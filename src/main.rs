@@ -71,6 +71,7 @@ fn main() {
 
         cx.spawn(async move |cx| {
             cx.open_window(WindowOptions::default(), |window, cx| {
+                window.set_window_title("Lightspeed");
                 let view = HelloWorld::new(window, cx);
                 // This first level on the window, should be a Root.
                 cx.new(|cx| Root::new(view.into(), window, cx))
