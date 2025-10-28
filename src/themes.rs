@@ -21,7 +21,7 @@ impl Default for State {
     }
 }
 
-pub fn init(cx: &mut App) {
+pub fn init(cx: &mut App, on_themes_loaded: impl Fn(&mut App) + 'static) {
     // Load last theme state
     let json = std::fs::read_to_string(STATE_FILE).unwrap_or(String::default());
     println!("Load themes...");
@@ -34,6 +34,8 @@ pub fn init(cx: &mut App) {
         {
             Theme::global_mut(cx).apply_config(&theme);
         }
+        // Call the callback after themes are loaded
+        on_themes_loaded(cx);
     }) {
         println!("Failed to watch themes directory: {}", err);
     }

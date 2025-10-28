@@ -7,11 +7,23 @@ mod themes;
 // Define actions for the app menus
 actions!(lightspeed, [About, Quit, CloseWindow]);
 
-fn init_menus(cx: &mut App) {
-    cx.set_menus(vec![
+#[derive(Action, Clone, PartialEq)]
+#[action(namespace = lightspeed, no_json)]
+pub struct SwitchTheme(pub SharedString);
+
+fn build_menus(cx: &App) -> Vec<Menu> {
+    let themes = ThemeRegistry::global(cx).sorted_themes();
+    vec![
         Menu {
             name: "Lightspeed".into(),
             items: vec![
+                MenuItem::Submenu(Menu {
+                    name: "Theme".into(),
+                    items: themes
+                        .iter()
+                        .map(|theme| MenuItem::action(theme.name.clone(), SwitchTheme(theme.name.clone())))
+                        .collect(),
+                }),
                 MenuItem::action("About Lightspeed", About),
                 MenuItem::Separator,
                 MenuItem::action("Quit", Quit),
@@ -32,7 +44,7 @@ fn init_menus(cx: &mut App) {
             name: "Window".into(),
             items: vec![MenuItem::action("Close Window", CloseWindow)],
         },
-    ]);
+    ]
 }
 
 // Custom title bar with platform-specific menu bar placement
@@ -95,12 +107,12 @@ impl Render for CustomTitleBar {
     }
 }
 
-pub struct HelloWorld {
+pub struct Lightspeed {
     themes_dropdown: Entity<DropdownState<Vec<SharedString>>>,
     title_bar: Entity<CustomTitleBar>,
 }
 
-impl HelloWorld {
+impl Lightspeed {
     fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let themes = ThemeRegistry::global(cx)
             .sorted_themes()
@@ -141,7 +153,7 @@ impl HelloWorld {
     }
 }
 
-impl Render for HelloWorld {
+impl Render for Lightspeed {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
@@ -172,10 +184,20 @@ fn main() {
     app.run(move |cx| {
         // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
-        themes::init(cx);
         
-        // Initialize menus
-        init_menus(cx);
+        // Initialize themes with callback to set menus after themes are loaded
+        themes::init(cx, |cx| {
+            cx.set_menus(build_menus(cx));
+        });
+        
+        // Handle theme switching from menu
+        cx.on_action(|switch: &SwitchTheme, cx| {
+            let theme_name = switch.0.clone();
+            if let Some(theme_config) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
+                Theme::global_mut(cx).apply_config(&theme_config);
+            }
+            cx.refresh_windows();
+        });
 
         cx.spawn(async move |cx| {
             let window_options = WindowOptions {
@@ -186,7 +208,7 @@ fn main() {
 
             cx.open_window(window_options, |window, cx| {
                 window.set_window_title("Lightspeed");
-                let view = HelloWorld::new(window, cx);
+                let view = Lightspeed::new(window, cx);
                 // This first level on the window, should be a Root.
                 cx.new(|cx| Root::new(view.into(), window, cx))
             })?;
