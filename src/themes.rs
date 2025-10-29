@@ -24,7 +24,6 @@ impl Default for State {
 pub fn init(cx: &mut App, on_themes_loaded: impl Fn(&mut App) + 'static) {
     // Load last theme state
     let json = std::fs::read_to_string(STATE_FILE).unwrap_or(String::default());
-    println!("Load themes...");
     let state = serde_json::from_str::<State>(&json).unwrap_or_default();
     if let Err(err) = ThemeRegistry::watch_dir(PathBuf::from("./src/themes"), cx, move |cx| {
         if let Some(theme) = ThemeRegistry::global(cx)
