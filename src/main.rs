@@ -140,6 +140,7 @@ pub struct EditorTab {
     id: usize,
     title: SharedString,
     content: Entity<InputState>,
+    _file_path: Option<std::path::PathBuf>,
     _modified: bool,
 }
 
@@ -155,6 +156,35 @@ impl EditorTab {
             id,
             title: title.into(),
             content,
+            _file_path: None,
+            _modified: false,
+        }
+    }
+
+    fn from_file(
+        id: usize,
+        path: std::path::PathBuf,
+        contents: String,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Untitled")
+            .to_string();
+
+        let content = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line()
+                .default_value(contents)
+        });
+
+        Self {
+            id,
+            title: file_name.into(),
+            content,
+            _file_path: Some(path),
             _modified: false,
         }
     }
@@ -222,6 +252,46 @@ impl Lightspeed {
             self.active_tab_index = index;
             cx.notify();
         }
+    }
+
+    fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let path_future = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+        });
+
+        cx.spawn_in(window, async move |view, window| {
+            // Wait for the user to select a path
+            let paths = path_future.await.ok()?.ok()??;
+            let path = paths.first()?.clone();
+
+            // Read file contents
+            let contents = std::fs::read_to_string(&path).ok()?;
+
+            // Update the view to add a new tab with the file
+            window
+                .update(|window, cx| {
+                    _ = view.update(cx, |this, cx| {
+                        let tab = EditorTab::from_file(
+                            this.next_tab_id,
+                            path.clone(),
+                            contents,
+                            window,
+                            cx,
+                        );
+                        this.tabs.push(tab);
+                        this.active_tab_index = this.tabs.len() - 1;
+                        this.next_tab_id += 1;
+                        cx.notify();
+                    });
+                })
+                .ok();
+
+            Some(())
+        })
+        .detach();
     }
 }
 
@@ -292,7 +362,7 @@ impl Render for Lightspeed {
                         // + button to create new tabs
                         tab_bar_button_factory("open-file", "Open File", IconName::FolderOpen, cx.theme().border)
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.new_tab(window, cx);
+                                this.open_file(window, cx);
                             })),
                     )
                     .child(
@@ -393,7 +463,13 @@ impl Render for Lightspeed {
                     .border_t_1()
                     .border_color(cx.theme().border)
                     .text_color(cx.theme().muted_foreground)
-                    .child(div().flex().justify_start().child(status_bar_left_item_factory(format!("Ln {}, Col {}", 123, 48), cx.theme().border)))
+                    .child(div()
+                        .flex()
+                        .justify_start()
+                        .child(
+                            status_bar_left_item_factory(format!("Ln {}, Col {}", 123, 48), cx.theme().border)
+                        )
+                    )
                     .child(
                         div()
                             .flex()
