@@ -1,8 +1,35 @@
+use anyhow::anyhow;
 use gpui::*;
-use gpui_component::{dropdown::*, *};
+use gpui_component::{button::*, input::*, *};
+use rust_embed::RustEmbed;
+use std::borrow::Cow;
 #[cfg(target_os = "windows")]
 use gpui_component::menu::AppMenuBar;
 mod themes;
+
+// Asset loader for icons
+#[derive(RustEmbed)]
+#[folder = "./assets"]
+#[include = "icons/**/*.svg"]
+pub struct Assets;
+
+impl AssetSource for Assets {
+    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        if path.is_empty() {
+            return Ok(None);
+        }
+
+        Self::get(path)
+            .map(|f| Some(f.data))
+            .ok_or_else(|| anyhow!("could not find asset at path \"{path}\""))
+    }
+
+    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
+        Ok(Self::iter()
+            .filter_map(|p| p.starts_with(path).then(|| p.into()))
+            .collect())
+    }
+}
 
 // Define actions for the app menus
 actions!(lightspeed, [About, Quit, CloseWindow]);
@@ -107,79 +134,245 @@ impl Render for CustomTitleBar {
     }
 }
 
-pub struct Lightspeed {
-    themes_dropdown: Entity<DropdownState<Vec<SharedString>>>,
-    title_bar: Entity<CustomTitleBar>,
+// Represents a single editor tab with its content
+#[derive(Clone)]
+pub struct EditorTab {
+    id: usize,
+    title: SharedString,
+    content: Entity<InputState>,
+    _modified: bool,
 }
 
-impl Lightspeed {
-    fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let themes = ThemeRegistry::global(cx)
-            .sorted_themes()
-            .iter()
-            .map(|theme| theme.name.clone())
-            .collect::<Vec<SharedString>>();
-        
-        let themes_dropdown = cx.new(|cx| {
-            DropdownState::new(themes, Some(IndexPath::default()), window, cx)
+impl EditorTab {
+    fn new(id: usize, title: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> Self {
+        let content = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line()
+                .placeholder("Start typing...")
         });
-
-        let title_bar = CustomTitleBar::new(window, cx);
-
-        cx.new(|cx| {
-            cx.subscribe_in(&themes_dropdown, window, Self::on_theme_change)
-                .detach();
-
-            Self {
-                themes_dropdown,
-                title_bar,
-            }
-        })
-    }
-
-    fn on_theme_change(
-        &mut self,
-        _dropdown: &Entity<DropdownState<Vec<SharedString>>>,
-        event: &DropdownEvent<Vec<SharedString>>,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let DropdownEvent::Confirm(Some(theme_name)) = event {
-            if let Some(theme_config) = ThemeRegistry::global(cx).themes().get(theme_name).cloned() {
-                Theme::global_mut(cx).apply_config(&theme_config);
-                cx.refresh_windows();
-            }
+        
+        Self {
+            id,
+            title: title.into(),
+            content,
+            _modified: false,
         }
     }
 }
 
+pub struct Lightspeed {
+    title_bar: Entity<CustomTitleBar>,
+    tabs: Vec<EditorTab>,
+    active_tab_index: usize,
+    next_tab_id: usize,
+}
+
+impl Lightspeed {
+    fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let title_bar = CustomTitleBar::new(window, cx);
+
+        // Create initial tab
+        let initial_tab = EditorTab::new(0, "Untitled", window, cx);
+
+        cx.new(|_cx| {
+            Self {
+                title_bar,
+                tabs: vec![initial_tab],
+                active_tab_index: 0,
+                next_tab_id: 1,
+            }
+        })
+    }
+
+    fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let tab = EditorTab::new(
+            self.next_tab_id,
+            format!("Untitled {}", self.next_tab_id),
+            window,
+            cx,
+        );
+        self.tabs.push(tab);
+        self.active_tab_index = self.tabs.len() - 1;
+        self.next_tab_id += 1;
+        cx.notify();
+    }
+
+    fn close_tab(&mut self, tab_id: usize, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.tabs.len() == 1 {
+            // Don't close the last tab
+            return;
+        }
+
+        if let Some(pos) = self.tabs.iter().position(|t| t.id == tab_id) {
+            self.tabs.remove(pos);
+            
+            // Adjust active index if needed
+            if self.active_tab_index >= self.tabs.len() {
+                self.active_tab_index = self.tabs.len() - 1;
+            } else if pos < self.active_tab_index {
+                self.active_tab_index -= 1;
+            }
+            
+            cx.notify();
+        }
+    }
+
+    fn set_active_tab(&mut self, index: usize, _window: &mut Window, cx: &mut Context<Self>) {
+        if index < self.tabs.len() {
+            self.active_tab_index = index;
+            cx.notify();
+        }
+    }
+}
+
+fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
+    Button::new(id)
+        .icon(icon)
+        .ghost()
+        .xsmall()
+        .tooltip(tooltip)
+        .border_t_0()   
+        .border_l_0()
+        .border_r_1()
+        .border_b_1()
+        .border_color(border_color)
+        .corner_radii(Corners {
+            top_left: px(0.0),
+            top_right: px(0.0),
+            bottom_left: px(0.0),
+            bottom_right: px(0.0),
+        })
+        .h(px(40.))
+        .w(px(40.))
+        .cursor_pointer()
+}
+
 impl Render for Lightspeed {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let active_tab = self.tabs.get(self.active_tab_index);
+
         div()
             .size_full()
             .v_flex()
             .child(self.title_bar.clone())
             .child(
+                // Tab bar with + button and tabs
                 div()
-                    .flex_1()
-                    .v_flex()
-                    .gap_2()
+                    .flex()
                     .items_center()
-                    .justify_center()
-                    .child("Hello, World!")
-                    .child(div().w_128().child(
-                        Dropdown::new(&self.themes_dropdown)
-                            .placeholder("Select theme...")
-                            .title_prefix("Theme: ")
-                            .cleanable()
-                            .into_any_element()
-                    )),
+                    .h(px(40.))
+                    .bg(cx.theme().tab_bar)
+                    //.border_b_1()
+                    //.border_color(cx.theme().border)
+                    .child(
+                        // + button to create new tabs
+                        tab_bar_button_factory("new-tab", "New Tab", IconName::Plus, cx.theme().border)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.new_tab(window, cx);
+                            })),
+                    )
+                    .child(
+                        // + button to create new tabs
+                        tab_bar_button_factory("open-file", "Open File", IconName::FolderOpen, cx.theme().border)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.new_tab(window, cx);
+                            })),
+                    )
+                    .child(
+                        // TabBar with all tabs
+                        div()
+                            .flex()
+                            .flex_1()
+                            .items_center()
+                            .children(self.tabs.iter().enumerate().map(|(index, tab)| {
+                                let tab_id = tab.id;
+                                let is_active = index == self.active_tab_index;
+
+                                let mut tab_div = div()
+                                    .flex()
+                                    .items_center()
+                                    .h(px(40.))
+                                    .px_2()
+                                    .gap_2()
+                                    .border_r_1()
+                                    .border_b_1()
+                                    .border_color(cx.theme().border)
+                                    .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, window, cx| {
+                                        if !is_active {
+                                            this.set_active_tab(index, window, cx);
+                                        }
+                                    }));
+
+                                if is_active {
+                                    tab_div = tab_div.bg(cx.theme().tab_active).border_b_0();
+                                } else {
+                                    tab_div = tab_div
+                                        .bg(cx.theme().tab)
+                                        .hover(|this| this.bg(cx.theme().muted))
+                                        .cursor_pointer();
+                                }
+
+                                tab_div
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(if is_active {
+                                                cx.theme().tab_active_foreground
+                                            } else {
+                                                cx.theme().tab_foreground
+                                            })
+                                            .pl_1()
+                                            .child(tab.title.clone()),
+                                    )
+                                    .child(
+                                        Button::new(("close-tab", tab_id))
+                                            .icon(IconName::Close)
+                                            .ghost()
+                                            .xsmall()
+                                            .cursor_pointer()
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                cx.stop_propagation();
+                                                this.close_tab(tab_id, window, cx);
+                                            })),
+                                    )
+                            }))
+
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.))
+                                    .border_b_1()
+                                    .border_color(cx.theme().border)
+                                    .h(px(40.))
+                            )
+                    )
+                )
+            .child(
+                // Active tab content area
+                {
+                    let mut content_div = div()
+                        .flex_1()
+                        .p_0()
+                        .m_0()
+                        .overflow_hidden();
+                    
+                    if let Some(tab) = active_tab {
+                        content_div = content_div.child(
+                            TextInput::new(&tab.content)
+                                .w_full()
+                                .h_full()
+                                .border_0()
+                        );
+                    }
+                    
+                    content_div
+                }
             )
     }
 }
 
 fn main() {
-    let app = Application::new();
+    let app = Application::new().with_assets(Assets);
 
     app.run(move |cx| {
         // This must be called before using any GPUI Component features.
