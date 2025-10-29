@@ -247,6 +247,23 @@ fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconNam
         .cursor_pointer()
 }
 
+fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
+    div()
+        .text_xs()
+        .px_2()
+        .py_1()
+        .border_color(border_color)
+        .child(content)
+}
+
+fn status_bar_right_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
+    status_bar_item_factory(content, border_color).border_l_1()
+}
+
+fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
+    status_bar_item_factory(content, border_color).border_r_1()
+}
+
 impl Render for Lightspeed {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let active_tab = self.tabs.get(self.active_tab_index);
@@ -368,6 +385,25 @@ impl Render for Lightspeed {
                     content_div
                 }
             )
+            .child(
+                h_flex()
+                    .justify_between()
+                    .bg(cx.theme().background)
+                    .px_2()
+                    .border_t_1()
+                    .border_color(cx.theme().border)
+                    .text_color(cx.theme().muted_foreground)
+                    .child(div().flex().justify_start().child(status_bar_left_item_factory(format!("Ln {}, Col {}", 123, 48), cx.theme().border)))
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .child(status_bar_right_item_factory(format!("Ln {}, Col {}", 123, 48), cx.theme().border))
+                            .child(status_bar_right_item_factory(format!("Ln {}, Col {}", 13, 22), cx.theme().border)),
+                    )
+                )
+            
+        
     }
 }
 
