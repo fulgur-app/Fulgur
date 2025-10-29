@@ -32,7 +32,7 @@ impl AssetSource for Assets {
 }
 
 // Define actions for the app menus
-actions!(lightspeed, [About, Quit, CloseWindow]);
+actions!(lightspeed, [About, Quit, CloseWindow, NewFile, OpenFile, SaveFileAs, SaveFile, CloseFile]);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = lightspeed, no_json)]
@@ -54,6 +54,18 @@ fn build_menus(cx: &App) -> Vec<Menu> {
                 MenuItem::action("About Lightspeed", About),
                 MenuItem::Separator,
                 MenuItem::action("Quit", Quit),
+            ],
+        },
+        Menu {
+            name: "File".into(),
+            items: vec![
+                MenuItem::action("New", NewFile),
+                MenuItem::action("Open...", OpenFile),
+                MenuItem::separator(),
+                MenuItem::action("Save as...", SaveFileAs),
+                MenuItem::action("Save", SaveFile),
+                MenuItem::separator(),
+                MenuItem::action("Close file", CloseFile),
             ],
         },
         Menu {
@@ -191,6 +203,7 @@ impl EditorTab {
 }
 
 pub struct Lightspeed {
+    focus_handle: FocusHandle,
     title_bar: Entity<CustomTitleBar>,
     tabs: Vec<EditorTab>,
     active_tab_index: usize,
@@ -204,13 +217,15 @@ impl Lightspeed {
         // Create initial tab
         let initial_tab = EditorTab::new(0, "Untitled", window, cx);
 
-        cx.new(|_cx| {
-            Self {
+        cx.new(|cx| {
+            let entity = Self {
+                focus_handle: cx.focus_handle(),
                 title_bar,
                 tabs: vec![initial_tab],
                 active_tab_index: 0,
                 next_tab_id: 1,
-            }
+            };
+            entity
         })
     }
 
@@ -295,6 +310,12 @@ impl Lightspeed {
     }
 }
 
+impl Focusable for Lightspeed {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
 fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
     Button::new(id)
         .icon(icon)
@@ -341,6 +362,13 @@ impl Render for Lightspeed {
         div()
             .size_full()
             .v_flex()
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(|this, _action: &NewFile, window, cx| {
+                this.new_tab(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &OpenFile, window, cx| {
+                this.open_file(window, cx);
+            }))
             .child(self.title_bar.clone())
             .child(
                 // Tab bar with + button and tabs
@@ -449,6 +477,7 @@ impl Render for Lightspeed {
                                 .w_full()
                                 .h_full()
                                 .border_0()
+                                .text_size(px(14.))
                         );
                     }
                     
@@ -495,6 +524,18 @@ fn main() {
             cx.set_menus(build_menus(cx));
         });
         
+        // Set up keyboard shortcuts
+        cx.bind_keys([
+            #[cfg(target_os = "macos")]
+            KeyBinding::new("cmd-o", OpenFile, None),
+            #[cfg(not(target_os = "macos"))]
+            KeyBinding::new("ctrl-o", OpenFile, None),
+            #[cfg(target_os = "macos")]
+            KeyBinding::new("cmd-n", NewFile, None),
+            #[cfg(not(target_os = "macos"))]
+            KeyBinding::new("ctrl-n", NewFile, None),
+        ]);
+        
         // Handle theme switching from menu
         cx.on_action(|switch: &SwitchTheme, cx| {
             let theme_name = switch.0.clone();
@@ -514,6 +555,8 @@ fn main() {
             cx.open_window(window_options, |window, cx| {
                 window.set_window_title("Lightspeed");
                 let view = Lightspeed::new(window, cx);
+                // Focus the view so keyboard shortcuts work immediately
+                view.focus_handle(cx).focus(window);
                 // This first level on the window, should be a Root.
                 cx.new(|cx| Root::new(view.into(), window, cx))
             })?;
