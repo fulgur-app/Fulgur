@@ -369,6 +369,9 @@ impl Render for Lightspeed {
             .on_action(cx.listener(|this, _action: &OpenFile, window, cx| {
                 this.open_file(window, cx);
             }))
+            .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
+                this.close_tab(this.active_tab_index, window, cx);
+            }))
             .child(self.title_bar.clone())
             .child(
                 // Tab bar with + button and tabs
@@ -534,6 +537,10 @@ fn main() {
             KeyBinding::new("cmd-n", NewFile, None),
             #[cfg(not(target_os = "macos"))]
             KeyBinding::new("ctrl-n", NewFile, None),
+            #[cfg(target_os = "macos")]
+            KeyBinding::new("cmd-w", CloseFile, None),
+            #[cfg(not(target_os = "macos"))]
+            KeyBinding::new("ctrl-w", CloseFile, None),
         ]);
         
         // Handle theme switching from menu
