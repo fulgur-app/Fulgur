@@ -373,7 +373,7 @@ impl Render for Lightspeed {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Update modified status of tabs
         self.update_modified_status(cx);
-        
+        let cursor_pos = self.tabs[self.active_tab_index].content.read(cx).cursor_position();
         let active_tab = self.tabs.get(self.active_tab_index);
 
         div()
@@ -538,7 +538,7 @@ impl Render for Lightspeed {
                         .flex()
                         .justify_start()
                         .child(
-                            status_bar_left_item_factory(format!("Ln {}, Col {}", 123, 48), cx.theme().border)
+                            status_bar_left_item_factory(format!("Ln {}, Col {}", 132, 22), cx.theme().border)
                         )
                     )
                     .child(
@@ -546,7 +546,7 @@ impl Render for Lightspeed {
                             .flex()
                             .justify_end()
                             .child(status_bar_right_item_factory(format!("Ln {}, Col {}", 123, 48), cx.theme().border))
-                            .child(status_bar_right_item_factory(format!("Ln {}, Col {}", 13, 22), cx.theme().border)),
+                            .child(status_bar_right_item_factory(format!("Ln {}, Col {}", cursor_pos.line + 1, cursor_pos.character + 1), cx.theme().border)),
                     )
                 )
             
