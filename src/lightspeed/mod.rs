@@ -4,7 +4,7 @@ mod editor_tab;
 mod themes;
 
 pub use titlebar::CustomTitleBar;
-pub use menus::{build_menus, SwitchTheme, OpenFile, NewFile, CloseFile, CloseAllFiles};
+pub use menus::*;
 pub use editor_tab::EditorTab;
 
 use gpui::*;
@@ -44,7 +44,7 @@ impl Lightspeed {
         });
     }
 
-    pub fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let tab = EditorTab::new(
             self.next_tab_id,
             format!("Untitled {}", self.next_tab_id),
@@ -57,7 +57,7 @@ impl Lightspeed {
         cx.notify();
     }
 
-    pub fn close_tab(&mut self, tab_id: usize, _window: &mut Window, cx: &mut Context<Self>) {
+    fn close_tab(&mut self, tab_id: usize, _window: &mut Window, cx: &mut Context<Self>) {
 
         if let Some(pos) = self.tabs.iter().position(|t| t.id == tab_id) {
             self.tabs.remove(pos);
@@ -75,14 +75,14 @@ impl Lightspeed {
         }
     }
 
-    pub fn set_active_tab(&mut self, index: usize, _window: &mut Window, cx: &mut Context<Self>) {
+    fn set_active_tab(&mut self, index: usize, _window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
             self.active_tab_index = index;
             cx.notify();
         }
     }
 
-    pub fn close_all_tabs(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    fn close_all_tabs(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.len() > 0 {
             self.tabs.clear();
             self.active_tab_index = 0;
@@ -91,7 +91,7 @@ impl Lightspeed {
         }
     }
 
-    pub fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let path_future = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -129,6 +129,18 @@ impl Lightspeed {
             Some(())
         })
         .detach();
+    }
+
+    fn quit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        // if self.tabs.len() > 0 {
+        //     // Prompt the user to save the tabs if they are modified
+        //     for tab in self.tabs.iter() {
+        //         if tab.modified {
+        //             println!("Tab {} is modified", tab.title); // TODO: Prompt the user to save the tab
+        //         }
+        //     }
+        // }
+        cx.quit();
     }
 }
 
@@ -196,6 +208,9 @@ impl Render for Lightspeed {
             }))
             .on_action(cx.listener(|this, _action: &CloseAllFiles, window, cx| {
                 this.close_all_tabs(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &Quit, window, cx| {
+                this.quit(window, cx);
             }))
             .child(self.title_bar.clone())
             .child(

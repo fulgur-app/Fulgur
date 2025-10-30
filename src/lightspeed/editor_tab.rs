@@ -8,7 +8,7 @@ pub struct EditorTab {
     pub title: SharedString,
     pub content: Entity<InputState>,
     pub _file_path: Option<std::path::PathBuf>,
-    pub _modified: bool,
+    pub modified: bool,
 }
 
 impl EditorTab {
@@ -24,7 +24,7 @@ impl EditorTab {
             title: title.into(),
             content,
             _file_path: None,
-            _modified: false,
+            modified: false,
         }
     }
 
@@ -52,7 +52,7 @@ impl EditorTab {
             title: file_name.into(),
             content,
             _file_path: Some(path),
-            _modified: false,
+            modified: false,
         }
     }
 }

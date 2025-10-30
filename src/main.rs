@@ -4,7 +4,7 @@ use gpui_component::{ThemeRegistry, Theme, TitleBar, Root};
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
 
-use crate::lightspeed::{Lightspeed, NewFile, OpenFile, CloseFile, SwitchTheme, CloseAllFiles};
+use crate::lightspeed::*;
 mod lightspeed;
 // Asset loader for icons
 #[derive(RustEmbed)]
@@ -56,6 +56,9 @@ fn main() {
             KeyBinding::new("cmd-shift-w", CloseAllFiles, None),
             #[cfg(not(target_os = "macos"))]
             KeyBinding::new("ctrl-shift-w", CloseAllFiles, None),
+            KeyBinding::new("cmd-q", Quit, None),
+            #[cfg(not(target_os = "macos"))]
+            KeyBinding::new("ctrl-q", Quit, None),
         ]);
             
         // Handle theme switching from menu
