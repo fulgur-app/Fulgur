@@ -4,7 +4,7 @@ use gpui_component::{ThemeRegistry, Theme, TitleBar, Root};
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
 
-use crate::lightspeed::{Lightspeed, NewFile, OpenFile, CloseFile, SwitchTheme};
+use crate::lightspeed::{Lightspeed, NewFile, OpenFile, CloseFile, SwitchTheme, CloseAllFiles};
 mod lightspeed;
 // Asset loader for icons
 #[derive(RustEmbed)]
@@ -52,8 +52,12 @@ fn main() {
             KeyBinding::new("cmd-w", CloseFile, None),
             #[cfg(not(target_os = "macos"))]
             KeyBinding::new("ctrl-w", CloseFile, None),
+            #[cfg(target_os = "macos")]
+            KeyBinding::new("cmd-shift-w", CloseAllFiles, None),
+            #[cfg(not(target_os = "macos"))]
+            KeyBinding::new("ctrl-shift-w", CloseAllFiles, None),
         ]);
-        
+            
         // Handle theme switching from menu
         cx.on_action(|switch: &SwitchTheme, cx| {
             let theme_name = switch.0.clone();

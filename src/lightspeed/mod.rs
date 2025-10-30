@@ -4,7 +4,7 @@ mod editor_tab;
 mod themes;
 
 pub use titlebar::CustomTitleBar;
-pub use menus::{build_menus, SwitchTheme, OpenFile, NewFile, CloseFile};
+pub use menus::{build_menus, SwitchTheme, OpenFile, NewFile, CloseFile, CloseAllFiles};
 pub use editor_tab::EditorTab;
 
 use gpui::*;
@@ -58,19 +58,17 @@ impl Lightspeed {
     }
 
     pub fn close_tab(&mut self, tab_id: usize, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.len() == 1 {
-            // Don't close the last tab
-            return;
-        }
 
         if let Some(pos) = self.tabs.iter().position(|t| t.id == tab_id) {
             self.tabs.remove(pos);
             
             // Adjust active index if needed
-            if self.active_tab_index >= self.tabs.len() {
-                self.active_tab_index = self.tabs.len() - 1;
-            } else if pos < self.active_tab_index {
-                self.active_tab_index -= 1;
+            if self.active_tab_index > 0 {
+                if self.active_tab_index >= self.tabs.len() {
+                    self.active_tab_index = self.tabs.len() - 1;
+                } else if pos < self.active_tab_index {
+                    self.active_tab_index -= 1;
+                }
             }
             
             cx.notify();
@@ -80,6 +78,15 @@ impl Lightspeed {
     pub fn set_active_tab(&mut self, index: usize, _window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
             self.active_tab_index = index;
+            cx.notify();
+        }
+    }
+
+    pub fn close_all_tabs(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.tabs.len() > 0 {
+            self.tabs.clear();
+            self.active_tab_index = 0;
+            self.next_tab_id = 1;
             cx.notify();
         }
     }
@@ -186,6 +193,9 @@ impl Render for Lightspeed {
             }))
             .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
                 this.close_tab(this.active_tab_index, window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &CloseAllFiles, window, cx| {
+                this.close_all_tabs(window, cx);
             }))
             .child(self.title_bar.clone())
             .child(

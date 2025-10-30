@@ -2,7 +2,7 @@ use gpui::*;
 use gpui_component::ThemeRegistry;
 
 
-actions!(lightspeed, [About, Quit, CloseWindow, NewFile, OpenFile, SaveFileAs, SaveFile, CloseFile]);
+actions!(lightspeed, [About, Quit, CloseWindow, NewFile, OpenFile, SaveFileAs, SaveFile, CloseFile, CloseAllFiles]);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = lightspeed, no_json)]
@@ -36,6 +36,7 @@ pub fn build_menus(cx: &mut App) -> Vec<Menu> {
                 MenuItem::action("Save", SaveFile),
                 MenuItem::separator(),
                 MenuItem::action("Close file", CloseFile),
+                MenuItem::action("Close all files", CloseAllFiles),
             ],
         },
         Menu {
