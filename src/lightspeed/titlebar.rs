@@ -10,6 +10,10 @@ pub struct CustomTitleBar {
 }
 
 impl CustomTitleBar {
+    // Create a new custom title bar
+    // @param window: The window to create the title bar in
+    // @param cx: The application context
+    // @return: The new custom title bar
     pub fn new(_window: &mut Window, _cx: &mut App) -> Entity<Self> {
         #[cfg(target_os = "windows")]
         let app_menu_bar = AppMenuBar::new(_window, _cx);
@@ -22,6 +26,10 @@ impl CustomTitleBar {
 }
 
 impl Render for CustomTitleBar {
+    // Render the custom title bar
+    // @param window: The window to render the title bar in
+    // @param cx: The application context
+    // @return: The rendered custom title bar
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let mut title_bar = TitleBar::new();
 

@@ -1,13 +1,15 @@
 use gpui::*;
 use gpui_component::ThemeRegistry;
 
-
 actions!(lightspeed, [About, Quit, CloseWindow, NewFile, OpenFile, SaveFileAs, SaveFile, CloseFile, CloseAllFiles]);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = lightspeed, no_json)]
 pub struct SwitchTheme(pub SharedString);
 
+// Build the menus for the Lightspeed instance
+// @param cx: The application context
+// @return: The menus for the Lightspeed instance
 pub fn build_menus(cx: &mut App) -> Vec<Menu> {
     let themes = ThemeRegistry::global(cx).sorted_themes();
     vec![

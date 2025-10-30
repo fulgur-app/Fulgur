@@ -19,6 +19,10 @@ pub struct Lightspeed {
 }
 
 impl Lightspeed {
+    // Create a new Lightspeed instance
+    // @param window: The window to create the Lightspeed instance in
+    // @param cx: The application context
+    // @return: The new Lightspeed instance
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
 
@@ -37,6 +41,8 @@ impl Lightspeed {
         })
     }
 
+    // Initialize the Lightspeed instance
+    // @param cx: The application context
     pub fn init(cx: &mut App) {
         themes::init(cx, |cx| {
             let menus = build_menus(cx);
@@ -76,6 +82,9 @@ impl Lightspeed {
         });
     }
 
+    // Create a new tab
+    // @param window: The window to create the tab in
+    // @param cx: The application context
     fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let tab = EditorTab::new(
             self.next_tab_id,
@@ -89,6 +98,10 @@ impl Lightspeed {
         cx.notify();
     }
 
+    // Close a tab
+    // @param tab_id: The ID of the tab to close
+    // @param window: The window to close the tab in
+    // @param cx: The application context
     fn close_tab(&mut self, tab_id: usize, _window: &mut Window, cx: &mut Context<Self>) {
 
         if let Some(pos) = self.tabs.iter().position(|t| t.id == tab_id) {
@@ -107,6 +120,10 @@ impl Lightspeed {
         }
     }
 
+    // Set the active tab
+    // @param index: The index of the tab to set as active
+    // @param window: The window to set the active tab in
+    // @param cx: The application context
     fn set_active_tab(&mut self, index: usize, _window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
             self.active_tab_index = index;
@@ -114,6 +131,9 @@ impl Lightspeed {
         }
     }
 
+    // Close all tabs
+    // @param window: The window to close all tabs in
+    // @param cx: The application context
     fn close_all_tabs(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.len() > 0 {
             self.tabs.clear();
@@ -123,6 +143,9 @@ impl Lightspeed {
         }
     }
 
+    // Open a file
+    // @param window: The window to open the file in
+    // @param cx: The application context
     fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let path_future = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -163,6 +186,9 @@ impl Lightspeed {
         .detach();
     }
 
+    // Save a file
+    // @param window: The window to save the file in
+    // @param cx: The application context
     fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() {
             return;
@@ -193,6 +219,9 @@ impl Lightspeed {
         cx.notify();
     }
 
+    // Save a file as
+    // @param window: The window to save the file as in
+    // @param cx: The application context
     fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() {
             return;
@@ -249,12 +278,17 @@ impl Lightspeed {
         .detach();
     }
 
+    // Update the modified status of the tabs
+    // @param cx: The application context
     fn update_modified_status(&mut self, cx: &mut Context<Self>) {
         for tab in self.tabs.iter_mut() {
             tab.check_modified(cx);
         }
     }
 
+    // Quit the application
+    // @param window: The window to quit the application in
+    // @param cx: The application context
     fn quit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         // if self.tabs.len() > 0 {
         //     // Prompt the user to save the tabs if they are modified
@@ -274,6 +308,12 @@ impl Focusable for Lightspeed {
     }
 }
 
+// Create a tab bar button
+// @param id: The ID of the button
+// @param tooltip: The tooltip of the button
+// @param icon: The icon of the button
+// @param border_color: The color of the border
+// @return: The tab bar button
 fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
     Button::new(id)
         .icon(icon)
@@ -296,6 +336,10 @@ fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconNam
         .cursor_pointer()
 }
 
+// Create a status bar item
+// @param content: The content of the status bar item
+// @param border_color: The color of the border
+// @return: The status bar item
 fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
     div()
         .text_xs()
@@ -305,15 +349,27 @@ fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
         .child(content)
 }
 
+// Create a status bar right item
+// @param content: The content of the status bar right item
+// @param border_color: The color of the border
+// @return: The status bar right item
 fn status_bar_right_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
     status_bar_item_factory(content, border_color).border_l_1()
 }
 
+// Create a status bar left item
+// @param content: The content of the status bar left item
+// @param border_color: The color of the border
+// @return: The status bar left item
 fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
     status_bar_item_factory(content, border_color).border_r_1()
 }
 
 impl Render for Lightspeed {
+    // Render the Lightspeed instance
+    // @param window: The window to render the Lightspeed instance in
+    // @param cx: The application context
+    // @return: The rendered Lightspeed instance
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Update modified status of tabs
         self.update_modified_status(cx);

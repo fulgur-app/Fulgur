@@ -13,6 +13,12 @@ pub struct EditorTab {
 }
 
 impl EditorTab {
+    // Create a new tab
+    // @param id: The ID of the tab
+    // @param title: The title of the tab
+    // @param window: The window to create the tab in
+    // @param cx: The application context
+    // @return: The new tab
     pub fn new(id: usize, title: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> Self {
         let content = cx.new(|cx| {
             InputState::new(window, cx)
@@ -30,6 +36,13 @@ impl EditorTab {
         }
     }
 
+    // Create a new tab from a file
+    // @param id: The ID of the tab
+    // @param path: The path of the file
+    // @param contents: The contents of the file
+    // @param window: The window to create the tab in
+    // @param cx: The application context
+    // @return: The new tab
     pub fn from_file(
         id: usize,
         path: std::path::PathBuf,
@@ -59,12 +72,17 @@ impl EditorTab {
         }
     }
     
+    // Check if the tab's content has been modified
+    // @param cx: The application context
+    // @return: True if the tab's content has been modified, false otherwise
     pub fn check_modified(&mut self, cx: &mut App) -> bool {
         let current_text = self.content.read(cx).text().to_string();
         self.modified = current_text != self.original_content;
         self.modified
     }
     
+    // Mark the tab as saved
+    // @param cx: The application context
     pub fn mark_as_saved(&mut self, cx: &mut App) {
         self.original_content = self.content.read(cx).text().to_string();
         self.modified = false;
