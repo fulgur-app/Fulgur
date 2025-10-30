@@ -3,12 +3,12 @@ mod menus;
 mod editor_tab;
 mod themes;
 
-pub use titlebar::CustomTitleBar;
-pub use menus::*;
-pub use editor_tab::EditorTab;
+use titlebar::CustomTitleBar;
+use menus::*;
+use editor_tab::EditorTab;
 
 use gpui::*;
-use gpui_component::{ActiveTheme, IconName, Sizable, StyledExt, button::{Button, ButtonVariants}, h_flex, input::TextInput};
+use gpui_component::{ActiveTheme, IconName, Sizable, StyledExt, Theme, ThemeRegistry, button::{Button, ButtonVariants}, h_flex, input::TextInput};
 
 pub struct Lightspeed {
     focus_handle: FocusHandle,
@@ -41,6 +41,38 @@ impl Lightspeed {
         themes::init(cx, |cx| {
             let menus = build_menus(cx);
             cx.set_menus(menus);
+
+            // Set up keyboard shortcuts
+            cx.bind_keys([
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-o", OpenFile, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-o", OpenFile, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-n", NewFile, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-n", NewFile, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-w", CloseFile, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-w", CloseFile, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-shift-w", CloseAllFiles, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-shift-w", CloseAllFiles, None),
+                KeyBinding::new("cmd-q", Quit, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-q", Quit, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-s", SaveFile, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-s", SaveFile, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-shift-s", SaveFileAs, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-shift-s", SaveFileAs, None),
+            ]);
+            
         });
     }
 
@@ -131,6 +163,98 @@ impl Lightspeed {
         .detach();
     }
 
+    fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tabs.is_empty() {
+            return;
+        }
+
+        let active_tab = &self.tabs[self.active_tab_index];
+        
+        // If no path exists, use save_as instead
+        if active_tab.file_path.is_none() {
+            self.save_file_as(window, cx);
+            return;
+        }
+
+        let path = active_tab.file_path.clone().unwrap();
+        let content_entity = active_tab.content.clone();
+        
+        // Get the text content from the InputState
+        let contents = content_entity.read(cx).text().to_string();
+        
+        // Write to file
+        if let Err(e) = std::fs::write(&path, contents) {
+            eprintln!("Failed to save file: {}", e);
+            return;
+        }
+
+        // Mark as saved
+        self.tabs[self.active_tab_index].mark_as_saved(cx);
+        cx.notify();
+    }
+
+    fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tabs.is_empty() {
+            return;
+        }
+
+        let active_tab_index = self.active_tab_index;
+        let content_entity = self.tabs[active_tab_index].content.clone();
+        
+        // Get the current directory or use home directory
+        let directory = if let Some(ref path) = self.tabs[active_tab_index].file_path {
+            path.parent().unwrap_or(std::path::Path::new(".")).to_path_buf()
+        } else {
+            std::env::current_dir().unwrap_or_default()
+        };
+
+        let path_future = cx.prompt_for_new_path(&directory, None);
+
+        cx.spawn_in(window, async move |view, window| {
+            // Wait for the user to select a path
+            let path = path_future.await.ok()?.ok()??;
+
+            // Get the text content
+            let contents = window
+                .update(|_, cx| content_entity.read(cx).text().to_string())
+                .ok()?;
+
+            // Write to file
+            if let Err(e) = std::fs::write(&path, &contents) {
+                eprintln!("Failed to save file: {}", e);
+                return None;
+            }
+
+            // Update the tab with the new path
+            window
+                .update(|_, cx| {
+                    _ = view.update(cx, |this, cx| {
+                        if let Some(tab) = this.tabs.get_mut(active_tab_index) {
+                            tab.file_path = Some(path.clone());
+                            tab.title = path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("Untitled")
+                                .to_string()
+                                .into();
+                            tab.mark_as_saved(cx);
+                            cx.notify();
+                        }
+                    });
+                })
+                .ok()?;
+
+            Some(())
+        })
+        .detach();
+    }
+
+    fn update_modified_status(&mut self, cx: &mut Context<Self>) {
+        for tab in self.tabs.iter_mut() {
+            tab.check_modified(cx);
+        }
+    }
+
     fn quit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         // if self.tabs.len() > 0 {
         //     // Prompt the user to save the tabs if they are modified
@@ -191,6 +315,9 @@ fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl Int
 
 impl Render for Lightspeed {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Update modified status of tabs
+        self.update_modified_status(cx);
+        
         let active_tab = self.tabs.get(self.active_tab_index);
 
         div()
@@ -209,9 +336,22 @@ impl Render for Lightspeed {
             .on_action(cx.listener(|this, _action: &CloseAllFiles, window, cx| {
                 this.close_all_tabs(window, cx);
             }))
+            .on_action(cx.listener(|this, _action: &SaveFile, window, cx| {
+                this.save_file(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &SaveFileAs, window, cx| {
+                this.save_file_as(window, cx);
+            }))
             .on_action(cx.listener(|this, _action: &Quit, window, cx| {
                 this.quit(window, cx);
             }))
+            .on_action(cx.listener(|this, _action: &SwitchTheme, window, cx| {
+                let theme_name = _action.0.clone();
+                if let Some(theme_config) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
+                    Theme::global_mut(cx).apply_config(&theme_config);
+                    }
+                    cx.refresh_windows();
+                }))
             .child(self.title_bar.clone())
             .child(
                 // Tab bar with + button and tabs
@@ -280,7 +420,10 @@ impl Render for Lightspeed {
                                                 cx.theme().tab_foreground
                                             })
                                             .pl_1()
-                                            .child(tab.title.clone()),
+                                            .child(format!("{}{}", 
+                                                tab.title.clone(),
+                                                if tab.modified { " •" } else { "" }
+                                            )),
                                     )
                                     .child(
                                         Button::new(("close-tab", tab_id))

@@ -1,10 +1,10 @@
 use anyhow::anyhow;
 use gpui::*;
-use gpui_component::{ThemeRegistry, Theme, TitleBar, Root};
+use gpui_component::{TitleBar, Root};
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
 
-use crate::lightspeed::*;
+use crate::lightspeed::Lightspeed;
 mod lightspeed;
 // Asset loader for icons
 #[derive(RustEmbed)]
@@ -37,38 +37,6 @@ fn main() {
         // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
         Lightspeed::init(cx);
-        
-        // Set up keyboard shortcuts
-        cx.bind_keys([
-            #[cfg(target_os = "macos")]
-            KeyBinding::new("cmd-o", OpenFile, None),
-            #[cfg(not(target_os = "macos"))]
-            KeyBinding::new("ctrl-o", OpenFile, None),
-            #[cfg(target_os = "macos")]
-            KeyBinding::new("cmd-n", NewFile, None),
-            #[cfg(not(target_os = "macos"))]
-            KeyBinding::new("ctrl-n", NewFile, None),
-            #[cfg(target_os = "macos")]
-            KeyBinding::new("cmd-w", CloseFile, None),
-            #[cfg(not(target_os = "macos"))]
-            KeyBinding::new("ctrl-w", CloseFile, None),
-            #[cfg(target_os = "macos")]
-            KeyBinding::new("cmd-shift-w", CloseAllFiles, None),
-            #[cfg(not(target_os = "macos"))]
-            KeyBinding::new("ctrl-shift-w", CloseAllFiles, None),
-            KeyBinding::new("cmd-q", Quit, None),
-            #[cfg(not(target_os = "macos"))]
-            KeyBinding::new("ctrl-q", Quit, None),
-        ]);
-            
-        // Handle theme switching from menu
-        cx.on_action(|switch: &SwitchTheme, cx| {
-            let theme_name = switch.0.clone();
-            if let Some(theme_config) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
-                Theme::global_mut(cx).apply_config(&theme_config);
-            }
-            cx.refresh_windows();
-        });
 
         cx.spawn(async move |cx| {
             let window_options = WindowOptions {

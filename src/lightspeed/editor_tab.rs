@@ -7,8 +7,9 @@ pub struct EditorTab {
     pub id: usize,
     pub title: SharedString,
     pub content: Entity<InputState>,
-    pub _file_path: Option<std::path::PathBuf>,
+    pub file_path: Option<std::path::PathBuf>,
     pub modified: bool,
+    pub original_content: String,
 }
 
 impl EditorTab {
@@ -23,8 +24,9 @@ impl EditorTab {
             id,
             title: title.into(),
             content,
-            _file_path: None,
+            file_path: None,
             modified: false,
+            original_content: String::new(),
         }
     }
 
@@ -44,15 +46,27 @@ impl EditorTab {
         let content = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
-                .default_value(contents)
+                .default_value(contents.clone())
         });
 
         Self {
             id,
             title: file_name.into(),
             content,
-            _file_path: Some(path),
+            file_path: Some(path),
             modified: false,
+            original_content: contents,
         }
+    }
+    
+    pub fn check_modified(&mut self, cx: &mut App) -> bool {
+        let current_text = self.content.read(cx).text().to_string();
+        self.modified = current_text != self.original_content;
+        self.modified
+    }
+    
+    pub fn mark_as_saved(&mut self, cx: &mut App) {
+        self.original_content = self.content.read(cx).text().to_string();
+        self.modified = false;
     }
 }
