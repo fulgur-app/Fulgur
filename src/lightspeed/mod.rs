@@ -9,13 +9,13 @@ use editor_tab::EditorTab;
 
 use gpui::*;
 use std::ops::DerefMut;
-use gpui_component::{ActiveTheme, ContextModal, IconName, Root, Sizable, StyledExt, Theme, ThemeRegistry, button::{Button, ButtonVariants}, h_flex, input::TextInput};
+use gpui_component::{ActiveTheme, ContextModal, IconName, Root, Sizable, StyledExt, Theme, ThemeRegistry, button::{Button, ButtonVariants}, h_flex, input::{Position, TextInput}};
 
 pub struct Lightspeed {
     focus_handle: FocusHandle,
     title_bar: Entity<CustomTitleBar>,
     tabs: Vec<EditorTab>,
-    active_tab_index: usize,
+    active_tab_index: Option<usize>,
     next_tab_id: usize,
 }
 
@@ -35,7 +35,7 @@ impl Lightspeed {
                 focus_handle: cx.focus_handle(),
                 title_bar,
                 tabs: vec![initial_tab],
-                active_tab_index: 0,
+                active_tab_index: Some(0),
                 next_tab_id: 1,
             };
             entity
@@ -94,7 +94,7 @@ impl Lightspeed {
             cx,
         );
         self.tabs.push(tab);
-        self.active_tab_index = self.tabs.len() - 1;
+        self.active_tab_index = Some(self.tabs.len() - 1);
         self.next_tab_id += 1;
         
         self.focus_active_tab(window, cx);
@@ -164,16 +164,16 @@ impl Lightspeed {
     fn close_tab_manage_focus(&mut self, window: &mut Window, cx: &mut Context<Self>, pos: usize) {
         // If no tabs left, create a new one
         if self.tabs.is_empty() {
-            let new_tab = EditorTab::new(self.next_tab_id, "Untitled", window, cx);
-            self.tabs.push(new_tab);
-            self.next_tab_id += 1;
-            self.active_tab_index = 0;
+            // let new_tab = EditorTab::new(self.next_tab_id, "Untitled", window, cx);
+            // self.tabs.push(new_tab);
+            // self.next_tab_id += 1;
+            self.active_tab_index = None;
         } else {
             // Adjust active index
-            if self.active_tab_index >= self.tabs.len() {
-                self.active_tab_index = self.tabs.len() - 1;
-            } else if pos < self.active_tab_index {
-                self.active_tab_index -= 1;
+            if self.active_tab_index.is_some() && self.active_tab_index.unwrap() >= self.tabs.len() {
+                self.active_tab_index = Some(self.tabs.len() - 1);
+            } else if self.active_tab_index.is_some() && pos < self.active_tab_index.unwrap() {
+                self.active_tab_index = Some(self.active_tab_index.unwrap() - 1);
             }
         }
         
@@ -186,7 +186,7 @@ impl Lightspeed {
     // @param cx: The application context
     fn set_active_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
-            self.active_tab_index = index;
+            self.active_tab_index = Some(index);
             self.focus_active_tab(window, cx);
             cx.notify();
         }
@@ -196,9 +196,11 @@ impl Lightspeed {
     // @param window: The window to focus the tab in
     // @param cx: The application context
     pub fn focus_active_tab(&self, window: &mut Window, cx: &App) {
-        if let Some(active_tab) = self.tabs.get(self.active_tab_index) {
-            let focus_handle = active_tab.content.read(cx).focus_handle(cx);
-            window.focus(&focus_handle);
+        if let Some(active_tab_index) = self.active_tab_index {
+            if let Some(active_tab) = self.tabs.get(active_tab_index) {
+                let focus_handle = active_tab.content.read(cx).focus_handle(cx);
+                window.focus(&focus_handle);
+            }
         }
     }
 
@@ -208,7 +210,7 @@ impl Lightspeed {
     fn close_all_tabs(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.len() > 0 {
             self.tabs.clear();
-            self.active_tab_index = 0;
+            self.active_tab_index = None;
             self.next_tab_id = 1;
             cx.notify();
         }
@@ -245,7 +247,7 @@ impl Lightspeed {
                             cx,
                         );
                         this.tabs.push(tab);
-                        this.active_tab_index = this.tabs.len() - 1;
+                        this.active_tab_index = Some(this.tabs.len() - 1);
                         this.next_tab_id += 1;
                         this.focus_active_tab(window, cx);
                         cx.notify();
@@ -262,16 +264,16 @@ impl Lightspeed {
     // @param window: The window to save the file in
     // @param cx: The application context
     fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.is_empty() {
+        if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;
         }
 
-        let active_tab = &self.tabs[self.active_tab_index];
+        let active_tab = &self.tabs[self.active_tab_index.unwrap()];
         
         // If no path exists, use save_as instead
         if active_tab.file_path.is_none() {
             self.save_file_as(window, cx);
-            return;
+            return; 
         }
 
         let path = active_tab.file_path.clone().unwrap();
@@ -287,7 +289,7 @@ impl Lightspeed {
         }
 
         // Mark as saved
-        self.tabs[self.active_tab_index].mark_as_saved(cx);
+        self.tabs[self.active_tab_index.unwrap()].mark_as_saved(cx);
         cx.notify();
     }
 
@@ -295,15 +297,15 @@ impl Lightspeed {
     // @param window: The window to save the file as in
     // @param cx: The application context
     fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.is_empty() {
+        if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;
         }
 
         let active_tab_index = self.active_tab_index;
-        let content_entity = self.tabs[active_tab_index].content.clone();
+        let content_entity = self.tabs[active_tab_index.unwrap()].content.clone();
         
         // Get the current directory or use home directory
-        let directory = if let Some(ref path) = self.tabs[active_tab_index].file_path {
+        let directory = if let Some(ref path) = self.tabs[active_tab_index.unwrap()].file_path {
             path.parent().unwrap_or(std::path::Path::new(".")).to_path_buf()
         } else {
             std::env::current_dir().unwrap_or_default()
@@ -330,7 +332,7 @@ impl Lightspeed {
             window
                 .update(|_, cx| {
                     _ = view.update(cx, |this, cx| {
-                        if let Some(tab) = this.tabs.get_mut(active_tab_index) {
+                        if let Some(tab) = this.tabs.get_mut(active_tab_index.unwrap()) {
                             tab.file_path = Some(path.clone());
                             tab.title = path
                                 .file_name()
@@ -445,16 +447,22 @@ impl Render for Lightspeed {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Ensure we always have at least one tab
         if self.tabs.is_empty() {
-            let new_tab = EditorTab::new(self.next_tab_id, "Untitled", window, cx);
-            self.tabs.push(new_tab);
-            self.next_tab_id += 1;
-            self.active_tab_index = 0;
+            // let new_tab = EditorTab::new(self.next_tab_id, "Untitled", window, cx);
+            // self.tabs.push(new_tab);
+            // self.next_tab_id += 1;
+            self.active_tab_index = None;
         }
         
         // Update modified status of tabs
         self.update_modified_status(cx);
-        let cursor_pos = self.tabs[self.active_tab_index].content.read(cx).cursor_position();
-        let active_tab = self.tabs.get(self.active_tab_index);
+        let cursor_pos = match self.active_tab_index {
+            Some(index) => self.tabs[index].content.read(cx).cursor_position(),
+            None => Position::default(),
+        };
+        let active_tab = match self.active_tab_index {
+            Some(index) => Some(self.tabs[index].clone()),
+            None => None,
+        };
 
         // Render modal, drawer, and notification layers
         let modal_layer = Root::render_modal_layer(window, cx);
@@ -475,7 +483,9 @@ impl Render for Lightspeed {
                 this.open_file(window, cx);
             }))
             .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
-                this.close_tab(this.active_tab_index, window, cx);
+                if let Some(index) = this.active_tab_index {
+                    this.close_tab(index, window, cx);
+                }
             }))
             .on_action(cx.listener(|this, _action: &CloseAllFiles, window, cx| {
                 this.close_all_tabs(window, cx);
@@ -528,11 +538,14 @@ impl Render for Lightspeed {
                             .items_center()
                             .children(self.tabs.iter().enumerate().map(|(index, tab)| {
                                 let tab_id = tab.id;
-                                let is_active = index == self.active_tab_index;
+                                let is_active = match self.active_tab_index {
+                                    Some(index) => index == index,
+                                    None => false,
+                                };
 
                                 let mut tab_div = div()
                                     .flex()
-                                    .items_center()
+                                    .items_center() 
                                     .h(px(40.))
                                     .px_2()
                                     .gap_2()
