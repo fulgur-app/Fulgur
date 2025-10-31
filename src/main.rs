@@ -50,7 +50,7 @@ fn main() {
                 let view = Lightspeed::new(window, cx);
                 // Focus the initial tab's content so keyboard shortcuts work immediately
                 view.read(cx).focus_active_tab(window, cx);
-                // This first level on the window, should be a Root.
+                // Root must be the window's root component for modals to work
                 cx.new(|cx| Root::new(view.into(), window, cx))
             })?;
 

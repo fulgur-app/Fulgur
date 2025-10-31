@@ -8,7 +8,8 @@ use menus::*;
 use editor_tab::EditorTab;
 
 use gpui::*;
-use gpui_component::{ActiveTheme, IconName, Sizable, StyledExt, Theme, ThemeRegistry, button::{Button, ButtonVariants}, h_flex, input::TextInput};
+use std::ops::DerefMut;
+use gpui_component::{ActiveTheme, ContextModal, IconName, Root, Sizable, StyledExt, Theme, ThemeRegistry, button::{Button, ButtonVariants}, h_flex, input::TextInput};
 
 pub struct Lightspeed {
     focus_handle: FocusHandle,
@@ -107,20 +108,76 @@ impl Lightspeed {
     fn close_tab(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
 
         if let Some(pos) = self.tabs.iter().position(|t| t.id == tab_id) {
-            self.tabs.remove(pos);
-            
-            // Adjust active index if needed
-            if self.active_tab_index > 0 {
-                if self.active_tab_index >= self.tabs.len() {
-                    self.active_tab_index = self.tabs.len() - 1;
-                } else if pos < self.active_tab_index {
-                    self.active_tab_index -= 1;
+            if let Some(to_be_removed) = self.tabs.get_mut(pos) {
+                // Check if the tab has been modified
+                let is_modified = to_be_removed.check_modified(cx);
+                if is_modified {
+                    // Get the entity reference to use in the modal callbacks
+                    let entity = cx.entity().clone();
+                    
+                    window.open_modal(cx.deref_mut(), move |modal, _, _| {
+                        // Clone entity for on_ok closure
+                        let entity_ok = entity.clone();
+                        
+                        // Return the modal builder
+                        modal
+                            .confirm()
+                            .child("Are you sure you want to close this tab? Your changes will be lost.")
+                            .on_ok(move |_, window, cx| {
+                                // Remove the tab and adjust indices
+                                entity_ok.update(cx, |this, cx| {
+                                    if let Some(pos) = this.tabs.iter().position(|t| t.id == tab_id) {
+                                        this.tabs.remove(pos);
+                                        this.close_tab_manage_focus(window, cx, pos);
+                                        cx.notify();
+                                    }
+                                });
+                                
+                                // Defer focus until after modal closes
+                                entity_ok.update(cx, |_this, cx| {
+                                    cx.defer_in(window, move |this, window, cx| {
+                                        this.focus_active_tab(window, cx);
+                                    });
+                                });
+                                
+                                true
+                            })
+                            .on_cancel(move |_, _, _| {
+                                // Just dismiss the modal without doing anything
+                                true
+                            })
+                    });
+                    return;
                 }
             }
-            
+            self.tabs.remove(pos);
+            self.close_tab_manage_focus(window, cx, pos);
             self.focus_active_tab(window, cx);
             cx.notify();
         }
+    }
+
+    // Close a tab and manage the focus
+    // @param window: The window to close the tab in
+    // @param cx: The application context
+    // @param pos: The position of the tab to close
+    fn close_tab_manage_focus(&mut self, window: &mut Window, cx: &mut Context<Self>, pos: usize) {
+        // If no tabs left, create a new one
+        if self.tabs.is_empty() {
+            let new_tab = EditorTab::new(self.next_tab_id, "Untitled", window, cx);
+            self.tabs.push(new_tab);
+            self.next_tab_id += 1;
+            self.active_tab_index = 0;
+        } else {
+            // Adjust active index
+            if self.active_tab_index >= self.tabs.len() {
+                self.active_tab_index = self.tabs.len() - 1;
+            } else if pos < self.active_tab_index {
+                self.active_tab_index -= 1;
+            }
+        }
+        
+        self.focus_active_tab(window, cx);
     }
 
     // Set the active tab
@@ -385,13 +442,29 @@ impl Render for Lightspeed {
     // @param window: The window to render the Lightspeed instance in
     // @param cx: The application context
     // @return: The rendered Lightspeed instance
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Ensure we always have at least one tab
+        if self.tabs.is_empty() {
+            let new_tab = EditorTab::new(self.next_tab_id, "Untitled", window, cx);
+            self.tabs.push(new_tab);
+            self.next_tab_id += 1;
+            self.active_tab_index = 0;
+        }
+        
         // Update modified status of tabs
         self.update_modified_status(cx);
         let cursor_pos = self.tabs[self.active_tab_index].content.read(cx).cursor_position();
         let active_tab = self.tabs.get(self.active_tab_index);
 
+        // Render modal, drawer, and notification layers
+        let modal_layer = Root::render_modal_layer(window, cx);
+        let drawer_layer = Root::render_drawer_layer(window, cx);
+        let notification_layer = Root::render_notification_layer(window, cx);
+
         div()
+            .size_full()
+            .child(
+                div()
             .size_full()
             .v_flex()
             .track_focus(&self.focus_handle)
@@ -564,7 +637,9 @@ impl Render for Lightspeed {
                             .child(status_bar_right_item_factory(format!("Ln {}, Col {}", cursor_pos.line + 1, cursor_pos.character + 1), cx.theme().border)),
                     )
                 )
-            
-        
+            )
+            .children(drawer_layer)
+            .children(modal_layer)
+            .children(notification_layer)
     }
 }
