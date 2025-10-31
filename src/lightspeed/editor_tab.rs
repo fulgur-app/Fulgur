@@ -32,6 +32,9 @@ pub enum Language {
 }
 
 impl Language {
+    // Convert an extension to a language
+    // @param extension: The extension to convert
+    // @return: The language
     fn from_extension(extension: &str) -> Self {
         match extension {
             "rs" => Self::Rust,
@@ -53,6 +56,8 @@ impl Language {
         }
     }
 
+    // Convert the language to a string
+    // @return: The string representation of the language
     fn to_string(&self) -> String {
         match self {
             Self::Rust => String::from("rust"),
@@ -73,6 +78,12 @@ impl Language {
     }
 }
 
+// Create a new input state
+// @param window: The window to create the input state in
+// @param cx: The application context
+// @param language: The language of the input state
+// @param content: The content of the input state
+// @return: The new input state
 fn make_input_state(window: &mut Window, cx: &mut Context<InputState>, language: Language, content: Option<String>) -> InputState {
     InputState::new(window, cx)
         .code_editor(language.to_string())
@@ -160,10 +171,5 @@ impl EditorTab {
     pub fn mark_as_saved(&mut self, cx: &mut App) {
         self.original_content = self.content.read(cx).text().to_string();
         self.modified = false;
-    }
-
-    fn get_language(&self) -> Language {
-        let extension = self.file_path.as_ref().and_then(|path| path.extension()).and_then(|ext| ext.to_str()).unwrap_or_default().to_string();
-        Language::from_extension(&extension)
     }
 }
