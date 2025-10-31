@@ -48,8 +48,8 @@ fn main() {
             cx.open_window(window_options, |window, cx| {
                 window.set_window_title("Lightspeed");
                 let view = Lightspeed::new(window, cx);
-                // Focus the view so keyboard shortcuts work immediately
-                view.focus_handle(cx).focus(window);
+                // Focus the initial tab's content so keyboard shortcuts work immediately
+                view.read(cx).focus_active_tab(window, cx);
                 // This first level on the window, should be a Root.
                 cx.new(|cx| Root::new(view.into(), window, cx))
             })?;

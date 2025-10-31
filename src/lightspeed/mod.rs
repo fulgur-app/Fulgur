@@ -95,6 +95,8 @@ impl Lightspeed {
         self.tabs.push(tab);
         self.active_tab_index = self.tabs.len() - 1;
         self.next_tab_id += 1;
+        
+        self.focus_active_tab(window, cx);
         cx.notify();
     }
 
@@ -102,7 +104,7 @@ impl Lightspeed {
     // @param tab_id: The ID of the tab to close
     // @param window: The window to close the tab in
     // @param cx: The application context
-    fn close_tab(&mut self, tab_id: usize, _window: &mut Window, cx: &mut Context<Self>) {
+    fn close_tab(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
 
         if let Some(pos) = self.tabs.iter().position(|t| t.id == tab_id) {
             self.tabs.remove(pos);
@@ -116,6 +118,7 @@ impl Lightspeed {
                 }
             }
             
+            self.focus_active_tab(window, cx);
             cx.notify();
         }
     }
@@ -124,10 +127,21 @@ impl Lightspeed {
     // @param index: The index of the tab to set as active
     // @param window: The window to set the active tab in
     // @param cx: The application context
-    fn set_active_tab(&mut self, index: usize, _window: &mut Window, cx: &mut Context<Self>) {
+    fn set_active_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
             self.active_tab_index = index;
+            self.focus_active_tab(window, cx);
             cx.notify();
+        }
+    }
+
+    // Focus the active tab's content
+    // @param window: The window to focus the tab in
+    // @param cx: The application context
+    pub fn focus_active_tab(&self, window: &mut Window, cx: &App) {
+        if let Some(active_tab) = self.tabs.get(self.active_tab_index) {
+            let focus_handle = active_tab.content.read(cx).focus_handle(cx);
+            window.focus(&focus_handle);
         }
     }
 
@@ -176,6 +190,7 @@ impl Lightspeed {
                         this.tabs.push(tab);
                         this.active_tab_index = this.tabs.len() - 1;
                         this.next_tab_id += 1;
+                        this.focus_active_tab(window, cx);
                         cx.notify();
                     });
                 })
@@ -401,7 +416,7 @@ impl Render for Lightspeed {
             .on_action(cx.listener(|this, _action: &Quit, window, cx| {
                 this.quit(window, cx);
             }))
-            .on_action(cx.listener(|this, _action: &SwitchTheme, window, cx| {
+            .on_action(cx.listener(|_this, _action: &SwitchTheme, _window, cx| {
                 let theme_name = _action.0.clone();
                 if let Some(theme_config) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
                     Theme::global_mut(cx).apply_config(&theme_config);
