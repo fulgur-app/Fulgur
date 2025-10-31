@@ -1,6 +1,6 @@
 // Represents a single editor tab with its content
 use gpui::*;
-use gpui_component::input::InputState;
+use gpui_component::input::{InputState, TabSize};
 
 #[derive(Clone)]
 pub struct EditorTab {
@@ -12,6 +12,19 @@ pub struct EditorTab {
     pub original_content: String,
 }
 
+fn make_input_state(window: &mut Window, cx: &mut Context<InputState>, language: Option<String>, content: Option<String>) -> InputState {
+    InputState::new(window, cx)
+        .code_editor(language.unwrap_or("text".to_string()))
+        .line_number(true)
+        .indent_guides(true)
+        .tab_size(TabSize {
+            tab_size: 4,
+            hard_tabs: false,
+        })
+        .soft_wrap(false)
+        .default_value(content.unwrap_or_default())
+}
+
 impl EditorTab {
     // Create a new tab
     // @param id: The ID of the tab
@@ -21,9 +34,7 @@ impl EditorTab {
     // @return: The new tab
     pub fn new(id: usize, title: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> Self {
         let content = cx.new(|cx| {
-            InputState::new(window, cx)
-                .multi_line()
-                .placeholder("Start typing...")
+            make_input_state(window, cx, None, None)
         });
         
         Self {
@@ -57,9 +68,7 @@ impl EditorTab {
             .to_string();
 
         let content = cx.new(|cx| {
-            InputState::new(window, cx)
-                .multi_line()
-                .default_value(contents.clone())
+            make_input_state(window, cx, None, Some(contents.clone()))
         });
 
         Self {
