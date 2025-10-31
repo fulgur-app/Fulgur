@@ -10,11 +10,72 @@ pub struct EditorTab {
     pub file_path: Option<std::path::PathBuf>,
     pub modified: bool,
     pub original_content: String,
+    pub language: Language,
 }
 
-fn make_input_state(window: &mut Window, cx: &mut Context<InputState>, language: Option<String>, content: Option<String>) -> InputState {
+#[derive(Clone)]
+pub enum Language {
+    Rust,
+    Python,
+    Lua,
+    Bash,
+    JavaScript,
+    TypeScript,
+    JSON,
+    YAML,
+    TOML,
+    PHP,
+    C,
+    CPP,
+    CSharp,
+    Text,
+}
+
+impl Language {
+    fn from_extension(extension: &str) -> Self {
+        match extension {
+            "rs" => Self::Rust,
+            "py" => Self::Python,
+            "lua" => Self::Lua,
+            "sh" => Self::Bash,
+            "js" => Self::JavaScript,
+            "ts" => Self::TypeScript,
+            "json" => Self::JSON,
+            "yaml" => Self::YAML,
+            "yml" => Self::YAML,
+            "toml" => Self::TOML,
+            "php" => Self::PHP,
+            "c" => Self::C,
+            "cpp" => Self::CPP,
+            "cs" => Self::CSharp,
+            "_" => Self::Text,
+            _ => Self::Text,
+        }
+    }
+
+    fn to_string(&self) -> String {
+        match self {
+            Self::Rust => String::from("rust"),
+            Self::Python => String::from("python"),
+            Self::Lua => String::from("lua"),
+            Self::Bash => String::from("bash"),
+            Self::JavaScript => String::from("javascript"),
+            Self::TypeScript => String::from("typescript"),
+            Self::JSON => String::from("json"),
+            Self::YAML => String::from("yaml"),
+            Self::TOML => String::from("toml"),
+            Self::PHP => String::from("php"),
+            Self::C => String::from("c"),
+            Self::CPP => String::from("cpp"),
+            Self::CSharp => String::from("csharp"),
+            Self::Text => String::from("text"),
+        }
+    }
+}
+
+fn make_input_state(window: &mut Window, cx: &mut Context<InputState>, language: Language, content: Option<String>) -> InputState {
     InputState::new(window, cx)
-        .code_editor(language.unwrap_or("text".to_string()))
+        .code_editor(language.to_string())
         .line_number(true)
         .indent_guides(true)
         .tab_size(TabSize {
@@ -33,8 +94,9 @@ impl EditorTab {
     // @param cx: The application context
     // @return: The new tab
     pub fn new(id: usize, title: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> Self {
+        let language = Language::Text;
         let content = cx.new(|cx| {
-            make_input_state(window, cx, None, None)
+            make_input_state(window, cx, language.clone(), None)
         });
         
         Self {
@@ -44,6 +106,7 @@ impl EditorTab {
             file_path: None,
             modified: false,
             original_content: String::new(),
+            language,
         }
     }
 
@@ -67,8 +130,9 @@ impl EditorTab {
             .unwrap_or("Untitled")
             .to_string();
 
+        let language = Language::from_extension(&file_name);
         let content = cx.new(|cx| {
-            make_input_state(window, cx, None, Some(contents.clone()))
+            make_input_state(window, cx, language.clone(), Some(contents.clone()))
         });
 
         Self {
@@ -78,6 +142,7 @@ impl EditorTab {
             file_path: Some(path),
             modified: false,
             original_content: contents,
+            language,
         }
     }
     
@@ -95,5 +160,10 @@ impl EditorTab {
     pub fn mark_as_saved(&mut self, cx: &mut App) {
         self.original_content = self.content.read(cx).text().to_string();
         self.modified = false;
+    }
+
+    fn get_language(&self) -> Language {
+        let extension = self.file_path.as_ref().and_then(|path| path.extension()).and_then(|ext| ext.to_str()).unwrap_or_default().to_string();
+        Language::from_extension(&extension)
     }
 }
