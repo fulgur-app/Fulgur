@@ -45,8 +45,6 @@ impl Lightspeed {
     // @param cx: The application context
     pub fn init(cx: &mut App) {
         themes::init(cx, |cx| {
-            let menus = build_menus(cx);
-            cx.set_menus(menus);
 
             // Set up keyboard shortcuts
             cx.bind_keys([
@@ -79,6 +77,8 @@ impl Lightspeed {
                 KeyBinding::new("ctrl-shift-s", SaveFileAs, None),
             ]);
             
+            let menus = build_menus(cx);
+            cx.set_menus(menus);
         });
     }
 
