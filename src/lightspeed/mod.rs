@@ -2,6 +2,7 @@ mod titlebar;
 mod menus;
 mod editor_tab;
 mod themes;
+mod components_utils;
 
 use titlebar::CustomTitleBar;
 use menus::*;
