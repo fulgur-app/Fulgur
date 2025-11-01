@@ -9,7 +9,7 @@ use editor_tab::EditorTab;
 
 use gpui::*;
 use std::ops::DerefMut;
-use gpui_component::{ActiveTheme, ContextModal, IconName, Root, Sizable, StyledExt, Theme, ThemeRegistry, button::{Button, ButtonVariants}, h_flex, input::{Position, TextInput}};
+use gpui_component::{ActiveTheme, ContextModal, IconName, Root, Sizable, StyledExt, Theme, ThemeRegistry, button::{Button, ButtonVariants}, h_flex, input::{InputState, Position, TextInput}};
 
 pub struct Lightspeed {
     focus_handle: FocusHandle,
@@ -17,6 +17,9 @@ pub struct Lightspeed {
     tabs: Vec<EditorTab>,
     active_tab_index: Option<usize>,
     next_tab_id: usize,
+    show_search: bool,
+    search_input: Entity<InputState>,
+    replace_input: Entity<InputState>,
 }
 
 impl Lightspeed {
@@ -29,6 +32,10 @@ impl Lightspeed {
 
         // Create initial tab
         let initial_tab = EditorTab::new(0, "Untitled", window, cx);
+        
+        // Create inputs
+        let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
 
         cx.new(|cx| {
             let entity = Self {
@@ -37,6 +44,9 @@ impl Lightspeed {
                 tabs: vec![initial_tab],
                 active_tab_index: Some(0),
                 next_tab_id: 1,
+                show_search: false,
+                search_input,
+                replace_input,
             };
             entity
         })
@@ -382,6 +392,32 @@ impl Focusable for Lightspeed {
     }
 }
 
+// Create a button
+// @param id: The ID of the button
+// @param tooltip: The tooltip of the button
+// @param icon: The icon of the button
+// @param border_color: The color of the border
+// @return: The button
+fn button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
+    Button::new(id)
+        .icon(icon)
+        .ghost()
+        .small()
+        .tooltip(tooltip)
+        .border_color(border_color)
+        .h(px(40.))
+        .w(px(40.))
+        .p_0()
+        .m_0()
+        .cursor_pointer()
+        .corner_radii(Corners {
+            top_left: px(0.0),
+            top_right: px(0.0),
+            bottom_left: px(0.0),
+            bottom_right: px(0.0),
+        })
+}
+
 // Create a tab bar button
 // @param id: The ID of the button
 // @param tooltip: The tooltip of the button
@@ -389,25 +425,20 @@ impl Focusable for Lightspeed {
 // @param border_color: The color of the border
 // @return: The tab bar button
 fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
-    Button::new(id)
-        .icon(icon)
-        .ghost()
-        .xsmall()
-        .tooltip(tooltip)
-        .border_t_0()   
+    let button = button_factory(id, tooltip, icon, border_color);
+    button.border_t_0()   
         .border_l_0()
         .border_r_1()
         .border_b_1()
-        .border_color(border_color)
-        .corner_radii(Corners {
-            top_left: px(0.0),
-            top_right: px(0.0),
-            bottom_left: px(0.0),
-            bottom_right: px(0.0),
-        })
-        .h(px(40.))
-        .w(px(40.))
-        .cursor_pointer()
+}
+
+fn search_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
+    let button = button_factory(id, tooltip, icon, border_color);
+    button.border_t_0()   
+        .border_l_1()
+        .border_r_0()
+        .border_b_0()
+        .border_t_0()
 }
 
 // Create a status bar item
@@ -469,7 +500,7 @@ impl Render for Lightspeed {
         let drawer_layer = Root::render_drawer_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
 
-        div()
+        let main_div = div()
             .size_full()
             .child(
                 div()
@@ -627,11 +658,119 @@ impl Render for Lightspeed {
                     content_div
                 }
             )
+            .children(if self.show_search {
+                Some(
+                    div()
+                        .flex()
+                        .justify_between()
+                        .items_center()
+                        .bg(cx.theme().background)
+                        .p_0()
+                        .m_0()
+                        .w_full()
+                        .h(px(40.))
+                        .border_t_1()
+                        .border_color(cx.theme().border)
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .bg(cx.theme().background)
+                                .p_0()
+                                .m_0()
+                                .flex_1()
+                                .h(px(40.))
+                                .text_color(cx.theme().muted_foreground)
+                                .child(
+                                    TextInput::new(&self.search_input)
+                                        .flex_1()
+                                        .text_size(px(14.))
+                                        .m_0()
+                                        .py_0()
+                                        .pl_2()
+                                        .pr_0()
+                                        .h(px(40.))
+                                        .border_0()
+                                        .corner_radii(Corners {
+                                            top_left: px(0.0),
+                                            top_right: px(0.0),
+                                            bottom_left: px(0.0),
+                                            bottom_right: px(0.0),
+                                        })
+                                        .text_color(cx.theme().muted_foreground)
+                                    // .bg(hsla(120.0, 100.0, 25.0, 1.0))
+                                )
+                                .child(
+                                    search_bar_button_factory("match-case-button", "Match case", IconName::Plus, cx.theme().border)
+                                )
+                                .child(
+                                    search_bar_button_factory("match-whole-word-button", "Match whole word", IconName::Close, cx.theme().border)
+                                )
+                                .child(
+                                    search_bar_button_factory("search-button", "Search", IconName::Search, cx.theme().border)
+                                )
+                                
+                            )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .bg(cx.theme().background)
+                                .p_0()
+                                .m_0()
+                                .border_r_1()
+                                .border_color(cx.theme().border)
+                                .child(
+                                    search_bar_button_factory("search-previous-button", "Previous", IconName::ChevronUp, cx.theme().border)
+                                )
+                                .child(
+                                    search_bar_button_factory("search-next-button", "Next", IconName::ChevronDown, cx.theme().border)
+                                )
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .bg(cx.theme().background)
+                                .p_0()
+                                .m_0()
+                                .flex_1()
+                                .h(px(40.))
+                                .text_color(cx.theme().muted_foreground)
+                                .child(
+                                    TextInput::new(&self.replace_input)
+                                        .flex_1()
+                                        .text_size(px(14.))
+                                        .m_0()
+                                        .py_0()
+                                        .px_2()
+                                        .h(px(40.))
+                                        .border_0()
+                                        .corner_radii(Corners {
+                                            top_left: px(0.0),
+                                            top_right: px(0.0),
+                                            bottom_left: px(0.0),
+                                            bottom_right: px(0.0),
+                                        })
+                                        .text_color(cx.theme().muted_foreground)
+                                )
+                                .child(
+                                    search_bar_button_factory("replace-button", "Replace", IconName::Replace, cx.theme().border)
+                                )
+                                .child(
+                                    search_bar_button_factory("replace-all-button", "Replace all", IconName::Replace, cx.theme().border)
+                                )
+                        )
+                )
+            } else {
+                None
+            })
             .child(
                 h_flex()
                     .justify_between()
                     .bg(cx.theme().background)
-                    .px_2()
+                    .py_0()
+                    .my_0()
                     .border_t_1()
                     .border_color(cx.theme().border)
                     .text_color(cx.theme().muted_foreground)
@@ -649,10 +788,12 @@ impl Render for Lightspeed {
                             .child(status_bar_right_item_factory(format!("Ln {}, Col {}", 123, 48), cx.theme().border))
                             .child(status_bar_right_item_factory(format!("Ln {}, Col {}", cursor_pos.line + 1, cursor_pos.character + 1), cx.theme().border)),
                     )
-                )
             )
-            .children(drawer_layer)
-            .children(modal_layer)
-            .children(notification_layer)
+        )
+        .children(drawer_layer)
+        .children(modal_layer)
+        .children(notification_layer);
+
+        main_div
     }
 }
