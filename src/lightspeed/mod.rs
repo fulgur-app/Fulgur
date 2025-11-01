@@ -406,7 +406,7 @@ impl Focusable for Lightspeed {
 // @param tooltip: The tooltip of the button
 // @param icon: The icon of the button
 // @param border_color: The color of the border
-// @return: The tab bar button
+// @return: A tab bar button
 fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
     let button = components_utils::button_factory(id, tooltip, icon, border_color);
     button.border_t_0()   
@@ -415,6 +415,12 @@ fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconNam
         .border_b_1()
 }
 
+// Create a search bar button
+// @param id: The ID of the button
+// @param tooltip: The tooltip of the button
+// @param icon: The icon of the button
+// @param border_color: The color of the border
+// @return: A search bar button
 fn search_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
     let button = components_utils::button_factory(id, tooltip, icon, border_color);
     button.border_t_0()   
@@ -431,7 +437,7 @@ fn search_bar_button_factory(id: &'static str, tooltip: &'static str, icon: Icon
 // @param border_color: The color of the border
 // @param bg_color: The background color when active
 // @param checked: Whether the toggle is checked
-// @return: The search bar toggle button
+// @return: A search bar toggle button
 fn search_bar_toggle_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla, bg_color: Hsla, checked: bool) -> Button {
     let mut button = components_utils::button_factory(id, tooltip, icon, border_color);
     button = button.border_t_0()   
@@ -450,7 +456,7 @@ fn search_bar_toggle_button_factory(id: &'static str, tooltip: &'static str, ico
 // Create a status bar item
 // @param content: The content of the status bar item
 // @param border_color: The color of the border
-// @return: The status bar item
+// @return: A status bar item
 fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
     div()
         .text_xs()
@@ -463,7 +469,7 @@ fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
 // Create a status bar right item
 // @param content: The content of the status bar right item
 // @param border_color: The color of the border
-// @return: The status bar right item
+// @return: A status bar right item
 fn status_bar_right_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
     status_bar_item_factory(content, border_color).border_l_1()
 }
@@ -471,7 +477,7 @@ fn status_bar_right_item_factory(content: String, border_color: Hsla) -> impl In
 // Create a status bar left item
 // @param content: The content of the status bar left item
 // @param border_color: The color of the border
-// @return: The status bar left item
+// @return: A status bar left item
 fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
     status_bar_item_factory(content, border_color).border_r_1()
 }
@@ -545,30 +551,24 @@ impl Render for Lightspeed {
                 }))
             .child(self.title_bar.clone())
             .child(
-                // Tab bar with + button and tabs
                 div()
                     .flex()
                     .items_center()
                     .h(px(40.))
                     .bg(cx.theme().tab_bar)
-                    //.border_b_1()
-                    //.border_color(cx.theme().border)
                     .child(
-                        // + button to create new tabs
                         tab_bar_button_factory("new-tab", "New Tab", IconName::Plus, cx.theme().border)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.new_tab(window, cx);
                             })),
                     )
                     .child(
-                        // + button to create new tabs
                         tab_bar_button_factory("open-file", "Open File", IconName::FolderOpen, cx.theme().border)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.open_file(window, cx);
                             })),
                     )
                     .child(
-                        // TabBar with all tabs
                         div()
                             .flex()
                             .flex_1()
@@ -643,7 +643,6 @@ impl Render for Lightspeed {
                     )
                 )
             .child(
-                // Active tab content area
                 {
                     let mut content_div = div()
                         .flex_1()
@@ -704,7 +703,6 @@ impl Render for Lightspeed {
                                             bottom_right: px(0.0),
                                         })
                                         .text_color(cx.theme().muted_foreground)
-                                    // .bg(hsla(120.0, 100.0, 25.0, 1.0))
                                 )
                                 .child(
                                     search_bar_toggle_button_factory(
