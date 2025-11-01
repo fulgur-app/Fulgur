@@ -570,7 +570,7 @@ impl Render for Lightspeed {
                             .children(self.tabs.iter().enumerate().map(|(index, tab)| {
                                 let tab_id = tab.id;
                                 let is_active = match self.active_tab_index {
-                                    Some(index) => index == index,
+                                    Some(active_index) => index == active_index,
                                     None => false,
                                 };
 
