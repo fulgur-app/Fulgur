@@ -21,6 +21,8 @@ pub struct Lightspeed {
     show_search: bool,
     search_input: Entity<InputState>,
     replace_input: Entity<InputState>,
+    match_case: bool,
+    match_whole_word: bool,
 }
 
 impl Lightspeed {
@@ -45,9 +47,11 @@ impl Lightspeed {
                 tabs: vec![initial_tab],
                 active_tab_index: Some(0),
                 next_tab_id: 1,
-                show_search: false,
+                show_search: true,
                 search_input,
                 replace_input,
+                match_case: false,
+                match_whole_word: false,
             };
             entity
         })
@@ -416,6 +420,29 @@ fn search_bar_button_factory(id: &'static str, tooltip: &'static str, icon: Icon
         .border_t_0()
 }
 
+// Create a search bar toggle button
+// @param id: The ID of the button
+// @param tooltip: The tooltip of the button
+// @param icon: The icon of the button
+// @param border_color: The color of the border
+// @param bg_color: The background color when active
+// @param checked: Whether the toggle is checked
+// @return: The search bar toggle button
+fn search_bar_toggle_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla, bg_color: Hsla, checked: bool) -> Button {
+    let mut button = components_utils::button_factory(id, tooltip, icon, border_color);
+    button = button.border_t_0()   
+        .border_l_1()
+        .border_r_0()
+        .border_b_0();
+    
+    // Apply active styling if checked
+    if checked {
+        button = button.bg(bg_color);
+    }
+    
+    button
+}
+
 // Create a status bar item
 // @param content: The content of the status bar item
 // @param border_color: The color of the border
@@ -676,10 +703,32 @@ impl Render for Lightspeed {
                                     // .bg(hsla(120.0, 100.0, 25.0, 1.0))
                                 )
                                 .child(
-                                    search_bar_button_factory("match-case-button", "Match case", IconName::Plus, cx.theme().border) //Toggle
+                                    search_bar_toggle_button_factory(
+                                        "match-case-button", 
+                                        "Match case", 
+                                        IconName::Plus, 
+                                        cx.theme().border,
+                                        cx.theme().accent,
+                                        self.match_case
+                                    )
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.match_case = !this.match_case;
+                                        cx.notify();
+                                    }))
                                 )
                                 .child(
-                                    search_bar_button_factory("match-whole-word-button", "Match whole word", IconName::Close, cx.theme().border) //Toggle
+                                    search_bar_toggle_button_factory(
+                                        "match-whole-word-button", 
+                                        "Match whole word", 
+                                        IconName::Close, 
+                                        cx.theme().border,
+                                        cx.theme().accent,
+                                        self.match_whole_word
+                                    )
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.match_whole_word = !this.match_whole_word;
+                                        cx.notify();
+                                    }))
                                 )
                                 .child(
                                     search_bar_button_factory("search-button", "Search", IconName::Search, cx.theme().border)
