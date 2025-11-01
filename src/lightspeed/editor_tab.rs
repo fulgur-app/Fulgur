@@ -1,6 +1,9 @@
 // Represents a single editor tab with its content
 use gpui::*;
 use gpui_component::input::{InputState, TabSize};
+use gpui_component::highlighter::Language;
+
+use super::languages::{language_from_extension, language_name};
 
 #[derive(Clone)]
 pub struct EditorTab {
@@ -13,72 +16,7 @@ pub struct EditorTab {
     pub language: Language,
 }
 
-#[derive(Clone)]
-pub enum Language {
-    Rust,
-    Python,
-    Lua,
-    Bash,
-    JavaScript,
-    TypeScript,
-    JSON,
-    YAML,
-    TOML,
-    PHP,
-    C,
-    CPP,
-    CSharp,
-    Text,
-}
-
-impl Language {
-    // Convert an extension to a language
-    // @param extension: The extension to convert
-    // @return: The language
-    fn from_extension(extension: &str) -> Self {
-        match extension {
-            "rs" => Self::Rust,
-            "py" => Self::Python,
-            "lua" => Self::Lua,
-            "sh" => Self::Bash,
-            "js" => Self::JavaScript,
-            "ts" => Self::TypeScript,
-            "json" => Self::JSON,
-            "yaml" => Self::YAML,
-            "yml" => Self::YAML,
-            "toml" => Self::TOML,
-            "php" => Self::PHP,
-            "c" => Self::C,
-            "cpp" => Self::CPP,
-            "cs" => Self::CSharp,
-            "_" => Self::Text,
-            _ => Self::Text,
-        }
-    }
-
-    // Convert the language to a string
-    // @return: The string representation of the language
-    fn to_string(&self) -> String {
-        match self {
-            Self::Rust => String::from("rust"),
-            Self::Python => String::from("python"),
-            Self::Lua => String::from("lua"),
-            Self::Bash => String::from("bash"),
-            Self::JavaScript => String::from("javascript"),
-            Self::TypeScript => String::from("typescript"),
-            Self::JSON => String::from("json"),
-            Self::YAML => String::from("yaml"),
-            Self::TOML => String::from("toml"),
-            Self::PHP => String::from("php"),
-            Self::C => String::from("c"),
-            Self::CPP => String::from("cpp"),
-            Self::CSharp => String::from("csharp"),
-            Self::Text => String::from("text"),
-        }
-    }
-}
-
-// Create a new input state
+// Create a new input state with syntax highlighting
 // @param window: The window to create the input state in
 // @param cx: The application context
 // @param language: The language of the input state
@@ -86,7 +24,7 @@ impl Language {
 // @return: The new input state
 fn make_input_state(window: &mut Window, cx: &mut Context<InputState>, language: Language, content: Option<String>) -> InputState {
     InputState::new(window, cx)
-        .code_editor(language.to_string())
+        .code_editor(language_name(&language).to_string())
         .line_number(true)
         .indent_guides(true)
         .tab_size(TabSize {
@@ -105,9 +43,9 @@ impl EditorTab {
     // @param cx: The application context
     // @return: The new tab
     pub fn new(id: usize, title: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> Self {
-        let language = Language::Text;
+        let language = Language::Plain;
         let content = cx.new(|cx| {
-            make_input_state(window, cx, language.clone(), None)
+            make_input_state(window, cx, language, None)
         });
         
         Self {
@@ -141,9 +79,15 @@ impl EditorTab {
             .unwrap_or("Untitled")
             .to_string();
 
-        let language = Language::from_extension(&file_name);
+        // Detect language from file extension
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+        let language = language_from_extension(extension);
+        
         let content = cx.new(|cx| {
-            make_input_state(window, cx, language.clone(), Some(contents.clone()))
+            make_input_state(window, cx, language, Some(contents.clone()))
         });
 
         Self {

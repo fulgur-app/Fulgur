@@ -3,6 +3,7 @@ mod menus;
 mod editor_tab;
 mod themes;
 mod components_utils;
+mod languages;
 
 use titlebar::CustomTitleBar;
 use menus::*;
@@ -60,6 +61,9 @@ impl Lightspeed {
     // Initialize the Lightspeed instance
     // @param cx: The application context
     pub fn init(cx: &mut App) {
+        // Initialize language support for syntax highlighting
+        languages::init_languages();
+        
         themes::init(cx, |cx| {
 
             // Set up keyboard shortcuts
