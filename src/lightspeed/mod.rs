@@ -393,32 +393,6 @@ impl Focusable for Lightspeed {
     }
 }
 
-// Create a button
-// @param id: The ID of the button
-// @param tooltip: The tooltip of the button
-// @param icon: The icon of the button
-// @param border_color: The color of the border
-// @return: The button
-fn button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
-    Button::new(id)
-        .icon(icon)
-        .ghost()
-        .small()
-        .tooltip(tooltip)
-        .border_color(border_color)
-        .h(px(40.))
-        .w(px(40.))
-        .p_0()
-        .m_0()
-        .cursor_pointer()
-        .corner_radii(Corners {
-            top_left: px(0.0),
-            top_right: px(0.0),
-            bottom_left: px(0.0),
-            bottom_right: px(0.0),
-        })
-}
-
 // Create a tab bar button
 // @param id: The ID of the button
 // @param tooltip: The tooltip of the button
@@ -426,7 +400,7 @@ fn button_factory(id: &'static str, tooltip: &'static str, icon: IconName, borde
 // @param border_color: The color of the border
 // @return: The tab bar button
 fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
-    let button = button_factory(id, tooltip, icon, border_color);
+    let button = components_utils::button_factory(id, tooltip, icon, border_color);
     button.border_t_0()   
         .border_l_0()
         .border_r_1()
@@ -434,7 +408,7 @@ fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconNam
 }
 
 fn search_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
-    let button = button_factory(id, tooltip, icon, border_color);
+    let button = components_utils::button_factory(id, tooltip, icon, border_color);
     button.border_t_0()   
         .border_l_1()
         .border_r_0()
@@ -702,10 +676,10 @@ impl Render for Lightspeed {
                                     // .bg(hsla(120.0, 100.0, 25.0, 1.0))
                                 )
                                 .child(
-                                    search_bar_button_factory("match-case-button", "Match case", IconName::Plus, cx.theme().border)
+                                    search_bar_button_factory("match-case-button", "Match case", IconName::Plus, cx.theme().border) //Toggle
                                 )
                                 .child(
-                                    search_bar_button_factory("match-whole-word-button", "Match whole word", IconName::Close, cx.theme().border)
+                                    search_bar_button_factory("match-whole-word-button", "Match whole word", IconName::Close, cx.theme().border) //Toggle
                                 )
                                 .child(
                                     search_bar_button_factory("search-button", "Search", IconName::Search, cx.theme().border)
