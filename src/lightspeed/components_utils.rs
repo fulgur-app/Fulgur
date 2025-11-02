@@ -1,5 +1,8 @@
 use gpui::*;
-use gpui_component::{IconName, Sizable, StyledExt, button::{Button, ButtonVariants}};
+use gpui_component::{
+    IconName, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+};
 
 // Create a button
 // @param id: The ID of the button
@@ -7,17 +10,24 @@ use gpui_component::{IconName, Sizable, StyledExt, button::{Button, ButtonVarian
 // @param icon: The icon of the button
 // @param border_color: The color of the border
 // @return: The button
-pub fn button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
+pub fn button_factory(
+    id: &'static str,
+    tooltip: &'static str,
+    icon: IconName,
+    border_color: Hsla,
+) -> Button {
     Button::new(id)
         .icon(icon)
-        .ghost()
+        .text()
         .small()
         .tooltip(tooltip)
-        .border_color(border_color)
+        .ghost()
         .h(px(40.))
         .w(px(40.))
         .p_0()
         .m_0()
+        .border_0()
+        .border_color(border_color)
         .cursor_pointer()
         .corner_radii(Corners {
             top_left: px(0.0),

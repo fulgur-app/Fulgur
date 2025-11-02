@@ -1,7 +1,7 @@
 use gpui::*;
 use gpui_component::ThemeRegistry;
 
-actions!(lightspeed, [About, Quit, CloseWindow, NewFile, OpenFile, SaveFileAs, SaveFile, CloseFile, CloseAllFiles]);
+actions!(lightspeed, [About, Quit, CloseWindow, NewFile, OpenFile, SaveFileAs, SaveFile, CloseFile, CloseAllFiles, FindInFile]);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = lightspeed, no_json)]
@@ -50,6 +50,8 @@ pub fn build_menus(cx: &mut App) -> Vec<Menu> {
                 MenuItem::action("Cut", gpui_component::input::Cut),
                 MenuItem::action("Copy", gpui_component::input::Copy),
                 MenuItem::action("Paste", gpui_component::input::Paste),
+                MenuItem::separator(),
+                MenuItem::action("Find & Replace", FindInFile),
             ],
         },
         Menu {

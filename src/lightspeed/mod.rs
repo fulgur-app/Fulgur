@@ -95,6 +95,10 @@ impl Lightspeed {
                 KeyBinding::new("cmd-shift-s", SaveFileAs, None),
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-shift-s", SaveFileAs, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-f", FindInFile, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-f", FindInFile, None),
             ]);
             
             let menus = build_menus(cx);
@@ -408,11 +412,9 @@ impl Focusable for Lightspeed {
 // @param border_color: The color of the border
 // @return: A tab bar button
 fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
-    let button = components_utils::button_factory(id, tooltip, icon, border_color);
-    button.border_t_0()   
-        .border_l_0()
-        .border_r_1()
-        .border_b_1()
+    let mut button = components_utils::button_factory(id, tooltip, icon, border_color);
+    button = button.border_b_1();
+    button
 }
 
 // Create a search bar button
@@ -421,13 +423,9 @@ fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconNam
 // @param icon: The icon of the button
 // @param border_color: The color of the border
 // @return: A search bar button
-fn search_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla) -> Button {
+fn search_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, background_color: Hsla, border_color: Hsla) -> Button {
     let button = components_utils::button_factory(id, tooltip, icon, border_color);
-    button.border_t_0()   
-        .border_l_1()
-        .border_r_0()
-        .border_b_0()
-        .border_t_0()
+    button
 }
 
 // Create a search bar toggle button
@@ -438,16 +436,14 @@ fn search_bar_button_factory(id: &'static str, tooltip: &'static str, icon: Icon
 // @param bg_color: The background color when active
 // @param checked: Whether the toggle is checked
 // @return: A search bar toggle button
-fn search_bar_toggle_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla, bg_color: Hsla, checked: bool) -> Button {
+fn search_bar_toggle_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, border_color: Hsla, background_color: Hsla, accent_color: Hsla, checked: bool) -> Button {
     let mut button = components_utils::button_factory(id, tooltip, icon, border_color);
-    button = button.border_t_0()   
-        .border_l_1()
-        .border_r_0()
-        .border_b_0();
-    
+
     // Apply active styling if checked
     if checked {
-        button = button.bg(bg_color);
+        button = button.bg(accent_color);
+    } else {
+        button = button.bg(background_color);
     }
     
     button
@@ -516,132 +512,138 @@ impl Render for Lightspeed {
             .size_full()
             .child(
                 div()
-            .size_full()
-            .v_flex()
-            .track_focus(&self.focus_handle)
-            .on_action(cx.listener(|this, _action: &NewFile, window, cx| {
-                this.new_tab(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &OpenFile, window, cx| {
-                this.open_file(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
-                if let Some(index) = this.active_tab_index {
-                    this.close_tab(index, window, cx);
+                    .size_full()
+                    .v_flex()
+                    .track_focus(&self.focus_handle)
+                    .on_action(cx.listener(|this, _action: &NewFile, window, cx| {
+                        this.new_tab(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _action: &OpenFile, window, cx| {
+                        this.open_file(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
+                        if let Some(index) = this.active_tab_index {
+                            this.close_tab(index, window, cx);
+                        }
+                    }))
+                    .on_action(cx.listener(|this, _action: &CloseAllFiles, window, cx| {
+                        this.close_all_tabs(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _action: &SaveFile, window, cx| {
+                        this.save_file(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _action: &SaveFileAs, window, cx| {
+                        this.save_file_as(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _action: &Quit, window, cx| {
+                        this.quit(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _action: &FindInFile, window, cx| {
+                        this.show_search = !this.show_search;
+                    }))
+                    .on_action(cx.listener(|_this, _action: &SwitchTheme, _window, cx| {
+                        let theme_name = _action.0.clone();
+                        if let Some(theme_config) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
+                            Theme::global_mut(cx).apply_config(&theme_config);
+                            }
+                            cx.refresh_windows();
                 }
-            }))
-            .on_action(cx.listener(|this, _action: &CloseAllFiles, window, cx| {
-                this.close_all_tabs(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &SaveFile, window, cx| {
-                this.save_file(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &SaveFileAs, window, cx| {
-                this.save_file_as(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &Quit, window, cx| {
-                this.quit(window, cx);
-            }))
-            .on_action(cx.listener(|_this, _action: &SwitchTheme, _window, cx| {
-                let theme_name = _action.0.clone();
-                if let Some(theme_config) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
-                    Theme::global_mut(cx).apply_config(&theme_config);
-                    }
-                    cx.refresh_windows();
-                }))
-            .child(self.title_bar.clone())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .h(px(40.))
-                    .bg(cx.theme().tab_bar)
-                    .child(
-                        tab_bar_button_factory("new-tab", "New Tab", IconName::Plus, cx.theme().border)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.new_tab(window, cx);
-                            })),
-                    )
-                    .child(
-                        tab_bar_button_factory("open-file", "Open File", IconName::FolderOpen, cx.theme().border)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.open_file(window, cx);
-                            })),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .items_center()
-                            .children(self.tabs.iter().enumerate().map(|(index, tab)| {
-                                let tab_id = tab.id;
-                                let is_active = match self.active_tab_index {
-                                    Some(active_index) => index == active_index,
-                                    None => false,
-                                };
-
-                                let mut tab_div = div()
-                                    .flex()
-                                    .items_center() 
-                                    .h(px(40.))
-                                    .px_2()
-                                    .gap_2()
-                                    .border_r_1()
-                                    .border_b_1()
-                                    .border_color(cx.theme().border)
-                                    .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, window, cx| {
-                                        if !is_active {
-                                            this.set_active_tab(index, window, cx);
-                                        }
-                                    }));
-
-                                if is_active {
-                                    tab_div = tab_div.bg(cx.theme().tab_active).border_b_0();
-                                } else {
-                                    tab_div = tab_div
-                                        .bg(cx.theme().tab)
-                                        .hover(|this| this.bg(cx.theme().muted))
-                                        .cursor_pointer();
-                                }
-
-                                tab_div
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(if is_active {
-                                                cx.theme().tab_active_foreground
-                                            } else {
-                                                cx.theme().tab_foreground
-                                            })
-                                            .pl_1()
-                                            .child(format!("{}{}", 
-                                                tab.title.clone(),
-                                                if tab.modified { " •" } else { "" }
-                                            )),
-                                    )
-                                    .child(
-                                        Button::new(("close-tab", tab_id))
-                                            .icon(IconName::Close)
-                                            .ghost()
-                                            .xsmall()
-                                            .cursor_pointer()
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                cx.stop_propagation();
-                                                this.close_tab(tab_id, window, cx);
-                                            })),
-                                    )
-                            }))
-
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w(px(0.))
-                                    .border_b_1()
-                                    .border_color(cx.theme().border)
-                                    .h(px(40.))
-                            )
-                    )
+            )
+        )
+        .child(self.title_bar.clone())
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .h(px(40.))
+                .bg(cx.theme().tab_bar)
+                .child(
+                    tab_bar_button_factory("new-tab", "New Tab", IconName::Plus, cx.theme().border)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.new_tab(window, cx);
+                        })),
                 )
+                .child(
+                    tab_bar_button_factory("open-file", "Open File", IconName::FolderOpen, cx.theme().border)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.open_file(window, cx);
+                        })),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_1()
+                        .items_center()
+                        .children(self.tabs.iter().enumerate().map(|(index, tab)| {
+                            let tab_id = tab.id;
+                            let is_active = match self.active_tab_index {
+                                Some(active_index) => index == active_index,
+                                None => false,
+                            };
+
+                            let mut tab_div = div()
+                                .flex()
+                                .items_center() 
+                                .h(px(40.))
+                                .px_2()
+                                .gap_2()
+                                .border_l_1()
+                                .border_b_1()
+                                .border_color(cx.theme().border)
+                                .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, window, cx| {
+                                    if !is_active {
+                                        this.set_active_tab(index, window, cx);
+                                    }
+                                }));
+
+                            if is_active {
+                                tab_div = tab_div.bg(cx.theme().tab_active).border_b_0();
+                            } else {
+                                tab_div = tab_div
+                                    .bg(cx.theme().tab)
+                                    .hover(|this| this.bg(cx.theme().muted))
+                                    .cursor_pointer();
+                            }
+
+                            tab_div
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(if is_active {
+                                            cx.theme().tab_active_foreground
+                                        } else {
+                                            cx.theme().tab_foreground
+                                        })
+                                        .pl_1()
+                                        .child(format!("{}{}", 
+                                            tab.title.clone(),
+                                            if tab.modified { " •" } else { "" }
+                                        )),
+                                )
+                                .child(
+                                    Button::new(("close-tab", tab_id))
+                                        .icon(IconName::Close)
+                                        .ghost()
+                                        .xsmall()
+                                        .cursor_pointer()
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            cx.stop_propagation();
+                                            this.close_tab(tab_id, window, cx);
+                                        })),
+                                )
+                        }))
+
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(0.))
+                                .border_b_1()
+                                .border_l_1()
+                                .border_color(cx.theme().border)
+                                .h(px(40.))
+                        )
+                )
+            )
             .child(
                 {
                     let mut content_div = div()
@@ -669,7 +671,7 @@ impl Render for Lightspeed {
                         .flex()
                         .justify_between()
                         .items_center()
-                        .bg(cx.theme().background)
+                        .bg(cx.theme().tab_bar)
                         .p_0()
                         .m_0()
                         .w_full()
@@ -680,16 +682,17 @@ impl Render for Lightspeed {
                             div()
                                 .flex()
                                 .items_center()
-                                .bg(cx.theme().background)
                                 .p_0()
                                 .m_0()
                                 .flex_1()
                                 .h(px(40.))
+                                .bg(cx.theme().background)
                                 .text_color(cx.theme().muted_foreground)
                                 .child(
                                     TextInput::new(&self.search_input)
                                         .flex_1()
                                         .text_size(px(14.))
+                                        .line_height(relative(1.0))
                                         .m_0()
                                         .py_0()
                                         .pl_2()
@@ -703,37 +706,52 @@ impl Render for Lightspeed {
                                             bottom_right: px(0.0),
                                         })
                                         .text_color(cx.theme().muted_foreground)
+                                        .bg(cx.theme().background)
                                 )
                                 .child(
-                                    search_bar_toggle_button_factory(
-                                        "match-case-button", 
-                                        "Match case", 
-                                        IconName::Plus, 
-                                        cx.theme().border,
-                                        cx.theme().accent,
-                                        self.match_case
-                                    )
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.match_case = !this.match_case;
-                                        cx.notify();
-                                    }))
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .p_0()
+                                        .m_0()
+                                        .h(px(40.))
+                                        .border_l_1()
+                                        .border_color(cx.theme().border)
+                                        .text_color(cx.theme().muted_foreground)
+                                        .bg(cx.theme().tab_bar)
+                                        .child(
+                                            search_bar_toggle_button_factory(
+                                                "match-case-button", 
+                                                "Match case", 
+                                                IconName::Plus, 
+                                                cx.theme().border,
+                                                cx.theme().tab_bar,
+                                                cx.theme().accent,
+                                                self.match_case,
+                                            )
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.match_case = !this.match_case;
+                                                cx.notify();
+                                            }))
+                                        )
+                                        .child(
+                                            search_bar_toggle_button_factory(
+                                                "match-whole-word-button", 
+                                                "Match whole word", 
+                                                IconName::Close, 
+                                                cx.theme().border,
+                                                cx.theme().tab_bar,
+                                                cx.theme().accent,
+                                                self.match_whole_word,
+                                            )
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.match_whole_word = !this.match_whole_word;
+                                                cx.notify();
+                                            }))
+                                        )
                                 )
                                 .child(
-                                    search_bar_toggle_button_factory(
-                                        "match-whole-word-button", 
-                                        "Match whole word", 
-                                        IconName::Close, 
-                                        cx.theme().border,
-                                        cx.theme().accent,
-                                        self.match_whole_word
-                                    )
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.match_whole_word = !this.match_whole_word;
-                                        cx.notify();
-                                    }))
-                                )
-                                .child(
-                                    search_bar_button_factory("search-button", "Search", IconName::Search, cx.theme().border)
+                                    search_bar_button_factory("search-button", "Search", IconName::Search, cx.theme().tab_bar, cx.theme().border)
                                 )
                                 
                             )
@@ -741,32 +759,32 @@ impl Render for Lightspeed {
                             div()
                                 .flex()
                                 .items_center()
-                                .bg(cx.theme().background)
                                 .p_0()
                                 .m_0()
                                 .border_r_1()
                                 .border_color(cx.theme().border)
                                 .child(
-                                    search_bar_button_factory("search-previous-button", "Previous", IconName::ChevronUp, cx.theme().border)
+                                    search_bar_button_factory("search-previous-button", "Previous", IconName::ChevronUp, cx.theme().tab_bar, cx.theme().border)
                                 )
                                 .child(
-                                    search_bar_button_factory("search-next-button", "Next", IconName::ChevronDown, cx.theme().border)
+                                    search_bar_button_factory("search-next-button", "Next", IconName::ChevronDown, cx.theme().tab_bar, cx.theme().border)
                                 )
                         )
                         .child(
                             div()
                                 .flex()
                                 .items_center()
-                                .bg(cx.theme().background)
                                 .p_0()
-                                .m_0()
+                                .m_0()                                                                                  
                                 .flex_1()
                                 .h(px(40.))
+                                .bg(cx.theme().background)
                                 .text_color(cx.theme().muted_foreground)
                                 .child(
                                     TextInput::new(&self.replace_input)
                                         .flex_1()
                                         .text_size(px(14.))
+                                        .line_height(relative(1.0))
                                         .m_0()
                                         .py_0()
                                         .px_2()
@@ -779,12 +797,23 @@ impl Render for Lightspeed {
                                             bottom_right: px(0.0),
                                         })
                                         .text_color(cx.theme().muted_foreground)
+                                        .bg(cx.theme().background)
                                 )
                                 .child(
-                                    search_bar_button_factory("replace-button", "Replace", IconName::Replace, cx.theme().border)
-                                )
-                                .child(
-                                    search_bar_button_factory("replace-all-button", "Replace all", IconName::Replace, cx.theme().border)
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .p_0()
+                                        .m_0()
+                                        .h(px(40.))
+                                        .bg(cx.theme().tab_bar)
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(
+                                            search_bar_button_factory("replace-button", "Replace", IconName::Replace, cx.theme().tab_bar, cx.theme().border)
+                                        )
+                                        .child(
+                                            search_bar_button_factory("replace-all-button", "Replace all", IconName::Replace, cx.theme().tab_bar, cx.theme().border)
+                                        )
                                 )
                         )
                 )
@@ -794,12 +823,12 @@ impl Render for Lightspeed {
             .child(
                 h_flex()
                     .justify_between()
-                    .bg(cx.theme().background)
+                    .bg(cx.theme().tab_bar)
                     .py_0()
                     .my_0()
                     .border_t_1()
                     .border_color(cx.theme().border)
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().foreground)
                     .child(div()
                         .flex()
                         .justify_start()
