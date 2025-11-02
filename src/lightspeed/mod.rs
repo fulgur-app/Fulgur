@@ -11,7 +11,8 @@ use editor_tab::EditorTab;
 
 use gpui::*;
 use std::ops::DerefMut;
-use gpui_component::{ActiveTheme, ContextModal, IconName, Root, Sizable, StyledExt, Theme, ThemeRegistry, button::{Button, ButtonVariants}, h_flex, input::{InputState, Position, TextInput}};
+use gpui_component::{ActiveTheme, ContextModal, IconName, Root, Sizable, StyledExt, Theme, ThemeRegistry, button::{Button, ButtonVariants}, h_flex, input::{InputEvent, InputState, Position, TextInput}};
+use lsp_types::{Diagnostic, DiagnosticSeverity};
 
 pub struct Lightspeed {
     focus_handle: FocusHandle,
@@ -24,6 +25,18 @@ pub struct Lightspeed {
     replace_input: Entity<InputState>,
     match_case: bool,
     match_whole_word: bool,
+    search_matches: Vec<SearchMatch>,
+    current_match_index: Option<usize>,
+    _search_subscription: gpui::Subscription,
+    last_search_query: String,
+}
+
+#[derive(Debug, Clone)]
+struct SearchMatch {
+    start: usize,
+    end: usize,
+    line: usize,
+    col: usize,
 }
 
 impl Lightspeed {
@@ -42,6 +55,19 @@ impl Lightspeed {
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
 
         cx.new(|cx| {
+            // Subscribe to search input changes for auto-search
+            let _search_subscription = cx.subscribe(&search_input, |this: &mut Self, _, ev: &InputEvent, cx| {
+                match ev {
+                    InputEvent::Change => {
+                        // Auto-search when user types (will be triggered on next render)
+                        if this.show_search {
+                            cx.notify();
+                        }
+                    }
+                    _ => {}
+                }
+            });
+            
             let entity = Self {
                 focus_handle: cx.focus_handle(),
                 title_bar,
@@ -53,6 +79,10 @@ impl Lightspeed {
                 replace_input,
                 match_case: false,
                 match_whole_word: false,
+                search_matches: Vec::new(),
+                current_match_index: None,
+                _search_subscription,
+                last_search_query: String::new(),
             };
             entity
         })
@@ -211,6 +241,12 @@ impl Lightspeed {
         if index < self.tabs.len() {
             self.active_tab_index = Some(index);
             self.focus_active_tab(window, cx);
+            
+            // If search is open, re-run search on new tab
+            if self.show_search {
+                self.perform_search(window, cx);
+            }
+            
             cx.notify();
         }
     }
@@ -397,6 +433,407 @@ impl Lightspeed {
         // }
         cx.quit();
     }
+
+    // Close the search bar and clear highlighting
+    // @param window: The window context
+    // @param cx: The application context
+    fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_search = false;
+        
+        // Clear search highlighting from active tab
+        if let Some(active_index) = self.active_tab_index {
+            if let Some(tab) = self.tabs.get(active_index) {
+                tab.content.update(cx, |content, _cx| {
+                    if let Some(diagnostics) = content.diagnostics_mut() {
+                        diagnostics.clear();
+                    }
+                });
+            }
+        }
+        
+        // Clear search results
+        self.search_matches.clear();
+        self.current_match_index = None;
+        
+        // Focus back on the editor
+        self.focus_active_tab(window, cx);
+        cx.notify();
+    }
+
+    // Perform search in the active tab
+    // @param window: The window context
+    // @param cx: The application context
+    fn perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_matches.clear();
+        self.current_match_index = None;
+
+        // Get the search query
+        let query = self.search_input.read(cx).text().to_string();
+        
+        // Get the active tab content
+        if let Some(active_index) = self.active_tab_index {
+            if let Some(tab) = self.tabs.get(active_index) {
+                // Clear existing search highlights
+                tab.content.update(cx, |content, _cx| {
+                    if let Some(diagnostics) = content.diagnostics_mut() {
+                        diagnostics.clear();
+                    }
+                });
+                
+                if query.is_empty() {
+                    cx.notify();
+                    return;
+                }
+                
+                let text = tab.content.read(cx).text().to_string();
+                let cursor_pos = tab.content.read(cx).cursor();
+                
+                // Find all matches
+                self.search_matches = self.find_matches(&text, &query);
+                
+                // Add visual highlighting using diagnostics (yellow background)
+                tab.content.update(cx, |content, cx| {
+                    if let Some(diagnostics) = content.diagnostics_mut() {
+                        for search_match in &self.search_matches {
+                            let diagnostic = Diagnostic {
+                                range: lsp_types::Range {
+                                    start: Position {
+                                        line: search_match.line as u32,
+                                        character: search_match.col as u32,
+                                    },
+                                    end: Position {
+                                        line: search_match.line as u32,
+                                        character: (search_match.col + (search_match.end - search_match.start)) as u32,
+                                    },
+                                },
+                                severity: Some(DiagnosticSeverity::WARNING),
+                                message: "Search match".to_string(),
+                                source: None,
+                                code: None,
+                                related_information: None,
+                                tags: None,
+                                code_description: None,
+                                data: None,
+                            };
+                            diagnostics.push(diagnostic);
+                        }
+                    }
+                    cx.notify();
+                });
+                
+                // Find the first match after the cursor, or wrap to the first match
+                if !self.search_matches.is_empty() {
+                    let mut found_after_cursor = false;
+                    for (idx, m) in self.search_matches.iter().enumerate() {
+                        if m.start >= cursor_pos {
+                            self.current_match_index = Some(idx);
+                            found_after_cursor = true;
+                            break;
+                        }
+                    }
+                    
+                    // If no match after cursor, wrap to first match
+                    if !found_after_cursor {
+                        self.current_match_index = Some(0);
+                    }
+                    
+                    // Jump to the match and select it
+                    self.highlight_current_match(window, cx);
+                }
+            }
+        }
+
+        cx.notify();
+    }
+
+    // Find all matches in the text
+    // @param text: The text to search in
+    // @param query: The search query
+    // @return: A vector of search matches
+    fn find_matches(&self, text: &str, query: &str) -> Vec<SearchMatch> {
+        let mut matches = Vec::new();
+        
+        if query.is_empty() {
+            return matches;
+        }
+
+        let search_text = if self.match_case {
+            text.to_string()
+        } else {
+            text.to_lowercase()
+        };
+
+        let search_query = if self.match_case {
+            query.to_string()
+        } else {
+            query.to_lowercase()
+        };
+
+        let mut start_pos = 0;
+        while let Some(pos) = search_text[start_pos..].find(&search_query) {
+            let absolute_pos = start_pos + pos;
+            let end_pos = absolute_pos + query.len();
+
+            // Check whole word matching if enabled
+            if self.match_whole_word {
+                let is_word_start = absolute_pos == 0 || 
+                    !text.chars().nth(absolute_pos - 1).map_or(false, |c| c.is_alphanumeric() || c == '_');
+                let is_word_end = end_pos >= text.len() || 
+                    !text.chars().nth(end_pos).map_or(false, |c| c.is_alphanumeric() || c == '_');
+                
+                if !is_word_start || !is_word_end {
+                    start_pos = absolute_pos + 1;
+                    continue;
+                }
+            }
+
+            // Calculate line and column
+            let (line, col) = self.get_line_col(text, absolute_pos);
+
+            matches.push(SearchMatch {
+                start: absolute_pos,
+                end: end_pos,
+                line,
+                col,
+            });
+
+            start_pos = absolute_pos + 1;
+        }
+
+        matches
+    }
+
+    // Get line and column from byte position
+    // @param text: The text
+    // @param pos: The byte position
+    // @return: A tuple of (line, column)
+    fn get_line_col(&self, text: &str, pos: usize) -> (usize, usize) {
+        let mut line = 0;
+        let mut col = 0;
+        
+        for (i, ch) in text.chars().enumerate() {
+            if i >= pos {
+                break;
+            }
+            if ch == '\n' {
+                line += 1;
+                col = 0;
+            } else {
+                col += 1;
+            }
+        }
+        
+        (line, col)
+    }
+
+    // Navigate to the next search match
+    // @param window: The window context
+    // @param cx: The application context
+    fn search_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_matches.is_empty() {
+            return;
+        }
+
+        if let Some(current) = self.current_match_index {
+            self.current_match_index = Some((current + 1) % self.search_matches.len());
+        } else {
+            self.current_match_index = Some(0);
+        }
+
+        self.highlight_current_match(window, cx);
+        cx.notify();
+    }
+
+    // Navigate to the previous search match
+    // @param window: The window context
+    // @param cx: The application context
+    fn search_previous(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_matches.is_empty() {
+            return;
+        }
+
+        if let Some(current) = self.current_match_index {
+            self.current_match_index = Some(
+                if current == 0 {
+                    self.search_matches.len() - 1
+                } else {
+                    current - 1
+                }
+            );
+        } else {
+            self.current_match_index = Some(0);
+        }
+
+        self.highlight_current_match(window, cx);
+        cx.notify();
+    }
+
+    // Highlight the current search match
+    // @param window: The window context
+    // @param cx: The application context
+    fn highlight_current_match(&self, window: &mut Window, cx: &mut App) {
+        if let Some(match_index) = self.current_match_index {
+            if let Some(search_match) = self.search_matches.get(match_index) {
+                if let Some(active_index) = self.active_tab_index {
+                    if let Some(tab) = self.tabs.get(active_index) {
+                        // Set the cursor position to the match
+                        tab.content.update(cx, |content, cx| {
+                            content.set_cursor_position(
+                                Position {
+                                    line: search_match.line as u32,
+                                    character: search_match.col as u32,
+                                },
+                                window,
+                                cx,
+                            );
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Replace the current search match
+    // @param window: The window context
+    // @param cx: The application context
+    fn replace_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(match_index) = self.current_match_index {
+            if let Some(search_match) = self.search_matches.get(match_index).cloned() {
+                if let Some(active_index) = self.active_tab_index {
+                    if let Some(tab) = self.tabs.get_mut(active_index) {
+                        let replace_text = self.replace_input.read(cx).text().to_string();
+                        
+                        // Get current text
+                        let text = tab.content.read(cx).text().to_string();
+                        
+                        // Replace the match in the text
+                        let mut new_text = String::new();
+                        new_text.push_str(&text[..search_match.start]);
+                        new_text.push_str(&replace_text);
+                        new_text.push_str(&text[search_match.end..]);
+                        
+                        // Update the content
+                        tab.content.update(cx, |content, cx| {
+                            content.set_value(&new_text, window, cx);
+                        });
+
+                        // Re-run search to update matches
+                        self.perform_search(window, cx);
+                        
+                        // If there are still matches, move to the current or next one
+                        if !self.search_matches.is_empty() {
+                            if match_index < self.search_matches.len() {
+                                self.current_match_index = Some(match_index);
+                            } else {
+                                self.current_match_index = Some(0);
+                            }
+                            self.highlight_current_match(window, cx);
+                        }
+                    }
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    // Replace all search matches
+    // @param window: The window context
+    // @param cx: The application context
+    fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_matches.is_empty() {
+            return;
+        }
+
+        if let Some(active_index) = self.active_tab_index {
+            let replace_text = self.replace_input.read(cx).text().to_string();
+            let search_query = self.search_input.read(cx).text().to_string();
+            let match_case = self.match_case;
+            let match_whole_word = self.match_whole_word;
+            
+            // Get the current text
+            if let Some(tab) = self.tabs.get(active_index) {
+                let text = tab.content.read(cx).text().to_string();
+                
+                // Perform replacement
+                let new_text = if match_case {
+                    if match_whole_word {
+                        self.replace_whole_words(&text, &replace_text)
+                    } else {
+                        text.replace(&search_query, &replace_text)
+                    }
+                } else {
+                    if match_whole_word {
+                        self.replace_whole_words_case_insensitive(&text, &replace_text)
+                    } else {
+                        self.replace_case_insensitive(&text, &replace_text)
+                    }
+                };
+                
+                // Update the content
+                if let Some(tab) = self.tabs.get_mut(active_index) {
+                    tab.content.update(cx, |content, cx| {
+                        content.set_value(&new_text, window, cx);
+                    });
+                }
+
+                // Clear search matches
+                self.search_matches.clear();
+                self.current_match_index = None;
+            }
+        }
+        cx.notify();
+    }
+
+    // Replace all occurrences case-insensitively
+    // @param text: The text to search in
+    // @param replace: The replacement text
+    // @return: The text with replacements
+    fn replace_case_insensitive(&self, text: &str, replace: &str) -> String {
+        let mut result = String::new();
+        let mut last_pos = 0;
+
+        for m in self.search_matches.iter() {
+            result.push_str(&text[last_pos..m.start]);
+            result.push_str(replace);
+            last_pos = m.end;
+        }
+        result.push_str(&text[last_pos..]);
+        result
+    }
+
+    // Replace whole words only
+    // @param text: The text to search in
+    // @param replace: The replacement text
+    // @return: The text with replacements
+    fn replace_whole_words(&self, text: &str, replace: &str) -> String {
+        let mut result = String::new();
+        let mut last_pos = 0;
+
+        for m in self.search_matches.iter() {
+            result.push_str(&text[last_pos..m.start]);
+            result.push_str(replace);
+            last_pos = m.end;
+        }
+        result.push_str(&text[last_pos..]);
+        result
+    }
+
+    // Replace whole words case-insensitively
+    // @param text: The text to search in
+    // @param replace: The replacement text
+    // @return: The text with replacements
+    fn replace_whole_words_case_insensitive(&self, text: &str, replace: &str) -> String {
+        let mut result = String::new();
+        let mut last_pos = 0;
+
+        for m in self.search_matches.iter() {
+            result.push_str(&text[last_pos..m.start]);
+            result.push_str(replace);
+            last_pos = m.end;
+        }
+        result.push_str(&text[last_pos..]);
+        result
+    }
 }
 
 impl Focusable for Lightspeed {
@@ -423,7 +860,7 @@ fn tab_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconNam
 // @param icon: The icon of the button
 // @param border_color: The color of the border
 // @return: A search bar button
-fn search_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, background_color: Hsla, border_color: Hsla) -> Button {
+fn search_bar_button_factory(id: &'static str, tooltip: &'static str, icon: IconName, _background_color: Hsla, border_color: Hsla) -> Button {
     let button = components_utils::button_factory(id, tooltip, icon, border_color);
     button
 }
@@ -440,6 +877,7 @@ fn search_bar_toggle_button_factory(id: &'static str, tooltip: &'static str, ico
     let mut button = components_utils::button_factory(id, tooltip, icon, border_color);
 
     // Apply active styling if checked
+    //button = button.small();
     if checked {
         button = button.bg(accent_color);
     } else {
@@ -492,6 +930,15 @@ impl Render for Lightspeed {
             self.active_tab_index = None;
         }
         
+        // Auto-search when query changes
+        if self.show_search {
+            let current_query = self.search_input.read(cx).text().to_string();
+            if current_query != self.last_search_query {
+                self.last_search_query = current_query;
+                self.perform_search(window, cx);
+            }
+        }
+        
         // Update modified status of tabs
         self.update_modified_status(cx);
         let cursor_pos = match self.active_tab_index {
@@ -540,6 +987,20 @@ impl Render for Lightspeed {
                     }))
                     .on_action(cx.listener(|this, _action: &FindInFile, window, cx| {
                         this.show_search = !this.show_search;
+                        
+                        if this.show_search {
+                            // Focus the search input when opening
+                            let search_focus = this.search_input.read(cx).focus_handle(cx);
+                            window.focus(&search_focus);
+                            
+                            // Perform search with current query if any
+                            this.perform_search(window, cx);
+                        } else {
+                            // Close search and clear highlighting
+                            this.close_search(window, cx);
+                        }
+                        
+                        cx.notify();
                     }))
                     .on_action(cx.listener(|_this, _action: &SwitchTheme, _window, cx| {
                         let theme_name = _action.0.clone();
@@ -723,34 +1184,31 @@ impl Render for Lightspeed {
                                             search_bar_toggle_button_factory(
                                                 "match-case-button", 
                                                 "Match case", 
-                                                IconName::Plus, 
+                                                IconName::CaseSensitive, 
                                                 cx.theme().border,
                                                 cx.theme().tab_bar,
                                                 cx.theme().accent,
                                                 self.match_case,
                                             )
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                            .on_click(cx.listener(|this, _, window, cx| {
                                                 this.match_case = !this.match_case;
-                                                cx.notify();
+                                                this.perform_search(window, cx);
                                             }))
                                         )
                                         .child(
                                             search_bar_toggle_button_factory(
                                                 "match-whole-word-button", 
                                                 "Match whole word", 
-                                                IconName::Close, 
+                                                IconName::ALargeSmall, 
                                                 cx.theme().border,
                                                 cx.theme().tab_bar,
                                                 cx.theme().accent,
                                                 self.match_whole_word,
                                             )
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                            .on_click(cx.listener(|this, _, window, cx| {
                                                 this.match_whole_word = !this.match_whole_word;
-                                                cx.notify();
+                                                this.perform_search(window, cx);
                                             }))
-                                        )
-                                        .child(
-                                            search_bar_button_factory("search-button", "Search", IconName::Search, cx.theme().tab_bar, cx.theme().border)
                                         )
                                 )
                                 
@@ -764,10 +1222,29 @@ impl Render for Lightspeed {
                                 .border_r_1()
                                 .border_color(cx.theme().border)
                                 .child(
+                                    div()
+                                        .text_xs()
+                                        .px_2()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(if self.search_matches.is_empty() {
+                                            "No matches".to_string()
+                                        } else if let Some(current) = self.current_match_index {
+                                            format!("{} of {}", current + 1, self.search_matches.len())
+                                        } else {
+                                            format!("{} matches", self.search_matches.len())
+                                        })
+                                )
+                                .child(
                                     search_bar_button_factory("search-previous-button", "Previous", IconName::ChevronUp, cx.theme().tab_bar, cx.theme().border)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.search_previous(window, cx);
+                                        }))
                                 )
                                 .child(
                                     search_bar_button_factory("search-next-button", "Next", IconName::ChevronDown, cx.theme().tab_bar, cx.theme().border)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.search_next(window, cx);
+                                        }))
                                 )
                         )
                         .child(
@@ -812,10 +1289,31 @@ impl Render for Lightspeed {
                                         .border_color(cx.theme().border)
                                         .child(
                                             search_bar_button_factory("replace-button", "Replace", IconName::Replace, cx.theme().tab_bar, cx.theme().border)
+                                                .on_click(cx.listener(|this, _, window, cx| {
+                                                    this.replace_current(window, cx);
+                                                }))
                                         )
                                         .child(
                                             search_bar_button_factory("replace-all-button", "Replace all", IconName::Replace, cx.theme().tab_bar, cx.theme().border)
+                                                .on_click(cx.listener(|this, _, window, cx| {
+                                                    this.replace_all(window, cx);
+                                                }))
                                         )
+                                )
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .p_0()
+                                .m_0()
+                                .border_l_1()
+                                .border_color(cx.theme().border)
+                                .child(
+                                    search_bar_button_factory("close-search-button", "Close", IconName::Close, cx.theme().tab_bar, cx.theme().border)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.close_search(window, cx);
+                                        }))
                                 )
                         )
                 )
