@@ -48,7 +48,7 @@ impl Lightspeed {
                 tabs: vec![initial_tab],
                 active_tab_index: Some(0),
                 next_tab_id: 1,
-                show_search: true,
+                show_search: false,
                 search_input,
                 replace_input,
                 match_case: false,
@@ -749,9 +749,9 @@ impl Render for Lightspeed {
                                                 cx.notify();
                                             }))
                                         )
-                                )
-                                .child(
-                                    search_bar_button_factory("search-button", "Search", IconName::Search, cx.theme().tab_bar, cx.theme().border)
+                                        .child(
+                                            search_bar_button_factory("search-button", "Search", IconName::Search, cx.theme().tab_bar, cx.theme().border)
+                                        )
                                 )
                                 
                             )
@@ -808,6 +808,8 @@ impl Render for Lightspeed {
                                         .h(px(40.))
                                         .bg(cx.theme().tab_bar)
                                         .text_color(cx.theme().muted_foreground)
+                                        .border_l_1()
+                                        .border_color(cx.theme().border)
                                         .child(
                                             search_bar_button_factory("replace-button", "Replace", IconName::Replace, cx.theme().tab_bar, cx.theme().border)
                                         )
