@@ -1,0 +1,142 @@
+use crate::lightspeed::{Lightspeed, editor_tab::EditorTab};
+use gpui::*;
+
+impl Lightspeed {
+    /// Open a file
+    /// @param window: The window to open the file in
+    /// @param cx: The application context
+    pub(super) fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let path_future = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+        });
+
+        cx.spawn_in(window, async move |view, window| {
+            // Wait for the user to select a path
+            let paths = path_future.await.ok()?.ok()??;
+            let path = paths.first()?.clone();
+
+            // Read file contents
+            let contents = std::fs::read_to_string(&path).ok()?;
+
+            // Update the view to add a new tab with the file
+            window
+                .update(|window, cx| {
+                    _ = view.update(cx, |this, cx| {
+                        let tab = EditorTab::from_file(
+                            this.next_tab_id,
+                            path.clone(),
+                            contents,
+                            window,
+                            cx,
+                        );
+                        this.tabs.push(tab);
+                        this.active_tab_index = Some(this.tabs.len() - 1);
+                        this.next_tab_id += 1;
+                        this.focus_active_tab(window, cx);
+                        cx.notify();
+                    });
+                })
+                .ok();
+
+            Some(())
+        })
+        .detach();
+    }
+
+    /// Save a file
+    /// @param window: The window to save the file in
+    /// @param cx: The application context
+    pub(super) fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tabs.is_empty() || self.active_tab_index.is_none() {
+            return;
+        }
+
+        let active_tab = &self.tabs[self.active_tab_index.unwrap()];
+
+        // If no path exists, use save_as instead
+        if active_tab.file_path.is_none() {
+            self.save_file_as(window, cx);
+            return;
+        }
+
+        let path = active_tab.file_path.clone().unwrap();
+        let content_entity = active_tab.content.clone();
+
+        // Get the text content from the InputState
+        let contents = content_entity.read(cx).text().to_string();
+
+        // Write to file
+        if let Err(e) = std::fs::write(&path, contents) {
+            eprintln!("Failed to save file: {}", e);
+            return;
+        }
+
+        // Mark as saved
+        self.tabs[self.active_tab_index.unwrap()].mark_as_saved(cx);
+        cx.notify();
+    }
+
+    /// Save a file as
+    /// @param window: The window to save the file as in
+    /// @param cx: The application context
+    pub(super) fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tabs.is_empty() || self.active_tab_index.is_none() {
+            return;
+        }
+
+        let active_tab_index = self.active_tab_index;
+        let content_entity = self.tabs[active_tab_index.unwrap()].content.clone();
+
+        // Get the current directory or use home directory
+        let directory = if let Some(ref path) = self.tabs[active_tab_index.unwrap()].file_path {
+            path.parent()
+                .unwrap_or(std::path::Path::new("."))
+                .to_path_buf()
+        } else {
+            std::env::current_dir().unwrap_or_default()
+        };
+
+        let path_future = cx.prompt_for_new_path(&directory, None);
+
+        cx.spawn_in(window, async move |view, window| {
+            // Wait for the user to select a path
+            let path = path_future.await.ok()?.ok()??;
+
+            // Get the text content
+            let contents = window
+                .update(|_, cx| content_entity.read(cx).text().to_string())
+                .ok()?;
+
+            // Write to file
+            if let Err(e) = std::fs::write(&path, &contents) {
+                eprintln!("Failed to save file: {}", e);
+                return None;
+            }
+
+            // Update the tab with the new path
+            window
+                .update(|_, cx| {
+                    _ = view.update(cx, |this, cx| {
+                        if let Some(tab) = this.tabs.get_mut(active_tab_index.unwrap()) {
+                            tab.file_path = Some(path.clone());
+                            tab.title = path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("Untitled")
+                                .to_string()
+                                .into();
+                            tab.mark_as_saved(cx);
+                            cx.notify();
+                        }
+                    });
+                })
+                .ok()?;
+
+            Some(())
+        })
+        .detach();
+    }
+}
