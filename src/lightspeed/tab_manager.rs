@@ -2,7 +2,6 @@ use gpui::*;
 use std::ops::DerefMut;
 use gpui_component::ContextModal;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::Sizable;
 use crate::lightspeed::{Lightspeed, editor_tab::EditorTab};
 
 impl Lightspeed {

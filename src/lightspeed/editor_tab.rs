@@ -1,7 +1,7 @@
 // Represents a single editor tab with its content
 use gpui::*;
-use gpui_component::input::{InputState, TabSize};
 use gpui_component::highlighter::Language;
+use gpui_component::input::{InputState, TabSize};
 
 use super::languages::{language_from_extension, language_name};
 
@@ -14,6 +14,7 @@ pub struct EditorTab {
     pub modified: bool,
     pub original_content: String,
     pub language: Language,
+    pub encoding: String,
 }
 
 // Create a new input state with syntax highlighting
@@ -22,7 +23,12 @@ pub struct EditorTab {
 // @param language: The language of the input state
 // @param content: The content of the input state
 // @return: The new input state
-fn make_input_state(window: &mut Window, cx: &mut Context<InputState>, language: Language, content: Option<String>) -> InputState {
+fn make_input_state(
+    window: &mut Window,
+    cx: &mut Context<InputState>,
+    language: Language,
+    content: Option<String>,
+) -> InputState {
     InputState::new(window, cx)
         .code_editor(language_name(&language).to_string())
         .line_number(true)
@@ -42,12 +48,15 @@ impl EditorTab {
     // @param window: The window to create the tab in
     // @param cx: The application context
     // @return: The new tab
-    pub fn new(id: usize, title: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> Self {
+    pub fn new(
+        id: usize,
+        title: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
         let language = Language::Plain;
-        let content = cx.new(|cx| {
-            make_input_state(window, cx, language, None)
-        });
-        
+        let content = cx.new(|cx| make_input_state(window, cx, language, None));
+
         Self {
             id,
             title: title.into(),
@@ -56,6 +65,7 @@ impl EditorTab {
             modified: false,
             original_content: String::new(),
             language,
+            encoding: "UTF-8".to_string(),
         }
     }
 
@@ -63,6 +73,7 @@ impl EditorTab {
     // @param id: The ID of the tab
     // @param path: The path of the file
     // @param contents: The contents of the file
+    // @param encoding: The encoding of the file
     // @param window: The window to create the tab in
     // @param cx: The application context
     // @return: The new tab
@@ -70,6 +81,7 @@ impl EditorTab {
         id: usize,
         path: std::path::PathBuf,
         contents: String,
+        encoding: String,
         window: &mut Window,
         cx: &mut App,
     ) -> Self {
@@ -80,15 +92,10 @@ impl EditorTab {
             .to_string();
 
         // Detect language from file extension
-        let extension = path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("");
+        let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
         let language = language_from_extension(extension);
-        
-        let content = cx.new(|cx| {
-            make_input_state(window, cx, language, Some(contents.clone()))
-        });
+
+        let content = cx.new(|cx| make_input_state(window, cx, language, Some(contents.clone())));
 
         Self {
             id,
@@ -98,9 +105,10 @@ impl EditorTab {
             modified: false,
             original_content: contents,
             language,
+            encoding,
         }
     }
-    
+
     // Check if the tab's content has been modified
     // @param cx: The application context
     // @return: True if the tab's content has been modified, false otherwise
@@ -109,7 +117,7 @@ impl EditorTab {
         self.modified = current_text != self.original_content;
         self.modified
     }
-    
+
     // Mark the tab as saved
     // @param cx: The application context
     pub fn mark_as_saved(&mut self, cx: &mut App) {

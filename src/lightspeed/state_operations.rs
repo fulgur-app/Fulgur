@@ -1,4 +1,7 @@
-use crate::lightspeed::{Lightspeed, editor_tab::EditorTab, state_persistence::*};
+use crate::lightspeed::{
+    Lightspeed, editor_tab::EditorTab, file_operations::detect_encoding_and_decode,
+    state_persistence::*,
+};
 use gpui::*;
 use std::fs;
 
@@ -110,33 +113,35 @@ impl Lightspeed {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<EditorTab> {
-        let (content, path) = if let Some(saved_path) = tab_state.file_path {
+        let (content, path, encoding) = if let Some(saved_path) = tab_state.file_path {
             if let Some(saved_content) = tab_state.content {
                 if saved_path.exists() {
                     if let Some(ref saved_time) = tab_state.last_saved {
                         if let Some(file_time) = get_file_modified_time(&saved_path) {
                             if is_file_newer(&file_time, saved_time) {
-                                if let Ok(file_content) = fs::read_to_string(&saved_path) {
-                                    (file_content, Some(saved_path))
+                                if let Ok(bytes) = fs::read(&saved_path) {
+                                    let (enc, file_content) = detect_encoding_and_decode(&bytes);
+                                    (file_content, Some(saved_path), enc)
                                 } else {
-                                    (saved_content, Some(saved_path))
+                                    (saved_content, Some(saved_path), "UTF-8".to_string())
                                 }
                             } else {
-                                (saved_content, Some(saved_path))
+                                (saved_content, Some(saved_path), "UTF-8".to_string())
                             }
                         } else {
-                            (saved_content, Some(saved_path))
+                            (saved_content, Some(saved_path), "UTF-8".to_string())
                         }
                     } else {
-                        (saved_content, Some(saved_path))
+                        (saved_content, Some(saved_path), "UTF-8".to_string())
                     }
                 } else {
-                    (saved_content, None)
+                    (saved_content, None, "UTF-8".to_string())
                 }
             } else {
                 if saved_path.exists() {
-                    if let Ok(file_content) = fs::read_to_string(&saved_path) {
-                        (file_content, Some(saved_path))
+                    if let Ok(bytes) = fs::read(&saved_path) {
+                        let (enc, file_content) = detect_encoding_and_decode(&bytes);
+                        (file_content, Some(saved_path), enc)
                     } else {
                         return None;
                     }
@@ -146,14 +151,14 @@ impl Lightspeed {
             }
         } else {
             if let Some(saved_content) = tab_state.content {
-                (saved_content, None)
+                (saved_content, None, "UTF-8".to_string())
             } else {
                 return None;
             }
         };
 
         let tab = if let Some(file_path) = path {
-            EditorTab::from_file(tab_state.id, file_path, content, window, cx)
+            EditorTab::from_file(tab_state.id, file_path, content, encoding, window, cx)
         } else {
             use gpui_component::highlighter::Language;
             use gpui_component::input::TabSize;
@@ -179,6 +184,7 @@ impl Lightspeed {
                 modified: true,
                 original_content: String::new(),
                 language: Language::Plain,
+                encoding: "UTF-8".to_string(),
             }
         };
 

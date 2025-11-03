@@ -1,5 +1,40 @@
 use crate::lightspeed::{Lightspeed, editor_tab::EditorTab};
+use chardetng::EncodingDetector;
 use gpui::*;
+
+/// Detect encoding from file bytes
+/// @param bytes: The bytes to detect encoding from
+/// @return: The detected encoding and decoded string
+pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
+    // Try UTF-8 first
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return ("UTF-8".to_string(), text.to_string());
+    }
+
+    // Use chardetng to detect encoding
+    let mut detector = EncodingDetector::new();
+    detector.feed(bytes, true);
+    let encoding = detector.guess(None, true);
+
+    // Decode the bytes using the detected encoding
+    let (decoded, _, had_errors) = encoding.decode(bytes);
+
+    // If there were errors, try to use a more lenient approach
+    let encoding_name = if had_errors {
+        // If decoding had errors, fall back to UTF-8 with replacement
+        match std::str::from_utf8(bytes) {
+            Ok(text) => return ("UTF-8".to_string(), text.to_string()),
+            Err(_) => {
+                let text = String::from_utf8_lossy(bytes).to_string();
+                return ("UTF-8".to_string(), text);
+            }
+        }
+    } else {
+        encoding.name().to_string()
+    };
+
+    (encoding_name, decoded.to_string())
+}
 
 impl Lightspeed {
     /// Open a file
@@ -18,8 +53,11 @@ impl Lightspeed {
             let paths = path_future.await.ok()?.ok()??;
             let path = paths.first()?.clone();
 
-            // Read file contents
-            let contents = std::fs::read_to_string(&path).ok()?;
+            // Read file contents as bytes first
+            let bytes = std::fs::read(&path).ok()?;
+
+            // Detect encoding and decode
+            let (encoding, contents) = detect_encoding_and_decode(&bytes);
 
             // Update the view to add a new tab with the file
             window
@@ -29,6 +67,7 @@ impl Lightspeed {
                             this.next_tab_id,
                             path.clone(),
                             contents,
+                            encoding,
                             window,
                             cx,
                         );

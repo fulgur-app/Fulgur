@@ -45,6 +45,12 @@ impl Lightspeed {
             Some(index) => self.tabs[index].content.read(cx).cursor_position(),
             None => Position::default(),
         };
+
+        let encoding = match self.active_tab_index {
+            Some(index) => self.tabs[index].encoding.clone(),
+            None => "UTF-8".to_string(),
+        };
+
         h_flex()
             .justify_between()
             .bg(cx.theme().tab_bar)
@@ -66,10 +72,7 @@ impl Lightspeed {
                 div()
                     .flex()
                     .justify_end()
-                    .child(status_bar_right_item_factory(
-                        format!("Ln {}, Col {}", 123, 48),
-                        cx.theme().border,
-                    ))
+                    .child(status_bar_right_item_factory(encoding, cx.theme().border))
                     .child(status_bar_right_item_factory(
                         format!(
                             "Ln {}, Col {}",
