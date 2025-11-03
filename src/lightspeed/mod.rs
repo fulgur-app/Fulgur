@@ -5,6 +5,8 @@ mod languages;
 mod menus;
 mod search_bar;
 mod search_replace;
+mod state_operations;
+mod state_persistence;
 mod status_bar;
 mod tab_bar;
 mod tab_manager;
@@ -47,7 +49,7 @@ impl Lightspeed {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
 
-        // Create initial tab
+        // Create initial tab (will be replaced if state is loaded)
         let initial_tab = EditorTab::new(0, "Untitled", window, cx);
 
         // Create inputs
@@ -69,7 +71,7 @@ impl Lightspeed {
                     }
                 });
 
-            let entity = Self {
+            let mut entity = Self {
                 focus_handle: cx.focus_handle(),
                 title_bar,
                 tabs: vec![initial_tab],
@@ -85,6 +87,10 @@ impl Lightspeed {
                 _search_subscription,
                 last_search_query: String::new(),
             };
+
+            // Load saved state if it exists
+            entity.load_state(window, cx);
+
             entity
         })
     }

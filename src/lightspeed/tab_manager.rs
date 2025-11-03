@@ -151,6 +151,10 @@ impl Lightspeed {
     /// @param window: The window to quit the application in
     /// @param cx: The application context
     pub(super) fn quit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        // Save state before quitting
+        if let Err(e) = self.save_state(cx) {
+            eprintln!("Failed to save app state: {}", e);
+        }
         cx.quit();
     }
 }

@@ -45,7 +45,6 @@ impl Lightspeed {
             Some(index) => self.tabs[index].content.read(cx).cursor_position(),
             None => Position::default(),
         };
-
         h_flex()
             .justify_between()
             .bg(cx.theme().tab_bar)
