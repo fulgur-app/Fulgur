@@ -1,7 +1,22 @@
 use gpui::*;
 use gpui_component::ThemeRegistry;
 
-actions!(lightspeed, [About, Quit, CloseWindow, NewFile, OpenFile, SaveFileAs, SaveFile, CloseFile, CloseAllFiles, FindInFile]);
+actions!(
+    lightspeed,
+    [
+        About,
+        Quit,
+        CloseWindow,
+        NewFile,
+        OpenFile,
+        SaveFileAs,
+        SaveFile,
+        CloseFile,
+        CloseAllFiles,
+        FindInFile,
+        Settings
+    ]
+);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = lightspeed, no_json)]
@@ -16,14 +31,18 @@ pub fn build_menus(cx: &mut App) -> Vec<Menu> {
         Menu {
             name: "Lightspeed".into(),
             items: vec![
+                MenuItem::action("About Lightspeed", About),
+                MenuItem::Separator,
                 MenuItem::Submenu(Menu {
                     name: "Theme".into(),
                     items: themes
                         .iter()
-                        .map(|theme| MenuItem::action(theme.name.clone(), SwitchTheme(theme.name.clone())))
+                        .map(|theme| {
+                            MenuItem::action(theme.name.clone(), SwitchTheme(theme.name.clone()))
+                        })
                         .collect(),
                 }),
-                MenuItem::action("About Lightspeed", About),
+                MenuItem::action("Settings", Settings),
                 MenuItem::Separator,
                 MenuItem::action("Quit", Quit),
             ],

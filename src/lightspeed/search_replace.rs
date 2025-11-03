@@ -21,11 +21,13 @@ impl Lightspeed {
         // Clear search highlighting from active tab
         if let Some(active_index) = self.active_tab_index {
             if let Some(tab) = self.tabs.get(active_index) {
-                tab.content.update(cx, |content, _cx| {
-                    if let Some(diagnostics) = content.diagnostics_mut() {
-                        diagnostics.clear();
-                    }
-                });
+                if let Some(editor_tab) = tab.as_editor() {
+                    editor_tab.content.update(cx, |content, _cx| {
+                        if let Some(diagnostics) = content.diagnostics_mut() {
+                            diagnostics.clear();
+                        }
+                    });
+                }
             }
         }
 
@@ -51,74 +53,76 @@ impl Lightspeed {
         // Get the active tab content
         if let Some(active_index) = self.active_tab_index {
             if let Some(tab) = self.tabs.get(active_index) {
-                // Clear existing search highlights
-                tab.content.update(cx, |content, _cx| {
-                    if let Some(diagnostics) = content.diagnostics_mut() {
-                        diagnostics.clear();
-                    }
-                });
-
-                if query.is_empty() {
-                    cx.notify();
-                    return;
-                }
-
-                let text = tab.content.read(cx).text().to_string();
-                let cursor_pos = tab.content.read(cx).cursor();
-
-                // Find all matches
-                self.search_matches = self.find_matches(&text, &query);
-
-                // Add visual highlighting using diagnostics (yellow background)
-                tab.content.update(cx, |content, cx| {
-                    if let Some(diagnostics) = content.diagnostics_mut() {
-                        for search_match in &self.search_matches {
-                            let diagnostic = Diagnostic {
-                                range: lsp_types::Range {
-                                    start: Position {
-                                        line: search_match.line as u32,
-                                        character: search_match.col as u32,
-                                    },
-                                    end: Position {
-                                        line: search_match.line as u32,
-                                        character: (search_match.col
-                                            + (search_match.end - search_match.start))
-                                            as u32,
-                                    },
-                                },
-                                severity: Some(DiagnosticSeverity::WARNING),
-                                message: "Search match".to_string(),
-                                source: None,
-                                code: None,
-                                related_information: None,
-                                tags: None,
-                                code_description: None,
-                                data: None,
-                            };
-                            diagnostics.push(diagnostic);
+                if let Some(editor_tab) = tab.as_editor() {
+                    // Clear existing search highlights
+                    editor_tab.content.update(cx, |content, _cx| {
+                        if let Some(diagnostics) = content.diagnostics_mut() {
+                            diagnostics.clear();
                         }
-                    }
-                    cx.notify();
-                });
+                    });
 
-                // Find the first match after the cursor, or wrap to the first match
-                if !self.search_matches.is_empty() {
-                    let mut found_after_cursor = false;
-                    for (idx, m) in self.search_matches.iter().enumerate() {
-                        if m.start >= cursor_pos {
-                            self.current_match_index = Some(idx);
-                            found_after_cursor = true;
-                            break;
+                    if query.is_empty() {
+                        cx.notify();
+                        return;
+                    }
+
+                    let text = editor_tab.content.read(cx).text().to_string();
+                    let cursor_pos = editor_tab.content.read(cx).cursor();
+
+                    // Find all matches
+                    self.search_matches = self.find_matches(&text, &query);
+
+                    // Add visual highlighting using diagnostics (yellow background)
+                    editor_tab.content.update(cx, |content, cx| {
+                        if let Some(diagnostics) = content.diagnostics_mut() {
+                            for search_match in &self.search_matches {
+                                let diagnostic = Diagnostic {
+                                    range: lsp_types::Range {
+                                        start: Position {
+                                            line: search_match.line as u32,
+                                            character: search_match.col as u32,
+                                        },
+                                        end: Position {
+                                            line: search_match.line as u32,
+                                            character: (search_match.col
+                                                + (search_match.end - search_match.start))
+                                                as u32,
+                                        },
+                                    },
+                                    severity: Some(DiagnosticSeverity::WARNING),
+                                    message: "Search match".to_string(),
+                                    source: None,
+                                    code: None,
+                                    related_information: None,
+                                    tags: None,
+                                    code_description: None,
+                                    data: None,
+                                };
+                                diagnostics.push(diagnostic);
+                            }
                         }
-                    }
+                        cx.notify();
+                    });
 
-                    // If no match after cursor, wrap to first match
-                    if !found_after_cursor {
-                        self.current_match_index = Some(0);
-                    }
+                    // Find the first match after the cursor, or wrap to the first match
+                    if !self.search_matches.is_empty() {
+                        let mut found_after_cursor = false;
+                        for (idx, m) in self.search_matches.iter().enumerate() {
+                            if m.start >= cursor_pos {
+                                self.current_match_index = Some(idx);
+                                found_after_cursor = true;
+                                break;
+                            }
+                        }
 
-                    // Jump to the match and select it
-                    self.highlight_current_match(window, cx);
+                        // If no match after cursor, wrap to first match
+                        if !found_after_cursor {
+                            self.current_match_index = Some(0);
+                        }
+
+                        // Jump to the match and select it
+                        self.highlight_current_match(window, cx);
+                    }
                 }
             }
         }
@@ -260,17 +264,19 @@ impl Lightspeed {
             if let Some(search_match) = self.search_matches.get(match_index) {
                 if let Some(active_index) = self.active_tab_index {
                     if let Some(tab) = self.tabs.get(active_index) {
-                        // Set the cursor position to the match
-                        tab.content.update(cx, |content, cx| {
-                            content.set_cursor_position(
-                                Position {
-                                    line: search_match.line as u32,
-                                    character: search_match.col as u32,
-                                },
-                                window,
-                                cx,
-                            );
-                        });
+                        if let Some(editor_tab) = tab.as_editor() {
+                            // Set the cursor position to the match
+                            editor_tab.content.update(cx, |content, cx| {
+                                content.set_cursor_position(
+                                    Position {
+                                        line: search_match.line as u32,
+                                        character: search_match.col as u32,
+                                    },
+                                    window,
+                                    cx,
+                                );
+                            });
+                        }
                     }
                 }
             }
@@ -285,33 +291,35 @@ impl Lightspeed {
             if let Some(search_match) = self.search_matches.get(match_index).cloned() {
                 if let Some(active_index) = self.active_tab_index {
                     if let Some(tab) = self.tabs.get_mut(active_index) {
-                        let replace_text = self.replace_input.read(cx).text().to_string();
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            let replace_text = self.replace_input.read(cx).text().to_string();
 
-                        // Get current text
-                        let text = tab.content.read(cx).text().to_string();
+                            // Get current text
+                            let text = editor_tab.content.read(cx).text().to_string();
 
-                        // Replace the match in the text
-                        let mut new_text = String::new();
-                        new_text.push_str(&text[..search_match.start]);
-                        new_text.push_str(&replace_text);
-                        new_text.push_str(&text[search_match.end..]);
+                            // Replace the match in the text
+                            let mut new_text = String::new();
+                            new_text.push_str(&text[..search_match.start]);
+                            new_text.push_str(&replace_text);
+                            new_text.push_str(&text[search_match.end..]);
 
-                        // Update the content
-                        tab.content.update(cx, |content, cx| {
-                            content.set_value(&new_text, window, cx);
-                        });
+                            // Update the content
+                            editor_tab.content.update(cx, |content, cx| {
+                                content.set_value(&new_text, window, cx);
+                            });
 
-                        // Re-run search to update matches
-                        self.perform_search(window, cx);
+                            // Re-run search to update matches
+                            self.perform_search(window, cx);
 
-                        // If there are still matches, move to the current or next one
-                        if !self.search_matches.is_empty() {
-                            if match_index < self.search_matches.len() {
-                                self.current_match_index = Some(match_index);
-                            } else {
-                                self.current_match_index = Some(0);
+                            // If there are still matches, move to the current or next one
+                            if !self.search_matches.is_empty() {
+                                if match_index < self.search_matches.len() {
+                                    self.current_match_index = Some(match_index);
+                                } else {
+                                    self.current_match_index = Some(0);
+                                }
+                                self.highlight_current_match(window, cx);
                             }
-                            self.highlight_current_match(window, cx);
                         }
                     }
                 }
@@ -336,33 +344,37 @@ impl Lightspeed {
 
             // Get the current text
             if let Some(tab) = self.tabs.get(active_index) {
-                let text = tab.content.read(cx).text().to_string();
+                if let Some(editor_tab) = tab.as_editor() {
+                    let text = editor_tab.content.read(cx).text().to_string();
 
-                // Perform replacement
-                let new_text = if match_case {
-                    if match_whole_word {
-                        self.replace_whole_words(&text, &replace_text)
+                    // Perform replacement
+                    let new_text = if match_case {
+                        if match_whole_word {
+                            self.replace_whole_words(&text, &replace_text)
+                        } else {
+                            text.replace(&search_query, &replace_text)
+                        }
                     } else {
-                        text.replace(&search_query, &replace_text)
-                    }
-                } else {
-                    if match_whole_word {
-                        self.replace_whole_words_case_insensitive(&text, &replace_text)
-                    } else {
-                        self.replace_case_insensitive(&text, &replace_text)
-                    }
-                };
+                        if match_whole_word {
+                            self.replace_whole_words_case_insensitive(&text, &replace_text)
+                        } else {
+                            self.replace_case_insensitive(&text, &replace_text)
+                        }
+                    };
 
-                // Update the content
-                if let Some(tab) = self.tabs.get_mut(active_index) {
-                    tab.content.update(cx, |content, cx| {
-                        content.set_value(&new_text, window, cx);
-                    });
+                    // Update the content
+                    if let Some(tab) = self.tabs.get_mut(active_index) {
+                        if let Some(editor_tab_mut) = tab.as_editor_mut() {
+                            editor_tab_mut.content.update(cx, |content, cx| {
+                                content.set_value(&new_text, window, cx);
+                            });
+                        }
+                    }
+
+                    // Clear search matches
+                    self.search_matches.clear();
+                    self.current_match_index = None;
                 }
-
-                // Clear search matches
-                self.search_matches.clear();
-                self.current_match_index = None;
             }
         }
         cx.notify();

@@ -42,12 +42,24 @@ impl Lightspeed {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let cursor_pos = match self.active_tab_index {
-            Some(index) => self.tabs[index].content.read(cx).cursor_position(),
+            Some(index) => {
+                if let Some(editor_tab) = self.tabs[index].as_editor() {
+                    editor_tab.content.read(cx).cursor_position()
+                } else {
+                    Position::default()
+                }
+            }
             None => Position::default(),
         };
 
         let encoding = match self.active_tab_index {
-            Some(index) => self.tabs[index].encoding.clone(),
+            Some(index) => {
+                if let Some(editor_tab) = self.tabs[index].as_editor() {
+                    editor_tab.encoding.clone()
+                } else {
+                    "N/A".to_string()
+                }
+            }
             None => "UTF-8".to_string(),
         };
 

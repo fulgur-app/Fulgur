@@ -1,4 +1,4 @@
-use crate::lightspeed::{Lightspeed, components_utils, editor_tab::EditorTab};
+use crate::lightspeed::{Lightspeed, components_utils, tab::Tab};
 use gpui::*;
 use gpui_component::{
     ActiveTheme, IconName, Sizable,
@@ -82,11 +82,11 @@ impl Lightspeed {
     fn render_tab(
         &self,
         index: usize,
-        tab: &EditorTab,
+        tab: &Tab,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Div {
-        let tab_id = tab.id;
+        let tab_id = tab.id();
         let is_active = match self.active_tab_index {
             Some(active_index) => index == active_index,
             None => false,
@@ -131,8 +131,8 @@ impl Lightspeed {
                     .pl_1()
                     .child(format!(
                         "{}{}",
-                        tab.title.clone(),
-                        if tab.modified { " •" } else { "" }
+                        tab.title(),
+                        if tab.is_modified() { " •" } else { "" }
                     )),
             )
             .child(

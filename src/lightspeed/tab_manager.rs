@@ -2,19 +2,19 @@ use gpui::*;
 use std::ops::DerefMut;
 use gpui_component::ContextModal;
 use gpui_component::button::{Button, ButtonVariants};
-use crate::lightspeed::{Lightspeed, editor_tab::EditorTab};
+use crate::lightspeed::{Lightspeed, editor_tab::EditorTab, settings::SettingsTab, tab::Tab};
 
 impl Lightspeed {
     /// Create a new tab
     /// @param window: The window to create the tab in
     /// @param cx: The application context
     pub(super) fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let tab = EditorTab::new(
+        let tab = Tab::Editor(EditorTab::new(
             self.next_tab_id,
             format!("Untitled {}", self.next_tab_id),
             window,
             cx,
-        );
+        ));
         self.tabs.push(tab);
         self.active_tab_index = Some(self.tabs.len() - 1);
         self.next_tab_id += 1;
@@ -23,15 +23,37 @@ impl Lightspeed {
         cx.notify();
     }
 
+    /// Open settings in a new tab or switch to existing settings tab
+    /// @param window: The window to open settings in
+    /// @param cx: The application context
+    pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Check if settings tab already exists
+        if let Some(index) = self.tabs.iter().position(|t| matches!(t, Tab::Settings(_))) {
+            // Settings tab exists, switch to it
+            self.set_active_tab(index, window, cx);
+        } else {
+            // Create new settings tab with unique ID
+            let settings_tab = Tab::Settings(SettingsTab::new(self.next_tab_id, window, cx));
+            self.tabs.push(settings_tab);
+            self.active_tab_index = Some(self.tabs.len() - 1);
+            self.next_tab_id += 1;
+            cx.notify();
+        }
+    }
+
     /// Close a tab
     /// @param tab_id: The ID of the tab to close
     /// @param window: The window to close the tab in
     /// @param cx: The application context
     pub(super) fn close_tab(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(pos) = self.tabs.iter().position(|t| t.id == tab_id) {
+        if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
             if let Some(to_be_removed) = self.tabs.get_mut(pos) {
-                // Check if the tab has been modified
-                let is_modified = to_be_removed.check_modified(cx);
+                // Check if the tab has been modified (only for editor tabs)
+                let is_modified = if let Some(editor_tab) = to_be_removed.as_editor_mut() {
+                    editor_tab.check_modified(cx)
+                } else {
+                    false // Settings tabs are never modified
+                };
                 if is_modified {
                     // Get the entity reference to use in the modal callbacks
                     let entity = cx.entity().clone();
@@ -59,7 +81,7 @@ impl Lightspeed {
                                         .on_click(move |_, window, cx| {
                                             // Remove the tab and adjust indices
                                             entity_ok_footer.update(cx, |this, cx| {
-                                                if let Some(pos) = this.tabs.iter().position(|t| t.id == tab_id) {
+                                                if let Some(pos) = this.tabs.iter().position(|t| t.id() == tab_id) {
                                                     this.tabs.remove(pos);
                                                     this.close_tab_manage_focus(window, cx, pos);
                                                     cx.notify();
@@ -135,8 +157,15 @@ impl Lightspeed {
     pub fn focus_active_tab(&self, window: &mut Window, cx: &App) {
         if let Some(active_tab_index) = self.active_tab_index {
             if let Some(active_tab) = self.tabs.get(active_tab_index) {
-                let focus_handle = active_tab.content.read(cx).focus_handle(cx);
-                window.focus(&focus_handle);
+                match active_tab {
+                    Tab::Editor(editor_tab) => {
+                        let focus_handle = editor_tab.content.read(cx).focus_handle(cx);
+                        window.focus(&focus_handle);
+                    }
+                    Tab::Settings(_) => {
+                        // Settings don't have focusable content, just keep window focus
+                    }
+                }
             }
         }
     }
@@ -157,7 +186,9 @@ impl Lightspeed {
     /// @param cx: The application context
     pub(super) fn update_modified_status(&mut self, cx: &mut Context<Self>) {
         for tab in self.tabs.iter_mut() {
-            tab.check_modified(cx);
+            if let Tab::Editor(editor_tab) = tab {
+                editor_tab.check_modified(cx);
+            }
         }
     }
 

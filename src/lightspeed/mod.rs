@@ -5,9 +5,11 @@ mod languages;
 mod menus;
 mod search_bar;
 mod search_replace;
+mod settings;
 mod state_operations;
 mod state_persistence;
 mod status_bar;
+mod tab;
 mod tab_bar;
 mod tab_manager;
 mod themes;
@@ -16,6 +18,7 @@ mod titlebar;
 use editor_tab::EditorTab;
 use menus::*;
 use search_replace::SearchMatch;
+use tab::Tab;
 use titlebar::CustomTitleBar;
 
 use gpui::*;
@@ -27,7 +30,7 @@ use gpui_component::{
 pub struct Lightspeed {
     focus_handle: FocusHandle,
     title_bar: Entity<CustomTitleBar>,
-    tabs: Vec<EditorTab>,
+    tabs: Vec<Tab>,
     active_tab_index: Option<usize>,
     next_tab_id: usize,
     show_search: bool,
@@ -50,7 +53,7 @@ impl Lightspeed {
         let title_bar = CustomTitleBar::new(window, cx);
 
         // Create initial tab (will be replaced if state is loaded)
-        let initial_tab = EditorTab::new(0, "Untitled", window, cx);
+        let initial_tab = Tab::Editor(EditorTab::new(0, "Untitled", window, cx));
 
         // Create inputs
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
@@ -172,10 +175,9 @@ impl Render for Lightspeed {
         // Update modified status of tabs
         self.update_modified_status(cx);
 
-        let active_tab = match self.active_tab_index {
-            Some(index) => Some(self.tabs[index].clone()),
-            None => None,
-        };
+        let active_tab = self
+            .active_tab_index
+            .and_then(|index| self.tabs.get(index).cloned());
 
         // Render modal, drawer, and notification layers
         let modal_layer = Root::render_modal_layer(window, cx);
@@ -212,6 +214,9 @@ impl Render for Lightspeed {
                     .on_action(cx.listener(|this, _action: &Quit, window, cx| {
                         this.quit(window, cx);
                     }))
+                    .on_action(cx.listener(|this, _action: &Settings, window, cx| {
+                        this.open_settings(window, cx);
+                    }))
                     .on_action(cx.listener(|this, _action: &FindInFile, window, cx| {
                         this.show_search = !this.show_search;
 
@@ -240,7 +245,7 @@ impl Render for Lightspeed {
                     }))
                     .child(self.title_bar.clone())
                     .child(self.render_tab_bar(window, cx))
-                    .child(self.render_content_area(active_tab))
+                    .child(self.render_content_area(active_tab, window, cx))
                     .children(self.render_search_bar(window, cx))
                     .child(self.render_status_bar(window, cx)),
             )
@@ -253,20 +258,34 @@ impl Render for Lightspeed {
 }
 
 impl Lightspeed {
-    /// Render the content area (editor)
+    /// Render the content area (editor or settings)
     /// @param active_tab: The active tab (if any)
+    /// @param window: The window context
+    /// @param cx: The application context
     /// @return: The rendered content area element
-    fn render_content_area(&self, active_tab: Option<EditorTab>) -> Div {
+    fn render_content_area(
+        &self,
+        active_tab: Option<Tab>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let mut content_div = div().flex_1().p_0().m_0().overflow_hidden();
 
         if let Some(tab) = active_tab {
-            content_div = content_div.child(
-                TextInput::new(&tab.content)
-                    .w_full()
-                    .h_full()
-                    .border_0()
-                    .text_size(px(14.)),
-            );
+            match tab {
+                Tab::Editor(editor_tab) => {
+                    content_div = content_div.child(
+                        TextInput::new(&editor_tab.content)
+                            .w_full()
+                            .h_full()
+                            .border_0()
+                            .text_size(px(14.)),
+                    );
+                }
+                Tab::Settings(settings_tab) => {
+                    content_div = content_div.child(settings_tab.render(window, cx));
+                }
+            }
         }
 
         content_div

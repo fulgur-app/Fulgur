@@ -1,6 +1,6 @@
 use crate::lightspeed::{
     Lightspeed, editor_tab::EditorTab, file_operations::detect_encoding_and_decode,
-    state_persistence::*,
+    state_persistence::*, tab::Tab,
 };
 use gpui::*;
 use std::fs;
@@ -13,42 +13,45 @@ impl Lightspeed {
         let mut tab_states = Vec::new();
 
         for tab in &self.tabs {
-            let current_content = tab.content.read(cx).text().to_string();
-            let is_modified = current_content != tab.original_content;
+            // Only save editor tabs, not settings tabs
+            if let Some(editor_tab) = tab.as_editor() {
+                let current_content = editor_tab.content.read(cx).text().to_string();
+                let is_modified = current_content != editor_tab.original_content;
 
-            if tab.file_path.is_none() && current_content.is_empty() {
-                continue;
-            }
+                if editor_tab.file_path.is_none() && current_content.is_empty() {
+                    continue;
+                }
 
-            let tab_state = if let Some(ref path) = tab.file_path {
-                if is_modified {
-                    TabState {
-                        id: tab.id,
-                        title: tab.title.to_string(),
-                        file_path: Some(path.clone()),
-                        content: Some(current_content),
-                        last_saved: get_file_modified_time(path),
+                let tab_state = if let Some(ref path) = editor_tab.file_path {
+                    if is_modified {
+                        TabState {
+                            id: editor_tab.id,
+                            title: editor_tab.title.to_string(),
+                            file_path: Some(path.clone()),
+                            content: Some(current_content),
+                            last_saved: get_file_modified_time(path),
+                        }
+                    } else {
+                        TabState {
+                            id: editor_tab.id,
+                            title: editor_tab.title.to_string(),
+                            file_path: Some(path.clone()),
+                            content: None,
+                            last_saved: None,
+                        }
                     }
                 } else {
                     TabState {
-                        id: tab.id,
-                        title: tab.title.to_string(),
-                        file_path: Some(path.clone()),
-                        content: None,
+                        id: editor_tab.id,
+                        title: editor_tab.title.to_string(),
+                        file_path: None,
+                        content: Some(current_content),
                         last_saved: None,
                     }
-                }
-            } else {
-                TabState {
-                    id: tab.id,
-                    title: tab.title.to_string(),
-                    file_path: None,
-                    content: Some(current_content),
-                    last_saved: None,
-                }
-            };
+                };
 
-            tab_states.push(tab_state);
+                tab_states.push(tab_state);
+            }
         }
 
         let app_state = AppState {
@@ -70,8 +73,8 @@ impl Lightspeed {
 
             for tab_state in app_state.tabs {
                 let tab = self.restore_tab_from_state(tab_state, window, cx);
-                if let Some(tab) = tab {
-                    self.tabs.push(tab);
+                if let Some(editor_tab) = tab {
+                    self.tabs.push(Tab::Editor(editor_tab));
                 }
             }
 
@@ -88,7 +91,7 @@ impl Lightspeed {
             self.next_tab_id = app_state.next_tab_id;
 
             if self.tabs.is_empty() {
-                let initial_tab = EditorTab::new(0, "Untitled", window, cx);
+                let initial_tab = Tab::Editor(EditorTab::new(0, "Untitled", window, cx));
                 self.tabs.push(initial_tab);
                 self.active_tab_index = Some(0);
                 self.next_tab_id = 1;
