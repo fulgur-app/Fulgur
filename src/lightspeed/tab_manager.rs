@@ -1,6 +1,8 @@
 use gpui::*;
 use std::ops::DerefMut;
 use gpui_component::ContextModal;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::Sizable;
 use crate::lightspeed::{Lightspeed, editor_tab::EditorTab};
 
 impl Lightspeed {
@@ -41,31 +43,44 @@ impl Lightspeed {
                         
                         // Return the modal builder
                         modal
-                            .confirm()
-                            .child("Are you sure you want to close this tab? Your changes will be lost.")
-                            .on_ok(move |_, window, cx| {
-                                // Remove the tab and adjust indices
-                                entity_ok.update(cx, |this, cx| {
-                                    if let Some(pos) = this.tabs.iter().position(|t| t.id == tab_id) {
-                                        this.tabs.remove(pos);
-                                        this.close_tab_manage_focus(window, cx, pos);
-                                        cx.notify();
-                                    }
-                                });
-                                
-                                // Defer focus until after modal closes
-                                entity_ok.update(cx, |_this, cx| {
-                                    cx.defer_in(window, move |this, window, cx| {
-                                        this.focus_active_tab(window, cx);
-                                    });
-                                });
-                                
-                                true
+                            .title(div().text_size(px(16.)).child("Unsaved changed"))
+                            .child(div().text_size(px(14.)).child("Are you sure you want to close this tab? Your changes will be lost."))
+                            .footer(move |_, _, _window, _cx| {
+                                let entity_ok_footer = entity_ok.clone();
+                                vec![
+                                    Button::new("cancel")
+                                        .label("Cancel")
+                                        .on_click(move |_, window, cx| {
+                                            window.close_modal(cx);
+                                        })
+                                        .into_any_element(),
+                                    Button::new("ok")
+                                        .label("Close")
+                                        .primary()
+                                        .on_click(move |_, window, cx| {
+                                            // Remove the tab and adjust indices
+                                            entity_ok_footer.update(cx, |this, cx| {
+                                                if let Some(pos) = this.tabs.iter().position(|t| t.id == tab_id) {
+                                                    this.tabs.remove(pos);
+                                                    this.close_tab_manage_focus(window, cx, pos);
+                                                    cx.notify();
+                                                }
+                                            });
+                                            
+                                            // Defer focus until after modal closes
+                                            entity_ok_footer.update(cx, |_this, cx| {
+                                                cx.defer_in(window, move |this, window, cx| {
+                                                    this.focus_active_tab(window, cx);
+                                                });
+                                            });
+                                            
+                                            window.close_modal(cx);
+                                        })
+                                        .into_any_element(),
+                                ]
                             })
-                            .on_cancel(move |_, _, _| {
-                                // Just dismiss the modal without doing anything
-                                true
-                            })
+                            .overlay_closable(false)
+                            .show_close(false)
                     });
                     return;
                 }
