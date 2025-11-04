@@ -40,13 +40,8 @@ pub fn button_factory(
 
 // Make a checkbox
 // @param id: The ID of the checkbox
-// @param label: The label of the checkbox
 // @param checked: Whether the checkbox is checked
 // @return: The checkbox
-pub fn checkbox_factory(id: &'static str, label: &'static str, checked: bool) -> Checkbox {
-    Checkbox::new(id)
-        .label(label)
-        .checked(checked)
-        .small()
-        .text_size(px(14.0))
+pub fn checkbox_factory(id: &'static str, checked: bool) -> Checkbox {
+    Checkbox::new(id).checked(checked).text_size(px(14.0))
 }

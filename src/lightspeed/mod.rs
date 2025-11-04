@@ -25,6 +25,7 @@ use titlebar::CustomTitleBar;
 use gpui::*;
 use gpui_component::{
     Root, StyledExt, Theme, ThemeRegistry,
+    dropdown::DropdownState,
     input::{InputEvent, InputState, TextInput},
 };
 
@@ -44,6 +45,8 @@ pub struct Lightspeed {
     _search_subscription: gpui::Subscription,
     last_search_query: String,
     pub settings: Settings,
+    pub font_size_dropdown: Entity<DropdownState<Vec<SharedString>>>,
+    _font_size_subscription: gpui::Subscription,
 }
 
 impl Lightspeed {
@@ -76,6 +79,13 @@ impl Lightspeed {
                     }
                 });
 
+            // Create font size dropdown state (logic is in settings.rs)
+            let font_size_dropdown = settings::create_font_size_dropdown(&settings, window, cx);
+
+            // Subscribe to font size changes (handler is in settings.rs)
+            let _font_size_subscription =
+                settings::subscribe_to_font_size_changes(&font_size_dropdown, cx);
+
             // Create initial tab (will be replaced if state is loaded)
             let initial_tab = Tab::Editor(EditorTab::new(
                 0,
@@ -101,6 +111,8 @@ impl Lightspeed {
                 _search_subscription,
                 last_search_query: String::new(),
                 settings,
+                font_size_dropdown,
+                _font_size_subscription,
             };
 
             // Load saved state if it exists
@@ -298,7 +310,7 @@ impl Lightspeed {
                             .w_full()
                             .h_full()
                             .appearance(false)
-                            .text_size(px(14.)),
+                            .text_size(px(self.settings.editor_settings.font_size)),
                     );
                 }
                 Tab::Settings(_) => {
