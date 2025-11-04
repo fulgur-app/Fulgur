@@ -91,7 +91,13 @@ impl Lightspeed {
             self.next_tab_id = app_state.next_tab_id;
 
             if self.tabs.is_empty() {
-                let initial_tab = Tab::Editor(EditorTab::new(0, "Untitled", window, cx));
+                let initial_tab = Tab::Editor(EditorTab::new(
+                    0,
+                    "Untitled",
+                    window,
+                    cx,
+                    &self.settings.editor_settings,
+                ));
                 self.tabs.push(initial_tab);
                 self.active_tab_index = Some(0);
                 self.next_tab_id = 1;
@@ -161,7 +167,15 @@ impl Lightspeed {
         };
 
         let tab = if let Some(file_path) = path {
-            EditorTab::from_file(tab_state.id, file_path, content, encoding, window, cx)
+            EditorTab::from_file(
+                tab_state.id,
+                file_path,
+                content,
+                encoding,
+                window,
+                cx,
+                &self.settings.editor_settings,
+            )
         } else {
             use gpui_component::highlighter::Language;
             use gpui_component::input::TabSize;
@@ -169,13 +183,13 @@ impl Lightspeed {
             let content_entity = cx.new(|cx| {
                 gpui_component::input::InputState::new(window, cx)
                     .code_editor("Plain".to_string())
-                    .line_number(true)
-                    .indent_guides(true)
+                    .line_number(self.settings.editor_settings.show_line_numbers)
+                    .indent_guides(self.settings.editor_settings.show_indent_guides)
                     .tab_size(TabSize {
                         tab_size: 4,
                         hard_tabs: false,
                     })
-                    .soft_wrap(false)
+                    .soft_wrap(self.settings.editor_settings.soft_wrap)
                     .default_value(content)
             });
 

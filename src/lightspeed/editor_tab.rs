@@ -3,6 +3,8 @@ use gpui::*;
 use gpui_component::highlighter::Language;
 use gpui_component::input::{InputState, TabSize};
 
+use crate::lightspeed::settings::EditorSettings;
+
 use super::languages::{language_from_extension, language_name};
 
 #[derive(Clone)]
@@ -22,22 +24,24 @@ pub struct EditorTab {
 // @param cx: The application context
 // @param language: The language of the input state
 // @param content: The content of the input state
+// @param settings: The settings for the input state
 // @return: The new input state
 fn make_input_state(
     window: &mut Window,
     cx: &mut Context<InputState>,
     language: Language,
     content: Option<String>,
+    settings: &EditorSettings,
 ) -> InputState {
     InputState::new(window, cx)
         .code_editor(language_name(&language).to_string())
-        .line_number(true)
-        .indent_guides(true)
+        .line_number(settings.show_line_numbers)
+        .indent_guides(settings.show_indent_guides)
         .tab_size(TabSize {
             tab_size: 4,
             hard_tabs: false,
         })
-        .soft_wrap(false)
+        .soft_wrap(settings.soft_wrap)
         .default_value(content.unwrap_or_default())
 }
 
@@ -47,15 +51,17 @@ impl EditorTab {
     // @param title: The title of the tab
     // @param window: The window to create the tab in
     // @param cx: The application context
+    // @param settings: The settings for the input state
     // @return: The new tab
     pub fn new(
         id: usize,
         title: impl Into<SharedString>,
         window: &mut Window,
         cx: &mut App,
+        settings: &EditorSettings,
     ) -> Self {
         let language = Language::Plain;
-        let content = cx.new(|cx| make_input_state(window, cx, language, None));
+        let content = cx.new(|cx| make_input_state(window, cx, language, None, settings));
 
         Self {
             id,
@@ -76,6 +82,7 @@ impl EditorTab {
     // @param encoding: The encoding of the file
     // @param window: The window to create the tab in
     // @param cx: The application context
+    // @param settings: The settings for the input state
     // @return: The new tab
     pub fn from_file(
         id: usize,
@@ -84,6 +91,7 @@ impl EditorTab {
         encoding: String,
         window: &mut Window,
         cx: &mut App,
+        settings: &EditorSettings,
     ) -> Self {
         let file_name = path
             .file_name()
@@ -95,7 +103,8 @@ impl EditorTab {
         let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
         let language = language_from_extension(extension);
 
-        let content = cx.new(|cx| make_input_state(window, cx, language, Some(contents.clone())));
+        let content =
+            cx.new(|cx| make_input_state(window, cx, language, Some(contents.clone()), settings));
 
         Self {
             id,
@@ -107,6 +116,18 @@ impl EditorTab {
             language,
             encoding,
         }
+    }
+
+    // Update the editor's display settings
+    // @param window: The window context
+    // @param cx: The application context
+    // @param settings: The settings for the input state
+    pub fn update_settings(&self, window: &mut Window, cx: &mut App, settings: &EditorSettings) {
+        self.content.update(cx, |input_state, cx| {
+            input_state.set_line_number(settings.show_line_numbers, window, cx);
+            input_state.set_indent_guides(settings.show_indent_guides, window, cx);
+            input_state.set_soft_wrap(settings.soft_wrap, window, cx);
+        });
     }
 
     // Check if the tab's content has been modified

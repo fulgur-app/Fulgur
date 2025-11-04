@@ -18,6 +18,7 @@ mod titlebar;
 use editor_tab::EditorTab;
 use menus::*;
 use search_replace::SearchMatch;
+use settings::Settings;
 use tab::Tab;
 use titlebar::CustomTitleBar;
 
@@ -42,6 +43,7 @@ pub struct Lightspeed {
     current_match_index: Option<usize>,
     _search_subscription: gpui::Subscription,
     last_search_query: String,
+    pub settings: Settings,
 }
 
 impl Lightspeed {
@@ -52,8 +54,8 @@ impl Lightspeed {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
 
-        // Create initial tab (will be replaced if state is loaded)
-        let initial_tab = Tab::Editor(EditorTab::new(0, "Untitled", window, cx));
+        // Create settings
+        let settings = Settings::new();
 
         // Create inputs
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
@@ -74,6 +76,15 @@ impl Lightspeed {
                     }
                 });
 
+            // Create initial tab (will be replaced if state is loaded)
+            let initial_tab = Tab::Editor(EditorTab::new(
+                0,
+                "Untitled",
+                window,
+                cx,
+                &settings.editor_settings,
+            ));
+
             let mut entity = Self {
                 focus_handle: cx.focus_handle(),
                 title_bar,
@@ -89,6 +100,7 @@ impl Lightspeed {
                 current_match_index: None,
                 _search_subscription,
                 last_search_query: String::new(),
+                settings,
             };
 
             // Load saved state if it exists
@@ -172,6 +184,13 @@ impl Render for Lightspeed {
             }
         }
 
+        // Update editor tabs with current settings
+        for tab in &self.tabs {
+            if let Tab::Editor(editor_tab) = tab {
+                editor_tab.update_settings(window, cx, &self.settings.editor_settings);
+            }
+        }
+
         // Update modified status of tabs
         self.update_modified_status(cx);
 
@@ -214,7 +233,7 @@ impl Render for Lightspeed {
                     .on_action(cx.listener(|this, _action: &Quit, window, cx| {
                         this.quit(window, cx);
                     }))
-                    .on_action(cx.listener(|this, _action: &Settings, window, cx| {
+                    .on_action(cx.listener(|this, _action: &SettingsTab, window, cx| {
                         this.open_settings(window, cx);
                     }))
                     .on_action(cx.listener(|this, _action: &FindInFile, window, cx| {
@@ -278,12 +297,12 @@ impl Lightspeed {
                         TextInput::new(&editor_tab.content)
                             .w_full()
                             .h_full()
-                            .border_0()
+                            .appearance(false)
                             .text_size(px(14.)),
                     );
                 }
-                Tab::Settings(settings_tab) => {
-                    content_div = content_div.child(settings_tab.render(window, cx));
+                Tab::Settings(_) => {
+                    content_div = content_div.child(self.render_settings(window, cx));
                 }
             }
         }

@@ -14,6 +14,7 @@ impl Lightspeed {
             format!("Untitled {}", self.next_tab_id),
             window,
             cx,
+            &self.settings.editor_settings,
         ));
         self.tabs.push(tab);
         self.active_tab_index = Some(self.tabs.len() - 1);

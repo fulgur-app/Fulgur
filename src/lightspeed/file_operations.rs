@@ -70,6 +70,7 @@ impl Lightspeed {
                             encoding,
                             window,
                             cx,
+                            &this.settings.editor_settings,
                         );
                         this.tabs.push(Tab::Editor(editor_tab));
                         this.active_tab_index = Some(this.tabs.len() - 1);

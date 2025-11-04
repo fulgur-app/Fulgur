@@ -14,7 +14,7 @@ actions!(
         CloseFile,
         CloseAllFiles,
         FindInFile,
-        Settings
+        SettingsTab
     ]
 );
 
@@ -42,7 +42,7 @@ pub fn build_menus(cx: &mut App) -> Vec<Menu> {
                         })
                         .collect(),
                 }),
-                MenuItem::action("Settings", Settings),
+                MenuItem::action("Settings", SettingsTab),
                 MenuItem::Separator,
                 MenuItem::action("Quit", Quit),
             ],
