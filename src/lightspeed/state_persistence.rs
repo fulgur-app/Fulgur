@@ -30,7 +30,7 @@ pub struct AppState {
 
 impl AppState {
     /// Get the path to the state file
-    fn state_file_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    fn state_file_path() -> anyhow::Result<PathBuf> {
         #[cfg(target_os = "windows")]
         {
             let app_data = std::env::var("APPDATA")?;
@@ -53,7 +53,7 @@ impl AppState {
     }
 
     /// Save the app state to disk
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save(&self) -> anyhow::Result<()> {
         let path = Self::state_file_path()?;
         let json = serde_json::to_string_pretty(self)?;
         fs::write(path, json)?;
@@ -61,11 +61,11 @@ impl AppState {
     }
 
     /// Load the app state from disk
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load() -> anyhow::Result<Self> {
         let path = Self::state_file_path()?;
 
         if !path.exists() {
-            return Err("State file does not exist".into());
+            return anyhow::bail!("State file does not exist");
         }
 
         let json = fs::read_to_string(path)?;

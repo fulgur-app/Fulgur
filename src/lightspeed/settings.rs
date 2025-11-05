@@ -1,3 +1,5 @@
+use std::{fs, path::PathBuf};
+
 use gpui::*;
 use gpui_component::{
     ActiveTheme, IndexPath, StyledExt,
@@ -6,10 +8,11 @@ use gpui_component::{
     switch::Switch,
     v_flex,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::lightspeed::Lightspeed;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EditorSettings {
     pub show_line_numbers: bool,
     pub show_indent_guides: bool,
@@ -18,7 +21,7 @@ pub struct EditorSettings {
     pub tab_size: usize,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub confirm_exit: bool,
 }
@@ -41,18 +44,62 @@ impl AppSettings {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub editor_settings: EditorSettings,
     pub app_settings: AppSettings,
 }
 
 impl Settings {
+    // Create a new settings instance
+    // @return: The new settings instance
     pub fn new() -> Self {
         Self {
             editor_settings: EditorSettings::new(),
             app_settings: AppSettings::new(),
         }
+    }
+
+    // Get the path to the settings file
+    // @return: The path to the settings file
+    fn settings_file_path() -> anyhow::Result<PathBuf> {
+        #[cfg(target_os = "windows")]
+        {
+            let app_data = std::env::var("APPDATA")?;
+            let mut path = PathBuf::from(app_data);
+            path.push("Lightspeed");
+            fs::create_dir_all(&path)?;
+            path.push("settings.json");
+            Ok(path)
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let home = std::env::var("HOME")?;
+            let mut path = PathBuf::from(home);
+            path.push(".lightspeed");
+            fs::create_dir_all(&path)?;
+            path.push("settings.json");
+            Ok(path)
+        }
+    }
+
+    // Save the settings to the state file
+    // @return: The result of the operation
+    pub fn save(&self) -> anyhow::Result<()> {
+        let path = Self::settings_file_path()?;
+        let json = serde_json::to_string_pretty(&self)?;
+        fs::write(path, json)?;
+        Ok(())
+    }
+
+    // Load the settings from the state file
+    // @return: The settings
+    pub fn load() -> anyhow::Result<Self> {
+        let path = Self::settings_file_path()?;
+        let json = fs::read_to_string(path)?;
+        let settings: Settings = serde_json::from_str(&json)?;
+        Ok(settings)
     }
 }
 
@@ -138,6 +185,9 @@ pub fn subscribe_to_font_size_changes(
             if let DropdownEvent::Confirm(Some(selected)) = event {
                 if let Ok(size) = selected.parse::<f32>() {
                     this.settings.editor_settings.font_size = size;
+                    if let Err(e) = this.settings.save() {
+                        eprintln!("Failed to save settings: {}", e);
+                    }
                     cx.notify();
                 }
             }
@@ -184,6 +234,9 @@ pub fn subscribe_to_tab_size_changes(
             if let DropdownEvent::Confirm(Some(selected)) = event {
                 if let Ok(size) = selected.parse::<usize>() {
                     this.settings.editor_settings.tab_size = size;
+                    if let Err(e) = this.settings.save() {
+                        eprintln!("Failed to save settings: {}", e);
+                    }
                     cx.notify();
                 }
             }
@@ -206,6 +259,10 @@ fn make_switch(
     div().child(Switch::new(id).checked(checked).on_click(cx.listener(
         move |this, checked: &bool, _, cx| {
             on_click_function(this, checked, cx);
+            if let Err(e) = this.settings.save() {
+                eprintln!("Failed to save settings: {}", e);
+            }
+            cx.notify();
         },
     )))
 }
@@ -214,10 +271,7 @@ fn make_switch(
 // @param title: The title of the settings section
 // @return: The settings section
 fn make_settings_section(title: &'static str) -> Div {
-    v_flex()
-        .py_6()
-        .gap_1()
-        .child(div().text_xl().px_2().child(title))
+    v_flex().gap_3().child(div().text_xl().px_3().child(title))
 }
 
 // Make a setting description
@@ -240,8 +294,16 @@ fn make_setting_description(
             v_flex()
                 .text_size(px(14.0))
                 .flex_1()
+                .min_w_0()
+                .overflow_hidden()
                 .child(div().font_semibold().child(title))
-                .child(div().child(description)),
+                .child(
+                    div()
+                        .max_w_full()
+                        .line_height(relative(1.4))
+                        .overflow_x_hidden()
+                        .child(description),
+                ),
         )
 }
 
@@ -299,7 +361,7 @@ impl Lightspeed {
             ))
             .child(make_dropdown_option(
                 "Spaces for indentation",
-                "The number of spaces for indentation. Lightspeed must be restarted to apply.",
+                "The number of spaces for indentation. Lightspeed must be restarted to apply the changes.",
                 &self.tab_size_dropdown,
                 cx,
             ))
@@ -309,20 +371,18 @@ impl Lightspeed {
                 "Show the line numbers in the editor",
                 self.settings.editor_settings.show_line_numbers,
                 cx,
-                |this, checked, cx| {
+                |this, checked, _cx| {
                     this.settings.editor_settings.show_line_numbers = *checked;
-                    cx.notify();
                 },
             ))
             .child(make_toggle_option(
                 "show_indent_guides",
                 "Show indent guides",
-                "Show ithe vertical lines that indicate the indentation of the text",
+                "Show the vertical lines that indicate the indentation of the text",
                 self.settings.editor_settings.show_indent_guides,
                 cx,
-                |this, checked, cx| {
+                |this, checked, _cx| {
                     this.settings.editor_settings.show_indent_guides = *checked;
-                    cx.notify();
                 },
             ))
             .child(make_toggle_option(
@@ -331,9 +391,8 @@ impl Lightspeed {
                 "Wraps the text to the next line when the line is too long",
                 self.settings.editor_settings.soft_wrap,
                 cx,
-                |this, checked, cx| {
+                |this, checked, _cx| {
                     this.settings.editor_settings.soft_wrap = *checked;
-                    cx.notify();
                 },
             ))
     }
@@ -342,17 +401,51 @@ impl Lightspeed {
     // @param cx: The context
     // @return: The application settings section
     fn make_application_settings_section(&self, cx: &mut Context<Self>) -> Div {
-        make_settings_section("Application").child(make_toggle_option(
-            "confirm_exit",
-            "Confirm exit",
-            "Confirm before exiting the application",
-            self.settings.app_settings.confirm_exit,
-            cx,
-            |this, checked, cx| {
-                this.settings.app_settings.confirm_exit = *checked;
-                cx.notify();
-            },
-        ))
+        make_settings_section("Application")
+            .child(make_toggle_option(
+                "confirm_exit",
+                "Confirm exit",
+                "Confirm before exiting the application",
+                self.settings.app_settings.confirm_exit,
+                cx,
+                |this, checked, cx| {
+                    this.settings.app_settings.confirm_exit = *checked;
+                    cx.notify();
+                },
+            ))
+            .child(make_toggle_option(
+                "confirm_exit",
+                "Confirm exit",
+                "Confirm before exiting the application",
+                self.settings.app_settings.confirm_exit,
+                cx,
+                |this, checked, cx| {
+                    this.settings.app_settings.confirm_exit = *checked;
+                    cx.notify();
+                },
+            ))
+            .child(make_toggle_option(
+                "confirm_exit",
+                "Confirm exit",
+                "Confirm before exiting the application",
+                self.settings.app_settings.confirm_exit,
+                cx,
+                |this, checked, cx| {
+                    this.settings.app_settings.confirm_exit = *checked;
+                    cx.notify();
+                },
+            ))
+            .child(make_toggle_option(
+                "confirm_exit",
+                "Confirm exit",
+                "Confirm before exiting the application",
+                self.settings.app_settings.confirm_exit,
+                cx,
+                |this, checked, cx| {
+                    this.settings.app_settings.confirm_exit = *checked;
+                    cx.notify();
+                },
+            ))
     }
 
     // Render the settings
@@ -360,16 +453,17 @@ impl Lightspeed {
     // @param cx: The context
     // @return: The settings UI
     pub fn render_settings(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .min_w_128()
-            .max_w_1_2()
-            .mx_auto()
-            .h_full()
-            .p_6()
-            .text_color(cx.theme().foreground)
-            .text_size(px(12.0))
-            .child(div().text_2xl().font_semibold().px_2().child("Settings"))
-            .child(self.make_editor_settings_section(window, cx))
-            .child(self.make_application_settings_section(cx))
+        div().h_full().w_full().scrollable(Axis::Vertical).child(
+            v_flex()
+                .w(px(680.0))
+                .mx_auto()
+                .py_6()
+                .text_color(cx.theme().foreground)
+                .text_size(px(12.0))
+                .gap_6()
+                .child(div().text_2xl().font_semibold().px_3().child("Settings"))
+                .child(self.make_editor_settings_section(window, cx))
+                .child(self.make_application_settings_section(cx)),
+        )
     }
 }

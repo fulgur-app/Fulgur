@@ -9,7 +9,7 @@ impl Lightspeed {
     // Save the current app state to disk
     // @param cx: The application context
     // @return: The result of the save operation
-    pub fn save_state(&self, cx: &App) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_state(&self, cx: &App) -> anyhow::Result<()> {
         let mut tab_states = Vec::new();
 
         for tab in &self.tabs {
