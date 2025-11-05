@@ -71,6 +71,7 @@ impl Lightspeed {
                             window,
                             cx,
                             &this.settings.editor_settings,
+                            false,
                         );
                         this.tabs.push(Tab::Editor(editor_tab));
                         this.active_tab_index = Some(this.tabs.len() - 1);

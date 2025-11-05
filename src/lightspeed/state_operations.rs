@@ -135,6 +135,7 @@ impl Lightspeed {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<EditorTab> {
+        let is_modified = tab_state.content.is_some();
         let (content, path, encoding) = if let Some(saved_path) = tab_state.file_path {
             if let Some(saved_content) = tab_state.content {
                 if saved_path.exists() {
@@ -188,6 +189,7 @@ impl Lightspeed {
                 window,
                 cx,
                 &self.settings.editor_settings,
+                is_modified,
             )
         } else {
             let content_entity = cx.new(|cx| {

@@ -90,6 +90,7 @@ impl EditorTab {
         window: &mut Window,
         cx: &mut App,
         settings: &EditorSettings,
+        is_modified: bool,
     ) -> Self {
         let file_name = path
             .file_name()
@@ -103,13 +104,13 @@ impl EditorTab {
 
         let content =
             cx.new(|cx| make_input_state(window, cx, language, Some(contents.clone()), settings));
-
+        let title = format!("{}{}", file_name, if is_modified { " •" } else { "" });
         Self {
             id,
-            title: file_name.into(),
+            title: title.into(),
             content,
             file_path: Some(path),
-            modified: false,
+            modified: is_modified,
             original_content: contents,
             encoding,
         }
