@@ -3,7 +3,24 @@ use gpui::*;
 use gpui_component::{
     ActiveTheme, IconName, Sizable,
     button::{Button, ButtonVariants},
+    context_menu::ContextMenuExt,
 };
+use serde::Deserialize;
+
+// Define actions for tab context menu
+#[derive(Action, Clone, PartialEq, Deserialize)]
+#[action(namespace = lightspeed, no_json)]
+pub struct CloseTabAction(pub usize);
+
+#[derive(Action, Clone, PartialEq, Deserialize)]
+#[action(namespace = lightspeed, no_json)]
+pub struct CloseTabsToLeft(pub usize);
+
+#[derive(Action, Clone, PartialEq, Deserialize)]
+#[action(namespace = lightspeed, no_json)]
+pub struct CloseTabsToRight(pub usize);
+
+actions!(lightspeed, [CloseAllTabsAction]);
 
 // Create a tab bar button
 // @param id: The ID of the button
@@ -23,6 +40,46 @@ pub fn tab_bar_button_factory(
 }
 
 impl Lightspeed {
+    // Handle close tab action from context menu
+    pub(super) fn on_close_tab_action(
+        &mut self,
+        action: &CloseTabAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_tab(action.0, window, cx);
+    }
+
+    // Handle close tabs to left action from context menu
+    pub(super) fn on_close_tabs_to_left(
+        &mut self,
+        action: &CloseTabsToLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_tabs_to_left(action.0, window, cx);
+    }
+
+    // Handle close tabs to right action from context menu
+    pub(super) fn on_close_tabs_to_right(
+        &mut self,
+        action: &CloseTabsToRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_tabs_to_right(action.0, window, cx);
+    }
+
+    // Handle close all tabs action from context menu
+    pub(super) fn on_close_all_tabs_action(
+        &mut self,
+        _: &CloseAllTabsAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_all_tabs(window, cx);
+    }
+
     // Render the tab bar
     // @param window: The window context
     // @param cx: The application context
@@ -85,14 +142,19 @@ impl Lightspeed {
         tab: &Tab,
         _window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Div {
+    ) -> AnyElement {
         let tab_id = tab.id();
         let is_active = match self.active_tab_index {
             Some(active_index) => index == active_index,
             None => false,
         };
 
+        let has_tabs_on_left = index > 0;
+        let has_tabs_on_right = index < self.tabs.len() - 1;
+        let total_tabs = self.tabs.len();
+
         let mut tab_div = div()
+            .id(("tab", tab_id))
             .flex()
             .items_center()
             .h(px(40.))
@@ -146,5 +208,25 @@ impl Lightspeed {
                         this.close_tab(tab_id, window, cx);
                     })),
             )
+            .context_menu(move |this, _window, _cx| {
+                this.menu("Close Tab", Box::new(CloseTabAction(tab_id)))
+                    .menu_with_disabled(
+                        "Close Tabs to the Left",
+                        Box::new(CloseTabsToLeft(index)),
+                        !has_tabs_on_left,
+                    )
+                    .menu_with_disabled(
+                        "Close Tabs to the Right",
+                        Box::new(CloseTabsToRight(index)),
+                        !has_tabs_on_right,
+                    )
+                    .separator()
+                    .menu_with_disabled(
+                        "Close All Tabs",
+                        Box::new(CloseAllTabsAction),
+                        total_tabs == 0,
+                    )
+            })
+            .into_any_element()
     }
 }

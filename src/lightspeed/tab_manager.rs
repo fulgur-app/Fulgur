@@ -181,6 +181,53 @@ impl Lightspeed {
         }
     }
 
+    // Close all tabs to the left of the specified index
+    // @param index: The index of the tab (tabs to the left will be closed)
+    // @param window: The window to close tabs in
+    // @param cx: The application context
+    pub(super) fn close_tabs_to_left(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if index > 0 && index < self.tabs.len() {
+            // Remove all tabs from 0 to index-1
+            self.tabs.drain(0..index);
+            
+            // Adjust active tab index
+            if let Some(active_idx) = self.active_tab_index {
+                if active_idx < index {
+                    // Active tab was closed, set to first remaining tab (was at position index)
+                    self.active_tab_index = Some(0);
+                } else {
+                    // Active tab is still present, adjust its index
+                    self.active_tab_index = Some(active_idx - index);
+                }
+            }
+            
+            self.focus_active_tab(window, cx);
+            cx.notify();
+        }
+    }
+
+    // Close all tabs to the right of the specified index
+    // @param index: The index of the tab (tabs to the right will be closed)
+    // @param window: The window to close tabs in
+    // @param cx: The application context
+    pub(super) fn close_tabs_to_right(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if index < self.tabs.len() - 1 {
+            // Remove all tabs after index
+            self.tabs.truncate(index + 1);
+            
+            // Adjust active tab index if needed
+            if let Some(active_idx) = self.active_tab_index {
+                if active_idx > index {
+                    // Active tab was closed, set to the rightmost remaining tab
+                    self.active_tab_index = Some(index);
+                }
+            }
+            
+            self.focus_active_tab(window, cx);
+            cx.notify();
+        }
+    }
+
     // Update the modified status of the tabs
     // @param cx: The application context
     pub(super) fn update_modified_status(&mut self, cx: &mut Context<Self>) {

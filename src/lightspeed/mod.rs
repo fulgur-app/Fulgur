@@ -305,6 +305,26 @@ impl Render for Lightspeed {
                         }
                         cx.refresh_windows();
                     }))
+                    .on_action(
+                        cx.listener(|this, action: &tab_bar::CloseTabAction, window, cx| {
+                            this.on_close_tab_action(action, window, cx);
+                        }),
+                    )
+                    .on_action(cx.listener(
+                        |this, action: &tab_bar::CloseTabsToLeft, window, cx| {
+                            this.on_close_tabs_to_left(action, window, cx);
+                        },
+                    ))
+                    .on_action(cx.listener(
+                        |this, action: &tab_bar::CloseTabsToRight, window, cx| {
+                            this.on_close_tabs_to_right(action, window, cx);
+                        },
+                    ))
+                    .on_action(cx.listener(
+                        |this, action: &tab_bar::CloseAllTabsAction, window, cx| {
+                            this.on_close_all_tabs_action(action, window, cx);
+                        },
+                    ))
                     .child(self.title_bar.clone())
                     .child(self.render_tab_bar(window, cx))
                     .child(self.render_content_area(active_tab, window, cx))
