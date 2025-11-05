@@ -259,6 +259,7 @@ fn make_switch(
     div().child(Switch::new(id).checked(checked).on_click(cx.listener(
         move |this, checked: &bool, _, cx| {
             on_click_function(this, checked, cx);
+            this.settings_changed = true;
             if let Err(e) = this.settings.save() {
                 eprintln!("Failed to save settings: {}", e);
             }
@@ -371,8 +372,13 @@ impl Lightspeed {
                 "Show the line numbers in the editor",
                 self.settings.editor_settings.show_line_numbers,
                 cx,
-                |this, checked, _cx| {
+                |this, checked, cx| {
                     this.settings.editor_settings.show_line_numbers = *checked;
+                    // this.settings_changed = true;
+                    // if let Err(e) = this.settings.save() {
+                    //     eprintln!("Failed to save settings: {}", e);
+                    // }
+                    // cx.notify();
                 },
             ))
             .child(make_toggle_option(
@@ -381,8 +387,13 @@ impl Lightspeed {
                 "Show the vertical lines that indicate the indentation of the text",
                 self.settings.editor_settings.show_indent_guides,
                 cx,
-                |this, checked, _cx| {
+                |this, checked, cx| {
                     this.settings.editor_settings.show_indent_guides = *checked;
+                    // this.settings_changed = true;
+                    // if let Err(e) = this.settings.save() {
+                    //     eprintln!("Failed to save settings: {}", e);
+                    // }
+                    // cx.notify();
                 },
             ))
             .child(make_toggle_option(
@@ -391,8 +402,13 @@ impl Lightspeed {
                 "Wraps the text to the next line when the line is too long",
                 self.settings.editor_settings.soft_wrap,
                 cx,
-                |this, checked, _cx| {
+                |this, checked, cx| {
                     this.settings.editor_settings.soft_wrap = *checked;
+                    // this.settings_changed = true;
+                    // if let Err(e) = this.settings.save() {
+                    //     eprintln!("Failed to save settings: {}", e);
+                    // }
+                    // cx.notify();
                 },
             ))
     }
@@ -401,51 +417,17 @@ impl Lightspeed {
     // @param cx: The context
     // @return: The application settings section
     fn make_application_settings_section(&self, cx: &mut Context<Self>) -> Div {
-        make_settings_section("Application")
-            .child(make_toggle_option(
-                "confirm_exit",
-                "Confirm exit",
-                "Confirm before exiting the application",
-                self.settings.app_settings.confirm_exit,
-                cx,
-                |this, checked, cx| {
-                    this.settings.app_settings.confirm_exit = *checked;
-                    cx.notify();
-                },
-            ))
-            .child(make_toggle_option(
-                "confirm_exit",
-                "Confirm exit",
-                "Confirm before exiting the application",
-                self.settings.app_settings.confirm_exit,
-                cx,
-                |this, checked, cx| {
-                    this.settings.app_settings.confirm_exit = *checked;
-                    cx.notify();
-                },
-            ))
-            .child(make_toggle_option(
-                "confirm_exit",
-                "Confirm exit",
-                "Confirm before exiting the application",
-                self.settings.app_settings.confirm_exit,
-                cx,
-                |this, checked, cx| {
-                    this.settings.app_settings.confirm_exit = *checked;
-                    cx.notify();
-                },
-            ))
-            .child(make_toggle_option(
-                "confirm_exit",
-                "Confirm exit",
-                "Confirm before exiting the application",
-                self.settings.app_settings.confirm_exit,
-                cx,
-                |this, checked, cx| {
-                    this.settings.app_settings.confirm_exit = *checked;
-                    cx.notify();
-                },
-            ))
+        make_settings_section("Application").child(make_toggle_option(
+            "confirm_exit",
+            "Confirm exit",
+            "Confirm before exiting the application",
+            self.settings.app_settings.confirm_exit,
+            cx,
+            |this, checked, cx| {
+                this.settings.app_settings.confirm_exit = *checked;
+                cx.notify();
+            },
+        ))
     }
 
     // Render the settings

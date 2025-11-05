@@ -49,6 +49,9 @@ pub struct Lightspeed {
     _font_size_subscription: gpui::Subscription,
     pub tab_size_dropdown: Entity<DropdownState<Vec<SharedString>>>,
     _tab_size_subscription: gpui::Subscription,
+    settings_changed: bool,
+    rendered_tabs: std::collections::HashSet<usize>, // Track which tabs have been rendered
+    tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
 }
 
 impl Lightspeed {
@@ -60,7 +63,10 @@ impl Lightspeed {
         let title_bar = CustomTitleBar::new(window, cx);
 
         // Create settings
-        let settings = Settings::new();
+        let settings = match Settings::load() {
+            Ok(settings) => settings,
+            Err(_) => Settings::new(),
+        };
 
         // Create inputs
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
@@ -91,21 +97,13 @@ impl Lightspeed {
             let _tab_size_subscription =
                 settings::subscribe_to_tab_size_changes(&tab_size_dropdown, cx);
 
-            // Create initial tab (will be replaced if state is loaded)
-            let initial_tab = Tab::Editor(EditorTab::new(
-                0,
-                "Untitled",
-                window,
-                cx,
-                &settings.editor_settings,
-            ));
-
+            // Don't create initial tab here - load_state() will handle it
             let mut entity = Self {
                 focus_handle: cx.focus_handle(),
                 title_bar,
-                tabs: vec![initial_tab],
-                active_tab_index: Some(0),
-                next_tab_id: 1,
+                tabs: vec![],
+                active_tab_index: None,
+                next_tab_id: 0,
                 show_search: false,
                 search_input,
                 replace_input,
@@ -120,6 +118,9 @@ impl Lightspeed {
                 _font_size_subscription,
                 tab_size_dropdown,
                 _tab_size_subscription,
+                settings_changed: false,
+                rendered_tabs: std::collections::HashSet::new(),
+                tabs_pending_update: std::collections::HashSet::new(),
             };
 
             // Load saved state if it exists
@@ -203,10 +204,34 @@ impl Render for Lightspeed {
             }
         }
 
-        // Update editor tabs with current settings
-        for tab in &self.tabs {
-            if let Tab::Editor(editor_tab) = tab {
-                editor_tab.update_settings(window, cx, &self.settings.editor_settings);
+        // Update tabs that were marked for update in the previous render
+        if !self.tabs_pending_update.is_empty() {
+            for tab_index in self.tabs_pending_update.drain() {
+                if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
+                    editor_tab.update_settings(window, cx, &self.settings.editor_settings);
+                }
+            }
+        }
+
+        // Update all rendered editor tabs when settings change
+        if self.settings_changed {
+            for tab_index in self.rendered_tabs.iter() {
+                if let Some(Tab::Editor(editor_tab)) = self.tabs.get(*tab_index) {
+                    editor_tab.update_settings(window, cx, &self.settings.editor_settings);
+                }
+            }
+            self.settings_changed = false;
+        }
+
+        // Mark the active tab as rendered and schedule update for newly rendered tabs
+        if let Some(index) = self.active_tab_index {
+            let is_newly_rendered = !self.rendered_tabs.contains(&index);
+            self.rendered_tabs.insert(index);
+
+            // For newly rendered tabs, schedule an update for the NEXT render
+            if is_newly_rendered {
+                self.tabs_pending_update.insert(index);
+                cx.notify(); // Trigger another render to apply the update
             }
         }
 

@@ -68,6 +68,10 @@ impl Lightspeed {
     // @param window: The window to load the state from
     // @param cx: The application context
     pub fn load_state(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Temporarily disable indent guides during restoration to prevent crash
+        let original_indent_guides = self.settings.editor_settings.show_indent_guides;
+        self.settings.editor_settings.show_indent_guides = false;
+
         if let Ok(app_state) = AppState::load() {
             self.tabs.clear();
 
@@ -90,20 +94,28 @@ impl Lightspeed {
 
             self.next_tab_id = app_state.next_tab_id;
 
-            if self.tabs.is_empty() {
-                let initial_tab = Tab::Editor(EditorTab::new(
-                    0,
-                    "Untitled",
-                    window,
-                    cx,
-                    &self.settings.editor_settings,
-                ));
-                self.tabs.push(initial_tab);
-                self.active_tab_index = Some(0);
-                self.next_tab_id = 1;
-            }
-
             cx.notify();
+        }
+
+        // Always ensure we have at least one tab, even if state loading failed or resulted in no tabs
+        if self.tabs.is_empty() {
+            let initial_tab = Tab::Editor(EditorTab::new(
+                0,
+                "Untitled",
+                window,
+                cx,
+                &self.settings.editor_settings,
+            ));
+            self.tabs.push(initial_tab);
+            self.active_tab_index = Some(0);
+            self.next_tab_id = 1;
+        }
+
+        // Restore original indent guides setting and trigger update
+        self.settings.editor_settings.show_indent_guides = original_indent_guides;
+        if original_indent_guides {
+            // Mark settings as changed to apply indent guides on next render
+            self.settings_changed = true;
         }
     }
 
