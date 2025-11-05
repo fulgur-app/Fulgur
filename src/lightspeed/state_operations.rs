@@ -3,6 +3,7 @@ use crate::lightspeed::{
     state_persistence::*, tab::Tab,
 };
 use gpui::*;
+use gpui_component::input::TabSize;
 use std::fs;
 
 impl Lightspeed {
@@ -189,9 +190,6 @@ impl Lightspeed {
                 &self.settings.editor_settings,
             )
         } else {
-            use gpui_component::highlighter::Language;
-            use gpui_component::input::TabSize;
-
             let content_entity = cx.new(|cx| {
                 gpui_component::input::InputState::new(window, cx)
                     .code_editor("Plain".to_string())
@@ -212,7 +210,6 @@ impl Lightspeed {
                 file_path: None,
                 modified: true,
                 original_content: String::new(),
-                language: Language::Plain,
                 encoding: "UTF-8".to_string(),
             }
         };

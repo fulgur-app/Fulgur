@@ -5,9 +5,9 @@ use gpui_component::button::{Button, ButtonVariants};
 use crate::lightspeed::{Lightspeed, editor_tab::EditorTab, settings::SettingsTab, tab::Tab};
 
 impl Lightspeed {
-    /// Create a new tab
-    /// @param window: The window to create the tab in
-    /// @param cx: The application context
+    // Create a new tab
+    // @param window: The window to create the tab in
+    // @param cx: The application context
     pub(super) fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let tab = Tab::Editor(EditorTab::new(
             self.next_tab_id,
@@ -24,9 +24,9 @@ impl Lightspeed {
         cx.notify();
     }
 
-    /// Open settings in a new tab or switch to existing settings tab
-    /// @param window: The window to open settings in
-    /// @param cx: The application context
+    // Open settings in a new tab or switch to existing settings tab
+    // @param window: The window to open settings in
+    // @param cx: The application context
     pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Check if settings tab already exists
         if let Some(index) = self.tabs.iter().position(|t| matches!(t, Tab::Settings(_))) {
@@ -42,10 +42,10 @@ impl Lightspeed {
         }
     }
 
-    /// Close a tab
-    /// @param tab_id: The ID of the tab to close
-    /// @param window: The window to close the tab in
-    /// @param cx: The application context
+    // Close a tab
+    // @param tab_id: The ID of the tab to close
+    // @param window: The window to close the tab in
+    // @param cx: The application context
     pub(super) fn close_tab(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
             if let Some(to_be_removed) = self.tabs.get_mut(pos) {
@@ -112,10 +112,10 @@ impl Lightspeed {
         }
     }
 
-    /// Close a tab and manage the focus
-    /// @param window: The window to close the tab in
-    /// @param cx: The application context
-    /// @param pos: The position of the tab to close
+    // Close a tab and manage the focus
+    // @param window: The window to close the tab in
+    // @param cx: The application context
+    // @param pos: The position of the tab to close
     pub(super) fn close_tab_manage_focus(&mut self, window: &mut Window, cx: &mut Context<Self>, pos: usize) {
         // If no tabs left, create a new one
         if self.tabs.is_empty() {
@@ -132,10 +132,10 @@ impl Lightspeed {
         self.focus_active_tab(window, cx);
     }
 
-    /// Set the active tab
-    /// @param index: The index of the tab to set as active
-    /// @param window: The window to set the active tab in
-    /// @param cx: The application context
+    // Set the active tab
+    // @param index: The index of the tab to set as active
+    // @param window: The window to set the active tab in
+    // @param cx: The application context
     pub(super) fn set_active_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
             self.active_tab_index = Some(index);
@@ -150,9 +150,9 @@ impl Lightspeed {
         }
     }
 
-    /// Focus the active tab's content
-    /// @param window: The window to focus the tab in
-    /// @param cx: The application context
+    // Focus the active tab's content
+    // @param window: The window to focus the tab in
+    // @param cx: The application context
     pub fn focus_active_tab(&self, window: &mut Window, cx: &App) {
         if let Some(active_tab_index) = self.active_tab_index {
             if let Some(active_tab) = self.tabs.get(active_tab_index) {
@@ -169,9 +169,9 @@ impl Lightspeed {
         }
     }
 
-    /// Close all tabs
-    /// @param window: The window to close all tabs in
-    /// @param cx: The application context
+    // Close all tabs
+    // @param window: The window to close all tabs in
+    // @param cx: The application context
     pub(super) fn close_all_tabs(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if !self.tabs.is_empty() {
             self.tabs.clear();
@@ -181,8 +181,8 @@ impl Lightspeed {
         }
     }
 
-    /// Update the modified status of the tabs
-    /// @param cx: The application context
+    // Update the modified status of the tabs
+    // @param cx: The application context
     pub(super) fn update_modified_status(&mut self, cx: &mut Context<Self>) {
         for tab in self.tabs.iter_mut() {
             if let Tab::Editor(editor_tab) = tab {
@@ -191,9 +191,9 @@ impl Lightspeed {
         }
     }
 
-    /// Quit the application. If confirm_exit is enabled, a modal will be shown to confirm the action.
-    /// @param window: The window to quit the application in
-    /// @param cx: The application context
+    // Quit the application. If confirm_exit is enabled, a modal will be shown to confirm the action.
+    // @param window: The window to quit the application in
+    // @param cx: The application context
     pub(super) fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.app_settings.confirm_exit {
             let entity = cx.entity().clone();

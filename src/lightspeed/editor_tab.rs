@@ -15,7 +15,6 @@ pub struct EditorTab {
     pub file_path: Option<std::path::PathBuf>,
     pub modified: bool,
     pub original_content: String,
-    pub language: Language,
     pub encoding: String,
 }
 
@@ -70,7 +69,6 @@ impl EditorTab {
             file_path: None,
             modified: false,
             original_content: String::new(),
-            language,
             encoding: "UTF-8".to_string(),
         }
     }
@@ -113,7 +111,6 @@ impl EditorTab {
             file_path: Some(path),
             modified: false,
             original_content: contents,
-            language,
             encoding,
         }
     }

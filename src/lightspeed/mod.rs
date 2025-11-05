@@ -15,7 +15,6 @@ mod tab_manager;
 mod themes;
 mod titlebar;
 
-use editor_tab::EditorTab;
 use menus::*;
 use search_replace::SearchMatch;
 use settings::Settings;
@@ -55,10 +54,10 @@ pub struct Lightspeed {
 }
 
 impl Lightspeed {
-    /// Create a new Lightspeed instance
-    /// @param window: The window to create the Lightspeed instance in
-    /// @param cx: The application context
-    /// @return: The new Lightspeed instance
+    // Create a new Lightspeed instance
+    // @param window: The window to create the Lightspeed instance in
+    // @param cx: The application context
+    // @return: The new Lightspeed instance
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
 
@@ -130,8 +129,8 @@ impl Lightspeed {
         })
     }
 
-    /// Initialize the Lightspeed instance
-    /// @param cx: The application context
+    // Initialize the Lightspeed instance
+    // @param cx: The application context
     pub fn init(cx: &mut App) {
         // Initialize language support for syntax highlighting
         languages::init_languages();
@@ -185,10 +184,10 @@ impl Focusable for Lightspeed {
 }
 
 impl Render for Lightspeed {
-    /// Render the Lightspeed instance
-    /// @param window: The window to render the Lightspeed instance in
-    /// @param cx: The application context
-    /// @return: The rendered Lightspeed instance
+    // Render the Lightspeed instance
+    // @param window: The window to render the Lightspeed instance in
+    // @param cx: The application context
+    // @return: The rendered Lightspeed instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Ensure we always have at least one tab
         if self.tabs.is_empty() {
@@ -321,11 +320,11 @@ impl Render for Lightspeed {
 }
 
 impl Lightspeed {
-    /// Render the content area (editor or settings)
-    /// @param active_tab: The active tab (if any)
-    /// @param window: The window context
-    /// @param cx: The application context
-    /// @return: The rendered content area element
+    // Render the content area (editor or settings)
+    // @param active_tab: The active tab (if any)
+    // @param window: The window context
+    // @param cx: The application context
+    // @return: The rendered content area element
     fn render_content_area(
         &self,
         active_tab: Option<Tab>,

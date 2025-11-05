@@ -2,10 +2,10 @@ use crate::lightspeed::Lightspeed;
 use gpui::*;
 use gpui_component::{ActiveTheme, h_flex, input::Position};
 
-/// Create a status bar item
-/// @param content: The content of the status bar item
-/// @param border_color: The color of the border
-/// @return: A status bar item
+// Create a status bar item
+// @param content: The content of the status bar item
+// @param border_color: The color of the border
+// @return: A status bar item
 pub fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
     div()
         .text_xs()
@@ -15,27 +15,27 @@ pub fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
         .child(content)
 }
 
-/// Create a status bar right item
-/// @param content: The content of the status bar right item
-/// @param border_color: The color of the border
-/// @return: A status bar right item
+// Create a status bar right item
+// @param content: The content of the status bar right item
+// @param border_color: The color of the border
+// @return: A status bar right item
 pub fn status_bar_right_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
     status_bar_item_factory(content, border_color).border_l_1()
 }
 
-/// Create a status bar left item
-/// @param content: The content of the status bar left item
-/// @param border_color: The color of the border
-/// @return: A status bar left item
+// Create a status bar left item
+// @param content: The content of the status bar left item
+// @param border_color: The color of the border
+// @return: A status bar left item
 pub fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
     status_bar_item_factory(content, border_color).border_r_1()
 }
 
 impl Lightspeed {
-    /// Render the status bar
-    /// @param window: The window context
-    /// @param cx: The application context
-    /// @return: The rendered status bar element
+    // Render the status bar
+    // @param window: The window context
+    // @param cx: The application context
+    // @return: The rendered status bar element
     pub(super) fn render_status_bar(
         &self,
         _window: &mut Window,

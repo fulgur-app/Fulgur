@@ -35,14 +35,6 @@ impl Tab {
         }
     }
 
-    /// Check if the tab can be closed
-    pub fn is_closable(&self) -> bool {
-        match self {
-            Tab::Editor(_) => true,
-            Tab::Settings(_) => true, // Settings can be closed
-        }
-    }
-
     /// Get the editor tab if this is an editor tab
     pub fn as_editor(&self) -> Option<&EditorTab> {
         match self {
@@ -57,15 +49,5 @@ impl Tab {
             Tab::Editor(tab) => Some(tab),
             _ => None,
         }
-    }
-
-    /// Check if this is an editor tab
-    pub fn is_editor(&self) -> bool {
-        matches!(self, Tab::Editor(_))
-    }
-
-    /// Check if this is a settings tab
-    pub fn is_settings(&self) -> bool {
-        matches!(self, Tab::Settings(_))
     }
 }

@@ -2,9 +2,9 @@ use crate::lightspeed::{Lightspeed, editor_tab::EditorTab, tab::Tab};
 use chardetng::EncodingDetector;
 use gpui::*;
 
-/// Detect encoding from file bytes
-/// @param bytes: The bytes to detect encoding from
-/// @return: The detected encoding and decoded string
+// Detect encoding from file bytes
+// @param bytes: The bytes to detect encoding from
+// @return: The detected encoding and decoded string
 pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     // Try UTF-8 first
     if let Ok(text) = std::str::from_utf8(bytes) {
@@ -37,9 +37,9 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
 }
 
 impl Lightspeed {
-    /// Open a file
-    /// @param window: The window to open the file in
-    /// @param cx: The application context
+    // Open a file
+    // @param window: The window to open the file in
+    // @param cx: The application context
     pub(super) fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let path_future = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -86,9 +86,9 @@ impl Lightspeed {
         .detach();
     }
 
-    /// Save a file
-    /// @param window: The window to save the file in
-    /// @param cx: The application context
+    // Save a file
+    // @param window: The window to save the file in
+    // @param cx: The application context
     pub(super) fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;
@@ -128,9 +128,9 @@ impl Lightspeed {
         cx.notify();
     }
 
-    /// Save a file as
-    /// @param window: The window to save the file as in
-    /// @param cx: The application context
+    // Save a file as
+    // @param window: The window to save the file as in
+    // @param cx: The application context
     pub(super) fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;

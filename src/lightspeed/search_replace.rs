@@ -12,9 +12,9 @@ pub struct SearchMatch {
 }
 
 impl Lightspeed {
-    /// Close the search bar and clear highlighting
-    /// @param window: The window context
-    /// @param cx: The application context
+    // Close the search bar and clear highlighting
+    // @param window: The window context
+    // @param cx: The application context
     pub(super) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_search = false;
 
@@ -40,9 +40,9 @@ impl Lightspeed {
         cx.notify();
     }
 
-    /// Perform search in the active tab
-    /// @param window: The window context
-    /// @param cx: The application context
+    // Perform search in the active tab
+    // @param window: The window context
+    // @param cx: The application context
     pub(super) fn perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_matches.clear();
         self.current_match_index = None;
@@ -130,10 +130,10 @@ impl Lightspeed {
         cx.notify();
     }
 
-    /// Find all matches in the text
-    /// @param text: The text to search in
-    /// @param query: The search query
-    /// @return: A vector of search matches
+    // Find all matches in the text
+    // @param text: The text to search in
+    // @param query: The search query
+    // @return: A vector of search matches
     fn find_matches(&self, text: &str, query: &str) -> Vec<SearchMatch> {
         let mut matches = Vec::new();
 
@@ -193,10 +193,10 @@ impl Lightspeed {
         matches
     }
 
-    /// Get line and column from byte position
-    /// @param text: The text
-    /// @param pos: The byte position
-    /// @return: A tuple of (line, column)
+    // Get line and column from byte position
+    // @param text: The text
+    // @param pos: The byte position
+    // @return: A tuple of (line, column)
     fn get_line_col(&self, text: &str, pos: usize) -> (usize, usize) {
         let mut line = 0;
         let mut col = 0;
@@ -216,9 +216,9 @@ impl Lightspeed {
         (line, col)
     }
 
-    /// Navigate to the next search match
-    /// @param window: The window context
-    /// @param cx: The application context
+    // Navigate to the next search match
+    // @param window: The window context
+    // @param cx: The application context
     pub(super) fn search_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.search_matches.is_empty() {
             return;
@@ -234,9 +234,9 @@ impl Lightspeed {
         cx.notify();
     }
 
-    /// Navigate to the previous search match
-    /// @param window: The window context
-    /// @param cx: The application context
+    // Navigate to the previous search match
+    // @param window: The window context
+    // @param cx: The application context
     pub(super) fn search_previous(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.search_matches.is_empty() {
             return;
@@ -256,9 +256,9 @@ impl Lightspeed {
         cx.notify();
     }
 
-    /// Highlight the current search match
-    /// @param window: The window context
-    /// @param cx: The application context
+    // Highlight the current search match
+    // @param window: The window context
+    // @param cx: The application context
     fn highlight_current_match(&self, window: &mut Window, cx: &mut App) {
         if let Some(match_index) = self.current_match_index {
             if let Some(search_match) = self.search_matches.get(match_index) {
@@ -283,9 +283,9 @@ impl Lightspeed {
         }
     }
 
-    /// Replace the current search match
-    /// @param window: The window context
-    /// @param cx: The application context
+    // Replace the current search match
+    // @param window: The window context
+    // @param cx: The application context
     pub(super) fn replace_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(match_index) = self.current_match_index {
             if let Some(search_match) = self.search_matches.get(match_index).cloned() {
@@ -328,9 +328,9 @@ impl Lightspeed {
         cx.notify();
     }
 
-    /// Replace all search matches
-    /// @param window: The window context
-    /// @param cx: The application context
+    // Replace all search matches
+    // @param window: The window context
+    // @param cx: The application context
     pub(super) fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.search_matches.is_empty() {
             return;
@@ -380,10 +380,10 @@ impl Lightspeed {
         cx.notify();
     }
 
-    /// Replace all occurrences case-insensitively
-    /// @param text: The text to search in
-    /// @param replace: The replacement text
-    /// @return: The text with replacements
+    // Replace all occurrences case-insensitively
+    // @param text: The text to search in
+    // @param replace: The replacement text
+    // @return: The text with replacements
     fn replace_case_insensitive(&self, text: &str, replace: &str) -> String {
         let mut result = String::new();
         let mut last_pos = 0;
@@ -397,10 +397,10 @@ impl Lightspeed {
         result
     }
 
-    /// Replace whole words only
-    /// @param text: The text to search in
-    /// @param replace: The replacement text
-    /// @return: The text with replacements
+    // Replace whole words only
+    // @param text: The text to search in
+    // @param replace: The replacement text
+    // @return: The text with replacements
     fn replace_whole_words(&self, text: &str, replace: &str) -> String {
         let mut result = String::new();
         let mut last_pos = 0;
@@ -414,10 +414,10 @@ impl Lightspeed {
         result
     }
 
-    /// Replace whole words case-insensitively
-    /// @param text: The text to search in
-    /// @param replace: The replacement text
-    /// @return: The text with replacements
+    // Replace whole words case-insensitively
+    // @param text: The text to search in
+    // @param replace: The replacement text
+    // @return: The text with replacements
     fn replace_whole_words_case_insensitive(&self, text: &str, replace: &str) -> String {
         let mut result = String::new();
         let mut last_pos = 0;

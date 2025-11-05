@@ -2,7 +2,6 @@ use gpui::*;
 use gpui_component::{
     IconName, Sizable, StyledExt,
     button::{Button, ButtonVariants},
-    checkbox::Checkbox,
 };
 
 // Create a button
@@ -36,12 +35,4 @@ pub fn button_factory(
             bottom_left: px(0.0),
             bottom_right: px(0.0),
         })
-}
-
-// Make a checkbox
-// @param id: The ID of the checkbox
-// @param checked: Whether the checkbox is checked
-// @return: The checkbox
-pub fn checkbox_factory(id: &'static str, checked: bool) -> Checkbox {
-    Checkbox::new(id).checked(checked).text_size(px(14.0))
 }

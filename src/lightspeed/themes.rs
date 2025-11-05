@@ -21,6 +21,9 @@ impl Default for State {
     }
 }
 
+// Initialize the themes
+// @param cx: The application context
+// @param on_themes_loaded: The callback to call when the themes are loaded
 pub fn init(cx: &mut App, on_themes_loaded: impl Fn(&mut App) + 'static) {
     // Load last theme state
     let json = std::fs::read_to_string(STATE_FILE).unwrap_or(String::default());
@@ -36,7 +39,7 @@ pub fn init(cx: &mut App, on_themes_loaded: impl Fn(&mut App) + 'static) {
         // Call the callback after themes are loaded
         on_themes_loaded(cx);
     }) {
-        println!("Failed to watch themes directory: {}", err);
+        eprintln!("Failed to watch themes directory: {}", err);
     }
 
     if let Some(scrollbar_show) = state.scrollbar_show {

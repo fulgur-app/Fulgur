@@ -5,12 +5,12 @@ use gpui_component::{
     button::{Button, ButtonVariants},
 };
 
-/// Create a tab bar button
-/// @param id: The ID of the button
-/// @param tooltip: The tooltip of the button
-/// @param icon: The icon of the button
-/// @param border_color: The color of the border
-/// @return: A tab bar button
+// Create a tab bar button
+// @param id: The ID of the button
+// @param tooltip: The tooltip of the button
+// @param icon: The icon of the button
+// @param border_color: The color of the border
+// @return: A tab bar button
 pub fn tab_bar_button_factory(
     id: &'static str,
     tooltip: &'static str,
@@ -23,10 +23,10 @@ pub fn tab_bar_button_factory(
 }
 
 impl Lightspeed {
-    /// Render the tab bar
-    /// @param window: The window context
-    /// @param cx: The application context
-    /// @return: The rendered tab bar element
+    // Render the tab bar
+    // @param window: The window context
+    // @param cx: The application context
+    // @return: The rendered tab bar element
     pub(super) fn render_tab_bar(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         div()
             .flex()
@@ -73,12 +73,12 @@ impl Lightspeed {
             )
     }
 
-    /// Render a single tab
-    /// @param index: The index of the tab
-    /// @param tab: The tab to render
-    /// @param window: The window context
-    /// @param cx: The application context
-    /// @return: The rendered tab element
+    // Render a single tab
+    // @param index: The index of the tab
+    // @param tab: The tab to render
+    // @param window: The window context
+    // @param cx: The application context
+    // @return: The rendered tab element
     fn render_tab(
         &self,
         index: usize,
