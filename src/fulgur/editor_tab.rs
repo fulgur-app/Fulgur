@@ -3,7 +3,7 @@ use gpui::*;
 use gpui_component::highlighter::Language;
 use gpui_component::input::{InputState, TabSize};
 
-use crate::lightspeed::settings::EditorSettings;
+use crate::fulgur::settings::EditorSettings;
 
 use super::languages::{language_from_extension, language_name};
 

@@ -2,7 +2,7 @@ use gpui::*;
 use gpui_component::ThemeRegistry;
 
 actions!(
-    lightspeed,
+    fulgur,
     [
         About,
         Quit,
@@ -19,19 +19,19 @@ actions!(
 );
 
 #[derive(Action, Clone, PartialEq)]
-#[action(namespace = lightspeed, no_json)]
+#[action(namespace = fulgur, no_json)]
 pub struct SwitchTheme(pub SharedString);
 
-// Build the menus for the Lightspeed instance
+// Build the menus for the Fulgur instance
 // @param cx: The application context
-// @return: The menus for the Lightspeed instance
+// @return: The menus for the Fulgur instance
 pub fn build_menus(cx: &mut App) -> Vec<Menu> {
     let themes = ThemeRegistry::global(cx).sorted_themes();
     vec![
         Menu {
-            name: "Lightspeed".into(),
+            name: "Fulgur".into(),
             items: vec![
-                MenuItem::action("About Lightspeed", About),
+                MenuItem::action("About Fulgur", About),
                 MenuItem::Separator,
                 MenuItem::Submenu(Menu {
                     name: "Theme".into(),

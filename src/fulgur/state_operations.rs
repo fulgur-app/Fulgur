@@ -1,12 +1,12 @@
-use crate::lightspeed::{
-    Lightspeed, editor_tab::EditorTab, file_operations::detect_encoding_and_decode,
+use crate::fulgur::{
+    Fulgur, editor_tab::EditorTab, file_operations::detect_encoding_and_decode,
     state_persistence::*, tab::Tab,
 };
 use gpui::*;
 use gpui_component::{highlighter::Language, input::TabSize};
 use std::fs;
 
-impl Lightspeed {
+impl Fulgur {
     // Save the current app state to disk
     // @param cx: The application context
     // @return: The result of the save operation

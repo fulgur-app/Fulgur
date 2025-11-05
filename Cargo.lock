@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "Lightspeed"
+name = "Fulgur"
 version = "0.1.0"
 dependencies = [
  "anyhow",

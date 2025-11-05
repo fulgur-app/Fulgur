@@ -26,7 +26,7 @@ impl AppState {
         {
             let app_data = std::env::var("APPDATA")?;
             let mut path = PathBuf::from(app_data);
-            path.push("Lightspeed");
+            path.push("Fulgur");
             fs::create_dir_all(&path)?;
             path.push("state.json");
             Ok(path)
@@ -36,7 +36,7 @@ impl AppState {
         {
             let home = std::env::var("HOME")?;
             let mut path = PathBuf::from(home);
-            path.push(".lightspeed");
+            path.push(".fulgur");
             fs::create_dir_all(&path)?;
             path.push("state.json");
             Ok(path)

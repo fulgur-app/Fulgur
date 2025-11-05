@@ -63,7 +63,7 @@ impl Render for CustomTitleBar {
                             .text_sm()
                             .font_semibold()
                             .text_color(cx.theme().foreground)
-                            .child("Lightspeed"),
+                            .child("Fulgur"),
                     ),
             )
             // Right side - empty for now, window controls are automatically added by TitleBar

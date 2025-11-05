@@ -1,4 +1,4 @@
-use crate::lightspeed::{Lightspeed, components_utils, tab::Tab};
+use crate::fulgur::{Fulgur, components_utils, tab::Tab};
 use gpui::*;
 use gpui_component::{
     ActiveTheme, IconName, Sizable,
@@ -9,18 +9,18 @@ use serde::Deserialize;
 
 // Define actions for tab context menu
 #[derive(Action, Clone, PartialEq, Deserialize)]
-#[action(namespace = lightspeed, no_json)]
+#[action(namespace = fulgur, no_json)]
 pub struct CloseTabAction(pub usize);
 
 #[derive(Action, Clone, PartialEq, Deserialize)]
-#[action(namespace = lightspeed, no_json)]
+#[action(namespace = fulgur, no_json)]
 pub struct CloseTabsToLeft(pub usize);
 
 #[derive(Action, Clone, PartialEq, Deserialize)]
-#[action(namespace = lightspeed, no_json)]
+#[action(namespace = fulgur, no_json)]
 pub struct CloseTabsToRight(pub usize);
 
-actions!(lightspeed, [CloseAllTabsAction]);
+actions!(fulgur, [CloseAllTabsAction]);
 
 // Create a tab bar button
 // @param id: The ID of the button
@@ -39,7 +39,7 @@ pub fn tab_bar_button_factory(
     button
 }
 
-impl Lightspeed {
+impl Fulgur {
     // Handle close tab action from context menu
     pub(super) fn on_close_tab_action(
         &mut self,

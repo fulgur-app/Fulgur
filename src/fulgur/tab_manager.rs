@@ -2,9 +2,9 @@ use gpui::*;
 use std::ops::DerefMut;
 use gpui_component::ContextModal;
 use gpui_component::button::{Button, ButtonVariants};
-use crate::lightspeed::{Lightspeed, editor_tab::EditorTab, settings::SettingsTab, tab::Tab};
+use crate::fulgur::{Fulgur, editor_tab::EditorTab, settings::SettingsTab, tab::Tab};
 
-impl Lightspeed {
+impl Fulgur {
     // Create a new tab
     // @param window: The window to create the tab in
     // @param cx: The application context
@@ -248,8 +248,8 @@ impl Lightspeed {
                         // Clone entity for on_ok closure
                         let entity_ok = entity.clone();
                         modal
-                            .title(div().text_size(px(16.)).child("Quit Lightspeed"))
-                            .child(div().text_size(px(14.)).child("Are you sure you want to quit Lightspeed?"))
+                            .title(div().text_size(px(16.)).child("Quit Fulgur"))
+                            .child(div().text_size(px(14.)).child("Are you sure you want to quit Fulgur?"))
                             .footer(move |_, _, _window, _cx| {
                                 let entity_ok_footer = entity_ok.clone();
                                 vec![

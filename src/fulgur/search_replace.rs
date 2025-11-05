@@ -1,4 +1,4 @@
-use crate::lightspeed::Lightspeed;
+use crate::fulgur::Fulgur;
 use gpui::*;
 use gpui_component::input::Position;
 use lsp_types::{Diagnostic, DiagnosticSeverity};
@@ -11,7 +11,7 @@ pub struct SearchMatch {
     pub col: usize,
 }
 
-impl Lightspeed {
+impl Fulgur {
     // Close the search bar and clear highlighting
     // @param window: The window context
     // @param cx: The application context

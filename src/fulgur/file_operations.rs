@@ -1,4 +1,4 @@
-use crate::lightspeed::{Lightspeed, editor_tab::EditorTab, tab::Tab};
+use crate::fulgur::{Fulgur, editor_tab::EditorTab, tab::Tab};
 use chardetng::EncodingDetector;
 use gpui::*;
 
@@ -36,7 +36,7 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     (encoding_name, decoded.to_string())
 }
 
-impl Lightspeed {
+impl Fulgur {
     // Open a file
     // @param window: The window to open the file in
     // @param cx: The application context

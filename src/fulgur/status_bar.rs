@@ -1,4 +1,4 @@
-use crate::lightspeed::{Lightspeed, languages};
+use crate::fulgur::{Fulgur, languages};
 use gpui::*;
 use gpui_component::{ActiveTheme, h_flex, highlighter::Language, input::Position};
 
@@ -31,7 +31,7 @@ pub fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl
     status_bar_item_factory(content, border_color) //.border_r_1()
 }
 
-impl Lightspeed {
+impl Fulgur {
     // Render the status bar
     // @param window: The window context
     // @param cx: The application context

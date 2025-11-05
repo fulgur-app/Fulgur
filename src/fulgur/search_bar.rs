@@ -1,4 +1,4 @@
-use crate::lightspeed::{Lightspeed, components_utils};
+use crate::fulgur::{Fulgur, components_utils};
 use gpui::*;
 use gpui_component::{ActiveTheme, IconName, StyledExt, button::Button, input::TextInput};
 
@@ -48,7 +48,7 @@ pub fn search_bar_toggle_button_factory(
     button
 }
 
-impl Lightspeed {
+impl Fulgur {
     // Render the search bar
     // @param window: The window context
     // @param cx: The application context

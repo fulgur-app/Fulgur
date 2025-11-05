@@ -10,7 +10,7 @@ use gpui_component::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::lightspeed::Lightspeed;
+use crate::fulgur::Fulgur;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EditorSettings {
@@ -67,7 +67,7 @@ impl Settings {
         {
             let app_data = std::env::var("APPDATA")?;
             let mut path = PathBuf::from(app_data);
-            path.push("Lightspeed");
+            path.push("Fulgur");
             fs::create_dir_all(&path)?;
             path.push("settings.json");
             Ok(path)
@@ -77,7 +77,7 @@ impl Settings {
         {
             let home = std::env::var("HOME")?;
             let mut path = PathBuf::from(home);
-            path.push(".lightspeed");
+            path.push(".fulgur");
             fs::create_dir_all(&path)?;
             path.push("settings.json");
             Ok(path)
@@ -177,7 +177,7 @@ pub fn create_font_size_dropdown(
 // @return: The subscription
 pub fn subscribe_to_font_size_changes(
     dropdown: &Entity<DropdownState<Vec<SharedString>>>,
-    cx: &mut Context<Lightspeed>,
+    cx: &mut Context<Fulgur>,
 ) -> Subscription {
     cx.subscribe(
         dropdown,
@@ -226,7 +226,7 @@ pub fn create_tab_size_dropdown(
 // @return: The subscription
 pub fn subscribe_to_tab_size_changes(
     dropdown: &Entity<DropdownState<Vec<SharedString>>>,
-    cx: &mut Context<Lightspeed>,
+    cx: &mut Context<Fulgur>,
 ) -> Subscription {
     cx.subscribe(
         dropdown,
@@ -253,8 +253,8 @@ pub fn subscribe_to_tab_size_changes(
 fn make_switch(
     id: &'static str,
     checked: bool,
-    cx: &mut Context<Lightspeed>,
-    on_click_function: fn(&mut Lightspeed, &bool, &mut Context<Lightspeed>),
+    cx: &mut Context<Fulgur>,
+    on_click_function: fn(&mut Fulgur, &bool, &mut Context<Fulgur>),
 ) -> Div {
     div().child(Switch::new(id).checked(checked).on_click(cx.listener(
         move |this, checked: &bool, _, cx| {
@@ -283,7 +283,7 @@ fn make_settings_section(title: &'static str) -> Div {
 fn make_setting_description(
     title: &'static str,
     description: &'static str,
-    cx: &mut Context<Lightspeed>,
+    cx: &mut Context<Fulgur>,
 ) -> Div {
     h_flex()
         .w_full()
@@ -321,8 +321,8 @@ fn make_toggle_option(
     title: &'static str,
     description: &'static str,
     checked: bool,
-    cx: &mut Context<Lightspeed>,
-    on_click_function: fn(&mut Lightspeed, &bool, &mut Context<Lightspeed>),
+    cx: &mut Context<Fulgur>,
+    on_click_function: fn(&mut Fulgur, &bool, &mut Context<Fulgur>),
 ) -> Div {
     make_setting_description(title, description, cx).child(make_switch(
         id,
@@ -342,13 +342,13 @@ fn make_dropdown_option(
     title: &'static str,
     description: &'static str,
     state: &Entity<DropdownState<Vec<SharedString>>>,
-    cx: &mut Context<Lightspeed>,
+    cx: &mut Context<Fulgur>,
 ) -> Div {
     make_setting_description(title, description, cx)
         .child(div().child(Dropdown::new(state).w(px(120.)).bg(cx.theme().background)))
 }
 
-impl Lightspeed {
+impl Fulgur {
     // Make the editor settings section
     // @param cx: The context
     // @return: The editor settings section
@@ -362,7 +362,7 @@ impl Lightspeed {
             ))
             .child(make_dropdown_option(
                 "Spaces for indentation",
-                "The number of spaces for indentation. Lightspeed must be restarted to apply the changes.",
+                "The number of spaces for indentation. Fulgur must be restarted to apply the changes.",
                 &self.tab_size_dropdown,
                 cx,
             ))

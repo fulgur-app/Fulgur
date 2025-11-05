@@ -1,11 +1,11 @@
 use anyhow::anyhow;
 use gpui::*;
-use gpui_component::{TitleBar, Root};
+use gpui_component::{Root, TitleBar};
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
 
-use crate::lightspeed::Lightspeed;
-mod lightspeed;
+mod fulgur;
+
 // Asset loader for icons
 #[derive(RustEmbed)]
 #[folder = "./assets"]
@@ -36,7 +36,7 @@ fn main() {
     app.run(move |cx| {
         // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
-        Lightspeed::init(cx);
+        fulgur::Fulgur::init(cx);
 
         cx.spawn(async move |cx| {
             let window_options = WindowOptions {
@@ -46,8 +46,8 @@ fn main() {
             };
 
             cx.open_window(window_options, |window, cx| {
-                window.set_window_title("Lightspeed");
-                let view = Lightspeed::new(window, cx);
+                window.set_window_title("Fulgur");
+                let view = fulgur::Fulgur::new(window, cx);
                 // Focus the initial tab's content so keyboard shortcuts work immediately
                 view.read(cx).focus_active_tab(window, cx);
                 // Root must be the window's root component for modals to work

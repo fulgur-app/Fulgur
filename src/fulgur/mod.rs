@@ -28,7 +28,7 @@ use gpui_component::{
     input::{InputEvent, InputState, TextInput},
 };
 
-pub struct Lightspeed {
+pub struct Fulgur {
     focus_handle: FocusHandle,
     title_bar: Entity<CustomTitleBar>,
     tabs: Vec<Tab>,
@@ -53,11 +53,11 @@ pub struct Lightspeed {
     tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
 }
 
-impl Lightspeed {
-    // Create a new Lightspeed instance
-    // @param window: The window to create the Lightspeed instance in
+impl Fulgur {
+    // Create a new Fulgur instance
+    // @param window: The window to create the Fulgur instance in
     // @param cx: The application context
-    // @return: The new Lightspeed instance
+    // @return: The new Fulgur instance
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
 
@@ -129,7 +129,7 @@ impl Lightspeed {
         })
     }
 
-    // Initialize the Lightspeed instance
+    // Initialize the Fulgur instance
     // @param cx: The application context
     pub fn init(cx: &mut App) {
         // Initialize language support for syntax highlighting
@@ -177,17 +177,17 @@ impl Lightspeed {
     }
 }
 
-impl Focusable for Lightspeed {
+impl Focusable for Fulgur {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for Lightspeed {
-    // Render the Lightspeed instance
-    // @param window: The window to render the Lightspeed instance in
+impl Render for Fulgur {
+    // Render the Fulgur instance
+    // @param window: The window to render the Fulgur instance in
     // @param cx: The application context
-    // @return: The rendered Lightspeed instance
+    // @return: The rendered Fulgur instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Ensure we always have at least one tab
         if self.tabs.is_empty() {
@@ -339,7 +339,7 @@ impl Render for Lightspeed {
     }
 }
 
-impl Lightspeed {
+impl Fulgur {
     // Render the content area (editor or settings)
     // @param active_tab: The active tab (if any)
     // @param window: The window context
