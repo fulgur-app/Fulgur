@@ -62,8 +62,6 @@ impl Lightspeed {
                     window.open_modal(cx.deref_mut(), move |modal, _, _| {
                         // Clone entity for on_ok closure
                         let entity_ok = entity.clone();
-                        
-                        // Return the modal builder
                         modal
                             .title(div().text_size(px(16.)).child("Unsaved changed"))
                             .child(div().text_size(px(14.)).child("Are you sure you want to close this tab? Your changes will be lost."))
@@ -193,10 +191,49 @@ impl Lightspeed {
         }
     }
 
-    /// Quit the application
+    /// Quit the application. If confirm_exit is enabled, a modal will be shown to confirm the action.
     /// @param window: The window to quit the application in
     /// @param cx: The application context
-    pub(super) fn quit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings.app_settings.confirm_exit {
+            let entity = cx.entity().clone();
+            window.open_modal(cx.deref_mut(), move |modal, _, _| {
+                        // Clone entity for on_ok closure
+                        let entity_ok = entity.clone();
+                        modal
+                            .title(div().text_size(px(16.)).child("Quit Lightspeed"))
+                            .child(div().text_size(px(14.)).child("Are you sure you want to quit Lightspeed?"))
+                            .footer(move |_, _, _window, _cx| {
+                                let entity_ok_footer = entity_ok.clone();
+                                vec![
+                                    Button::new("cancel")
+                                        .label("Cancel")
+                                        .on_click(move |_, window, cx| {
+                                            window.close_modal(cx);
+                                        })
+                                        .into_any_element(),
+                                    Button::new("ok")
+                                        .label("Close")
+                                        .primary()
+                                        .on_click(move |_, window, cx| {
+                                            // Save state before quitting
+                                            entity_ok_footer.update(cx, |this, cx| {
+                                                if let Err(e) = this.save_state(cx) {
+                                                    eprintln!("Failed to save app state: {}", e);
+                                                }
+                                            });
+                                            
+                                            cx.quit();
+                                            window.close_modal(cx);
+                                        })
+                                        .into_any_element(),
+                                ]
+                            })
+                            .overlay_closable(false)
+                            .show_close(false)
+                    });
+            return;
+        }
         // Save state before quitting
         if let Err(e) = self.save_state(cx) {
             eprintln!("Failed to save app state: {}", e);
