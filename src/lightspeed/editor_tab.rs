@@ -144,4 +144,27 @@ impl EditorTab {
         self.original_content = self.content.read(cx).text().to_string();
         self.modified = false;
     }
+
+    // Update the language/syntax highlighting based on the file extension
+    // @param window: The window context
+    // @param cx: The application context
+    // @param settings: The settings for the input state
+    pub fn update_language(
+        &mut self,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) {
+        if let Some(ref path) = self.file_path {
+            let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+            let language = language_from_extension(extension);
+
+            // Get the current content to preserve it
+            let current_content = self.content.read(cx).text().to_string();
+
+            // Create a new InputState with the new language
+            self.content = cx
+                .new(|cx| make_input_state(window, cx, language, Some(current_content), settings));
+        }
+    }
 }

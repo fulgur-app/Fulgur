@@ -172,7 +172,7 @@ impl Lightspeed {
 
             // Update the tab with the new path
             window
-                .update(|_, cx| {
+                .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
                         if let Some(Tab::Editor(editor_tab)) =
                             this.tabs.get_mut(active_tab_index.unwrap())
@@ -185,6 +185,7 @@ impl Lightspeed {
                                 .to_string()
                                 .into();
                             editor_tab.mark_as_saved(cx);
+                            editor_tab.update_language(window, cx, &this.settings.editor_settings);
                             cx.notify();
                         }
                     });
