@@ -372,13 +372,8 @@ impl Lightspeed {
                 "Show the line numbers in the editor",
                 self.settings.editor_settings.show_line_numbers,
                 cx,
-                |this, checked, cx| {
+                |this, checked, _cx| {
                     this.settings.editor_settings.show_line_numbers = *checked;
-                    // this.settings_changed = true;
-                    // if let Err(e) = this.settings.save() {
-                    //     eprintln!("Failed to save settings: {}", e);
-                    // }
-                    // cx.notify();
                 },
             ))
             .child(make_toggle_option(
@@ -387,28 +382,18 @@ impl Lightspeed {
                 "Show the vertical lines that indicate the indentation of the text",
                 self.settings.editor_settings.show_indent_guides,
                 cx,
-                |this, checked, cx| {
+                |this, checked, _cx| {
                     this.settings.editor_settings.show_indent_guides = *checked;
-                    // this.settings_changed = true;
-                    // if let Err(e) = this.settings.save() {
-                    //     eprintln!("Failed to save settings: {}", e);
-                    // }
-                    // cx.notify();
                 },
             ))
             .child(make_toggle_option(
                 "soft_wrap",
                 "Soft wrap",
-                "Wraps the text to the next line when the line is too long",
+                "Wraps the text to the next line when the line is too long",    
                 self.settings.editor_settings.soft_wrap,
                 cx,
-                |this, checked, cx| {
+                |this, checked, _cx| {
                     this.settings.editor_settings.soft_wrap = *checked;
-                    // this.settings_changed = true;
-                    // if let Err(e) = this.settings.save() {
-                    //     eprintln!("Failed to save settings: {}", e);
-                    // }
-                    // cx.notify();
                 },
             ))
     }
@@ -423,9 +408,8 @@ impl Lightspeed {
             "Confirm before exiting the application",
             self.settings.app_settings.confirm_exit,
             cx,
-            |this, checked, cx| {
+            |this, checked, _cx| {
                 this.settings.app_settings.confirm_exit = *checked;
-                cx.notify();
             },
         ))
     }
