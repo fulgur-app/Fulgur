@@ -186,7 +186,7 @@ impl Lightspeed {
                     .line_number(self.settings.editor_settings.show_line_numbers)
                     .indent_guides(self.settings.editor_settings.show_indent_guides)
                     .tab_size(TabSize {
-                        tab_size: 4,
+                        tab_size: self.settings.editor_settings.tab_size,
                         hard_tabs: false,
                     })
                     .soft_wrap(self.settings.editor_settings.soft_wrap)

@@ -38,7 +38,7 @@ fn make_input_state(
         .line_number(settings.show_line_numbers)
         .indent_guides(settings.show_indent_guides)
         .tab_size(TabSize {
-            tab_size: 4,
+            tab_size: settings.tab_size,
             hard_tabs: false,
         })
         .soft_wrap(settings.soft_wrap)
@@ -127,6 +127,8 @@ impl EditorTab {
             input_state.set_line_number(settings.show_line_numbers, window, cx);
             input_state.set_indent_guides(settings.show_indent_guides, window, cx);
             input_state.set_soft_wrap(settings.soft_wrap, window, cx);
+            // Note: tab_size cannot be changed after InputState creation
+            // It must be set during the initial creation of the InputState
         });
     }
 

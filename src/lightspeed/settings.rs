@@ -15,6 +15,7 @@ pub struct EditorSettings {
     pub show_indent_guides: bool,
     pub soft_wrap: bool,
     pub font_size: f32,
+    pub tab_size: usize,
 }
 
 #[derive(Clone)]
@@ -29,6 +30,7 @@ impl EditorSettings {
             show_indent_guides: true,
             soft_wrap: false,
             font_size: 14.0,
+            tab_size: 4,
         }
     }
 }
@@ -74,6 +76,29 @@ impl SettingsTab {
     }
 }
 
+// Create the a dropdown state
+// @param settings: The current settings
+// @param window: The window
+// @param cx: The app context
+// @return: The dropdown state entity
+pub fn create_dropdown(
+    _settings: &Settings,
+    window: &mut Window,
+    current_value: String,
+    options: Vec<SharedString>,
+    cx: &mut App,
+) -> Entity<DropdownState<Vec<SharedString>>> {
+    let selected_index = options.iter().position(|s| s.as_ref() == current_value);
+
+    cx.new(|cx| {
+        DropdownState::new(
+            options,
+            selected_index.map(|i| IndexPath::default().row(i)),
+            window,
+            cx,
+        )
+    })
+}
 // Create the font size dropdown state
 // @param settings: The current settings
 // @param window: The window
@@ -96,18 +121,7 @@ pub fn create_font_size_dropdown(
 
     // Find the index of the current font size
     let current_font_size = settings.editor_settings.font_size.to_string();
-    let selected_index = font_sizes
-        .iter()
-        .position(|s| s.as_ref() == current_font_size);
-
-    cx.new(|cx| {
-        DropdownState::new(
-            font_sizes,
-            selected_index.map(|i| IndexPath::default().row(i)),
-            window,
-            cx,
-        )
-    })
+    create_dropdown(settings, window, current_font_size, font_sizes, cx)
 }
 
 // Subscribe to font size dropdown changes
@@ -131,6 +145,52 @@ pub fn subscribe_to_font_size_changes(
     )
 }
 
+// Create the tab size dropdown state
+// @param settings: The current settings
+// @param window: The window
+// @param cx: The app context
+// @return: The dropdown state entity
+pub fn create_tab_size_dropdown(
+    settings: &Settings,
+    window: &mut Window,
+    cx: &mut App,
+) -> Entity<DropdownState<Vec<SharedString>>> {
+    let tab_sizes: Vec<SharedString> = vec![
+        "2".into(),
+        "4".into(),
+        "6".into(),
+        "8".into(),
+        "10".into(),
+        "12".into(),
+        "42".into(),
+    ];
+
+    // Find the index of the current font size
+    let current_tab_size = settings.editor_settings.tab_size.to_string();
+    create_dropdown(settings, window, current_tab_size, tab_sizes, cx)
+}
+
+// Subscribe to font size dropdown changes
+// @param dropdown: The dropdown state entity
+// @param cx: The context
+// @return: The subscription
+pub fn subscribe_to_tab_size_changes(
+    dropdown: &Entity<DropdownState<Vec<SharedString>>>,
+    cx: &mut Context<Lightspeed>,
+) -> Subscription {
+    cx.subscribe(
+        dropdown,
+        |this, _dropdown, event: &DropdownEvent<Vec<SharedString>>, cx| {
+            if let DropdownEvent::Confirm(Some(selected)) = event {
+                if let Ok(size) = selected.parse::<usize>() {
+                    this.settings.editor_settings.tab_size = size;
+                    cx.notify();
+                }
+            }
+        },
+    )
+}
+
 // Make a switch
 // @param id: The ID of the switch
 // @param checked: Whether the switch is checked
@@ -142,12 +202,12 @@ fn make_switch(
     checked: bool,
     cx: &mut Context<Lightspeed>,
     on_click_function: fn(&mut Lightspeed, &bool, &mut Context<Lightspeed>),
-) -> Switch {
-    Switch::new(id)
-        .checked(checked)
-        .on_click(cx.listener(move |this, checked: &bool, _, cx| {
+) -> Div {
+    div().child(Switch::new(id).checked(checked).on_click(cx.listener(
+        move |this, checked: &bool, _, cx| {
             on_click_function(this, checked, cx);
-        }))
+        },
+    )))
 }
 
 // Make a settings section
@@ -181,7 +241,7 @@ fn make_setting_description(
                 .text_size(px(14.0))
                 .flex_1()
                 .child(div().font_semibold().child(title))
-                .child(description),
+                .child(div().child(description)),
         )
 }
 
@@ -221,104 +281,11 @@ fn make_dropdown_option(
     state: &Entity<DropdownState<Vec<SharedString>>>,
     cx: &mut Context<Lightspeed>,
 ) -> Div {
-    h_flex()
-        .w_full()
-        .px_3()
-        .py_2()
-        .bg(cx.theme().muted)
-        .rounded(px(2.0))
-        .child(
-            v_flex()
-                .text_size(px(14.0))
-                .flex_1()
-                .child(div().font_semibold().child(title))
-                .child(description),
-        )
+    make_setting_description(title, description, cx)
         .child(div().child(Dropdown::new(state).w(px(120.)).bg(cx.theme().background)))
 }
 
 impl Lightspeed {
-    // Make a switch
-    // @param id: The ID of the switch
-    // @param checked: Whether the switch is checked
-    // @param cx: The context
-    // @param on_click_function: The function to call when the switch is clicked
-    // @return: The switch
-    // fn make_switch(
-    //     &self,
-    //     id: &'static str,
-    //     checked: bool,
-    //     cx: &mut Context<Self>,
-    //     on_click_function: fn(&mut Lightspeed, &bool, &mut Context<Self>),
-    // ) -> Switch {
-    //     Switch::new(id).checked(checked).on_click(cx.listener(
-    //         move |this, checked: &bool, _, cx| {
-    //             on_click_function(this, checked, cx);
-    //         },
-    //     ))
-    // }
-
-    // fn make_setting_description(
-    //     &self,
-    //     title: &'static str,
-    //     description: &'static str,
-    //     cx: &mut Context<Self>,
-    // ) -> Div {
-    //     h_flex()
-    //         .w_full()
-    //         .px_3()
-    //         .py_2()
-    //         .bg(cx.theme().muted)
-    //         .rounded(px(2.0))
-    //         .child(
-    //             v_flex()
-    //                 .text_size(px(14.0))
-    //                 .flex_1()
-    //                 .child(div().font_semibold().child(title))
-    //                 .child(description),
-    //         )
-    // }
-
-    // fn make_toggle_option(
-    //     &self,
-    //     id: &'static str,
-    //     title: &'static str,
-    //     description: &'static str,
-    //     checked: bool,
-    //     cx: &mut Context<Self>,
-    //     on_click_function: fn(&mut Lightspeed, &bool, &mut Context<Self>),
-    // ) -> Div {
-    //     make_setting_description(title, description, cx).child(make_switch(
-    //         id,
-    //         checked,
-    //         cx,
-    //         on_click_function,
-    //     ))
-    // }
-
-    // fn make_dropdown_option(
-    //     &self,
-    //     title: &'static str,
-    //     description: &'static str,
-    //     state: &Entity<DropdownState<Vec<SharedString>>>,
-    //     cx: &mut Context<Self>,
-    // ) -> Div {
-    //     h_flex()
-    //         .w_full()
-    //         .px_3()
-    //         .py_2()
-    //         .bg(cx.theme().muted)
-    //         .rounded(px(2.0))
-    //         .child(
-    //             v_flex()
-    //                 .text_size(px(14.0))
-    //                 .flex_1()
-    //                 .child(div().font_semibold().child(title))
-    //                 .child(description),
-    //         )
-    //         .child(div().child(Dropdown::new(state).w(px(120.)).bg(cx.theme().background)))
-    // }
-
     // Make the editor settings section
     // @param cx: The context
     // @return: The editor settings section
@@ -328,6 +295,12 @@ impl Lightspeed {
                 "Font size",
                 "The size of the font in the editor",
                 &self.font_size_dropdown,
+                cx,
+            ))
+            .child(make_dropdown_option(
+                "Spaces for indentation",
+                "The number of spaces for indentation. Lightspeed must be restarted to apply.",
+                &self.tab_size_dropdown,
                 cx,
             ))
             .child(make_toggle_option(

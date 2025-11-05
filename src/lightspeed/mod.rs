@@ -47,6 +47,8 @@ pub struct Lightspeed {
     pub settings: Settings,
     pub font_size_dropdown: Entity<DropdownState<Vec<SharedString>>>,
     _font_size_subscription: gpui::Subscription,
+    pub tab_size_dropdown: Entity<DropdownState<Vec<SharedString>>>,
+    _tab_size_subscription: gpui::Subscription,
 }
 
 impl Lightspeed {
@@ -79,12 +81,15 @@ impl Lightspeed {
                     }
                 });
 
-            // Create font size dropdown state (logic is in settings.rs)
+            // Create settings dropdown states (logic is in settings.rs)
             let font_size_dropdown = settings::create_font_size_dropdown(&settings, window, cx);
+            let tab_size_dropdown = settings::create_tab_size_dropdown(&settings, window, cx);
 
-            // Subscribe to font size changes (handler is in settings.rs)
+            // Subscribe to dropdown subscriptions (handler is in settings.rs)
             let _font_size_subscription =
                 settings::subscribe_to_font_size_changes(&font_size_dropdown, cx);
+            let _tab_size_subscription =
+                settings::subscribe_to_tab_size_changes(&tab_size_dropdown, cx);
 
             // Create initial tab (will be replaced if state is loaded)
             let initial_tab = Tab::Editor(EditorTab::new(
@@ -113,6 +118,8 @@ impl Lightspeed {
                 settings,
                 font_size_dropdown,
                 _font_size_subscription,
+                tab_size_dropdown,
+                _tab_size_subscription,
             };
 
             // Load saved state if it exists
