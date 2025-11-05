@@ -26,6 +26,7 @@ use gpui_component::{
     Root, StyledExt, Theme, ThemeRegistry,
     dropdown::DropdownState,
     input::{InputEvent, InputState, TextInput},
+    v_flex,
 };
 
 pub struct Fulgur {
@@ -205,18 +206,20 @@ impl Render for Fulgur {
 
         // Update tabs that were marked for update in the previous render
         if !self.tabs_pending_update.is_empty() {
-            for tab_index in self.tabs_pending_update.drain() {
-                if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
-                    editor_tab.update_settings(window, cx, &self.settings.editor_settings);
+            let settings = self.settings.editor_settings.clone();
+            for tab_index in self.tabs_pending_update.drain().collect::<Vec<_>>() {
+                if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
+                    editor_tab.update_settings(window, cx, &settings);
                 }
             }
         }
 
         // Update all rendered editor tabs when settings change
         if self.settings_changed {
-            for tab_index in self.rendered_tabs.iter() {
-                if let Some(Tab::Editor(editor_tab)) = self.tabs.get(*tab_index) {
-                    editor_tab.update_settings(window, cx, &self.settings.editor_settings);
+            let settings = self.settings.editor_settings.clone();
+            for tab_index in self.rendered_tabs.iter().copied().collect::<Vec<_>>() {
+                if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
+                    editor_tab.update_settings(window, cx, &settings);
                 }
             }
             self.settings_changed = false;
@@ -249,9 +252,9 @@ impl Render for Fulgur {
         let main_div = div()
             .size_full()
             .child(
-                div()
+                v_flex()
                     .size_full()
-                    .v_flex()
+                    .gap_0()
                     .track_focus(&self.focus_handle)
                     .on_action(cx.listener(|this, _action: &NewFile, window, cx| {
                         this.new_tab(window, cx);
@@ -350,26 +353,29 @@ impl Fulgur {
         active_tab: Option<Tab>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Div {
-        let mut content_div = div().flex_1().p_0().m_0().overflow_hidden();
-
+    ) -> impl IntoElement {
         if let Some(tab) = active_tab {
             match tab {
                 Tab::Editor(editor_tab) => {
-                    content_div = content_div.child(
+                    return v_flex().w_full().flex_1().child(
                         TextInput::new(&editor_tab.content)
-                            .w_full()
+                            .bordered(false)
+                            .p_0()
                             .h_full()
-                            .appearance(false)
-                            .text_size(px(self.settings.editor_settings.font_size)),
+                            .font_family("Monaco")
+                            .text_size(px(self.settings.editor_settings.font_size))
+                            .focus_bordered(false),
                     );
                 }
                 Tab::Settings(_) => {
-                    content_div = content_div.child(self.render_settings(window, cx));
+                    return v_flex()
+                        .w_full()
+                        .flex_1()
+                        .child(self.render_settings(window, cx));
                 }
             }
         }
 
-        content_div
+        v_flex().w_full().flex_1()
     }
 }
