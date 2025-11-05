@@ -28,3 +28,42 @@ pub fn language_from_extension(extension: &str) -> Language {
 pub fn language_name(language: &Language) -> &'static str {
     language.name()
 }
+
+pub fn pretty_name(language: Language) -> String {
+    let language_pretty = match language {
+        Language::Plain => "Text",
+        Language::Bash => "Bash",
+        Language::C => "C",
+        Language::CMake => "CMake",
+        Language::CSharp => "C#",
+        Language::Cpp => "C++",
+        Language::Css => "CSS",
+        Language::Diff => "Diff",
+        Language::Ejs => "EJS",
+        Language::Elixir => "Elixir",
+        Language::Erb => "ERB",
+        Language::Go => "Go",
+        Language::GraphQL => "GraphQL",
+        Language::Html => "HTML",
+        Language::Java => "Java",
+        Language::JavaScript => "JavaScript",
+        Language::JsDoc => "JSdoc",
+        Language::Json => "JSON",
+        Language::Make => "Make",
+        Language::Markdown => "Markdown",
+        Language::MarkdownInline => "Markdown Inline",
+        Language::Proto => "Proto",
+        Language::Python => "Python",
+        Language::Ruby => "Ruby",
+        Language::Rust => "Rust",
+        Language::Scala => "Scala",
+        Language::Sql => "SQL",
+        Language::Swift => "Swift",
+        Language::Toml => "Toml",
+        Language::Tsx => "TSX",
+        Language::TypeScript => "TypeScript",
+        Language::Yaml => "YAML",
+        Language::Zig => "Zig",
+    };
+    language_pretty.to_string()
+}

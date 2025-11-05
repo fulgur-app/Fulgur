@@ -16,6 +16,7 @@ pub struct EditorTab {
     pub modified: bool,
     pub original_content: String,
     pub encoding: String,
+    pub language: Language,
 }
 
 // Create a new input state with syntax highlighting
@@ -70,6 +71,7 @@ impl EditorTab {
             modified: false,
             original_content: String::new(),
             encoding: "UTF-8".to_string(),
+            language,
         }
     }
 
@@ -113,6 +115,7 @@ impl EditorTab {
             modified: is_modified,
             original_content: contents,
             encoding,
+            language,
         }
     }
 

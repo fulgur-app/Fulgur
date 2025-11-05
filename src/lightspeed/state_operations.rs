@@ -3,7 +3,7 @@ use crate::lightspeed::{
     state_persistence::*, tab::Tab,
 };
 use gpui::*;
-use gpui_component::input::TabSize;
+use gpui_component::{highlighter::Language, input::TabSize};
 use std::fs;
 
 impl Lightspeed {
@@ -213,6 +213,7 @@ impl Lightspeed {
                 modified: true,
                 original_content: String::new(),
                 encoding: "UTF-8".to_string(),
+                language: Language::Plain,
             }
         };
 
