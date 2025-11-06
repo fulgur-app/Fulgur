@@ -1,4 +1,8 @@
-use crate::fulgur::{Fulgur, components_utils, tab::Tab};
+use crate::fulgur::{
+    Fulgur,
+    components_utils::{self, TAB_BAR_HEIGHT},
+    tab::Tab,
+};
 use gpui::*;
 use gpui_component::{
     ActiveTheme, IconName, Sizable,
@@ -88,8 +92,16 @@ impl Fulgur {
         div()
             .flex()
             .items_center()
-            .h(px(40.))
+            .h(px(TAB_BAR_HEIGHT))
             .bg(cx.theme().tab_bar)
+            // Do not delete this, it is used to create a space for the title bar
+            // .child(
+            //     div()
+            //         .w_20()
+            //         .h(px(TAB_BAR_HEIGHT))
+            //         .border_b_1()
+            //         .border_color(cx.theme().border),
+            // )
             .child(
                 tab_bar_button_factory("new-tab", "New Tab", IconName::Plus, cx.theme().border)
                     .on_click(cx.listener(|this, _, window, cx| {
@@ -109,6 +121,8 @@ impl Fulgur {
             )
             .child(
                 div()
+                    .id("tab-scroll-container")
+                    .overflow_x_scroll()
                     .flex()
                     .flex_1()
                     .items_center()
@@ -125,7 +139,7 @@ impl Fulgur {
                             .border_b_1()
                             .border_l_1()
                             .border_color(cx.theme().border)
-                            .h(px(40.)),
+                            .h(px(TAB_BAR_HEIGHT)),
                     ),
             )
     }
@@ -157,7 +171,7 @@ impl Fulgur {
             .id(("tab", tab_id))
             .flex()
             .items_center()
-            .h(px(40.))
+            .h(px(TAB_BAR_HEIGHT))
             .px_2()
             .gap_2()
             .border_l_1()

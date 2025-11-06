@@ -4,6 +4,9 @@ use gpui_component::{
     button::{Button, ButtonVariants},
 };
 
+pub const TAB_BAR_HEIGHT: f32 = 40.0;
+pub const BUTTON_SIZE: f32 = TAB_BAR_HEIGHT;
+
 // Create a button
 // @param id: The ID of the button
 // @param tooltip: The tooltip of the button
@@ -22,8 +25,8 @@ pub fn button_factory(
         .small()
         .tooltip(tooltip)
         .ghost()
-        .h(px(40.))
-        .w(px(40.))
+        .h(px(BUTTON_SIZE))
+        .w(px(BUTTON_SIZE))
         .p_0()
         .m_0()
         .border_0()
