@@ -3,6 +3,12 @@ name = "Fulgur"
 version = "0.1.0"
 edition = "2024"
 
+[package.metadata.bundle]
+name = "Fulgur"
+identifier = "com.fulgur.app"
+icon = ["assets/icon.png"]
+category = "Developer Tool"
+
 [dependencies]
 anyhow = "1.0.100"
 chardetng = "0.1.17"
