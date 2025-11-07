@@ -95,13 +95,13 @@ impl Fulgur {
             .h(px(TAB_BAR_HEIGHT))
             .bg(cx.theme().tab_bar)
             // Do not delete this, it is used to create a space for the title bar
-            // .child(
-            //     div()
-            //         .w_20()
-            //         .h(px(TAB_BAR_HEIGHT))
-            //         .border_b_1()
-            //         .border_color(cx.theme().border),
-            // )
+            .child(
+                div()
+                    .w_20()
+                    .h(px(TAB_BAR_HEIGHT))
+                    .border_b_1()
+                    .border_color(cx.theme().border),
+            )
             .child(
                 tab_bar_button_factory("new-tab", "New Tab", IconName::Plus, cx.theme().border)
                     .on_click(cx.listener(|this, _, window, cx| {

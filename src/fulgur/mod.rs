@@ -328,7 +328,7 @@ impl Render for Fulgur {
                             this.on_close_all_tabs_action(action, window, cx);
                         },
                     ))
-                    .child(self.title_bar.clone())
+                    //.child(self.title_bar.clone())
                     .child(self.render_tab_bar(window, cx))
                     .child(self.render_content_area(active_tab, window, cx))
                     .children(self.render_search_bar(window, cx))

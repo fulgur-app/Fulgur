@@ -4,7 +4,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
 };
 
-pub const TAB_BAR_HEIGHT: f32 = 40.0;
+pub const TAB_BAR_HEIGHT: f32 = 34.0;
 pub const BUTTON_SIZE: f32 = TAB_BAR_HEIGHT;
 
 // Create a button
