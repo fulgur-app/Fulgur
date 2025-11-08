@@ -48,6 +48,26 @@ fn main() {
             cx.open_window(window_options, |window, cx| {
                 window.set_window_title("Fulgur");
                 let view = fulgur::Fulgur::new(window, cx);
+
+                // Register window close handler to show confirmation modal
+                let view_clone = view.clone();
+                window.on_window_should_close(cx, move |window, cx| {
+                    view_clone.update(cx, |fulgur, cx| {
+                        // Check if confirmation is needed
+                        if fulgur.settings.app_settings.confirm_exit {
+                            // Show modal and prevent closing
+                            fulgur.quit(window, cx);
+                            false // Prevent window from closing (modal will handle it)
+                        } else {
+                            // Save state and allow closing
+                            if let Err(e) = fulgur.save_state(cx) {
+                                eprintln!("Failed to save app state: {}", e);
+                            }
+                            true // Allow window to close
+                        }
+                    })
+                });
+
                 // Focus the initial tab's content so keyboard shortcuts work immediately
                 view.read(cx).focus_active_tab(window, cx);
                 // Root must be the window's root component for modals to work

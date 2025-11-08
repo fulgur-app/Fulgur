@@ -63,7 +63,6 @@ impl Fulgur {
                         let entity_ok = entity.clone();
                         modal
                             .title(div().text_size(px(16.)).child("Unsaved changed"))
-                            .child(div().text_size(px(14.)).child("Are you sure you want to close this tab? Your changes will be lost."))
                             .keyboard(true)
                             .confirm()
                             .on_ok(move |_, window, cx| {
@@ -88,7 +87,8 @@ impl Fulgur {
                             })
                             .on_cancel(move |_, _window, _cx| {
                                 true
-                            })  
+                            })
+                            .child(div().text_size(px(14.)).child("Are you sure you want to close this tab? Your changes will be lost."))
                             .overlay_closable(false)
                             .show_close(false)
                     });
@@ -231,7 +231,7 @@ impl Fulgur {
     // Quit the application. If confirm_exit is enabled, a modal will be shown to confirm the action.
     // @param window: The window to quit the application in
     // @param cx: The application context
-    pub(super) fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.app_settings.confirm_exit {
             let entity = cx.entity().clone();
             window.open_modal(cx.deref_mut(), move |modal, _, _| {
@@ -241,7 +241,7 @@ impl Fulgur {
                             .title(div().text_size(px(16.)).child("Quit Fulgur"))
                             .keyboard(true)
                             .confirm()
-                            .on_ok(move |_, window, cx| {
+                            .on_ok(move |_, _window, cx| {
                                 let entity_ok_footer = entity_ok.clone();
                                 // Save state before quitting
                                 entity_ok_footer.update(cx, |this, cx| {
