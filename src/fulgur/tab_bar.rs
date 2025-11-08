@@ -1,11 +1,12 @@
 use crate::fulgur::{
     Fulgur,
     components_utils::{self, TAB_BAR_HEIGHT},
+    icons::CustomIcon,
     tab::Tab,
 };
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, IconName, Sizable,
+    ActiveTheme, Sizable,
     button::{Button, ButtonVariants},
     context_menu::ContextMenuExt,
 };
@@ -35,7 +36,7 @@ actions!(fulgur, [CloseAllTabsAction]);
 pub fn tab_bar_button_factory(
     id: &'static str,
     tooltip: &'static str,
-    icon: IconName,
+    icon: CustomIcon,
     border_color: Hsla,
 ) -> Button {
     let mut button = components_utils::button_factory(id, tooltip, icon, border_color);
@@ -153,7 +154,7 @@ impl Fulgur {
                     .border_color(cx.theme().border),
             )
             .child(
-                tab_bar_button_factory("new-tab", "New Tab", IconName::Plus, cx.theme().border)
+                tab_bar_button_factory("new-tab", "New Tab", CustomIcon::Plus, cx.theme().border)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.new_tab(window, cx);
                     })),
@@ -162,7 +163,7 @@ impl Fulgur {
                 tab_bar_button_factory(
                     "open-file",
                     "Open File",
-                    IconName::FolderOpen,
+                    CustomIcon::FolderOpen,
                     cx.theme().border,
                 )
                 .on_click(cx.listener(|this, _, window, cx| {
@@ -277,7 +278,7 @@ impl Fulgur {
             .child(title_container)
             .child(
                 Button::new(("close-tab", tab_id))
-                    .icon(IconName::Close)
+                    .icon(CustomIcon::Close)
                     .ghost()
                     .xsmall()
                     .cursor_pointer()

@@ -1,6 +1,7 @@
 mod components_utils;
 mod editor_tab;
 mod file_operations;
+mod icons;
 mod languages;
 mod menus;
 mod search_bar;

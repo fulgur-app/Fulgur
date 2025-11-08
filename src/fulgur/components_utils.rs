@@ -1,8 +1,10 @@
 use gpui::*;
 use gpui_component::{
-    IconName, Sizable, StyledExt,
+    Sizable, StyledExt,
     button::{Button, ButtonVariants},
 };
+
+use crate::fulgur::icons::CustomIcon;
 
 pub const TAB_BAR_HEIGHT: f32 = 34.0;
 pub const BUTTON_SIZE: f32 = TAB_BAR_HEIGHT;
@@ -16,7 +18,7 @@ pub const BUTTON_SIZE: f32 = TAB_BAR_HEIGHT;
 pub fn button_factory(
     id: &'static str,
     tooltip: &'static str,
-    icon: IconName,
+    icon: CustomIcon,
     border_color: Hsla,
 ) -> Button {
     Button::new(id)

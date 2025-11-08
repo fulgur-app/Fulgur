@@ -1,6 +1,10 @@
-use crate::fulgur::{Fulgur, components_utils};
+use crate::fulgur::{
+    Fulgur,
+    components_utils::{self, button_factory},
+    icons::CustomIcon,
+};
 use gpui::*;
-use gpui_component::{ActiveTheme, IconName, StyledExt, button::Button, input::TextInput};
+use gpui_component::{ActiveTheme, StyledExt, button::Button, input::TextInput};
 
 // Create a search bar button
 // @param id: The ID of the button
@@ -11,12 +15,11 @@ use gpui_component::{ActiveTheme, IconName, StyledExt, button::Button, input::Te
 pub fn search_bar_button_factory(
     id: &'static str,
     tooltip: &'static str,
-    icon: IconName,
+    icon: CustomIcon,
     _background_color: Hsla,
     border_color: Hsla,
 ) -> Button {
-    let button = components_utils::button_factory(id, tooltip, icon, border_color);
-    button
+    button_factory(id, tooltip, icon, border_color)
 }
 
 // Create a search bar toggle button
@@ -30,7 +33,7 @@ pub fn search_bar_button_factory(
 pub fn search_bar_toggle_button_factory(
     id: &'static str,
     tooltip: &'static str,
-    icon: IconName,
+    icon: CustomIcon,
     border_color: Hsla,
     background_color: Hsla,
     accent_color: Hsla,
@@ -129,7 +132,7 @@ impl Fulgur {
                         search_bar_toggle_button_factory(
                             "match-case-button",
                             "Match case",
-                            IconName::CaseSensitive,
+                            CustomIcon::CaseSensitive,
                             cx.theme().border,
                             cx.theme().tab_bar,
                             cx.theme().accent,
@@ -144,7 +147,7 @@ impl Fulgur {
                         search_bar_toggle_button_factory(
                             "match-whole-word-button",
                             "Match whole word",
-                            IconName::ALargeSmall,
+                            CustomIcon::WholeWord,
                             cx.theme().border,
                             cx.theme().tab_bar,
                             cx.theme().accent,
@@ -172,8 +175,6 @@ impl Fulgur {
             .items_center()
             .p_0()
             .m_0()
-            .border_r_1()
-            .border_color(cx.theme().border)
             .child(
                 div()
                     .text_xs()
@@ -191,7 +192,7 @@ impl Fulgur {
                 search_bar_button_factory(
                     "search-previous-button",
                     "Previous",
-                    IconName::ChevronUp,
+                    CustomIcon::ChevronUp,
                     cx.theme().tab_bar,
                     cx.theme().border,
                 )
@@ -203,7 +204,7 @@ impl Fulgur {
                 search_bar_button_factory(
                     "search-next-button",
                     "Next",
-                    IconName::ChevronDown,
+                    CustomIcon::ChevronDown,
                     cx.theme().tab_bar,
                     cx.theme().border,
                 )
@@ -227,6 +228,8 @@ impl Fulgur {
             .h(px(40.))
             .bg(cx.theme().background)
             .text_color(cx.theme().muted_foreground)
+            .border_l_1()
+            .border_color(cx.theme().border)
             .child(
                 TextInput::new(&self.replace_input)
                     .flex_1()
@@ -261,7 +264,7 @@ impl Fulgur {
                         search_bar_button_factory(
                             "replace-button",
                             "Replace",
-                            IconName::Replace,
+                            CustomIcon::Replace,
                             cx.theme().tab_bar,
                             cx.theme().border,
                         )
@@ -273,7 +276,7 @@ impl Fulgur {
                         search_bar_button_factory(
                             "replace-all-button",
                             "Replace all",
-                            IconName::Replace,
+                            CustomIcon::ReplaceAll,
                             cx.theme().tab_bar,
                             cx.theme().border,
                         )
@@ -300,7 +303,7 @@ impl Fulgur {
                 search_bar_button_factory(
                     "close-search-button",
                     "Close",
-                    IconName::Close,
+                    CustomIcon::Close,
                     cx.theme().tab_bar,
                     cx.theme().border,
                 )
