@@ -47,8 +47,8 @@ impl Fulgur {
     // Get the display title for a tab, including parent folder if there are duplicates
     // @param index: The index of the tab
     // @param tab: The tab to get the title for
-    // @return: The display title
-    fn get_tab_display_title(&self, index: usize, tab: &Tab) -> String {
+    // @return: A tuple of (filename, optional parent folder)
+    fn get_tab_display_title(&self, index: usize, tab: &Tab) -> (String, Option<String>) {
         let base_title = tab.title();
 
         // Only apply folder logic to editor tabs with file paths
@@ -82,16 +82,16 @@ impl Fulgur {
                 if duplicate_count > 0 {
                     if let Some(parent) = path.parent() {
                         if let Some(parent_name) = parent.file_name().and_then(|n| n.to_str()) {
-                            return format!("{} — {}", filename, parent_name);
+                            return (filename.to_string(), Some(format!("../{}", parent_name)));
                         }
                     }
                 }
 
-                return filename.to_string();
+                return (filename.to_string(), None);
             }
         }
 
-        base_title.to_string()
+        (base_title.to_string(), None)
     }
 
     // Handle close tab action from context menu
@@ -245,22 +245,36 @@ impl Fulgur {
                 .cursor_pointer();
         }
 
-        tab_div
-            .child(
+        let (filename, folder) = self.get_tab_display_title(index, tab);
+        let modified_indicator = if tab.is_modified() { " •" } else { "" };
+
+        let mut title_container = div().flex().items_center().gap_1().pl_1().child(
+            div()
+                .text_sm()
+                .text_color(if is_active {
+                    cx.theme().tab_active_foreground
+                } else {
+                    cx.theme().tab_foreground
+                })
+                .child(format!("{}{}", filename, modified_indicator)),
+        );
+
+        if let Some(folder_path) = folder {
+            title_container = title_container.child(
                 div()
-                    .text_sm()
+                    .text_xs()
+                    .italic()
                     .text_color(if is_active {
                         cx.theme().tab_active_foreground
                     } else {
                         cx.theme().tab_foreground
                     })
-                    .pl_1()
-                    .child(format!(
-                        "{}{}",
-                        self.get_tab_display_title(index, tab),
-                        if tab.is_modified() { " •" } else { "" }
-                    )),
-            )
+                    .child(folder_path),
+            );
+        }
+
+        tab_div
+            .child(title_container)
             .child(
                 Button::new(("close-tab", tab_id))
                     .icon(IconName::Close)
