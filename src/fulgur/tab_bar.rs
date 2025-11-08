@@ -44,6 +44,56 @@ pub fn tab_bar_button_factory(
 }
 
 impl Fulgur {
+    // Get the display title for a tab, including parent folder if there are duplicates
+    // @param index: The index of the tab
+    // @param tab: The tab to get the title for
+    // @return: The display title
+    fn get_tab_display_title(&self, index: usize, tab: &Tab) -> String {
+        let base_title = tab.title();
+
+        // Only apply folder logic to editor tabs with file paths
+        if let Some(editor_tab) = tab.as_editor() {
+            if let Some(ref path) = editor_tab.file_path {
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+                // Count how many tabs have the same filename
+                let duplicate_count = self
+                    .tabs
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, t)| {
+                        if *i == index {
+                            return false; // Skip the current tab
+                        }
+                        if let Some(editor) = t.as_editor() {
+                            if let Some(ref other_path) = editor.file_path {
+                                if let Some(other_filename) =
+                                    other_path.file_name().and_then(|n| n.to_str())
+                                {
+                                    return other_filename == filename;
+                                }
+                            }
+                        }
+                        false
+                    })
+                    .count();
+
+                // If there are duplicates, include the parent folder
+                if duplicate_count > 0 {
+                    if let Some(parent) = path.parent() {
+                        if let Some(parent_name) = parent.file_name().and_then(|n| n.to_str()) {
+                            return format!("{} — {}", filename, parent_name);
+                        }
+                    }
+                }
+
+                return filename.to_string();
+            }
+        }
+
+        base_title.to_string()
+    }
+
     // Handle close tab action from context menu
     pub(super) fn on_close_tab_action(
         &mut self,
@@ -207,7 +257,7 @@ impl Fulgur {
                     .pl_1()
                     .child(format!(
                         "{}{}",
-                        tab.title(),
+                        self.get_tab_display_title(index, tab),
                         if tab.is_modified() { " •" } else { "" }
                     )),
             )
