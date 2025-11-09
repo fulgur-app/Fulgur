@@ -3,6 +3,7 @@ use gpui::*;
 use gpui_component::highlighter::Language;
 use gpui_component::input::{InputState, TabSize};
 
+use crate::fulgur::components_utils::{UNTITLED, UTF_8};
 use crate::fulgur::settings::EditorSettings;
 
 use super::languages::{language_from_extension, language_name};
@@ -62,7 +63,6 @@ impl EditorTab {
     ) -> Self {
         let language = Language::Plain;
         let content = cx.new(|cx| make_input_state(window, cx, language, None, settings));
-
         Self {
             id,
             title: title.into(),
@@ -70,7 +70,7 @@ impl EditorTab {
             file_path: None,
             modified: false,
             original_content: String::new(),
-            encoding: "UTF-8".to_string(),
+            encoding: UTF_8.to_string(),
             language,
         }
     }
@@ -97,13 +97,11 @@ impl EditorTab {
         let file_name = path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("Untitled")
+            .unwrap_or(UNTITLED)
             .to_string();
 
-        // Detect language from file extension
         let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
         let language = language_from_extension(extension);
-
         let content =
             cx.new(|cx| make_input_state(window, cx, language, Some(contents.clone()), settings));
         let title = format!("{}{}", file_name, if is_modified { " •" } else { "" });
@@ -119,7 +117,7 @@ impl EditorTab {
         }
     }
 
-    // Update the editor's display settings
+    // Update the editor's display settings. Tab size cannot be changed after InputState creation.
     // @param window: The window context
     // @param cx: The application context
     // @param settings: The settings for the input state
@@ -128,8 +126,6 @@ impl EditorTab {
             input_state.set_line_number(settings.show_line_numbers, window, cx);
             input_state.set_indent_guides(settings.show_indent_guides, window, cx);
             input_state.set_soft_wrap(settings.soft_wrap, window, cx);
-            // Note: tab_size cannot be changed after InputState creation
-            // It must be set during the initial creation of the InputState
         });
     }
 
@@ -162,11 +158,7 @@ impl EditorTab {
         if let Some(ref path) = self.file_path {
             let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
             let language = language_from_extension(extension);
-
-            // Get the current content to preserve it
             let current_content = self.content.read(cx).text().to_string();
-
-            // Create a new InputState with the new language
             self.content = cx
                 .new(|cx| make_input_state(window, cx, language, Some(current_content), settings));
         }

@@ -1,4 +1,4 @@
-use crate::fulgur::{Fulgur, languages};
+use crate::fulgur::{Fulgur, components_utils::UTF_8, languages};
 use gpui::*;
 use gpui_component::{ActiveTheme, h_flex, highlighter::Language, input::Position};
 
@@ -54,9 +54,7 @@ impl Fulgur {
             }
             None => (Position::default(), Language::Plain),
         };
-
         let language = languages::pretty_name(language);
-
         let encoding = match self.active_tab_index {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
@@ -65,9 +63,8 @@ impl Fulgur {
                     "N/A".to_string()
                 }
             }
-            None => "UTF-8".to_string(),
+            None => UTF_8.to_string(),
         };
-
         h_flex()
             .justify_between()
             .bg(cx.theme().tab_bar)

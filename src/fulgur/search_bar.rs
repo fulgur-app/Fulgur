@@ -1,6 +1,8 @@
 use crate::fulgur::{
     Fulgur,
-    components_utils::{self, button_factory},
+    components_utils::{
+        self, CORNERS_SIZE, LINE_HEIGHT, SEARCH_BAR_HEIGHT, TEXT_SIZE, button_factory,
+    },
     icons::CustomIcon,
 };
 use gpui::*;
@@ -40,14 +42,11 @@ pub fn search_bar_toggle_button_factory(
     checked: bool,
 ) -> Button {
     let mut button = components_utils::button_factory(id, tooltip, icon, border_color);
-
-    // Apply active styling if checked
     if checked {
         button = button.bg(accent_color);
     } else {
         button = button.bg(background_color);
     }
-
     button
 }
 
@@ -64,7 +63,6 @@ impl Fulgur {
         if !self.show_search {
             return None;
         }
-
         Some(
             div()
                 .flex()
@@ -74,7 +72,7 @@ impl Fulgur {
                 .p_0()
                 .m_0()
                 .w_full()
-                .h(px(40.))
+                .h(SEARCH_BAR_HEIGHT)
                 .border_t_1()
                 .border_color(cx.theme().border)
                 .child(self.render_search_input_section(cx))
@@ -94,26 +92,21 @@ impl Fulgur {
             .p_0()
             .m_0()
             .flex_1()
-            .h(px(40.))
+            .h(SEARCH_BAR_HEIGHT)
             .bg(cx.theme().background)
             .text_color(cx.theme().muted_foreground)
             .child(
                 TextInput::new(&self.search_input)
                     .flex_1()
-                    .text_size(px(14.))
-                    .line_height(relative(1.0))
+                    .text_size(TEXT_SIZE)
+                    .line_height(LINE_HEIGHT)
                     .m_0()
                     .py_0()
                     .pl_2()
                     .pr_0()
-                    .h(px(40.))
+                    .h(SEARCH_BAR_HEIGHT)
                     .border_0()
-                    .corner_radii(Corners {
-                        top_left: px(0.0),
-                        top_right: px(0.0),
-                        bottom_left: px(0.0),
-                        bottom_right: px(0.0),
-                    })
+                    .corner_radii(CORNERS_SIZE)
                     .text_color(cx.theme().muted_foreground)
                     .bg(cx.theme().background),
             )
@@ -123,7 +116,7 @@ impl Fulgur {
                     .items_center()
                     .p_0()
                     .m_0()
-                    .h(px(40.))
+                    .h(SEARCH_BAR_HEIGHT)
                     .border_l_1()
                     .border_color(cx.theme().border)
                     .text_color(cx.theme().muted_foreground)
@@ -225,7 +218,7 @@ impl Fulgur {
             .p_0()
             .m_0()
             .flex_1()
-            .h(px(40.))
+            .h(SEARCH_BAR_HEIGHT)
             .bg(cx.theme().background)
             .text_color(cx.theme().muted_foreground)
             .border_l_1()
@@ -233,19 +226,14 @@ impl Fulgur {
             .child(
                 TextInput::new(&self.replace_input)
                     .flex_1()
-                    .text_size(px(14.))
-                    .line_height(relative(1.0))
+                    .text_size(TEXT_SIZE)
+                    .line_height(LINE_HEIGHT)
                     .m_0()
                     .py_0()
                     .px_2()
-                    .h(px(40.))
+                    .h(SEARCH_BAR_HEIGHT)
                     .border_0()
-                    .corner_radii(Corners {
-                        top_left: px(0.0),
-                        top_right: px(0.0),
-                        bottom_left: px(0.0),
-                        bottom_right: px(0.0),
-                    })
+                    .corner_radii(CORNERS_SIZE)
                     .text_color(cx.theme().muted_foreground)
                     .bg(cx.theme().background),
             )
@@ -255,7 +243,7 @@ impl Fulgur {
                     .items_center()
                     .p_0()
                     .m_0()
-                    .h(px(40.))
+                    .h(SEARCH_BAR_HEIGHT)
                     .bg(cx.theme().tab_bar)
                     .text_color(cx.theme().muted_foreground)
                     .border_l_1()

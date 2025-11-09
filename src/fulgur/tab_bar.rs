@@ -12,7 +12,6 @@ use gpui_component::{
 };
 use serde::Deserialize;
 
-// Define actions for tab context menu
 #[derive(Action, Clone, PartialEq, Deserialize)]
 #[action(namespace = fulgur, no_json)]
 pub struct CloseTabAction(pub usize);
@@ -51,20 +50,16 @@ impl Fulgur {
     // @return: A tuple of (filename, optional parent folder)
     fn get_tab_display_title(&self, index: usize, tab: &Tab) -> (String, Option<String>) {
         let base_title = tab.title();
-
-        // Only apply folder logic to editor tabs with file paths
         if let Some(editor_tab) = tab.as_editor() {
             if let Some(ref path) = editor_tab.file_path {
                 let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-                // Count how many tabs have the same filename
                 let duplicate_count = self
                     .tabs
                     .iter()
                     .enumerate()
                     .filter(|(i, t)| {
                         if *i == index {
-                            return false; // Skip the current tab
+                            return false;
                         }
                         if let Some(editor) = t.as_editor() {
                             if let Some(ref other_path) = editor.file_path {
@@ -78,8 +73,6 @@ impl Fulgur {
                         false
                     })
                     .count();
-
-                // If there are duplicates, include the parent folder
                 if duplicate_count > 0 {
                     if let Some(parent) = path.parent() {
                         if let Some(parent_name) = parent.file_name().and_then(|n| n.to_str()) {
@@ -87,15 +80,16 @@ impl Fulgur {
                         }
                     }
                 }
-
                 return (filename.to_string(), None);
             }
         }
-
         (base_title.to_string(), None)
     }
 
     // Handle close tab action from context menu
+    // @param action: The action to handle
+    // @param window: The window context
+    // @param cx: The application context
     pub(super) fn on_close_tab_action(
         &mut self,
         action: &CloseTabAction,
@@ -106,6 +100,9 @@ impl Fulgur {
     }
 
     // Handle close tabs to left action from context menu
+    // @param action: The action to handle
+    // @param window: The window context
+    // @param cx: The application context
     pub(super) fn on_close_tabs_to_left(
         &mut self,
         action: &CloseTabsToLeft,
@@ -116,6 +113,9 @@ impl Fulgur {
     }
 
     // Handle close tabs to right action from context menu
+    // @param action: The action to handle
+    // @param window: The window context
+    // @param cx: The application context
     pub(super) fn on_close_tabs_to_right(
         &mut self,
         action: &CloseTabsToRight,
@@ -126,6 +126,9 @@ impl Fulgur {
     }
 
     // Handle close all tabs action from context menu
+    // @param action: The action to handle
+    // @param window: The window context
+    // @param cx: The application context
     pub(super) fn on_close_all_tabs_action(
         &mut self,
         _: &CloseAllTabsAction,
@@ -143,13 +146,13 @@ impl Fulgur {
         div()
             .flex()
             .items_center()
-            .h(px(TAB_BAR_HEIGHT))
+            .h(TAB_BAR_HEIGHT)
             .bg(cx.theme().tab_bar)
             // Do not delete this, it is used to create a space for the title bar
             .child(
                 div()
                     .w_20()
-                    .h(px(TAB_BAR_HEIGHT))
+                    .h(TAB_BAR_HEIGHT)
                     .border_b_1()
                     .border_color(cx.theme().border),
             )
@@ -190,7 +193,7 @@ impl Fulgur {
                             .border_b_1()
                             .border_l_1()
                             .border_color(cx.theme().border)
-                            .h(px(TAB_BAR_HEIGHT)),
+                            .h(TAB_BAR_HEIGHT),
                     ),
             )
     }
@@ -213,16 +216,14 @@ impl Fulgur {
             Some(active_index) => index == active_index,
             None => false,
         };
-
         let has_tabs_on_left = index > 0;
         let has_tabs_on_right = index < self.tabs.len() - 1;
         let total_tabs = self.tabs.len();
-
         let mut tab_div = div()
             .id(("tab", tab_id))
             .flex()
             .items_center()
-            .h(px(TAB_BAR_HEIGHT))
+            .h(TAB_BAR_HEIGHT)
             .px_2()
             .gap_2()
             .border_l_1()
@@ -236,7 +237,6 @@ impl Fulgur {
                     }
                 }),
             );
-
         if is_active {
             tab_div = tab_div.bg(cx.theme().tab_active).border_b_0();
         } else {
@@ -245,10 +245,8 @@ impl Fulgur {
                 .hover(|this| this.bg(cx.theme().muted))
                 .cursor_pointer();
         }
-
         let (filename, folder) = self.get_tab_display_title(index, tab);
         let modified_indicator = if tab.is_modified() { " •" } else { "" };
-
         let mut title_container = div().flex().items_center().gap_1().pl_1().child(
             div()
                 .text_sm()
@@ -259,7 +257,6 @@ impl Fulgur {
                 })
                 .child(format!("{}{}", filename, modified_indicator)),
         );
-
         if let Some(folder_path) = folder {
             title_container = title_container.child(
                 div()
@@ -273,7 +270,6 @@ impl Fulgur {
                     .child(folder_path),
             );
         }
-
         tab_div
             .child(title_container)
             .child(

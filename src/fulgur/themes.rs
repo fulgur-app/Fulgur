@@ -36,7 +36,6 @@ pub fn init(cx: &mut App, on_themes_loaded: impl Fn(&mut App) + 'static) {
         {
             Theme::global_mut(cx).apply_config(&theme);
         }
-        // Call the callback after themes are loaded
         on_themes_loaded(cx);
     }) {
         eprintln!("Failed to watch themes directory: {}", err);

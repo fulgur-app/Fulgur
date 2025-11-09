@@ -1,6 +1,10 @@
 use crate::fulgur::{
-    Fulgur, editor_tab::EditorTab, file_operations::detect_encoding_and_decode,
-    state_persistence::*, tab::Tab,
+    Fulgur,
+    components_utils::{UNTITLED, UTF_8},
+    editor_tab::EditorTab,
+    file_operations::detect_encoding_and_decode,
+    state_persistence::*,
+    tab::Tab,
 };
 use gpui::*;
 use gpui_component::{highlighter::Language, input::TabSize};
@@ -102,7 +106,7 @@ impl Fulgur {
         if self.tabs.is_empty() {
             let initial_tab = Tab::Editor(EditorTab::new(
                 0,
-                "Untitled",
+                UNTITLED,
                 window,
                 cx,
                 &self.settings.editor_settings,
@@ -146,19 +150,19 @@ impl Fulgur {
                                     let (enc, file_content) = detect_encoding_and_decode(&bytes);
                                     (file_content, Some(saved_path), enc)
                                 } else {
-                                    (saved_content, Some(saved_path), "UTF-8".to_string())
+                                    (saved_content, Some(saved_path), UTF_8.to_string())
                                 }
                             } else {
-                                (saved_content, Some(saved_path), "UTF-8".to_string())
+                                (saved_content, Some(saved_path), UTF_8.to_string())
                             }
                         } else {
-                            (saved_content, Some(saved_path), "UTF-8".to_string())
+                            (saved_content, Some(saved_path), UTF_8.to_string())
                         }
                     } else {
-                        (saved_content, Some(saved_path), "UTF-8".to_string())
+                        (saved_content, Some(saved_path), UTF_8.to_string())
                     }
                 } else {
-                    (saved_content, None, "UTF-8".to_string())
+                    (saved_content, None, UTF_8.to_string())
                 }
             } else {
                 if saved_path.exists() {
@@ -174,7 +178,7 @@ impl Fulgur {
             }
         } else {
             if let Some(saved_content) = tab_state.content {
-                (saved_content, None, "UTF-8".to_string())
+                (saved_content, None, UTF_8.to_string())
             } else {
                 return None;
             }
@@ -194,7 +198,7 @@ impl Fulgur {
         } else {
             let content_entity = cx.new(|cx| {
                 gpui_component::input::InputState::new(window, cx)
-                    .code_editor("Plain".to_string())
+                    .code_editor(Language::Plain.name())
                     .line_number(self.settings.editor_settings.show_line_numbers)
                     .indent_guides(self.settings.editor_settings.show_indent_guides)
                     .tab_size(TabSize {

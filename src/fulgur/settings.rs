@@ -136,7 +136,6 @@ pub fn create_dropdown(
     cx: &mut App,
 ) -> Entity<DropdownState<Vec<SharedString>>> {
     let selected_index = options.iter().position(|s| s.as_ref() == current_value);
-
     cx.new(|cx| {
         DropdownState::new(
             options,
@@ -214,8 +213,6 @@ pub fn create_tab_size_dropdown(
         "12".into(),
         "42".into(),
     ];
-
-    // Find the index of the current font size
     let current_tab_size = settings.editor_settings.tab_size.to_string();
     create_dropdown(settings, window, current_tab_size, tab_sizes, cx)
 }

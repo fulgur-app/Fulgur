@@ -1,7 +1,9 @@
+use crate::fulgur::{
+    Fulgur, components_utils::UNTITLED, editor_tab::EditorTab, settings::SettingsTab, tab::Tab,
+};
 use gpui::*;
-use std::ops::DerefMut;
 use gpui_component::ContextModal;
-use crate::fulgur::{Fulgur, editor_tab::EditorTab, settings::SettingsTab, tab::Tab};
+use std::ops::DerefMut;
 
 impl Fulgur {
     // Create a new tab
@@ -10,7 +12,7 @@ impl Fulgur {
     pub(super) fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let tab = Tab::Editor(EditorTab::new(
             self.next_tab_id,
-            format!("Untitled {}", self.next_tab_id),
+            format!("{} {}", UNTITLED, self.next_tab_id),
             window,
             cx,
             &self.settings.editor_settings,
@@ -18,7 +20,6 @@ impl Fulgur {
         self.tabs.push(tab);
         self.active_tab_index = Some(self.tabs.len() - 1);
         self.next_tab_id += 1;
-        
         self.focus_active_tab(window, cx);
         cx.notify();
     }
@@ -27,12 +28,9 @@ impl Fulgur {
     // @param window: The window to open settings in
     // @param cx: The application context
     pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Check if settings tab already exists
         if let Some(index) = self.tabs.iter().position(|t| matches!(t, Tab::Settings(_))) {
-            // Settings tab exists, switch to it
             self.set_active_tab(index, window, cx);
         } else {
-            // Create new settings tab with unique ID
             let settings_tab = Tab::Settings(SettingsTab::new(self.next_tab_id, window, cx));
             self.tabs.push(settings_tab);
             self.active_tab_index = Some(self.tabs.len() - 1);
@@ -48,18 +46,14 @@ impl Fulgur {
     pub(super) fn close_tab(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
             if let Some(to_be_removed) = self.tabs.get_mut(pos) {
-                // Check if the tab has been modified (only for editor tabs)
                 let is_modified = if let Some(editor_tab) = to_be_removed.as_editor_mut() {
                     editor_tab.check_modified(cx)
                 } else {
-                    false // Settings tabs are never modified
+                    false
                 };
                 if is_modified {
-                    // Get the entity reference to use in the modal callbacks
                     let entity = cx.entity().clone();
-                    
                     window.open_modal(cx.deref_mut(), move |modal, _, _| {
-                        // Clone entity for on_ok closure
                         let entity_ok = entity.clone();
                         modal
                             .title(div().text_size(px(16.)).child("Unsaved changed"))
@@ -67,7 +61,6 @@ impl Fulgur {
                             .confirm()
                             .on_ok(move |_, window, cx| {
                                 let entity_ok_footer = entity_ok.clone();
-                                 // Remove the tab and adjust indices
                                 entity_ok_footer.update(cx, |this, cx| {
                                     if let Some(pos) = this.tabs.iter().position(|t| t.id() == tab_id) {
                                         this.tabs.remove(pos);
@@ -75,14 +68,12 @@ impl Fulgur {
                                         cx.notify();
                                     }
                                 });
-                                
                                 // Defer focus until after modal closes
                                 entity_ok_footer.update(cx, |_this, cx| {
                                     cx.defer_in(window, move |this, window, cx| {
                                         this.focus_active_tab(window, cx);
                                     });
                                 });
-                                
                                 true
                             })
                             .on_cancel(move |_, _window, _cx| {
@@ -106,36 +97,41 @@ impl Fulgur {
     // @param window: The window to close the tab in
     // @param cx: The application context
     // @param pos: The position of the tab to close
-    pub(super) fn close_tab_manage_focus(&mut self, window: &mut Window, cx: &mut Context<Self>, pos: usize) {
-        // If no tabs left, create a new one
+    pub(super) fn close_tab_manage_focus(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        pos: usize,
+    ) {
         if self.tabs.is_empty() {
             self.active_tab_index = None;
         } else {
-            // Adjust active index
-            if self.active_tab_index.is_some() && self.active_tab_index.unwrap() >= self.tabs.len() {
+            if self.active_tab_index.is_some() && self.active_tab_index.unwrap() >= self.tabs.len()
+            {
                 self.active_tab_index = Some(self.tabs.len() - 1);
             } else if self.active_tab_index.is_some() && pos < self.active_tab_index.unwrap() {
                 self.active_tab_index = Some(self.active_tab_index.unwrap() - 1);
             }
         }
-        
         self.focus_active_tab(window, cx);
     }
 
-    // Set the active tab
+    // Set the active tab. If search is open, re-run search on new tab.
     // @param index: The index of the tab to set as active
     // @param window: The window to set the active tab in
     // @param cx: The application context
-    pub(super) fn set_active_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn set_active_tab(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if index < self.tabs.len() {
             self.active_tab_index = Some(index);
             self.focus_active_tab(window, cx);
-            
-            // If search is open, re-run search on new tab
             if self.show_search {
                 self.perform_search(window, cx);
             }
-            
             cx.notify();
         }
     }
@@ -175,22 +171,21 @@ impl Fulgur {
     // @param index: The index of the tab (tabs to the left will be closed)
     // @param window: The window to close tabs in
     // @param cx: The application context
-    pub(super) fn close_tabs_to_left(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn close_tabs_to_left(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if index > 0 && index < self.tabs.len() {
-            // Remove all tabs from 0 to index-1
             self.tabs.drain(0..index);
-            
-            // Adjust active tab index
             if let Some(active_idx) = self.active_tab_index {
                 if active_idx < index {
-                    // Active tab was closed, set to first remaining tab (was at position index)
                     self.active_tab_index = Some(0);
                 } else {
-                    // Active tab is still present, adjust its index
                     self.active_tab_index = Some(active_idx - index);
                 }
             }
-            
             self.focus_active_tab(window, cx);
             cx.notify();
         }
@@ -200,19 +195,20 @@ impl Fulgur {
     // @param index: The index of the tab (tabs to the right will be closed)
     // @param window: The window to close tabs in
     // @param cx: The application context
-    pub(super) fn close_tabs_to_right(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn close_tabs_to_right(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if index < self.tabs.len() - 1 {
-            // Remove all tabs after index
             self.tabs.truncate(index + 1);
-            
-            // Adjust active tab index if needed
             if let Some(active_idx) = self.active_tab_index {
                 if active_idx > index {
                     // Active tab was closed, set to the rightmost remaining tab
                     self.active_tab_index = Some(index);
                 }
             }
-            
             self.focus_active_tab(window, cx);
             cx.notify();
         }
@@ -235,38 +231,35 @@ impl Fulgur {
         if self.settings.app_settings.confirm_exit {
             let entity = cx.entity().clone();
             window.open_modal(cx.deref_mut(), move |modal, _, _| {
-                        // Clone entity for on_ok closure
-                        let entity_ok = entity.clone();
-                        modal
-                            .title(div().text_size(px(16.)).child("Quit Fulgur"))
-                            .keyboard(true)
-                            .confirm()
-                            .on_ok(move |_, _window, cx| {
-                                let entity_ok_footer = entity_ok.clone();
-                                // Save state before quitting
-                                entity_ok_footer.update(cx, |this, cx| {
-                                    if let Err(e) = this.save_state(cx) {
-                                        eprintln!("Failed to save app state: {}", e);
-                                    }
-                                });
-                                
-                                cx.quit();
-                                true
-                            })
-                            .on_cancel(move |_, _window, _cx| {
-                                true
-                            })
-                            .child(div().text_size(px(14.)).child("Are you sure you want to quit Fulgur?"))
-                            .overlay_closable(false)
-                            .show_close(false)
-                    });
+                let entity_ok = entity.clone();
+                modal
+                    .title(div().text_size(px(16.)).child("Quit Fulgur"))
+                    .keyboard(true)
+                    .confirm()
+                    .on_ok(move |_, _window, cx| {
+                        let entity_ok_footer = entity_ok.clone();
+                        entity_ok_footer.update(cx, |this, cx| {
+                            if let Err(e) = this.save_state(cx) {
+                                eprintln!("Failed to save app state: {}", e);
+                            }
+                        });
+                        cx.quit();
+                        true
+                    })
+                    .on_cancel(move |_, _window, _cx| true)
+                    .child(
+                        div()
+                            .text_size(px(14.))
+                            .child("Are you sure you want to quit Fulgur?"),
+                    )
+                    .overlay_closable(false)
+                    .show_close(false)
+            });
             return;
         }
-        // Save state before quitting
         if let Err(e) = self.save_state(cx) {
             eprintln!("Failed to save app state: {}", e);
         }
         cx.quit();
     }
 }
-

@@ -1,4 +1,9 @@
-use crate::fulgur::{Fulgur, editor_tab::EditorTab, tab::Tab};
+use crate::fulgur::{
+    Fulgur,
+    components_utils::{UNTITLED, UTF_8},
+    editor_tab::EditorTab,
+    tab::Tab,
+};
 use chardetng::EncodingDetector;
 use gpui::*;
 
@@ -8,7 +13,7 @@ use gpui::*;
 pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     // Try UTF-8 first
     if let Ok(text) = std::str::from_utf8(bytes) {
-        return ("UTF-8".to_string(), text.to_string());
+        return (UTF_8.to_string(), text.to_string());
     }
 
     // Use chardetng to detect encoding
@@ -23,10 +28,10 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     let encoding_name = if had_errors {
         // If decoding had errors, fall back to UTF-8 with replacement
         match std::str::from_utf8(bytes) {
-            Ok(text) => return ("UTF-8".to_string(), text.to_string()),
+            Ok(text) => return (UTF_8.to_string(), text.to_string()),
             Err(_) => {
                 let text = String::from_utf8_lossy(bytes).to_string();
-                return ("UTF-8".to_string(), text);
+                return (UTF_8.to_string(), text);
             }
         }
     } else {
@@ -182,7 +187,7 @@ impl Fulgur {
                             editor_tab.title = path
                                 .file_name()
                                 .and_then(|n| n.to_str())
-                                .unwrap_or("Untitled")
+                                .unwrap_or(UNTITLED)
                                 .to_string()
                                 .into();
                             editor_tab.mark_as_saved(cx);

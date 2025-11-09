@@ -191,12 +191,9 @@ impl Render for Fulgur {
     // @param cx: The application context
     // @return: The rendered Fulgur instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Ensure we always have at least one tab
         if self.tabs.is_empty() {
             self.active_tab_index = None;
         }
-
-        // Auto-search when query changes
         if self.show_search {
             let current_query = self.search_input.read(cx).text().to_string();
             if current_query != self.last_search_query {
@@ -204,8 +201,6 @@ impl Render for Fulgur {
                 self.perform_search(window, cx);
             }
         }
-
-        // Update tabs that were marked for update in the previous render
         if !self.tabs_pending_update.is_empty() {
             let settings = self.settings.editor_settings.clone();
             for tab_index in self.tabs_pending_update.drain().collect::<Vec<_>>() {
@@ -214,8 +209,6 @@ impl Render for Fulgur {
                 }
             }
         }
-
-        // Update all rendered editor tabs when settings change
         if self.settings_changed {
             let settings = self.settings.editor_settings.clone();
             for tab_index in self.rendered_tabs.iter().copied().collect::<Vec<_>>() {
@@ -225,29 +218,20 @@ impl Render for Fulgur {
             }
             self.settings_changed = false;
         }
-
-        // Mark the active tab as rendered and schedule update for newly rendered tabs
         if let Some(index) = self.active_tab_index {
             let is_newly_rendered = !self.rendered_tabs.contains(&index);
             self.rendered_tabs.insert(index);
-
-            // For newly rendered tabs, schedule an update for the NEXT render
             if is_newly_rendered {
                 self.tabs_pending_update.insert(index);
-                cx.notify(); // Trigger another render to apply the update
+                cx.notify();
             }
         }
-
-        // Update modified status of tabs
         self.update_modified_status(cx);
-
         let active_tab = self
             .active_tab_index
             .and_then(|index| self.tabs.get(index).cloned());
-
-        // Render modal, drawer, and notification layers
         let modal_layer = Root::render_modal_layer(window, cx);
-        let drawer_layer = Root::render_drawer_layer(window, cx);
+        // let drawer_layer = Root::render_drawer_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
 
         let main_div = div()
@@ -335,10 +319,9 @@ impl Render for Fulgur {
                     .children(self.render_search_bar(window, cx))
                     .child(self.render_status_bar(window, cx)),
             )
-            .children(drawer_layer)
+            //.children(drawer_layer)
             .children(modal_layer)
             .children(notification_layer);
-
         main_div
     }
 }
@@ -376,7 +359,6 @@ impl Fulgur {
                 }
             }
         }
-
         v_flex().w_full().flex_1()
     }
 }

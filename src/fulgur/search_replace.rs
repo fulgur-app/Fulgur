@@ -17,8 +17,6 @@ impl Fulgur {
     // @param cx: The application context
     pub(super) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_search = false;
-
-        // Clear search highlighting from active tab
         if let Some(active_index) = self.active_tab_index {
             if let Some(tab) = self.tabs.get(active_index) {
                 if let Some(editor_tab) = tab.as_editor() {
@@ -30,12 +28,8 @@ impl Fulgur {
                 }
             }
         }
-
-        // Clear search results
         self.search_matches.clear();
         self.current_match_index = None;
-
-        // Focus back on the editor
         self.focus_active_tab(window, cx);
         cx.notify();
     }
@@ -46,33 +40,22 @@ impl Fulgur {
     pub(super) fn perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_matches.clear();
         self.current_match_index = None;
-
-        // Get the search query
         let query = self.search_input.read(cx).text().to_string();
-
-        // Get the active tab content
         if let Some(active_index) = self.active_tab_index {
             if let Some(tab) = self.tabs.get(active_index) {
                 if let Some(editor_tab) = tab.as_editor() {
-                    // Clear existing search highlights
                     editor_tab.content.update(cx, |content, _cx| {
                         if let Some(diagnostics) = content.diagnostics_mut() {
                             diagnostics.clear();
                         }
                     });
-
                     if query.is_empty() {
                         cx.notify();
                         return;
                     }
-
                     let text = editor_tab.content.read(cx).text().to_string();
                     let cursor_pos = editor_tab.content.read(cx).cursor();
-
-                    // Find all matches
                     self.search_matches = self.find_matches(&text, &query);
-
-                    // Add visual highlighting using diagnostics (yellow background)
                     editor_tab.content.update(cx, |content, cx| {
                         if let Some(diagnostics) = content.diagnostics_mut() {
                             for search_match in &self.search_matches {
@@ -103,8 +86,6 @@ impl Fulgur {
                         }
                         cx.notify();
                     });
-
-                    // Find the first match after the cursor, or wrap to the first match
                     if !self.search_matches.is_empty() {
                         let mut found_after_cursor = false;
                         for (idx, m) in self.search_matches.iter().enumerate() {
@@ -114,19 +95,14 @@ impl Fulgur {
                                 break;
                             }
                         }
-
-                        // If no match after cursor, wrap to first match
                         if !found_after_cursor {
                             self.current_match_index = Some(0);
                         }
-
-                        // Jump to the match and select it
                         self.highlight_current_match(window, cx);
                     }
                 }
             }
         }
-
         cx.notify();
     }
 
@@ -136,29 +112,23 @@ impl Fulgur {
     // @return: A vector of search matches
     fn find_matches(&self, text: &str, query: &str) -> Vec<SearchMatch> {
         let mut matches = Vec::new();
-
         if query.is_empty() {
             return matches;
         }
-
         let search_text = if self.match_case {
             text.to_string()
         } else {
             text.to_lowercase()
         };
-
         let search_query = if self.match_case {
             query.to_string()
         } else {
             query.to_lowercase()
         };
-
         let mut start_pos = 0;
         while let Some(pos) = search_text[start_pos..].find(&search_query) {
             let absolute_pos = start_pos + pos;
             let end_pos = absolute_pos + query.len();
-
-            // Check whole word matching if enabled
             if self.match_whole_word {
                 let is_word_start = absolute_pos == 0
                     || !text
@@ -176,20 +146,15 @@ impl Fulgur {
                     continue;
                 }
             }
-
-            // Calculate line and column
             let (line, col) = self.get_line_col(text, absolute_pos);
-
             matches.push(SearchMatch {
                 start: absolute_pos,
                 end: end_pos,
                 line,
                 col,
             });
-
             start_pos = absolute_pos + 1;
         }
-
         matches
     }
 
@@ -200,7 +165,6 @@ impl Fulgur {
     fn get_line_col(&self, text: &str, pos: usize) -> (usize, usize) {
         let mut line = 0;
         let mut col = 0;
-
         for (i, ch) in text.chars().enumerate() {
             if i >= pos {
                 break;
@@ -212,7 +176,6 @@ impl Fulgur {
                 col += 1;
             }
         }
-
         (line, col)
     }
 
@@ -223,13 +186,11 @@ impl Fulgur {
         if self.search_matches.is_empty() {
             return;
         }
-
         if let Some(current) = self.current_match_index {
             self.current_match_index = Some((current + 1) % self.search_matches.len());
         } else {
             self.current_match_index = Some(0);
         }
-
         self.highlight_current_match(window, cx);
         cx.notify();
     }
@@ -241,7 +202,6 @@ impl Fulgur {
         if self.search_matches.is_empty() {
             return;
         }
-
         if let Some(current) = self.current_match_index {
             self.current_match_index = Some(if current == 0 {
                 self.search_matches.len() - 1
@@ -251,7 +211,6 @@ impl Fulgur {
         } else {
             self.current_match_index = Some(0);
         }
-
         self.highlight_current_match(window, cx);
         cx.notify();
     }
@@ -265,7 +224,6 @@ impl Fulgur {
                 if let Some(active_index) = self.active_tab_index {
                     if let Some(tab) = self.tabs.get(active_index) {
                         if let Some(editor_tab) = tab.as_editor() {
-                            // Set the cursor position to the match
                             editor_tab.content.update(cx, |content, cx| {
                                 content.set_cursor_position(
                                     Position {
@@ -293,25 +251,15 @@ impl Fulgur {
                     if let Some(tab) = self.tabs.get_mut(active_index) {
                         if let Some(editor_tab) = tab.as_editor_mut() {
                             let replace_text = self.replace_input.read(cx).text().to_string();
-
-                            // Get current text
                             let text = editor_tab.content.read(cx).text().to_string();
-
-                            // Replace the match in the text
                             let mut new_text = String::new();
                             new_text.push_str(&text[..search_match.start]);
                             new_text.push_str(&replace_text);
                             new_text.push_str(&text[search_match.end..]);
-
-                            // Update the content
                             editor_tab.content.update(cx, |content, cx| {
                                 content.set_value(&new_text, window, cx);
                             });
-
-                            // Re-run search to update matches
                             self.perform_search(window, cx);
-
-                            // If there are still matches, move to the current or next one
                             if !self.search_matches.is_empty() {
                                 if match_index < self.search_matches.len() {
                                     self.current_match_index = Some(match_index);
@@ -335,19 +283,14 @@ impl Fulgur {
         if self.search_matches.is_empty() {
             return;
         }
-
         if let Some(active_index) = self.active_tab_index {
             let replace_text = self.replace_input.read(cx).text().to_string();
             let search_query = self.search_input.read(cx).text().to_string();
             let match_case = self.match_case;
             let match_whole_word = self.match_whole_word;
-
-            // Get the current text
             if let Some(tab) = self.tabs.get(active_index) {
                 if let Some(editor_tab) = tab.as_editor() {
                     let text = editor_tab.content.read(cx).text().to_string();
-
-                    // Perform replacement
                     let new_text = if match_case {
                         if match_whole_word {
                             self.replace_whole_words(&text, &replace_text)
@@ -361,8 +304,6 @@ impl Fulgur {
                             self.replace_case_insensitive(&text, &replace_text)
                         }
                     };
-
-                    // Update the content
                     if let Some(tab) = self.tabs.get_mut(active_index) {
                         if let Some(editor_tab_mut) = tab.as_editor_mut() {
                             editor_tab_mut.content.update(cx, |content, cx| {
@@ -370,8 +311,6 @@ impl Fulgur {
                             });
                         }
                     }
-
-                    // Clear search matches
                     self.search_matches.clear();
                     self.current_match_index = None;
                 }
@@ -387,7 +326,6 @@ impl Fulgur {
     fn replace_case_insensitive(&self, text: &str, replace: &str) -> String {
         let mut result = String::new();
         let mut last_pos = 0;
-
         for m in self.search_matches.iter() {
             result.push_str(&text[last_pos..m.start]);
             result.push_str(replace);
@@ -404,7 +342,6 @@ impl Fulgur {
     fn replace_whole_words(&self, text: &str, replace: &str) -> String {
         let mut result = String::new();
         let mut last_pos = 0;
-
         for m in self.search_matches.iter() {
             result.push_str(&text[last_pos..m.start]);
             result.push_str(replace);
@@ -421,7 +358,6 @@ impl Fulgur {
     fn replace_whole_words_case_insensitive(&self, text: &str, replace: &str) -> String {
         let mut result = String::new();
         let mut last_pos = 0;
-
         for m in self.search_matches.iter() {
             result.push_str(&text[last_pos..m.start]);
             result.push_str(replace);

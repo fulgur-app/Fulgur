@@ -1,8 +1,8 @@
 // Custom title bar with platform-specific menu bar placement
 use gpui::*;
-use gpui_component::{ActiveTheme, StyledExt, TitleBar};
 #[cfg(target_os = "windows")]
 use gpui_component::menu::AppMenuBar;
+use gpui_component::{ActiveTheme, StyledExt, TitleBar};
 
 pub struct CustomTitleBar {
     #[cfg(target_os = "windows")]
@@ -36,12 +36,8 @@ impl Render for CustomTitleBar {
         // Left side - menu bar on Windows only
         #[cfg(target_os = "windows")]
         {
-            title_bar = title_bar.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .child(self.app_menu_bar.clone()),
-            );
+            title_bar =
+                title_bar.child(div().flex().items_center().child(self.app_menu_bar.clone()));
         }
         #[cfg(not(target_os = "windows"))]
         {
