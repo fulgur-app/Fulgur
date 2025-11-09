@@ -5,6 +5,7 @@ use gpui_component::{
     ActiveTheme, IndexPath, StyledExt,
     dropdown::{Dropdown, DropdownEvent, DropdownState},
     h_flex,
+    scroll::ScrollbarShow,
     switch::Switch,
     v_flex,
 };
@@ -24,6 +25,9 @@ pub struct EditorSettings {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub confirm_exit: bool,
+    pub theme: SharedString,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scrollbar_show: Option<ScrollbarShow>,
 }
 
 impl EditorSettings {
@@ -40,7 +44,11 @@ impl EditorSettings {
 
 impl AppSettings {
     pub fn new() -> Self {
-        Self { confirm_exit: true }
+        Self {
+            confirm_exit: true,
+            theme: "Default Light".into(),
+            scrollbar_show: None,
+        }
     }
 }
 

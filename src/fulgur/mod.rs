@@ -24,7 +24,7 @@ use titlebar::CustomTitleBar;
 
 use gpui::*;
 use gpui_component::{
-    Root, StyledExt, Theme, ThemeRegistry,
+    ActiveTheme, Root, Theme, ThemeRegistry,
     dropdown::DropdownState,
     input::{InputEvent, InputState, TextInput},
     v_flex,
@@ -74,31 +74,23 @@ impl Fulgur {
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
 
         cx.new(|cx| {
-            // Subscribe to search input changes for auto-search
-            let _search_subscription =
-                cx.subscribe(&search_input, |this: &mut Self, _, ev: &InputEvent, cx| {
-                    match ev {
-                        InputEvent::Change => {
-                            // Auto-search when user types (will be triggered on next render)
-                            if this.show_search {
-                                cx.notify();
-                            }
+            let _search_subscription = cx.subscribe(
+                &search_input,
+                |this: &mut Self, _, ev: &InputEvent, cx| match ev {
+                    InputEvent::Change => {
+                        if this.show_search {
+                            cx.notify();
                         }
-                        _ => {}
                     }
-                });
-
-            // Create settings dropdown states (logic is in settings.rs)
+                    _ => {}
+                },
+            );
             let font_size_dropdown = settings::create_font_size_dropdown(&settings, window, cx);
             let tab_size_dropdown = settings::create_tab_size_dropdown(&settings, window, cx);
-
-            // Subscribe to dropdown subscriptions (handler is in settings.rs)
             let _font_size_subscription =
                 settings::subscribe_to_font_size_changes(&font_size_dropdown, cx);
             let _tab_size_subscription =
                 settings::subscribe_to_tab_size_changes(&tab_size_dropdown, cx);
-
-            // Don't create initial tab here - load_state() will handle it
             let mut entity = Self {
                 focus_handle: cx.focus_handle(),
                 title_bar,
@@ -123,10 +115,7 @@ impl Fulgur {
                 rendered_tabs: std::collections::HashSet::new(),
                 tabs_pending_update: std::collections::HashSet::new(),
             };
-
-            // Load saved state if it exists
             entity.load_state(window, cx);
-
             entity
         })
     }
@@ -134,11 +123,9 @@ impl Fulgur {
     // Initialize the Fulgur instance
     // @param cx: The application context
     pub fn init(cx: &mut App) {
-        // Initialize language support for syntax highlighting
         languages::init_languages();
-
-        themes::init(cx, |cx| {
-            // Set up keyboard shortcuts
+        let settings = Settings::load().unwrap_or_else(|_| Settings::new());
+        themes::init(&settings, cx, |cx| {
             cx.bind_keys([
                 #[cfg(target_os = "macos")]
                 KeyBinding::new("cmd-o", OpenFile, None),
@@ -172,7 +159,6 @@ impl Fulgur {
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-f", FindInFile, None),
             ]);
-
             let menus = build_menus(cx);
             cx.set_menus(menus);
         });
@@ -233,7 +219,6 @@ impl Render for Fulgur {
         let modal_layer = Root::render_modal_layer(window, cx);
         // let drawer_layer = Root::render_drawer_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
-
         let main_div = div()
             .size_full()
             .child(
@@ -271,25 +256,26 @@ impl Render for Fulgur {
                         this.show_search = !this.show_search;
 
                         if this.show_search {
-                            // Focus the search input when opening
                             let search_focus = this.search_input.read(cx).focus_handle(cx);
                             window.focus(&search_focus);
-
-                            // Perform search with current query if any
                             this.perform_search(window, cx);
                         } else {
-                            // Close search and clear highlighting
                             this.close_search(window, cx);
                         }
-
                         cx.notify();
                     }))
-                    .on_action(cx.listener(|_this, _action: &SwitchTheme, _window, cx| {
-                        let theme_name = _action.0.clone();
+                    .on_action(cx.listener(|this, action: &SwitchTheme, _window, cx| {
+                        let theme_name = action.0.clone();
                         if let Some(theme_config) =
                             ThemeRegistry::global(cx).themes().get(&theme_name).cloned()
                         {
                             Theme::global_mut(cx).apply_config(&theme_config);
+                            this.settings.app_settings.theme = theme_name;
+                            this.settings.app_settings.scrollbar_show =
+                                Some(cx.theme().scrollbar_show);
+                            if let Err(e) = this.settings.save() {
+                                eprintln!("Failed to save settings: {}", e);
+                            }
                         }
                         cx.refresh_windows();
                     }))
