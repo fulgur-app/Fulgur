@@ -1,5 +1,5 @@
 use gpui::*;
-use gpui_component::ThemeRegistry;
+use gpui_component::{ThemeMode, ThemeRegistry};
 
 actions!(
     fulgur,
@@ -14,7 +14,8 @@ actions!(
         CloseFile,
         CloseAllFiles,
         FindInFile,
-        SettingsTab
+        SettingsTab,
+        AddTheme
     ]
 );
 
@@ -27,6 +28,14 @@ pub struct SwitchTheme(pub SharedString);
 // @return: The menus for the Fulgur instance
 pub fn build_menus(cx: &mut App) -> Vec<Menu> {
     let themes = ThemeRegistry::global(cx).sorted_themes();
+    let light_themes = themes
+        .iter()
+        .filter(|theme| theme.mode == ThemeMode::Light)
+        .collect::<Vec<_>>();
+    let dark_themes = themes
+        .iter()
+        .filter(|theme| theme.mode == ThemeMode::Dark)
+        .collect::<Vec<_>>();
     vec![
         Menu {
             name: "Fulgur".into(),
@@ -34,13 +43,36 @@ pub fn build_menus(cx: &mut App) -> Vec<Menu> {
                 MenuItem::action("About Fulgur", About),
                 MenuItem::Separator,
                 MenuItem::Submenu(Menu {
-                    name: "Theme".into(),
-                    items: themes
-                        .iter()
-                        .map(|theme| {
-                            MenuItem::action(theme.name.clone(), SwitchTheme(theme.name.clone()))
-                        })
-                        .collect(),
+                    name: "Themes".into(),
+                    items: vec![
+                        MenuItem::Submenu(Menu {
+                            name: "Light Themes".into(),
+                            items: light_themes
+                                .iter()
+                                .map(|theme| {
+                                    MenuItem::action(
+                                        theme.name.clone(),
+                                        SwitchTheme(theme.name.clone()),
+                                    )
+                                })
+                                .collect(),
+                        }),
+                        MenuItem::Submenu(Menu {
+                            name: "Dark Themes".into(),
+                            items: dark_themes
+                                .iter()
+                                .map(|theme| {
+                                    MenuItem::action(
+                                        theme.name.clone(),
+                                        SwitchTheme(theme.name.clone()),
+                                    )
+                                })
+                                .collect(),
+                        }),
+                        MenuItem::Separator,
+                        MenuItem::action("Get more themes", AddTheme),
+                        MenuItem::action("Add Theme...", AddTheme),
+                    ],
                 }),
                 MenuItem::action("Settings", SettingsTab),
                 MenuItem::Separator,
