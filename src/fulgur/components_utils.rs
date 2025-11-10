@@ -1,3 +1,6 @@
+use chrono::{DateTime, Utc};
+use std::time::SystemTime;
+
 use gpui::*;
 use gpui_component::{
     Sizable, StyledExt,
@@ -54,4 +57,16 @@ pub fn button_factory(
         .border_color(border_color)
         .cursor_pointer()
         .corner_radii(CORNERS_SIZE)
+}
+
+// Format a date as ISO 8601 string
+// @param time: The time to format
+// @return: The formatted date
+pub fn format_system_time(time: SystemTime) -> Option<String> {
+    let datetime: DateTime<Utc> = match time.try_into() {
+        Ok(dt) => dt,
+        Err(_) => return None,
+    };
+
+    Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string())
 }

@@ -6,9 +6,12 @@ use crate::fulgur::{
 };
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Sizable,
+    ActiveTheme, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     context_menu::ContextMenuExt,
+    h_flex,
+    tooltip::Tooltip,
+    v_flex,
 };
 use serde::Deserialize;
 
@@ -219,6 +222,12 @@ impl Fulgur {
         let has_tabs_on_left = index > 0;
         let has_tabs_on_right = index < self.tabs.len() - 1;
         let total_tabs = self.tabs.len();
+        let file_path = tab.as_editor().and_then(|editor_tab| {
+            editor_tab
+                .file_path
+                .as_ref()
+                .and_then(|path| path.to_str().map(|s| s.to_string()))
+        });
         let mut tab_div = div()
             .id(("tab", tab_id))
             .flex()
@@ -270,7 +279,7 @@ impl Fulgur {
                     .child(folder_path),
             );
         }
-        tab_div
+        let mut tab_with_content = tab_div
             .child(title_container)
             .child(
                 Button::new(("close-tab", tab_id))
@@ -301,7 +310,59 @@ impl Fulgur {
                         Box::new(CloseAllTabsAction),
                         total_tabs == 0,
                     )
-            })
-            .into_any_element()
+            });
+        if let Some(path) = file_path {
+            tab_with_content = tab_with_content.tooltip(move |window, cx| {
+                let path_clone = path.clone();
+                let file_info = std::fs::metadata(&path).ok();
+                let file_size = file_info.as_ref().and_then(|meta| {
+                    let size = meta.len();
+                    if size < 1024 {
+                        Some(format!("{} B", size))
+                    } else if size < 1024 * 1024 {
+                        Some(format!("{:.1} KB", size as f64 / 1024.0))
+                    } else {
+                        Some(format!("{:.1} MB", size as f64 / (1024.0 * 1024.0)))
+                    }
+                });
+                let last_modified = file_info.as_ref().and_then(|meta| {
+                    meta.modified()
+                        .ok()
+                        .map(|modified| components_utils::format_system_time(modified))
+                });
+                let last_modified = last_modified.unwrap_or_default();
+                Tooltip::element(move |_, cx| {
+                    let mut tooltip = v_flex().gap_1().py_2().px_1().child(
+                        h_flex()
+                            .gap_3()
+                            .child(CustomIcon::File.icon())
+                            .child(path_clone.clone())
+                            .text_sm()
+                            .font_semibold(),
+                    );
+                    let mut details = h_flex().gap_4().justify_between();
+                    if let Some(ref size) = file_size {
+                        details = details.child(
+                            div()
+                                .child(format!("Size: {}", size))
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground),
+                        );
+                    }
+                    if let Some(ref last_modified) = last_modified {
+                        details = details.child(
+                            div()
+                                .child(format!("Last Modified: {}", last_modified))
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground),
+                        );
+                    }
+                    tooltip = tooltip.child(details);
+                    tooltip
+                })
+                .build(window, cx)
+            });
+        }
+        tab_with_content.into_any_element()
     }
 }
