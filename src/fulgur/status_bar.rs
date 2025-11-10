@@ -1,4 +1,8 @@
-use crate::fulgur::{Fulgur, components_utils::UTF_8, languages};
+use crate::fulgur::{
+    Fulgur,
+    components_utils::{EMPTY, UTF_8},
+    languages,
+};
 use gpui::*;
 use gpui_component::{ActiveTheme, h_flex, highlighter::Language, input::Position};
 
@@ -41,26 +45,30 @@ impl Fulgur {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let active_tab_index = self.active_tab_index;
         let (cursor_pos, language) = match self.active_tab_index {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
                     (
                         editor_tab.content.read(cx).cursor_position(),
-                        editor_tab.language,
+                        Some(editor_tab.language),
                     )
                 } else {
-                    (Position::default(), Language::Plain)
+                    (Position::default(), Some(Language::Plain))
                 }
             }
-            None => (Position::default(), Language::Plain),
+            None => (Position::default(), None),
         };
-        let language = languages::pretty_name(language);
+        let language = match language {
+            Some(language) => languages::pretty_name(language),
+            None => EMPTY.to_string(),
+        };
         let encoding = match self.active_tab_index {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
                     editor_tab.encoding.clone()
                 } else {
-                    "N/A".to_string()
+                    EMPTY.to_string()
                 }
             }
             None => UTF_8.to_string(),

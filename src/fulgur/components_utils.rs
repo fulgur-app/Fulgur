@@ -30,6 +30,8 @@ pub const LINE_HEIGHT: DefiniteLength = relative(1.0);
 pub const UTF_8: &str = "UTF-8";
 // The untitled string
 pub const UNTITLED: &str = "Untitled";
+// The empty string
+pub const EMPTY: &str = "";
 
 // Create a button
 // @param id: The ID of the button

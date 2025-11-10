@@ -219,92 +219,96 @@ impl Render for Fulgur {
         let modal_layer = Root::render_modal_layer(window, cx);
         // let drawer_layer = Root::render_drawer_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
+        let mut content = v_flex()
+            .size_full()
+            .gap_0()
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(|this, _action: &NewFile, window, cx| {
+                this.new_tab(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &OpenFile, window, cx| {
+                this.open_file(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
+                if let Some(index) = this.active_tab_index {
+                    this.close_tab(index, window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _action: &CloseAllFiles, window, cx| {
+                this.close_all_tabs(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &SaveFile, window, cx| {
+                this.save_file(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &SaveFileAs, window, cx| {
+                this.save_file_as(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &Quit, window, cx| {
+                this.quit(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &SettingsTab, window, cx| {
+                this.open_settings(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &FindInFile, window, cx| {
+                this.show_search = !this.show_search;
+
+                if this.show_search {
+                    let search_focus = this.search_input.read(cx).focus_handle(cx);
+                    window.focus(&search_focus);
+                    this.perform_search(window, cx);
+                } else {
+                    this.close_search(window, cx);
+                }
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, action: &SwitchTheme, _window, cx| {
+                let theme_name = action.0.clone();
+                if let Some(theme_config) =
+                    ThemeRegistry::global(cx).themes().get(&theme_name).cloned()
+                {
+                    Theme::global_mut(cx).apply_config(&theme_config);
+                    this.settings.app_settings.theme = theme_name;
+                    this.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_show);
+                    if let Err(e) = this.settings.save() {
+                        eprintln!("Failed to save settings: {}", e);
+                    }
+                }
+                cx.refresh_windows();
+            }))
+            .on_action(
+                cx.listener(|this, action: &tab_bar::CloseTabAction, window, cx| {
+                    this.on_close_tab_action(action, window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|this, action: &tab_bar::CloseTabsToLeft, window, cx| {
+                    this.on_close_tabs_to_left(action, window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|this, action: &tab_bar::CloseTabsToRight, window, cx| {
+                    this.on_close_tabs_to_right(action, window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|this, action: &tab_bar::CloseAllTabsAction, window, cx| {
+                    this.on_close_all_tabs_action(action, window, cx);
+                }),
+            )
+            //.child(self.title_bar.clone())
+            .child(self.render_tab_bar(window, cx))
+            .child(self.render_content_area(active_tab, window, cx))
+            .children(self.render_search_bar(window, cx));
+
+        // Only render status bar for editor tabs
+        if let Some(index) = self.active_tab_index {
+            if let Some(Tab::Editor(_)) = self.tabs.get(index) {
+                content = content.child(self.render_status_bar(window, cx));
+            }
+        }
         let main_div = div()
             .size_full()
-            .child(
-                v_flex()
-                    .size_full()
-                    .gap_0()
-                    .track_focus(&self.focus_handle)
-                    .on_action(cx.listener(|this, _action: &NewFile, window, cx| {
-                        this.new_tab(window, cx);
-                    }))
-                    .on_action(cx.listener(|this, _action: &OpenFile, window, cx| {
-                        this.open_file(window, cx);
-                    }))
-                    .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
-                        if let Some(index) = this.active_tab_index {
-                            this.close_tab(index, window, cx);
-                        }
-                    }))
-                    .on_action(cx.listener(|this, _action: &CloseAllFiles, window, cx| {
-                        this.close_all_tabs(window, cx);
-                    }))
-                    .on_action(cx.listener(|this, _action: &SaveFile, window, cx| {
-                        this.save_file(window, cx);
-                    }))
-                    .on_action(cx.listener(|this, _action: &SaveFileAs, window, cx| {
-                        this.save_file_as(window, cx);
-                    }))
-                    .on_action(cx.listener(|this, _action: &Quit, window, cx| {
-                        this.quit(window, cx);
-                    }))
-                    .on_action(cx.listener(|this, _action: &SettingsTab, window, cx| {
-                        this.open_settings(window, cx);
-                    }))
-                    .on_action(cx.listener(|this, _action: &FindInFile, window, cx| {
-                        this.show_search = !this.show_search;
-
-                        if this.show_search {
-                            let search_focus = this.search_input.read(cx).focus_handle(cx);
-                            window.focus(&search_focus);
-                            this.perform_search(window, cx);
-                        } else {
-                            this.close_search(window, cx);
-                        }
-                        cx.notify();
-                    }))
-                    .on_action(cx.listener(|this, action: &SwitchTheme, _window, cx| {
-                        let theme_name = action.0.clone();
-                        if let Some(theme_config) =
-                            ThemeRegistry::global(cx).themes().get(&theme_name).cloned()
-                        {
-                            Theme::global_mut(cx).apply_config(&theme_config);
-                            this.settings.app_settings.theme = theme_name;
-                            this.settings.app_settings.scrollbar_show =
-                                Some(cx.theme().scrollbar_show);
-                            if let Err(e) = this.settings.save() {
-                                eprintln!("Failed to save settings: {}", e);
-                            }
-                        }
-                        cx.refresh_windows();
-                    }))
-                    .on_action(
-                        cx.listener(|this, action: &tab_bar::CloseTabAction, window, cx| {
-                            this.on_close_tab_action(action, window, cx);
-                        }),
-                    )
-                    .on_action(cx.listener(
-                        |this, action: &tab_bar::CloseTabsToLeft, window, cx| {
-                            this.on_close_tabs_to_left(action, window, cx);
-                        },
-                    ))
-                    .on_action(cx.listener(
-                        |this, action: &tab_bar::CloseTabsToRight, window, cx| {
-                            this.on_close_tabs_to_right(action, window, cx);
-                        },
-                    ))
-                    .on_action(cx.listener(
-                        |this, action: &tab_bar::CloseAllTabsAction, window, cx| {
-                            this.on_close_all_tabs_action(action, window, cx);
-                        },
-                    ))
-                    //.child(self.title_bar.clone())
-                    .child(self.render_tab_bar(window, cx))
-                    .child(self.render_content_area(active_tab, window, cx))
-                    .children(self.render_search_bar(window, cx))
-                    .child(self.render_status_bar(window, cx)),
-            )
+            .child(content)
             //.children(drawer_layer)
             .children(modal_layer)
             .children(notification_layer);
