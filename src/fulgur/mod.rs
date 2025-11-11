@@ -274,6 +274,8 @@ impl Render for Fulgur {
                     }
                 }
                 cx.refresh_windows();
+                let menus = build_menus(cx);
+                cx.set_menus(menus);
             }))
             .on_action(
                 cx.listener(|this, action: &tab_bar::CloseTabAction, window, cx| {

@@ -1,5 +1,5 @@
 use gpui::*;
-use gpui_component::{ThemeMode, ThemeRegistry};
+use gpui_component::{Theme, ThemeMode, ThemeRegistry};
 
 actions!(
     fulgur,
@@ -28,14 +28,17 @@ pub struct SwitchTheme(pub SharedString);
 // @return: The menus for the Fulgur instance
 pub fn build_menus(cx: &mut App) -> Vec<Menu> {
     let themes = ThemeRegistry::global(cx).sorted_themes();
-    let light_themes = themes
+    let light_themes: Vec<String> = themes
         .iter()
         .filter(|theme| theme.mode == ThemeMode::Light)
-        .collect::<Vec<_>>();
-    let dark_themes = themes
+        .map(|theme| theme.name.to_string())
+        .collect();
+    let dark_themes: Vec<String> = themes
         .iter()
         .filter(|theme| theme.mode == ThemeMode::Dark)
-        .collect::<Vec<_>>();
+        .map(|theme| theme.name.to_string())
+        .collect();
+    let current_theme = Theme::global(cx).theme_name().to_string();
     vec![
         Menu {
             name: "Fulgur".into(),
@@ -50,10 +53,7 @@ pub fn build_menus(cx: &mut App) -> Vec<Menu> {
                             items: light_themes
                                 .iter()
                                 .map(|theme| {
-                                    MenuItem::action(
-                                        theme.name.clone(),
-                                        SwitchTheme(theme.name.clone()),
-                                    )
+                                    MenuItem::action(theme.clone(), SwitchTheme(theme.into()))
                                 })
                                 .collect(),
                         }),
@@ -63,8 +63,16 @@ pub fn build_menus(cx: &mut App) -> Vec<Menu> {
                                 .iter()
                                 .map(|theme| {
                                     MenuItem::action(
-                                        theme.name.clone(),
-                                        SwitchTheme(theme.name.clone()),
+                                        format!(
+                                            "{} {}",
+                                            theme,
+                                            if theme == &current_theme {
+                                                "\u{2713}"
+                                            } else {
+                                                ""
+                                            }
+                                        ),
+                                        SwitchTheme(theme.into()),
                                     )
                                 })
                                 .collect(),
