@@ -141,6 +141,26 @@ impl Fulgur {
         self.close_all_tabs(window, cx);
     }
 
+    // Handle next tab action
+    // @param window: The window context
+    // @param cx: The application context
+    pub(super) fn on_next_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(active_index) = self.active_tab_index {
+            let next_index = (active_index + 1) % self.tabs.len();
+            self.set_active_tab(next_index, window, cx);
+        }
+    }
+
+    // Handle previous tab action
+    // @param window: The window context
+    // @param cx: The application context
+    pub(super) fn on_previous_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(active_index) = self.active_tab_index {
+            let previous_index = (active_index + self.tabs.len() - 1) % self.tabs.len();
+            self.set_active_tab(previous_index, window, cx);
+        }
+    }
+
     // Render the tab bar
     // @param window: The window context
     // @param cx: The application context

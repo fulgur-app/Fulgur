@@ -158,6 +158,14 @@ impl Fulgur {
                 KeyBinding::new("cmd-f", FindInFile, None),
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-f", FindInFile, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-shift-right", NextTab, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-shift-right", NextTab, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-shift-left", PreviousTab, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-shift-left", PreviousTab, None),
             ]);
             let menus = build_menus(cx);
             cx.set_menus(menus);
@@ -297,6 +305,12 @@ impl Render for Fulgur {
                     this.on_close_all_tabs_action(action, window, cx);
                 }),
             )
+            .on_action(cx.listener(|this, action: &NextTab, window, cx| {
+                this.on_next_tab(window, cx);
+            }))
+            .on_action(cx.listener(|this, action: &PreviousTab, window, cx| {
+                this.on_previous_tab(window, cx);
+            }))
             //.child(self.title_bar.clone())
             .child(self.render_tab_bar(window, cx))
             .child(self.render_content_area(active_tab, window, cx))

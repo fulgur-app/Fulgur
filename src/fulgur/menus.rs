@@ -15,7 +15,9 @@ actions!(
         CloseAllFiles,
         FindInFile,
         SettingsTab,
-        AddTheme
+        AddTheme,
+        NextTab,
+        PreviousTab,
     ]
 );
 
@@ -111,6 +113,13 @@ pub fn build_menus(cx: &mut App) -> Vec<Menu> {
                 MenuItem::action("Paste", gpui_component::input::Paste),
                 MenuItem::separator(),
                 MenuItem::action("Find & Replace", FindInFile),
+            ],
+        },
+        Menu {
+            name: "Go".into(),
+            items: vec![
+                MenuItem::action("Next Tab", NextTab),
+                MenuItem::action("Previous Tab", PreviousTab),
             ],
         },
         Menu {
