@@ -59,7 +59,7 @@ fn main() {
                     })
                 });
                 view.read(cx).focus_active_tab(window, cx);
-                cx.new(|cx| Root::new(view.into(), window, cx))
+                cx.new(|cx| Root::new(view, window, cx))
             })?;
             Ok::<_, anyhow::Error>(())
         })

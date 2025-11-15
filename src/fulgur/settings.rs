@@ -2,10 +2,9 @@ use std::{fs, path::PathBuf};
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, IndexPath, StyledExt,
-    dropdown::{Dropdown, DropdownEvent, DropdownState},
-    h_flex,
+    ActiveTheme, IndexPath, StyledExt, h_flex,
     scroll::ScrollbarShow,
+    select::{Select, SelectEvent, SelectState},
     switch::Switch,
     v_flex,
 };
@@ -142,10 +141,10 @@ pub fn create_dropdown(
     current_value: String,
     options: Vec<SharedString>,
     cx: &mut App,
-) -> Entity<DropdownState<Vec<SharedString>>> {
+) -> Entity<SelectState<Vec<SharedString>>> {
     let selected_index = options.iter().position(|s| s.as_ref() == current_value);
     cx.new(|cx| {
-        DropdownState::new(
+        SelectState::new(
             options,
             selected_index.map(|i| IndexPath::default().row(i)),
             window,
@@ -162,7 +161,7 @@ pub fn create_font_size_dropdown(
     settings: &Settings,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<DropdownState<Vec<SharedString>>> {
+) -> Entity<SelectState<Vec<SharedString>>> {
     let font_sizes: Vec<SharedString> = vec![
         "8".into(),
         "10".into(),
@@ -179,17 +178,20 @@ pub fn create_font_size_dropdown(
 }
 
 // Subscribe to font size dropdown changes
-// @param dropdown: The dropdown state entity
+// @param select: The select state entity
 // @param cx: The context
 // @return: The subscription
 pub fn subscribe_to_font_size_changes(
-    dropdown: &Entity<DropdownState<Vec<SharedString>>>,
+    select: &Entity<SelectState<Vec<SharedString>>>,
     cx: &mut Context<Fulgur>,
 ) -> Subscription {
     cx.subscribe(
-        dropdown,
-        |this, _dropdown, event: &DropdownEvent<Vec<SharedString>>, cx| {
-            if let DropdownEvent::Confirm(Some(selected)) = event {
+        select,
+        |this: &mut Fulgur,
+         _select: Entity<SelectState<Vec<SharedString>>>,
+         event: &SelectEvent<Vec<SharedString>>,
+         cx: &mut Context<Fulgur>| {
+            if let SelectEvent::Confirm(Some(selected)) = event {
                 if let Ok(size) = selected.parse::<f32>() {
                     this.settings.editor_settings.font_size = size;
                     if let Err(e) = this.settings.save() {
@@ -211,7 +213,7 @@ pub fn create_tab_size_dropdown(
     settings: &Settings,
     window: &mut Window,
     cx: &mut App,
-) -> Entity<DropdownState<Vec<SharedString>>> {
+) -> Entity<SelectState<Vec<SharedString>>> {
     let tab_sizes: Vec<SharedString> = vec![
         "2".into(),
         "4".into(),
@@ -226,19 +228,22 @@ pub fn create_tab_size_dropdown(
 }
 
 // Subscribe to font size dropdown changes
-// @param dropdown: The dropdown state entity
+// @param select: The select state entity
 // @param cx: The context
 // @return: The subscription
 pub fn subscribe_to_tab_size_changes(
-    dropdown: &Entity<DropdownState<Vec<SharedString>>>,
+    select: &Entity<SelectState<Vec<SharedString>>>,
     cx: &mut Context<Fulgur>,
 ) -> Subscription {
     cx.subscribe(
-        dropdown,
-        |this, _dropdown, event: &DropdownEvent<Vec<SharedString>>, cx| {
-            if let DropdownEvent::Confirm(Some(selected)) = event {
-                if let Ok(size) = selected.parse::<usize>() {
-                    this.settings.editor_settings.tab_size = size;
+        &select,
+        |this: &mut Fulgur,
+         _select: Entity<SelectState<Vec<SharedString>>>,
+         event: &SelectEvent<Vec<SharedString>>,
+         cx: &mut Context<Fulgur>| {
+            if let SelectEvent::Confirm(Some(selected)) = event {
+                if let Ok(size) = selected.parse::<f32>() {
+                    this.settings.editor_settings.tab_size = size as usize;
                     if let Err(e) = this.settings.save() {
                         eprintln!("Failed to save settings: {}", e);
                     }
@@ -346,11 +351,11 @@ fn make_toggle_option(
 fn make_dropdown_option(
     title: &'static str,
     description: &'static str,
-    state: &Entity<DropdownState<Vec<SharedString>>>,
+    state: &Entity<SelectState<Vec<SharedString>>>,
     cx: &mut Context<Fulgur>,
 ) -> Div {
     make_setting_description(title, description, cx)
-        .child(div().child(Dropdown::new(state).w(px(120.)).bg(cx.theme().background)))
+        .child(div().child(Select::new(state).w(px(120.)).bg(cx.theme().background)))
 }
 
 impl Fulgur {

@@ -8,8 +8,8 @@ use gpui::*;
 use gpui_component::{
     ActiveTheme, Sizable, StyledExt,
     button::{Button, ButtonVariants},
-    context_menu::ContextMenuExt,
     h_flex,
+    menu::ContextMenuExt,
     tooltip::Tooltip,
     v_flex,
 };
@@ -274,65 +274,8 @@ impl Fulgur {
                 .hover(|this| this.bg(cx.theme().muted))
                 .cursor_pointer();
         }
-        let (filename, folder) = self.get_tab_display_title(index, tab);
-        let modified_indicator = if tab.is_modified() { " •" } else { "" };
-        let mut title_container = div().flex().items_center().gap_1().pl_1().child(
-            div()
-                .text_sm()
-                .text_color(if is_active {
-                    cx.theme().tab_active_foreground
-                } else {
-                    cx.theme().tab_foreground
-                })
-                .child(format!("{}{}", filename, modified_indicator)),
-        );
-        if let Some(folder_path) = folder {
-            title_container = title_container.child(
-                div()
-                    .text_xs()
-                    .italic()
-                    .text_color(if is_active {
-                        cx.theme().tab_active_foreground
-                    } else {
-                        cx.theme().tab_foreground
-                    })
-                    .child(folder_path),
-            );
-        }
-        let mut tab_with_content = tab_div
-            .child(title_container)
-            .child(
-                Button::new(("close-tab", tab_id))
-                    .icon(CustomIcon::Close)
-                    .ghost()
-                    .xsmall()
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        cx.stop_propagation();
-                        this.close_tab(tab_id, window, cx);
-                    })),
-            )
-            .context_menu(move |this, _window, _cx| {
-                this.menu("Close Tab", Box::new(CloseTabAction(tab_id)))
-                    .menu_with_disabled(
-                        "Close Tabs to the Left",
-                        Box::new(CloseTabsToLeft(index)),
-                        !has_tabs_on_left,
-                    )
-                    .menu_with_disabled(
-                        "Close Tabs to the Right",
-                        Box::new(CloseTabsToRight(index)),
-                        !has_tabs_on_right,
-                    )
-                    .separator()
-                    .menu_with_disabled(
-                        "Close All Tabs",
-                        Box::new(CloseAllTabsAction),
-                        total_tabs == 0,
-                    )
-            });
         if let Some(path) = file_path {
-            tab_with_content = tab_with_content.tooltip(move |window, cx| {
+            tab_div = tab_div.tooltip(move |window, cx| {
                 let path_clone = path.clone();
                 let file_info = std::fs::metadata(&path).ok();
                 let file_size = file_info.as_ref().and_then(|meta| {
@@ -383,6 +326,64 @@ impl Fulgur {
                 .build(window, cx)
             });
         }
+        let (filename, folder) = self.get_tab_display_title(index, tab);
+        let modified_indicator = if tab.is_modified() { " •" } else { "" };
+        let mut title_container = div().flex().items_center().gap_1().pl_1().child(
+            div()
+                .text_sm()
+                .text_color(if is_active {
+                    cx.theme().tab_active_foreground
+                } else {
+                    cx.theme().tab_foreground
+                })
+                .child(format!("{}{}", filename, modified_indicator)),
+        );
+        if let Some(folder_path) = folder {
+            title_container = title_container.child(
+                div()
+                    .text_xs()
+                    .italic()
+                    .text_color(if is_active {
+                        cx.theme().tab_active_foreground
+                    } else {
+                        cx.theme().tab_foreground
+                    })
+                    .child(folder_path),
+            );
+        }
+        let tab_with_content = tab_div
+            .child(title_container)
+            .child(
+                Button::new(("close-tab", tab_id))
+                    .icon(CustomIcon::Close)
+                    .ghost()
+                    .xsmall()
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.close_tab(tab_id, window, cx);
+                    })),
+            )
+            .context_menu(move |this, _window, _cx| {
+                this.menu("Close Tab", Box::new(CloseTabAction(tab_id)))
+                    .menu_with_disabled(
+                        "Close Tabs to the Left",
+                        Box::new(CloseTabsToLeft(index)),
+                        !has_tabs_on_left,
+                    )
+                    .menu_with_disabled(
+                        "Close Tabs to the Right",
+                        Box::new(CloseTabsToRight(index)),
+                        !has_tabs_on_right,
+                    )
+                    .separator()
+                    .menu_with_disabled(
+                        "Close All Tabs",
+                        Box::new(CloseAllTabsAction),
+                        total_tabs == 0,
+                    )
+            });
+
         tab_with_content.into_any_element()
     }
 }

@@ -25,8 +25,8 @@ use titlebar::CustomTitleBar;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Root, Theme, ThemeRegistry,
-    dropdown::DropdownState,
-    input::{InputEvent, InputState, TextInput},
+    input::{Input, InputEvent, InputState},
+    select::SelectState,
     v_flex,
 };
 
@@ -46,9 +46,9 @@ pub struct Fulgur {
     _search_subscription: gpui::Subscription,
     last_search_query: String,
     pub settings: Settings,
-    pub font_size_dropdown: Entity<DropdownState<Vec<SharedString>>>,
+    pub font_size_dropdown: Entity<SelectState<Vec<SharedString>>>,
     _font_size_subscription: gpui::Subscription,
-    pub tab_size_dropdown: Entity<DropdownState<Vec<SharedString>>>,
+    pub tab_size_dropdown: Entity<SelectState<Vec<SharedString>>>,
     _tab_size_subscription: gpui::Subscription,
     settings_changed: bool,
     rendered_tabs: std::collections::HashSet<usize>, // Track which tabs have been rendered
@@ -224,9 +224,6 @@ impl Render for Fulgur {
         let active_tab = self
             .active_tab_index
             .and_then(|index| self.tabs.get(index).cloned());
-        let modal_layer = Root::render_modal_layer(window, cx);
-        // let drawer_layer = Root::render_drawer_layer(window, cx);
-        let notification_layer = Root::render_notification_layer(window, cx);
         let mut content = v_flex()
             .size_full()
             .gap_0()
@@ -305,18 +302,16 @@ impl Render for Fulgur {
                     this.on_close_all_tabs_action(action, window, cx);
                 }),
             )
-            .on_action(cx.listener(|this, action: &NextTab, window, cx| {
+            .on_action(cx.listener(|this, _action: &NextTab, window, cx| {
                 this.on_next_tab(window, cx);
             }))
-            .on_action(cx.listener(|this, action: &PreviousTab, window, cx| {
+            .on_action(cx.listener(|this, _action: &PreviousTab, window, cx| {
                 this.on_previous_tab(window, cx);
             }))
             //.child(self.title_bar.clone())
             .child(self.render_tab_bar(window, cx))
             .child(self.render_content_area(active_tab, window, cx))
             .children(self.render_search_bar(window, cx));
-
-        // Only render status bar for editor tabs
         if let Some(index) = self.active_tab_index {
             if let Some(Tab::Editor(_)) = self.tabs.get(index) {
                 content = content.child(self.render_status_bar(window, cx));
@@ -325,9 +320,8 @@ impl Render for Fulgur {
         let main_div = div()
             .size_full()
             .child(content)
-            //.children(drawer_layer)
-            .children(modal_layer)
-            .children(notification_layer);
+            .children(Root::render_notification_layer(window, cx))
+            .children(Root::render_dialog_layer(window, cx));
         main_div
     }
 }
@@ -348,7 +342,7 @@ impl Fulgur {
             match tab {
                 Tab::Editor(editor_tab) => {
                     return v_flex().w_full().flex_1().child(
-                        TextInput::new(&editor_tab.content)
+                        Input::new(&editor_tab.content)
                             .bordered(false)
                             .p_0()
                             .h_full()

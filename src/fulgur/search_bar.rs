@@ -6,7 +6,7 @@ use crate::fulgur::{
     icons::CustomIcon,
 };
 use gpui::*;
-use gpui_component::{ActiveTheme, StyledExt, button::Button, input::TextInput};
+use gpui_component::{ActiveTheme, StyledExt, button::Button, input::Input};
 
 // Create a search bar button
 // @param id: The ID of the button
@@ -96,7 +96,7 @@ impl Fulgur {
             .bg(cx.theme().background)
             .text_color(cx.theme().muted_foreground)
             .child(
-                TextInput::new(&self.search_input)
+                Input::new(&self.search_input)
                     .flex_1()
                     .text_size(TEXT_SIZE)
                     .line_height(LINE_HEIGHT)
@@ -224,7 +224,7 @@ impl Fulgur {
             .border_l_1()
             .border_color(cx.theme().border)
             .child(
-                TextInput::new(&self.replace_input)
+                Input::new(&self.replace_input)
                     .flex_1()
                     .text_size(TEXT_SIZE)
                     .line_height(LINE_HEIGHT)

@@ -2,7 +2,7 @@ use crate::fulgur::{
     Fulgur, components_utils::UNTITLED, editor_tab::EditorTab, settings::SettingsTab, tab::Tab,
 };
 use gpui::*;
-use gpui_component::ContextModal;
+use gpui_component::WindowExt;
 use std::ops::DerefMut;
 
 impl Fulgur {
@@ -53,7 +53,7 @@ impl Fulgur {
                 };
                 if is_modified {
                     let entity = cx.entity().clone();
-                    window.open_modal(cx.deref_mut(), move |modal, _, _| {
+                    window.open_dialog(cx.deref_mut(), move |modal, _, _| {
                         let entity_ok = entity.clone();
                         modal
                             .title(div().text_size(px(16.)).child("Unsaved changed"))
@@ -81,7 +81,7 @@ impl Fulgur {
                             })
                             .child(div().text_size(px(14.)).child("Are you sure you want to close this tab? Your changes will be lost."))
                             .overlay_closable(false)
-                            .show_close(false)
+                            .close_button(false)
                     });
                     return;
                 }
@@ -230,7 +230,7 @@ impl Fulgur {
     pub fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.app_settings.confirm_exit {
             let entity = cx.entity().clone();
-            window.open_modal(cx.deref_mut(), move |modal, _, _| {
+            window.open_dialog(cx.deref_mut(), move |modal, _, _| {
                 let entity_ok = entity.clone();
                 modal
                     .title(div().text_size(px(16.)).child("Quit Fulgur"))
@@ -253,7 +253,7 @@ impl Fulgur {
                             .child("Are you sure you want to quit Fulgur?"),
                     )
                     .overlay_closable(false)
-                    .show_close(false)
+                    .close_button(false)
             });
             return;
         }

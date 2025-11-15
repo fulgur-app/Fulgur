@@ -45,7 +45,6 @@ impl Fulgur {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let active_tab_index = self.active_tab_index;
         let (cursor_pos, language) = match self.active_tab_index {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
