@@ -6,8 +6,13 @@ edition = "2024"
 [package.metadata.bundle]
 name = "Fulgur"
 identifier = "com.fulgur.app"
-icon = ["assets/icon.png"]
-category = "Developer Tool"
+icon = [
+    "assets/icon.icns",  # macOS
+    "assets/icon.ico",   # Windows
+    "assets/icon.png",   # Linux
+]
+category = "Utility"
+
 
 [dependencies]
 anyhow = "1.0.100"
