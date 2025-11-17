@@ -1,10 +1,16 @@
+use std::ops::DerefMut;
+
 use crate::fulgur::{
     Fulgur,
     components_utils::{EMPTY, UTF_8},
-    languages,
+    editor_tab, languages,
 };
 use gpui::*;
-use gpui_component::{ActiveTheme, h_flex, highlighter::Language, input::Position};
+use gpui_component::{
+    ActiveTheme, WindowExt, h_flex,
+    highlighter::Language,
+    input::{Input, Position},
+};
 
 // Create a status bar item
 // @param content: The content of the status bar item
@@ -17,6 +23,17 @@ pub fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
         .py_1()
         .border_color(border_color)
         .child(content)
+}
+
+// Create a status bar button
+// @param content: The content of the status bar button
+// @param border_color: The color of the border
+// @param accent_color: The color of the accent
+// @return: A status bar button
+pub fn status_bar_button_factory(content: String, border_color: Hsla, accent_color: Hsla) -> Div {
+    status_bar_item_factory(content, border_color)
+        .hover(|this| this.bg(accent_color))
+        .cursor_pointer()
 }
 
 // Create a status bar right item
@@ -36,6 +53,49 @@ pub fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl
 }
 
 impl Fulgur {
+    // Jump to line
+    // @param window: The window context
+    // @param cx: The application context
+    pub fn jump_to_line(self: &mut Fulgur, window: &mut Window, cx: &mut Context<Self>) {
+        let jump_to_line_input = self.jump_to_line_input.clone();
+        jump_to_line_input.update(cx, |input_state, cx| {
+            input_state.set_value("", window, cx);
+            cx.notify();
+        });
+        let entity = cx.entity().clone();
+        self.jump_to_line_dialog_open = true;
+        window.open_dialog(cx.deref_mut(), move |modal, window, cx| {
+            let focus_handle = jump_to_line_input.read(cx).focus_handle(cx);
+            window.focus(&focus_handle);
+            let entity_clone = entity.clone();
+            let jump_to_line_input_clone = jump_to_line_input.clone();
+            modal
+                .confirm()
+                .keyboard(true)
+                .child(Input::new(&jump_to_line_input))
+                .overlay_closable(true)
+                .close_button(false)
+                .on_ok(move |_event: &ClickEvent, _window, cx| {
+                    let text = jump_to_line_input_clone.read(cx).value();
+                    let text_shared = SharedString::from(text);
+                    let jump = editor_tab::extract_line_number(text_shared);
+                    let entity_ok = entity_clone.clone();
+                    entity_ok.update(cx, |this, cx| {
+                        if let Ok(jump) = jump {
+                            this.pending_jump = Some(jump);
+                            this.jump_to_line_dialog_open = false;
+                            cx.notify();
+                            return true;
+                        } else {
+                            this.pending_jump = None;
+                            return false;
+                        }
+                    });
+                    false
+                })
+        });
+        return;
+    }
     // Render the status bar
     // @param window: The window context
     // @param cx: The application context
@@ -72,6 +132,22 @@ impl Fulgur {
             }
             None => UTF_8.to_string(),
         };
+        let jump_to_line_button_content = format!(
+            "Ln {}, Col {}",
+            cursor_pos.line + 1,
+            cursor_pos.character + 1
+        );
+        let jump_to_line_button = status_bar_button_factory(
+            jump_to_line_button_content,
+            cx.theme().border,
+            cx.theme().muted,
+        );
+        let jump_to_line_button = jump_to_line_button.on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _event: &MouseDownEvent, window, cx| {
+                this.jump_to_line(window, cx);
+            }),
+        );
         h_flex()
             .justify_between()
             .bg(cx.theme().tab_bar)
@@ -90,15 +166,8 @@ impl Fulgur {
                 div()
                     .flex()
                     .justify_end()
-                    .child(status_bar_right_item_factory(encoding, cx.theme().border))
-                    .child(status_bar_right_item_factory(
-                        format!(
-                            "Ln {}, Col {}",
-                            cursor_pos.line + 1,
-                            cursor_pos.character + 1
-                        ),
-                        cx.theme().border,
-                    )),
+                    .child(jump_to_line_button)
+                    .child(status_bar_right_item_factory(encoding, cx.theme().border)),
             )
     }
 }

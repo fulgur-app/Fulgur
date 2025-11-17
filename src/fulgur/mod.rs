@@ -24,7 +24,7 @@ use titlebar::CustomTitleBar;
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Root, Theme, ThemeRegistry,
+    ActiveTheme, Root, Theme, ThemeRegistry, WindowExt,
     input::{Input, InputEvent, InputState},
     select::SelectState,
     v_flex,
@@ -45,6 +45,9 @@ pub struct Fulgur {
     current_match_index: Option<usize>,
     _search_subscription: gpui::Subscription,
     last_search_query: String,
+    pub jump_to_line_input: Entity<InputState>,
+    pending_jump: Option<editor_tab::Jump>,
+    jump_to_line_dialog_open: bool,
     pub settings: Settings,
     pub font_size_dropdown: Entity<SelectState<Vec<SharedString>>>,
     _font_size_subscription: gpui::Subscription,
@@ -62,18 +65,17 @@ impl Fulgur {
     // @return: The new Fulgur instance
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
-
-        // Create settings
         let settings = match Settings::load() {
             Ok(settings) => settings,
             Err(_) => Settings::new(),
         };
-
-        // Create inputs
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
-
-        cx.new(|cx| {
+        let jump_to_line_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
+        let font_size_dropdown = settings::create_font_size_dropdown(&settings, window, cx);
+        let tab_size_dropdown = settings::create_tab_size_dropdown(&settings, window, cx);
+        let entity = cx.new(|cx| {
             let _search_subscription = cx.subscribe(
                 &search_input,
                 |this: &mut Self, _, ev: &InputEvent, cx| match ev {
@@ -85,13 +87,11 @@ impl Fulgur {
                     _ => {}
                 },
             );
-            let font_size_dropdown = settings::create_font_size_dropdown(&settings, window, cx);
-            let tab_size_dropdown = settings::create_tab_size_dropdown(&settings, window, cx);
             let _font_size_subscription =
                 settings::subscribe_to_font_size_changes(&font_size_dropdown, cx);
             let _tab_size_subscription =
                 settings::subscribe_to_tab_size_changes(&tab_size_dropdown, cx);
-            let mut entity = Self {
+            let entity = Self {
                 focus_handle: cx.focus_handle(),
                 title_bar,
                 tabs: vec![],
@@ -106,6 +106,9 @@ impl Fulgur {
                 current_match_index: None,
                 _search_subscription,
                 last_search_query: String::new(),
+                jump_to_line_input,
+                pending_jump: None,
+                jump_to_line_dialog_open: false,
                 settings,
                 font_size_dropdown,
                 _font_size_subscription,
@@ -115,9 +118,13 @@ impl Fulgur {
                 rendered_tabs: std::collections::HashSet::new(),
                 tabs_pending_update: std::collections::HashSet::new(),
             };
-            entity.load_state(window, cx);
             entity
-        })
+        });
+        // Load state after entity creation
+        entity.update(cx, |this, cx| {
+            this.load_state(window, cx);
+        });
+        entity
     }
 
     // Initialize the Fulgur instance
@@ -166,6 +173,10 @@ impl Fulgur {
                 KeyBinding::new("cmd-shift-left", PreviousTab, None),
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-shift-left", PreviousTab, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("ctrl-g", JumpToLine, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-g", JumpToLine, None),
             ]);
             let menus = build_menus(cx);
             cx.set_menus(menus);
@@ -219,6 +230,17 @@ impl Render for Fulgur {
                 self.tabs_pending_update.insert(index);
                 cx.notify();
             }
+        }
+        if let Some(jump) = self.pending_jump.take() {
+            if let Some(index) = self.active_tab_index {
+                if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(index) {
+                    editor_tab.jump_to_line(window, cx, jump);
+                }
+            }
+        }
+        if !self.jump_to_line_dialog_open {
+            window.close_dialog(cx);
+            self.jump_to_line_dialog_open = true;
         }
         self.update_modified_status(cx);
         let active_tab = self
@@ -307,6 +329,9 @@ impl Render for Fulgur {
             }))
             .on_action(cx.listener(|this, _action: &PreviousTab, window, cx| {
                 this.on_previous_tab(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &JumpToLine, window, cx| {
+                this.jump_to_line(window, cx);
             }))
             //.child(self.title_bar.clone())
             .child(self.render_tab_bar(window, cx))

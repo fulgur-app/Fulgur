@@ -1,7 +1,8 @@
 // Represents a single editor tab with its content
 use gpui::*;
 use gpui_component::highlighter::Language;
-use gpui_component::input::{InputState, TabSize};
+use gpui_component::input::{InputState, Position, TabSize};
+use regex::Regex;
 
 use crate::fulgur::components_utils::{UNTITLED, UTF_8};
 use crate::fulgur::settings::EditorSettings;
@@ -162,5 +163,93 @@ impl EditorTab {
             self.content = cx
                 .new(|cx| make_input_state(window, cx, language, Some(current_content), settings));
         }
+    }
+
+    // Jump to a specific line
+    // @param cx: The application context
+    // @param line: The line to jump to
+    pub fn jump_to_line(&mut self, window: &mut Window, cx: &mut App, jump: Jump) {
+        self.content.update(cx, |input_state, cx| {
+            input_state.set_cursor_position(
+                Position {
+                    line: jump.line,
+                    character: jump.character.unwrap_or(0),
+                },
+                window,
+                cx,
+            );
+            input_state.focus(window, cx);
+            cx.notify();
+        });
+    }
+}
+
+pub struct Jump {
+    pub line: u32,
+    pub character: Option<u32>,
+}
+
+// Extract the line number and character from a destination string
+// @param destination: The destination string
+// @return: The jump struct
+pub fn extract_line_number(destination: SharedString) -> anyhow::Result<Jump> {
+    let mut jump = Jump {
+        line: 0,
+        character: None,
+    };
+    let re = Regex::new(r"^(\d+|\d+:\d+)$").unwrap();
+    re.is_match(destination.as_str())
+        .then(|| {
+            if destination.contains(":") {
+                let parts = destination.split(":").collect::<Vec<&str>>();
+                if parts.len() == 2 {
+                    jump.line = string_to_u32(parts[0]) - 1;
+                    jump.character = Some(string_to_u32(parts[1]));
+                }
+            } else {
+                jump.line = string_to_u32(destination.as_str()) - 1;
+            }
+        })
+        .ok_or(anyhow::anyhow!("Invalid destination"))?;
+    Ok(jump)
+}
+
+// Convert a string to a u32
+// @param string: The string to convert
+// @return: The u32 value of the string, or None if the string is not a valid u32
+fn string_to_u32(string: &str) -> u32 {
+    if let Ok(line) = string.parse::<u32>() {
+        line
+    } else {
+        0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_line_number;
+    use gpui::SharedString;
+
+    #[test]
+    fn test_extract_line_number_simple() {
+        let destination = SharedString::from("23");
+        let result = extract_line_number(destination).unwrap();
+        assert_eq!(result.line, 22);
+        assert_eq!(result.character, None);
+    }
+
+    #[test]
+    fn test_extract_line_number_with_character() {
+        let destination = SharedString::from("23:17");
+        let result = extract_line_number(destination).unwrap();
+        assert_eq!(result.line, 22);
+        assert_eq!(result.character, Some(17));
+    }
+
+    #[test]
+    fn test_extract_line_number_invalid() {
+        let destination = SharedString::from("azerty");
+        let result = extract_line_number(destination);
+        assert!(result.is_err());
     }
 }

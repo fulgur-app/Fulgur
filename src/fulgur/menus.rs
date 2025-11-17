@@ -18,6 +18,7 @@ actions!(
         AddTheme,
         NextTab,
         PreviousTab,
+        JumpToLine,
     ]
 );
 
@@ -120,6 +121,8 @@ pub fn build_menus(cx: &mut App) -> Vec<Menu> {
             items: vec![
                 MenuItem::action("Next Tab", NextTab),
                 MenuItem::action("Previous Tab", PreviousTab),
+                MenuItem::Separator,
+                MenuItem::action("Jump to line", JumpToLine),
             ],
         },
         Menu {

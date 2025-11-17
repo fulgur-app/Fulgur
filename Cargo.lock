@@ -13,6 +13,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "lsp-types",
+ "regex",
  "rust-embed",
  "serde",
  "serde_json",
