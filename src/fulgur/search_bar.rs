@@ -1,7 +1,8 @@
 use crate::fulgur::{
     Fulgur,
     components_utils::{
-        self, CORNERS_SIZE, LINE_HEIGHT, SEARCH_BAR_HEIGHT, TEXT_SIZE, button_factory,
+        CORNERS_SIZE, LINE_HEIGHT, SEARCH_BAR_BUTTON_SIZE, SEARCH_BAR_HEIGHT, TEXT_SIZE,
+        button_factory,
     },
     icons::CustomIcon,
 };
@@ -18,10 +19,11 @@ pub fn search_bar_button_factory(
     id: &'static str,
     tooltip: &'static str,
     icon: CustomIcon,
-    _background_color: Hsla,
     border_color: Hsla,
 ) -> Button {
     button_factory(id, tooltip, icon, border_color)
+        .h(SEARCH_BAR_BUTTON_SIZE)
+        .w(SEARCH_BAR_BUTTON_SIZE)
 }
 
 // Create a search bar toggle button
@@ -41,7 +43,7 @@ pub fn search_bar_toggle_button_factory(
     accent_color: Hsla,
     checked: bool,
 ) -> Button {
-    let mut button = components_utils::button_factory(id, tooltip, icon, border_color);
+    let mut button = search_bar_button_factory(id, tooltip, icon, border_color);
     if checked {
         button = button.bg(accent_color);
     } else {
@@ -117,6 +119,7 @@ impl Fulgur {
                     .p_0()
                     .m_0()
                     .h(SEARCH_BAR_HEIGHT)
+                    .line_height(LINE_HEIGHT)
                     .border_l_1()
                     .border_color(cx.theme().border)
                     .text_color(cx.theme().muted_foreground)
@@ -131,6 +134,7 @@ impl Fulgur {
                             cx.theme().accent,
                             self.match_case,
                         )
+                        .line_height(LINE_HEIGHT)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.match_case = !this.match_case;
                             this.perform_search(window, cx);
@@ -146,6 +150,7 @@ impl Fulgur {
                             cx.theme().accent,
                             self.match_whole_word,
                         )
+                        .line_height(LINE_HEIGHT)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.match_whole_word = !this.match_whole_word;
                             this.perform_search(window, cx);
@@ -186,7 +191,6 @@ impl Fulgur {
                     "search-previous-button",
                     "Previous",
                     CustomIcon::ChevronUp,
-                    cx.theme().tab_bar,
                     cx.theme().border,
                 )
                 .on_click(cx.listener(|this, _, window, cx| {
@@ -199,7 +203,6 @@ impl Fulgur {
                     "Next",
                     CustomIcon::ChevronDown,
                     cx.theme().tab_bar,
-                    cx.theme().border,
                 )
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.search_next(window, cx);
@@ -253,7 +256,6 @@ impl Fulgur {
                             "replace-button",
                             "Replace",
                             CustomIcon::Replace,
-                            cx.theme().tab_bar,
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
@@ -265,7 +267,6 @@ impl Fulgur {
                             "replace-all-button",
                             "Replace all",
                             CustomIcon::ReplaceAll,
-                            cx.theme().tab_bar,
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
@@ -292,7 +293,6 @@ impl Fulgur {
                     "close-search-button",
                     "Close",
                     CustomIcon::Close,
-                    cx.theme().tab_bar,
                     cx.theme().border,
                 )
                 .on_click(cx.listener(|this, _, window, cx| {

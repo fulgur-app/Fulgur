@@ -1,6 +1,6 @@
 use crate::fulgur::{
     Fulgur,
-    components_utils::{self, TAB_BAR_HEIGHT},
+    components_utils::{self, TAB_BAR_BUTTON_SIZE, TAB_BAR_HEIGHT, button_factory},
     icons::CustomIcon,
     tab::Tab,
 };
@@ -41,9 +41,10 @@ pub fn tab_bar_button_factory(
     icon: CustomIcon,
     border_color: Hsla,
 ) -> Button {
-    let mut button = components_utils::button_factory(id, tooltip, icon, border_color);
-    button = button.border_b_1();
-    button
+    button_factory(id, tooltip, icon, border_color)
+        .border_b_1()
+        .h(TAB_BAR_BUTTON_SIZE)
+        .w(TAB_BAR_BUTTON_SIZE)
 }
 
 impl Fulgur {

@@ -11,10 +11,12 @@ use crate::fulgur::icons::CustomIcon;
 
 // The height of the tab bar
 pub const TAB_BAR_HEIGHT: Pixels = px(34.0);
+// The size of the tab barbutton
+pub const TAB_BAR_BUTTON_SIZE: Pixels = TAB_BAR_HEIGHT;
 // The height of the search bar
 pub const SEARCH_BAR_HEIGHT: Pixels = px(40.0);
-// The size of the button
-pub const BUTTON_SIZE: Pixels = TAB_BAR_HEIGHT;
+// The size of the search bar button
+pub const SEARCH_BAR_BUTTON_SIZE: Pixels = SEARCH_BAR_HEIGHT;
 // The size of the corners of the button
 pub const CORNERS_SIZE: Corners<Pixels> = Corners {
     top_left: px(0.0),
@@ -51,8 +53,6 @@ pub fn button_factory(
         .small()
         .tooltip(tooltip)
         .ghost()
-        .h(BUTTON_SIZE)
-        .w(BUTTON_SIZE)
         .p_0()
         .m_0()
         .border_0()
