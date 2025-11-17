@@ -323,8 +323,12 @@ impl Render for Fulgur {
             }))
             .on_action(cx.listener(|this, _action: &JumpToLine, window, cx| {
                 this.jump_to_line(window, cx);
-            }))
-            //.child(self.title_bar.clone())
+            }));
+        #[cfg(not(target_os = "macos"))]
+        {
+            content = content.child(self.title_bar.clone());
+        }
+        content = content
             .child(self.render_tab_bar(window, cx))
             .child(self.render_content_area(active_tab, window, cx))
             .children(self.render_search_bar(window, cx));

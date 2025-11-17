@@ -2,7 +2,7 @@
 use gpui::*;
 #[cfg(target_os = "windows")]
 use gpui_component::menu::AppMenuBar;
-use gpui_component::{ActiveTheme, StyledExt, TitleBar};
+use gpui_component::{ActiveTheme, StyledExt, TitleBar, h_flex};
 
 pub struct CustomTitleBar {
     #[cfg(target_os = "windows")]
@@ -44,25 +44,18 @@ impl Render for CustomTitleBar {
             title_bar = title_bar.child(div());
         }
 
-        title_bar
-            // Center - app title (using absolute positioning to center)
-            .child(
+        // Center - app title (using flex layout instead of absolute to avoid blocking events)
+        title_bar = title_bar.child(
+            h_flex().flex_1().justify_center().items_center().child(
                 div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .flex()
-                    .justify_center()
-                    .items_center()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_semibold()
-                            .text_color(cx.theme().foreground)
-                            .child("Fulgur"),
-                    ),
-            )
-            // Right side - empty for now, window controls are automatically added by TitleBar
-            .child(div())
+                    .text_sm()
+                    .font_semibold()
+                    .text_color(cx.theme().foreground)
+                    .child("Fulgur"),
+            ),
+        );
+
+        // Right side - empty, window controls are automatically added by TitleBar
+        title_bar.child(div())
     }
 }
