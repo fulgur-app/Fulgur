@@ -34,6 +34,21 @@ impl Fulgur {
         cx.notify();
     }
 
+    // Find in file
+    // @param window: The window context
+    // @param cx: The application context
+    pub(super) fn find_in_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_search = !self.show_search;
+        if self.show_search {
+            let search_focus = self.search_input.read(cx).focus_handle(cx);
+            window.focus(&search_focus);
+            self.perform_search(window, cx);
+        } else {
+            self.close_search(window, cx);
+        }
+        cx.notify();
+    }
+
     // Perform search in the active tab
     // @param window: The window context
     // @param cx: The application context
@@ -293,15 +308,19 @@ impl Fulgur {
                     let text = editor_tab.content.read(cx).text().to_string();
                     let new_text = if match_case {
                         if match_whole_word {
-                            self.replace_whole_words(&text, &replace_text)
+                            replace_whole_words(&self.search_matches, &text, &replace_text)
                         } else {
                             text.replace(&search_query, &replace_text)
                         }
                     } else {
                         if match_whole_word {
-                            self.replace_whole_words_case_insensitive(&text, &replace_text)
+                            replace_whole_words_case_insensitive(
+                                &self.search_matches,
+                                &text,
+                                &replace_text,
+                            )
                         } else {
-                            self.replace_case_insensitive(&text, &replace_text)
+                            replace_case_insensitive(&self.search_matches, &text, &replace_text)
                         }
                     };
                     if let Some(tab) = self.tabs.get_mut(active_index) {
@@ -318,52 +337,294 @@ impl Fulgur {
         }
         cx.notify();
     }
+}
 
-    // Replace all occurrences case-insensitively
-    // @param text: The text to search in
-    // @param replace: The replacement text
-    // @return: The text with replacements
-    fn replace_case_insensitive(&self, text: &str, replace: &str) -> String {
-        let mut result = String::new();
-        let mut last_pos = 0;
-        for m in self.search_matches.iter() {
-            result.push_str(&text[last_pos..m.start]);
-            result.push_str(replace);
-            last_pos = m.end;
+// Replace all occurrences case-insensitively
+// @param search_matches: The search matches
+// @param text: The text to search in
+// @param replace: The replacement text
+// @return: The text with replacements
+fn replace_case_insensitive(
+    search_matches: &Vec<SearchMatch>,
+    text: &str,
+    replace: &str,
+) -> String {
+    let mut result = String::new();
+    let mut last_pos = 0;
+    for m in search_matches.iter() {
+        result.push_str(&text[last_pos..m.start]);
+        result.push_str(replace);
+        last_pos = m.end;
+    }
+    result.push_str(&text[last_pos..]);
+    result
+}
+
+// Replace whole words only
+// @param search_matches: The search matches
+// @param text: The text to search in
+// @param replace: The replacement text
+// @return: The text with replacements
+fn replace_whole_words(search_matches: &Vec<SearchMatch>, text: &str, replace: &str) -> String {
+    let mut result = String::new();
+    let mut last_pos = 0;
+    for m in search_matches.iter() {
+        result.push_str(&text[last_pos..m.start]);
+        result.push_str(replace);
+        last_pos = m.end;
+    }
+    result.push_str(&text[last_pos..]);
+    result
+}
+
+// Replace whole words case-insensitively
+// @param search_matches: The search matches
+// @param text: The text to search in
+// @param replace: The replacement text
+// @return: The text with replacements
+fn replace_whole_words_case_insensitive(
+    search_matches: &Vec<SearchMatch>,
+    text: &str,
+    replace: &str,
+) -> String {
+    let mut result = String::new();
+    let mut last_pos = 0;
+    for m in search_matches.iter() {
+        result.push_str(&text[last_pos..m.start]);
+        result.push_str(replace);
+        last_pos = m.end;
+    }
+    result.push_str(&text[last_pos..]);
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        SearchMatch, replace_case_insensitive, replace_whole_words,
+        replace_whole_words_case_insensitive,
+    };
+
+    fn create_match(start: usize, end: usize, line: usize, col: usize) -> SearchMatch {
+        SearchMatch {
+            start,
+            end,
+            line,
+            col,
         }
-        result.push_str(&text[last_pos..]);
-        result
     }
 
-    // Replace whole words only
-    // @param text: The text to search in
-    // @param replace: The replacement text
-    // @return: The text with replacements
-    fn replace_whole_words(&self, text: &str, replace: &str) -> String {
-        let mut result = String::new();
-        let mut last_pos = 0;
-        for m in self.search_matches.iter() {
-            result.push_str(&text[last_pos..m.start]);
-            result.push_str(replace);
-            last_pos = m.end;
-        }
-        result.push_str(&text[last_pos..]);
-        result
+    #[test]
+    fn test_replace_case_insensitive_single_match() {
+        let text = "Hello World";
+        let matches = vec![create_match(0, 5, 0, 0)]; // "Hello"
+        let result = replace_case_insensitive(&matches, text, "Hi");
+        assert_eq!(result, "Hi World");
     }
 
-    // Replace whole words case-insensitively
-    // @param text: The text to search in
-    // @param replace: The replacement text
-    // @return: The text with replacements
-    fn replace_whole_words_case_insensitive(&self, text: &str, replace: &str) -> String {
-        let mut result = String::new();
-        let mut last_pos = 0;
-        for m in self.search_matches.iter() {
-            result.push_str(&text[last_pos..m.start]);
-            result.push_str(replace);
-            last_pos = m.end;
-        }
-        result.push_str(&text[last_pos..]);
-        result
+    #[test]
+    fn test_replace_case_insensitive_multiple_matches() {
+        let text = "hello hello hello";
+        let matches = vec![
+            create_match(0, 5, 0, 0),    // "hello"
+            create_match(6, 11, 0, 6),   // "hello"
+            create_match(12, 17, 0, 12), // "hello"
+        ];
+        let result = replace_case_insensitive(&matches, text, "hi");
+        assert_eq!(result, "hi hi hi");
+    }
+
+    #[test]
+    fn test_replace_case_insensitive_no_matches() {
+        let text = "Hello World";
+        let matches = vec![];
+        let result = replace_case_insensitive(&matches, text, "Hi");
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_replace_case_insensitive_match_at_start() {
+        let text = "test string";
+        let matches = vec![create_match(0, 4, 0, 0)]; // "test"
+        let result = replace_case_insensitive(&matches, text, "example");
+        assert_eq!(result, "example string");
+    }
+
+    #[test]
+    fn test_replace_case_insensitive_match_at_end() {
+        let text = "test string";
+        let matches = vec![create_match(5, 11, 0, 5)]; // "string"
+        let result = replace_case_insensitive(&matches, text, "text");
+        assert_eq!(result, "test text");
+    }
+
+    #[test]
+    fn test_replace_case_insensitive_multiline() {
+        let text = "line1\nline2\nline3";
+        let matches = vec![
+            create_match(0, 5, 0, 0),   // "line1"
+            create_match(6, 11, 1, 0),  // "line2"
+            create_match(12, 17, 2, 0), // "line3"
+        ];
+        let result = replace_case_insensitive(&matches, text, "replaced");
+        assert_eq!(result, "replaced\nreplaced\nreplaced");
+    }
+
+    #[test]
+    fn test_replace_case_insensitive_empty_replace() {
+        let text = "hello world";
+        let matches = vec![create_match(0, 5, 0, 0)]; // "hello"
+        let result = replace_case_insensitive(&matches, text, "");
+        assert_eq!(result, " world");
+    }
+
+    #[test]
+    fn test_replace_whole_words_single_match() {
+        let text = "Hello World";
+        let matches = vec![create_match(0, 5, 0, 0)]; // "Hello"
+        let result = replace_whole_words(&matches, text, "Hi");
+        assert_eq!(result, "Hi World");
+    }
+
+    #[test]
+    fn test_replace_whole_words_multiple_matches() {
+        let text = "test test test";
+        let matches = vec![
+            create_match(0, 4, 0, 0),    // "test"
+            create_match(5, 9, 0, 5),    // "test"
+            create_match(10, 14, 0, 10), // "test"
+        ];
+        let result = replace_whole_words(&matches, text, "example");
+        assert_eq!(result, "example example example");
+    }
+
+    #[test]
+    fn test_replace_whole_words_no_matches() {
+        let text = "Hello World";
+        let matches = vec![];
+        let result = replace_whole_words(&matches, text, "Hi");
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_replace_whole_words_match_at_start() {
+        let text = "word other";
+        let matches = vec![create_match(0, 4, 0, 0)]; // "word"
+        let result = replace_whole_words(&matches, text, "term");
+        assert_eq!(result, "term other");
+    }
+
+    #[test]
+    fn test_replace_whole_words_match_at_end() {
+        let text = "other word";
+        let matches = vec![create_match(6, 10, 0, 6)]; // "word"
+        let result = replace_whole_words(&matches, text, "term");
+        assert_eq!(result, "other term");
+    }
+
+    #[test]
+    fn test_replace_whole_words_multiline() {
+        let text = "word1\nword2\nword3";
+        let matches = vec![
+            create_match(0, 5, 0, 0),   // "word1"
+            create_match(6, 11, 1, 0),  // "word2"
+            create_match(12, 17, 2, 0), // "word3"
+        ];
+        let result = replace_whole_words(&matches, text, "replaced");
+        assert_eq!(result, "replaced\nreplaced\nreplaced");
+    }
+
+    #[test]
+    fn test_replace_whole_words_empty_replace() {
+        let text = "hello world";
+        let matches = vec![create_match(0, 5, 0, 0)]; // "hello"
+        let result = replace_whole_words(&matches, text, "");
+        assert_eq!(result, " world");
+    }
+
+    #[test]
+    fn test_replace_whole_words_case_insensitive_single_match() {
+        let text = "Hello World";
+        let matches = vec![create_match(0, 5, 0, 0)]; // "Hello"
+        let result = replace_whole_words_case_insensitive(&matches, text, "Hi");
+        assert_eq!(result, "Hi World");
+    }
+
+    #[test]
+    fn test_replace_whole_words_case_insensitive_multiple_matches() {
+        let text = "test TEST test";
+        let matches = vec![
+            create_match(0, 4, 0, 0),    // "test"
+            create_match(5, 9, 0, 5),    // "TEST"
+            create_match(10, 14, 0, 10), // "test"
+        ];
+        let result = replace_whole_words_case_insensitive(&matches, text, "example");
+        assert_eq!(result, "example example example");
+    }
+
+    #[test]
+    fn test_replace_whole_words_case_insensitive_no_matches() {
+        let text = "Hello World";
+        let matches = vec![];
+        let result = replace_whole_words_case_insensitive(&matches, text, "Hi");
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_replace_whole_words_case_insensitive_match_at_start() {
+        let text = "word other";
+        let matches = vec![create_match(0, 4, 0, 0)]; // "word"
+        let result = replace_whole_words_case_insensitive(&matches, text, "term");
+        assert_eq!(result, "term other");
+    }
+
+    #[test]
+    fn test_replace_whole_words_case_insensitive_match_at_end() {
+        let text = "other word";
+        let matches = vec![create_match(6, 10, 0, 6)]; // "word"
+        let result = replace_whole_words_case_insensitive(&matches, text, "term");
+        assert_eq!(result, "other term");
+    }
+
+    #[test]
+    fn test_replace_whole_words_case_insensitive_multiline() {
+        let text = "word1\nWORD2\nword3";
+        let matches = vec![
+            create_match(0, 5, 0, 0),   // "word1"
+            create_match(6, 11, 1, 0),  // "WORD2"
+            create_match(12, 17, 2, 0), // "word3"
+        ];
+        let result = replace_whole_words_case_insensitive(&matches, text, "replaced");
+        assert_eq!(result, "replaced\nreplaced\nreplaced");
+    }
+
+    #[test]
+    fn test_replace_whole_words_case_insensitive_empty_replace() {
+        let text = "hello world";
+        let matches = vec![create_match(0, 5, 0, 0)]; // "hello"
+        let result = replace_whole_words_case_insensitive(&matches, text, "");
+        assert_eq!(result, " world");
+    }
+
+    #[test]
+    fn test_replace_case_insensitive_non_sequential_matches() {
+        let text = "hello world hello";
+        let matches = vec![
+            create_match(0, 5, 0, 0),    // "hello"
+            create_match(12, 17, 0, 12), // "hello"
+        ];
+        let result = replace_case_insensitive(&matches, text, "hi");
+        assert_eq!(result, "hi world hi");
+    }
+
+    #[test]
+    fn test_replace_whole_words_non_sequential_matches() {
+        let text = "test word test";
+        let matches = vec![
+            create_match(0, 4, 0, 0),    // "test"
+            create_match(10, 14, 0, 10), // "test"
+        ];
+        let result = replace_whole_words(&matches, text, "example");
+        assert_eq!(result, "example word example");
     }
 }

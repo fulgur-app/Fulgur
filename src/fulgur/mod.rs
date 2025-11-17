@@ -277,16 +277,7 @@ impl Render for Fulgur {
                 this.open_settings(window, cx);
             }))
             .on_action(cx.listener(|this, _action: &FindInFile, window, cx| {
-                this.show_search = !this.show_search;
-
-                if this.show_search {
-                    let search_focus = this.search_input.read(cx).focus_handle(cx);
-                    window.focus(&search_focus);
-                    this.perform_search(window, cx);
-                } else {
-                    this.close_search(window, cx);
-                }
-                cx.notify();
+                this.find_in_file(window, cx);
             }))
             .on_action(cx.listener(|this, action: &SwitchTheme, _window, cx| {
                 let theme_name = action.0.clone();

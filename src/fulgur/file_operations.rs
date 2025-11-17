@@ -11,22 +11,14 @@ use gpui::*;
 // @param bytes: The bytes to detect encoding from
 // @return: The detected encoding and decoded string
 pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
-    // Try UTF-8 first
     if let Ok(text) = std::str::from_utf8(bytes) {
         return (UTF_8.to_string(), text.to_string());
     }
-
-    // Use chardetng to detect encoding
     let mut detector = EncodingDetector::new();
     detector.feed(bytes, true);
     let encoding = detector.guess(None, true);
-
-    // Decode the bytes using the detected encoding
     let (decoded, _, had_errors) = encoding.decode(bytes);
-
-    // If there were errors, try to use a more lenient approach
     let encoding_name = if had_errors {
-        // If decoding had errors, fall back to UTF-8 with replacement
         match std::str::from_utf8(bytes) {
             Ok(text) => return (UTF_8.to_string(), text.to_string()),
             Err(_) => {
@@ -37,7 +29,6 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     } else {
         encoding.name().to_string()
     };
-
     (encoding_name, decoded.to_string())
 }
 
@@ -52,19 +43,11 @@ impl Fulgur {
             multiple: false,
             prompt: None,
         });
-
         cx.spawn_in(window, async move |view, window| {
-            // Wait for the user to select a path
             let paths = path_future.await.ok()?.ok()??;
             let path = paths.first()?.clone();
-
-            // Read file contents as bytes first
             let bytes = std::fs::read(&path).ok()?;
-
-            // Detect encoding and decode
             let (encoding, contents) = detect_encoding_and_decode(&bytes);
-
-            // Update the view to add a new tab with the file
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
@@ -86,7 +69,6 @@ impl Fulgur {
                     });
                 })
                 .ok();
-
             Some(())
         })
         .detach();
@@ -99,13 +81,9 @@ impl Fulgur {
         if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;
         }
-
         let active_tab = &self.tabs[self.active_tab_index.unwrap()];
-
-        // Only save editor tabs
         let (path, content_entity) = match active_tab {
             Tab::Editor(editor_tab) => {
-                // If no path exists, use save_as instead
                 if editor_tab.file_path.is_none() {
                     self.save_file_as(window, cx);
                     return;
@@ -115,19 +93,13 @@ impl Fulgur {
                     editor_tab.content.clone(),
                 )
             }
-            Tab::Settings(_) => return, // Can't save settings tabs
+            Tab::Settings(_) => return,
         };
-
-        // Get the text content from the InputState
         let contents = content_entity.read(cx).text().to_string();
-
-        // Write to file
         if let Err(e) = std::fs::write(&path, contents) {
             eprintln!("Failed to save file: {}", e);
             return;
         }
-
-        // Mark as saved
         if let Tab::Editor(editor_tab) = &mut self.tabs[self.active_tab_index.unwrap()] {
             editor_tab.mark_as_saved(cx);
         }
@@ -141,10 +113,7 @@ impl Fulgur {
         if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;
         }
-
         let active_tab_index = self.active_tab_index;
-
-        // Only save editor tabs
         let (content_entity, directory) = match &self.tabs[active_tab_index.unwrap()] {
             Tab::Editor(editor_tab) => {
                 let dir = if let Some(ref path) = editor_tab.file_path {
@@ -156,27 +125,18 @@ impl Fulgur {
                 };
                 (editor_tab.content.clone(), dir)
             }
-            Tab::Settings(_) => return, // Can't save settings tabs
+            Tab::Settings(_) => return,
         };
-
         let path_future = cx.prompt_for_new_path(&directory, None);
-
         cx.spawn_in(window, async move |view, window| {
-            // Wait for the user to select a path
             let path = path_future.await.ok()?.ok()??;
-
-            // Get the text content
             let contents = window
                 .update(|_, cx| content_entity.read(cx).text().to_string())
                 .ok()?;
-
-            // Write to file
             if let Err(e) = std::fs::write(&path, &contents) {
                 eprintln!("Failed to save file: {}", e);
                 return None;
             }
-
-            // Update the tab with the new path
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
@@ -197,7 +157,6 @@ impl Fulgur {
                     });
                 })
                 .ok()?;
-
             Some(())
         })
         .detach();
