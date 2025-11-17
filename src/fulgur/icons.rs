@@ -16,6 +16,10 @@ pub enum CustomIcon {
     ReplaceAll,
     Search,
     WholeWord,
+    WindowClose,
+    WindowMaximize,
+    WindowMinimize,
+    WindowRestore,
 }
 
 impl CustomIcon {
@@ -36,6 +40,10 @@ impl CustomIcon {
             Self::ReplaceAll => "icons/replace-all.svg",
             Self::Search => "icons/search.svg",
             Self::WholeWord => "icons/whole-word.svg",
+            Self::WindowClose => "icons/window-close.svg",
+            Self::WindowMaximize => "icons/window-maximize.svg",
+            Self::WindowMinimize => "icons/window-minimize.svg",
+            Self::WindowRestore => "icons/window-restore.svg",
         }
         .into()
     }
