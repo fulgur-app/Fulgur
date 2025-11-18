@@ -167,19 +167,23 @@ impl Fulgur {
     // @param cx: The application context
     // @return: The rendered tab bar element
     pub(super) fn render_tab_bar(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
-        div()
+        let mut tab_bar = div()
             .flex()
             .items_center()
             .h(TAB_BAR_HEIGHT)
-            .bg(cx.theme().tab_bar)
-            // Do not delete this, it is used to create a space for the title bar
-            .child(
+            .bg(cx.theme().tab_bar);
+        // Do not delete this, it is used to create a space for the title bar for MacOS
+        #[cfg(target_os = "macos")]
+        {
+            tab_bar = tab_bar.child(
                 div()
                     .w_20()
                     .h(TAB_BAR_HEIGHT)
                     .border_b_1()
                     .border_color(cx.theme().border),
-            )
+            );
+        }
+        tab_bar = tab_bar
             .child(
                 tab_bar_button_factory("new-tab", "New Tab", CustomIcon::Plus, cx.theme().border)
                     .on_click(cx.listener(|this, _, window, cx| {
@@ -219,7 +223,8 @@ impl Fulgur {
                             .border_color(cx.theme().border)
                             .h(TAB_BAR_HEIGHT),
                     ),
-            )
+            );
+        tab_bar
     }
 
     // Render a single tab
