@@ -52,9 +52,51 @@ impl AppSettings {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+pub struct RecentFiles {
+    files: Vec<PathBuf>,
+    max_files: usize,
+}
+
+impl RecentFiles {
+    // Create a new recent files instance
+    // @param max_files: The maximum number of files to store
+    // @return: The new recent files instance
+    pub fn new(max_files: usize) -> Self {
+        Self {
+            files: Vec::new(),
+            max_files,
+        }
+    }
+
+    // Add a file to the recent files
+    // @param file: The file to add
+    // @return: The result of the operation
+    pub fn add_file(&mut self, file: PathBuf) {
+        self.files.push(file);
+        if self.files.len() > self.max_files {
+            self.files.remove(0);
+        }
+    }
+
+    // Remove a file from the recent files
+    // @param file: The file to remove
+    // @return: The result of the operation
+    pub fn remove_file(&mut self, file: PathBuf) {
+        self.files.retain(|f| f != &file);
+    }
+
+    // Get the recent files
+    // @return: The recent files
+    pub fn get_files(&self) -> &Vec<PathBuf> {
+        &self.files
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub editor_settings: EditorSettings,
     pub app_settings: AppSettings,
+    pub recent_files: RecentFiles,
 }
 
 impl Settings {
@@ -64,6 +106,7 @@ impl Settings {
         Self {
             editor_settings: EditorSettings::new(),
             app_settings: AppSettings::new(),
+            recent_files: RecentFiles::new(10),
         }
     }
 
@@ -107,6 +150,24 @@ impl Settings {
         let json = fs::read_to_string(path)?;
         let settings: Settings = serde_json::from_str(&json)?;
         Ok(settings)
+    }
+
+    // Get the recent files
+    // @return: The recent files
+    pub fn get_recent_files(&mut self) -> Vec<PathBuf> {
+        let mut files = self.recent_files.get_files().clone();
+        files.reverse();
+        files
+    }
+
+    // Add a file to the recent files
+    // @param file: The file to add
+    pub fn add_file(&mut self, file: PathBuf) -> anyhow::Result<()> {
+        if self.recent_files.get_files().contains(&file) {
+            self.recent_files.remove_file(file.clone());
+        }
+        self.recent_files.add_file(file);
+        self.save()
     }
 }
 

@@ -1,5 +1,6 @@
 use gpui::*;
 use gpui_component::{Theme, ThemeMode, ThemeRegistry};
+use std::path::PathBuf;
 
 actions!(
     fulgur,
@@ -19,6 +20,7 @@ actions!(
         NextTab,
         PreviousTab,
         JumpToLine,
+        OpenRecentFile,
     ]
 );
 
@@ -28,8 +30,9 @@ pub struct SwitchTheme(pub SharedString);
 
 // Build the menus for the Fulgur instance
 // @param cx: The application context
+// @param recent_files: The list of recent files to display
 // @return: The menus for the Fulgur instance
-pub fn build_menus(cx: &mut App) -> Vec<Menu> {
+pub fn build_menus(cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
     let themes = ThemeRegistry::global(cx).sorted_themes();
     let light_themes: Vec<String> = themes
         .iter()
@@ -95,6 +98,13 @@ pub fn build_menus(cx: &mut App) -> Vec<Menu> {
             items: vec![
                 MenuItem::action("New", NewFile),
                 MenuItem::action("Open...", OpenFile),
+                MenuItem::Submenu(Menu {
+                    name: "Recent Files".into(),
+                    items: recent_files
+                        .iter()
+                        .map(|file| MenuItem::action(file.display().to_string(), OpenRecentFile))
+                        .collect(),
+                }),
                 MenuItem::separator(),
                 MenuItem::action("Save", SaveFile),
                 MenuItem::action("Save as...", SaveFileAs),

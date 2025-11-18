@@ -2,6 +2,7 @@ use crate::fulgur::{
     Fulgur,
     components_utils::{UNTITLED, UTF_8},
     editor_tab::EditorTab,
+    menus,
     tab::Tab,
 };
 use chardetng::EncodingDetector;
@@ -65,6 +66,11 @@ impl Fulgur {
                         this.active_tab_index = Some(this.tabs.len() - 1);
                         this.next_tab_id += 1;
                         this.focus_active_tab(window, cx);
+                        if let Err(e) = this.settings.add_file(path) {
+                            eprintln!("Failed to add file to recent files: {}", e);
+                        }
+                        let menus = menus::build_menus(cx, &this.settings.get_recent_files());
+                        cx.set_menus(menus);
                         cx.notify();
                     });
                 })

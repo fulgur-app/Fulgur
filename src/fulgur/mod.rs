@@ -131,8 +131,9 @@ impl Fulgur {
     // @param cx: The application context
     pub fn init(cx: &mut App) {
         languages::init_languages();
-        let settings = Settings::load().unwrap_or_else(|_| Settings::new());
-        themes::init(&settings, cx, |cx| {
+        let mut settings = Settings::load().unwrap_or_else(|_| Settings::new());
+        let recent_files = settings.get_recent_files();
+        themes::init(&settings, cx, move |cx| {
             cx.bind_keys([
                 #[cfg(target_os = "macos")]
                 KeyBinding::new("cmd-o", OpenFile, None),
@@ -178,7 +179,7 @@ impl Fulgur {
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-g", JumpToLine, None),
             ]);
-            let menus = build_menus(cx);
+            let menus = build_menus(cx, &recent_files);
             cx.set_menus(menus);
         });
     }
@@ -292,7 +293,7 @@ impl Render for Fulgur {
                     }
                 }
                 cx.refresh_windows();
-                let menus = build_menus(cx);
+                let menus = build_menus(cx, &this.settings.recent_files.get_files());
                 cx.set_menus(menus);
             }))
             .on_action(
