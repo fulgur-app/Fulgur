@@ -370,6 +370,12 @@ impl Fulgur {
                         this.close_tab(tab_id, window, cx);
                     })),
             )
+            .on_mouse_down(
+                MouseButton::Middle,
+                cx.listener(move |this, _, window, cx| {
+                    this.close_tab(tab_id, window, cx);
+                }),
+            )
             .context_menu(move |this, _window, _cx| {
                 this.menu("Close Tab", Box::new(CloseTabAction(tab_id)))
                     .menu_with_disabled(
