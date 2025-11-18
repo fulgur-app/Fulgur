@@ -327,6 +327,9 @@ impl Render for Fulgur {
             }))
             .on_action(cx.listener(|this, action: &OpenRecentFile, window, cx| {
                 this.do_open_file(window, cx, action.0.clone());
+            }))
+            .on_action(cx.listener(|this, _action: &ClearRecentFiles, window, cx| {
+                this.clear_recent_files(window, cx);
             }));
         #[cfg(not(target_os = "macos"))]
         {

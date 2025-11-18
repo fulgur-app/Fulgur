@@ -21,6 +21,7 @@ actions!(
         NextTab,
         PreviousTab,
         JumpToLine,
+        ClearRecentFiles,
     ]
 );
 
@@ -54,7 +55,7 @@ pub fn build_menus(cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
         items.push(MenuItem::action("No recent files", NoneAction));
         items
     } else {
-        recent_files
+        let mut items: Vec<MenuItem> = recent_files
             .iter()
             .map(|file| {
                 MenuItem::action(
@@ -62,7 +63,10 @@ pub fn build_menus(cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
                     OpenRecentFile(file.to_path_buf()),
                 )
             })
-            .collect()
+            .collect();
+        items.push(MenuItem::Separator);
+        items.push(MenuItem::action("Clear recent files", ClearRecentFiles));
+        items
     };
     vec![
         Menu {

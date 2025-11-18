@@ -10,7 +10,7 @@ use gpui_component::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::fulgur::Fulgur;
+use crate::fulgur::{Fulgur, menus::build_menus};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EditorSettings {
@@ -89,6 +89,12 @@ impl RecentFiles {
     // @return: The recent files
     pub fn get_files(&self) -> &Vec<PathBuf> {
         &self.files
+    }
+
+    // Clear the recent files
+    // @return: The result of the operation
+    pub fn clear(&mut self) {
+        self.files.clear();
     }
 }
 
@@ -502,5 +508,18 @@ impl Fulgur {
                 .child(self.make_editor_settings_section(window, cx))
                 .child(self.make_application_settings_section(cx)),
         )
+    }
+
+    // Clear the recent files
+    // @param window: The window
+    // @param cx: The context
+    // @return: The result of the operation
+    pub fn clear_recent_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.recent_files.clear();
+        if let Err(e) = self.settings.save() {
+            eprintln!("Failed to save settings: {}", e);
+        }
+        let menus = build_menus(cx, &self.settings.recent_files.get_files());
+        cx.set_menus(menus);
     }
 }
