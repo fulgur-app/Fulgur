@@ -324,6 +324,9 @@ impl Render for Fulgur {
             }))
             .on_action(cx.listener(|this, _action: &JumpToLine, window, cx| {
                 this.jump_to_line(window, cx);
+            }))
+            .on_action(cx.listener(|this, action: &OpenRecentFile, window, cx| {
+                this.do_open_file(window, cx, action.0.clone());
             }));
         #[cfg(not(target_os = "macos"))]
         {

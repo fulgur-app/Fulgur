@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::fulgur::{
     Fulgur,
     components_utils::{UNTITLED, UTF_8},
@@ -34,6 +36,47 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
 }
 
 impl Fulgur {
+    // Internal helper function to open a file from a path
+    // This function handles reading the file, detecting encoding, and creating the editor tab
+    // @param view: The view entity (WeakEntity)
+    // @param window: The async window context
+    // @param path: The path to the file to open
+    async fn open_file_from_path(
+        view: WeakEntity<Self>,
+        window: &mut AsyncWindowContext,
+        path: PathBuf,
+    ) -> Option<()> {
+        let bytes = std::fs::read(&path).ok()?;
+        let (encoding, contents) = detect_encoding_and_decode(&bytes);
+        window
+            .update(|window, cx| {
+                _ = view.update(cx, |this, cx| {
+                    let editor_tab = EditorTab::from_file(
+                        this.next_tab_id,
+                        path.clone(),
+                        contents,
+                        encoding,
+                        window,
+                        cx,
+                        &this.settings.editor_settings,
+                        false,
+                    );
+                    this.tabs.push(Tab::Editor(editor_tab));
+                    this.active_tab_index = Some(this.tabs.len() - 1);
+                    this.next_tab_id += 1;
+                    this.focus_active_tab(window, cx);
+                    if let Err(e) = this.settings.add_file(path) {
+                        eprintln!("Failed to add file to recent files: {}", e);
+                    }
+                    let menus = menus::build_menus(cx, &this.settings.get_recent_files());
+                    cx.set_menus(menus);
+                    cx.notify();
+                });
+            })
+            .ok();
+        Some(())
+    }
+
     // Open a file
     // @param window: The window to open the file in
     // @param cx: The application context
@@ -47,35 +90,23 @@ impl Fulgur {
         cx.spawn_in(window, async move |view, window| {
             let paths = path_future.await.ok()?.ok()??;
             let path = paths.first()?.clone();
-            let bytes = std::fs::read(&path).ok()?;
-            let (encoding, contents) = detect_encoding_and_decode(&bytes);
-            window
-                .update(|window, cx| {
-                    _ = view.update(cx, |this, cx| {
-                        let editor_tab = EditorTab::from_file(
-                            this.next_tab_id,
-                            path.clone(),
-                            contents,
-                            encoding,
-                            window,
-                            cx,
-                            &this.settings.editor_settings,
-                            false,
-                        );
-                        this.tabs.push(Tab::Editor(editor_tab));
-                        this.active_tab_index = Some(this.tabs.len() - 1);
-                        this.next_tab_id += 1;
-                        this.focus_active_tab(window, cx);
-                        if let Err(e) = this.settings.add_file(path) {
-                            eprintln!("Failed to add file to recent files: {}", e);
-                        }
-                        let menus = menus::build_menus(cx, &this.settings.get_recent_files());
-                        cx.set_menus(menus);
-                        cx.notify();
-                    });
-                })
-                .ok();
-            Some(())
+            Self::open_file_from_path(view, window, path).await
+        })
+        .detach();
+    }
+
+    // Open a file from a given path
+    // @param window: The window to open the file in
+    // @param cx: The application context
+    // @param path: The path to the file to open
+    pub(super) fn do_open_file(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        path: PathBuf,
+    ) {
+        cx.spawn_in(window, async move |view, window| {
+            Self::open_file_from_path(view, window, path).await
         })
         .detach();
     }

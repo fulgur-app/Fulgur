@@ -5,6 +5,7 @@ use std::path::PathBuf;
 actions!(
     fulgur,
     [
+        NoneAction,
         About,
         Quit,
         CloseWindow,
@@ -20,13 +21,16 @@ actions!(
         NextTab,
         PreviousTab,
         JumpToLine,
-        OpenRecentFile,
     ]
 );
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
 pub struct SwitchTheme(pub SharedString);
+
+#[derive(Action, Clone, PartialEq)]
+#[action(namespace = fulgur, no_json)]
+pub struct OpenRecentFile(pub PathBuf);
 
 // Build the menus for the Fulgur instance
 // @param cx: The application context
@@ -45,6 +49,21 @@ pub fn build_menus(cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
         .map(|theme| theme.name.to_string())
         .collect();
     let current_theme = Theme::global(cx).theme_name().to_string();
+    let recent_files_items = if recent_files.is_empty() {
+        let mut items = Vec::new();
+        items.push(MenuItem::action("No recent files", NoneAction));
+        items
+    } else {
+        recent_files
+            .iter()
+            .map(|file| {
+                MenuItem::action(
+                    file.display().to_string(),
+                    OpenRecentFile(file.to_path_buf()),
+                )
+            })
+            .collect()
+    };
     vec![
         Menu {
             name: "Fulgur".into(),
@@ -100,10 +119,7 @@ pub fn build_menus(cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
                 MenuItem::action("Open...", OpenFile),
                 MenuItem::Submenu(Menu {
                     name: "Recent Files".into(),
-                    items: recent_files
-                        .iter()
-                        .map(|file| MenuItem::action(file.display().to_string(), OpenRecentFile))
-                        .collect(),
+                    items: recent_files_items,
                 }),
                 MenuItem::separator(),
                 MenuItem::action("Save", SaveFile),
