@@ -1,11 +1,11 @@
 // Custom title bar with platform-specific menu bar placement
 use gpui::*;
-#[cfg(target_os = "windows")]
+#[cfg(not(target_os = "macos"))]
 use gpui_component::menu::AppMenuBar;
 use gpui_component::{ActiveTheme, StyledExt, TitleBar, h_flex};
 
 pub struct CustomTitleBar {
-    #[cfg(target_os = "windows")]
+    #[cfg(not(target_os = "macos"))]
     app_menu_bar: Entity<AppMenuBar>,
 }
 
@@ -15,11 +15,11 @@ impl CustomTitleBar {
     // @param cx: The application context
     // @return: The new custom title bar
     pub fn new(_window: &mut Window, _cx: &mut App) -> Entity<Self> {
-        #[cfg(target_os = "windows")]
+        #[cfg(not(target_os = "macos"))]
         let app_menu_bar = AppMenuBar::new(_window, _cx);
 
         _cx.new(|_cx| Self {
-            #[cfg(target_os = "windows")]
+            #[cfg(not(target_os = "macos"))]
             app_menu_bar,
         })
     }
@@ -34,7 +34,7 @@ impl Render for CustomTitleBar {
         let mut title_bar = TitleBar::new();
 
         // Left side - menu bar on Windows only
-        #[cfg(target_os = "windows")]
+        #[cfg(not(target_os = "macos"))]
         {
             title_bar =
                 title_bar.child(div().flex().items_center().child(self.app_menu_bar.clone()));
