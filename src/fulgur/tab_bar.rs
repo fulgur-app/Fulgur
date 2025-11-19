@@ -274,6 +274,7 @@ impl Fulgur {
             );
         if is_active {
             tab_div = tab_div.bg(cx.theme().tab_active).border_b_0();
+            self.set_title(Some(tab.title().to_string()), cx);
         } else {
             tab_div = tab_div
                 .bg(cx.theme().tab)

@@ -4,9 +4,12 @@ use gpui::*;
 use gpui_component::menu::AppMenuBar;
 use gpui_component::{ActiveTheme, StyledExt, TitleBar, h_flex};
 
+const DEFAULT_TITLE: &str = "Fulgur";
+
 pub struct CustomTitleBar {
     #[cfg(not(target_os = "macos"))]
     app_menu_bar: Entity<AppMenuBar>,
+    title: String,
 }
 
 impl CustomTitleBar {
@@ -21,7 +24,18 @@ impl CustomTitleBar {
         _cx.new(|_cx| Self {
             #[cfg(not(target_os = "macos"))]
             app_menu_bar,
+            title: DEFAULT_TITLE.to_string(),
         })
+    }
+
+    // Set the title of the title bar
+    // @param title: The title to set (if None, the default title is used)
+    pub fn set_title(&mut self, title: Option<String>) {
+        if let Some(title) = title {
+            self.title = format!("{} - Fulgur", title);
+        } else {
+            self.title = DEFAULT_TITLE.to_string();
+        }
     }
 }
 
@@ -51,7 +65,7 @@ impl Render for CustomTitleBar {
                     .text_sm()
                     .font_semibold()
                     .text_color(cx.theme().foreground)
-                    .child("Fulgur"),
+                    .child(self.title.clone()),
             ),
         );
 

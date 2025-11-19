@@ -385,4 +385,13 @@ impl Fulgur {
         }
         v_flex().w_full().flex_1()
     }
+
+    // Set the title of the title bar
+    // @param title: The title to set (if None, the default title is used)
+    // @param cx: The application context
+    fn set_title(&self, title: Option<String>, cx: &mut Context<Self>) {
+        self.title_bar.update(cx, |this, _cx| {
+            this.set_title(title);
+        });
+    }
 }

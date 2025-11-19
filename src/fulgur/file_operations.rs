@@ -65,11 +65,16 @@ impl Fulgur {
                     this.active_tab_index = Some(this.tabs.len() - 1);
                     this.next_tab_id += 1;
                     this.focus_active_tab(window, cx);
-                    if let Err(e) = this.settings.add_file(path) {
+                    if let Err(e) = this.settings.add_file(path.clone()) {
                         eprintln!("Failed to add file to recent files: {}", e);
                     }
                     let menus = menus::build_menus(cx, &this.settings.get_recent_files());
                     cx.set_menus(menus);
+                    let title = match path.file_name() {
+                        Some(file_name) => Some(file_name.to_string_lossy().to_string()),
+                        None => None,
+                    };
+                    this.set_title(title, cx);
                     cx.notify();
                 });
             })
