@@ -172,17 +172,6 @@ impl Fulgur {
             .items_center()
             .h(TAB_BAR_HEIGHT)
             .bg(cx.theme().tab_bar);
-        // Do not delete this, it is used to create a space for the title bar for MacOS
-        #[cfg(target_os = "macos")]
-        {
-            tab_bar = tab_bar.child(
-                div()
-                    .w_20()
-                    .h(TAB_BAR_HEIGHT)
-                    .border_b_1()
-                    .border_color(cx.theme().border),
-            );
-        }
         tab_bar = tab_bar
             .child(
                 tab_bar_button_factory("new-tab", "New Tab", CustomIcon::Plus, cx.theme().border)

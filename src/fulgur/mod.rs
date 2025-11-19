@@ -331,10 +331,7 @@ impl Render for Fulgur {
             .on_action(cx.listener(|this, _action: &ClearRecentFiles, window, cx| {
                 this.clear_recent_files(window, cx);
             }));
-        #[cfg(not(target_os = "macos"))]
-        {
-            content = content.child(self.title_bar.clone());
-        }
+        content = content.child(self.title_bar.clone());
         content = content
             .child(self.render_tab_bar(window, cx))
             .child(self.render_content_area(active_tab, window, cx))

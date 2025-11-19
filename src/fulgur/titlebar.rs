@@ -31,7 +31,7 @@ impl Render for CustomTitleBar {
     // @param cx: The application context
     // @return: The rendered custom title bar
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut title_bar = TitleBar::new();
+        let mut title_bar = TitleBar::new().bg(cx.theme().tab_bar);
 
         // Left side - menu bar on Windows only
         #[cfg(not(target_os = "macos"))]
