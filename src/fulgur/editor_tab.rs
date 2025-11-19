@@ -162,6 +162,7 @@ impl EditorTab {
             let current_content = self.content.read(cx).text().to_string();
             self.content = cx
                 .new(|cx| make_input_state(window, cx, language, Some(current_content), settings));
+            self.language = language;
         }
     }
 
