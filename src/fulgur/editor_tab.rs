@@ -159,11 +159,21 @@ impl EditorTab {
         if let Some(ref path) = self.file_path {
             let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
             let language = language_from_extension(extension);
-            let current_content = self.content.read(cx).text().to_string();
-            self.content = cx
-                .new(|cx| make_input_state(window, cx, language, Some(current_content), settings));
-            self.language = language;
+            self.force_language(window, cx, language, settings);
         }
+    }
+
+    pub fn force_language(
+        &mut self,
+        window: &mut Window,
+        cx: &mut App,
+        language: Language,
+        settings: &EditorSettings,
+    ) {
+        let current_content = self.content.read(cx).text().to_string();
+        self.language = language;
+        self.content =
+            cx.new(|cx| make_input_state(window, cx, language, Some(current_content), settings));
     }
 
     // Jump to a specific line

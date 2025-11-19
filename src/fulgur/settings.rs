@@ -10,7 +10,7 @@ use gpui_component::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::fulgur::{Fulgur, menus::build_menus};
+use crate::fulgur::{Fulgur, components_utils::create_select_state, menus::build_menus};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EditorSettings {
@@ -197,28 +197,6 @@ impl SettingsTab {
     }
 }
 
-// Create the a dropdown state
-// @param settings: The current settings
-// @param window: The window
-// @param cx: The app context
-// @return: The dropdown state entity
-pub fn create_dropdown(
-    _settings: &Settings,
-    window: &mut Window,
-    current_value: String,
-    options: Vec<SharedString>,
-    cx: &mut App,
-) -> Entity<SelectState<Vec<SharedString>>> {
-    let selected_index = options.iter().position(|s| s.as_ref() == current_value);
-    cx.new(|cx| {
-        SelectState::new(
-            options,
-            selected_index.map(|i| IndexPath::default().row(i)),
-            window,
-            cx,
-        )
-    })
-}
 // Create the font size dropdown state
 // @param settings: The current settings
 // @param window: The window
@@ -241,7 +219,7 @@ pub fn create_font_size_dropdown(
 
     // Find the index of the current font size
     let current_font_size = settings.editor_settings.font_size.to_string();
-    create_dropdown(settings, window, current_font_size, font_sizes, cx)
+    create_select_state(window, current_font_size, font_sizes, cx)
 }
 
 // Subscribe to font size dropdown changes
@@ -291,7 +269,7 @@ pub fn create_tab_size_dropdown(
         "42".into(),
     ];
     let current_tab_size = settings.editor_settings.tab_size.to_string();
-    create_dropdown(settings, window, current_tab_size, tab_sizes, cx)
+    create_select_state(window, current_tab_size, tab_sizes, cx)
 }
 
 // Subscribe to font size dropdown changes

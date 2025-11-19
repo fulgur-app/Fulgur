@@ -1,4 +1,7 @@
-use gpui_component::highlighter::Language;
+use gpui::*;
+use gpui_component::{highlighter::Language, select::SelectState};
+
+use crate::fulgur::components_utils::create_select_state;
 
 // Initialize the language registry with all supported languages
 pub fn init_languages() {}
@@ -29,6 +32,9 @@ pub fn language_name(language: &Language) -> &'static str {
     language.name()
 }
 
+// Get the pretty name of a language
+// @param language: The Language enum
+// @return: The pretty name of the language
 pub fn pretty_name(language: Language) -> String {
     let language_pretty = match language {
         Language::Plain => "Text",
@@ -66,4 +72,35 @@ pub fn pretty_name(language: Language) -> String {
         Language::Zig => "Zig",
     };
     language_pretty.to_string()
+}
+
+// Get the Language enum from a pretty name (e.g., "JavaScript" -> Language::JavaScript)
+// @param pretty_name_str: The pretty name of the language
+// @return: The Language enum, or Language::Plain if not found
+pub fn language_from_pretty_name(pretty_name_str: &str) -> Language {
+    Language::all()
+        .find(|&lang| pretty_name(lang) == pretty_name_str)
+        .unwrap_or(Language::Plain)
+}
+
+// Create the all languages select state
+// @param current_language: The current language
+// @param window: The window
+// @param cx: The app context
+// @return: The select state entity
+pub fn create_all_languages_select_state(
+    current_language: String,
+    window: &mut Window,
+    cx: &mut App,
+) -> Entity<SelectState<Vec<SharedString>>> {
+    let languages = all_languages();
+    create_select_state(window, current_language, languages, cx)
+}
+
+fn all_languages() -> Vec<SharedString> {
+    let mut languages = Language::all()
+        .map(|language| SharedString::new(pretty_name(language).as_str()))
+        .collect::<Vec<SharedString>>();
+    languages.sort();
+    languages
 }

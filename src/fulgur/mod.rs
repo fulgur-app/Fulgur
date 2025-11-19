@@ -53,6 +53,7 @@ pub struct Fulgur {
     _font_size_subscription: gpui::Subscription,
     pub tab_size_dropdown: Entity<SelectState<Vec<SharedString>>>,
     _tab_size_subscription: gpui::Subscription,
+    pub language_dropdown: Entity<SelectState<Vec<SharedString>>>,
     settings_changed: bool,
     rendered_tabs: std::collections::HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
@@ -75,6 +76,8 @@ impl Fulgur {
             cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
         let font_size_dropdown = settings::create_font_size_dropdown(&settings, window, cx);
         let tab_size_dropdown = settings::create_tab_size_dropdown(&settings, window, cx);
+        let language_dropdown =
+            languages::create_all_languages_select_state("Plain".into(), window, cx);
         let entity = cx.new(|cx| {
             let _search_subscription = cx.subscribe(
                 &search_input,
@@ -114,6 +117,7 @@ impl Fulgur {
                 _font_size_subscription,
                 tab_size_dropdown,
                 _tab_size_subscription,
+                language_dropdown,
                 settings_changed: false,
                 rendered_tabs: std::collections::HashSet::new(),
                 tabs_pending_update: std::collections::HashSet::new(),

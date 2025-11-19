@@ -10,6 +10,7 @@ use gpui_component::{
     ActiveTheme, WindowExt, h_flex,
     highlighter::Language,
     input::{Input, Position},
+    select::Select,
 };
 
 // Create a status bar item
@@ -96,6 +97,61 @@ impl Fulgur {
         });
         return;
     }
+
+    // Set the language via a dialog
+    // @param window: The window context
+    // @param cx: The application context
+    // @param current_language: The current language
+    fn set_language(
+        self: &mut Fulgur,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        current_language: SharedString,
+    ) {
+        let language_dropdown = self.language_dropdown.clone();
+        language_dropdown.update(cx, |select_state, cx| {
+            select_state.set_selected_value(&current_language, window, cx);
+            cx.notify();
+        });
+        let entity = cx.entity().clone();
+        window.open_dialog(cx.deref_mut(), move |modal, window, cx| {
+            let focus_handle = language_dropdown.read(cx).focus_handle(cx);
+            window.focus(&focus_handle);
+            let entity_clone = entity.clone();
+            modal
+                .confirm()
+                .keyboard(true)
+                .child(Select::new(&language_dropdown))
+                .overlay_closable(true)
+                .close_button(false)
+                .on_ok({
+                    let value = language_dropdown.clone();
+                    let entity_ok = entity_clone.clone();
+                    move |_event: &ClickEvent, window, cx| {
+                        let language_name = value.read(cx).selected_value();
+                        if let Some(language_name) = language_name {
+                            let language = languages::language_from_pretty_name(&language_name);
+                            entity_ok.update(cx, |this, cx| {
+                                if let Some(index) = this.active_tab_index {
+                                    if let Some(tab) = this.tabs.get_mut(index) {
+                                        if let Some(editor_tab) = tab.as_editor_mut() {
+                                            editor_tab.force_language(
+                                                window,
+                                                cx,
+                                                language,
+                                                &this.settings.editor_settings,
+                                            );
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                        true
+                    }
+                })
+        });
+    }
+
     // Render the status bar
     // @param window: The window context
     // @param cx: The application context
@@ -148,6 +204,14 @@ impl Fulgur {
                 this.jump_to_line(window, cx);
             }),
         );
+        let language_shared = SharedString::from(language.clone());
+        let language_button =
+            status_bar_button_factory(language, cx.theme().border, cx.theme().muted).on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
+                    this.set_language(window, cx, language_shared.clone());
+                }),
+            );
         h_flex()
             .justify_between()
             .bg(cx.theme().tab_bar)
@@ -156,12 +220,7 @@ impl Fulgur {
             .border_t_1()
             .border_color(cx.theme().border)
             .text_color(cx.theme().foreground)
-            .child(
-                div()
-                    .flex()
-                    .justify_start()
-                    .child(status_bar_left_item_factory(language, cx.theme().border)),
-            )
+            .child(div().flex().justify_start().child(language_button))
             .child(
                 div()
                     .flex()
