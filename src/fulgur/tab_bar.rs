@@ -191,6 +191,17 @@ impl Fulgur {
                 })),
             )
             .child(
+                tab_bar_button_factory(
+                    "save-file",
+                    "Save File",
+                    CustomIcon::Save,
+                    cx.theme().border,
+                )
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.save_file(window, cx);
+                })),
+            )
+            .child(
                 div()
                     .id("tab-scroll-container")
                     .overflow_x_scroll()
