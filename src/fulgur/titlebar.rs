@@ -46,19 +46,11 @@ impl Render for CustomTitleBar {
     // @return: The rendered custom title bar
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let mut title_bar = TitleBar::new().bg(cx.theme().tab_bar);
-
-        // Left side - menu bar on Windows only
         #[cfg(not(target_os = "macos"))]
         {
             title_bar =
                 title_bar.child(div().flex().items_center().child(self.app_menu_bar.clone()));
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            title_bar = title_bar.child(div());
-        }
-
-        // Center - app title (using flex layout instead of absolute to avoid blocking events)
         title_bar = title_bar.child(
             h_flex().flex_1().justify_center().items_center().child(
                 div()
@@ -68,8 +60,15 @@ impl Render for CustomTitleBar {
                     .child(self.title.clone()),
             ),
         );
+        #[cfg(not(target_os = "macos"))]
+        {
+            title_bar = title_bar.child(div().w_128()).child(" ");
+        }
+        #[cfg(target_os = "macos")]
+        {
+            title_bar = title_bar.child(div().w_20()).child(" ");
+        }
 
-        // Right side - empty, window controls are automatically added by TitleBar
-        title_bar.child(div())
+        title_bar
     }
 }
