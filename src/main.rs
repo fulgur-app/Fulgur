@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use gpui::*;
 use gpui_component::{Root, TitleBar};
 use rust_embed::RustEmbed;
@@ -6,10 +5,13 @@ use std::borrow::Cow;
 
 mod fulgur;
 
-// Asset loader for icons
 #[derive(RustEmbed)]
 #[folder = "./assets"]
 #[include = "icons/**/*.svg"]
+#[include = "icon_square.png"]
+#[include = "icon.png"]
+#[include = "icon.icns"]
+#[include = "icon.ico"]
 pub struct Assets;
 
 impl AssetSource for Assets {
@@ -17,10 +19,16 @@ impl AssetSource for Assets {
         if path.is_empty() {
             return Ok(None);
         }
-
-        Self::get(path)
-            .map(|f| Some(f.data))
-            .ok_or_else(|| anyhow!("could not find asset at path \"{path}\""))
+        if let Some(data) = Self::get(path) {
+            return Ok(Some(data.data));
+        }
+        let path_without_prefix = path.strip_prefix("assets/").unwrap_or(path);
+        if path_without_prefix != path {
+            if let Some(data) = Self::get(path_without_prefix) {
+                return Ok(Some(data.data));
+            }
+        }
+        Ok(None)
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {

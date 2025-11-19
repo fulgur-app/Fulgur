@@ -24,11 +24,14 @@ use titlebar::CustomTitleBar;
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Root, Theme, ThemeRegistry, WindowExt,
+    ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
     input::{Input, InputEvent, InputState},
+    link::Link,
     select::SelectState,
     v_flex,
 };
+
+use crate::{Assets, fulgur::icons::CustomIcon};
 
 pub struct Fulgur {
     focus_handle: FocusHandle,
@@ -334,7 +337,11 @@ impl Render for Fulgur {
             }))
             .on_action(cx.listener(|this, _action: &ClearRecentFiles, window, cx| {
                 this.clear_recent_files(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &About, window, cx| {
+                this.about(window, cx);
             }));
+
         content = content.child(self.title_bar.clone());
         content = content
             .child(self.render_tab_bar(window, cx))
@@ -396,6 +403,35 @@ impl Fulgur {
     fn set_title(&self, title: Option<String>, cx: &mut Context<Self>) {
         self.title_bar.update(cx, |this, _cx| {
             this.set_title(title);
+        });
+    }
+    // Show the about dialog
+    // @param window: The window context
+    // @param cx: The application context
+    fn about(&self, window: &mut Window, cx: &mut Context<Self>) {
+        window.open_dialog(cx, |modal, _window, _cx| {
+            modal
+                .alert()
+                .keyboard(true)
+                .title(div().text_center().child("Fulgur"))
+                .child(
+                    gpui_component::v_flex()
+                        .gap_4()
+                        .items_center()
+                        .child(img("assets/icon_square.png").w(px(200.0)).h(px(200.0)))
+                        .child("Version 0.1.0")
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .items_center()
+                                .child(Icon::new(CustomIcon::GitHub))
+                                .child(
+                                    Link::new("github-link")
+                                        .href("https://github.com/PRRPCHT/Fulgur")
+                                        .child("https://github.com/PRRPCHT/Fulgur"),
+                                ),
+                        ),
+                )
         });
     }
 }
