@@ -1,11 +1,11 @@
 [package]
 name = "Fulgur"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 
 [package.metadata.bundle]
 name = "Fulgur"
-identifier = "com.fulgur.app"
+identifier = "app.fulgur.fulgur"
 icon = [
     "assets/icon.icns",  # macOS
     "assets/icon.ico",   # Windows
