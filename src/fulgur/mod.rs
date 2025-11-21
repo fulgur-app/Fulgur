@@ -323,6 +323,11 @@ impl Render for Fulgur {
                     this.on_close_all_tabs_action(action, window, cx);
                 }),
             )
+            .on_action(
+                cx.listener(|this, action: &tab_bar::CloseAllOtherTabs, window, cx| {
+                    this.on_close_all_other_tabs_action(action, window, cx);
+                }),
+            )
             .on_action(cx.listener(|this, _action: &NextTab, window, cx| {
                 this.on_next_tab(window, cx);
             }))

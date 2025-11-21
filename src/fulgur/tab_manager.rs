@@ -415,10 +415,111 @@ impl Fulgur {
                     }
                 }
             }
-
             if let Some(active_idx) = self.active_tab_index {
                 if active_idx >= self.tabs.len() {
                     self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
+                }
+            }
+            self.focus_active_tab(window, cx);
+            cx.notify();
+        }
+    }
+
+    // Close all tabs except the active one
+    // @param window: The window to close tabs in
+    // @param cx: The application context
+    pub(super) fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(active_index) = self.active_tab_index {
+            if self.tabs.len() <= 1 {
+                return;
+            }
+            let active_tab_id = self.tabs.get(active_index).map(|t| t.id());
+            let tab_ids: Vec<usize> = self
+                .tabs
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, tab)| {
+                    if idx != active_index {
+                        Some(tab.id())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for tab_id in tab_ids {
+                if !self.tabs.iter().any(|t| t.id() == tab_id) {
+                    continue;
+                }
+                let is_modified = if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id)
+                {
+                    if let Some(tab_mut) = self.tabs.get_mut(pos) {
+                        if let Some(editor_tab_mut) = tab_mut.as_editor_mut() {
+                            editor_tab_mut.check_modified(cx)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if is_modified {
+                    if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
+                        self.set_active_tab(pos, window, cx);
+                    }
+                    let entity = cx.entity().clone();
+                    let active_tab_id_for_closure = active_tab_id;
+                    window.open_dialog(cx.deref_mut(), move |modal, _, _| {
+                        let entity_ok = entity.clone();
+                        modal
+                            .title(div().text_size(px(16.)).child("Unsaved changed"))
+                            .keyboard(true)
+                            .confirm()
+                            .on_ok(move |_, window, cx| {
+                                let entity_ok_footer = entity_ok.clone();
+                                entity_ok_footer.update(cx, |this, cx| {
+                                    if let Some(pos) = this.tabs.iter().position(|t| t.id() == tab_id) {
+                                        this.tabs.remove(pos);
+                                        this.close_tab_manage_focus(window, cx, pos);
+                                        cx.notify();
+                                    }
+                                    if !this.tabs.is_empty() {
+                                        if let Some(remaining_active_id) = active_tab_id_for_closure {
+                                            if let Some(new_active_pos) = this.tabs.iter().position(|t| t.id() == remaining_active_id) {
+                                                this.active_tab_index = Some(new_active_pos);
+                                            }
+                                        }
+                                        this.close_other_tabs(window, cx);
+                                    }
+                                });
+                                entity_ok_footer.update(cx, |_this, cx| {
+                                    cx.defer_in(window, move |this, window, cx| {
+                                        this.focus_active_tab(window, cx);
+                                    });
+                                });
+                                true
+                            })
+                            .on_cancel(move |_, _window, _cx| {
+                                true
+                            })
+                            .child(div().text_size(px(14.)).child("Are you sure you want to close this tab? Your changes will be lost."))
+                            .overlay_closable(false)
+                            .close_button(false)
+                    });
+                    return;
+                } else {
+                    if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
+                        self.tabs.remove(pos);
+                        self.close_tab_manage_focus(window, cx, pos);
+                    }
+                }
+            }
+            if let Some(remaining_active_id) = active_tab_id {
+                if let Some(new_active_pos) =
+                    self.tabs.iter().position(|t| t.id() == remaining_active_id)
+                {
+                    self.active_tab_index = Some(new_active_pos);
                 }
             }
             self.focus_active_tab(window, cx);

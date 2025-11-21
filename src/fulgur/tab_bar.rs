@@ -27,6 +27,10 @@ pub struct CloseTabsToLeft(pub usize);
 #[action(namespace = fulgur, no_json)]
 pub struct CloseTabsToRight(pub usize);
 
+#[derive(Action, Clone, PartialEq, Deserialize)]
+#[action(namespace = fulgur, no_json)]
+pub struct CloseAllOtherTabs(pub usize);
+
 actions!(fulgur, [CloseAllTabsAction]);
 
 // Create a tab bar button
@@ -140,6 +144,19 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         self.close_all_tabs(window, cx);
+    }
+
+    // Handle close all tabs action from context menu
+    // @param action: The action to handle
+    // @param window: The window context
+    // @param cx: The application context
+    pub(super) fn on_close_all_other_tabs_action(
+        &mut self,
+        _: &CloseAllOtherTabs,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_other_tabs(window, cx);
     }
 
     // Handle next tab action
@@ -393,6 +410,11 @@ impl Fulgur {
                     .menu_with_disabled(
                         "Close All Tabs",
                         Box::new(CloseAllTabsAction),
+                        total_tabs == 0,
+                    )
+                    .menu_with_disabled(
+                        "Close All Other Tabs",
+                        Box::new(CloseAllOtherTabs(index)),
                         total_tabs == 0,
                     )
             });
