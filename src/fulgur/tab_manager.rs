@@ -158,11 +158,85 @@ impl Fulgur {
     // Close all tabs
     // @param window: The window to close all tabs in
     // @param cx: The application context
-    pub(super) fn close_all_tabs(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.tabs.is_empty() {
-            self.tabs.clear();
-            self.active_tab_index = None;
-            self.next_tab_id = 1;
+            let tab_ids: Vec<usize> = self.tabs.iter().map(|tab| tab.id()).collect();
+            for tab_id in tab_ids {
+                // Check if tab still exists (might have been removed by previous close_tab)
+                if !self.tabs.iter().any(|t| t.id() == tab_id) {
+                    continue;
+                }
+                let is_modified = if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id)
+                {
+                    if let Some(tab_mut) = self.tabs.get_mut(pos) {
+                        if let Some(editor_tab_mut) = tab_mut.as_editor_mut() {
+                            editor_tab_mut.check_modified(cx)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if is_modified {
+                    if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
+                        self.set_active_tab(pos, window, cx);
+                    }
+                    let entity = cx.entity().clone();
+                    window.open_dialog(cx.deref_mut(), move |modal, _, _| {
+                        let entity_ok = entity.clone();
+                        modal
+                            .title(div().text_size(px(16.)).child("Unsaved changed"))
+                            .keyboard(true)
+                            .confirm()
+                            .on_ok(move |_, window, cx| {
+                                let entity_ok_footer = entity_ok.clone();
+                                entity_ok_footer.update(cx, |this, cx| {
+                                    // Remove the confirmed tab
+                                    if let Some(pos) = this.tabs.iter().position(|t| t.id() == tab_id) {
+                                        this.tabs.remove(pos);
+                                        this.close_tab_manage_focus(window, cx, pos);
+                                        cx.notify();
+                                    }
+                                    // Continue closing remaining tabs
+                                    if !this.tabs.is_empty() {
+                                        this.close_all_tabs(window, cx);
+                                    } else {
+                                        this.active_tab_index = None;
+                                        this.next_tab_id = 1;
+                                        cx.notify();
+                                    }
+                                });
+                                entity_ok_footer.update(cx, |_this, cx| {
+                                    cx.defer_in(window, move |this, window, cx| {
+                                        this.focus_active_tab(window, cx);
+                                    });
+                                });
+                                true
+                            })
+                            .on_cancel(move |_, _window, _cx| {
+                                true
+                            })
+                            .child(div().text_size(px(14.)).child("Are you sure you want to close this tab? Your changes will be lost."))
+                            .overlay_closable(false)
+                            .close_button(false)
+                    });
+                    return;
+                } else {
+                    if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
+                        self.tabs.remove(pos);
+                        self.close_tab_manage_focus(window, cx, pos);
+                    }
+                }
+            }
+
+            // All tabs closed (or none were modified)
+            if self.tabs.is_empty() {
+                self.active_tab_index = None;
+                self.next_tab_id = 1;
+            }
             cx.notify();
         }
     }
