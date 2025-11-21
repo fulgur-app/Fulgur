@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, IndexPath, StyledExt, h_flex,
+    ActiveTheme, StyledExt, h_flex,
     scroll::ScrollbarShow,
     select::{Select, SelectEvent, SelectState},
     switch::Switch,
@@ -492,7 +492,7 @@ impl Fulgur {
     // @param window: The window
     // @param cx: The context
     // @return: The result of the operation
-    pub fn clear_recent_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn clear_recent_files(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.settings.recent_files.clear();
         if let Err(e) = self.settings.save() {
             eprintln!("Failed to save settings: {}", e);

@@ -49,9 +49,9 @@ pub fn status_bar_right_item_factory(content: String, border_color: Hsla) -> imp
 // @param content: The content of the status bar left item
 // @param border_color: The color of the border
 // @return: A status bar left item
-pub fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
-    status_bar_item_factory(content, border_color) //.border_r_1()
-}
+// pub fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
+//     status_bar_item_factory(content, border_color) //.border_r_1()
+// }
 
 impl Fulgur {
     // Jump to line
