@@ -31,7 +31,7 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::{Assets, fulgur::icons::CustomIcon};
+use crate::fulgur::icons::CustomIcon;
 
 pub struct Fulgur {
     focus_handle: FocusHandle,
@@ -419,7 +419,18 @@ impl Fulgur {
                         .gap_4()
                         .items_center()
                         .child(img("assets/icon_square.png").w(px(200.0)).h(px(200.0)))
-                        .child("Version 0.1.0")
+                        .child("Version 0.0.1")
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .items_center()
+                                .child(Icon::new(CustomIcon::Globe))
+                                .child(
+                                    Link::new("website-link")
+                                        .href("https://fulgur.app")
+                                        .child("https://fulgur.app"),
+                                ),
+                        )
                         .child(
                             h_flex()
                                 .gap_2()
