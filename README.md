@@ -12,7 +12,7 @@ Your lightning fast, multiplatform, themable text editor.
 
 [Rust](https://rust-lang.org/) 1.90.0 is the minimum supported version.
 
-Install [cargo-bundle](https://github.com/burtonageo/cargo-bundle) with `cargo install cargo-bundle`. It will bundle the app with a nice icon for each platform.
+Install [cargo-packager](https://github.com/crabnebula-dev/cargo-packager) with `cargo install cargo-packager --locked`. It will bundle the app with a nice icon for each platform.
 
 #### MacOS
 
@@ -27,7 +27,7 @@ Install the [Windows SDK](https://developer.microsoft.com/en-us/windows/download
 Once all the prerequisites installed and set up:
 
 1. Run `cargo build --release` to build an optimized version of Fulgur. May take some time on older systems.
-2. Run `cargo bundle` to make a pretty executable with an icon.
+2. Run `cargo packager --release` to make a pretty executable with an icon.
 3. Enjoy!
 
 ## License

@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- File Type Associations -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <!-- Plain Text -->
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Text Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.plain-text</string>
+                <string>public.text</string>
+            </array>
+        </dict>
+        
+        <!-- Markdown -->
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Markdown Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>net.daringfireball.markdown</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>md</string>
+                <string>markdown</string>
+            </array>
+        </dict>
+        
+        <!-- JSON -->
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>JSON Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.json</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>json</string>
+            </array>
+        </dict>
+        
+        <!-- XML -->
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>XML Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.xml</string>
+            </array>
+        </dict>
+        
+        <!-- YAML -->
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>YAML Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>yaml</string>
+                <string>yml</string>
+            </array>
+        </dict>
+        
+        <!-- Source Code (catch-all for programming files) -->
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Source Code</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.source-code</string>
+                <string>public.script</string>
+                <string>public.shell-script</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <!-- Rust -->
+                <string>rs</string>
+                <string>toml</string>
+                
+                <!-- JavaScript/TypeScript -->
+                <string>js</string>
+                <string>jsx</string>
+                <string>ts</string>
+                <string>tsx</string>
+                <string>mjs</string>
+                <string>cjs</string>
+                
+                <!-- Python -->
+                <string>py</string>
+                <string>pyw</string>
+                
+                <!-- Web -->
+                <string>html</string>
+                <string>htm</string>
+                <string>css</string>
+                <string>scss</string>
+                <string>sass</string>
+                <string>less</string>
+                <string>vue</string>
+                <string>svelte</string>
+                
+                <!-- C/C++ -->
+                <string>c</string>
+                <string>h</string>
+                <string>cpp</string>
+                <string>hpp</string>
+                <string>cc</string>
+                <string>cxx</string>
+                <string>hh</string>
+                <string>hxx</string>
+                
+                <!-- Java/JVM -->
+                <string>java</string>
+                <string>kt</string>
+                <string>scala</string>
+                
+                <!-- Other languages -->
+                <string>go</string>
+                <string>rb</string>
+                <string>php</string>
+                <string>swift</string>
+                <string>m</string>
+                <string>mm</string>
+                <string>lua</string>
+                <string>pl</string>
+                <string>r</string>
+                <string>dart</string>
+                
+                <!-- Shell -->
+                <string>sh</string>
+                <string>bash</string>
+                <string>zsh</string>
+                <string>fish</string>
+                
+                <!-- Config/Data -->
+                <string>conf</string>
+                <string>cfg</string>
+                <string>ini</string>
+                <string>env</string>
+                
+                <!-- Documentation -->
+                <string>rst</string>
+                <string>tex</string>
+                
+                <!-- Other -->
+                <string>sql</string>
+                <string>csv</string>
+                <string>log</string>
+                <string>txt</string>
+                <string>diff</string>
+                <string>patch</string>
+            </array>
+        </dict>
+    </array>
+    
+    <!-- High Resolution Support -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    
+    <!-- Support for opening files -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>Text File</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>mytexteditor</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

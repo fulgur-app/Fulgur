@@ -3,17 +3,6 @@ name = "Fulgur"
 version = "0.0.1"
 edition = "2024"
 
-[package.metadata.bundle]
-name = "Fulgur"
-identifier = "app.fulgur.fulgur"
-icon = [
-    "assets/icon.icns",  # macOS
-    "assets/icon.ico",   # Windows
-    "assets/icon.png",   # Linux
-]
-category = "Utility"
-
-
 [dependencies]
 anyhow = "1.0.100"
 chardetng = "0.1.17"
@@ -26,3 +15,17 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 rust-embed = "8.9.0"
 regex = "1.12.2"
+
+[package.metadata.packager]
+before-packaging-command = "cargo build --release"
+product_name = "Fulgur"
+identifier = "app.fulgur.fulgur"
+publisher = "PRRPCHT"
+icons = ["assets/icon.icns", "assets/icon.ico", "assets/icon.png"]
+category = "DeveloperTool"
+description = "Your lightning fast, multiplatform, themable text editor."
+copyright = "Copyright (c) 2025 PRRPCHT"
+
+[package.metadata.packager.macos]
+minimum_system_version = "10.15"
+info_plist_path = "resources/Info.plist"
