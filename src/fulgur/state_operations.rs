@@ -15,6 +15,7 @@ impl Fulgur {
     // @param cx: The application context
     // @return: The result of the save operation
     pub fn save_state(&self, cx: &App) -> anyhow::Result<()> {
+        log::info!("Saving application state...");
         let mut tab_states = Vec::new();
 
         for tab in &self.tabs {
@@ -66,6 +67,10 @@ impl Fulgur {
         };
 
         app_state.save()?;
+        log::info!(
+            "Application state saved successfully ({} tabs)",
+            self.tabs.len()
+        );
         Ok(())
     }
 
@@ -73,11 +78,16 @@ impl Fulgur {
     // @param window: The window to load the state from
     // @param cx: The application context
     pub fn load_state(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        log::info!("Loading application state...");
         // Temporarily disable indent guides during restoration to prevent crash
         let original_indent_guides = self.settings.editor_settings.show_indent_guides;
         self.settings.editor_settings.show_indent_guides = false;
 
         if let Ok(app_state) = AppState::load() {
+            log::info!(
+                "State loaded successfully, restoring {} tabs",
+                app_state.tabs.len()
+            );
             self.tabs.clear();
 
             for tab_state in app_state.tabs {
@@ -100,10 +110,11 @@ impl Fulgur {
             self.next_tab_id = app_state.next_tab_id;
 
             cx.notify();
+        } else {
+            log::warn!("Failed to load application state, starting fresh");
         }
-
-        // Always ensure we have at least one tab, even if state loading failed or resulted in no tabs
         if self.tabs.is_empty() {
+            log::info!("No tabs restored, creating initial empty tab");
             let initial_tab = Tab::Editor(EditorTab::new(
                 0,
                 UNTITLED,
@@ -115,11 +126,8 @@ impl Fulgur {
             self.active_tab_index = Some(0);
             self.next_tab_id = 1;
         }
-
-        // Restore original indent guides setting and trigger update
         self.settings.editor_settings.show_indent_guides = original_indent_guides;
         if original_indent_guides {
-            // Mark settings as changed to apply indent guides on next render
             self.settings_changed = true;
         }
     }
@@ -139,6 +147,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<EditorTab> {
+        log::debug!("Restoring tab: {}", tab_state.title);
         let is_modified = tab_state.content.is_some();
         let (content, path, encoding) = if let Some(saved_path) = tab_state.file_path {
             if let Some(saved_content) = tab_state.content {

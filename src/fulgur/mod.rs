@@ -3,6 +3,7 @@ mod editor_tab;
 mod file_operations;
 mod icons;
 mod languages;
+pub mod logger;
 mod menus;
 mod search_bar;
 mod search_replace;
@@ -60,14 +61,20 @@ pub struct Fulgur {
     settings_changed: bool,
     rendered_tabs: std::collections::HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
+    pub pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>, // Files from macOS "Open with" events
 }
 
 impl Fulgur {
     // Create a new Fulgur instance
     // @param window: The window to create the Fulgur instance in
     // @param cx: The application context
+    // @param pending_files_from_macos: Arc to the pending files queue from macOS open events
     // @return: The new Fulgur instance
-    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(
+        window: &mut Window,
+        cx: &mut App,
+        pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>,
+    ) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
         let settings = match Settings::load() {
             Ok(settings) => settings,
@@ -124,10 +131,10 @@ impl Fulgur {
                 settings_changed: false,
                 rendered_tabs: std::collections::HashSet::new(),
                 tabs_pending_update: std::collections::HashSet::new(),
+                pending_files_from_macos,
             };
             entity
         });
-        // Load state after entity creation
         entity.update(cx, |this, cx| {
             this.load_state(window, cx);
         });
@@ -204,6 +211,23 @@ impl Render for Fulgur {
     // @param cx: The application context
     // @return: The rendered Fulgur instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let files_to_open = if let Ok(mut pending) = self.pending_files_from_macos.try_lock() {
+            if pending.is_empty() {
+                Vec::new()
+            } else {
+                log::info!(
+                    "Processing {} pending file(s) from macOS open event",
+                    pending.len()
+                );
+                pending.drain(..).collect()
+            }
+        } else {
+            Vec::new()
+        };
+        for file_path in files_to_open {
+            self.handle_open_file_from_cli(window, cx, file_path);
+        }
+
         if self.tabs.is_empty() {
             self.active_tab_index = None;
         }
