@@ -320,7 +320,7 @@ impl Render for Fulgur {
                     this.settings.app_settings.theme = theme_name;
                     this.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_show);
                     if let Err(e) = this.settings.save() {
-                        eprintln!("Failed to save settings: {}", e);
+                        log::error!("Failed to save settings: {}", e);
                     }
                 }
                 cx.refresh_windows();

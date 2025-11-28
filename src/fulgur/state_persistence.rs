@@ -97,7 +97,6 @@ mod tests {
 
     #[test]
     fn test_get_file_modified_time_existing_file() {
-        // Create a temporary file
         let temp_dir = std::env::temp_dir();
         let file_path = temp_dir.join("test_file_modified_time.txt");
         let mut file = fs::File::create(&file_path).unwrap();

@@ -240,7 +240,7 @@ pub fn subscribe_to_font_size_changes(
                 if let Ok(size) = selected.parse::<f32>() {
                     this.settings.editor_settings.font_size = size;
                     if let Err(e) = this.settings.save() {
-                        eprintln!("Failed to save settings: {}", e);
+                        log::error!("Failed to save settings: {}", e);
                     }
                     cx.notify();
                 }
@@ -290,7 +290,7 @@ pub fn subscribe_to_tab_size_changes(
                 if let Ok(size) = selected.parse::<f32>() {
                     this.settings.editor_settings.tab_size = size as usize;
                     if let Err(e) = this.settings.save() {
-                        eprintln!("Failed to save settings: {}", e);
+                        log::error!("Failed to save settings: {}", e);
                     }
                     cx.notify();
                 }
@@ -316,7 +316,7 @@ fn make_switch(
             on_click_function(this, checked, cx);
             this.settings_changed = true;
             if let Err(e) = this.settings.save() {
-                eprintln!("Failed to save settings: {}", e);
+                log::error!("Failed to save settings: {}", e);
             }
             cx.notify();
         },
@@ -495,7 +495,7 @@ impl Fulgur {
     pub fn clear_recent_files(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.settings.recent_files.clear();
         if let Err(e) = self.settings.save() {
-            eprintln!("Failed to save settings: {}", e);
+            log::error!("Failed to save settings: {}", e);
         }
         let menus = build_menus(cx, &self.settings.recent_files.get_files());
         cx.set_menus(menus);

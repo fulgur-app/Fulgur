@@ -75,7 +75,7 @@ impl Fulgur {
             None
         };
         if let Some(path) = path {
-            log::info!("Reloading tab content from disk: {:?}", path);
+            log::debug!("Reloading tab content from disk: {:?}", path);
             match std::fs::read(&path) {
                 Ok(bytes) => {
                     let (encoding, contents) = detect_encoding_and_decode(&bytes);
@@ -87,12 +87,11 @@ impl Fulgur {
                         editor_tab.encoding = encoding;
                         editor_tab.modified = false;
                         editor_tab.update_language(window, cx, &self.settings.editor_settings);
-                        log::info!("Tab reloaded successfully from disk: {:?}", path);
+                        log::debug!("Tab reloaded successfully from disk: {:?}", path);
                     }
                 }
                 Err(e) => {
                     log::error!("Failed to reload file {:?}: {}", path, e);
-                    eprintln!("Failed to reload file: {}", e);
                 }
             }
         }
@@ -108,10 +107,10 @@ impl Fulgur {
         window: &mut AsyncWindowContext,
         path: PathBuf,
     ) -> Option<()> {
-        log::info!("Attempting to open file: {:?}", path);
+        log::debug!("Attempting to open file: {:?}", path);
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => {
-                log::info!("Successfully read file: {:?} ({} bytes)", path, bytes.len());
+                log::debug!("Successfully read file: {:?} ({} bytes)", path, bytes.len());
                 bytes
             }
             Err(e) => {
@@ -139,7 +138,6 @@ impl Fulgur {
                     this.focus_active_tab(window, cx);
                     if let Err(e) = this.settings.add_file(path.clone()) {
                         log::error!("Failed to add file to recent files: {}", e);
-                        eprintln!("Failed to add file to recent files: {}", e);
                     }
                     let menus = menus::build_menus(cx, &this.settings.get_recent_files());
                     cx.set_menus(menus);
@@ -148,7 +146,7 @@ impl Fulgur {
                         None => None,
                     };
                     this.set_title(title, cx);
-                    log::info!("File opened successfully in new tab: {:?}", path);
+                    log::debug!("File opened successfully in new tab: {:?}", path);
                     cx.notify();
                 });
             })
@@ -204,22 +202,22 @@ impl Fulgur {
         cx: &mut Context<Self>,
         path: PathBuf,
     ) {
-        log::info!("Handling file open from CLI: {:?}", path);
+        log::debug!("Handling file open from CLI: {:?}", path);
         if let Some(tab_index) = self.find_tab_by_path(&path) {
-            log::info!("Tab already exists for {:?} at index {}", path, tab_index);
+            log::debug!("Tab already exists for {:?} at index {}", path, tab_index);
             if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
                 if editor_tab.modified {
-                    log::info!("Tab is modified, reloading content from disk");
+                    log::debug!("Tab is modified, reloading content from disk");
                     self.reload_tab_from_disk(tab_index, window, cx);
                 } else {
-                    log::info!("Tab is not modified, just focusing it");
+                    log::debug!("Tab is not modified, just focusing it");
                 }
             }
             self.active_tab_index = Some(tab_index);
             self.focus_active_tab(window, cx);
             cx.notify();
         } else {
-            log::info!("No existing tab found, opening new tab for {:?}", path);
+            log::debug!("No existing tab found, opening new tab for {:?}", path);
             self.do_open_file(window, cx, path);
         }
     }
@@ -246,13 +244,12 @@ impl Fulgur {
             Tab::Settings(_) => return,
         };
         let contents = content_entity.read(cx).text().to_string();
-        log::info!("Saving file: {:?} ({} bytes)", path, contents.len());
+        log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
         if let Err(e) = std::fs::write(&path, contents) {
-            log::error!("Failed to save file {:?}: {}", path, e);
-            eprintln!("Failed to save file: {}", e);
+            log::debug!("Failed to save file {:?}: {}", path, e);
             return;
         }
-        log::info!("File saved successfully: {:?}", path);
+        log::debug!("File saved successfully: {:?}", path);
         if let Tab::Editor(editor_tab) = &mut self.tabs[self.active_tab_index.unwrap()] {
             editor_tab.mark_as_saved(cx);
         }
@@ -286,13 +283,12 @@ impl Fulgur {
             let contents = window
                 .update(|_, cx| content_entity.read(cx).text().to_string())
                 .ok()?;
-            log::info!("Saving file as: {:?} ({} bytes)", path, contents.len());
+            log::debug!("Saving file as: {:?} ({} bytes)", path, contents.len());
             if let Err(e) = std::fs::write(&path, &contents) {
                 log::error!("Failed to save file {:?}: {}", path, e);
-                eprintln!("Failed to save file: {}", e);
                 return None;
             }
-            log::info!("File saved successfully as: {:?}", path);
+            log::debug!("File saved successfully as: {:?}", path);
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {

@@ -553,7 +553,7 @@ impl Fulgur {
                         let entity_ok_footer = entity_ok.clone();
                         entity_ok_footer.update(cx, |this, cx| {
                             if let Err(e) = this.save_state(cx) {
-                                eprintln!("Failed to save app state: {}", e);
+                                log::error!("Failed to save app state: {}", e);
                             }
                         });
                         cx.quit();
@@ -571,7 +571,7 @@ impl Fulgur {
             return;
         }
         if let Err(e) = self.save_state(cx) {
-            eprintln!("Failed to save app state: {}", e);
+            log::error!("Failed to save app state: {}", e);
         }
         cx.quit();
     }

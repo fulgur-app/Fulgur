@@ -48,7 +48,7 @@ fn url_to_path(url_string: &str) -> Option<std::path::PathBuf> {
         Ok(decoded) => {
             let path = std::path::PathBuf::from(decoded.into_owned());
             if path.exists() && path.is_file() {
-                log::info!("Converted URL to valid file path: {:?}", path);
+                log::debug!("Converted URL to valid file path: {:?}", path);
                 Some(path)
             } else {
                 log::warn!("URL converted to path but file doesn't exist: {:?}", path);
@@ -64,7 +64,7 @@ fn url_to_path(url_string: &str) -> Option<std::path::PathBuf> {
 
 fn main() {
     if let Err(e) = fulgur::logger::init() {
-        eprintln!("Failed to initialize logger: {}", e);
+        log::error!("Failed to initialize logger: {}", e);
     }
     log::info!("=== Fulgur Text Editor v0.0.1 Starting ===");
     log::info!("Platform: {}", std::env::consts::OS);
@@ -80,7 +80,7 @@ fn main() {
         .filter_map(|arg| {
             let path = std::path::PathBuf::from(arg);
             if path.exists() && path.is_file() {
-                log::info!("Valid file argument found: {:?}", path);
+                log::debug!("Valid file argument found: {:?}", path);
                 Some(path)
             } else {
                 if !arg.is_empty() {
@@ -96,9 +96,9 @@ fn main() {
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let pending_files_clone = pending_files.clone();
     app.on_open_urls(move |urls| {
-        log::info!("Received {} file URL(s) from macOS open event", urls.len());
+        log::debug!("Received {} file URL(s) from macOS open event", urls.len());
         for url in &urls {
-            log::info!("macOS open URL: {}", url);
+            log::debug!("macOS open URL: {}", url);
         }
         let file_paths: Vec<std::path::PathBuf> =
             urls.iter().filter_map(|url| url_to_path(url)).collect();
@@ -107,13 +107,13 @@ fn main() {
             log::warn!("No valid file paths from macOS open event");
             return;
         }
-        log::info!(
+        log::debug!(
             "Processing {} valid file(s) from macOS open event",
             file_paths.len()
         );
         if let Ok(mut pending) = pending_files_clone.lock() {
             pending.extend(file_paths);
-            log::info!(
+            log::debug!(
                 "Added files to pending queue, total pending: {}",
                 pending.len()
             );
@@ -142,14 +142,14 @@ fn main() {
                             false
                         } else {
                             if let Err(e) = fulgur.save_state(cx) {
-                                eprintln!("Failed to save app state: {}", e);
+                                log::error!("Failed to save app state: {}", e);
                             }
                             true
                         }
                     })
                 });
                 if !cli_file_paths.is_empty() {
-                    log::info!(
+                    log::debug!(
                         "Processing {} command-line file arguments",
                         cli_file_paths.len()
                     );

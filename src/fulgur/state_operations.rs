@@ -15,19 +15,16 @@ impl Fulgur {
     // @param cx: The application context
     // @return: The result of the save operation
     pub fn save_state(&self, cx: &App) -> anyhow::Result<()> {
-        log::info!("Saving application state...");
+        log::debug!("Saving application state...");
         let mut tab_states = Vec::new();
 
         for tab in &self.tabs {
-            // Only save editor tabs, not settings tabs
             if let Some(editor_tab) = tab.as_editor() {
                 let current_content = editor_tab.content.read(cx).text().to_string();
                 let is_modified = current_content != editor_tab.original_content;
-
                 if editor_tab.file_path.is_none() && current_content.is_empty() {
                     continue;
                 }
-
                 let tab_state = if let Some(ref path) = editor_tab.file_path {
                     if is_modified {
                         TabState {
@@ -59,15 +56,13 @@ impl Fulgur {
                 tab_states.push(tab_state);
             }
         }
-
         let app_state = AppState {
             tabs: tab_states,
             active_tab_index: self.active_tab_index,
             next_tab_id: self.next_tab_id,
         };
-
         app_state.save()?;
-        log::info!(
+        log::debug!(
             "Application state saved successfully ({} tabs)",
             self.tabs.len()
         );
@@ -78,13 +73,13 @@ impl Fulgur {
     // @param window: The window to load the state from
     // @param cx: The application context
     pub fn load_state(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        log::info!("Loading application state...");
+        log::debug!("Loading application state...");
         // Temporarily disable indent guides during restoration to prevent crash
         let original_indent_guides = self.settings.editor_settings.show_indent_guides;
         self.settings.editor_settings.show_indent_guides = false;
 
         if let Ok(app_state) = AppState::load() {
-            log::info!(
+            log::debug!(
                 "State loaded successfully, restoring {} tabs",
                 app_state.tabs.len()
             );
@@ -114,7 +109,7 @@ impl Fulgur {
             log::warn!("Failed to load application state, starting fresh");
         }
         if self.tabs.is_empty() {
-            log::info!("No tabs restored, creating initial empty tab");
+            log::debug!("No tabs restored, creating initial empty tab");
             let initial_tab = Tab::Editor(EditorTab::new(
                 0,
                 UNTITLED,
