@@ -369,6 +369,11 @@ impl Render for Fulgur {
             }))
             .on_action(cx.listener(|this, _action: &About, window, cx| {
                 this.about(window, cx);
+            }))
+            .on_action(cx.listener(|_, _action: &GetTheme, _window, _cx| {
+                if let Err(e) = open::that("https://zed-themes.com") {
+                    log::error!("Failed to open browser: {}", e);
+                }
             }));
 
         content = content.child(self.title_bar.clone());

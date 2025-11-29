@@ -18,6 +18,7 @@ rust-embed = "8.9.0"
 regex = "1.12.2"
 simplelog = "0.12"
 urlencoding = "2.1"
+open = "5.3"
 
 [package.metadata.packager]
 before-packaging-command = "cargo build --release"
