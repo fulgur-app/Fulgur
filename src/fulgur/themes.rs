@@ -1,9 +1,11 @@
-use gpui::{Action, App};
-use gpui_component::{Theme, ThemeMode, ThemeRegistry};
+use gpui::{Action, App, Context, PathPromptOptions, Window};
+use gpui_component::{Theme, ThemeMode, ThemeRegistry, WindowExt};
 use rust_embed::RustEmbed;
 use std::fs;
 use std::path::PathBuf;
 
+use crate::fulgur::Fulgur;
+use crate::fulgur::menus::build_menus;
 use crate::fulgur::settings::Settings;
 
 // Embed bundled themes into the binary
@@ -93,3 +95,93 @@ fn themes_directory_path() -> anyhow::Result<PathBuf> {
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = themes, no_json)]
 pub(crate) struct SwitchThemeMode(pub(crate) ThemeMode);
+
+impl Fulgur {
+    // Add a theme to the themes directory. Prompt the user for the path to the theme file.
+    // If the theme file is added successfully, reload the themes and update the menus.
+    // @param window: The window context
+    // @param cx: The application context
+    pub fn add_theme(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let path_future = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Select theme".into()),
+        });
+        let settings = self.settings.clone();
+        cx.spawn_in(window, async move |_view, window| {
+            let paths = path_future.await.ok()?.ok()??;
+            let theme_path = paths.first()?.clone();
+            if theme_path.extension().and_then(|s| s.to_str()) != Some("json") {
+                window
+                    .update(|window, cx| {
+                        window.push_notification(
+                            "Invalid file type. Please select a JSON theme file.".to_string(),
+                            cx,
+                        );
+                    })
+                    .ok()?;
+                return None;
+            }
+            let themes_dir = match themes_directory_path() {
+                Ok(path) => path,
+                Err(e) => {
+                    log::error!("Failed to get themes directory: {}", e);
+                    window
+                        .update(|window, cx| {
+                            window.push_notification(
+                                format!("Failed to access themes directory: {}", e),
+                                cx,
+                            );
+                        })
+                        .ok()?;
+                    return None;
+                }
+            };
+            let filename = match theme_path.file_name() {
+                Some(name) => name,
+                None => {
+                    window
+                        .update(|window, cx| {
+                            window.push_notification("Invalid theme file path.".to_string(), cx);
+                        })
+                        .ok()?;
+                    return None;
+                }
+            };
+            let dest_path = themes_dir.join(filename);
+            match fs::copy(&theme_path, &dest_path) {
+                Ok(_) => {
+                    log::info!("Theme file copied to: {:?}", dest_path);
+                    window
+                        .update(|window, cx| {
+                            window.push_notification(
+                                format!(
+                                    "Theme '{}' added successfully!",
+                                    filename.to_string_lossy()
+                                ),
+                                cx,
+                            );
+                            let recent_files = settings.recent_files.get_files().clone();
+                            init(&settings, cx, move |cx| {
+                                let menus = build_menus(cx, &recent_files);
+                                cx.set_menus(menus);
+                                cx.refresh_windows();
+                            });
+                        })
+                        .ok()?;
+                }
+                Err(e) => {
+                    log::error!("Failed to copy theme file: {}", e);
+                    window
+                        .update(|window, cx| {
+                            window.push_notification(format!("Failed to add theme: {}", e), cx);
+                        })
+                        .ok()?;
+                }
+            }
+            Some(())
+        })
+        .detach();
+    }
+}
