@@ -371,7 +371,9 @@ impl Render for Fulgur {
                 this.about(window, cx);
             }))
             .on_action(cx.listener(|_, _action: &GetTheme, _window, _cx| {
-                if let Err(e) = open::that("https://zed-themes.com") {
+                if let Err(e) =
+                    open::that("https://github.com/longbridge/gpui-component/tree/main/themes")
+                {
                     log::error!("Failed to open browser: {}", e);
                 }
             }))
