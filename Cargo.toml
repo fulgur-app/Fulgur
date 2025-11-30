@@ -9,7 +9,7 @@ chardetng = "0.1.17"
 chrono = { version = "0.4", features = ["serde"] }
 encoding_rs = "0.8.35"
 gpui = "0.2.2"
-gpui-component = { version = "0.4.1", features = ["tree-sitter-languages"] }
+gpui-component = { version = "0.4.2", features = ["tree-sitter-languages"] }
 log = "0.4"
 lsp-types = "0.97"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -18,7 +18,7 @@ rust-embed = "8.9.0"
 regex = "1.12.2"
 simplelog = "0.12"
 urlencoding = "2.1"
-open = "5.3"
+open = "5.3.3"
 
 [package.metadata.packager]
 before-packaging-command = "cargo build --release"
