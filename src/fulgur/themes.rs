@@ -1,4 +1,5 @@
-use gpui::{Action, App, Context, PathPromptOptions, Window};
+use gpui::{Action, App, Context, PathPromptOptions, SharedString, Window};
+use gpui_component::notification::NotificationType;
 use gpui_component::{Theme, ThemeMode, ThemeRegistry, WindowExt};
 use rust_embed::RustEmbed;
 use std::fs;
@@ -129,10 +130,11 @@ impl Fulgur {
                     log::error!("Failed to get themes directory: {}", e);
                     window
                         .update(|window, cx| {
-                            window.push_notification(
-                                format!("Failed to access themes directory: {}", e),
-                                cx,
-                            );
+                            let notification = SharedString::from(format!(
+                                "Failed to access themes directory: {}",
+                                e
+                            ));
+                            window.push_notification((NotificationType::Error, notification), cx);
                         })
                         .ok()?;
                     return None;
@@ -143,7 +145,8 @@ impl Fulgur {
                 None => {
                     window
                         .update(|window, cx| {
-                            window.push_notification("Invalid theme file path.".to_string(), cx);
+                            let notification = SharedString::from("Invalid theme file path.");
+                            window.push_notification((NotificationType::Error, notification), cx);
                         })
                         .ok()?;
                     return None;
@@ -155,13 +158,11 @@ impl Fulgur {
                     log::info!("Theme file copied to: {:?}", dest_path);
                     window
                         .update(|window, cx| {
-                            window.push_notification(
-                                format!(
-                                    "Theme '{}' added successfully!",
-                                    filename.to_string_lossy()
-                                ),
-                                cx,
-                            );
+                            let notification = SharedString::from(format!(
+                                "Theme '{}' added successfully!",
+                                filename.to_string_lossy()
+                            ));
+                            window.push_notification((NotificationType::Success, notification), cx);
                             let recent_files = settings.recent_files.get_files().clone();
                             init(&settings, cx, move |cx| {
                                 let menus = build_menus(cx, &recent_files);
@@ -175,7 +176,9 @@ impl Fulgur {
                     log::error!("Failed to copy theme file: {}", e);
                     window
                         .update(|window, cx| {
-                            window.push_notification(format!("Failed to add theme: {}", e), cx);
+                            let notification =
+                                SharedString::from(format!("Failed to add theme: {}", e));
+                            window.push_notification((NotificationType::Error, notification), cx);
                         })
                         .ok()?;
                 }
