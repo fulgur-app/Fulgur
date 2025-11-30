@@ -83,7 +83,18 @@ pub fn build_menus(cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
                             items: light_themes
                                 .iter()
                                 .map(|theme| {
-                                    MenuItem::action(theme.clone(), SwitchTheme(theme.into()))
+                                    MenuItem::action(
+                                        format!(
+                                            "{} {}",
+                                            theme,
+                                            if theme == &current_theme {
+                                                "\u{2713}"
+                                            } else {
+                                                ""
+                                            }
+                                        ),
+                                        SwitchTheme(theme.into()),
+                                    )
                                 })
                                 .collect(),
                         }),
