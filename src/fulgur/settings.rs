@@ -668,7 +668,12 @@ impl Fulgur {
     // @param cx: The context
     // @return: The settings UI
     pub fn render_settings(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().h_full().w_full().scrollable(Axis::Vertical).child(
+        // let scroll_handle = window
+        //     .use_keyed_state("settings-scroll-handle", cx, |_, _| ScrollHandle::default())
+        //     .read(cx)
+        //     .clone();
+
+        div().id("settings-scroll-container").size_full().child(
             v_flex()
                 .w(px(680.0))
                 .mx_auto()
@@ -679,7 +684,7 @@ impl Fulgur {
                 .child(div().text_2xl().font_semibold().px_3().child("Settings"))
                 .child(self.make_editor_settings_section(window, cx))
                 .child(self.make_application_settings_section(cx))
-                .child(self.make_themes_section(cx)),
+                .child(self.make_themes_section(cx).mb_24()),
         )
     }
 

@@ -25,7 +25,7 @@ use titlebar::CustomTitleBar;
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
+    ActiveTheme, Icon, Root, StyledExt, Theme, ThemeRegistry, WindowExt, h_flex,
     input::{Input, InputEvent, InputState},
     link::Link,
     select::SelectState,
@@ -420,29 +420,36 @@ impl Fulgur {
         active_tab: Option<Tab>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> AnyElement {
         if let Some(tab) = active_tab {
             match tab {
                 Tab::Editor(editor_tab) => {
-                    return v_flex().w_full().flex_1().child(
-                        Input::new(&editor_tab.content)
-                            .bordered(false)
-                            .p_0()
-                            .h_full()
-                            .font_family("Monaco")
-                            .text_size(px(self.settings.editor_settings.font_size))
-                            .focus_bordered(false),
-                    );
-                }
-                Tab::Settings(_) => {
                     return v_flex()
                         .w_full()
                         .flex_1()
-                        .child(self.render_settings(window, cx));
+                        .child(
+                            Input::new(&editor_tab.content)
+                                .bordered(false)
+                                .p_0()
+                                .h_full()
+                                .font_family("Monaco")
+                                .text_size(px(self.settings.editor_settings.font_size))
+                                .focus_bordered(false),
+                        )
+                        .into_any_element();
+                }
+                Tab::Settings(_) => {
+                    return v_flex()
+                        .id("settings-tab-scrollable")
+                        .w_full()
+                        .flex_1()
+                        .scrollable(Axis::Vertical)
+                        .child(self.render_settings(window, cx))
+                        .into_any_element();
                 }
             }
         }
-        v_flex().w_full().flex_1()
+        v_flex().w_full().flex_1().into_any_element()
     }
 
     // Set the title of the title bar
