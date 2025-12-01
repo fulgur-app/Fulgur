@@ -32,7 +32,7 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::fulgur::icons::CustomIcon;
+use crate::fulgur::{icons::CustomIcon, settings::Themes};
 
 pub struct Fulgur {
     focus_handle: FocusHandle,
@@ -59,6 +59,7 @@ pub struct Fulgur {
     _tab_size_subscription: gpui::Subscription,
     pub language_dropdown: Entity<SelectState<Vec<SharedString>>>,
     settings_changed: bool,
+    pub themes: Option<Themes>,
     rendered_tabs: std::collections::HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
     pub pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>, // Files from macOS "Open with" events
@@ -88,6 +89,13 @@ impl Fulgur {
         let tab_size_dropdown = settings::create_tab_size_dropdown(&settings, window, cx);
         let language_dropdown =
             languages::create_all_languages_select_state("Plain".into(), window, cx);
+        let themes = match Themes::load() {
+            Ok(themes) => Some(themes),
+            Err(e) => {
+                log::error!("Failed to load themes: {}", e);
+                None
+            }
+        };
         let entity = cx.new(|cx| {
             let _search_subscription = cx.subscribe(
                 &search_input,
@@ -132,6 +140,7 @@ impl Fulgur {
                 rendered_tabs: std::collections::HashSet::new(),
                 tabs_pending_update: std::collections::HashSet::new(),
                 pending_files_from_macos,
+                themes,
             };
             entity
         });

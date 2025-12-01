@@ -1,8 +1,10 @@
 use std::{fs, path::PathBuf};
 
-use gpui::*;
+use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
-    ActiveTheme, StyledExt, h_flex,
+    ActiveTheme, StyledExt,
+    button::Button,
+    h_flex,
     scroll::ScrollbarShow,
     select::{Select, SelectEvent, SelectState},
     switch::Switch,
@@ -10,7 +12,13 @@ use gpui_component::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::fulgur::{Fulgur, components_utils::create_select_state, menus::build_menus};
+use crate::fulgur::{
+    Fulgur,
+    components_utils::create_select_state,
+    icons::CustomIcon,
+    menus::build_menus,
+    themes::{self, BundledThemes, themes_directory_path},
+};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct EditorSettings {
@@ -95,6 +103,79 @@ impl RecentFiles {
     // @return: The result of the operation
     pub fn clear(&mut self) {
         self.files.clear();
+    }
+}
+
+#[derive(Clone, Deserialize)]
+pub struct ThemeInfo {
+    pub name: String,
+    pub mode: String,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct ThemeFile {
+    pub name: String,
+    pub author: String,
+    pub themes: Vec<ThemeInfo>,
+    #[serde(skip)]
+    pub path: PathBuf,
+}
+impl ThemeFile {
+    // Load a theme file from a path
+    // @param path: The path to the theme file
+    // @return: The theme file
+    pub fn load(path: PathBuf) -> anyhow::Result<Self> {
+        let json = fs::read_to_string(&path)?;
+        let mut theme_file: ThemeFile = serde_json::from_str(&json)?;
+        theme_file.path = path;
+        Ok(theme_file)
+    }
+}
+
+#[derive(Clone)]
+pub struct Themes {
+    pub default_themes: Vec<ThemeFile>,
+    pub user_themes: Vec<ThemeFile>,
+}
+
+impl Themes {
+    // Load the theme settings from the themes folder
+    // @param path: The path to the themes folder
+    // @return: The theme settings
+    pub fn load() -> anyhow::Result<Self> {
+        let themes_dir = themes_directory_path()?;
+        let themes_files = fs::read_dir(&themes_dir)?;
+        let default_themes: Vec<ThemeFile> = BundledThemes::iter()
+            .map(|file| ThemeFile::load(themes_dir.join(file.as_ref())))
+            .collect::<Result<Vec<ThemeFile>, anyhow::Error>>()?;
+        let default_themes_names = BundledThemes::iter()
+            .map(|file| file.as_ref().to_string())
+            .collect::<Vec<String>>();
+        let user_themes: Vec<ThemeFile> = themes_files
+            .filter_map(|entry| {
+                entry.ok().and_then(|entry| {
+                    let filename = entry.file_name().to_string_lossy().to_string();
+                    if !default_themes_names.contains(&filename) {
+                        Some(entry)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .filter_map(|entry| ThemeFile::load(entry.path()).ok())
+            .collect();
+
+        Ok(Themes {
+            default_themes,
+            user_themes,
+        })
+    }
+
+    // Remove a theme from the user themes
+    // @param theme_name: The name of the theme to remove
+    // @return: The result of the operation
+    pub fn remove_theme(&mut self, theme_name: String) {
+        self.user_themes.retain(|theme| theme.name != theme_name);
     }
 }
 
@@ -306,21 +387,25 @@ pub fn subscribe_to_tab_size_changes(
 // @param on_click_function: The function to call when the switch is clicked
 // @return: The switch
 fn make_switch(
-    id: &'static str,
+    id: impl Into<SharedString>,
     checked: bool,
     cx: &mut Context<Fulgur>,
     on_click_function: fn(&mut Fulgur, &bool, &mut Context<Fulgur>),
 ) -> Div {
-    div().child(Switch::new(id).checked(checked).on_click(cx.listener(
-        move |this, checked: &bool, _, cx| {
-            on_click_function(this, checked, cx);
-            this.settings_changed = true;
-            if let Err(e) = this.settings.save() {
-                log::error!("Failed to save settings: {}", e);
-            }
-            cx.notify();
-        },
-    )))
+    let id_str: SharedString = id.into();
+    let id_static: &'static str = Box::leak(id_str.to_string().into_boxed_str());
+    div().child(
+        Switch::new(id_static)
+            .checked(checked)
+            .on_click(cx.listener(move |this, checked: &bool, _, cx| {
+                on_click_function(this, checked, cx);
+                this.settings_changed = true;
+                if let Err(e) = this.settings.save() {
+                    log::error!("Failed to save settings: {}", e);
+                }
+                cx.notify();
+            })),
+    )
 }
 
 // Make a settings section
@@ -336,8 +421,8 @@ fn make_settings_section(title: &'static str) -> Div {
 // @param cx: The context
 // @return: The setting description
 fn make_setting_description(
-    title: &'static str,
-    description: &'static str,
+    title: impl Into<SharedString>,
+    description: impl Into<SharedString>,
     cx: &mut Context<Fulgur>,
 ) -> Div {
     h_flex()
@@ -352,13 +437,13 @@ fn make_setting_description(
                 .flex_1()
                 .min_w_0()
                 .overflow_hidden()
-                .child(div().font_semibold().child(title))
+                .child(div().font_semibold().child(title.into()))
                 .child(
                     div()
                         .max_w_full()
                         .line_height(relative(1.4))
                         .overflow_x_hidden()
-                        .child(description),
+                        .child(description.into()),
                 ),
         )
 }
@@ -372,15 +457,16 @@ fn make_setting_description(
 // @param on_click_function: The function to call when the toggle option is clicked
 // @return: The toggle option
 fn make_toggle_option(
-    id: &'static str,
-    title: &'static str,
-    description: &'static str,
+    id: impl Into<SharedString>,
+    title: impl Into<SharedString>,
+    description: impl Into<SharedString>,
     checked: bool,
     cx: &mut Context<Fulgur>,
     on_click_function: fn(&mut Fulgur, &bool, &mut Context<Fulgur>),
 ) -> Div {
+    let id_str = id.into();
     make_setting_description(title, description, cx).child(make_switch(
-        id,
+        id_str,
         checked,
         cx,
         on_click_function,
@@ -401,6 +487,109 @@ fn make_dropdown_option(
 ) -> Div {
     make_setting_description(title, description, cx)
         .child(div().child(Select::new(state).w(px(120.)).bg(cx.theme().background)))
+}
+
+// Make a theme section
+// @param title: The title of the theme section
+// @return: The theme section
+fn make_theme_section(title: &'static str) -> Div {
+    v_flex().gap_3().child(div().text_xl().px_3().child(title))
+}
+
+// Make a theme option
+// @param theme: The theme
+// @param cx: The context
+// @param is_default: Whether the theme is a default theme
+// @return: The theme option
+fn make_theme_option(theme: &ThemeFile, cx: &mut Context<Fulgur>, is_default: bool) -> Div {
+    h_flex()
+        .w_full()
+        .px_3()
+        .py_2()
+        .bg(cx.theme().muted)
+        .rounded(px(2.0))
+        .child(
+            v_flex()
+                .text_size(px(14.0))
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .child(
+                    div()
+                        .h_flex()
+                        .w_full()
+                        .when(is_default, |div| {
+                            div.font_semibold().child(format!(
+                                "{} by {} (Default theme)",
+                                theme.name.clone(),
+                                theme.author.clone()
+                            ))
+                        })
+                        .when(!is_default, |div| {
+                            div.font_semibold().child(format!(
+                                "{} by {}",
+                                theme.name.clone(),
+                                theme.author.clone()
+                            ))
+                        }),
+                )
+                .child(
+                    div()
+                        .max_w_full()
+                        .line_height(relative(1.4))
+                        .overflow_x_hidden()
+                        .child(
+                            theme
+                                .themes
+                                .iter()
+                                .map(|theme| {
+                                    format!("{} ({})", theme.name.clone(), theme.mode.clone())
+                                })
+                                .collect::<Vec<String>>()
+                                .join(", "),
+                        ),
+                ),
+        )
+        .when(!is_default, |div| {
+            let theme_name = theme.name.clone();
+            let theme_path = theme.path.clone();
+            let button_id: SharedString = format!("Delete_{}", theme_name.clone()).into();
+            div.child(
+                Button::new(button_id)
+                    .icon(CustomIcon::Close)
+                    .on_click(cx.listener(move |this, _, _window, cx| {
+                        if let Err(e) = fs::remove_file(&theme_path) {
+                            log::error!(
+                                "Failed to delete theme file {}: {}",
+                                theme_path.display(),
+                                e
+                            );
+                        } else {
+                            log::info!("Deleted theme file: {:?}", theme_path);
+                        }
+                        let recent_files = this.settings.recent_files.get_files().clone();
+                        let entity_clone = cx.entity().clone();
+                        themes::init(&this.settings, cx, move |cx| {
+                            let themes = match Themes::load() {
+                                Ok(themes) => Some(themes),
+                                Err(e) => {
+                                    log::error!("Failed to load themes: {}", e);
+                                    None
+                                }
+                            };
+                            if let Some(themes) = themes {
+                                entity_clone.update(cx, |fulgur, _cx| {
+                                    fulgur.themes = Some(themes);
+                                });
+                            }
+                            let menus = build_menus(cx, &recent_files);
+                            cx.set_menus(menus);
+                            cx.refresh_windows();
+                        });
+                        cx.notify();
+                    })),
+            )
+        })
 }
 
 impl Fulgur {
@@ -469,6 +658,36 @@ impl Fulgur {
         ))
     }
 
+    fn make_themes_section(&self, cx: &mut Context<Self>) -> Div {
+        if self.themes.is_none() {
+            return div();
+        }
+        println!(
+            "User themes: {:?}",
+            self.themes.as_ref().unwrap().user_themes.len()
+        );
+        println!(
+            "Default themes: {:?}",
+            self.themes.as_ref().unwrap().default_themes.len()
+        );
+        let themes = self.themes.as_ref().unwrap();
+        make_theme_section("Themes")
+            .children(
+                themes
+                    .user_themes
+                    .iter()
+                    .map(|theme| make_theme_option(theme, cx, false))
+                    .collect::<Vec<Div>>(),
+            )
+            .children(
+                themes
+                    .default_themes
+                    .iter()
+                    .map(|theme| make_theme_option(theme, cx, true))
+                    .collect::<Vec<Div>>(),
+            )
+    }
+
     // Render the settings
     // @param window: The window
     // @param cx: The context
@@ -482,6 +701,7 @@ impl Fulgur {
                 .text_color(cx.theme().foreground)
                 .text_size(px(12.0))
                 .gap_6()
+                .child(self.make_themes_section(cx))
                 .child(div().text_2xl().font_semibold().px_3().child("Settings"))
                 .child(self.make_editor_settings_section(window, cx))
                 .child(self.make_application_settings_section(cx)),

@@ -7,13 +7,13 @@ use std::path::PathBuf;
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::menus::build_menus;
-use crate::fulgur::settings::Settings;
+use crate::fulgur::settings::{Settings, Themes};
 
 // Embed bundled themes into the binary
 #[derive(RustEmbed)]
 #[folder = "./src/themes"]
 #[include = "*.json"]
-struct BundledThemes;
+pub struct BundledThemes;
 
 // Initialize the themes
 // @param settings: The application settings containing theme preferences
@@ -71,7 +71,7 @@ fn extract_bundled_themes(themes_dir: &PathBuf) -> anyhow::Result<()> {
 
 // Get the path to the themes directory
 // @return: The path to the themes directory
-fn themes_directory_path() -> anyhow::Result<PathBuf> {
+pub fn themes_directory_path() -> anyhow::Result<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         let app_data = std::env::var("APPDATA")?;
@@ -110,6 +110,7 @@ impl Fulgur {
             prompt: Some("Select theme".into()),
         });
         let settings = self.settings.clone();
+        let entity = cx.entity();
         cx.spawn_in(window, async move |_view, window| {
             let paths = path_future.await.ok()?.ok()??;
             let theme_path = paths.first()?.clone();
@@ -164,7 +165,20 @@ impl Fulgur {
                             ));
                             window.push_notification((NotificationType::Success, notification), cx);
                             let recent_files = settings.recent_files.get_files().clone();
+                            let entity_clone = entity.clone();
                             init(&settings, cx, move |cx| {
+                                let themes = match Themes::load() {
+                                    Ok(themes) => Some(themes),
+                                    Err(e) => {
+                                        log::error!("Failed to load themes: {}", e);
+                                        None
+                                    }
+                                };
+                                if let Some(themes) = themes {
+                                    entity_clone.update(cx, |fulgur, _cx| {
+                                        fulgur.themes = Some(themes);
+                                    });
+                                }
                                 let menus = build_menus(cx, &recent_files);
                                 cx.set_menus(menus);
                                 cx.refresh_windows();
