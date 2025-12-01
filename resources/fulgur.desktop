@@ -1,0 +1,23 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Fulgur
+GenericName=Text Editor
+Comment=Lightning-fast, multiplatform, themable text editor
+Exec=fulgur %F
+Icon=fulgur
+Terminal=false
+Categories=Development;TextEditor;Utility;
+Keywords=text;editor;code;programming;development;
+StartupNotify=true
+StartupWMClass=fulgur
+
+# MIME types - file associations
+MimeType=text/plain;text/markdown;application/json;application/xml;text/yaml;application/toml;text/x-rust;text/javascript;text/typescript;text/x-python;text/html;text/css;text/x-scss;text/x-sass;text/x-less;text/x-vue;text/x-svelte;text/x-c;text/x-c++;text/x-java;text/x-kotlin;text/x-scala;text/x-go;text/x-ruby;text/x-php;text/x-swift;text/x-lua;text/x-perl;text/x-r;text/x-dart;text/x-shellscript;text/x-rst;text/x-tex;text/x-sql;text/csv;text/x-diff;text/x-patch;
+
+# Actions for opening files
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=fulgur
