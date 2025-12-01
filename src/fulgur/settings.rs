@@ -164,7 +164,6 @@ impl Themes {
             })
             .filter_map(|entry| ThemeFile::load(entry.path()).ok())
             .collect();
-
         Ok(Themes {
             default_themes,
             user_themes,
@@ -297,8 +296,6 @@ pub fn create_font_size_dropdown(
         "18".into(),
         "20".into(),
     ];
-
-    // Find the index of the current font size
     let current_font_size = settings.editor_settings.font_size.to_string();
     create_select_state(window, current_font_size, font_sizes, cx)
 }
@@ -557,6 +554,7 @@ fn make_theme_option(theme: &ThemeFile, cx: &mut Context<Fulgur>, is_default: bo
             div.child(
                 Button::new(button_id)
                     .icon(CustomIcon::Close)
+                    .cursor_pointer()
                     .on_click(cx.listener(move |this, _, _window, cx| {
                         if let Err(e) = fs::remove_file(&theme_path) {
                             log::error!(
@@ -567,25 +565,7 @@ fn make_theme_option(theme: &ThemeFile, cx: &mut Context<Fulgur>, is_default: bo
                         } else {
                             log::info!("Deleted theme file: {:?}", theme_path);
                         }
-                        let recent_files = this.settings.recent_files.get_files().clone();
-                        let entity_clone = cx.entity().clone();
-                        themes::init(&this.settings, cx, move |cx| {
-                            let themes = match Themes::load() {
-                                Ok(themes) => Some(themes),
-                                Err(e) => {
-                                    log::error!("Failed to load themes: {}", e);
-                                    None
-                                }
-                            };
-                            if let Some(themes) = themes {
-                                entity_clone.update(cx, |fulgur, _cx| {
-                                    fulgur.themes = Some(themes);
-                                });
-                            }
-                            let menus = build_menus(cx, &recent_files);
-                            cx.set_menus(menus);
-                            cx.refresh_windows();
-                        });
+                        themes::reload_themes_and_update(&this.settings, cx.entity(), cx);
                         cx.notify();
                     })),
             )
@@ -658,18 +638,13 @@ impl Fulgur {
         ))
     }
 
+    // Make the themes section
+    // @param cx: The context
+    // @return: The themes section
     fn make_themes_section(&self, cx: &mut Context<Self>) -> Div {
         if self.themes.is_none() {
             return div();
         }
-        println!(
-            "User themes: {:?}",
-            self.themes.as_ref().unwrap().user_themes.len()
-        );
-        println!(
-            "Default themes: {:?}",
-            self.themes.as_ref().unwrap().default_themes.len()
-        );
         let themes = self.themes.as_ref().unwrap();
         make_theme_section("Themes")
             .children(
@@ -701,10 +676,10 @@ impl Fulgur {
                 .text_color(cx.theme().foreground)
                 .text_size(px(12.0))
                 .gap_6()
-                .child(self.make_themes_section(cx))
                 .child(div().text_2xl().font_semibold().px_3().child("Settings"))
                 .child(self.make_editor_settings_section(window, cx))
-                .child(self.make_application_settings_section(cx)),
+                .child(self.make_application_settings_section(cx))
+                .child(self.make_themes_section(cx)),
         )
     }
 

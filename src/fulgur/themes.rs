@@ -1,4 +1,4 @@
-use gpui::{Action, App, Context, PathPromptOptions, SharedString, Window};
+use gpui::{Action, App, Context, Entity, PathPromptOptions, SharedString, Window};
 use gpui_component::notification::NotificationType;
 use gpui_component::{Theme, ThemeMode, ThemeRegistry, WindowExt};
 use rust_embed::RustEmbed;
@@ -93,6 +93,34 @@ pub fn themes_directory_path() -> anyhow::Result<PathBuf> {
     }
 }
 
+// Reload themes and update the Fulgur instance
+// This function initializes the theme registry, reloads themes from disk,
+// updates the Fulgur entity's themes field, and refreshes the menus and windows.
+// @param settings: The application settings
+// @param entity: The Fulgur entity to update
+// @param cx: The application context
+pub fn reload_themes_and_update(settings: &Settings, entity: Entity<Fulgur>, cx: &mut App) {
+    let recent_files = settings.recent_files.get_files().clone();
+    let entity_clone = entity.clone();
+    init(settings, cx, move |cx| {
+        let themes = match Themes::load() {
+            Ok(themes) => Some(themes),
+            Err(e) => {
+                log::error!("Failed to load themes: {}", e);
+                None
+            }
+        };
+        if let Some(themes) = themes {
+            entity_clone.update(cx, |fulgur, _cx| {
+                fulgur.themes = Some(themes);
+            });
+        }
+        let menus = build_menus(cx, &recent_files);
+        cx.set_menus(menus);
+        cx.refresh_windows();
+    });
+}
+
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = themes, no_json)]
 pub(crate) struct SwitchThemeMode(pub(crate) ThemeMode);
@@ -164,25 +192,7 @@ impl Fulgur {
                                 filename.to_string_lossy()
                             ));
                             window.push_notification((NotificationType::Success, notification), cx);
-                            let recent_files = settings.recent_files.get_files().clone();
-                            let entity_clone = entity.clone();
-                            init(&settings, cx, move |cx| {
-                                let themes = match Themes::load() {
-                                    Ok(themes) => Some(themes),
-                                    Err(e) => {
-                                        log::error!("Failed to load themes: {}", e);
-                                        None
-                                    }
-                                };
-                                if let Some(themes) = themes {
-                                    entity_clone.update(cx, |fulgur, _cx| {
-                                        fulgur.themes = Some(themes);
-                                    });
-                                }
-                                let menus = build_menus(cx, &recent_files);
-                                cx.set_menus(menus);
-                                cx.refresh_windows();
-                            });
+                            reload_themes_and_update(&settings, entity, cx);
                         })
                         .ok()?;
                 }
