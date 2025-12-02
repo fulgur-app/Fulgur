@@ -20,29 +20,519 @@ simplelog = "0.12"
 urlencoding = "2.1"
 open = "5.3.3"
 
+# ============================================================================
+# cargo-packager configuration
+# ============================================================================
+
 [package.metadata.packager]
 before-packaging-command = "cargo build --release"
-product_name = "Fulgur"
+product-name = "Fulgur"
 identifier = "app.fulgur.fulgur"
+authors = ["PRRPCHT <prrpcht@gmail.com>"]
 publisher = "PRRPCHT"
-icons = ["assets/icon.icns", "assets/icon.ico", "assets/icon.png"]
-category = "DeveloperTool"
-description = "Your lightning fast, multiplatform, themable text editor."
+description = "Lightning fast, multiplatform, themable text editor"
+long-description = """
+Fulgur is a modern text editor designed for developers and power users.
+"""
+homepage = "https://github.com/PRRPCHT/fulgur"
 copyright = "Copyright (c) 2025 PRRPCHT"
+category = "DeveloperTool"
+icons = ["assets/icon.icns", "assets/icon.ico", "assets/icon.png"]
 
-# Include resources in all packages
-resources = ["resources/fulgur.desktop"]
+# Plain Text
+[[package.metadata.packager.file-associations]]
+extensions = ["txt", "text"]
+name = "Plain Text"
+description = "Plain text document"
+role = "editor"
+mimeType = "text/plain"
+
+# Markdown
+[[package.metadata.packager.file-associations]]
+extensions = ["md", "markdown", "mdown", "mkd", "mdwn"]
+name = "Markdown Document"
+description = "Markdown formatted text"
+role = "editor"
+mimeType = "text/markdown"
+
+# reStructuredText
+[[package.metadata.packager.file-associations]]
+extensions = ["rst"]
+name = "reStructuredText Document"
+description = "reStructuredText document"
+role = "editor"
+mimeType = "text/x-rst"
+
+# JSON
+[[package.metadata.packager.file-associations]]
+extensions = ["json", "jsonc"]
+name = "JSON Document"
+description = "JSON data file"
+role = "editor"
+mimeType = "application/json"
+
+# XML
+[[package.metadata.packager.file-associations]]
+extensions = ["xml"]
+name = "XML Document"
+description = "XML document"
+role = "editor"
+mimeType = "application/xml"
+
+# YAML
+[[package.metadata.packager.file-associations]]
+extensions = ["yaml", "yml"]
+name = "YAML Document"
+description = "YAML configuration file"
+role = "editor"
+mimeType = "application/x-yaml"
+
+# TOML
+[[package.metadata.packager.file-associations]]
+extensions = ["toml"]
+name = "TOML Configuration"
+description = "TOML configuration file"
+role = "editor"
+mimeType = "application/toml"
+
+# INI/Config
+[[package.metadata.packager.file-associations]]
+extensions = ["ini", "cfg", "conf", "config"]
+name = "Configuration File"
+description = "Configuration file"
+role = "editor"
+mimeType = "text/plain"
+
+# Environment Files
+[[package.metadata.packager.file-associations]]
+extensions = ["env"]
+name = "Environment File"
+description = "Environment variables file"
+role = "editor"
+mimeType = "text/plain"
+
+# CSV
+[[package.metadata.packager.file-associations]]
+extensions = ["csv"]
+name = "CSV File"
+description = "Comma-separated values file"
+role = "editor"
+mimeType = "text/csv"
+
+# TSV
+[[package.metadata.packager.file-associations]]
+extensions = ["tsv"]
+name = "TSV File"
+description = "Tab-separated values file"
+role = "editor"
+mimeType = "text/tab-separated-values"
+
+# ============================================================================
+# PROGRAMMING LANGUAGES
+# ============================================================================
+
+# Rust
+[[package.metadata.packager.file-associations]]
+extensions = ["rs"]
+name = "Rust Source"
+description = "Rust source code"
+role = "editor"
+mimeType = "text/x-rust"
+
+# JavaScript
+[[package.metadata.packager.file-associations]]
+extensions = ["js", "mjs", "cjs"]
+name = "JavaScript Source"
+description = "JavaScript source code"
+role = "editor"
+mimeType = "text/javascript"
+
+# TypeScript
+[[package.metadata.packager.file-associations]]
+extensions = ["ts", "tsx"]
+name = "TypeScript Source"
+description = "TypeScript source code"
+role = "editor"
+mimeType = "text/typescript"
+
+# JSX
+[[package.metadata.packager.file-associations]]
+extensions = ["jsx"]
+name = "JSX Source"
+description = "React JSX source code"
+role = "editor"
+mimeType = "text/jsx"
+
+# Python
+[[package.metadata.packager.file-associations]]
+extensions = ["py", "pyw", "pyx", "pyi"]
+name = "Python Source"
+description = "Python source code"
+role = "editor"
+mimeType = "text/x-python"
+
+# Java
+[[package.metadata.packager.file-associations]]
+extensions = ["java"]
+name = "Java Source"
+description = "Java source code"
+role = "editor"
+mimeType = "text/x-java"
+
+# Kotlin
+[[package.metadata.packager.file-associations]]
+extensions = ["kt", "kts"]
+name = "Kotlin Source"
+description = "Kotlin source code"
+role = "editor"
+mimeType = "text/x-kotlin"
+
+# Scala
+[[package.metadata.packager.file-associations]]
+extensions = ["scala", "sc"]
+name = "Scala Source"
+description = "Scala source code"
+role = "editor"
+mimeType = "text/x-scala"
+
+# C
+[[package.metadata.packager.file-associations]]
+extensions = ["c", "h"]
+name = "C Source"
+description = "C source code"
+role = "editor"
+mimeType = "text/x-c"
+
+# C++
+[[package.metadata.packager.file-associations]]
+extensions = ["cpp", "cc", "cxx", "hpp", "hh", "hxx", "c++", "h++"]
+name = "C++ Source"
+description = "C++ source code"
+role = "editor"
+mimeType = "text/x-c++"
+
+# C#
+[[package.metadata.packager.file-associations]]
+extensions = ["cs", "csx"]
+name = "C# Source"
+description = "C# source code"
+role = "editor"
+mimeType = "text/x-csharp"
+
+# Go
+[[package.metadata.packager.file-associations]]
+extensions = ["go"]
+name = "Go Source"
+description = "Go source code"
+role = "editor"
+mimeType = "text/x-go"
+
+# Ruby
+[[package.metadata.packager.file-associations]]
+extensions = ["rb", "ruby", "rake"]
+name = "Ruby Source"
+description = "Ruby source code"
+role = "editor"
+mimeType = "text/x-ruby"
+
+# PHP
+[[package.metadata.packager.file-associations]]
+extensions = ["php", "phtml"]
+name = "PHP Source"
+description = "PHP source code"
+role = "editor"
+mimeType = "text/x-php"
+
+# Swift
+[[package.metadata.packager.file-associations]]
+extensions = ["swift"]
+name = "Swift Source"
+description = "Swift source code"
+role = "editor"
+mimeType = "text/x-swift"
+
+# Objective-C
+[[package.metadata.packager.file-associations]]
+extensions = ["m", "mm"]
+name = "Objective-C Source"
+description = "Objective-C source code"
+role = "editor"
+mimeType = "text/x-objc"
+
+# Dart
+[[package.metadata.packager.file-associations]]
+extensions = ["dart"]
+name = "Dart Source"
+description = "Dart source code"
+role = "editor"
+mimeType = "text/x-dart"
+
+# Lua
+[[package.metadata.packager.file-associations]]
+extensions = ["lua"]
+name = "Lua Source"
+description = "Lua source code"
+role = "editor"
+mimeType = "text/x-lua"
+
+# Perl
+[[package.metadata.packager.file-associations]]
+extensions = ["pl", "pm"]
+name = "Perl Source"
+description = "Perl source code"
+role = "editor"
+mimeType = "text/x-perl"
+
+# R
+[[package.metadata.packager.file-associations]]
+extensions = ["r", "R"]
+name = "R Source"
+description = "R source code"
+role = "editor"
+mimeType = "text/x-r"
+
+# ============================================================================
+# WEB TECHNOLOGIES
+# ============================================================================
+
+# HTML
+[[package.metadata.packager.file-associations]]
+extensions = ["html", "htm", "xhtml"]
+name = "HTML Document"
+description = "HTML web page"
+role = "editor"
+mimeType = "text/html"
+
+# CSS
+[[package.metadata.packager.file-associations]]
+extensions = ["css"]
+name = "CSS Stylesheet"
+description = "Cascading Style Sheet"
+role = "editor"
+mimeType = "text/css"
+
+# SCSS
+[[package.metadata.packager.file-associations]]
+extensions = ["scss"]
+name = "SCSS Stylesheet"
+description = "Sassy CSS stylesheet"
+role = "editor"
+mimeType = "text/x-scss"
+
+# Sass
+[[package.metadata.packager.file-associations]]
+extensions = ["sass"]
+name = "Sass Stylesheet"
+description = "Syntactically Awesome Stylesheet"
+role = "editor"
+mimeType = "text/x-sass"
+
+# Less
+[[package.metadata.packager.file-associations]]
+extensions = ["less"]
+name = "Less Stylesheet"
+description = "Less stylesheet"
+role = "editor"
+mimeType = "text/x-less"
+
+# Vue
+[[package.metadata.packager.file-associations]]
+extensions = ["vue"]
+name = "Vue Component"
+description = "Vue.js component"
+role = "editor"
+mimeType = "text/x-vue"
+
+# Svelte
+[[package.metadata.packager.file-associations]]
+extensions = ["svelte"]
+name = "Svelte Component"
+description = "Svelte component"
+role = "editor"
+mimeType = "text/x-svelte"
+
+# SVG
+[[package.metadata.packager.file-associations]]
+extensions = ["svg"]
+name = "SVG Image"
+description = "Scalable Vector Graphics"
+role = "editor"
+mimeType = "image/svg+xml"
+
+# ============================================================================
+# SHELL SCRIPTS
+# ============================================================================
+
+# Bash
+[[package.metadata.packager.file-associations]]
+extensions = ["sh", "bash"]
+name = "Shell Script"
+description = "Bash shell script"
+role = "editor"
+mimeType = "text/x-shellscript"
+
+# Zsh
+[[package.metadata.packager.file-associations]]
+extensions = ["zsh"]
+name = "Zsh Script"
+description = "Zsh shell script"
+role = "editor"
+mimeType = "text/x-zsh"
+
+# Fish
+[[package.metadata.packager.file-associations]]
+extensions = ["fish"]
+name = "Fish Script"
+description = "Fish shell script"
+role = "editor"
+mimeType = "text/x-fish"
+
+# PowerShell
+[[package.metadata.packager.file-associations]]
+extensions = ["ps1", "psm1"]
+name = "PowerShell Script"
+description = "PowerShell script"
+role = "editor"
+mimeType = "text/x-powershell"
+
+# Batch
+[[package.metadata.packager.file-associations]]
+extensions = ["bat", "cmd"]
+name = "Batch File"
+description = "Windows batch file"
+role = "editor"
+mimeType = "text/x-msdos-batch"
+
+# ============================================================================
+# DATABASE
+# ============================================================================
+
+# SQL
+[[package.metadata.packager.file-associations]]
+extensions = ["sql"]
+name = "SQL Script"
+description = "SQL database script"
+role = "editor"
+mimeType = "text/x-sql"
+
+# ============================================================================
+# DOCUMENTATION
+# ============================================================================
+
+# LaTeX
+[[package.metadata.packager.file-associations]]
+extensions = ["tex", "latex"]
+name = "LaTeX Document"
+description = "LaTeX document"
+role = "editor"
+mimeType = "text/x-tex"
+
+# BibTeX
+[[package.metadata.packager.file-associations]]
+extensions = ["bib"]
+name = "BibTeX Bibliography"
+description = "BibTeX bibliography"
+role = "editor"
+mimeType = "text/x-bibtex"
+
+# Org Mode
+[[package.metadata.packager.file-associations]]
+extensions = ["org"]
+name = "Org Mode Document"
+description = "Emacs Org mode document"
+role = "editor"
+mimeType = "text/org"
+
+# AsciiDoc
+[[package.metadata.packager.file-associations]]
+extensions = ["adoc", "asciidoc"]
+name = "AsciiDoc Document"
+description = "AsciiDoc document"
+role = "editor"
+mimeType = "text/asciidoc"
+
+# ============================================================================
+# VERSION CONTROL & BUILD
+# ============================================================================
+
+# Git Config
+[[package.metadata.packager.file-associations]]
+extensions = ["gitignore", "gitattributes", "gitmodules"]
+name = "Git Configuration"
+description = "Git configuration file"
+role = "editor"
+mimeType = "text/plain"
+
+# Dockerfile
+[[package.metadata.packager.file-associations]]
+extensions = ["dockerfile"]
+name = "Dockerfile"
+description = "Docker container definition"
+role = "editor"
+mimeType = "text/x-dockerfile"
+
+# Makefile
+[[package.metadata.packager.file-associations]]
+extensions = ["makefile"]
+name = "Makefile"
+description = "Make build file"
+role = "editor"
+mimeType = "text/x-makefile"
+
+# CMake
+[[package.metadata.packager.file-associations]]
+extensions = ["cmake"]
+name = "CMake File"
+description = "CMake build configuration"
+role = "editor"
+mimeType = "text/x-cmake"
+
+# Gradle
+[[package.metadata.packager.file-associations]]
+extensions = ["gradle"]
+name = "Gradle Build File"
+description = "Gradle build configuration"
+role = "editor"
+mimeType = "text/x-gradle"
+
+# ============================================================================
+# OTHER
+# ============================================================================
+
+# Log Files
+[[package.metadata.packager.file-associations]]
+extensions = ["log"]
+name = "Log File"
+description = "Log file"
+role = "editor"
+mimeType = "text/x-log"
+
+# Diff/Patch
+[[package.metadata.packager.file-associations]]
+extensions = ["diff", "patch"]
+name = "Diff/Patch File"
+description = "Unified diff or patch file"
+role = "editor"
+mimeType = "text/x-diff"
+
+# License
+[[package.metadata.packager.file-associations]]
+extensions = ["license"]
+name = "License File"
+description = "Software license"
+role = "editor"
+mimeType = "text/plain"
+
+# README
+[[package.metadata.packager.file-associations]]
+extensions = ["readme"]
+name = "README File"
+description = "README documentation"
+role = "editor"
+mimeType = "text/plain"
 
 [package.metadata.packager.macos]
-minimum_system_version = "10.15"
-info_plist_path = "resources/Info.plist"
+minimum-system-version = "10.15"
 
 [package.metadata.packager.linux]
-# This will automatically install the desktop file during package installation
-# The desktop file contains MIME associations, making Fulgur appear in "Open With" menus
-# It does NOT set Fulgur as the default application - users choose that
-
-[package.metadata.packager.deb]
-# Desktop file will be automatically installed to /usr/share/applications/
-# DEB packages handle this via the resources configuration above
-
+generate-desktop-entry = true
