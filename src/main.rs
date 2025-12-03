@@ -128,6 +128,7 @@ fn main() {
         cx.spawn(async move |cx| {
             let window_options = WindowOptions {
                 titlebar: Some(TitleBar::title_bar_options()),
+                window_decorations: Some(gpui::WindowDecorations::Client),
                 ..Default::default()
             };
             cx.open_window(window_options, |window, cx| {
