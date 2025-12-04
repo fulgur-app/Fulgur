@@ -4,6 +4,28 @@
 
 Your lightning fast, multiplatform, themable text editor.
 
+## About Fulgur
+
+### What is Fulgur?
+
+Fulgur is a straightforward text editor built for speed and reliability across multiple platforms. It's not designed to replace full-featured IDEs like VS Code, IntelliJ, or Zed, nor does it aim to match the extensive capabilities of editors like Emacs or Vim. Instead, Fulgur focuses on being fast, dependable, and built with modern technologies.
+
+Themes are a core part of the Fulgur experience, with several included by default. Future versions will introduce Sync mode, allowing you to send files between Fulgur instances similar to how you share tabs between browsers. The best part: the sync server will be self-hostable, keeping your data private.
+
+### Limitations
+
+Fulgur is currently in alpha development. While it has been stable in testing, several features are still being implemented and issues remain to be resolved:
+
+* Drag and drop support
+* Syntax highlighting for additional languages
+* Sync mode functionality
+* Various edge cases
+* Compatibility issues on some desktop environments, such as double title bars in XFCE
+
+### Themes
+
+Fulgur themes use the `gpui-component` format, configured with JSON files and hexadecimal color codes. Bundled themes are located in `src/themes` and will be stored in `~/.fulgur/themes` when installed. You can modify existing themes or create your own.
+
 ## Build
 
 ### Prerequisites
@@ -26,9 +48,8 @@ Install the [Windows SDK](https://developer.microsoft.com/en-us/windows/download
 
 Once all the prerequisites installed and set up:
 
-1. Run `cargo build --release` to build an optimized version of Fulgur. May take some time on older systems.
-2. Run `cargo packager --release` to make a pretty executable with an icon.
-3. Enjoy!
+* Run `cargo build --release` to build an optimized version of Fulgur. May take some time on older systems.
+* Run `cargo packager --release` to build an optimized version of Fulgur and make a pretty executable with an icon.
 
 ## License
 
