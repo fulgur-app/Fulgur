@@ -25,9 +25,10 @@ use titlebar::CustomTitleBar;
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, Root, StyledExt, Theme, ThemeRegistry, WindowExt, h_flex,
+    ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
     input::{Input, InputEvent, InputState},
     link::Link,
+    scroll::ScrollableElement,
     select::SelectState,
     v_flex,
 };
@@ -443,7 +444,7 @@ impl Fulgur {
                         .id("settings-tab-scrollable")
                         .w_full()
                         .flex_1()
-                        .scrollable(Axis::Vertical)
+                        .overflow_y_scrollbar()
                         .child(self.render_settings(window, cx))
                         .into_any_element();
                 }
