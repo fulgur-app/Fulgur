@@ -28,6 +28,7 @@ use gpui_component::{
     ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
     input::{Input, InputEvent, InputState},
     link::Link,
+    scroll::ScrollableElement,
     select::SelectState,
     v_flex,
 };
@@ -450,7 +451,7 @@ impl Fulgur {
                         .id("settings-tab-scrollable")
                         .w_full()
                         .flex_1()
-                        .overflow_y_scroll()
+                        .overflow_y_scrollbar()
                         .child(self.render_settings(window, cx))
                         .into_any_element();
                 }
