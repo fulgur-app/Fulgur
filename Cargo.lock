@@ -9,6 +9,7 @@ dependencies = [
  "anyhow",
  "chardetng",
  "chrono",
+ "embed-resource",
  "encoding_rs",
  "gpui",
  "gpui-component",
