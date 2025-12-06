@@ -62,13 +62,13 @@ impl Render for CustomTitleBar {
         );
         #[cfg(not(target_os = "macos"))]
         {
-            title_bar = title_bar.child(div().w_40()).child(" ");
+            title_bar = title_bar.child(div().w_40());
         }
         #[cfg(target_os = "macos")]
         {
-            title_bar = title_bar.child(div().w_20()).child(" ");
+            title_bar = title_bar.child(div().w_20());
         }
-
         title_bar
     }
+
 }

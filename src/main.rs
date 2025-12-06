@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use gpui::*;
 use gpui_component::{Root, TitleBar};
 use rust_embed::RustEmbed;
@@ -128,10 +130,13 @@ fn main() {
         cx.spawn(async move |cx| {
             let window_options = WindowOptions {
                 titlebar: Some(TitleBar::title_bar_options()),
+                // IMPORTANT: window_decorations is ONLY set on Linux!
+                // Windows and macOS use the default (None)
+                #[cfg(target_os = "linux")]
                 window_decorations: Some(gpui::WindowDecorations::Client),
                 ..Default::default()
             };
-            cx.open_window(window_options, |window, cx| {
+            let window = cx.open_window(window_options, |window, cx| {
                 window.set_window_title("Fulgur");
                 let view = fulgur::Fulgur::new(window, cx, pending_files.clone());
                 let view_clone = view.clone();
@@ -165,6 +170,11 @@ fn main() {
 
                 cx.new(|cx| Root::new(view, window, cx))
             })?;
+            window
+            .update(cx, |_, window, _| {
+                window.activate_window();
+            })
+            .expect("failed to update window");
             Ok::<_, anyhow::Error>(())
         })
         .detach();

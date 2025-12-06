@@ -25,7 +25,7 @@ use titlebar::CustomTitleBar;
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, Root, StyledExt, Theme, ThemeRegistry, WindowExt, h_flex,
+    ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
     input::{Input, InputEvent, InputState},
     link::Link,
     select::SelectState,
@@ -287,8 +287,11 @@ impl Render for Fulgur {
         let active_tab = self
             .active_tab_index
             .and_then(|index| self.tabs.get(index).cloned());
-        let mut content = v_flex()
+        let mut app_content = div()
+            .id("app-content")
             .size_full()
+            .flex()
+            .flex_col()
             .gap_0()
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|this, _action: &NewFile, window, cx| {
@@ -389,20 +392,24 @@ impl Render for Fulgur {
             .on_action(cx.listener(|this, _action: &AddTheme, window, cx| {
                 this.add_theme(window, cx);
             }));
-
-        content = content.child(self.title_bar.clone());
-        content = content
+        app_content = app_content
             .child(self.render_tab_bar(window, cx))
             .child(self.render_content_area(active_tab, window, cx))
             .children(self.render_search_bar(window, cx));
         if let Some(index) = self.active_tab_index {
             if let Some(Tab::Editor(_)) = self.tabs.get(index) {
-                content = content.child(self.render_status_bar(window, cx));
+                app_content = app_content.child(self.render_status_bar(window, cx));
             }
         }
+        // Create root layout: TitleBar OUTSIDE of focus-tracked content
+        // This is critical for Windows hit-testing to work!
+        let root_content = v_flex()
+            .size_full()
+            .child(self.title_bar.clone())
+            .child(app_content);
         let main_div = div()
             .size_full()
-            .child(content)
+            .child(root_content)
             .children(Root::render_notification_layer(window, cx))
             .children(Root::render_dialog_layer(window, cx));
         main_div
@@ -443,7 +450,7 @@ impl Fulgur {
                         .id("settings-tab-scrollable")
                         .w_full()
                         .flex_1()
-                        .scrollable(Axis::Vertical)
+                        .overflow_y_scroll()
                         .child(self.render_settings(window, cx))
                         .into_any_element();
                 }
