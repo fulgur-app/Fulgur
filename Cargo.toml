@@ -9,7 +9,7 @@ chardetng = "0.1.17"
 chrono = { version = "0.4", features = ["serde"] }
 encoding_rs = "0.8.35"
 gpui = "0.2.2"
-gpui-component = { version = "0.5.0-preview2", features = ["tree-sitter-languages"] }
+gpui-component = { version = "0.5.0", features = ["tree-sitter-languages"] }
 log = "0.4.29"
 lsp-types = "0.97"
 serde = { version = "1.0.228", features = ["derive"] }
