@@ -27,6 +27,7 @@ pub struct EditorSettings {
     pub soft_wrap: bool,
     pub font_size: f32,
     pub tab_size: usize,
+    pub default_show_markdown_preview: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -45,6 +46,7 @@ impl EditorSettings {
             soft_wrap: false,
             font_size: 14.0,
             tab_size: 4,
+            default_show_markdown_preview: true,
         }
     }
 }
@@ -619,6 +621,17 @@ impl Fulgur {
                 cx,
                 |this, checked, _cx| {
                     this.settings.editor_settings.soft_wrap = *checked;
+                },
+            ))
+            .child(make_toggle_option(
+                "show_markdown_preview",
+                "Default show markdown preview",
+                "Show the markdown preview by default when opening a markdown file",    
+                self.settings.editor_settings.default_show_markdown_preview,
+                cx,
+                |this, checked, _cx| {
+                    println!("show_markdown_preview: {}", *checked);
+                    this.settings.editor_settings.default_show_markdown_preview = *checked;
                 },
             ))
     }

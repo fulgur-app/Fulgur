@@ -101,6 +101,7 @@ impl Fulgur {
                 None
             }
         };
+        let show_markdown_preview = settings.editor_settings.default_show_markdown_preview;
         let entity = cx.new(|cx| {
             let _search_subscription = cx.subscribe(
                 &search_input,
@@ -146,7 +147,7 @@ impl Fulgur {
                 tabs_pending_update: std::collections::HashSet::new(),
                 pending_files_from_macos,
                 themes,
-                show_markdown_preview: true,
+                show_markdown_preview,
             };
             entity
         });
