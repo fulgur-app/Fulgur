@@ -26,10 +26,13 @@ use titlebar::CustomTitleBar;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
+    highlighter::Language,
     input::{Input, InputEvent, InputState},
     link::Link,
+    resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
     select::SelectState,
+    text::TextView,
     v_flex,
 };
 
@@ -433,18 +436,43 @@ impl Fulgur {
         if let Some(tab) = active_tab {
             match tab {
                 Tab::Editor(editor_tab) => {
+                    let editor_input = Input::new(&editor_tab.content)
+                        .bordered(false)
+                        .p_0()
+                        .h_full()
+                        .font_family("Monaco")
+                        .text_size(px(self.settings.editor_settings.font_size))
+                        .focus_bordered(false);
+                    if editor_tab.language == Language::Markdown {
+                        return v_flex()
+                            .w_full()
+                            .flex_1()
+                            .child(
+                                h_resizable("markdown-preview-container")
+                                    .child(resizable_panel().child(
+                                        div().id("markdown-editor").size_full().child(editor_input),
+                                    ))
+                                    .child(
+                                        resizable_panel().child(
+                                            TextView::markdown(
+                                                "markdown-preview",
+                                                editor_tab.content.read(cx).value().clone(),
+                                                window,
+                                                cx,
+                                            )
+                                            .flex_none()
+                                            .p_5()
+                                            .scrollable(true)
+                                            .selectable(true),
+                                        ),
+                                    ),
+                            )
+                            .into_any_element();
+                    }
                     return v_flex()
                         .w_full()
                         .flex_1()
-                        .child(
-                            Input::new(&editor_tab.content)
-                                .bordered(false)
-                                .p_0()
-                                .h_full()
-                                .font_family("Monaco")
-                                .text_size(px(self.settings.editor_settings.font_size))
-                                .focus_bordered(false),
-                        )
+                        .child(editor_input)
                         .into_any_element();
                 }
                 Tab::Settings(_) => {
