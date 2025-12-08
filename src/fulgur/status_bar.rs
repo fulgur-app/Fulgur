@@ -5,7 +5,7 @@ use crate::fulgur::{
     components_utils::{EMPTY, UTF_8},
     editor_tab, languages,
 };
-use gpui::*;
+use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
     ActiveTheme, WindowExt, h_flex,
     highlighter::Language,
@@ -212,6 +212,30 @@ impl Fulgur {
                     this.set_language(window, cx, language_shared.clone());
                 }),
             );
+        let preview_button_content = if self.show_markdown_preview {
+            "Hide Preview".to_string()
+        } else {
+            "Show Preview".to_string()
+        };
+        let preview_button =
+            status_bar_button_factory(preview_button_content, cx.theme().border, cx.theme().muted)
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                        this.show_markdown_preview = !this.show_markdown_preview;
+                        cx.notify();
+                    }),
+                );
+        let current_tab_language = match self.active_tab_index {
+            Some(index) => {
+                if let Some(editor_tab) = self.tabs[index].as_editor() {
+                    editor_tab.language
+                } else {
+                    Language::Plain
+                }
+            }
+            None => Language::Plain,
+        };
         h_flex()
             .justify_between()
             .bg(cx.theme().tab_bar)
@@ -220,7 +244,15 @@ impl Fulgur {
             .border_t_1()
             .border_color(cx.theme().border)
             .text_color(cx.theme().foreground)
-            .child(div().flex().justify_start().child(language_button))
+            .child(
+                div()
+                    .flex()
+                    .justify_start()
+                    .child(language_button)
+                    .when(current_tab_language == Language::Markdown, |this| {
+                        this.child(preview_button)
+                    }),
+            )
             .child(
                 div()
                     .flex()

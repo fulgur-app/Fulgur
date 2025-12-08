@@ -67,6 +67,7 @@ pub struct Fulgur {
     rendered_tabs: std::collections::HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
     pub pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>, // Files from macOS "Open with" events
+    pub show_markdown_preview: bool,
 }
 
 impl Fulgur {
@@ -145,6 +146,7 @@ impl Fulgur {
                 tabs_pending_update: std::collections::HashSet::new(),
                 pending_files_from_macos,
                 themes,
+                show_markdown_preview: true,
             };
             entity
         });
@@ -443,7 +445,7 @@ impl Fulgur {
                         .font_family("Monaco")
                         .text_size(px(self.settings.editor_settings.font_size))
                         .focus_bordered(false);
-                    if editor_tab.language == Language::Markdown {
+                    if editor_tab.language == Language::Markdown && self.show_markdown_preview {
                         return v_flex()
                             .w_full()
                             .flex_1()
