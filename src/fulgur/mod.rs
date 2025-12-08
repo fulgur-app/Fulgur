@@ -463,9 +463,11 @@ impl Fulgur {
                                                 cx,
                                             )
                                             .flex_none()
-                                            .p_5()
+                                            .py_0()
+                                            .px_2()
                                             .scrollable(true)
-                                            .selectable(true),
+                                            .selectable(true)
+                                            .bg(cx.theme().muted),
                                         ),
                                     ),
                             )
