@@ -1,5 +1,4 @@
 use gpui::*;
-use gpui_component::{Theme, ThemeMode, ThemeRegistry};
 use std::path::PathBuf;
 
 actions!(
@@ -18,11 +17,11 @@ actions!(
         FindInFile,
         SettingsTab,
         GetTheme,
-        AddTheme,
         NextTab,
         PreviousTab,
         JumpToLine,
         ClearRecentFiles,
+        SelectTheme,
     ]
 );
 
@@ -38,19 +37,7 @@ pub struct OpenRecentFile(pub PathBuf);
 // @param cx: The application context
 // @param recent_files: The list of recent files to display
 // @return: The menus for the Fulgur instance
-pub fn build_menus(cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
-    let themes = ThemeRegistry::global(cx).sorted_themes();
-    let light_themes: Vec<String> = themes
-        .iter()
-        .filter(|theme| theme.mode == ThemeMode::Light)
-        .map(|theme| theme.name.to_string())
-        .collect();
-    let dark_themes: Vec<String> = themes
-        .iter()
-        .filter(|theme| theme.mode == ThemeMode::Dark)
-        .map(|theme| theme.name.to_string())
-        .collect();
-    let current_theme = Theme::global(cx).theme_name().to_string();
+pub fn build_menus(_cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
     let recent_files_items = if recent_files.is_empty() {
         let mut items = Vec::new();
         items.push(MenuItem::action("No recent files", NoneAction));
@@ -75,55 +62,9 @@ pub fn build_menus(cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
             items: vec![
                 MenuItem::action("About Fulgur", About),
                 MenuItem::Separator,
-                MenuItem::Submenu(Menu {
-                    name: "Themes".into(),
-                    items: vec![
-                        MenuItem::Submenu(Menu {
-                            name: "Light Themes".into(),
-                            items: light_themes
-                                .iter()
-                                .map(|theme| {
-                                    MenuItem::action(
-                                        format!(
-                                            "{} {}",
-                                            theme,
-                                            if theme == &current_theme {
-                                                "\u{2713}"
-                                            } else {
-                                                ""
-                                            }
-                                        ),
-                                        SwitchTheme(theme.into()),
-                                    )
-                                })
-                                .collect(),
-                        }),
-                        MenuItem::Submenu(Menu {
-                            name: "Dark Themes".into(),
-                            items: dark_themes
-                                .iter()
-                                .map(|theme| {
-                                    MenuItem::action(
-                                        format!(
-                                            "{} {}",
-                                            theme,
-                                            if theme == &current_theme {
-                                                "\u{2713}"
-                                            } else {
-                                                ""
-                                            }
-                                        ),
-                                        SwitchTheme(theme.into()),
-                                    )
-                                })
-                                .collect(),
-                        }),
-                        MenuItem::Separator,
-                        MenuItem::action("Get more themes...", GetTheme),
-                        MenuItem::action("Add Theme...", AddTheme),
-                    ],
-                }),
                 MenuItem::action("Settings", SettingsTab),
+                MenuItem::action("Select theme", SelectTheme),
+                MenuItem::action("Get more themes...", GetTheme),
                 MenuItem::Separator,
                 MenuItem::action("Quit", Quit),
             ],

@@ -1,12 +1,17 @@
-use gpui::{Action, App, Context, Entity, PathPromptOptions, SharedString, Window};
+use gpui::prelude::FluentBuilder;
+use gpui::*;
+use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::notification::NotificationType;
-use gpui_component::{Theme, ThemeMode, ThemeRegistry, WindowExt};
+use gpui_component::scroll::ScrollableElement;
+use gpui_component::{
+    Disableable, Sizable, Theme, ThemeMode, ThemeRegistry, WindowExt, h_flex, v_flex,
+};
 use rust_embed::RustEmbed;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use crate::fulgur::Fulgur;
-use crate::fulgur::menus::build_menus;
 use crate::fulgur::settings::{Settings, Themes};
 
 // Embed bundled themes into the binary
@@ -100,7 +105,6 @@ pub fn themes_directory_path() -> anyhow::Result<PathBuf> {
 // @param entity: The Fulgur entity to update
 // @param cx: The application context
 pub fn reload_themes_and_update(settings: &Settings, entity: Entity<Fulgur>, cx: &mut App) {
-    let recent_files = settings.recent_files.get_files().clone();
     let entity_clone = entity.clone();
     init(settings, cx, move |cx| {
         let themes = match Themes::load() {
@@ -115,10 +119,98 @@ pub fn reload_themes_and_update(settings: &Settings, entity: Entity<Fulgur>, cx:
                 fulgur.themes = Some(themes);
             });
         }
-        let menus = build_menus(cx, &recent_files);
-        cx.set_menus(menus);
-        cx.refresh_windows();
+        // let menus = build_menus(cx, &recent_files);
+        // cx.set_menus(menus);
+        // cx.refresh_windows();
     });
+}
+
+// Make a select theme item
+// @param entity: The entity
+// @param theme_name: The name of the theme
+// @param is_current_theme: Whether the theme is the current theme
+// @param current_theme_shared: The shared state of the current theme
+// @return: The select theme item
+fn make_select_theme_item(
+    entity: Entity<Fulgur>,
+    theme_name: String,
+    is_current_theme: bool,
+    current_theme_shared: Arc<Mutex<String>>,
+) -> Div {
+    let button_id = format!("Select_{}", theme_name);
+    let button_id = SharedString::from(button_id);
+    h_flex()
+        .justify_between()
+        .py_1()
+        .child(div().py_1().text_sm().child(theme_name.clone()))
+        .when(!is_current_theme, |this| {
+            this.child(
+                Button::new(button_id.clone())
+                    .child("Select")
+                    .small()
+                    .cursor_pointer()
+                    .on_click(move |_this, _window, cx| {
+                        if let Some(theme_config) = ThemeRegistry::global(cx)
+                            .themes()
+                            .get(theme_name.as_str())
+                            .cloned()
+                        {
+                            Theme::global_mut(cx).apply_config(&theme_config);
+                            let theme_name_clone = theme_name.clone();
+                            entity.update(cx, |fulgur, cx| {
+                                fulgur.settings.app_settings.theme =
+                                    theme_name_clone.clone().into();
+                                if let Err(e) = fulgur.settings.save() {
+                                    log::error!("Failed to save settings: {}", e);
+                                }
+                                if let Ok(mut current) = current_theme_shared.lock() {
+                                    *current = theme_name_clone;
+                                }
+                                cx.notify();
+                            });
+                            cx.refresh_windows();
+                        }
+                    }),
+            )
+        })
+        .when(is_current_theme, |this| {
+            this.child(
+                Button::new(button_id)
+                    .child("Select")
+                    .primary()
+                    .small()
+                    .disabled(true),
+            )
+        })
+}
+
+// Make a select theme list
+// @param entity: The entity
+// @param themes: The list of themes
+// @param current_theme: The name of the current theme
+// @param current_theme_shared: The shared state of the current theme
+// @return: The select theme list
+fn make_select_theme_list(
+    entity: Entity<Fulgur>,
+    themes: Vec<String>,
+    current_theme: String,
+    current_theme_shared: Arc<Mutex<String>>,
+) -> Div {
+    let entity = entity.clone();
+    div().rounded_md().children(
+        themes
+            .clone()
+            .iter()
+            .map(move |theme| {
+                make_select_theme_item(
+                    entity.clone(),
+                    theme.clone(),
+                    theme.to_string() == current_theme,
+                    current_theme_shared.clone(),
+                )
+            })
+            .collect::<Vec<Div>>(),
+    )
 }
 
 #[derive(Action, Clone, PartialEq)]
@@ -210,5 +302,92 @@ impl Fulgur {
             Some(())
         })
         .detach();
+    }
+
+    /// Open theme selector as a sheet (sliding panel from right side)
+    /// This is an alternative to the dialog-based theme selector
+    pub fn select_theme_sheet(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let entity = cx.entity();
+        let current_theme = self.settings.app_settings.theme.to_string();
+        let current_theme_shared = Arc::new(Mutex::new(current_theme.clone()));
+        let viewport_height = window.viewport_size().height;
+        window.open_sheet(cx, move |sheet, _window, cx| {
+            let themes = ThemeRegistry::global(cx).sorted_themes();
+            let light_themes: Vec<String> = themes
+                .iter()
+                .filter(|theme| theme.mode == ThemeMode::Light)
+                .map(|theme| theme.name.to_string())
+                .collect();
+            let dark_themes: Vec<String> = themes
+                .iter()
+                .filter(|theme| theme.mode == ThemeMode::Dark)
+                .map(|theme| theme.name.to_string())
+                .collect();
+
+            let entity_dark = entity.clone();
+            let entity_light = entity.clone();
+            let current_theme_shared_dark = current_theme_shared.clone();
+            let current_theme_shared_light = current_theme_shared.clone();
+            let current_theme_display = current_theme_shared
+                .lock()
+                .ok()
+                .map(|t| t.clone())
+                .unwrap_or(current_theme.clone());
+            let max_height = px((viewport_height - px(150.0)).into()); //TODO: Make this dynamic based on the content
+
+            sheet
+                .title("Select Theme")
+                .size(px(400.))
+                .child(
+                    v_flex()
+                        .overflow_y_scrollbar()
+                        .gap_2()
+                        .h(max_height)
+                        .child(div().text_lg().child("Dark themes"))
+                        .child(make_select_theme_list(
+                            entity_dark,
+                            dark_themes.clone(),
+                            current_theme_display.clone(),
+                            current_theme_shared_dark,
+                        ))
+                        .child(div().text_lg().mt_4().child("Light themes"))
+                        .child(make_select_theme_list(
+                            entity_light,
+                            light_themes.clone(),
+                            current_theme_display.clone(),
+                            current_theme_shared_light,
+                        )),
+                )
+                .footer({
+                    let entity_footer = entity.clone();
+                    h_flex()
+                        .justify_between()
+                        .w_full()
+                        .child(
+                            Button::new("add-theme-footer")
+                                .child("Add new theme...")
+                                .small()
+                                .cursor_pointer()
+                                .on_click(move |_, window, cx| {
+                                    entity_footer.update(cx, |this, cx| {
+                                        this.add_theme(window, cx);
+                                    });
+                                    // Close sheet after opening add theme dialog
+                                    // User can reopen to see new theme
+                                    //window.close_sheet(cx);
+                                }),
+                        )
+                        .child(
+                            Button::new("ok-footer")
+                                .child("OK")
+                                .small()
+                                .primary()
+                                .cursor_pointer()
+                                .on_click(|_, window, cx| {
+                                    window.close_sheet(cx);
+                                }),
+                        )
+                })
+        });
     }
 }

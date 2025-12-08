@@ -390,8 +390,8 @@ impl Render for Fulgur {
                     log::error!("Failed to open browser: {}", e);
                 }
             }))
-            .on_action(cx.listener(|this, _action: &AddTheme, window, cx| {
-                this.add_theme(window, cx);
+            .on_action(cx.listener(|this, _action: &SelectTheme, window, cx| {
+                this.select_theme_sheet(window, cx);
             }));
         app_content = app_content
             .child(self.render_tab_bar(window, cx))
@@ -411,6 +411,7 @@ impl Render for Fulgur {
         let main_div = div()
             .size_full()
             .child(root_content)
+            .children(Root::render_sheet_layer(window, cx))
             .children(Root::render_notification_layer(window, cx))
             .children(Root::render_dialog_layer(window, cx));
         main_div
