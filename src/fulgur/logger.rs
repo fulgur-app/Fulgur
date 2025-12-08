@@ -48,6 +48,7 @@ pub fn init() -> anyhow::Result<()> {
 
 // Get the log file path for display purposes
 // @return: The path to the log file as a string
+#[allow(dead_code)]
 pub fn get_log_path() -> Option<String> {
     log_file_path()
         .ok()
