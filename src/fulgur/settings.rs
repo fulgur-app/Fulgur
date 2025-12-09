@@ -30,6 +30,7 @@ pub struct EditorSettings {
     pub font_size: f32,
     pub tab_size: usize,
     pub default_show_markdown_preview: bool,
+    pub default_show_markdown_toolbar: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -49,6 +50,7 @@ impl EditorSettings {
             font_size: 14.0,
             tab_size: 4,
             default_show_markdown_preview: true,
+            default_show_markdown_toolbar: false,
         }
     }
 }

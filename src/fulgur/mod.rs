@@ -98,6 +98,7 @@ impl Fulgur {
             }
         };
         let show_markdown_preview = settings.editor_settings.default_show_markdown_preview;
+        let show_markdown_toolbar = settings.editor_settings.default_show_markdown_toolbar;
         let entity = cx.new(|cx| {
             let _search_subscription = cx.subscribe(
                 &search_input,
@@ -136,7 +137,7 @@ impl Fulgur {
                 pending_files_from_macos,
                 themes,
                 show_markdown_preview,
-                show_markdown_toolbar: false,
+                show_markdown_toolbar,
             };
             entity
         });
