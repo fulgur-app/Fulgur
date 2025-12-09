@@ -1,13 +1,17 @@
 use std::{fs, path::PathBuf};
 
-use gpui::{prelude::FluentBuilder, *};
+use gpui::*;
 use gpui_component::{
-    ActiveTheme, StyledExt,
+    ActiveTheme, Sizable, Size, StyledExt,
     button::Button,
+    group_box::GroupBoxVariant,
     h_flex,
     scroll::ScrollbarShow,
-    select::{Select, SelectEvent, SelectState},
-    switch::Switch,
+    select::{SelectEvent, SelectState},
+    setting::{
+        NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage,
+        Settings as SettingsComponent,
+    },
     v_flex,
 };
 use serde::{Deserialize, Serialize};
@@ -380,301 +384,356 @@ pub fn subscribe_to_tab_size_changes(
     )
 }
 
-// Make a switch
-// @param id: The ID of the switch
-// @param checked: Whether the switch is checked
-// @param cx: The context
-// @param on_click_function: The function to call when the switch is clicked
-// @return: The switch
-fn make_switch(
-    id: impl Into<SharedString>,
-    checked: bool,
-    cx: &mut Context<Fulgur>,
-    on_click_function: fn(&mut Fulgur, &bool, &mut Context<Fulgur>),
-) -> Div {
-    let id_str: SharedString = id.into();
-    let id_static: &'static str = Box::leak(id_str.to_string().into_boxed_str());
-    div().child(
-        Switch::new(id_static)
-            .checked(checked)
-            .on_click(cx.listener(move |this, checked: &bool, _, cx| {
-                on_click_function(this, checked, cx);
-                this.settings_changed = true;
-                if let Err(e) = this.settings.save() {
-                    log::error!("Failed to save settings: {}", e);
-                }
-                cx.notify();
-            })),
-    )
-}
-
-// Make a settings section
-// @param title: The title of the settings section
-// @return: The settings section
-fn make_settings_section(title: &'static str) -> Div {
-    v_flex().gap_3().child(div().text_xl().px_3().child(title))
-}
-
-// Make a setting description
-// @param title: The title of the setting
-// @param description: The description of the setting
-// @param cx: The context
-// @return: The setting description
-fn make_setting_description(
-    title: impl Into<SharedString>,
-    description: impl Into<SharedString>,
-    cx: &mut Context<Fulgur>,
-) -> Div {
-    h_flex()
-        .w_full()
-        .px_3()
-        .py_2()
-        .bg(cx.theme().muted)
-        .rounded(px(2.0))
-        .child(
-            v_flex()
-                .text_size(px(14.0))
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .child(div().font_semibold().child(title.into()))
-                .child(
-                    div()
-                        .max_w_full()
-                        .line_height(relative(1.4))
-                        .overflow_x_hidden()
-                        .child(description.into()),
-                ),
-        )
-}
-
-// Make a toggle option
-// @param id: The ID of the toggle option
-// @param title: The title of the toggle option
-// @param description: The description of the toggle option
-// @param checked: Whether the toggle option is checked
-// @param cx: The context
-// @param on_click_function: The function to call when the toggle option is clicked
-// @return: The toggle option
-fn make_toggle_option(
-    id: impl Into<SharedString>,
-    title: impl Into<SharedString>,
-    description: impl Into<SharedString>,
-    checked: bool,
-    cx: &mut Context<Fulgur>,
-    on_click_function: fn(&mut Fulgur, &bool, &mut Context<Fulgur>),
-) -> Div {
-    let id_str = id.into();
-    make_setting_description(title, description, cx).child(make_switch(
-        id_str,
-        checked,
-        cx,
-        on_click_function,
-    ))
-}
-
-// Make a dropdown option
-// @param title: The title of the dropdown option
-// @param description: The description of the dropdown option
-// @param state: The state of the dropdown option
-// @param cx: The context
-// @return: The dropdown option
-fn make_dropdown_option(
-    title: &'static str,
-    description: &'static str,
-    state: &Entity<SelectState<Vec<SharedString>>>,
-    cx: &mut Context<Fulgur>,
-) -> Div {
-    make_setting_description(title, description, cx)
-        .child(div().child(Select::new(state).w(px(120.)).bg(cx.theme().background)))
-}
-
-// Make a theme section
-// @param title: The title of the theme section
-// @return: The theme section
-fn make_theme_section(title: &'static str) -> Div {
-    v_flex().gap_3().child(div().text_xl().px_3().child(title))
-}
-
-// Make a theme option
-// @param theme: The theme
-// @param cx: The context
-// @param is_default: Whether the theme is a default theme
-// @return: The theme option
-fn make_theme_option(theme: &ThemeFile, cx: &mut Context<Fulgur>, is_default: bool) -> Div {
-    h_flex()
-        .w_full()
-        .px_3()
-        .py_2()
-        .bg(cx.theme().muted)
-        .rounded(px(2.0))
-        .child(
-            v_flex()
-                .text_size(px(14.0))
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .child(
-                    div()
-                        .h_flex()
-                        .w_full()
-                        .when(is_default, |div| {
-                            div.font_semibold().child(format!(
-                                "{} by {} (Default theme)",
-                                theme.name.clone(),
-                                theme.author.clone()
-                            ))
-                        })
-                        .when(!is_default, |div| {
-                            div.font_semibold().child(format!(
-                                "{} by {}",
-                                theme.name.clone(),
-                                theme.author.clone()
-                            ))
-                        }),
-                )
-                .child(
-                    div()
-                        .max_w_full()
-                        .line_height(relative(1.4))
-                        .overflow_x_hidden()
-                        .child(
-                            theme
-                                .themes
-                                .iter()
-                                .map(|theme| {
-                                    format!("{} ({})", theme.name.clone(), theme.mode.clone())
-                                })
-                                .collect::<Vec<String>>()
-                                .join(", "),
-                        ),
-                ),
-        )
-        .when(!is_default, |div| {
-            let theme_name = theme.name.clone();
-            let theme_path = theme.path.clone();
-            let button_id: SharedString = format!("Delete_{}", theme_name.clone()).into();
-            div.child(
-                Button::new(button_id)
-                    .icon(CustomIcon::Close)
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, _window, cx| {
-                        if let Err(e) = fs::remove_file(&theme_path) {
-                            log::error!(
-                                "Failed to delete theme file {}: {}",
-                                theme_path.display(),
-                                e
-                            );
-                        } else {
-                            log::info!("Deleted theme file: {:?}", theme_path);
-                        }
-                        themes::reload_themes_and_update(&this.settings, cx.entity(), cx);
-                        cx.notify();
-                    })),
-            )
-        })
-}
-
 impl Fulgur {
-    // Make the editor settings section
-    // @param cx: The context
-    // @return: The editor settings section
-    fn make_editor_settings_section(&self, _window: &mut Window, cx: &mut Context<Self>) -> Div {
-        make_settings_section("Editor")
-            .child(make_dropdown_option(
-                "Font size",
-                "The size of the font in the editor",
-                &self.font_size_dropdown,
-                cx,
-            ))
-            .child(make_dropdown_option(
-                "Spaces for indentation",
-                "The number of spaces for indentation. Fulgur must be restarted to apply the changes.",
-                &self.tab_size_dropdown,
-                cx,
-            ))
-            .child(make_toggle_option(
-                "show_line_numbers",
-                "Show line numbers",
-                "Show the line numbers in the editor",
-                self.settings.editor_settings.show_line_numbers,
-                cx,
-                |this, checked, _cx| {
-                    this.settings.editor_settings.show_line_numbers = *checked;
-                },
-            ))
-            .child(make_toggle_option(
-                "show_indent_guides",
-                "Show indent guides",
-                "Show the vertical lines that indicate the indentation of the text",
-                self.settings.editor_settings.show_indent_guides,
-                cx,
-                |this, checked, _cx| {
-                    this.settings.editor_settings.show_indent_guides = *checked;
-                },
-            ))
-            .child(make_toggle_option(
-                "soft_wrap",
-                "Soft wrap",
-                "Wraps the text to the next line when the line is too long",    
-                self.settings.editor_settings.soft_wrap,
-                cx,
-                |this, checked, _cx| {
-                    this.settings.editor_settings.soft_wrap = *checked;
-                },
-            ))
-            .child(make_toggle_option(
-                "show_markdown_preview",
-                "Default show markdown preview",
-                "Show the markdown preview by default when opening a markdown file",    
-                self.settings.editor_settings.default_show_markdown_preview,
-                cx,
-                |this, checked, _cx| {
-                    println!("show_markdown_preview: {}", *checked);
-                    this.settings.editor_settings.default_show_markdown_preview = *checked;
-                },
-            ))
+    // Create the Editor settings page
+    // @param entity: The Fulgur entity
+    // @return: The Editor settings page
+    fn create_editor_page(entity: Entity<Self>) -> SettingPage {
+        let default_editor_settings = EditorSettings::new();
+        SettingPage::new("Editor").default_open(true).groups(vec![
+            SettingGroup::new().title("Font").items(vec![
+                SettingItem::new(
+                    "Font Size",
+                    SettingField::number_input(
+                        NumberFieldOptions {
+                            min: 8.0,
+                            max: 24.0,
+                            step: 2.0,
+                            ..Default::default()
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| {
+                                entity.read(cx).settings.editor_settings.font_size as f64
+                            }
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: f64, cx: &mut App| {
+                                entity.update(cx, |this, _cx| {
+                                    this.settings.editor_settings.font_size = val as f32;
+                                    this.settings_changed = true;
+                                    if let Err(e) = this.settings.save() {
+                                        log::error!("Failed to save settings: {}", e);
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_editor_settings.font_size as f64),
+                )
+                .description("Adjust the font size for the editor (8-24)."),
+            ]),
+            SettingGroup::new().title("Indentation").items(vec![
+                SettingItem::new(
+                    "Tab Size",
+                    SettingField::number_input(
+                        NumberFieldOptions {
+                            min: 2.0,
+                            max: 12.0,
+                            step: 2.0,
+                            ..Default::default()
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| entity.read(cx).settings.editor_settings.tab_size as f64
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: f64, cx: &mut App| {
+                                entity.update(cx, |this, _cx| {
+                                    this.settings.editor_settings.tab_size = val as usize;
+                                    this.settings_changed = true;
+                                    if let Err(e) = this.settings.save() {
+                                        log::error!("Failed to save settings: {}", e);
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_editor_settings.tab_size as f64),
+                )
+                .description("Number of spaces for indentation. Requires restart."),
+                SettingItem::new(
+                    "Show Indent Guides",
+                    SettingField::switch(
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| {
+                                entity.read(cx).settings.editor_settings.show_indent_guides
+                            }
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: bool, cx: &mut App| {
+                                entity.update(cx, |this, _cx| {
+                                    this.settings.editor_settings.show_indent_guides = val;
+                                    this.settings_changed = true;
+                                    if let Err(e) = this.settings.save() {
+                                        log::error!("Failed to save settings: {}", e);
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_editor_settings.show_indent_guides),
+                )
+                .description("Show vertical lines indicating indentation levels."),
+            ]),
+            SettingGroup::new().title("Display").items(vec![
+                SettingItem::new(
+                    "Show Line Numbers",
+                    SettingField::switch(
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| {
+                                entity.read(cx).settings.editor_settings.show_line_numbers
+                            }
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: bool, cx: &mut App| {
+                                entity.update(cx, |this, _cx| {
+                                    this.settings.editor_settings.show_line_numbers = val;
+                                    this.settings_changed = true;
+                                    if let Err(e) = this.settings.save() {
+                                        log::error!("Failed to save settings: {}", e);
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_editor_settings.show_line_numbers),
+                )
+                .description("Display line numbers in the editor gutter."),
+                SettingItem::new(
+                    "Soft Wrap",
+                    SettingField::switch(
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| entity.read(cx).settings.editor_settings.soft_wrap
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: bool, cx: &mut App| {
+                                entity.update(cx, |this, _cx| {
+                                    this.settings.editor_settings.soft_wrap = val;
+                                    this.settings_changed = true;
+                                    if let Err(e) = this.settings.save() {
+                                        log::error!("Failed to save settings: {}", e);
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_editor_settings.soft_wrap),
+                )
+                .description("Wrap long lines to the next line instead of scrolling."),
+            ]),
+            SettingGroup::new().title("Markdown").items(vec![
+                SettingItem::new(
+                    "Default Show Preview",
+                    SettingField::switch(
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| {
+                                entity
+                                    .read(cx)
+                                    .settings
+                                    .editor_settings
+                                    .default_show_markdown_preview
+                            }
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: bool, cx: &mut App| {
+                                entity.update(cx, |this, _cx| {
+                                    this.settings.editor_settings.default_show_markdown_preview =
+                                        val;
+                                    this.settings_changed = true;
+                                    if let Err(e) = this.settings.save() {
+                                        log::error!("Failed to save settings: {}", e);
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_editor_settings.default_show_markdown_preview),
+                )
+                .description("Show markdown preview by default when opening .md files."),
+            ]),
+        ])
     }
 
-    // Make the application settings section
-    // @param cx: The context
-    // @return: The application settings section
-    fn make_application_settings_section(&self, cx: &mut Context<Self>) -> Div {
-        make_settings_section("Application").child(make_toggle_option(
-            "confirm_exit",
-            "Confirm exit",
-            "Confirm before exiting the application",
-            self.settings.app_settings.confirm_exit,
-            cx,
-            |this, checked, _cx| {
-                this.settings.app_settings.confirm_exit = *checked;
-            },
-        ))
+    // Create the Application settings page
+    // @param entity: The Fulgur entity
+    // @return: The Application settings page
+    fn create_application_page(entity: Entity<Self>) -> SettingPage {
+        let default_app_settings = AppSettings::new();
+
+        SettingPage::new("Application").groups(vec![SettingGroup::new().title("General").items(
+            vec![
+                    SettingItem::new(
+                        "Confirm Exit",
+                        SettingField::switch(
+                            {
+                                let entity = entity.clone();
+                                move |cx: &App| entity.read(cx).settings.app_settings.confirm_exit
+                            },
+                            {
+                                let entity = entity.clone();
+                                move |val: bool, cx: &mut App| {
+                                    entity.update(cx, |this, _cx| {
+                                        this.settings.app_settings.confirm_exit = val;
+                                        if let Err(e) = this.settings.save() {
+                                            log::error!("Failed to save settings: {}", e);
+                                        }
+                                    });
+                                }
+                            },
+                        )
+                        .default_value(default_app_settings.confirm_exit),
+                    )
+                    .description("Show confirmation dialog before exiting the application."),
+                ],
+        )])
     }
 
-    // Make the themes section
-    // @param cx: The context
-    // @return: The themes section
-    fn make_themes_section(&self, cx: &mut Context<Self>) -> Div {
-        if self.themes.is_none() {
-            return div();
+    // Create the Themes settings page
+    // @param entity: The Fulgur entity
+    // @param themes: The themes to display
+    // @return: The Themes settings page
+    fn create_themes_page(entity: Entity<Self>, themes: &Themes) -> SettingPage {
+        let mut user_theme_items = Vec::new();
+        let mut default_theme_items = Vec::new();
+        for theme in &themes.user_themes {
+            let theme_name = theme.name.clone();
+            let theme_author = theme.author.clone();
+            let theme_path = theme.path.clone();
+            let themes_info = theme
+                .themes
+                .iter()
+                .map(|t| format!("{} ({})", t.name, t.mode))
+                .collect::<Vec<String>>()
+                .join(", ");
+            let button_id = format!("delete-theme-{}", theme_name);
+            let button_id_static: &'static str = Box::leak(button_id.into_boxed_str());
+            user_theme_items.push(SettingItem::render({
+                let entity = entity.clone();
+                move |_options, _window, cx| {
+                    let theme_path = theme_path.clone();
+                    let entity_clone = entity.clone();
+                    h_flex()
+                        .w_full()
+                        .justify_between()
+                        .gap_3()
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .font_semibold()
+                                        .child(format!("{} by {}", theme_name, theme_author)),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(themes_info.clone()),
+                                ),
+                        )
+                        .child(
+                            Button::new(button_id_static)
+                                .icon(CustomIcon::Close)
+                                .small()
+                                .cursor_pointer()
+                                .on_click(move |_, _window, cx| {
+                                    if let Err(e) = fs::remove_file(&theme_path) {
+                                        log::error!(
+                                            "Failed to delete theme file {}: {}",
+                                            theme_path.display(),
+                                            e
+                                        );
+                                    } else {
+                                        log::info!("Deleted theme file: {:?}", theme_path);
+                                    }
+                                    let entity_for_update = entity_clone.clone();
+                                    entity_clone.update(cx, |this, cx| {
+                                        themes::reload_themes_and_update(
+                                            &this.settings,
+                                            entity_for_update,
+                                            cx,
+                                        );
+                                    });
+                                }),
+                        )
+                        .into_any_element()
+                }
+            }));
         }
-        let themes = self.themes.as_ref().unwrap();
-        make_theme_section("Themes")
-            .children(
-                themes
-                    .user_themes
-                    .iter()
-                    .map(|theme| make_theme_option(theme, cx, false))
-                    .collect::<Vec<Div>>(),
-            )
-            .children(
-                themes
-                    .default_themes
-                    .iter()
-                    .map(|theme| make_theme_option(theme, cx, true))
-                    .collect::<Vec<Div>>(),
-            )
+        for theme in &themes.default_themes {
+            let theme_name = theme.name.clone();
+            let theme_author = theme.author.clone();
+            let themes_info = theme
+                .themes
+                .iter()
+                .map(|t| format!("{} ({})", t.name, t.mode))
+                .collect::<Vec<String>>()
+                .join(", ");
+            default_theme_items.push(SettingItem::render(move |_options, _window, cx| {
+                v_flex()
+                    .w_full()
+                    .gap_1()
+                    .child(
+                        div()
+                            .font_semibold()
+                            .child(format!("{} by {} (Default)", theme_name, theme_author)),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(themes_info.clone()),
+                    )
+                    .into_any_element()
+            }));
+        }
+        let mut groups = Vec::new();
+        if !user_theme_items.is_empty() {
+            groups.push(
+                SettingGroup::new()
+                    .title("User Themes")
+                    .items(user_theme_items),
+            );
+        }
+        if !default_theme_items.is_empty() {
+            groups.push(
+                SettingGroup::new()
+                    .title("Default Themes")
+                    .items(default_theme_items),
+            );
+        }
+        SettingPage::new("Themes").groups(groups)
+    }
+
+    // Create settings pages using the Settings component
+    // @param window: The window
+    // @param cx: The context
+    // @return: The settings pages
+    fn create_settings_pages(
+        &self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<SettingPage> {
+        let entity = cx.entity();
+        let mut pages = vec![
+            Self::create_editor_page(entity.clone()),
+            Self::create_application_page(entity.clone()),
+        ];
+        if let Some(ref themes) = self.themes {
+            pages.push(Self::create_themes_page(entity, themes));
+        }
+        pages
     }
 
     // Render the settings
@@ -682,24 +741,28 @@ impl Fulgur {
     // @param cx: The context
     // @return: The settings UI
     pub fn render_settings(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // let scroll_handle = window
-        //     .use_keyed_state("settings-scroll-handle", cx, |_, _| ScrollHandle::default())
-        //     .read(cx)
-        //     .clone();
-
-        div().id("settings-scroll-container").size_full().child(
-            v_flex()
-                .w(px(680.0))
-                .mx_auto()
-                .py_6()
-                .text_color(cx.theme().foreground)
-                .text_size(px(12.0))
-                .gap_6()
-                .child(div().text_2xl().font_semibold().px_3().child("Settings"))
-                .child(self.make_editor_settings_section(window, cx))
-                .child(self.make_application_settings_section(cx))
-                .child(self.make_themes_section(cx).mb_24()),
-        )
+        div()
+            .id("settings-scroll-container")
+            .size_full()
+            .overflow_x_scroll()
+            .child(
+                v_flex()
+                    .w(px(980.0))
+                    .h_full()
+                    .mx_auto()
+                    .py_6()
+                    .text_color(cx.theme().foreground)
+                    .text_size(px(12.0))
+                    .gap_6()
+                    .child(div().text_2xl().font_semibold().px_3().child("Settings"))
+                    .child(
+                        SettingsComponent::new("fulgur-settings")
+                            .with_size(Size::Medium)
+                            .with_group_variant(GroupBoxVariant::Outline)
+                            .pages(self.create_settings_pages(window, cx)),
+                    )
+                    .mb_24(),
+            )
     }
 
     // Clear the recent files
