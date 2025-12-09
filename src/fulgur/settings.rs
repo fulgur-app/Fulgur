@@ -7,7 +7,6 @@ use gpui_component::{
     group_box::GroupBoxVariant,
     h_flex,
     scroll::ScrollbarShow,
-    select::{SelectEvent, SelectState},
     setting::{
         NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage,
         Settings as SettingsComponent,
@@ -18,7 +17,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::fulgur::{
     Fulgur,
-    components_utils::create_select_state,
     icons::CustomIcon,
     menus::build_menus,
     themes::{self, BundledThemes, themes_directory_path},
@@ -282,106 +280,6 @@ impl SettingsTab {
             title: SharedString::from("Settings"),
         }
     }
-}
-
-// Create the font size dropdown state
-// @param settings: The current settings
-// @param window: The window
-// @param cx: The app context
-// @return: The dropdown state entity
-pub fn create_font_size_dropdown(
-    settings: &Settings,
-    window: &mut Window,
-    cx: &mut App,
-) -> Entity<SelectState<Vec<SharedString>>> {
-    let font_sizes: Vec<SharedString> = vec![
-        "8".into(),
-        "10".into(),
-        "12".into(),
-        "14".into(),
-        "16".into(),
-        "18".into(),
-        "20".into(),
-    ];
-    let current_font_size = settings.editor_settings.font_size.to_string();
-    create_select_state(window, current_font_size, font_sizes, cx)
-}
-
-// Subscribe to font size dropdown changes
-// @param select: The select state entity
-// @param cx: The context
-// @return: The subscription
-pub fn subscribe_to_font_size_changes(
-    select: &Entity<SelectState<Vec<SharedString>>>,
-    cx: &mut Context<Fulgur>,
-) -> Subscription {
-    cx.subscribe(
-        select,
-        |this: &mut Fulgur,
-         _select: Entity<SelectState<Vec<SharedString>>>,
-         event: &SelectEvent<Vec<SharedString>>,
-         cx: &mut Context<Fulgur>| {
-            if let SelectEvent::Confirm(Some(selected)) = event {
-                if let Ok(size) = selected.parse::<f32>() {
-                    this.settings.editor_settings.font_size = size;
-                    if let Err(e) = this.settings.save() {
-                        log::error!("Failed to save settings: {}", e);
-                    }
-                    cx.notify();
-                }
-            }
-        },
-    )
-}
-
-// Create the tab size dropdown state
-// @param settings: The current settings
-// @param window: The window
-// @param cx: The app context
-// @return: The dropdown state entity
-pub fn create_tab_size_dropdown(
-    settings: &Settings,
-    window: &mut Window,
-    cx: &mut App,
-) -> Entity<SelectState<Vec<SharedString>>> {
-    let tab_sizes: Vec<SharedString> = vec![
-        "2".into(),
-        "4".into(),
-        "6".into(),
-        "8".into(),
-        "10".into(),
-        "12".into(),
-        "42".into(),
-    ];
-    let current_tab_size = settings.editor_settings.tab_size.to_string();
-    create_select_state(window, current_tab_size, tab_sizes, cx)
-}
-
-// Subscribe to font size dropdown changes
-// @param select: The select state entity
-// @param cx: The context
-// @return: The subscription
-pub fn subscribe_to_tab_size_changes(
-    select: &Entity<SelectState<Vec<SharedString>>>,
-    cx: &mut Context<Fulgur>,
-) -> Subscription {
-    cx.subscribe(
-        &select,
-        |this: &mut Fulgur,
-         _select: Entity<SelectState<Vec<SharedString>>>,
-         event: &SelectEvent<Vec<SharedString>>,
-         cx: &mut Context<Fulgur>| {
-            if let SelectEvent::Confirm(Some(selected)) = event {
-                if let Ok(size) = selected.parse::<f32>() {
-                    this.settings.editor_settings.tab_size = size as usize;
-                    if let Err(e) = this.settings.save() {
-                        log::error!("Failed to save settings: {}", e);
-                    }
-                    cx.notify();
-                }
-            }
-        },
-    )
 }
 
 impl Fulgur {
@@ -750,18 +648,18 @@ impl Fulgur {
                     .w(px(980.0))
                     .h_full()
                     .mx_auto()
-                    .py_6()
                     .text_color(cx.theme().foreground)
                     .text_size(px(12.0))
                     .gap_6()
-                    .child(div().text_2xl().font_semibold().px_3().child("Settings"))
+                    .border_r_1()
+                    .border_color(cx.theme().border)
+                    //.child(div().text_2xl().font_semibold().px_3().child("Settings"))
                     .child(
                         SettingsComponent::new("fulgur-settings")
                             .with_size(Size::Medium)
                             .with_group_variant(GroupBoxVariant::Outline)
                             .pages(self.create_settings_pages(window, cx)),
-                    )
-                    .mb_24(),
+                    ),
             )
     }
 

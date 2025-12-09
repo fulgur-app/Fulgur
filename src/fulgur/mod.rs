@@ -4,6 +4,7 @@ mod file_operations;
 mod icons;
 mod languages;
 pub mod logger;
+mod markdown_toolbar;
 mod menus;
 mod search_bar;
 mod search_replace;
@@ -57,10 +58,6 @@ pub struct Fulgur {
     pending_jump: Option<editor_tab::Jump>,
     jump_to_line_dialog_open: bool,
     pub settings: Settings,
-    pub font_size_dropdown: Entity<SelectState<Vec<SharedString>>>,
-    _font_size_subscription: gpui::Subscription,
-    pub tab_size_dropdown: Entity<SelectState<Vec<SharedString>>>,
-    _tab_size_subscription: gpui::Subscription,
     pub language_dropdown: Entity<SelectState<Vec<SharedString>>>,
     settings_changed: bool,
     pub themes: Option<Themes>,
@@ -68,6 +65,7 @@ pub struct Fulgur {
     tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
     pub pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>, // Files from macOS "Open with" events
     pub show_markdown_preview: bool,
+    pub show_markdown_toolbar: bool,
 }
 
 impl Fulgur {
@@ -90,8 +88,6 @@ impl Fulgur {
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
         let jump_to_line_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
-        let font_size_dropdown = settings::create_font_size_dropdown(&settings, window, cx);
-        let tab_size_dropdown = settings::create_tab_size_dropdown(&settings, window, cx);
         let language_dropdown =
             languages::create_all_languages_select_state("Plain".into(), window, cx);
         let themes = match Themes::load() {
@@ -114,10 +110,6 @@ impl Fulgur {
                     _ => {}
                 },
             );
-            let _font_size_subscription =
-                settings::subscribe_to_font_size_changes(&font_size_dropdown, cx);
-            let _tab_size_subscription =
-                settings::subscribe_to_tab_size_changes(&tab_size_dropdown, cx);
             let entity = Self {
                 focus_handle: cx.focus_handle(),
                 title_bar,
@@ -137,10 +129,6 @@ impl Fulgur {
                 pending_jump: None,
                 jump_to_line_dialog_open: false,
                 settings,
-                font_size_dropdown,
-                _font_size_subscription,
-                tab_size_dropdown,
-                _tab_size_subscription,
                 language_dropdown,
                 settings_changed: false,
                 rendered_tabs: std::collections::HashSet::new(),
@@ -148,6 +136,7 @@ impl Fulgur {
                 pending_files_from_macos,
                 themes,
                 show_markdown_preview,
+                show_markdown_toolbar: false,
             };
             entity
         });
@@ -402,6 +391,7 @@ impl Render for Fulgur {
         app_content = app_content
             .child(self.render_tab_bar(window, cx))
             .child(self.render_content_area(active_tab, window, cx))
+            .children(self.render_markdown_bar(window, cx))
             .children(self.render_search_bar(window, cx));
         if let Some(index) = self.active_tab_index {
             if let Some(Tab::Editor(_)) = self.tabs.get(index) {

@@ -18,6 +18,10 @@ pub const TAB_BAR_BUTTON_SIZE: Pixels = TAB_BAR_HEIGHT;
 pub const SEARCH_BAR_HEIGHT: Pixels = px(40.0);
 // The size of the search bar button
 pub const SEARCH_BAR_BUTTON_SIZE: Pixels = SEARCH_BAR_HEIGHT;
+// The height of the markdown bar
+pub const MARKDOWN_BAR_HEIGHT: Pixels = px(34.0);
+// The size of the markdown bar button
+pub const MARKDOWN_BAR_BUTTON_SIZE: Pixels = MARKDOWN_BAR_HEIGHT;
 // The size of the corners of the button
 pub const CORNERS_SIZE: Corners<Pixels> = Corners {
     top_left: px(0.0),
