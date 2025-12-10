@@ -212,7 +212,9 @@ impl Fulgur {
                     this.set_language(window, cx, language_shared.clone());
                 }),
             );
-        let preview_button_content = if self.show_markdown_preview {
+        let active_editor_tab = self.get_active_editor_tab();
+        let preview_button_content = if active_editor_tab.unwrap().show_markdown_preview {
+            //TODO: Handle the case where there is no active editor tab even if it shouldn't happen
             "Hide Preview".to_string()
         } else {
             "Show Preview".to_string()
@@ -226,6 +228,25 @@ impl Fulgur {
                         if let Some(active_editor_tab) = active_editor_tab {
                             active_editor_tab.show_markdown_preview =
                                 !active_editor_tab.show_markdown_preview;
+                        }
+                        cx.notify();
+                    }),
+                );
+        let toolbar_button_content = if active_editor_tab.unwrap().show_markdown_toolbar {
+            //TODO: Handle the case where there is no active editor tab even if it shouldn't happen
+            "Hide Toolbar".to_string()
+        } else {
+            "Show Toolbar".to_string()
+        };
+        let toolbar_button =
+            status_bar_button_factory(toolbar_button_content, cx.theme().border, cx.theme().muted)
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                        let active_editor_tab = this.get_active_editor_tab_mut();
+                        if let Some(active_editor_tab) = active_editor_tab {
+                            active_editor_tab.show_markdown_toolbar =
+                                !active_editor_tab.show_markdown_toolbar;
                         }
                         cx.notify();
                     }),
@@ -244,7 +265,8 @@ impl Fulgur {
                     .flex()
                     .justify_start()
                     .child(language_button)
-                    .when(is_markdown, |this| this.child(preview_button)),
+                    .when(is_markdown, |this| this.child(preview_button))
+                    .when(is_markdown, |this| this.child(toolbar_button)),
             )
             .child(
                 div()

@@ -64,8 +64,6 @@ pub struct Fulgur {
     rendered_tabs: std::collections::HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
     pub pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>, // Files from macOS "Open with" events
-    pub show_markdown_preview: bool,
-    pub show_markdown_toolbar: bool,
 }
 
 impl Fulgur {
@@ -97,14 +95,6 @@ impl Fulgur {
                 None
             }
         };
-        let show_markdown_preview = settings
-            .editor_settings
-            .markdown_settings
-            .show_markdown_preview;
-        let show_markdown_toolbar = settings
-            .editor_settings
-            .markdown_settings
-            .show_markdown_toolbar;
         let entity = cx.new(|cx| {
             let _search_subscription = cx.subscribe(
                 &search_input,
@@ -142,8 +132,6 @@ impl Fulgur {
                 tabs_pending_update: std::collections::HashSet::new(),
                 pending_files_from_macos,
                 themes,
-                show_markdown_preview,
-                show_markdown_toolbar,
             };
             entity
         });
