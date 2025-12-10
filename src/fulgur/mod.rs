@@ -443,7 +443,8 @@ impl Fulgur {
                         .font_family("Monaco")
                         .text_size(px(self.settings.editor_settings.font_size))
                         .focus_bordered(false);
-                    if editor_tab.language == Language::Markdown && self.show_markdown_preview {
+                    if editor_tab.language == Language::Markdown && editor_tab.show_markdown_preview
+                    {
                         return v_flex()
                             .w_full()
                             .flex_1()

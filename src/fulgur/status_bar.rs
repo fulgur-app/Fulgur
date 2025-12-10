@@ -222,20 +222,15 @@ impl Fulgur {
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
-                        this.show_markdown_preview = !this.show_markdown_preview;
+                        let active_editor_tab = this.get_active_editor_tab_mut();
+                        if let Some(active_editor_tab) = active_editor_tab {
+                            active_editor_tab.show_markdown_preview =
+                                !active_editor_tab.show_markdown_preview;
+                        }
                         cx.notify();
                     }),
                 );
-        let current_tab_language = match self.active_tab_index {
-            Some(index) => {
-                if let Some(editor_tab) = self.tabs[index].as_editor() {
-                    editor_tab.language
-                } else {
-                    Language::Plain
-                }
-            }
-            None => Language::Plain,
-        };
+        let is_markdown = self.is_markdown();
         h_flex()
             .justify_between()
             .bg(cx.theme().tab_bar)
@@ -249,9 +244,7 @@ impl Fulgur {
                     .flex()
                     .justify_start()
                     .child(language_button)
-                    .when(current_tab_language == Language::Markdown, |this| {
-                        this.child(preview_button)
-                    }),
+                    .when(is_markdown, |this| this.child(preview_button)),
             )
             .child(
                 div()

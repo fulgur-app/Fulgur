@@ -19,6 +19,8 @@ pub struct EditorTab {
     pub original_content: String,
     pub encoding: String,
     pub language: Language,
+    pub show_markdown_toolbar: bool,
+    pub show_markdown_preview: bool,
 }
 
 // Create a new input state with syntax highlighting
@@ -73,6 +75,8 @@ impl EditorTab {
             original_content: String::new(),
             encoding: UTF_8.to_string(),
             language,
+            show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
+            show_markdown_preview: settings.markdown_settings.show_markdown_preview,
         }
     }
 
@@ -115,6 +119,8 @@ impl EditorTab {
             original_content: contents,
             encoding,
             language,
+            show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
+            show_markdown_preview: settings.markdown_settings.show_markdown_preview,
         }
     }
 

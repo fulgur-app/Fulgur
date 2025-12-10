@@ -63,7 +63,11 @@ impl Fulgur {
         if !self.is_markdown() {
             return None;
         }
-        if !self.show_markdown_toolbar {
+        let current_tab = match self.get_active_editor_tab() {
+            Some(tab) => tab,
+            None => return None,
+        };
+        if !current_tab.show_markdown_toolbar {
             return None;
         }
         Some(

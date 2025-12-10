@@ -1,5 +1,7 @@
 use gpui::*;
 
+use crate::fulgur::Fulgur;
+
 use super::editor_tab::EditorTab;
 use super::settings::SettingsTab;
 
@@ -54,5 +56,33 @@ impl Tab {
             Tab::Editor(tab) => Some(tab),
             _ => None,
         }
+    }
+}
+
+impl Fulgur {
+    // Get the active editor tab
+    // @return: The active editor tab
+    pub fn get_active_editor_tab(&self) -> Option<&EditorTab> {
+        if let Some(index) = self.active_tab_index {
+            if let Some(tab) = self.tabs.get(index) {
+                if let Some(editor_tab) = tab.as_editor() {
+                    return Some(editor_tab);
+                }
+            }
+        }
+        None
+    }
+
+    // Get the active editor tab as mutable
+    // @return: The active editor tab as mutable
+    pub fn get_active_editor_tab_mut(&mut self) -> Option<&mut EditorTab> {
+        if let Some(index) = self.active_tab_index {
+            if let Some(tab) = self.tabs.get_mut(index) {
+                if let Some(editor_tab) = tab.as_editor_mut() {
+                    return Some(editor_tab);
+                }
+            }
+        }
+        None
     }
 }

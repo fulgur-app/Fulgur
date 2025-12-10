@@ -222,6 +222,16 @@ impl Fulgur {
                 original_content: String::new(),
                 encoding: "UTF-8".to_string(),
                 language: Language::Plain,
+                show_markdown_toolbar: self
+                    .settings
+                    .editor_settings
+                    .markdown_settings
+                    .show_markdown_toolbar,
+                show_markdown_preview: self
+                    .settings
+                    .editor_settings
+                    .markdown_settings
+                    .show_markdown_preview,
             }
         };
 
