@@ -97,8 +97,14 @@ impl Fulgur {
                 None
             }
         };
-        let show_markdown_preview = settings.editor_settings.default_show_markdown_preview;
-        let show_markdown_toolbar = settings.editor_settings.default_show_markdown_toolbar;
+        let show_markdown_preview = settings
+            .editor_settings
+            .markdown_settings
+            .show_markdown_preview;
+        let show_markdown_toolbar = settings
+            .editor_settings
+            .markdown_settings
+            .show_markdown_toolbar;
         let entity = cx.new(|cx| {
             let _search_subscription = cx.subscribe(
                 &search_input,

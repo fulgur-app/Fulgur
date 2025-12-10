@@ -60,6 +60,9 @@ impl Fulgur {
     // @param cx: The application context
     // @return: The rendered markdown bar element
     pub fn render_markdown_bar(&self, _window: &mut Window, cx: &mut Context<Self>) -> Option<Div> {
+        if !self.is_markdown() {
+            return None;
+        }
         if !self.show_markdown_toolbar {
             return None;
         }

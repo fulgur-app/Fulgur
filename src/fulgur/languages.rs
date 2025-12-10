@@ -1,7 +1,7 @@
 use gpui::*;
 use gpui_component::{highlighter::Language, select::SelectState};
 
-use crate::fulgur::components_utils::create_select_state;
+use crate::fulgur::{Fulgur, components_utils::create_select_state};
 
 // Initialize the language registry with all supported languages
 pub fn init_languages() {}
@@ -103,4 +103,29 @@ fn all_languages() -> Vec<SharedString> {
         .collect::<Vec<SharedString>>();
     languages.sort();
     languages
+}
+
+impl Fulgur {
+    // Get the current language of the active tab
+    // @return: The current language
+    pub fn get_current_language(&self) -> Language {
+        let current_tab_language = match self.active_tab_index {
+            Some(index) => {
+                if let Some(editor_tab) = self.tabs[index].as_editor() {
+                    editor_tab.language
+                } else {
+                    Language::Plain
+                }
+            }
+            None => Language::Plain,
+        };
+        current_tab_language
+    }
+
+    // Check if the current active tab's language is a Markdown language
+    // @return: True if the current active tab's language is a Markdown language
+    pub fn is_markdown(&self) -> bool {
+        let current_language = self.get_current_language();
+        current_language == Language::Markdown || current_language == Language::MarkdownInline
+    }
 }

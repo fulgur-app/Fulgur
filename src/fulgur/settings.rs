@@ -23,14 +23,28 @@ use crate::fulgur::{
 };
 
 #[derive(Clone, Serialize, Deserialize)]
+pub struct MarkdownSettings {
+    pub show_markdown_preview: bool,
+    pub show_markdown_toolbar: bool,
+}
+
+impl MarkdownSettings {
+    pub fn new() -> Self {
+        Self {
+            show_markdown_preview: true,
+            show_markdown_toolbar: false,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EditorSettings {
     pub show_line_numbers: bool,
     pub show_indent_guides: bool,
     pub soft_wrap: bool,
     pub font_size: f32,
     pub tab_size: usize,
-    pub default_show_markdown_preview: bool,
-    pub default_show_markdown_toolbar: bool,
+    pub markdown_settings: MarkdownSettings,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -49,8 +63,7 @@ impl EditorSettings {
             soft_wrap: false,
             font_size: 14.0,
             tab_size: 4,
-            default_show_markdown_preview: true,
-            default_show_markdown_toolbar: false,
+            markdown_settings: MarkdownSettings::new(),
         }
     }
 }
@@ -441,15 +454,18 @@ impl Fulgur {
                                     .read(cx)
                                     .settings
                                     .editor_settings
-                                    .default_show_markdown_preview
+                                    .markdown_settings
+                                    .show_markdown_preview
                             }
                         },
                         {
                             let entity = entity.clone();
                             move |val: bool, cx: &mut App| {
                                 entity.update(cx, |this, _cx| {
-                                    this.settings.editor_settings.default_show_markdown_preview =
-                                        val;
+                                    this.settings
+                                        .editor_settings
+                                        .markdown_settings
+                                        .show_markdown_preview = val;
                                     this.settings_changed = true;
                                     if let Err(e) = this.settings.save() {
                                         log::error!("Failed to save settings: {}", e);
@@ -458,9 +474,50 @@ impl Fulgur {
                             }
                         },
                     )
-                    .default_value(default_editor_settings.default_show_markdown_preview),
+                    .default_value(
+                        default_editor_settings
+                            .markdown_settings
+                            .show_markdown_preview,
+                    ),
                 )
-                .description("Show markdown preview by default when opening .md files."),
+                .description("Show preview when opening Markdown files."),
+                SettingItem::new(
+                    "Show Toolbar by default",
+                    SettingField::switch(
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| {
+                                entity
+                                    .read(cx)
+                                    .settings
+                                    .editor_settings
+                                    .markdown_settings
+                                    .show_markdown_toolbar
+                            }
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: bool, cx: &mut App| {
+                                entity.update(cx, |this, _cx| {
+                                    this.settings
+                                        .editor_settings
+                                        .markdown_settings
+                                        .show_markdown_toolbar = val;
+                                    this.settings_changed = true;
+                                    if let Err(e) = this.settings.save() {
+                                        log::error!("Failed to save settings: {}", e);
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .default_value(
+                        default_editor_settings
+                            .markdown_settings
+                            .show_markdown_toolbar,
+                    ),
+                )
+                .description("Show toolbar by default when opening Markdown files."),
             ]),
         ])
     }
@@ -652,7 +709,6 @@ impl Fulgur {
                     .mx_auto()
                     .text_color(cx.theme().foreground)
                     .text_size(px(12.0))
-                    .gap_6()
                     .border_r_1()
                     .border_color(cx.theme().border)
                     //.child(div().text_2xl().font_semibold().px_3().child("Settings"))
