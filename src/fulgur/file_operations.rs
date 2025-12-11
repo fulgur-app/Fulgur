@@ -167,7 +167,37 @@ impl Fulgur {
         cx.spawn_in(window, async move |view, window| {
             let paths = path_future.await.ok()?.ok()??;
             let path = paths.first()?.clone();
-            Self::open_file_from_path(view, window, path).await
+
+            // Check if tab already exists for this path
+            let should_open_new = window
+                .update(|window, cx| {
+                    view.update(cx, |this, cx| {
+                        if let Some(tab_index) = this.find_tab_by_path(&path) {
+                            log::debug!("Tab already exists for {:?} at index {}, focusing and reloading", path, tab_index);
+                            if let Some(Tab::Editor(editor_tab)) = this.tabs.get(tab_index) {
+                                if editor_tab.modified {
+                                    log::debug!("Tab is modified, reloading content from disk");
+                                    this.reload_tab_from_disk(tab_index, window, cx);
+                                } else {
+                                    log::debug!("Tab is not modified, just focusing it");
+                                }
+                            }
+                            this.active_tab_index = Some(tab_index);
+                            this.focus_active_tab(window, cx);
+                            cx.notify();
+                            false // Don't open new tab
+                        } else {
+                            true // Open new tab
+                        }
+                    }).ok()
+                })
+                .ok()??;
+
+            if should_open_new {
+                Self::open_file_from_path(view, window, path).await
+            } else {
+                Some(())
+            }
         })
         .detach();
     }
@@ -182,6 +212,24 @@ impl Fulgur {
         cx: &mut Context<Self>,
         path: PathBuf,
     ) {
+        // Check if tab already exists for this path
+        if let Some(tab_index) = self.find_tab_by_path(&path) {
+            log::debug!("Tab already exists for {:?} at index {}, focusing and reloading", path, tab_index);
+            if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
+                if editor_tab.modified {
+                    log::debug!("Tab is modified, reloading content from disk");
+                    self.reload_tab_from_disk(tab_index, window, cx);
+                } else {
+                    log::debug!("Tab is not modified, just focusing it");
+                }
+            }
+            self.active_tab_index = Some(tab_index);
+            self.focus_active_tab(window, cx);
+            cx.notify();
+            return;
+        }
+
+        // No existing tab, open new one
         cx.spawn_in(window, async move |view, window| {
             Self::open_file_from_path(view, window, path).await
         })
