@@ -45,6 +45,19 @@ pub fn status_bar_right_item_factory(content: String, border_color: Hsla) -> imp
     status_bar_item_factory(content, border_color) //.border_l_1()
 }
 
+pub fn status_bar_toggle_button_factory(
+    content: String,
+    border_color: Hsla,
+    accent_color: Hsla,
+    checked: bool,
+) -> Div {
+    let mut button = status_bar_button_factory(content, border_color, accent_color);
+    if checked {
+        button = button.bg(accent_color);
+    }
+    button
+}
+
 // Create a status bar left item
 // @param content: The content of the status bar left item
 // @param border_color: The color of the border
@@ -213,44 +226,42 @@ impl Fulgur {
                 }),
             );
         let active_editor_tab = self.get_active_editor_tab();
-        let preview_button_content = if active_editor_tab.unwrap().show_markdown_preview {
-            //TODO: Handle the case where there is no active editor tab even if it shouldn't happen
-            "Hide Preview".to_string()
-        } else {
-            "Show Preview".to_string()
-        };
-        let preview_button =
-            status_bar_button_factory(preview_button_content, cx.theme().border, cx.theme().muted)
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
-                        let active_editor_tab = this.get_active_editor_tab_mut();
-                        if let Some(active_editor_tab) = active_editor_tab {
-                            active_editor_tab.show_markdown_preview =
-                                !active_editor_tab.show_markdown_preview;
-                        }
-                        cx.notify();
-                    }),
-                );
-        let toolbar_button_content = if active_editor_tab.unwrap().show_markdown_toolbar {
-            //TODO: Handle the case where there is no active editor tab even if it shouldn't happen
-            "Hide Toolbar".to_string()
-        } else {
-            "Show Toolbar".to_string()
-        };
-        let toolbar_button =
-            status_bar_button_factory(toolbar_button_content, cx.theme().border, cx.theme().muted)
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
-                        let active_editor_tab = this.get_active_editor_tab_mut();
-                        if let Some(active_editor_tab) = active_editor_tab {
-                            active_editor_tab.show_markdown_toolbar =
-                                !active_editor_tab.show_markdown_toolbar;
-                        }
-                        cx.notify();
-                    }),
-                );
+        let show_markdown_preview = active_editor_tab.unwrap().show_markdown_preview; //TODO: Handle the case where there is no active editor tab even if it shouldn't happen
+        let preview_button = status_bar_toggle_button_factory(
+            "Preview".to_string(),
+            cx.theme().border,
+            cx.theme().muted,
+            show_markdown_preview,
+        )
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                let active_editor_tab = this.get_active_editor_tab_mut();
+                if let Some(active_editor_tab) = active_editor_tab {
+                    active_editor_tab.show_markdown_preview =
+                        !active_editor_tab.show_markdown_preview;
+                }
+                cx.notify();
+            }),
+        );
+        let show_markdown_toolbar = active_editor_tab.unwrap().show_markdown_toolbar; //TODO: Handle the case where there is no active editor tab even if it shouldn't happen
+        let toolbar_button = status_bar_toggle_button_factory(
+            "Toolbar".to_string(),
+            cx.theme().border,
+            cx.theme().muted,
+            show_markdown_toolbar,
+        )
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                let active_editor_tab = this.get_active_editor_tab_mut();
+                if let Some(active_editor_tab) = active_editor_tab {
+                    active_editor_tab.show_markdown_toolbar =
+                        !active_editor_tab.show_markdown_toolbar;
+                }
+                cx.notify();
+            }),
+        );
         let is_markdown = self.is_markdown();
         h_flex()
             .justify_between()
