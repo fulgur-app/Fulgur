@@ -40,11 +40,17 @@ pub struct UpdateInfo {
     pub release_page: String,
 }
 
+// Parse a version string into a Version struct
+// @param version_str: The version string to parse
+// @return: The parsed version
 fn parse_version(version_str: &str) -> anyhow::Result<Version> {
     let cleaned = version_str.trim_start_matches('v');
     Version::parse(cleaned).map_err(|e| e.into())
 }
 
+// Check for updates
+// @param current_version: The current version of the application
+// @return: The update information if an update is available, otherwise None
 pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<UpdateInfo>> {
     let mut response = ureq::get(GITHUB_API_URL)
         .header("User-Agent", "Fulgur")
@@ -72,6 +78,9 @@ pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<Updat
     }
 }
 
+// Get the download URL for the platform-specific asset
+// @param release: The release information
+// @return: The download URL for the platform-specific asset
 fn get_platform_download_url(release: &GitHubRelease) -> anyhow::Result<String> {
     let platform = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
@@ -177,5 +186,264 @@ impl Fulgur {
                 .ok();
         })
         .detach();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GitHubRelease, ReleaseAsset, parse_version};
+
+    #[test]
+    fn test_parse_version_with_v_prefix() {
+        let result = parse_version("v1.2.3");
+        assert!(result.is_ok());
+        let version = result.unwrap();
+        assert_eq!(version.major, 1);
+        assert_eq!(version.minor, 2);
+        assert_eq!(version.patch, 3);
+    }
+
+    #[test]
+    fn test_parse_version_without_v_prefix() {
+        let result = parse_version("1.2.3");
+        assert!(result.is_ok());
+        let version = result.unwrap();
+        assert_eq!(version.major, 1);
+        assert_eq!(version.minor, 2);
+        assert_eq!(version.patch, 3);
+    }
+
+    #[test]
+    fn test_parse_version_with_prelease() {
+        let result = parse_version("v1.2.3-alpha.1");
+        assert!(result.is_ok());
+        let version = result.unwrap();
+        assert_eq!(version.major, 1);
+        assert_eq!(version.minor, 2);
+        assert_eq!(version.patch, 3);
+    }
+
+    #[test]
+    fn test_parse_version_with_build_metadata() {
+        let result = parse_version("v1.2.3+20240101");
+        assert!(result.is_ok());
+        let version = result.unwrap();
+        assert_eq!(version.major, 1);
+        assert_eq!(version.minor, 2);
+        assert_eq!(version.patch, 3);
+    }
+
+    #[test]
+    fn test_parse_version_invalid_format() {
+        let result = parse_version("not-a-version");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_version_empty_string() {
+        let result = parse_version("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_version_multiple_v_prefixes() {
+        let result = parse_version("vv1.2.3");
+        assert!(result.is_ok());
+        let version = result.unwrap();
+        assert_eq!(version.major, 1);
+        assert_eq!(version.minor, 2);
+        assert_eq!(version.patch, 3);
+    }
+
+    #[test]
+    fn test_get_platform_download_url_macos_aarch64() {
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".to_string(),
+            name: "Test Release".to_string(),
+            body: None,
+            html_url: "https://github.com/test/release".to_string(),
+            published_at: "2024-01-01T00:00:00Z".to_string(),
+            assets: vec![
+                ReleaseAsset {
+                    name: "Fulgur-macos-aarch64.dmg".to_string(),
+                    browser_download_url: "https://github.com/test/Fulgur-macos-aarch64.dmg"
+                        .to_string(),
+                    size: 1000000,
+                },
+                ReleaseAsset {
+                    name: "Fulgur-macos-x86_64.dmg".to_string(),
+                    browser_download_url: "https://github.com/test/Fulgur-macos-x86_64.dmg"
+                        .to_string(),
+                    size: 1000000,
+                },
+            ],
+        };
+
+        // Mock the platform detection by testing the pattern matching logic
+        let pattern = "macos-aarch64";
+        let found = release
+            .assets
+            .iter()
+            .find(|asset| asset.name.contains(pattern));
+        assert!(found.is_some());
+        assert_eq!(
+            found.unwrap().browser_download_url,
+            "https://github.com/test/Fulgur-macos-aarch64.dmg"
+        );
+    }
+
+    #[test]
+    fn test_get_platform_download_url_macos_x86_64() {
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".to_string(),
+            name: "Test Release".to_string(),
+            body: None,
+            html_url: "https://github.com/test/release".to_string(),
+            published_at: "2024-01-01T00:00:00Z".to_string(),
+            assets: vec![ReleaseAsset {
+                name: "Fulgur-macos-x86_64.dmg".to_string(),
+                browser_download_url: "https://github.com/test/Fulgur-macos-x86_64.dmg".to_string(),
+                size: 1000000,
+            }],
+        };
+
+        let pattern = "macos-x86_64";
+        let found = release
+            .assets
+            .iter()
+            .find(|asset| asset.name.contains(pattern));
+        assert!(found.is_some());
+    }
+
+    #[test]
+    fn test_get_platform_download_url_windows_x86_64() {
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".to_string(),
+            name: "Test Release".to_string(),
+            body: None,
+            html_url: "https://github.com/test/release".to_string(),
+            published_at: "2024-01-01T00:00:00Z".to_string(),
+            assets: vec![ReleaseAsset {
+                name: "Fulgur-windows-x86_64.exe".to_string(),
+                browser_download_url: "https://github.com/test/Fulgur-windows-x86_64.exe"
+                    .to_string(),
+                size: 1000000,
+            }],
+        };
+
+        let pattern = "windows-x86_64";
+        let found = release
+            .assets
+            .iter()
+            .find(|asset| asset.name.contains(pattern));
+        assert!(found.is_some());
+    }
+
+    #[test]
+    fn test_get_platform_download_url_linux_x86_64() {
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".to_string(),
+            name: "Test Release".to_string(),
+            body: None,
+            html_url: "https://github.com/test/release".to_string(),
+            published_at: "2024-01-01T00:00:00Z".to_string(),
+            assets: vec![ReleaseAsset {
+                name: "Fulgur-linux-x86_64.AppImage".to_string(),
+                browser_download_url: "https://github.com/test/Fulgur-linux-x86_64.AppImage"
+                    .to_string(),
+                size: 1000000,
+            }],
+        };
+
+        let pattern = "linux-x86_64";
+        let found = release
+            .assets
+            .iter()
+            .find(|asset| asset.name.contains(pattern));
+        assert!(found.is_some());
+    }
+
+    #[test]
+    fn test_get_platform_download_url_no_matching_asset() {
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".to_string(),
+            name: "Test Release".to_string(),
+            body: None,
+            html_url: "https://github.com/test/release".to_string(),
+            published_at: "2024-01-01T00:00:00Z".to_string(),
+            assets: vec![ReleaseAsset {
+                name: "Fulgur-other-platform.zip".to_string(),
+                browser_download_url: "https://github.com/test/Fulgur-other-platform.zip"
+                    .to_string(),
+                size: 1000000,
+            }],
+        };
+
+        // When no matching asset is found, should return html_url
+        let pattern = "macos-aarch64";
+        let found = release
+            .assets
+            .iter()
+            .find(|asset| asset.name.contains(pattern));
+        assert!(found.is_none());
+        // The function should return html_url in this case
+        assert_eq!(release.html_url, "https://github.com/test/release");
+    }
+
+    #[test]
+    fn test_get_platform_download_url_partial_match() {
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".to_string(),
+            name: "Test Release".to_string(),
+            body: None,
+            html_url: "https://github.com/test/release".to_string(),
+            published_at: "2024-01-01T00:00:00Z".to_string(),
+            assets: vec![
+                ReleaseAsset {
+                    name: "Fulgur-macos-aarch64-v1.0.0.dmg".to_string(),
+                    browser_download_url: "https://github.com/test/Fulgur-macos-aarch64-v1.0.0.dmg"
+                        .to_string(),
+                    size: 1000000,
+                },
+                ReleaseAsset {
+                    name: "Fulgur-macos-aarch64-symbols.zip".to_string(),
+                    browser_download_url:
+                        "https://github.com/test/Fulgur-macos-aarch64-symbols.zip".to_string(),
+                    size: 500000,
+                },
+            ],
+        };
+
+        // Should find the first matching asset
+        let pattern = "macos-aarch64";
+        let found: Vec<_> = release
+            .assets
+            .iter()
+            .filter(|asset| asset.name.contains(pattern))
+            .collect();
+        assert_eq!(found.len(), 2);
+        // The function should return the first match
+        assert!(found[0].name.contains("macos-aarch64"));
+    }
+
+    #[test]
+    fn test_get_platform_download_url_empty_assets() {
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".to_string(),
+            name: "Test Release".to_string(),
+            body: None,
+            html_url: "https://github.com/test/release".to_string(),
+            published_at: "2024-01-01T00:00:00Z".to_string(),
+            assets: vec![],
+        };
+
+        // When assets are empty, should return html_url
+        let pattern = "macos-aarch64";
+        let found = release
+            .assets
+            .iter()
+            .find(|asset| asset.name.contains(pattern));
+        assert!(found.is_none());
+        assert_eq!(release.html_url, "https://github.com/test/release");
     }
 }

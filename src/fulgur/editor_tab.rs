@@ -169,6 +169,11 @@ impl EditorTab {
         }
     }
 
+    // Force the language/syntax highlighting based on the file extension
+    // @param window: The window context
+    // @param cx: The application context
+    // @param language: The language to force
+    // @param settings: The settings for the input state
     pub fn force_language(
         &mut self,
         window: &mut Window,
