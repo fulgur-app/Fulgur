@@ -730,7 +730,11 @@ impl Fulgur {
         if let Err(e) = self.settings.save() {
             log::error!("Failed to save settings: {}", e);
         }
-        let menus = build_menus(cx, &self.settings.recent_files.get_files());
+        let menus = build_menus(
+            cx,
+            &self.settings.recent_files.get_files(),
+            self.update_link.clone(),
+        );
         cx.set_menus(menus);
     }
 }

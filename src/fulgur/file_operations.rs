@@ -139,7 +139,11 @@ impl Fulgur {
                     if let Err(e) = this.settings.add_file(path.clone()) {
                         log::error!("Failed to add file to recent files: {}", e);
                     }
-                    let menus = menus::build_menus(cx, &this.settings.get_recent_files());
+                    let menus = menus::build_menus(
+                        cx,
+                        &this.settings.get_recent_files(),
+                        this.update_link.clone(),
+                    );
                     cx.set_menus(menus);
                     let title = match path.file_name() {
                         Some(file_name) => Some(file_name.to_string_lossy().to_string()),
@@ -173,7 +177,11 @@ impl Fulgur {
                 .update(|window, cx| {
                     view.update(cx, |this, cx| {
                         if let Some(tab_index) = this.find_tab_by_path(&path) {
-                            log::debug!("Tab already exists for {:?} at index {}, focusing and reloading", path, tab_index);
+                            log::debug!(
+                                "Tab already exists for {:?} at index {}, focusing and reloading",
+                                path,
+                                tab_index
+                            );
                             if let Some(Tab::Editor(editor_tab)) = this.tabs.get(tab_index) {
                                 if editor_tab.modified {
                                     log::debug!("Tab is modified, reloading content from disk");
@@ -189,7 +197,8 @@ impl Fulgur {
                         } else {
                             true // Open new tab
                         }
-                    }).ok()
+                    })
+                    .ok()
                 })
                 .ok()??;
 
@@ -214,7 +223,11 @@ impl Fulgur {
     ) {
         // Check if tab already exists for this path
         if let Some(tab_index) = self.find_tab_by_path(&path) {
-            log::debug!("Tab already exists for {:?} at index {}, focusing and reloading", path, tab_index);
+            log::debug!(
+                "Tab already exists for {:?} at index {}, focusing and reloading",
+                path,
+                tab_index
+            );
             if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
                 if editor_tab.modified {
                     log::debug!("Tab is modified, reloading content from disk");

@@ -17,6 +17,7 @@ mod tab_bar;
 mod tab_manager;
 mod themes;
 mod titlebar;
+mod updater;
 
 use menus::*;
 use search_replace::SearchMatch;
@@ -30,6 +31,7 @@ use gpui_component::{
     highlighter::Language,
     input::{Input, InputEvent, InputState},
     link::Link,
+    notification::NotificationType,
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
     select::SelectState,
@@ -64,6 +66,7 @@ pub struct Fulgur {
     rendered_tabs: std::collections::HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
     pub pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>, // Files from macOS "Open with" events
+    update_link: Option<String>,
 }
 
 impl Fulgur {
@@ -132,6 +135,7 @@ impl Fulgur {
                 tabs_pending_update: std::collections::HashSet::new(),
                 pending_files_from_macos,
                 themes,
+                update_link: None,
             };
             entity
         });
@@ -193,7 +197,7 @@ impl Fulgur {
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-g", JumpToLine, None),
             ]);
-            let menus = build_menus(cx, &recent_files);
+            let menus = build_menus(cx, &recent_files, None);
             cx.set_menus(menus);
         });
     }
@@ -327,7 +331,7 @@ impl Render for Fulgur {
                     }
                 }
                 cx.refresh_windows();
-                let menus = build_menus(cx, &this.settings.recent_files.get_files());
+                let menus = build_menus(cx, &this.settings.recent_files.get_files(), None);
                 cx.set_menus(menus);
             }))
             .on_action(
@@ -382,6 +386,9 @@ impl Render for Fulgur {
             }))
             .on_action(cx.listener(|this, _action: &SelectTheme, window, cx| {
                 this.select_theme_sheet(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &CheckForUpdates, window, cx| {
+                this.check_for_updates(window, cx);
             }));
         app_content = app_content
             .child(self.render_tab_bar(window, cx))

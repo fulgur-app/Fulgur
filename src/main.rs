@@ -68,7 +68,8 @@ fn main() {
     if let Err(e) = fulgur::logger::init() {
         log::error!("Failed to initialize logger: {}", e);
     }
-    log::info!("=== Fulgur Text Editor v0.0.1 Starting ===");
+    let current_version = env!("CARGO_PKG_VERSION");
+    log::info!("=== Fulgur Text Editor v{} Starting ===", current_version);
     log::info!("Platform: {}", std::env::consts::OS);
     log::info!("Architecture: {}", std::env::consts::ARCH);
     let args: Vec<String> = std::env::args().collect();
@@ -171,10 +172,10 @@ fn main() {
                 cx.new(|cx| Root::new(view, window, cx))
             })?;
             window
-            .update(cx, |_, window, _| {
-                window.activate_window();
-            })
-            .expect("failed to update window");
+                .update(cx, |_, window, _| {
+                    window.activate_window();
+                })
+                .expect("failed to update window");
             Ok::<_, anyhow::Error>(())
         })
         .detach();

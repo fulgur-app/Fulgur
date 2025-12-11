@@ -22,6 +22,7 @@ actions!(
         JumpToLine,
         ClearRecentFiles,
         SelectTheme,
+        CheckForUpdates,
     ]
 );
 
@@ -37,7 +38,11 @@ pub struct OpenRecentFile(pub PathBuf);
 // @param cx: The application context
 // @param recent_files: The list of recent files to display
 // @return: The menus for the Fulgur instance
-pub fn build_menus(_cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
+pub fn build_menus(
+    _cx: &mut App,
+    recent_files: &[PathBuf],
+    update_link: Option<String>,
+) -> Vec<Menu> {
     let recent_files_items = if recent_files.is_empty() {
         let mut items = Vec::new();
         items.push(MenuItem::action("No recent files", NoneAction));
@@ -61,6 +66,11 @@ pub fn build_menus(_cx: &mut App, recent_files: &[PathBuf]) -> Vec<Menu> {
             name: "Fulgur".into(),
             items: vec![
                 MenuItem::action("About Fulgur", About),
+                if update_link.is_some() {
+                    MenuItem::action("Update available", CheckForUpdates)
+                } else {
+                    MenuItem::action("Check for updates", CheckForUpdates)
+                },
                 MenuItem::Separator,
                 MenuItem::action("Settings", SettingsTab),
                 MenuItem::action("Select theme", SelectTheme),
