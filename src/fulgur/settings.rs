@@ -30,10 +30,8 @@ pub struct SynchronizationSettings {
     pub is_synchronization_activated: bool,
     pub server_url: Option<String>,
     pub email: Option<String>,
-    /// Encrypted key stored in settings.json (base64-encoded)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encrypted_key: Option<String>,
-    /// Plaintext key cached in memory (not serialized)
     #[serde(skip)]
     pub key: Option<String>,
 }
@@ -258,7 +256,6 @@ impl Settings {
             path.push("settings.json");
             Ok(path)
         }
-
         #[cfg(not(target_os = "windows"))]
         {
             let home = std::env::var("HOME")?;
@@ -273,7 +270,6 @@ impl Settings {
     // Save the settings to the state file
     // @return: The result of the operation
     pub fn save(&mut self) -> anyhow::Result<()> {
-        // Encrypt the key before saving
         if let Some(ref plaintext_key) = self.app_settings.synchronization_settings.key {
             if !plaintext_key.is_empty() {
                 match crypto_helper::encrypt(plaintext_key) {
@@ -291,7 +287,6 @@ impl Settings {
         } else {
             self.app_settings.synchronization_settings.encrypted_key = None;
         }
-
         let path = Self::settings_file_path()?;
         let json = serde_json::to_string_pretty(&self)?;
         fs::write(path, json)?;
@@ -303,11 +298,7 @@ impl Settings {
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::settings_file_path()?;
         let json = fs::read_to_string(&path)?;
-
-        // Load settings
         let mut settings: Settings = serde_json::from_str(&json)?;
-
-        // Decrypt the key if it exists
         if let Some(ref encrypted_key) =
             settings.app_settings.synchronization_settings.encrypted_key
         {
@@ -318,7 +309,6 @@ impl Settings {
                 }
                 Err(e) => {
                     log::error!("Failed to decrypt sync key: {}", e);
-                    // If decryption fails, clear both encrypted and plaintext keys
                     settings.app_settings.synchronization_settings.encrypted_key = None;
                     settings.app_settings.synchronization_settings.key = None;
                 }
@@ -796,7 +786,6 @@ impl Fulgur {
                                         .cursor_pointer()
                                         .on_click({
                                             let entity = entity.clone();
-
                                             move |_, window, cx| {
                                                 let result = entity
                                                     .read(cx)
@@ -982,7 +971,6 @@ impl Fulgur {
                     .text_size(px(12.0))
                     .border_r_1()
                     .border_color(cx.theme().border)
-                    //.child(div().text_2xl().font_semibold().px_3().child("Settings"))
                     .child(
                         SettingsComponent::new("fulgur-settings")
                             .with_size(Size::Medium)
