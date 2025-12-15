@@ -1,4 +1,5 @@
 mod components_utils;
+mod crypto_helper;
 mod editor_tab;
 mod file_operations;
 mod icons;
@@ -31,7 +32,6 @@ use gpui_component::{
     highlighter::Language,
     input::{Input, InputEvent, InputState},
     link::Link,
-    notification::NotificationType,
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
     select::SelectState,
