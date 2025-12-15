@@ -316,7 +316,7 @@ impl Fulgur {
             cx.theme().danger,
             cx.theme().danger_foreground,
             cx.theme().danger_hover,
-            true,
+            self.is_connected.load(std::sync::atomic::Ordering::Relaxed),
         );
         h_flex()
             .justify_between()
@@ -330,7 +330,13 @@ impl Fulgur {
                 div()
                     .flex()
                     .justify_start()
-                    .child(sync_button)
+                    .when(
+                        self.settings
+                            .app_settings
+                            .synchronization_settings
+                            .is_synchronization_activated,
+                        |this| this.child(sync_button),
+                    )
                     .child(language_button)
                     .when(is_markdown, |this| this.child(preview_button))
                     .when(is_markdown, |this| this.child(toolbar_button)),

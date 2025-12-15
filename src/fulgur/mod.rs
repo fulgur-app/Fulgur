@@ -39,6 +39,7 @@ use gpui_component::{
     v_flex,
 };
 
+use crate::fulgur::settings::{SynchronizationTestResult, test_synchronization_connection};
 use crate::fulgur::{icons::CustomIcon, settings::Themes};
 
 pub struct Fulgur {
@@ -67,6 +68,7 @@ pub struct Fulgur {
     tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
     pub pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>, // Files from macOS "Open with" events
     update_link: Option<String>,
+    is_connected: std::sync::Arc<std::sync::atomic::AtomicBool>, // Shared sync connection status (thread-safe)
 }
 
 impl Fulgur {
@@ -136,13 +138,58 @@ impl Fulgur {
                 pending_files_from_macos,
                 themes,
                 update_link: None,
+                is_connected: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             };
             entity
         });
         entity.update(cx, |this, cx| {
             this.load_state(window, cx);
         });
+
+        // Verify sync connection asynchronously if enabled
+        Self::verify_sync_connection_async(&entity, cx);
+
         entity
+    }
+
+    // Verify synchronization connection asynchronously without blocking app startup
+    // @param entity: The Fulgur entity
+    // @param cx: The application context
+    fn verify_sync_connection_async(entity: &Entity<Self>, cx: &App) {
+        if !entity
+            .read(cx)
+            .settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated
+        {
+            return;
+        }
+        let settings = entity.read(cx).settings.clone();
+        let is_connected = entity.read(cx).is_connected.clone();
+        std::thread::spawn(move || {
+            // Small delay to ensure app initialization doesn't block
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let server_url = settings
+                .app_settings
+                .synchronization_settings
+                .server_url
+                .clone();
+            let email = settings.app_settings.synchronization_settings.email.clone();
+            let key = settings.app_settings.synchronization_settings.key.clone();
+            let connection_status = if server_url.is_none() || email.is_none() || key.is_none() {
+                false
+            } else {
+                match test_synchronization_connection(server_url, email, key) {
+                    SynchronizationTestResult::Success => true,
+                    SynchronizationTestResult::Failure(e) => {
+                        log::error!("Sync connection test failed: {}", e);
+                        false
+                    }
+                }
+            };
+            is_connected.store(connection_status, std::sync::atomic::Ordering::Relaxed);
+        });
     }
 
     // Initialize the Fulgur instance
