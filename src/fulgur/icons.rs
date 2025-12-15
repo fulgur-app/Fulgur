@@ -9,6 +9,8 @@ pub enum CustomIcon {
     CaseSensitive,
     ChevronDown,
     ChevronUp,
+    CircleCheck,
+    CircleX,
     Close,
     Code,
     File,
@@ -21,6 +23,7 @@ pub enum CustomIcon {
     Heading3,
     Heading4,
     Heading5,
+    Info,
     List,
     ListNumbered,
     Italic,
@@ -36,12 +39,15 @@ pub enum CustomIcon {
     Strikethrough,
     Table,
     TaskList,
+    TriangleAlert,
     Upload,
     WholeWord,
     WindowClose,
     WindowMaximize,
     WindowMinimize,
     WindowRestore,
+    Zap,
+    ZapOff,
 }
 
 impl CustomIcon {
@@ -57,6 +63,8 @@ impl CustomIcon {
             Self::ChevronUp => "icons/chevron-up.svg",
             Self::Close => "icons/close.svg",
             Self::Code => "icons/code.svg",
+            Self::CircleCheck => "icons/circle-check.svg",
+            Self::CircleX => "icons/circle-x.svg",
             Self::File => "icons/file.svg",
             Self::FileCode => "icons/file-code.svg",
             Self::FolderOpen => "icons/folder-open.svg",
@@ -67,6 +75,7 @@ impl CustomIcon {
             Self::Heading3 => "icons/heading-3.svg",
             Self::Heading4 => "icons/heading-4.svg",
             Self::Heading5 => "icons/heading-5.svg",
+            Self::Info => "icons/info.svg",
             Self::List => "icons/list.svg",
             Self::ListNumbered => "icons/list-ordered.svg",
             Self::Italic => "icons/italic.svg",
@@ -81,6 +90,7 @@ impl CustomIcon {
             Self::Separator => "icons/separator-horizontal.svg",
             Self::Table => "icons/table.svg",
             Self::TaskList => "icons/list-todo.svg",
+            Self::TriangleAlert => "icons/triangle-alert.svg",
             Self::Upload => "icons/upload.svg",
             Self::Strikethrough => "icons/strikethrough.svg",
             Self::WholeWord => "icons/whole-word.svg",
@@ -88,6 +98,8 @@ impl CustomIcon {
             Self::WindowMaximize => "icons/window-maximize.svg",
             Self::WindowMinimize => "icons/window-minimize.svg",
             Self::WindowRestore => "icons/window-restore.svg",
+            Self::Zap => "icons/zap.svg",
+            Self::ZapOff => "icons/zap-off.svg",
         }
         .into()
     }
