@@ -2,10 +2,11 @@ use std::{fs, path::PathBuf};
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Sizable, Size, StyledExt,
-    button::Button,
+    ActiveTheme, Sizable, Size, StyledExt, WindowExt,
+    button::{Button, ButtonVariants},
     group_box::GroupBoxVariant,
     h_flex,
+    notification::NotificationType,
     scroll::ScrollbarShow,
     setting::{
         NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage,
@@ -16,11 +17,38 @@ use gpui_component::{
 use serde::{Deserialize, Serialize};
 
 use crate::fulgur::{
-    Fulgur,
+    Fulgur, crypto_helper,
     icons::CustomIcon,
     menus::build_menus,
     themes::{self, BundledThemes, themes_directory_path},
 };
+
+const DEVICE_KEY_PLACEHOLDER: &str = "<Device Key>";
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct SynchronizationSettings {
+    pub is_synchronization_activated: bool,
+    pub server_url: Option<String>,
+    pub email: Option<String>,
+    /// Encrypted key stored in settings.json (base64-encoded)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encrypted_key: Option<String>,
+    /// Plaintext key cached in memory (not serialized)
+    #[serde(skip)]
+    pub key: Option<String>,
+}
+
+impl SynchronizationSettings {
+    pub fn new() -> Self {
+        Self {
+            is_synchronization_activated: false,
+            server_url: None,
+            email: None,
+            encrypted_key: None,
+            key: None,
+        }
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MarkdownSettings {
@@ -53,6 +81,7 @@ pub struct AppSettings {
     pub theme: SharedString,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scrollbar_show: Option<ScrollbarShow>,
+    pub synchronization_settings: SynchronizationSettings,
 }
 
 impl EditorSettings {
@@ -74,6 +103,7 @@ impl AppSettings {
             confirm_exit: true,
             theme: "Default Light".into(),
             scrollbar_show: None,
+            synchronization_settings: SynchronizationSettings::new(),
         }
     }
 }
@@ -242,7 +272,26 @@ impl Settings {
 
     // Save the settings to the state file
     // @return: The result of the operation
-    pub fn save(&self) -> anyhow::Result<()> {
+    pub fn save(&mut self) -> anyhow::Result<()> {
+        // Encrypt the key before saving
+        if let Some(ref plaintext_key) = self.app_settings.synchronization_settings.key {
+            if !plaintext_key.is_empty() {
+                match crypto_helper::encrypt(plaintext_key) {
+                    Ok(encrypted) => {
+                        self.app_settings.synchronization_settings.encrypted_key = Some(encrypted);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to encrypt key: {}", e);
+                        return Err(e);
+                    }
+                }
+            } else {
+                self.app_settings.synchronization_settings.encrypted_key = None;
+            }
+        } else {
+            self.app_settings.synchronization_settings.encrypted_key = None;
+        }
+
         let path = Self::settings_file_path()?;
         let json = serde_json::to_string_pretty(&self)?;
         fs::write(path, json)?;
@@ -253,8 +302,29 @@ impl Settings {
     // @return: The settings
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::settings_file_path()?;
-        let json = fs::read_to_string(path)?;
-        let settings: Settings = serde_json::from_str(&json)?;
+        let json = fs::read_to_string(&path)?;
+
+        // Load settings
+        let mut settings: Settings = serde_json::from_str(&json)?;
+
+        // Decrypt the key if it exists
+        if let Some(ref encrypted_key) =
+            settings.app_settings.synchronization_settings.encrypted_key
+        {
+            match crypto_helper::decrypt(encrypted_key) {
+                Ok(decrypted) => {
+                    settings.app_settings.synchronization_settings.key = Some(decrypted);
+                    log::info!("Successfully decrypted sync key");
+                }
+                Err(e) => {
+                    log::error!("Failed to decrypt sync key: {}", e);
+                    // If decryption fails, clear both encrypted and plaintext keys
+                    settings.app_settings.synchronization_settings.encrypted_key = None;
+                    settings.app_settings.synchronization_settings.key = None;
+                }
+            }
+        }
+
         Ok(settings)
     }
 
@@ -528,8 +598,10 @@ impl Fulgur {
     fn create_application_page(entity: Entity<Self>) -> SettingPage {
         let default_app_settings = AppSettings::new();
 
-        SettingPage::new("Application").groups(vec![SettingGroup::new().title("General").items(
-            vec![
+        SettingPage::new("Application")
+            .default_open(true)
+            .groups(vec![
+                SettingGroup::new().title("General").items(vec![
                     SettingItem::new(
                         "Confirm Exit",
                         SettingField::switch(
@@ -552,8 +624,281 @@ impl Fulgur {
                         .default_value(default_app_settings.confirm_exit),
                     )
                     .description("Show confirmation dialog before exiting the application."),
-                ],
-        )])
+                ]),
+                SettingGroup::new().title("Synchronization").items(vec![
+                    SettingItem::new(
+                        "Activate Synchronization",
+                        SettingField::switch(
+                            {
+                                let entity = entity.clone();
+                                move |cx: &App| {
+                                    entity
+                                        .read(cx)
+                                        .settings
+                                        .app_settings
+                                        .synchronization_settings
+                                        .is_synchronization_activated
+                                }
+                            },
+                            {
+                                let entity = entity.clone();
+                                move |val: bool, cx: &mut App| {
+                                    entity.update(cx, |this, _cx| {
+                                        this.settings
+                                            .app_settings
+                                            .synchronization_settings
+                                            .is_synchronization_activated = val;
+                                        if let Err(e) = this.settings.save() {
+                                            log::error!("Failed to save settings: {}", e);
+                                        }
+                                    });
+                                }
+                            },
+                        )
+                        .default_value(default_app_settings.confirm_exit),
+                    )
+                    .description("Activate synchronization with the server."),
+                    SettingItem::new(
+                        "Server URL",
+                        SettingField::input(
+                            {
+                                let entity = entity.clone();
+                                move |cx: &App| {
+                                    entity
+                                        .read(cx)
+                                        .settings
+                                        .app_settings
+                                        .synchronization_settings
+                                        .server_url
+                                        .as_ref()
+                                        .map(|s| SharedString::from(s.clone()))
+                                        .unwrap_or_default()
+                                }
+                            },
+                            {
+                                let entity = entity.clone();
+                                move |val: SharedString, cx: &mut App| {
+                                    entity.update(cx, |this, _cx| {
+                                        let url = if val.is_empty() {
+                                            None
+                                        } else {
+                                            Some(val.to_string())
+                                        };
+                                        this.settings
+                                            .app_settings
+                                            .synchronization_settings
+                                            .server_url = url;
+                                        if let Err(e) = this.settings.save() {
+                                            log::error!("Failed to save settings: {}", e);
+                                        }
+                                    });
+                                }
+                            },
+                        )
+                        .default_value(
+                            default_app_settings
+                                .synchronization_settings
+                                .server_url
+                                .clone()
+                                .map(|s| SharedString::from(s))
+                                .unwrap_or_default(),
+                        ),
+                    )
+                    .description("URL of the synchronization server."),
+                    SettingItem::new(
+                        "Email",
+                        SettingField::input(
+                            {
+                                let entity = entity.clone();
+                                move |cx: &App| {
+                                    entity
+                                        .read(cx)
+                                        .settings
+                                        .app_settings
+                                        .synchronization_settings
+                                        .email
+                                        .as_ref()
+                                        .map(|s| SharedString::from(s.clone()))
+                                        .unwrap_or_default()
+                                }
+                            },
+                            {
+                                let entity = entity.clone();
+                                move |val: SharedString, cx: &mut App| {
+                                    entity.update(cx, |this, _cx| {
+                                        let email = if val.is_empty() {
+                                            None
+                                        } else {
+                                            Some(val.to_string())
+                                        };
+                                        this.settings.app_settings.synchronization_settings.email =
+                                            email;
+                                        if let Err(e) = this.settings.save() {
+                                            log::error!("Failed to save settings: {}", e);
+                                        }
+                                    });
+                                }
+                            },
+                        )
+                        .default_value(
+                            default_app_settings
+                                .synchronization_settings
+                                .email
+                                .clone()
+                                .map(|s| SharedString::from(s))
+                                .unwrap_or_default(),
+                        ),
+                    )
+                    .description("Email for synchronization."),
+                    SettingItem::new(
+                        "Device Key",
+                        SettingField::input(
+                            move |_cx: &App| SharedString::from(DEVICE_KEY_PLACEHOLDER),
+                            {
+                                let entity = entity.clone();
+                                move |val: SharedString, cx: &mut App| {
+                                    entity.update(cx, |this, _cx| {
+                                        let key = if val.is_empty() {
+                                            None
+                                        } else {
+                                            if val.to_string() == DEVICE_KEY_PLACEHOLDER {
+                                                None
+                                            } else {
+                                                Some(
+                                                    crypto_helper::encrypt(&val.to_string())
+                                                        .unwrap(),
+                                                )
+                                            }
+                                        };
+                                        this.settings.app_settings.synchronization_settings.key =
+                                            key;
+                                        if let Err(e) = this.settings.save() {
+                                            log::error!("Failed to save settings: {}", e);
+                                        }
+                                    });
+                                }
+                            },
+                        ),
+                    )
+                    .description("Device Key for synchronization (stored encrypted)."),
+                    // SettingItem::new(
+                    //     "Device Key",
+                    //     SettingField::render({
+                    //         let entity = entity.clone();
+                    //         move |options, window, cx| {
+                    //             // Get the cached key from memory (no keyring access!)
+                    //             let cached_key = entity
+                    //                 .read(cx)
+                    //                 .settings
+                    //                 .app_settings
+                    //                 .synchronization_settings
+                    //                 .key
+                    //                 .clone()
+                    //                 .unwrap_or_default();
+
+                    //             let state_key = SharedString::from("sync-key-input");
+                    //             let state = window.use_keyed_state(state_key, cx, |window, cx| {
+                    //                 let input = cx.new(|cx| {
+                    //                     InputState::new(window, cx)
+                    //                         .masked(true)
+                    //                         .default_value(&cached_key)
+                    //                         .placeholder("Enter synchronization key...")
+                    //                 });
+
+                    //                 let _subscription = cx.subscribe_in(&input, window, {
+                    //                     let entity = entity.clone();
+                    //                     move |_, input, event: &InputEvent, _window, cx| {
+                    //                         if let InputEvent::Change = event {
+                    //                             let value = input.read(cx).value();
+                    //                             // Update the key in memory and save to settings.json (encrypted)
+                    //                             entity.update(cx, |this, _cx| {
+                    //                                 if value.is_empty() {
+                    //                                     this.settings
+                    //                                         .app_settings
+                    //                                         .synchronization_settings
+                    //                                         .key = None;
+                    //                                 } else {
+                    //                                     this.settings
+                    //                                         .app_settings
+                    //                                         .synchronization_settings
+                    //                                         .key = Some(value.to_string());
+                    //                                 }
+                    //                                 // Save settings (will encrypt the key)
+                    //                                 if let Err(e) = this.settings.save() {
+                    //                                     log::error!(
+                    //                                         "Failed to save settings: {}",
+                    //                                         e
+                    //                                     );
+                    //                                 }
+                    //                             });
+                    //                         }
+                    //                     }
+                    //                 });
+
+                    //                 (input, _subscription)
+                    //             });
+
+                    //             let (input, _sub) = state.read(cx);
+
+                    //             Input::new(&input)
+                    //                 .with_size(options.size)
+                    //                 .map(|this| {
+                    //                     if options.layout.is_horizontal() {
+                    //                         this.w_64()
+                    //                     } else {
+                    //                         this.w_full()
+                    //                     }
+                    //                 })
+                    //                 .cleanable(true)
+                    //                 .into_any_element()
+                    //         }
+                    //     }),
+                    // )
+                    // .description("Device key for synchronization (stored encrypted in settings)."),
+                    SettingItem::render({
+                        let entity = entity.clone();
+                        move |_options, _window, _cx| {
+                            h_flex()
+                                .w_full()
+                                .justify_end()
+                                .mt_2()
+                                .child(
+                                    Button::new("test-connection-button")
+                                        .label("Test Connection")
+                                        .primary()
+                                        .small()
+                                        .cursor_pointer()
+                                        .on_click({
+                                            let entity = entity.clone();
+
+                                            move |_, window, cx| {
+                                                let result = entity
+                                                    .read(cx)
+                                                    .test_synchronization_connection();
+                                                let notification = match result {
+                                                    SynchronizationTestResult::Success => (
+                                                        NotificationType::Success,
+                                                        SharedString::from(
+                                                            "Connection test successful!",
+                                                        ),
+                                                    ),
+                                                    SynchronizationTestResult::Failure(msg) => (
+                                                        NotificationType::Error,
+                                                        SharedString::from(format!(
+                                                            "Connection test failed: {}",
+                                                            msg
+                                                        )),
+                                                    ),
+                                                };
+                                                window.push_notification(notification, cx);
+                                            }
+                                        }),
+                                )
+                                .into_any_element()
+                        }
+                    }),
+                ]),
+            ])
     }
 
     // Create the Themes settings page
@@ -737,4 +1082,56 @@ impl Fulgur {
         );
         cx.set_menus(menus);
     }
+
+    // Test the synchronization connection
+    // @return: The result of the connection test
+    pub fn test_synchronization_connection(&self) -> SynchronizationTestResult {
+        let server_url = self
+            .settings
+            .app_settings
+            .synchronization_settings
+            .server_url
+            .clone();
+        let email = self
+            .settings
+            .app_settings
+            .synchronization_settings
+            .email
+            .clone();
+        let key = self
+            .settings
+            .app_settings
+            .synchronization_settings
+            .key
+            .clone();
+
+        if server_url.is_none() {
+            return SynchronizationTestResult::Failure("Server URL is missing".to_string());
+        }
+        if email.is_none() {
+            return SynchronizationTestResult::Failure("Email is missing".to_string());
+        }
+        if key.is_none() {
+            return SynchronizationTestResult::Failure("Key is missing".to_string());
+        }
+        let decrypted_key = crypto_helper::decrypt(&key.unwrap()).unwrap();
+        let ping_url = format!("{}/api/ping", server_url.unwrap());
+        log::debug!("Ping URL: {:?}", ping_url);
+        let response = ureq::get(&ping_url)
+            .header("Authorization", &format!("Bearer {}", decrypted_key))
+            .header("X-User-Email", &email.unwrap())
+            .call();
+        if response.is_ok() {
+            return SynchronizationTestResult::Success;
+        } else {
+            log::error!("Connection test failed: {}", response.unwrap_err());
+            return SynchronizationTestResult::Failure("Connection test failed".to_string());
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub enum SynchronizationTestResult {
+    Success,
+    Failure(String),
 }
