@@ -3,11 +3,13 @@ use std::ops::DerefMut;
 use crate::fulgur::{
     Fulgur,
     components_utils::{EMPTY, UTF_8},
-    editor_tab, languages,
+    editor_tab,
+    icons::CustomIcon,
+    languages,
 };
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
-    ActiveTheme, WindowExt, h_flex,
+    ActiveTheme, Icon, WindowExt, h_flex,
     highlighter::Language,
     input::{Input, Position},
     select::Select,
@@ -17,7 +19,7 @@ use gpui_component::{
 // @param content: The content of the status bar item
 // @param border_color: The color of the border
 // @return: A status bar item
-pub fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
+pub fn status_bar_item_factory(content: impl IntoElement, border_color: Hsla) -> Div {
     div()
         .text_xs()
         .px_2()
@@ -31,7 +33,11 @@ pub fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
 // @param border_color: The color of the border
 // @param accent_color: The color of the accent
 // @return: A status bar button
-pub fn status_bar_button_factory(content: String, border_color: Hsla, accent_color: Hsla) -> Div {
+pub fn status_bar_button_factory(
+    content: impl IntoElement,
+    border_color: Hsla,
+    accent_color: Hsla,
+) -> Div {
     status_bar_item_factory(content, border_color)
         .hover(|this| this.bg(accent_color))
         .cursor_pointer()
@@ -46,7 +52,7 @@ pub fn status_bar_right_item_factory(content: String, border_color: Hsla) -> imp
 }
 
 pub fn status_bar_toggle_button_factory(
-    content: String,
+    content: impl IntoElement,
     border_color: Hsla,
     accent_color: Hsla,
     checked: bool,
@@ -54,6 +60,43 @@ pub fn status_bar_toggle_button_factory(
     let mut button = status_bar_button_factory(content, border_color, accent_color);
     if checked {
         button = button.bg(accent_color);
+    }
+    button
+}
+
+pub fn status_bar_sync_button(
+    connected_icon: Icon,
+    disconnected_icon: Icon,
+    border_color: Hsla,
+    connected_color: Hsla,
+    connected_foreground_color: Hsla,
+    connected_hover_color: Hsla,
+    disconnected_color: Hsla,
+    disconnected_foreground_color: Hsla,
+    disconnected_hover_color: Hsla,
+    is_connected: bool,
+) -> Div {
+    let mut button = div()
+        .text_sm()
+        .flex()
+        .items_center()
+        .justify_center()
+        .px_4()
+        .py_1()
+        .border_color(border_color)
+        .cursor_pointer();
+    if is_connected {
+        button = button
+            .child(connected_icon)
+            .bg(connected_color)
+            .text_color(connected_foreground_color)
+            .hover(|this| this.bg(connected_hover_color));
+    } else {
+        button = button
+            .child(disconnected_icon)
+            .bg(disconnected_color)
+            .text_color(disconnected_foreground_color)
+            .hover(|this| this.bg(disconnected_hover_color));
     }
     button
 }
@@ -263,6 +306,18 @@ impl Fulgur {
             }),
         );
         let is_markdown = self.is_markdown();
+        let sync_button = status_bar_sync_button(
+            Icon::new(CustomIcon::Zap),
+            Icon::new(CustomIcon::ZapOff),
+            cx.theme().border,
+            cx.theme().primary,
+            cx.theme().primary_foreground,
+            cx.theme().primary_hover,
+            cx.theme().danger,
+            cx.theme().danger_foreground,
+            cx.theme().danger_hover,
+            true,
+        );
         h_flex()
             .justify_between()
             .bg(cx.theme().tab_bar)
@@ -275,6 +330,7 @@ impl Fulgur {
                 div()
                     .flex()
                     .justify_start()
+                    .child(sync_button)
                     .child(language_button)
                     .when(is_markdown, |this| this.child(preview_button))
                     .when(is_markdown, |this| this.child(toolbar_button)),
