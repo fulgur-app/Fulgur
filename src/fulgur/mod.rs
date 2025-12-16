@@ -13,6 +13,7 @@ mod settings;
 mod state_operations;
 mod state_persistence;
 mod status_bar;
+mod sync;
 mod tab;
 mod tab_bar;
 mod tab_manager;
@@ -39,8 +40,8 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::fulgur::settings::{SynchronizationTestResult, test_synchronization_connection};
-use crate::fulgur::{icons::CustomIcon, settings::Themes};
+use crate::fulgur::sync::SynchronizationTestResult;
+use crate::fulgur::{icons::CustomIcon, settings::Themes, sync::test_synchronization_connection};
 
 pub struct Fulgur {
     focus_handle: FocusHandle,
@@ -145,8 +146,6 @@ impl Fulgur {
         entity.update(cx, |this, cx| {
             this.load_state(window, cx);
         });
-
-        // Verify sync connection asynchronously if enabled
         Self::verify_sync_connection_async(&entity, cx);
 
         entity

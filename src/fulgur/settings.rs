@@ -20,6 +20,7 @@ use crate::fulgur::{
     Fulgur, crypto_helper,
     icons::CustomIcon,
     menus::build_menus,
+    sync::{SynchronizationTestResult, test_synchronization_connection},
     themes::{self, BundledThemes, themes_directory_path},
 };
 
@@ -1020,44 +1021,5 @@ impl Fulgur {
             .clone();
 
         test_synchronization_connection(server_url, email, key)
-    }
-}
-
-#[derive(Clone, PartialEq)]
-pub enum SynchronizationTestResult {
-    Success,
-    Failure(String),
-}
-
-// Test the synchronization connection
-// @param server_url: The server URL
-// @param email: The email
-// @param key: The key
-// @return: The result of the connection test
-pub fn test_synchronization_connection(
-    server_url: Option<String>,
-    email: Option<String>,
-    key: Option<String>,
-) -> SynchronizationTestResult {
-    if server_url.is_none() {
-        return SynchronizationTestResult::Failure("Server URL is missing".to_string());
-    }
-    if email.is_none() {
-        return SynchronizationTestResult::Failure("Email is missing".to_string());
-    }
-    if key.is_none() {
-        return SynchronizationTestResult::Failure("Key is missing".to_string());
-    }
-    let decrypted_key = crypto_helper::decrypt(&key.unwrap()).unwrap();
-    let ping_url = format!("{}/api/ping", server_url.unwrap());
-    let response = ureq::get(&ping_url)
-        .header("Authorization", &format!("Bearer {}", decrypted_key))
-        .header("X-User-Email", &email.unwrap())
-        .call();
-    if response.is_ok() {
-        return SynchronizationTestResult::Success;
-    } else {
-        log::error!("Connection test failed: {}", response.unwrap_err());
-        return SynchronizationTestResult::Failure("Connection test failed".to_string());
     }
 }

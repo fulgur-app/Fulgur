@@ -6,6 +6,7 @@ use crate::fulgur::{
     editor_tab,
     icons::CustomIcon,
     languages,
+    sync::{Device, get_devices},
 };
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
@@ -13,7 +14,97 @@ use gpui_component::{
     highlighter::Language,
     input::{Input, Position},
     select::Select,
+    v_flex,
 };
+
+// State for device selection dialog
+struct DeviceSelectionState {
+    devices: Vec<Device>,
+    selected_ids: Vec<String>,
+}
+
+impl DeviceSelectionState {
+    // Create a new device selection state
+    // @param devices: The devices to select from
+    // @return: The new device selection state
+    fn new(devices: Vec<Device>) -> Self {
+        Self {
+            devices,
+            selected_ids: Vec::new(),
+        }
+    }
+
+    // Toggle the selection of a device
+    // @param device_id: The ID of the device
+    // @return: The new selection state
+    fn toggle_selection(&mut self, device_id: &str) {
+        if let Some(pos) = self.selected_ids.iter().position(|id| id == device_id) {
+            self.selected_ids.remove(pos);
+        } else {
+            self.selected_ids.push(device_id.to_string());
+        }
+    }
+
+    // Check if a device is selected
+    // @param device_id: The ID of the device
+    // @return: True if the device is selected, false otherwise
+    fn is_selected(&self, device_id: &str) -> bool {
+        self.selected_ids.contains(&device_id.to_string())
+    }
+}
+
+impl Render for DeviceSelectionState {
+    // Render the device selection state
+    // @param window: The window context
+    // @param cx: The application context
+    // @return: The rendered device selection state
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex().gap_2().w_full().children(
+            self.devices
+                .iter()
+                .enumerate()
+                .map(|(idx, device)| {
+                    let device_id = device.id.clone();
+                    let is_selected = self.is_selected(&device_id);
+
+                    h_flex()
+                        .id(("share-device", idx))
+                        .items_center()
+                        .justify_between()
+                        .w_full()
+                        .p_2()
+                        .rounded_sm()
+                        .border_color(cx.theme().border)
+                        .border_1()
+                        .hover(|this| this.bg(cx.theme().muted))
+                        .when(is_selected, |this| {
+                            this.bg(cx.theme().accent)
+                                .text_color(cx.theme().accent_foreground)
+                        })
+                        .cursor_pointer()
+                        .child(
+                            h_flex()
+                                .items_center()
+                                .justify_start()
+                                .gap_2()
+                                .child(device.get_icon())
+                                .child(div().child(device.name.clone()))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .child(format!("Expires: {}", device.expires_at.clone())),
+                                ),
+                        )
+                        .when(is_selected, |this| this.child(Icon::new(CustomIcon::Zap)))
+                        .on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
+                            this.toggle_selection(&device_id);
+                            cx.notify();
+                        }))
+                })
+                .collect::<Vec<_>>(),
+        )
+    }
+}
 
 // Create a status bar item
 // @param content: The content of the status bar item
@@ -317,6 +408,54 @@ impl Fulgur {
             cx.theme().danger_foreground,
             cx.theme().danger_hover,
             self.is_connected.load(std::sync::atomic::Ordering::Relaxed),
+        )
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
+                let devices = get_devices(
+                    this.settings
+                        .app_settings
+                        .synchronization_settings
+                        .server_url
+                        .clone(),
+                    this.settings
+                        .app_settings
+                        .synchronization_settings
+                        .email
+                        .clone(),
+                    this.settings
+                        .app_settings
+                        .synchronization_settings
+                        .key
+                        .clone(),
+                );
+                let devices = match devices {
+                    Ok(devices) => devices,
+                    Err(e) => {
+                        log::error!("Failed to get devices: {}", e);
+                        return;
+                    }
+                };
+                let state = cx.new(|_cx| DeviceSelectionState::new(devices));
+                window.open_dialog(cx.deref_mut(), move |modal, _window, _cx| {
+                    modal
+                        .confirm()
+                        .title("Share with...")
+                        .child(state.clone())
+                        .overlay_closable(true)
+                        .close_button(false)
+                        .on_ok({
+                            let state_clone = state.clone();
+                            move |_event: &ClickEvent, _window, cx| {
+                                let selected_ids = state_clone.read(cx).selected_ids.clone();
+                                selected_ids.iter().for_each(|id| {
+                                    println!("Sharing with device: {}", id);
+                                });
+                                true
+                            }
+                        })
+                });
+            }),
         );
         h_flex()
             .justify_between()
