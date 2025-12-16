@@ -6,13 +6,15 @@ use crate::fulgur::{
     editor_tab,
     icons::CustomIcon,
     languages,
-    sync::{Device, get_devices},
+    sync::{Device, ShareFilePayload, get_devices, get_icon, share_file},
 };
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
     ActiveTheme, Icon, WindowExt, h_flex,
     highlighter::Language,
     input::{Input, Position},
+    notification::NotificationType,
+    scroll::ScrollableElement,
     select::Select,
     v_flex,
 };
@@ -58,51 +60,58 @@ impl Render for DeviceSelectionState {
     // @param window: The window context
     // @param cx: The application context
     // @return: The rendered device selection state
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex().gap_2().w_full().children(
-            self.devices
-                .iter()
-                .enumerate()
-                .map(|(idx, device)| {
-                    let device_id = device.id.clone();
-                    let is_selected = self.is_selected(&device_id);
-
-                    h_flex()
-                        .id(("share-device", idx))
-                        .items_center()
-                        .justify_between()
-                        .w_full()
-                        .p_2()
-                        .rounded_sm()
-                        .border_color(cx.theme().border)
-                        .border_1()
-                        .hover(|this| this.bg(cx.theme().muted))
-                        .when(is_selected, |this| {
-                            this.bg(cx.theme().accent)
-                                .text_color(cx.theme().accent_foreground)
-                        })
-                        .cursor_pointer()
-                        .child(
-                            h_flex()
-                                .items_center()
-                                .justify_start()
-                                .gap_2()
-                                .child(device.get_icon())
-                                .child(div().child(device.name.clone()))
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .child(format!("Expires: {}", device.expires_at.clone())),
-                                ),
-                        )
-                        .when(is_selected, |this| this.child(Icon::new(CustomIcon::Zap)))
-                        .on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
-                            this.toggle_selection(&device_id);
-                            cx.notify();
-                        }))
-                })
-                .collect::<Vec<_>>(),
-        )
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let window_height = window.window_bounds().get_bounds().size.height;
+        let max_height = window_height - px(200.0); //TODO: Make this dynamic
+        v_flex()
+            .w_full()
+            .max_h(max_height)
+            .overflow_y_scrollbar()
+            .children(
+                self.devices
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, device)| {
+                        let device_id = device.id.clone();
+                        let is_selected = self.is_selected(&device_id);
+                        h_flex()
+                            .id(("share-device", idx))
+                            .items_center()
+                            .justify_between()
+                            .w_full()
+                            .p_2()
+                            .my_2()
+                            .rounded_sm()
+                            .border_color(cx.theme().border)
+                            .border_1()
+                            .hover(|this| this.bg(cx.theme().muted))
+                            .when(is_selected, |this| {
+                                this.bg(cx.theme().accent)
+                                    .text_color(cx.theme().accent_foreground)
+                            })
+                            .cursor_pointer()
+                            .child(
+                                h_flex()
+                                    .items_center()
+                                    .justify_start()
+                                    .gap_2()
+                                    .child(get_icon(&device))
+                                    .child(div().child(device.name.clone()))
+                                    .child(
+                                        div().text_xs().child(format!(
+                                            "Expires: {}",
+                                            device.expires_at.clone()
+                                        )),
+                                    ),
+                            )
+                            .when(is_selected, |this| this.child(Icon::new(CustomIcon::Zap)))
+                            .on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
+                                this.toggle_selection(&device_id);
+                                cx.notify();
+                            }))
+                    })
+                    .collect::<Vec<_>>(),
+            )
     }
 }
 
@@ -436,6 +445,7 @@ impl Fulgur {
                         return;
                     }
                 };
+                let entity = cx.entity();
                 let state = cx.new(|_cx| DeviceSelectionState::new(devices));
                 window.open_dialog(cx.deref_mut(), move |modal, _window, _cx| {
                     modal
@@ -446,11 +456,66 @@ impl Fulgur {
                         .close_button(false)
                         .on_ok({
                             let state_clone = state.clone();
-                            move |_event: &ClickEvent, _window, cx| {
+                            let entity_clone = entity.clone();
+                            move |_event: &ClickEvent, window, cx| {
                                 let selected_ids = state_clone.read(cx).selected_ids.clone();
-                                selected_ids.iter().for_each(|id| {
-                                    println!("Sharing with device: {}", id);
+                                let result = entity_clone.update(cx, |this, cx| {
+                                    let content = this
+                                        .get_active_editor_tab()
+                                        .map(|tab| tab.content.read(cx).value().to_string())
+                                        .unwrap_or_default();
+                                    let file_name = this
+                                        .get_active_editor_tab()
+                                        .and_then(|tab| tab.file_path.as_ref())
+                                        .and_then(|path| path.file_name())
+                                        .and_then(|name| name.to_str())
+                                        .unwrap_or("Untitled")
+                                        .to_string();
+                                    let payload = ShareFilePayload {
+                                        content,
+                                        file_name,
+                                        device_ids: selected_ids,
+                                    };
+                                    share_file(
+                                        this.settings
+                                            .app_settings
+                                            .synchronization_settings
+                                            .server_url
+                                            .clone(),
+                                        this.settings
+                                            .app_settings
+                                            .synchronization_settings
+                                            .email
+                                            .clone(),
+                                        this.settings
+                                            .app_settings
+                                            .synchronization_settings
+                                            .key
+                                            .clone(),
+                                        payload,
+                                    )
                                 });
+                                match result {
+                                    Ok(_) => {
+                                        log::info!("File shared successfully");
+                                        let notification = (
+                                            NotificationType::Success,
+                                            SharedString::from("File shared successfully!"),
+                                        );
+                                        window.push_notification(notification, cx);
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to share file: {}", e);
+                                        let notification = (
+                                            NotificationType::Error,
+                                            SharedString::from(format!(
+                                                "Failed to share file: {}",
+                                                e
+                                            )),
+                                        );
+                                        window.push_notification(notification, cx);
+                                    }
+                                }
                                 true
                             }
                         })
