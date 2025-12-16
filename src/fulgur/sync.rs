@@ -98,6 +98,32 @@ pub fn get_devices(
     }
 }
 
+/// Fetch the user's encryption key from the server
+/// The server manages a shared encryption key per user that all their devices can access
+/// @param server_url: The server URL
+/// @param email: The user's email
+/// @param device_key: The decrypted device authentication key
+/// @return: The user's encryption key (base64-encoded)
+fn fetch_encryption_key(server_url: &str, email: &str, device_key: &str) -> anyhow::Result<String> {
+    let key_url = format!("{}/api/encryption-key", server_url);
+    let mut response = ureq::get(&key_url)
+        .header("Authorization", &format!("Bearer {}", device_key))
+        .header("X-User-Email", email)
+        .call()
+        .map_err(|e| anyhow::anyhow!("Failed to fetch encryption key: {}", e))?;
+
+    let body = response.body_mut().read_to_string()?;
+
+    // Parse JSON response: {"encryption_key": "base64_key"}
+    let json: serde_json::Value = serde_json::from_str(&body)?;
+    let encryption_key = json["encryption_key"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid response: missing encryption_key"))?;
+
+    log::debug!("Fetched encryption key from server");
+    Ok(encryption_key.to_string())
+}
+
 #[derive(Serialize)]
 pub struct ShareFilePayload {
     pub content: String,
@@ -108,8 +134,8 @@ pub struct ShareFilePayload {
 // Share the file with the devices
 // @param server_url: The server URL
 // @param email: The email
-// @param key: The key
-// @param payload: The payload to share the file with
+// @param key: The encrypted device authentication key
+// @param payload: The payload to share the file with (content will be encrypted)
 // @return: The result of the sharing
 pub fn share_file(
     server_url: Option<String>,
@@ -139,15 +165,35 @@ pub fn share_file(
     if payload.device_ids.is_empty() {
         return Err(anyhow::anyhow!("Device IDs are missing"));
     }
-    let decrypted_key = crypto_helper::decrypt(&key.unwrap()).unwrap();
-    let share_url = format!("{}/api/share", server_url.unwrap());
+
+    let server_url_str = server_url.as_ref().unwrap();
+    let email_str = email.as_ref().unwrap();
+    let decrypted_device_key = crypto_helper::decrypt(&key.unwrap())?;
+    let encryption_key = fetch_encryption_key(server_url_str, email_str, &decrypted_device_key)?;
+    let encrypted_content = crypto_helper::encrypt_content(&payload.content, &encryption_key)?;
+    log::debug!(
+        "Encrypted {} bytes to {} bytes",
+        payload.content.len(),
+        encrypted_content.len()
+    );
+
+    // Create payload with encrypted content
+    let encrypted_payload = ShareFilePayload {
+        content: encrypted_content,
+        file_name: payload.file_name,
+        device_ids: payload.device_ids,
+    };
+
+    // Send the encrypted content to the server
+    let share_url = format!("{}/api/share", server_url_str);
     let mut response = ureq::post(&share_url)
-        .header("Authorization", &format!("Bearer {}", decrypted_key))
-        .header("X-User-Email", &email.unwrap())
+        .header("Authorization", &format!("Bearer {}", decrypted_device_key))
+        .header("X-User-Email", email_str)
         .header("Content-Type", "application/json")
-        .send_json(payload)?;
-    println!("Response: {:?}", response);
+        .send_json(encrypted_payload)?;
+
     if response.status() == 200 {
+        log::info!("File shared successfully with end-to-end encryption");
         Ok(())
     } else {
         Err(anyhow::anyhow!(
