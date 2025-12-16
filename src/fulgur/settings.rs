@@ -791,7 +791,7 @@ impl Fulgur {
                                                 let result = entity
                                                     .read(cx)
                                                     .test_synchronization_connection();
-                                                let notification = match result {
+                                                let notification = match result.clone() {
                                                     SynchronizationTestResult::Success => (
                                                         NotificationType::Success,
                                                         SharedString::from(
@@ -807,6 +807,16 @@ impl Fulgur {
                                                     ),
                                                 };
                                                 window.push_notification(notification, cx);
+                                                let is_connected = match result {
+                                                    SynchronizationTestResult::Success => true,
+                                                    SynchronizationTestResult::Failure(_) => false,
+                                                };
+                                                entity.update(cx, |this, _cx| {
+                                                    this.is_connected.store(
+                                                        is_connected,
+                                                        std::sync::atomic::Ordering::Relaxed,
+                                                    );
+                                                });
                                             }
                                         }),
                                 )
@@ -1021,5 +1031,6 @@ impl Fulgur {
             .clone();
 
         test_synchronization_connection(server_url, email, key)
+        //TODO update status
     }
 }
