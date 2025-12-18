@@ -21,6 +21,13 @@ mod themes;
 mod titlebar;
 mod updater;
 
+use std::{
+    collections::HashSet,
+    path::PathBuf,
+    sync::{Arc, Mutex, atomic::AtomicBool},
+};
+
+use fulgur_common::api::shares::SharedFileResponse;
 use menus::*;
 use search_replace::SearchMatch;
 use settings::Settings;
@@ -64,14 +71,14 @@ pub struct Fulgur {
     pub language_dropdown: Entity<SelectState<Vec<SharedString>>>,
     settings_changed: bool,
     pub themes: Option<Themes>,
-    rendered_tabs: std::collections::HashSet<usize>, // Track which tabs have been rendered
-    tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
-    pub pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>, // Files from macOS "Open with" events
+    rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
+    tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
+    pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>, // Files from macOS "Open with" events
     update_link: Option<String>,
-    is_connected: std::sync::Arc<std::sync::atomic::AtomicBool>, // Shared sync connection status (thread-safe)
-    encryption_key: std::sync::Arc<std::sync::Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
-    pending_shared_files:
-        std::sync::Arc<std::sync::Mutex<Vec<fulgur_common::api::shares::SharedFileResponse>>>, // Shared files from sync server (thread-safe)
+    is_connected: Arc<AtomicBool>, // Shared sync connection status (thread-safe)
+    encryption_key: Arc<Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
+    device_name: Arc<Mutex<Option<String>>>, // Device name from server (thread-safe)
+    pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>, // Shared files from sync server (thread-safe)
 }
 
 impl Fulgur {
@@ -83,7 +90,7 @@ impl Fulgur {
     pub fn new(
         window: &mut Window,
         cx: &mut App,
-        pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>,
+        pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
     ) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
         let settings = match Settings::load() {
@@ -136,14 +143,15 @@ impl Fulgur {
                 settings,
                 language_dropdown,
                 settings_changed: false,
-                rendered_tabs: std::collections::HashSet::new(),
-                tabs_pending_update: std::collections::HashSet::new(),
+                rendered_tabs: HashSet::new(),
+                tabs_pending_update: HashSet::new(),
                 pending_files_from_macos,
                 themes,
                 update_link: None,
-                is_connected: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                encryption_key: std::sync::Arc::new(std::sync::Mutex::new(None)),
-                pending_shared_files: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                is_connected: Arc::new(AtomicBool::new(false)),
+                encryption_key: Arc::new(Mutex::new(None)),
+                device_name: Arc::new(Mutex::new(None)),
+                pending_shared_files: Arc::new(Mutex::new(Vec::new())),
             };
             entity
         });

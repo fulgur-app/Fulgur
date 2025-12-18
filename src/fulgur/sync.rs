@@ -1,3 +1,6 @@
+use std::thread;
+use std::time::Duration;
+
 use crate::fulgur::{crypto_helper, icons::CustomIcon};
 use fulgur_common::api::BeginResponse;
 use fulgur_common::api::devices::DeviceResponse;
@@ -235,9 +238,13 @@ pub fn initial_synchronization(
     Ok(begin_response)
 }
 
-// Fetches shared files from the server and stores them for processing without blocking app startup
-// @param entity: The Fulgur entity
-// @param cx: The application context
+/// Fetches shared files from the server and stores them for processing without blocking app startup
+///
+/// @param entity: The Fulgur entity
+///
+/// @param cx: The application context
+///
+/// @return: The begin response from the server containing encryption key, device name, and shared files
 pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &gpui::App) {
     if !entity
         .read(cx)
@@ -252,10 +259,10 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     let is_connected = entity.read(cx).is_connected.clone();
     let pending_shared_files = entity.read(cx).pending_shared_files.clone();
     let encryption_key = entity.read(cx).encryption_key.clone();
-
-    std::thread::spawn(move || {
+    let device_name = entity.read(cx).device_name.clone();
+    thread::spawn(move || {
         // Small delay to ensure app initialization doesn't block
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(100));
         let server_url = settings
             .app_settings
             .synchronization_settings
@@ -273,6 +280,9 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                 is_connected.store(true, std::sync::atomic::Ordering::Relaxed);
                 if let Ok(mut key) = encryption_key.lock() {
                     *key = Some(begin_response.encryption_key);
+                }
+                if let Ok(mut device_name) = device_name.lock() {
+                    *device_name = Some(begin_response.device_name);
                 }
                 if let Ok(mut files) = pending_shared_files.lock() {
                     *files = begin_response.shares;
