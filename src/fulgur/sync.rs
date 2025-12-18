@@ -1,6 +1,10 @@
 use crate::fulgur::{crypto_helper, icons::CustomIcon};
+use fulgur_common::api::BeginResponse;
+use fulgur_common::api::devices::DeviceResponse;
 use gpui_component::Icon;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+
+pub type Device = DeviceResponse;
 
 // Test the synchronization connection
 // @param server_url: The server URL
@@ -39,16 +43,6 @@ pub fn test_synchronization_connection(
 pub enum SynchronizationTestResult {
     Success,
     Failure(String),
-}
-
-#[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)]
-pub struct Device {
-    pub id: String,
-    pub name: String,
-    pub device_type: String,
-    pub created_at: String,
-    pub expires_at: String,
 }
 
 // Get the icon for the device
@@ -201,4 +195,93 @@ pub fn share_file(
             response.body_mut().read_to_string()?
         ))
     }
+}
+
+/// Initial synchronization with the server
+/// This endpoint returns both the encryption key and any shared files waiting for this device
+/// @param server_url: The server URL
+/// @param email: The email
+/// @param key: The encrypted device authentication key
+/// @return: The begin response containing encryption key and shared files
+pub fn initial_synchronization(
+    server_url: Option<String>,
+    email: Option<String>,
+    key: Option<String>,
+) -> anyhow::Result<BeginResponse> {
+    if server_url.is_none() {
+        return Err(anyhow::anyhow!("Server URL is missing"));
+    }
+    if email.is_none() {
+        return Err(anyhow::anyhow!("Email is missing"));
+    }
+    if key.is_none() {
+        return Err(anyhow::anyhow!("Key is missing"));
+    }
+    let server_url_str = server_url.as_ref().unwrap();
+    let email_str = email.as_ref().unwrap();
+    let decrypted_device_key = crypto_helper::decrypt(&key.unwrap())?;
+    let begin_url = format!("{}/api/begin", server_url_str);
+    let mut response = ureq::get(&begin_url)
+        .header("Authorization", &format!("Bearer {}", decrypted_device_key))
+        .header("X-User-Email", email_str)
+        .call()
+        .map_err(|e| anyhow::anyhow!("Failed to fetch shared files: {}", e))?;
+    let body = response.body_mut().read_to_string()?;
+    let begin_response: BeginResponse = serde_json::from_str(&body)?;
+    log::info!(
+        "Initial synchronization successful with {} shared files",
+        begin_response.shares.len()
+    );
+    Ok(begin_response)
+}
+
+// Fetches shared files from the server and stores them for processing without blocking app startup
+// @param entity: The Fulgur entity
+// @param cx: The application context
+pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &gpui::App) {
+    if !entity
+        .read(cx)
+        .settings
+        .app_settings
+        .synchronization_settings
+        .is_synchronization_activated
+    {
+        return;
+    }
+    let settings = entity.read(cx).settings.clone();
+    let is_connected = entity.read(cx).is_connected.clone();
+    let pending_shared_files = entity.read(cx).pending_shared_files.clone();
+    let encryption_key = entity.read(cx).encryption_key.clone();
+
+    std::thread::spawn(move || {
+        // Small delay to ensure app initialization doesn't block
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let server_url = settings
+            .app_settings
+            .synchronization_settings
+            .server_url
+            .clone();
+        let email = settings.app_settings.synchronization_settings.email.clone();
+        let key = settings.app_settings.synchronization_settings.key.clone();
+        if server_url.is_none() || email.is_none() || key.is_none() {
+            is_connected.store(false, std::sync::atomic::Ordering::Relaxed);
+            return;
+        }
+        match initial_synchronization(server_url, email, key) {
+            Ok(begin_response) => {
+                log::info!("Successfully connected to sync server");
+                is_connected.store(true, std::sync::atomic::Ordering::Relaxed);
+                if let Ok(mut key) = encryption_key.lock() {
+                    *key = Some(begin_response.encryption_key);
+                }
+                if let Ok(mut files) = pending_shared_files.lock() {
+                    *files = begin_response.shares;
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to fetch shared files: {}", e);
+                is_connected.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    });
 }

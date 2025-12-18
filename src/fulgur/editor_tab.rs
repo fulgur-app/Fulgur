@@ -80,6 +80,44 @@ impl EditorTab {
         }
     }
 
+    // Create a new tab from content with a given file name (no path)
+    // Used for shared files from sync server
+    // @param id: The ID of the tab
+    // @param contents: The contents of the file
+    // @param file_name: The name of the file (displayed in tab bar)
+    // @param window: The window to create the tab in
+    // @param cx: The application context
+    // @param settings: The settings for the input state
+    // @return: The new tab
+    pub fn from_content(
+        id: usize,
+        contents: String,
+        file_name: String,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) -> Self {
+        let extension = std::path::Path::new(&file_name)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+        let language = language_from_extension(extension);
+        let content =
+            cx.new(|cx| make_input_state(window, cx, language, Some(contents.clone()), settings));
+        Self {
+            id,
+            title: file_name.into(),
+            content,
+            file_path: None,                 // No path - forces "Save as..." dialog
+            modified: true,                  // Mark as modified
+            original_content: String::new(), // Empty so check_modified() keeps it as modified
+            encoding: UTF_8.to_string(),
+            language,
+            show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
+            show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+        }
+    }
+
     // Create a new tab from a file
     // @param id: The ID of the tab
     // @param path: The path of the file
@@ -150,6 +188,19 @@ impl EditorTab {
     pub fn mark_as_saved(&mut self, cx: &mut App) {
         self.original_content = self.content.read(cx).text().to_string();
         self.modified = false;
+    }
+
+    // Get suggested filename for "Save as..." dialog
+    // Extracts filename from tab title by removing modification indicators
+    // @return: The suggested filename, or None if UNTITLED
+    pub fn get_suggested_filename(&self) -> Option<String> {
+        let title_str = self.title.to_string();
+        let cleaned = title_str.trim_end_matches(" •").trim();
+        if cleaned.is_empty() || cleaned.starts_with(UNTITLED) {
+            None
+        } else {
+            Some(cleaned.to_string())
+        }
     }
 
     // Update the language/syntax highlighting based on the file extension

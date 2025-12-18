@@ -40,8 +40,7 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::fulgur::sync::SynchronizationTestResult;
-use crate::fulgur::{icons::CustomIcon, settings::Themes, sync::test_synchronization_connection};
+use crate::fulgur::{icons::CustomIcon, settings::Themes, sync::initial_synchronization};
 
 pub struct Fulgur {
     focus_handle: FocusHandle,
@@ -70,6 +69,9 @@ pub struct Fulgur {
     pub pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>, // Files from macOS "Open with" events
     update_link: Option<String>,
     is_connected: std::sync::Arc<std::sync::atomic::AtomicBool>, // Shared sync connection status (thread-safe)
+    encryption_key: std::sync::Arc<std::sync::Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
+    pending_shared_files:
+        std::sync::Arc<std::sync::Mutex<Vec<fulgur_common::api::shares::SharedFileResponse>>>, // Shared files from sync server (thread-safe)
 }
 
 impl Fulgur {
@@ -140,55 +142,17 @@ impl Fulgur {
                 themes,
                 update_link: None,
                 is_connected: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                encryption_key: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                pending_shared_files: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             };
             entity
         });
         entity.update(cx, |this, cx| {
             this.load_state(window, cx);
         });
-        Self::verify_sync_connection_async(&entity, cx);
+        sync::begin_synchronization(&entity, cx);
 
         entity
-    }
-
-    // Verify synchronization connection asynchronously without blocking app startup
-    // @param entity: The Fulgur entity
-    // @param cx: The application context
-    fn verify_sync_connection_async(entity: &Entity<Self>, cx: &App) {
-        if !entity
-            .read(cx)
-            .settings
-            .app_settings
-            .synchronization_settings
-            .is_synchronization_activated
-        {
-            return;
-        }
-        let settings = entity.read(cx).settings.clone();
-        let is_connected = entity.read(cx).is_connected.clone();
-        std::thread::spawn(move || {
-            // Small delay to ensure app initialization doesn't block
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            let server_url = settings
-                .app_settings
-                .synchronization_settings
-                .server_url
-                .clone();
-            let email = settings.app_settings.synchronization_settings.email.clone();
-            let key = settings.app_settings.synchronization_settings.key.clone();
-            let connection_status = if server_url.is_none() || email.is_none() || key.is_none() {
-                false
-            } else {
-                match test_synchronization_connection(server_url, email, key) {
-                    SynchronizationTestResult::Success => true,
-                    SynchronizationTestResult::Failure(e) => {
-                        log::error!("Sync connection test failed: {}", e);
-                        false
-                    }
-                }
-            };
-            is_connected.store(connection_status, std::sync::atomic::Ordering::Relaxed);
-        });
     }
 
     // Initialize the Fulgur instance
@@ -276,6 +240,66 @@ impl Render for Fulgur {
         };
         for file_path in files_to_open {
             self.handle_open_file_from_cli(window, cx, file_path);
+        }
+
+        // Process pending shared files from sync server
+        let shared_files_to_open = if let Ok(mut pending) = self.pending_shared_files.try_lock() {
+            if pending.is_empty() {
+                Vec::new()
+            } else {
+                log::info!(
+                    "Processing {} shared file(s) from sync server",
+                    pending.len()
+                );
+                pending.drain(..).collect()
+            }
+        } else {
+            Vec::new()
+        };
+
+        if !shared_files_to_open.is_empty() {
+            // Get encryption key for decrypting shared files
+            let encryption_key_opt = if let Ok(key) = self.encryption_key.lock() {
+                key.clone()
+            } else {
+                None
+            };
+
+            if let Some(encryption_key) = encryption_key_opt {
+                for shared_file in shared_files_to_open {
+                    // Decrypt the file content
+                    match crypto_helper::decrypt_content(&shared_file.content, &encryption_key) {
+                        Ok(decrypted_content) => {
+                            // Create a new editor tab with the decrypted content
+                            let tab_id = self.next_tab_id;
+                            self.next_tab_id += 1;
+
+                            let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
+                                tab_id,
+                                decrypted_content,
+                                shared_file.file_name.clone(),
+                                window,
+                                cx,
+                                &self.settings.editor_settings,
+                            ));
+
+                            self.tabs.push(new_tab);
+                            self.active_tab_index = Some(self.tabs.len() - 1);
+
+                            log::info!("Opened shared file: {}", shared_file.file_name);
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "Failed to decrypt shared file {}: {}",
+                                shared_file.file_name,
+                                e
+                            );
+                        }
+                    }
+                }
+            } else {
+                log::error!("Cannot decrypt shared files: encryption key not available");
+            }
         }
 
         if self.tabs.is_empty() {

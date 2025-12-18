@@ -4,6 +4,9 @@ version = "0.0.2"
 edition = "2024"
 
 [dependencies]
+# Types
+fulgur-common = { path = "../Fulgur-common" }
+
 anyhow = "1.0.100"
 chardetng = "0.1.17"
 chrono = { version = "0.4", features = ["serde"] }

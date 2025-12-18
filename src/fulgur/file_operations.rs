@@ -325,7 +325,7 @@ impl Fulgur {
             return;
         }
         let active_tab_index = self.active_tab_index;
-        let (content_entity, directory) = match &self.tabs[active_tab_index.unwrap()] {
+        let (content_entity, directory, suggested_filename) = match &self.tabs[active_tab_index.unwrap()] {
             Tab::Editor(editor_tab) => {
                 let dir = if let Some(ref path) = editor_tab.file_path {
                     path.parent()
@@ -334,11 +334,12 @@ impl Fulgur {
                 } else {
                     std::env::current_dir().unwrap_or_default()
                 };
-                (editor_tab.content.clone(), dir)
+                let suggested = editor_tab.get_suggested_filename();
+                (editor_tab.content.clone(), dir, suggested)
             }
             Tab::Settings(_) => return,
         };
-        let path_future = cx.prompt_for_new_path(&directory, None);
+        let path_future = cx.prompt_for_new_path(&directory, suggested_filename.as_deref());
         cx.spawn_in(window, async move |view, window| {
             let path = path_future.await.ok()?.ok()??;
             let contents = window

@@ -13,6 +13,7 @@ dependencies = [
  "chrono",
  "embed-resource",
  "encoding_rs",
+ "fulgur-common",
  "gpui",
  "gpui-component",
  "log",
@@ -1941,6 +1942,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76ee7a02da4d231650c7cea31349b889be2f45ddb3ef3032d2ec8185f6313fd2"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "fulgur-common"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
