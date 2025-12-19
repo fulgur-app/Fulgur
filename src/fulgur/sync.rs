@@ -141,13 +141,13 @@ pub struct ShareFilePayload {
 ///
 /// @param payload: The payload to share the file with (content will be encrypted)
 ///
-/// @return: The result of the sharing
+/// @return: The expiration date of the shared file
 pub fn share_file(
     server_url: Option<String>,
     email: Option<String>,
     key: Option<String>,
     payload: ShareFilePayload,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<String> {
     if server_url.is_none() {
         return Err(anyhow::anyhow!("Server URL is missing"));
     }
@@ -178,7 +178,7 @@ pub fn share_file(
     let encrypted_content = crypto_helper::encrypt_bytes(&compressed_content, &encryption_key)?;
     let encrypted_payload = ShareFilePayload {
         content: encrypted_content,
-        file_name: payload.file_name,
+        file_name: payload.file_name.clone(),
         device_ids: payload.device_ids,
     };
     let share_url = format!("{}/api/share", server_url_str);
@@ -188,8 +188,17 @@ pub fn share_file(
         .header("Content-Type", "application/json")
         .send_json(encrypted_payload)?;
     if response.status() == 200 {
-        log::info!("File shared successfully with end-to-end encryption");
-        Ok(())
+        let body = response.body_mut().read_to_string()?;
+        let json: serde_json::Value = serde_json::from_str(&body)?;
+        let expiration_date = json["expiration_date"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid response: missing expiration_date"))?;
+        log::info!(
+            "File {} shared successfully until {}",
+            payload.file_name,
+            expiration_date
+        );
+        Ok(expiration_date.to_string())
     } else {
         Err(anyhow::anyhow!(
             "Failed to share file: {}",

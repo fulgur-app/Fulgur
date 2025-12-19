@@ -496,11 +496,13 @@ impl Fulgur {
                                     )
                                 });
                                 match result {
-                                    Ok(_) => {
-                                        log::info!("File shared successfully");
+                                    Ok(expiration_date) => {
                                         let notification = (
                                             NotificationType::Success,
-                                            SharedString::from("File shared successfully!"),
+                                            SharedString::from(format!(
+                                                "File shared successfully until {}",
+                                                expiration_date
+                                            )),
                                         );
                                         window.push_notification(notification, cx);
                                     }
