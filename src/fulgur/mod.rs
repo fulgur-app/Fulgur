@@ -466,8 +466,9 @@ impl Render for Fulgur {
                     this.clear_recent_files(cx);
                 }),
             )
-            .on_action(cx.listener(|this, _action: &About, window, cx| {
-                this.about(window, cx);
+            .on_action(cx.listener(|_this, _action: &About, window, cx| {
+                let entity = cx.entity();
+                about(entity, window, cx);
             }))
             .on_action(cx.listener(|_, _action: &GetTheme, _window, _cx| {
                 if let Err(e) =
@@ -506,6 +507,51 @@ impl Render for Fulgur {
             .children(Root::render_dialog_layer(window, cx));
         main_div
     }
+}
+
+/// Show the about dialog
+///
+/// @param _entity: The Fulgur entity (unused but needed for consistent signature)
+///
+/// @param window: The window context
+///
+/// @param cx: The application context
+fn about(_entity: Entity<Fulgur>, window: &mut Window, cx: &mut App) {
+    window.open_dialog(cx, |modal, _window, _cx| {
+        modal
+            .alert()
+            .keyboard(true)
+            .title(div().text_center().child("Fulgur"))
+            .child(
+                gpui_component::v_flex()
+                    .gap_4()
+                    .items_center()
+                    .child(img("assets/icon_square.png").w(px(200.0)).h(px(200.0)))
+                    .child(format!("Version {}", env!("CARGO_PKG_VERSION")))
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(Icon::new(CustomIcon::Globe))
+                            .child(
+                                Link::new("website-link")
+                                    .href("https://fulgur.app")
+                                    .child("https://fulgur.app"),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(Icon::new(CustomIcon::GitHub))
+                            .child(
+                                Link::new("github-link")
+                                    .href("https://github.com/PRRPCHT/Fulgur")
+                                    .child("https://github.com/PRRPCHT/Fulgur"),
+                            ),
+                    ),
+            )
+    });
 }
 
 impl Fulgur {
@@ -591,49 +637,6 @@ impl Fulgur {
     fn set_title(&self, title: Option<String>, cx: &mut Context<Self>) {
         self.title_bar.update(cx, |this, _cx| {
             this.set_title(title);
-        });
-    }
-
-    /// Show the about dialog
-    ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
-    fn about(&self, window: &mut Window, cx: &mut Context<Self>) {
-        window.open_dialog(cx, |modal, _window, _cx| {
-            modal
-                .alert()
-                .keyboard(true)
-                .title(div().text_center().child("Fulgur"))
-                .child(
-                    gpui_component::v_flex()
-                        .gap_4()
-                        .items_center()
-                        .child(img("assets/icon_square.png").w(px(200.0)).h(px(200.0)))
-                        .child("Version 0.0.1")
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .items_center()
-                                .child(Icon::new(CustomIcon::Globe))
-                                .child(
-                                    Link::new("website-link")
-                                        .href("https://fulgur.app")
-                                        .child("https://fulgur.app"),
-                                ),
-                        )
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .items_center()
-                                .child(Icon::new(CustomIcon::GitHub))
-                                .child(
-                                    Link::new("github-link")
-                                        .href("https://github.com/PRRPCHT/Fulgur")
-                                        .child("https://github.com/PRRPCHT/Fulgur"),
-                                ),
-                        ),
-                )
         });
     }
 }
