@@ -1,4 +1,5 @@
 mod components_utils;
+mod crypto_helper;
 mod editor_tab;
 mod file_operations;
 mod icons;
@@ -12,6 +13,7 @@ mod settings;
 mod state_operations;
 mod state_persistence;
 mod status_bar;
+mod sync;
 mod tab;
 mod tab_bar;
 mod tab_manager;
@@ -19,6 +21,13 @@ mod themes;
 mod titlebar;
 mod updater;
 
+use std::{
+    collections::HashSet,
+    path::PathBuf,
+    sync::{Arc, Mutex, atomic::AtomicBool},
+};
+
+use fulgur_common::api::shares::SharedFileResponse;
 use menus::*;
 use search_replace::SearchMatch;
 use settings::Settings;
@@ -31,7 +40,6 @@ use gpui_component::{
     highlighter::Language,
     input::{Input, InputEvent, InputState},
     link::Link,
-    notification::NotificationType,
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
     select::SelectState,
@@ -63,10 +71,14 @@ pub struct Fulgur {
     pub language_dropdown: Entity<SelectState<Vec<SharedString>>>,
     settings_changed: bool,
     pub themes: Option<Themes>,
-    rendered_tabs: std::collections::HashSet<usize>, // Track which tabs have been rendered
-    tabs_pending_update: std::collections::HashSet<usize>, // Track tabs that need settings update on next render
-    pub pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>, // Files from macOS "Open with" events
+    rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
+    tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
+    pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>, // Files from macOS "Open with" events
     update_link: Option<String>,
+    is_connected: Arc<AtomicBool>, // Shared sync connection status (thread-safe)
+    encryption_key: Arc<Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
+    device_name: Arc<Mutex<Option<String>>>, // Device name from server (thread-safe)
+    pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>, // Shared files from sync server (thread-safe)
 }
 
 impl Fulgur {
@@ -78,7 +90,7 @@ impl Fulgur {
     pub fn new(
         window: &mut Window,
         cx: &mut App,
-        pending_files_from_macos: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>,
+        pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
     ) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
         let settings = match Settings::load() {
@@ -131,17 +143,23 @@ impl Fulgur {
                 settings,
                 language_dropdown,
                 settings_changed: false,
-                rendered_tabs: std::collections::HashSet::new(),
-                tabs_pending_update: std::collections::HashSet::new(),
+                rendered_tabs: HashSet::new(),
+                tabs_pending_update: HashSet::new(),
                 pending_files_from_macos,
                 themes,
                 update_link: None,
+                is_connected: Arc::new(AtomicBool::new(false)),
+                encryption_key: Arc::new(Mutex::new(None)),
+                device_name: Arc::new(Mutex::new(None)),
+                pending_shared_files: Arc::new(Mutex::new(Vec::new())),
             };
             entity
         });
         entity.update(cx, |this, cx| {
             this.load_state(window, cx);
         });
+        sync::begin_synchronization(&entity, cx);
+
         entity
     }
 
@@ -230,6 +248,69 @@ impl Render for Fulgur {
         };
         for file_path in files_to_open {
             self.handle_open_file_from_cli(window, cx, file_path);
+        }
+
+        // Process pending shared files from sync server
+        let shared_files_to_open = if let Ok(mut pending) = self.pending_shared_files.try_lock() {
+            if pending.is_empty() {
+                Vec::new()
+            } else {
+                log::info!(
+                    "Processing {} shared file(s) from sync server",
+                    pending.len()
+                );
+                pending.drain(..).collect()
+            }
+        } else {
+            Vec::new()
+        };
+
+        if !shared_files_to_open.is_empty() {
+            // Get encryption key for decrypting shared files
+            let encryption_key_opt = if let Ok(key) = self.encryption_key.lock() {
+                key.clone()
+            } else {
+                None
+            };
+
+            if let Some(encryption_key) = encryption_key_opt {
+                for shared_file in shared_files_to_open {
+                    let decrypted_result =
+                        crypto_helper::decrypt_bytes(&shared_file.content, &encryption_key)
+                            .and_then(|compressed_bytes| {
+                                sync::decompress_content(&compressed_bytes)
+                            });
+                    match decrypted_result {
+                        Ok(decrypted_content) => {
+                            let tab_id = self.next_tab_id;
+                            self.next_tab_id += 1;
+
+                            let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
+                                tab_id,
+                                decrypted_content,
+                                shared_file.file_name.clone(),
+                                window,
+                                cx,
+                                &self.settings.editor_settings,
+                            ));
+
+                            self.tabs.push(new_tab);
+                            self.active_tab_index = Some(self.tabs.len() - 1);
+
+                            log::info!("Opened shared file: {}", shared_file.file_name);
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "Failed to decrypt shared file {}: {}",
+                                shared_file.file_name,
+                                e
+                            );
+                        }
+                    }
+                }
+            } else {
+                log::error!("Cannot decrypt shared files: encryption key not available");
+            }
         }
 
         if self.tabs.is_empty() {

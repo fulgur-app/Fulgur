@@ -4,6 +4,9 @@ version = "0.0.2"
 edition = "2024"
 
 [dependencies]
+# Types
+fulgur-common = { path = "../Fulgur-common" }
+
 anyhow = "1.0.100"
 chardetng = "0.1.17"
 chrono = { version = "0.4", features = ["serde"] }
@@ -21,6 +24,11 @@ urlencoding = "2.1"
 open = "5.3.3"
 ureq = { version = "3.1.4", features = ["json"] }
 semver = "1.0.27"
+
+aes-gcm = "0.10"
+base64 = "0.22"
+machine-uid = "0.5"
+flate2 = "1.1.5"
 
 [build-dependencies]
 embed-resource = "3.0.6"

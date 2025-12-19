@@ -3,21 +3,123 @@ use std::ops::DerefMut;
 use crate::fulgur::{
     Fulgur,
     components_utils::{EMPTY, UTF_8},
-    editor_tab, languages,
+    editor_tab,
+    icons::CustomIcon,
+    languages,
+    sync::{Device, ShareFilePayload, get_devices, get_icon, share_file},
 };
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
-    ActiveTheme, WindowExt, h_flex,
+    ActiveTheme, Icon, WindowExt, h_flex,
     highlighter::Language,
     input::{Input, Position},
+    notification::NotificationType,
+    scroll::ScrollableElement,
     select::Select,
+    v_flex,
 };
+
+// State for device selection dialog
+struct DeviceSelectionState {
+    devices: Vec<Device>,
+    selected_ids: Vec<String>,
+}
+
+impl DeviceSelectionState {
+    // Create a new device selection state
+    // @param devices: The devices to select from
+    // @return: The new device selection state
+    fn new(devices: Vec<Device>) -> Self {
+        Self {
+            devices,
+            selected_ids: Vec::new(),
+        }
+    }
+
+    // Toggle the selection of a device
+    // @param device_id: The ID of the device
+    // @return: The new selection state
+    fn toggle_selection(&mut self, device_id: &str) {
+        if let Some(pos) = self.selected_ids.iter().position(|id| id == device_id) {
+            self.selected_ids.remove(pos);
+        } else {
+            self.selected_ids.push(device_id.to_string());
+        }
+    }
+
+    // Check if a device is selected
+    // @param device_id: The ID of the device
+    // @return: True if the device is selected, false otherwise
+    fn is_selected(&self, device_id: &str) -> bool {
+        self.selected_ids.contains(&device_id.to_string())
+    }
+}
+
+impl Render for DeviceSelectionState {
+    // Render the device selection state
+    // @param window: The window context
+    // @param cx: The application context
+    // @return: The rendered device selection state
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let window_height = window.window_bounds().get_bounds().size.height;
+        let max_height = window_height - px(200.0); //TODO: Make this dynamic
+        v_flex()
+            .w_full()
+            .max_h(max_height)
+            .overflow_y_scrollbar()
+            .children(
+                self.devices
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, device)| {
+                        let device_id = device.id.clone();
+                        let is_selected = self.is_selected(&device_id);
+                        h_flex()
+                            .id(("share-device", idx))
+                            .items_center()
+                            .justify_between()
+                            .w_full()
+                            .p_2()
+                            .my_2()
+                            .rounded_sm()
+                            .border_color(cx.theme().border)
+                            .border_1()
+                            .hover(|this| this.bg(cx.theme().muted))
+                            .when(is_selected, |this| {
+                                this.bg(cx.theme().accent)
+                                    .text_color(cx.theme().accent_foreground)
+                            })
+                            .cursor_pointer()
+                            .child(
+                                h_flex()
+                                    .items_center()
+                                    .justify_start()
+                                    .gap_2()
+                                    .child(get_icon(&device))
+                                    .child(div().child(device.name.clone()))
+                                    .child(
+                                        div().text_xs().child(format!(
+                                            "Expires: {}",
+                                            device.expires_at.clone()
+                                        )),
+                                    ),
+                            )
+                            .when(is_selected, |this| this.child(Icon::new(CustomIcon::Zap)))
+                            .on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
+                                this.toggle_selection(&device_id);
+                                cx.notify();
+                            }))
+                    })
+                    .collect::<Vec<_>>(),
+            )
+    }
+}
 
 // Create a status bar item
 // @param content: The content of the status bar item
 // @param border_color: The color of the border
 // @return: A status bar item
-pub fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
+pub fn status_bar_item_factory(content: impl IntoElement, border_color: Hsla) -> Div {
     div()
         .text_xs()
         .px_2()
@@ -31,7 +133,11 @@ pub fn status_bar_item_factory(content: String, border_color: Hsla) -> Div {
 // @param border_color: The color of the border
 // @param accent_color: The color of the accent
 // @return: A status bar button
-pub fn status_bar_button_factory(content: String, border_color: Hsla, accent_color: Hsla) -> Div {
+pub fn status_bar_button_factory(
+    content: impl IntoElement,
+    border_color: Hsla,
+    accent_color: Hsla,
+) -> Div {
     status_bar_item_factory(content, border_color)
         .hover(|this| this.bg(accent_color))
         .cursor_pointer()
@@ -46,7 +152,7 @@ pub fn status_bar_right_item_factory(content: String, border_color: Hsla) -> imp
 }
 
 pub fn status_bar_toggle_button_factory(
-    content: String,
+    content: impl IntoElement,
     border_color: Hsla,
     accent_color: Hsla,
     checked: bool,
@@ -54,6 +160,43 @@ pub fn status_bar_toggle_button_factory(
     let mut button = status_bar_button_factory(content, border_color, accent_color);
     if checked {
         button = button.bg(accent_color);
+    }
+    button
+}
+
+pub fn status_bar_sync_button(
+    connected_icon: Icon,
+    disconnected_icon: Icon,
+    border_color: Hsla,
+    connected_color: Hsla,
+    connected_foreground_color: Hsla,
+    connected_hover_color: Hsla,
+    disconnected_color: Hsla,
+    disconnected_foreground_color: Hsla,
+    disconnected_hover_color: Hsla,
+    is_connected: bool,
+) -> Div {
+    let mut button = div()
+        .text_sm()
+        .flex()
+        .items_center()
+        .justify_center()
+        .px_4()
+        .py_1()
+        .border_color(border_color)
+        .cursor_pointer();
+    if is_connected {
+        button = button
+            .child(connected_icon)
+            .bg(connected_color)
+            .text_color(connected_foreground_color)
+            .hover(|this| this.bg(connected_hover_color));
+    } else {
+        button = button
+            .child(disconnected_icon)
+            .bg(disconnected_color)
+            .text_color(disconnected_foreground_color)
+            .hover(|this| this.bg(disconnected_hover_color));
     }
     button
 }
@@ -263,6 +406,124 @@ impl Fulgur {
             }),
         );
         let is_markdown = self.is_markdown();
+        let sync_button = status_bar_sync_button(
+            Icon::new(CustomIcon::Zap),
+            Icon::new(CustomIcon::ZapOff),
+            cx.theme().border,
+            cx.theme().primary,
+            cx.theme().primary_foreground,
+            cx.theme().primary_hover,
+            cx.theme().danger,
+            cx.theme().danger_foreground,
+            cx.theme().danger_hover,
+            self.is_connected.load(std::sync::atomic::Ordering::Relaxed),
+        )
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
+                let devices = get_devices(
+                    this.settings
+                        .app_settings
+                        .synchronization_settings
+                        .server_url
+                        .clone(),
+                    this.settings
+                        .app_settings
+                        .synchronization_settings
+                        .email
+                        .clone(),
+                    this.settings
+                        .app_settings
+                        .synchronization_settings
+                        .key
+                        .clone(),
+                );
+                let devices = match devices {
+                    Ok(devices) => devices,
+                    Err(e) => {
+                        log::error!("Failed to get devices: {}", e);
+                        return;
+                    }
+                };
+                let entity = cx.entity();
+                let state = cx.new(|_cx| DeviceSelectionState::new(devices));
+                window.open_dialog(cx.deref_mut(), move |modal, _window, _cx| {
+                    modal
+                        .confirm()
+                        .title("Share with...")
+                        .child(state.clone())
+                        .overlay_closable(true)
+                        .close_button(false)
+                        .on_ok({
+                            let state_clone = state.clone();
+                            let entity_clone = entity.clone();
+                            move |_event: &ClickEvent, window, cx| {
+                                let selected_ids = state_clone.read(cx).selected_ids.clone();
+                                let result = entity_clone.update(cx, |this, cx| {
+                                    let content = this
+                                        .get_active_editor_tab()
+                                        .map(|tab| tab.content.read(cx).value().to_string())
+                                        .unwrap_or_default();
+                                    let file_name = this
+                                        .get_active_editor_tab()
+                                        .and_then(|tab| tab.file_path.as_ref())
+                                        .and_then(|path| path.file_name())
+                                        .and_then(|name| name.to_str())
+                                        .unwrap_or("Untitled")
+                                        .to_string();
+                                    let payload = ShareFilePayload {
+                                        content,
+                                        file_name,
+                                        device_ids: selected_ids,
+                                    };
+                                    share_file(
+                                        this.settings
+                                            .app_settings
+                                            .synchronization_settings
+                                            .server_url
+                                            .clone(),
+                                        this.settings
+                                            .app_settings
+                                            .synchronization_settings
+                                            .email
+                                            .clone(),
+                                        this.settings
+                                            .app_settings
+                                            .synchronization_settings
+                                            .key
+                                            .clone(),
+                                        payload,
+                                    )
+                                });
+                                match result {
+                                    Ok(expiration_date) => {
+                                        let notification = (
+                                            NotificationType::Success,
+                                            SharedString::from(format!(
+                                                "File shared successfully until {}",
+                                                expiration_date
+                                            )),
+                                        );
+                                        window.push_notification(notification, cx);
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to share file: {}", e);
+                                        let notification = (
+                                            NotificationType::Error,
+                                            SharedString::from(format!(
+                                                "Failed to share file: {}",
+                                                e
+                                            )),
+                                        );
+                                        window.push_notification(notification, cx);
+                                    }
+                                }
+                                true
+                            }
+                        })
+                });
+            }),
+        );
         h_flex()
             .justify_between()
             .bg(cx.theme().tab_bar)
@@ -275,6 +536,13 @@ impl Fulgur {
                 div()
                     .flex()
                     .justify_start()
+                    .when(
+                        self.settings
+                            .app_settings
+                            .synchronization_settings
+                            .is_synchronization_activated,
+                        |this| this.child(sync_button),
+                    )
                     .child(language_button)
                     .when(is_markdown, |this| this.child(preview_button))
                     .when(is_markdown, |this| this.child(toolbar_button)),
