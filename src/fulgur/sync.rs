@@ -1,5 +1,4 @@
-use std::thread;
-use std::time::Duration;
+use std::{sync::atomic::Ordering, thread, time::Duration};
 
 use crate::fulgur::{crypto_helper, icons::CustomIcon};
 use fulgur_common::api::BeginResponse;
@@ -8,45 +7,6 @@ use gpui_component::Icon;
 use serde::Serialize;
 
 pub type Device = DeviceResponse;
-
-// Test the synchronization connection
-// @param server_url: The server URL
-// @param email: The email
-// @param key: The key
-// @return: The result of the connection test
-pub fn test_synchronization_connection(
-    server_url: Option<String>,
-    email: Option<String>,
-    key: Option<String>,
-) -> SynchronizationTestResult {
-    if server_url.is_none() {
-        return SynchronizationTestResult::Failure("Server URL is missing".to_string());
-    }
-    if email.is_none() {
-        return SynchronizationTestResult::Failure("Email is missing".to_string());
-    }
-    if key.is_none() {
-        return SynchronizationTestResult::Failure("Key is missing".to_string());
-    }
-    let decrypted_key = crypto_helper::decrypt(&key.unwrap()).unwrap();
-    let ping_url = format!("{}/api/ping", server_url.unwrap());
-    let response = ureq::get(&ping_url)
-        .header("Authorization", &format!("Bearer {}", decrypted_key))
-        .header("X-User-Email", &email.unwrap())
-        .call();
-    if response.is_ok() {
-        return SynchronizationTestResult::Success;
-    } else {
-        log::error!("Connection test failed: {}", response.unwrap_err());
-        return SynchronizationTestResult::Failure("Connection test failed".to_string());
-    }
-}
-
-#[derive(Clone, PartialEq)]
-pub enum SynchronizationTestResult {
-    Success,
-    Failure(String),
-}
 
 // Get the icon for the device
 // @param device: The device
@@ -108,15 +68,11 @@ fn fetch_encryption_key(server_url: &str, email: &str, device_key: &str) -> anyh
         .header("X-User-Email", email)
         .call()
         .map_err(|e| anyhow::anyhow!("Failed to fetch encryption key: {}", e))?;
-
     let body = response.body_mut().read_to_string()?;
-
-    // Parse JSON response: {"encryption_key": "base64_key"}
     let json: serde_json::Value = serde_json::from_str(&body)?;
     let encryption_key = json["encryption_key"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid response: missing encryption_key"))?;
-
     log::debug!("Fetched encryption key from server");
     Ok(encryption_key.to_string())
 }
@@ -290,7 +246,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             }
             Err(e) => {
                 log::error!("Failed to fetch shared files: {}", e);
-                is_connected.store(false, std::sync::atomic::Ordering::Relaxed);
+                is_connected.store(false, Ordering::Relaxed);
             }
         }
     });

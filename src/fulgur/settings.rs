@@ -20,7 +20,7 @@ use crate::fulgur::{
     Fulgur, crypto_helper,
     icons::CustomIcon,
     menus::build_menus,
-    sync::{SynchronizationTestResult, test_synchronization_connection},
+    sync::initial_synchronization,
     themes::{self, BundledThemes, themes_directory_path},
 };
 
@@ -780,37 +780,84 @@ impl Fulgur {
                                 .justify_end()
                                 .mt_2()
                                 .child(
-                                    Button::new("test-connection-button")
-                                        .label("Test Connection")
+                                    Button::new("begin-synchronization-button")
+                                        .label("Begin Synchronization")
                                         .primary()
                                         .small()
                                         .cursor_pointer()
                                         .on_click({
                                             let entity = entity.clone();
                                             move |_, window, cx| {
-                                                let result = entity
-                                                    .read(cx)
-                                                    .test_synchronization_connection();
-                                                let notification = match result.clone() {
-                                                    SynchronizationTestResult::Success => (
-                                                        NotificationType::Success,
-                                                        SharedString::from(
-                                                            "Connection test successful!",
+                                                let settings = entity.read(cx).settings.clone();
+                                                let server_url = settings
+                                                    .app_settings
+                                                    .synchronization_settings
+                                                    .server_url
+                                                    .clone();
+                                                let email = settings
+                                                    .app_settings
+                                                    .synchronization_settings
+                                                    .email
+                                                    .clone();
+                                                let key = settings
+                                                    .app_settings
+                                                    .synchronization_settings
+                                                    .key
+                                                    .clone();
+
+                                                let result =
+                                                    initial_synchronization(server_url, email, key);
+
+                                                let (notification, is_connected) = match result {
+                                                    Ok(begin_response) => {
+                                                        // Update encryption key and device name
+                                                        entity.update(cx, |this, _cx| {
+                                                            if let Ok(mut key) =
+                                                                this.encryption_key.lock()
+                                                            {
+                                                                *key = Some(
+                                                                    begin_response.encryption_key,
+                                                                );
+                                                            }
+                                                            if let Ok(mut name) =
+                                                                this.device_name.lock()
+                                                            {
+                                                                *name = Some(
+                                                                    begin_response
+                                                                        .device_name
+                                                                        .clone(),
+                                                                );
+                                                            }
+                                                            if let Ok(mut files) =
+                                                                this.pending_shared_files.lock()
+                                                            {
+                                                                *files = begin_response.shares;
+                                                            }
+                                                        });
+                                                        (
+                                                            (
+                                                                NotificationType::Success,
+                                                                SharedString::from(format!(
+                                                                    "Connection successful as {}",
+                                                                    begin_response.device_name
+                                                                )),
+                                                            ),
+                                                            true,
+                                                        )
+                                                    }
+                                                    Err(e) => (
+                                                        (
+                                                            NotificationType::Error,
+                                                            SharedString::from(format!(
+                                                                "Connection failed: {}",
+                                                                e
+                                                            )),
                                                         ),
-                                                    ),
-                                                    SynchronizationTestResult::Failure(msg) => (
-                                                        NotificationType::Error,
-                                                        SharedString::from(format!(
-                                                            "Connection test failed: {}",
-                                                            msg
-                                                        )),
+                                                        false,
                                                     ),
                                                 };
+
                                                 window.push_notification(notification, cx);
-                                                let is_connected = match result {
-                                                    SynchronizationTestResult::Success => true,
-                                                    SynchronizationTestResult::Failure(_) => false,
-                                                };
                                                 entity.update(cx, |this, _cx| {
                                                     this.is_connected.store(
                                                         is_connected,
@@ -1006,31 +1053,5 @@ impl Fulgur {
             self.update_link.clone(),
         );
         cx.set_menus(menus);
-    }
-
-    // Test the synchronization connection
-    // @return: The result of the connection test
-    pub fn test_synchronization_connection(&self) -> SynchronizationTestResult {
-        let server_url = self
-            .settings
-            .app_settings
-            .synchronization_settings
-            .server_url
-            .clone();
-        let email = self
-            .settings
-            .app_settings
-            .synchronization_settings
-            .email
-            .clone();
-        let key = self
-            .settings
-            .app_settings
-            .synchronization_settings
-            .key
-            .clone();
-
-        test_synchronization_connection(server_url, email, key)
-        //TODO update status
     }
 }

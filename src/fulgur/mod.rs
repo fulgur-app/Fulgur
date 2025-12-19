@@ -47,7 +47,7 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::fulgur::{icons::CustomIcon, settings::Themes, sync::initial_synchronization};
+use crate::fulgur::{icons::CustomIcon, settings::Themes};
 
 pub struct Fulgur {
     focus_handle: FocusHandle,
