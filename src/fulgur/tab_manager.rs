@@ -6,9 +6,11 @@ use gpui_component::WindowExt;
 use std::ops::DerefMut;
 
 impl Fulgur {
-    // Create a new tab
-    // @param window: The window to create the tab in
-    // @param cx: The application context
+    /// Create a new tab
+    ///
+    /// @param window: The window to create the tab in
+    ///
+    /// @param cx: The application context
     pub(super) fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let tab = Tab::Editor(EditorTab::new(
             self.next_tab_id,
@@ -24,9 +26,11 @@ impl Fulgur {
         cx.notify();
     }
 
-    // Open settings in a new tab or switch to existing settings tab
-    // @param window: The window to open settings in
-    // @param cx: The application context
+    /// Open settings in a new tab or switch to existing settings tab
+    ///
+    /// @param window: The window to open settings in
+    ///
+    /// @param cx: The application context
     pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(index) = self.tabs.iter().position(|t| matches!(t, Tab::Settings(_))) {
             self.set_active_tab(index, window, cx);
@@ -39,10 +43,13 @@ impl Fulgur {
         }
     }
 
-    // Close a tab
-    // @param tab_id: The ID of the tab to close
-    // @param window: The window to close the tab in
-    // @param cx: The application context
+    /// Close a tab
+    ///
+    /// @param tab_id: The ID of the tab to close
+    ///
+    /// @param window: The window to close the tab in
+    ///
+    /// @param cx: The application context
     pub(super) fn close_tab(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
         if !self.tabs.iter().any(|t| t.id() == tab_id) {
             return;
@@ -60,10 +67,13 @@ impl Fulgur {
         }
     }
 
-    // Close a tab and manage the focus
-    // @param window: The window to close the tab in
-    // @param cx: The application context
-    // @param pos: The position of the tab to close
+    /// Close a tab and manage the focus
+    ///
+    /// @param window: The window to close the tab in
+    ///
+    /// @param cx: The application context
+    ///
+    /// @param pos: The position of the tab to close
     pub(super) fn close_tab_manage_focus(
         &mut self,
         window: &mut Window,
@@ -83,10 +93,13 @@ impl Fulgur {
         self.focus_active_tab(window, cx);
     }
 
-    // Set the active tab. If search is open, re-run search on new tab.
-    // @param index: The index of the tab to set as active
-    // @param window: The window to set the active tab in
-    // @param cx: The application context
+    /// Set the active tab. If search is open, re-run search on new tab.
+    ///
+    /// @param index: The index of the tab to set as active
+    ///
+    /// @param window: The window to set the active tab in
+    ///
+    /// @param cx: The application context
     pub(super) fn set_active_tab(
         &mut self,
         index: usize,
@@ -103,9 +116,11 @@ impl Fulgur {
         }
     }
 
-    // Focus the active tab's content
-    // @param window: The window to focus the tab in
-    // @param cx: The application context
+    /// Focus the active tab's content
+    ///
+    /// @param window: The window to focus the tab in
+    ///
+    /// @param cx: The application context
     pub fn focus_active_tab(&self, window: &mut Window, cx: &App) {
         if let Some(active_tab_index) = self.active_tab_index {
             if let Some(active_tab) = self.tabs.get(active_tab_index) {
@@ -122,9 +137,11 @@ impl Fulgur {
         }
     }
 
-    // Close all tabs
-    // @param window: The window to close all tabs in
-    // @param cx: The application context
+    /// Close all tabs
+    ///
+    /// @param window: The window to close all tabs in
+    ///
+    /// @param cx: The application context
     pub(super) fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() {
             return;
@@ -161,10 +178,13 @@ impl Fulgur {
         cx.notify();
     }
 
-    // Close all tabs to the left of the specified index
-    // @param index: The index of the tab (tabs to the left will be closed)
-    // @param window: The window to close tabs in
-    // @param cx: The application context
+    /// Close all tabs to the left of the specified index
+    ///
+    /// @param index: The index of the tab (tabs to the left will be closed)
+    ///
+    /// @param window: The window to close tabs in
+    ///
+    /// @param cx: The application context
     pub(super) fn close_tabs_to_left(
         &mut self,
         index: usize,
@@ -206,10 +226,13 @@ impl Fulgur {
         cx.notify();
     }
 
-    // Close all tabs to the right of the specified index
-    // @param index: The index of the tab (tabs to the right will be closed)
-    // @param window: The window to close tabs in
-    // @param cx: The application context
+    /// Close all tabs to the right of the specified index
+    ///
+    /// @param index: The index of the tab (tabs to the right will be closed)
+    ///
+    /// @param window: The window to close tabs in
+    ///
+    /// @param cx: The application context
     pub(super) fn close_tabs_to_right(
         &mut self,
         index: usize,
@@ -255,9 +278,11 @@ impl Fulgur {
         cx.notify();
     }
 
-    // Close all tabs except the active one
-    // @param window: The window to close tabs in
-    // @param cx: The application context
+    /// Close all tabs except the active one
+    ///
+    /// @param window: The window to close tabs in
+    ///
+    /// @param cx: The application context
     pub(super) fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(active_index) = self.active_tab_index else {
             return;
@@ -317,8 +342,9 @@ impl Fulgur {
         cx.notify();
     }
 
-    // Update the modified status of the tabs
-    // @param cx: The application context
+    /// Update the modified status of the tabs
+    ///
+    /// @param cx: The application context
     pub(super) fn update_modified_status(&mut self, cx: &mut Context<Self>) {
         for tab in self.tabs.iter_mut() {
             if let Tab::Editor(editor_tab) = tab {
@@ -327,10 +353,13 @@ impl Fulgur {
         }
     }
 
-    // Check if a tab has unsaved modifications
-    // @param tab_id: The ID of the tab to check
-    // @param _cx: The application context (unused but kept for API consistency)
-    // @return: True if the tab has unsaved changes, false otherwise
+    /// Check if a tab has unsaved modifications
+    ///
+    /// @param tab_id: The ID of the tab to check
+    ///
+    /// @param _cx: The application context (unused but kept for API consistency)
+    ///
+    /// @return: True if the tab has unsaved changes, false otherwise
     fn check_tab_modified(&self, tab_id: usize, _cx: &App) -> bool {
         if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
             if let Some(tab) = self.tabs.get(pos) {
@@ -342,10 +371,13 @@ impl Fulgur {
         false
     }
 
-    // Remove a tab by ID and manage focus
-    // @param tab_id: The ID of the tab to remove
-    // @param window: The window context
-    // @param cx: The application context
+    /// Remove a tab by ID and manage focus
+    ///
+    /// @param tab_id: The ID of the tab to remove
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     fn remove_tab_by_id(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
             self.tabs.remove(pos);
@@ -354,10 +386,13 @@ impl Fulgur {
         }
     }
 
-    // Show confirmation dialog for unsaved changes
-    // @param window: The window context
-    // @param cx: The application context
-    // @param on_confirm: Callback executed when user confirms closing
+    /// Show confirmation dialog for unsaved changes
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @param on_confirm: Callback executed when user confirms closing
     fn show_unsaved_changes_dialog<F>(
         &self,
         window: &mut Window,
@@ -398,9 +433,11 @@ impl Fulgur {
         });
     }
 
-    // Quit the application. If confirm_exit is enabled, a modal will be shown to confirm the action.
-    // @param window: The window to quit the application in
-    // @param cx: The application context
+    /// Quit the application. If confirm_exit is enabled, a modal will be shown to confirm the action.
+    ///
+    /// @param window: The window to quit the application in
+    ///
+    /// @param cx: The application context
     pub fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.app_settings.confirm_exit {
             let entity = cx.entity().clone();

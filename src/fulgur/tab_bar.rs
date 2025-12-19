@@ -33,12 +33,17 @@ pub struct CloseAllOtherTabs(pub usize);
 
 actions!(fulgur, [CloseAllTabsAction]);
 
-// Create a tab bar button
-// @param id: The ID of the button
-// @param tooltip: The tooltip of the button
-// @param icon: The icon of the button
-// @param border_color: The color of the border
-// @return: A tab bar button
+/// Create a tab bar button
+///
+/// @param id: The ID of the button
+///
+/// @param tooltip: The tooltip of the button
+///
+/// @param icon: The icon of the button
+///
+/// @param border_color: The color of the border
+///
+/// @return: A tab bar button
 pub fn tab_bar_button_factory(
     id: &'static str,
     tooltip: &'static str,
@@ -52,10 +57,13 @@ pub fn tab_bar_button_factory(
 }
 
 impl Fulgur {
-    // Get the display title for a tab, including parent folder if there are duplicates
-    // @param index: The index of the tab
-    // @param tab: The tab to get the title for
-    // @return: A tuple of (filename, optional parent folder)
+    /// Get the display title for a tab, including parent folder if there are duplicates
+    ///
+    /// @param index: The index of the tab
+    ///
+    /// @param tab: The tab to get the title for
+    ///
+    /// @return: A tuple of (filename, optional parent folder)
     fn get_tab_display_title(&self, index: usize, tab: &Tab) -> (String, Option<String>) {
         let base_title = tab.title();
         if let Some(editor_tab) = tab.as_editor() {
@@ -94,10 +102,13 @@ impl Fulgur {
         (base_title.to_string(), None)
     }
 
-    // Handle close tab action from context menu
-    // @param action: The action to handle
-    // @param window: The window context
-    // @param cx: The application context
+    /// Handle close tab action from context menu
+    ///
+    /// @param action: The action to handle
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     pub(super) fn on_close_tab_action(
         &mut self,
         action: &CloseTabAction,
@@ -107,10 +118,13 @@ impl Fulgur {
         self.close_tab(action.0, window, cx);
     }
 
-    // Handle close tabs to left action from context menu
-    // @param action: The action to handle
-    // @param window: The window context
-    // @param cx: The application context
+    /// Handle close tabs to left action from context menu
+    ///
+    /// @param action: The action to handle
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     pub(super) fn on_close_tabs_to_left(
         &mut self,
         action: &CloseTabsToLeft,
@@ -120,10 +134,13 @@ impl Fulgur {
         self.close_tabs_to_left(action.0, window, cx);
     }
 
-    // Handle close tabs to right action from context menu
-    // @param action: The action to handle
-    // @param window: The window context
-    // @param cx: The application context
+    /// Handle close tabs to right action from context menu
+    ///
+    /// @param action: The action to handle
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     pub(super) fn on_close_tabs_to_right(
         &mut self,
         action: &CloseTabsToRight,
@@ -133,10 +150,13 @@ impl Fulgur {
         self.close_tabs_to_right(action.0, window, cx);
     }
 
-    // Handle close all tabs action from context menu
-    // @param action: The action to handle
-    // @param window: The window context
-    // @param cx: The application context
+    /// Handle close all tabs action from context menu
+    ///
+    /// @param action: The action to handle
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     pub(super) fn on_close_all_tabs_action(
         &mut self,
         _: &CloseAllTabsAction,
@@ -146,10 +166,13 @@ impl Fulgur {
         self.close_all_tabs(window, cx);
     }
 
-    // Handle close all tabs action from context menu
-    // @param action: The action to handle
-    // @param window: The window context
-    // @param cx: The application context
+    /// Handle close all tabs action from context menu
+    ///
+    /// @param action: The action to handle
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     pub(super) fn on_close_all_other_tabs_action(
         &mut self,
         _: &CloseAllOtherTabs,
@@ -159,9 +182,11 @@ impl Fulgur {
         self.close_other_tabs(window, cx);
     }
 
-    // Handle next tab action
-    // @param window: The window context
-    // @param cx: The application context
+    /// Handle next tab action
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     pub(super) fn on_next_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(active_index) = self.active_tab_index {
             let next_index = (active_index + 1) % self.tabs.len();
@@ -169,9 +194,11 @@ impl Fulgur {
         }
     }
 
-    // Handle previous tab action
-    // @param window: The window context
-    // @param cx: The application context
+    /// Handle previous tab action
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     pub(super) fn on_previous_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(active_index) = self.active_tab_index {
             let previous_index = (active_index + self.tabs.len() - 1) % self.tabs.len();
@@ -179,10 +206,13 @@ impl Fulgur {
         }
     }
 
-    // Render the tab bar
-    // @param window: The window context
-    // @param cx: The application context
-    // @return: The rendered tab bar element
+    /// Render the tab bar
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered tab bar element
     pub(super) fn render_tab_bar(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let mut tab_bar = div()
             .flex()
@@ -244,12 +274,17 @@ impl Fulgur {
         tab_bar
     }
 
-    // Render a single tab
-    // @param index: The index of the tab
-    // @param tab: The tab to render
-    // @param window: The window context
-    // @param cx: The application context
-    // @return: The rendered tab element
+    /// Render a single tab
+    ///
+    /// @param index: The index of the tab
+    ///
+    /// @param tab: The tab to render
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered tab element
     fn render_tab(
         &self,
         index: usize,

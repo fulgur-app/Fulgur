@@ -10,9 +10,11 @@ use crate::fulgur::{
 use chardetng::EncodingDetector;
 use gpui::*;
 
-// Detect encoding from file bytes
-// @param bytes: The bytes to detect encoding from
-// @return: The detected encoding and decoded string
+/// Detect encoding from file bytes
+///
+/// @param bytes: The bytes to detect encoding from
+///
+/// @return: The detected encoding and decoded string
 pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     if let Ok(text) = std::str::from_utf8(bytes) {
         log::debug!("File encoding detected as UTF-8");
@@ -42,9 +44,11 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
 }
 
 impl Fulgur {
-    // Find the index of a tab with the given file path
-    // @param path: The path to search for
-    // @return: The index of the tab if found, None otherwise
+    /// Find the index of a tab with the given file path
+    ///
+    /// @param path: The path to search for
+    ///
+    /// @return: The index of the tab if found, None otherwise
     fn find_tab_by_path(&self, path: &PathBuf) -> Option<usize> {
         self.tabs.iter().position(|tab| {
             if let Tab::Editor(editor_tab) = tab {
@@ -59,10 +63,15 @@ impl Fulgur {
         })
     }
 
-    // Reload tab content from disk
-    // @param tab_index: The index of the tab to reload
-    // @param window: The window context
-    // @param cx: The application context
+    /// Reload tab content from disk
+    ///
+    /// @param tab_index: The index of the tab to reload
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The updated tab
     fn reload_tab_from_disk(
         &mut self,
         tab_index: usize,
@@ -97,11 +106,16 @@ impl Fulgur {
         }
     }
 
-    // Internal helper function to open a file from a path
-    // This function handles reading the file, detecting encoding, and creating the editor tab
-    // @param view: The view entity (WeakEntity)
-    // @param window: The async window context
-    // @param path: The path to the file to open
+    /// Internal helper function to open a file from a path
+    /// This function handles reading the file, detecting encoding, and creating the editor tab
+    ///
+    /// @param view: The view entity (WeakEntity)
+    ///
+    /// @param window: The async window context
+    ///
+    /// @param path: The path to the file to open
+    ///
+    /// @return: None if the file could not be read, otherwise Some(())
     async fn open_file_from_path(
         view: WeakEntity<Self>,
         window: &mut AsyncWindowContext,
@@ -140,7 +154,6 @@ impl Fulgur {
                         log::error!("Failed to add file to recent files: {}", e);
                     }
                     let menus = menus::build_menus(
-                        cx,
                         &this.settings.get_recent_files(),
                         this.update_link.clone(),
                     );
@@ -158,9 +171,13 @@ impl Fulgur {
         Some(())
     }
 
-    // Open a file
-    // @param window: The window to open the file in
-    // @param cx: The application context
+    /// Open a file
+    ///
+    /// @param window: The window to open the file in
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: None if the file could not be opened, otherwise Some(())
     pub(super) fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let path_future = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -211,10 +228,15 @@ impl Fulgur {
         .detach();
     }
 
-    // Open a file from a given path
-    // @param window: The window to open the file in
-    // @param cx: The application context
-    // @param path: The path to the file to open
+    /// Open a file from a given path
+    ///
+    /// @param window: The window to open the file in
+    ///
+    /// @param cx: The application context
+    ///
+    /// @param path: The path to the file to open
+    ///
+    /// @return: None if the file could not be opened, otherwise Some(())
     pub(super) fn do_open_file(
         &mut self,
         window: &mut Window,
@@ -249,14 +271,21 @@ impl Fulgur {
         .detach();
     }
 
-    // Handle opening a file from the command line (double-click or "Open with")
-    // This method implements smart tab handling:
-    // - If a tab exists for the file and is not modified: focus the tab
-    // - If a tab exists for the file and is modified: reload content and focus the tab
-    // - If no tab exists: open a new tab and focus it
-    // @param window: The window to open the file in
-    // @param cx: The application context
-    // @param path: The path to the file to open
+    /// Handle opening a file from the command line (double-click or "Open with")
+    ///
+    /// This method implements smart tab handling:
+    ///
+    /// - If a tab exists for the file and is not modified: focus the tab
+    ///
+    /// - If a tab exists for the file and is modified: reload content and focus the tab
+    ///
+    /// - If no tab exists: open a new tab and focus it
+    ///
+    /// @param window: The window to open the file in
+    ///
+    /// @param cx: The application context
+    ///
+    /// @param path: The path to the file to open
     pub fn handle_open_file_from_cli(
         &mut self,
         window: &mut Window,
@@ -283,9 +312,11 @@ impl Fulgur {
         }
     }
 
-    // Save a file
-    // @param window: The window to save the file in
-    // @param cx: The application context
+    /// Save a file
+    ///
+    /// @param window: The window to save the file in
+    ///
+    /// @param cx: The application context
     pub(super) fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;
@@ -317,28 +348,31 @@ impl Fulgur {
         cx.notify();
     }
 
-    // Save a file as
-    // @param window: The window to save the file as in
-    // @param cx: The application context
+    /// Save a file as
+    ///
+    /// @param window: The window to save the file as in
+    ///
+    /// @param cx: The application context
     pub(super) fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;
         }
         let active_tab_index = self.active_tab_index;
-        let (content_entity, directory, suggested_filename) = match &self.tabs[active_tab_index.unwrap()] {
-            Tab::Editor(editor_tab) => {
-                let dir = if let Some(ref path) = editor_tab.file_path {
-                    path.parent()
-                        .unwrap_or(std::path::Path::new("."))
-                        .to_path_buf()
-                } else {
-                    std::env::current_dir().unwrap_or_default()
-                };
-                let suggested = editor_tab.get_suggested_filename();
-                (editor_tab.content.clone(), dir, suggested)
-            }
-            Tab::Settings(_) => return,
-        };
+        let (content_entity, directory, suggested_filename) =
+            match &self.tabs[active_tab_index.unwrap()] {
+                Tab::Editor(editor_tab) => {
+                    let dir = if let Some(ref path) = editor_tab.file_path {
+                        path.parent()
+                            .unwrap_or(std::path::Path::new("."))
+                            .to_path_buf()
+                    } else {
+                        std::env::current_dir().unwrap_or_default()
+                    };
+                    let suggested = editor_tab.get_suggested_filename();
+                    (editor_tab.content.clone(), dir, suggested)
+                }
+                Tab::Settings(_) => return,
+            };
         let path_future = cx.prompt_for_new_path(&directory, suggested_filename.as_deref());
         cx.spawn_in(window, async move |view, window| {
             let path = path_future.await.ok()?.ok()??;

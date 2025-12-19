@@ -163,8 +163,9 @@ impl Fulgur {
         entity
     }
 
-    // Initialize the Fulgur instance
-    // @param cx: The application context
+    /// Initialize the Fulgur instance
+    ///
+    /// @param cx: The application context
     pub fn init(cx: &mut App) {
         languages::init_languages();
         let mut settings = Settings::load().unwrap_or_else(|_| Settings::new());
@@ -215,23 +216,31 @@ impl Fulgur {
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-g", JumpToLine, None),
             ]);
-            let menus = build_menus(cx, &recent_files, None);
+            let menus = build_menus(&recent_files, None);
             cx.set_menus(menus);
         });
     }
 }
 
 impl Focusable for Fulgur {
+    /// Get the focus handle for the Fulgur instance
+    ///
+    /// @param _cx: The application context
+    ///
+    /// @return: The focus handle for the Fulgur instance
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
 impl Render for Fulgur {
-    // Render the Fulgur instance
-    // @param window: The window to render the Fulgur instance in
-    // @param cx: The application context
-    // @return: The rendered Fulgur instance
+    /// Render the Fulgur instance
+    ///
+    /// @param window: The window to render the Fulgur instance in
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered Fulgur instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let files_to_open = if let Ok(mut pending) = self.pending_files_from_macos.try_lock() {
             if pending.is_empty() {
@@ -412,7 +421,7 @@ impl Render for Fulgur {
                     }
                 }
                 cx.refresh_windows();
-                let menus = build_menus(cx, &this.settings.recent_files.get_files(), None);
+                let menus = build_menus(&this.settings.recent_files.get_files(), None);
                 cx.set_menus(menus);
             }))
             .on_action(
@@ -452,9 +461,11 @@ impl Render for Fulgur {
             .on_action(cx.listener(|this, action: &OpenRecentFile, window, cx| {
                 this.do_open_file(window, cx, action.0.clone());
             }))
-            .on_action(cx.listener(|this, _action: &ClearRecentFiles, window, cx| {
-                this.clear_recent_files(window, cx);
-            }))
+            .on_action(
+                cx.listener(|this, _action: &ClearRecentFiles, _window, cx| {
+                    this.clear_recent_files(cx);
+                }),
+            )
             .on_action(cx.listener(|this, _action: &About, window, cx| {
                 this.about(window, cx);
             }))
@@ -498,11 +509,15 @@ impl Render for Fulgur {
 }
 
 impl Fulgur {
-    // Render the content area (editor or settings)
-    // @param active_tab: The active tab (if any)
-    // @param window: The window context
-    // @param cx: The application context
-    // @return: The rendered content area element
+    /// Render the content area (editor or settings)
+    ///
+    /// @param active_tab: The active tab (if any)
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered content area element (wrapped in AnyElement)
     fn render_content_area(
         &self,
         active_tab: Option<Tab>,
@@ -568,17 +583,22 @@ impl Fulgur {
         v_flex().w_full().flex_1().into_any_element()
     }
 
-    // Set the title of the title bar
-    // @param title: The title to set (if None, the default title is used)
-    // @param cx: The application context
+    /// Set the title of the title bar
+    ///
+    /// @param title: The title to set (if None, the default title is used)
+    ///
+    /// @param cx: The application context
     fn set_title(&self, title: Option<String>, cx: &mut Context<Self>) {
         self.title_bar.update(cx, |this, _cx| {
             this.set_title(title);
         });
     }
-    // Show the about dialog
-    // @param window: The window context
-    // @param cx: The application context
+
+    /// Show the about dialog
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     fn about(&self, window: &mut Window, cx: &mut Context<Self>) {
         window.open_dialog(cx, |modal, _window, _cx| {
             modal

@@ -9,12 +9,17 @@ use crate::fulgur::{
 use gpui::*;
 use gpui_component::{ActiveTheme, StyledExt, button::Button, input::Input};
 
-// Create a search bar button
-// @param id: The ID of the button
-// @param tooltip: The tooltip of the button
-// @param icon: The icon of the button
-// @param border_color: The color of the border
-// @return: A search bar button
+/// Create a search bar button
+///
+/// @param id: The ID of the button
+///
+/// @param tooltip: The tooltip of the button
+///
+/// @param icon: The icon of the button
+///
+/// @param border_color: The color of the border
+///
+/// @return: A search bar button
 pub fn search_bar_button_factory(
     id: &'static str,
     tooltip: &'static str,
@@ -26,14 +31,21 @@ pub fn search_bar_button_factory(
         .w(SEARCH_BAR_BUTTON_SIZE)
 }
 
-// Create a search bar toggle button
-// @param id: The ID of the button
-// @param tooltip: The tooltip of the button
-// @param icon: The icon of the button
-// @param border_color: The color of the border
-// @param bg_color: The background color when active
-// @param checked: Whether the toggle is checked
-// @return: A search bar toggle button
+/// Create a search bar toggle button
+///
+/// @param id: The ID of the button
+///
+/// @param tooltip: The tooltip of the button
+///
+/// @param icon: The icon of the button
+///
+/// @param border_color: The color of the border
+///
+/// @param bg_color: The background color when active
+///
+/// @param checked: Whether the toggle is checked
+///
+/// @return: A search bar toggle button
 pub fn search_bar_toggle_button_factory(
     id: &'static str,
     tooltip: &'static str,
@@ -53,10 +65,13 @@ pub fn search_bar_toggle_button_factory(
 }
 
 impl Fulgur {
-    // Render the search bar
-    // @param window: The window context
-    // @param cx: The application context
-    // @return: The rendered search bar element (wrapped in Option)
+    /// Render the search bar
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered search bar element (wrapped in Option)
     pub(super) fn render_search_bar(
         &self,
         window: &mut Window,
@@ -84,9 +99,11 @@ impl Fulgur {
         )
     }
 
-    // Render the search input section (left part of search bar)
-    // @param cx: The application context
-    // @return: The rendered search input section element
+    /// Render the search input section (left part of search bar)
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered search input section element
     fn render_search_input_section(&self, cx: &mut Context<Self>) -> Div {
         div()
             .flex()
@@ -159,10 +176,13 @@ impl Fulgur {
             )
     }
 
-    // Render the search navigation section (match count and prev/next buttons)
-    // @param _window: The window context
-    // @param cx: The application context
-    // @return: The rendered search navigation section element
+    /// Render the search navigation section (match count and prev/next buttons)
+    ///
+    /// @param _window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered search navigation section element
     fn render_search_navigation_section(
         &self,
         _window: &mut Window,
@@ -210,10 +230,13 @@ impl Fulgur {
             )
     }
 
-    // Render the replace section (replace input and buttons)
-    // @param _window: The window context
-    // @param cx: The application context
-    // @return: The rendered replace section element
+    /// Render the replace section (replace input and buttons)
+    ///
+    /// @param _window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered replace section element
     fn render_replace_section(&self, _window: &mut Window, cx: &mut Context<Self>) -> Div {
         div()
             .flex()
@@ -276,10 +299,13 @@ impl Fulgur {
             )
     }
 
-    // Render the close button for the search bar
-    // @param _window: The window context
-    // @param cx: The application context
-    // @return: The rendered close button element
+    /// Render the close button for the search bar
+    ///
+    /// @param _window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered close button element
     fn render_search_close_button(&self, _window: &mut Window, cx: &mut Context<Self>) -> Div {
         div()
             .flex()

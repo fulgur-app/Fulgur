@@ -40,17 +40,21 @@ pub struct UpdateInfo {
     pub release_page: String,
 }
 
-// Parse a version string into a Version struct
-// @param version_str: The version string to parse
-// @return: The parsed version
+/// Parse a version string into a Version struct
+///
+/// @param version_str: The version string to parse
+///
+/// @return: The parsed version
 fn parse_version(version_str: &str) -> anyhow::Result<Version> {
     let cleaned = version_str.trim_start_matches('v');
     Version::parse(cleaned).map_err(|e| e.into())
 }
 
-// Check for updates
-// @param current_version: The current version of the application
-// @return: The update information if an update is available, otherwise None
+/// Check for updates
+///
+/// @param current_version: The current version of the application
+///
+/// @return: The update information if an update is available, otherwise None
 pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<UpdateInfo>> {
     let mut response = ureq::get(GITHUB_API_URL)
         .header("User-Agent", "Fulgur")
@@ -78,9 +82,11 @@ pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<Updat
     }
 }
 
-// Get the download URL for the platform-specific asset
-// @param release: The release information
-// @return: The download URL for the platform-specific asset
+/// Get the download URL for the platform-specific asset
+///
+/// @param release: The release information
+///
+/// @return: The download URL for the platform-specific asset
 fn get_platform_download_url(release: &GitHubRelease) -> anyhow::Result<String> {
     let platform = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
@@ -109,9 +115,11 @@ fn get_platform_download_url(release: &GitHubRelease) -> anyhow::Result<String> 
 }
 
 impl Fulgur {
-    // Check for updates, open the download page in the browser if an update is available + update the menus to show the update available action
-    // @param window: The window context
-    // @param cx: The application context
+    /// Check for updates, open the download page in the browser if an update is available + update the menus to show the update available action
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     pub fn check_for_updates(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(update_link) = self.update_link.as_ref() {
             match open::that(update_link) {
@@ -142,7 +150,6 @@ impl Fulgur {
                         let _ = view.update(cx, |this, cx| {
                             this.update_link = Some(update_info.download_url.clone());
                             let menus = build_menus(
-                                cx,
                                 &this.settings.recent_files.get_files(),
                                 this.update_link.clone(),
                             );

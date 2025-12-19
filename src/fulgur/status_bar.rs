@@ -19,16 +19,18 @@ use gpui_component::{
     v_flex,
 };
 
-// State for device selection dialog
+/// State for device selection dialog
 struct DeviceSelectionState {
     devices: Vec<Device>,
     selected_ids: Vec<String>,
 }
 
 impl DeviceSelectionState {
-    // Create a new device selection state
-    // @param devices: The devices to select from
-    // @return: The new device selection state
+    /// Create a new device selection state
+    ///
+    /// @param devices: The devices to select from
+    ///
+    /// @return: The new device selection state
     fn new(devices: Vec<Device>) -> Self {
         Self {
             devices,
@@ -36,9 +38,11 @@ impl DeviceSelectionState {
         }
     }
 
-    // Toggle the selection of a device
-    // @param device_id: The ID of the device
-    // @return: The new selection state
+    /// Toggle the selection of a device
+    ///
+    /// @param device_id: The ID of the device
+    ///
+    /// @return: The new selection state
     fn toggle_selection(&mut self, device_id: &str) {
         if let Some(pos) = self.selected_ids.iter().position(|id| id == device_id) {
             self.selected_ids.remove(pos);
@@ -47,19 +51,24 @@ impl DeviceSelectionState {
         }
     }
 
-    // Check if a device is selected
-    // @param device_id: The ID of the device
-    // @return: True if the device is selected, false otherwise
+    /// Check if a device is selected
+    ///
+    /// @param device_id: The ID of the device
+    ///
+    /// @return: True if the device is selected, false otherwise
     fn is_selected(&self, device_id: &str) -> bool {
         self.selected_ids.contains(&device_id.to_string())
     }
 }
 
 impl Render for DeviceSelectionState {
-    // Render the device selection state
-    // @param window: The window context
-    // @param cx: The application context
-    // @return: The rendered device selection state
+    /// Render the device selection state
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered device selection state
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let window_height = window.window_bounds().get_bounds().size.height;
         let max_height = window_height - px(200.0); //TODO: Make this dynamic
@@ -115,10 +124,13 @@ impl Render for DeviceSelectionState {
     }
 }
 
-// Create a status bar item
-// @param content: The content of the status bar item
-// @param border_color: The color of the border
-// @return: A status bar item
+/// Create a status bar item
+///
+/// @param content: The content of the status bar item
+///
+/// @param border_color: The color of the border
+///
+/// @return: A status bar item
 pub fn status_bar_item_factory(content: impl IntoElement, border_color: Hsla) -> Div {
     div()
         .text_xs()
@@ -128,11 +140,15 @@ pub fn status_bar_item_factory(content: impl IntoElement, border_color: Hsla) ->
         .child(content)
 }
 
-// Create a status bar button
-// @param content: The content of the status bar button
-// @param border_color: The color of the border
-// @param accent_color: The color of the accent
-// @return: A status bar button
+/// Create a status bar button
+///
+/// @param content: The content of the status bar button
+///
+/// @param border_color: The color of the border
+///
+/// @param accent_color: The color of the accent
+///
+/// @return: A status bar button
 pub fn status_bar_button_factory(
     content: impl IntoElement,
     border_color: Hsla,
@@ -143,14 +159,28 @@ pub fn status_bar_button_factory(
         .cursor_pointer()
 }
 
-// Create a status bar right item
-// @param content: The content of the status bar right item
-// @param border_color: The color of the border
-// @return: A status bar right item
+/// Create a status bar right item
+///
+/// @param content: The content of the status bar right item
+///
+/// @param border_color: The color of the border
+///
+/// @return: A status bar right item
 pub fn status_bar_right_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
     status_bar_item_factory(content, border_color) //.border_l_1()
 }
 
+/// Create a status bar toggle button
+///
+/// @param content: The content of the status bar toggle button
+///
+/// @param border_color: The color of the border
+///
+/// @param accent_color: The color of the accent
+///
+/// @param checked: Whether the toggle is checked
+///
+/// @return: A status bar toggle button
 pub fn status_bar_toggle_button_factory(
     content: impl IntoElement,
     border_color: Hsla,
@@ -164,6 +194,29 @@ pub fn status_bar_toggle_button_factory(
     button
 }
 
+/// Create a status bar sync button
+///
+/// @param connected_icon: The icon to display when connected
+///
+/// @param disconnected_icon: The icon to display when disconnected
+///
+/// @param border_color: The color of the border
+///
+/// @param connected_color: The color of the connected button
+///
+/// @param connected_foreground_color: The foreground color of the connected button
+///
+/// @param connected_hover_color: The hover color of the connected button
+///
+/// @param disconnected_color: The color of the disconnected button
+///
+/// @param disconnected_foreground_color: The foreground color of the disconnected button
+///
+/// @param disconnected_hover_color: The hover color of the disconnected button
+///
+/// @param is_connected: Whether the device is connected
+///
+/// @return: A status bar sync button
 pub fn status_bar_sync_button(
     connected_icon: Icon,
     disconnected_icon: Icon,
@@ -201,18 +254,25 @@ pub fn status_bar_sync_button(
     button
 }
 
-// Create a status bar left item
-// @param content: The content of the status bar left item
-// @param border_color: The color of the border
-// @return: A status bar left item
-// pub fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
-//     status_bar_item_factory(content, border_color) //.border_r_1()
-// }
+/// Create a status bar left item
+///
+/// @param content: The content of the status bar left item
+///
+/// @param border_color: The color of the border
+///
+/// @return: A status bar left item
+#[allow(dead_code)]
+pub fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
+    status_bar_item_factory(content, border_color) //.border_r_1()
+}
 
 impl Fulgur {
-    // Jump to line
-    // @param window: The window context
-    // @param cx: The application context
+    /// Jump to line
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
     pub fn jump_to_line(self: &mut Fulgur, window: &mut Window, cx: &mut Context<Self>) {
         let jump_to_line_input = self.jump_to_line_input.clone();
         jump_to_line_input.update(cx, |input_state, cx| {
@@ -254,10 +314,13 @@ impl Fulgur {
         return;
     }
 
-    // Set the language via a dialog
-    // @param window: The window context
-    // @param cx: The application context
-    // @param current_language: The current language
+    /// Set the language via a dialog
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @param current_language: The current language
     fn set_language(
         self: &mut Fulgur,
         window: &mut Window,
@@ -308,10 +371,13 @@ impl Fulgur {
         });
     }
 
-    // Render the status bar
-    // @param window: The window context
-    // @param cx: The application context
-    // @return: The rendered status bar element
+    /// Render the status bar
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The rendered status bar element
     pub(super) fn render_status_bar(
         &self,
         _window: &mut Window,

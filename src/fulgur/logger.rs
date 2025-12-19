@@ -3,8 +3,9 @@ use simplelog::*;
 use std::fs::{self, File};
 use std::path::PathBuf;
 
-// Get the path to the log file
-// @return: The path to the log file
+/// Get the path to the log file
+///
+/// @return: The path to the log file
 fn log_file_path() -> anyhow::Result<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -27,8 +28,9 @@ fn log_file_path() -> anyhow::Result<PathBuf> {
     }
 }
 
-// Initialize the file logger
-// @return: Result indicating success or failure
+/// Initialize the file logger
+///
+/// @return: Result indicating success or failure
 pub fn init() -> anyhow::Result<()> {
     let log_path = log_file_path()?;
     #[cfg(debug_assertions)]
@@ -46,8 +48,9 @@ pub fn init() -> anyhow::Result<()> {
     Ok(())
 }
 
-// Get the log file path for display purposes
-// @return: The path to the log file as a string
+/// Get the log file path for display purposes
+///
+/// @return: The path to the log file as a string
 #[allow(dead_code)]
 pub fn get_log_path() -> Option<String> {
     log_file_path()

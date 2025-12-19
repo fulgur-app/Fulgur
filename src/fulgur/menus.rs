@@ -34,15 +34,14 @@ pub struct SwitchTheme(pub SharedString);
 #[action(namespace = fulgur, no_json)]
 pub struct OpenRecentFile(pub PathBuf);
 
-// Build the menus for the Fulgur instance
-// @param cx: The application context
-// @param recent_files: The list of recent files to display
-// @return: The menus for the Fulgur instance
-pub fn build_menus(
-    _cx: &mut App,
-    recent_files: &[PathBuf],
-    update_link: Option<String>,
-) -> Vec<Menu> {
+/// Build the menus for the Fulgur instance
+///
+/// @param recent_files: The list of recent files to display
+///
+/// @param update_link: The link to the update
+///
+/// @return: The menus for the Fulgur instance
+pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec<Menu> {
     let recent_files_items = if recent_files.is_empty() {
         let mut items = Vec::new();
         items.push(MenuItem::action("No recent files", NoneAction));

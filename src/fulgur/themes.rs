@@ -20,10 +20,13 @@ use crate::fulgur::settings::{Settings, Themes};
 #[include = "*.json"]
 pub struct BundledThemes;
 
-// Initialize the themes
-// @param settings: The application settings containing theme preferences
-// @param cx: The application context
-// @param on_themes_loaded: The callback to call when the themes are loaded
+/// Initialize the themes
+///
+/// @param settings: The application settings containing theme preferences
+///
+/// @param cx: The application context
+///
+/// @param on_themes_loaded: The callback to call when the themes are loaded
 pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut App) + 'static) {
     let theme_name = settings.app_settings.theme.clone();
     let scrollbar_show = settings.app_settings.scrollbar_show;
@@ -58,9 +61,11 @@ pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut Ap
     });
 }
 
-// Extract bundled themes to the themes directory if they don't exist
-// @param themes_dir: The themes directory path
-// @return: Result indicating success or failure
+/// Extract bundled themes to the themes directory if they don't exist
+///
+/// @param themes_dir: The themes directory path
+///
+/// @return: Result indicating success or failure
 fn extract_bundled_themes(themes_dir: &PathBuf) -> anyhow::Result<()> {
     fs::create_dir_all(themes_dir)?;
     for file in BundledThemes::iter() {
@@ -74,8 +79,9 @@ fn extract_bundled_themes(themes_dir: &PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-// Get the path to the themes directory
-// @return: The path to the themes directory
+/// Get the path to the themes directory
+///
+/// @return: The path to the themes directory
 pub fn themes_directory_path() -> anyhow::Result<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -98,12 +104,15 @@ pub fn themes_directory_path() -> anyhow::Result<PathBuf> {
     }
 }
 
-// Reload themes and update the Fulgur instance
-// This function initializes the theme registry, reloads themes from disk,
-// updates the Fulgur entity's themes field, and refreshes the menus and windows.
-// @param settings: The application settings
-// @param entity: The Fulgur entity to update
-// @param cx: The application context
+/// Reload themes and update the Fulgur instance
+///
+/// This function initializes the theme registry, reloads themes from disk, updates the Fulgur entity's themes field, and refreshes the menus and windows.
+///
+/// @param settings: The application settings
+///
+/// @param entity: The Fulgur entity to update
+///
+/// @param cx: The application context
 pub fn reload_themes_and_update(settings: &Settings, entity: Entity<Fulgur>, cx: &mut App) {
     let entity_clone = entity.clone();
     init(settings, cx, move |cx| {
@@ -125,12 +134,17 @@ pub fn reload_themes_and_update(settings: &Settings, entity: Entity<Fulgur>, cx:
     });
 }
 
-// Make a select theme item
-// @param entity: The entity
-// @param theme_name: The name of the theme
-// @param is_current_theme: Whether the theme is the current theme
-// @param current_theme_shared: The shared state of the current theme
-// @return: The select theme item
+/// Make a select theme item
+///
+/// @param entity: The entity
+///
+/// @param theme_name: The name of the theme
+///
+/// @param is_current_theme: Whether the theme is the current theme
+///
+/// @param current_theme_shared: The shared state of the current theme
+///
+/// @return: The select theme item
 fn make_select_theme_item(
     entity: Entity<Fulgur>,
     theme_name: String,
@@ -184,12 +198,17 @@ fn make_select_theme_item(
         })
 }
 
-// Make a select theme list
-// @param entity: The entity
-// @param themes: The list of themes
-// @param current_theme: The name of the current theme
-// @param current_theme_shared: The shared state of the current theme
-// @return: The select theme list
+/// Make a select theme list
+///
+/// @param entity: The entity
+///
+/// @param themes: The list of themes
+///
+/// @param current_theme: The name of the current theme
+///
+/// @param current_theme_shared: The shared state of the current theme
+///
+/// @return: The select theme list
 fn make_select_theme_list(
     entity: Entity<Fulgur>,
     themes: Vec<String>,
@@ -218,10 +237,13 @@ fn make_select_theme_list(
 pub(crate) struct SwitchThemeMode(pub(crate) ThemeMode);
 
 impl Fulgur {
-    // Add a theme to the themes directory. Prompt the user for the path to the theme file.
-    // If the theme file is added successfully, reload the themes and update the menus.
-    // @param window: The window context
-    // @param cx: The application context
+    /// Add a theme to the themes directory. Prompt the user for the path to the theme file.
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
+    ///
+    /// @return: The result of the operation
     pub fn add_theme(&self, window: &mut Window, cx: &mut Context<Self>) {
         let path_future = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -305,7 +327,12 @@ impl Fulgur {
     }
 
     /// Open theme selector as a sheet (sliding panel from right side)
+    ///     
     /// This is an alternative to the dialog-based theme selector
+    ///
+    /// @param window: The window context
+    ///
+    /// @param cx: The application context
     pub fn select_theme_sheet(&self, window: &mut Window, cx: &mut Context<Self>) {
         let entity = cx.entity();
         let current_theme = self.settings.app_settings.theme.to_string();
@@ -334,7 +361,6 @@ impl Fulgur {
                 .map(|t| t.clone())
                 .unwrap_or(current_theme.clone());
             let max_height = px((viewport_height - px(150.0)).into()); //TODO: Make this dynamic based on the content
-
             sheet
                 .title("Select Theme")
                 .size(px(400.))

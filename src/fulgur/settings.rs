@@ -38,6 +38,9 @@ pub struct SynchronizationSettings {
 }
 
 impl SynchronizationSettings {
+    /// Create a new synchronization settings instance
+    ///
+    /// @return: The new synchronization settings instance
     pub fn new() -> Self {
         Self {
             is_synchronization_activated: false,
@@ -56,6 +59,9 @@ pub struct MarkdownSettings {
 }
 
 impl MarkdownSettings {
+    /// Create a new markdown settings instance
+    ///
+    /// @return: The new markdown settings instance
     pub fn new() -> Self {
         Self {
             show_markdown_preview: true,
@@ -84,6 +90,9 @@ pub struct AppSettings {
 }
 
 impl EditorSettings {
+    /// Create a new editor settings instance
+    ///
+    /// @return: The new editor settings instance
     pub fn new() -> Self {
         Self {
             show_line_numbers: true,
@@ -97,6 +106,9 @@ impl EditorSettings {
 }
 
 impl AppSettings {
+    /// Create a new app settings instance
+    ///
+    /// @return: The new app settings instance
     pub fn new() -> Self {
         Self {
             confirm_exit: true,
@@ -114,9 +126,11 @@ pub struct RecentFiles {
 }
 
 impl RecentFiles {
-    // Create a new recent files instance
-    // @param max_files: The maximum number of files to store
-    // @return: The new recent files instance
+    /// Create a new recent files instance
+    ///
+    /// @param max_files: The maximum number of files to store
+    ///
+    /// @return: The new recent files instance
     pub fn new(max_files: usize) -> Self {
         Self {
             files: Vec::new(),
@@ -124,9 +138,11 @@ impl RecentFiles {
         }
     }
 
-    // Add a file to the recent files
-    // @param file: The file to add
-    // @return: The result of the operation
+    /// Add a file to the recent files
+    ///
+    /// @param file: The file to add
+    ///
+    /// @return: The result of the operation
     pub fn add_file(&mut self, file: PathBuf) {
         self.files.push(file);
         if self.files.len() > self.max_files {
@@ -134,21 +150,25 @@ impl RecentFiles {
         }
     }
 
-    // Remove a file from the recent files
-    // @param file: The file to remove
-    // @return: The result of the operation
+    /// Remove a file from the recent files
+    ///
+    /// @param file: The file to remove
+    ///
+    /// @return: The result of the operation
     pub fn remove_file(&mut self, file: PathBuf) {
         self.files.retain(|f| f != &file);
     }
 
-    // Get the recent files
-    // @return: The recent files
+    /// Get the recent files
+    ///
+    /// @return: The recent files
     pub fn get_files(&self) -> &Vec<PathBuf> {
         &self.files
     }
 
-    // Clear the recent files
-    // @return: The result of the operation
+    /// Clear the recent files
+    ///
+    /// @return: The result of the operation
     pub fn clear(&mut self) {
         self.files.clear();
     }
@@ -169,9 +189,11 @@ pub struct ThemeFile {
     pub path: PathBuf,
 }
 impl ThemeFile {
-    // Load a theme file from a path
-    // @param path: The path to the theme file
-    // @return: The theme file
+    /// Load a theme file from a path
+    ///
+    /// @param path: The path to the theme file
+    ///
+    /// @return: The theme file
     pub fn load(path: PathBuf) -> anyhow::Result<Self> {
         let json = fs::read_to_string(&path)?;
         let mut theme_file: ThemeFile = serde_json::from_str(&json)?;
@@ -187,9 +209,11 @@ pub struct Themes {
 }
 
 impl Themes {
-    // Load the theme settings from the themes folder
-    // @param path: The path to the themes folder
-    // @return: The theme settings
+    /// Load the theme settings from the themes folder
+    ///
+    /// @param path: The path to the themes folder
+    ///
+    /// @return: The theme settings
     pub fn load() -> anyhow::Result<Self> {
         let themes_dir = themes_directory_path()?;
         let themes_files = fs::read_dir(&themes_dir)?;
@@ -218,9 +242,11 @@ impl Themes {
         })
     }
 
-    // Remove a theme from the user themes
-    // @param theme_name: The name of the theme to remove
-    // @return: The result of the operation
+    /// Remove a theme from the user themes
+    ///
+    /// @param theme_name: The name of the theme to remove
+    ///
+    /// @return: The result of the operation
     #[allow(dead_code)]
     pub fn remove_theme(&mut self, theme_name: String) {
         self.user_themes.retain(|theme| theme.name != theme_name);
@@ -359,9 +385,11 @@ impl SettingsTab {
 }
 
 impl Fulgur {
-    // Create the Editor settings page
-    // @param entity: The Fulgur entity
-    // @return: The Editor settings page
+    /// Create the Editor settings page
+    ///
+    /// @param entity: The Fulgur entity
+    ///
+    /// @return: The Editor settings page
     fn create_editor_page(entity: Entity<Self>) -> SettingPage {
         let default_editor_settings = EditorSettings::new();
         SettingPage::new("Editor").default_open(true).groups(vec![
@@ -583,9 +611,11 @@ impl Fulgur {
         ])
     }
 
-    // Create the Application settings page
-    // @param entity: The Fulgur entity
-    // @return: The Application settings page
+    /// Create the Application settings page
+    ///
+    /// @param entity: The Fulgur entity
+    ///
+    /// @return: The Application settings page
     fn create_application_page(entity: Entity<Self>) -> SettingPage {
         let default_app_settings = AppSettings::new();
 
@@ -874,10 +904,13 @@ impl Fulgur {
             ])
     }
 
-    // Create the Themes settings page
-    // @param entity: The Fulgur entity
-    // @param themes: The themes to display
-    // @return: The Themes settings page
+    /// Create the Themes settings page
+    ///
+    /// @param entity: The Fulgur entity
+    ///
+    /// @param themes: The themes to display
+    ///
+    /// @return: The Themes settings page
     fn create_themes_page(entity: Entity<Self>, themes: &Themes) -> SettingPage {
         let mut user_theme_items = Vec::new();
         let mut default_theme_items = Vec::new();
@@ -991,10 +1024,13 @@ impl Fulgur {
         SettingPage::new("Themes").groups(groups)
     }
 
-    // Create settings pages using the Settings component
-    // @param window: The window
-    // @param cx: The context
-    // @return: The settings pages
+    /// Create settings pages using the Settings component
+    ///
+    /// @param window: The window
+    ///
+    /// @param cx: The context
+    ///
+    /// @return: The settings pages
     fn create_settings_pages(
         &self,
         _window: &mut Window,
@@ -1011,10 +1047,13 @@ impl Fulgur {
         pages
     }
 
-    // Render the settings
-    // @param window: The window
-    // @param cx: The context
-    // @return: The settings UI
+    /// Render the settings
+    ///
+    /// @param window: The window
+    ///
+    /// @param cx: The context
+    ///
+    /// @return: The settings UI
     pub fn render_settings(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("settings-scroll-container")
@@ -1038,17 +1077,17 @@ impl Fulgur {
             )
     }
 
-    // Clear the recent files
-    // @param window: The window
-    // @param cx: The context
-    // @return: The result of the operation
-    pub fn clear_recent_files(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    /// Clear the recent files
+    ///
+    /// @param cx: The context
+    ///
+    /// @return: The result of the operation
+    pub fn clear_recent_files(&mut self, cx: &mut Context<Self>) {
         self.settings.recent_files.clear();
         if let Err(e) = self.settings.save() {
             log::error!("Failed to save settings: {}", e);
         }
         let menus = build_menus(
-            cx,
             &self.settings.recent_files.get_files(),
             self.update_link.clone(),
         );

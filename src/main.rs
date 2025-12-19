@@ -17,6 +17,11 @@ mod fulgur;
 pub struct Assets;
 
 impl AssetSource for Assets {
+    /// Load an asset from the assets folder
+    ///
+    /// @param path: The path to the asset
+    ///
+    /// @return: The asset data if found, otherwise None
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         if path.is_empty() {
             return Ok(None);
@@ -33,6 +38,11 @@ impl AssetSource for Assets {
         Ok(None)
     }
 
+    /// List all assets in the assets folder
+    ///
+    /// @param path: The path to the assets
+    ///
+    /// @return: The list of assets
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         Ok(Self::iter()
             .filter_map(|p| p.starts_with(path).then(|| p.into()))
@@ -40,9 +50,11 @@ impl AssetSource for Assets {
     }
 }
 
-// Convert a file:// URL string to a PathBuf
-// @param url_string: The URL string to convert (e.g., "file:///Users/user/file.txt")
-// @return: The PathBuf if successful, None otherwise
+/// Convert a file:// URL string to a PathBuf
+///
+/// @param url_string: The URL string to convert (e.g., "file:///Users/user/file.txt")
+///
+/// @return: The PathBuf if successful, None otherwise
 fn url_to_path(url_string: &str) -> Option<std::path::PathBuf> {
     log::debug!("Converting URL to path: {}", url_string);
     let path_str = url_string.strip_prefix("file://").unwrap_or(url_string);
