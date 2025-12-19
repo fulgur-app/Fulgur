@@ -275,10 +275,13 @@ impl Render for Fulgur {
 
             if let Some(encryption_key) = encryption_key_opt {
                 for shared_file in shared_files_to_open {
-                    // Decrypt the file content
-                    match crypto_helper::decrypt_content(&shared_file.content, &encryption_key) {
+                    let decrypted_result =
+                        crypto_helper::decrypt_bytes(&shared_file.content, &encryption_key)
+                            .and_then(|compressed_bytes| {
+                                sync::decompress_content(&compressed_bytes)
+                            });
+                    match decrypted_result {
                         Ok(decrypted_content) => {
-                            // Create a new editor tab with the decrypted content
                             let tab_id = self.next_tab_id;
                             self.next_tab_id += 1;
 

@@ -9,8 +9,9 @@ use std::hash::{Hash, Hasher};
 
 const APP_SALT: &[u8] = b"Fulgur-Sync-Key-v1";
 
-/// Get a machine-specific encryption key
-/// This is derived from the machine's unique ID + app salt
+/// Get a machine-specific encryption key, derived from the machine's unique ID + app salt
+///
+/// @return: The machine-specific encryption key
 fn get_machine_key() -> anyhow::Result<[u8; 32]> {
     let machine_id =
         machine_uid::get().map_err(|e| anyhow::anyhow!("Failed to get machine ID: {}", e))?;
@@ -43,7 +44,9 @@ fn get_machine_key() -> anyhow::Result<[u8; 32]> {
 }
 
 /// Encrypt a string using machine-specific key
+///
 /// @param plaintext: The string to encrypt
+///
 /// @return: Base64-encoded encrypted string (nonce + ciphertext)
 pub fn encrypt(plaintext: &str) -> anyhow::Result<String> {
     let key = get_machine_key()?;
@@ -59,7 +62,9 @@ pub fn encrypt(plaintext: &str) -> anyhow::Result<String> {
 }
 
 /// Decrypt a base64-encoded encrypted string
+///
 /// @param encrypted: Base64-encoded encrypted string (nonce + ciphertext)
+///
 /// @return: Decrypted plaintext string
 pub fn decrypt(encrypted: &str) -> anyhow::Result<String> {
     let key = get_machine_key()?;
@@ -82,7 +87,9 @@ pub fn decrypt(encrypted: &str) -> anyhow::Result<String> {
 }
 
 /// Convert base64 encryption key to bytes
+///
 /// @param key_b64: Base64-encoded encryption key
+///
 /// @return: 32-byte encryption key
 pub fn decode_encryption_key(key_b64: &str) -> anyhow::Result<[u8; 32]> {
     let key_bytes = BASE64.decode(key_b64)?;
@@ -97,61 +104,52 @@ pub fn decode_encryption_key(key_b64: &str) -> anyhow::Result<[u8; 32]> {
     Ok(key)
 }
 
-/// Encrypt content for sharing between devices
-/// Uses AES-256-GCM with the user's shared encryption key from the server
-/// @param content: The plaintext content to encrypt
+/// Encrypt bytes (e.g., compressed data) for file sharing
+///
+/// @param content_bytes: The bytes to encrypt
+///
 /// @param encryption_key_b64: The base64-encoded encryption key from the server
+///
 /// @return: Base64-encoded encrypted content (nonce + ciphertext)
-pub fn encrypt_content(content: &str, encryption_key_b64: &str) -> anyhow::Result<String> {
+pub fn encrypt_bytes(content_bytes: &[u8], encryption_key_b64: &str) -> anyhow::Result<String> {
     let key_bytes = decode_encryption_key(encryption_key_b64)?;
     let cipher = Aes256Gcm::new_from_slice(&key_bytes)
         .map_err(|e| anyhow::anyhow!("Failed to create cipher: {}", e))?;
-
-    // Generate a random nonce for this encryption
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-
-    // Encrypt the content
     let ciphertext = cipher
-        .encrypt(&nonce, content.as_bytes())
+        .encrypt(&nonce, content_bytes)
         .map_err(|e| anyhow::anyhow!("Encryption failed: {}", e))?;
-
-    // Combine nonce + ciphertext and encode as base64
     let mut combined = nonce.to_vec();
     combined.extend_from_slice(&ciphertext);
-
     Ok(BASE64.encode(combined))
 }
 
-/// Decrypt content received from another device
+/// Decrypt bytes (e.g., compressed data) received from another device
+///
 /// @param encrypted: Base64-encoded encrypted content (nonce + ciphertext)
+///
 /// @param encryption_key_b64: The base64-encoded encryption key from the server
-/// @return: Decrypted plaintext content
-pub fn decrypt_content(encrypted: &str, encryption_key_b64: &str) -> anyhow::Result<String> {
+///
+/// @return: Decrypted bytes
+pub fn decrypt_bytes(encrypted: &str, encryption_key_b64: &str) -> anyhow::Result<Vec<u8>> {
     let key_bytes = decode_encryption_key(encryption_key_b64)?;
     let cipher = Aes256Gcm::new_from_slice(&key_bytes)
         .map_err(|e| anyhow::anyhow!("Failed to create cipher: {}", e))?;
-
-    // Decode from base64
     let combined = BASE64
         .decode(encrypted)
         .map_err(|e| anyhow::anyhow!("Failed to decode base64: {}", e))?;
-
-    // Extract nonce (first 12 bytes) and ciphertext (remaining bytes)
     if combined.len() < 12 {
         return Err(anyhow::anyhow!(
             "Invalid encrypted data: too short (expected at least 12 bytes for nonce)"
         ));
     }
-
     let (nonce_bytes, ciphertext) = combined.split_at(12);
     let nonce = Nonce::from_slice(nonce_bytes);
-
-    // Decrypt
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
         .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))?;
 
-    String::from_utf8(plaintext).map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))
+    Ok(plaintext)
 }
 
 #[cfg(test)]
@@ -175,50 +173,33 @@ mod tests {
     }
 
     #[test]
-    fn test_encrypt_decrypt_content() {
-        // Generate a test encryption key (base64-encoded 32 bytes)
+    fn test_encrypt_decrypt_bytes() {
         let key_bytes = [42u8; 32]; // Simple test key
         let encryption_key = BASE64.encode(&key_bytes);
-
-        let original_content = "This is a test file content with some data!";
-
-        // Encrypt the content
+        let original_bytes = b"This is a test file content with some data!";
         let encrypted =
-            encrypt_content(original_content, &encryption_key).expect("Encryption should succeed");
-
-        // Verify encrypted is different from original and longer (includes nonce)
-        assert_ne!(encrypted, original_content);
-        assert!(encrypted.len() > original_content.len());
-
-        // Decrypt the content
+            encrypt_bytes(original_bytes, &encryption_key).expect("Encryption should succeed");
+        assert_ne!(encrypted, String::from_utf8_lossy(original_bytes));
         let decrypted =
-            decrypt_content(&encrypted, &encryption_key).expect("Decryption should succeed");
-
-        // Verify decrypted matches original
-        assert_eq!(decrypted, original_content);
+            decrypt_bytes(&encrypted, &encryption_key).expect("Decryption should succeed");
+        assert_eq!(decrypted, original_bytes);
     }
 
     #[test]
     fn test_encrypt_produces_different_ciphertext() {
         let key_bytes = [42u8; 32];
         let encryption_key = BASE64.encode(&key_bytes);
-        let content = "Same content";
-
-        // Encrypt the same content twice
-        let encrypted1 = encrypt_content(content, &encryption_key).unwrap();
-        let encrypted2 = encrypt_content(content, &encryption_key).unwrap();
-
-        // Should produce different ciphertext due to random nonce
+        let content_bytes = b"Same content";
+        let encrypted1 = encrypt_bytes(content_bytes, &encryption_key).unwrap();
+        let encrypted2 = encrypt_bytes(content_bytes, &encryption_key).unwrap();
         assert_ne!(encrypted1, encrypted2);
-
-        // But both should decrypt to the same content
         assert_eq!(
-            decrypt_content(&encrypted1, &encryption_key).unwrap(),
-            content
+            decrypt_bytes(&encrypted1, &encryption_key).unwrap(),
+            content_bytes
         );
         assert_eq!(
-            decrypt_content(&encrypted2, &encryption_key).unwrap(),
-            content
+            decrypt_bytes(&encrypted2, &encryption_key).unwrap(),
+            content_bytes
         );
     }
 
@@ -228,12 +209,9 @@ mod tests {
         let key_bytes2 = [99u8; 32];
         let encryption_key1 = BASE64.encode(&key_bytes1);
         let encryption_key2 = BASE64.encode(&key_bytes2);
-
-        let content = "Secret data";
-        let encrypted = encrypt_content(content, &encryption_key1).unwrap();
-
-        // Trying to decrypt with wrong key should fail
-        let result = decrypt_content(&encrypted, &encryption_key2);
+        let content_bytes = b"Secret data";
+        let encrypted = encrypt_bytes(content_bytes, &encryption_key1).unwrap();
+        let result = decrypt_bytes(&encrypted, &encryption_key2);
         assert!(result.is_err());
     }
 }

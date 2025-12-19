@@ -13,6 +13,7 @@ dependencies = [
  "chrono",
  "embed-resource",
  "encoding_rs",
+ "flate2",
  "fulgur-common",
  "gpui",
  "gpui-component",

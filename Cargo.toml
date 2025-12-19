@@ -28,6 +28,7 @@ semver = "1.0.27"
 aes-gcm = "0.10"
 base64 = "0.22"
 machine-uid = "0.5"
+flate2 = "1.1.5"
 
 [build-dependencies]
 embed-resource = "3.0.6"

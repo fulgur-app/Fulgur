@@ -1,16 +1,54 @@
 use std::{sync::atomic::Ordering, thread, time::Duration};
 
 use crate::fulgur::{crypto_helper, icons::CustomIcon};
+use flate2::Compression;
+use flate2::read::{GzDecoder, GzEncoder};
 use fulgur_common::api::BeginResponse;
 use fulgur_common::api::devices::DeviceResponse;
 use gpui_component::Icon;
 use serde::Serialize;
+use std::io::Read;
 
 pub type Device = DeviceResponse;
 
-// Get the icon for the device
-// @param device: The device
-// @return: The icon for the device
+/// Compress content using gzip compression
+///
+/// @param content: The content to compress
+///
+/// @return: The compressed content as bytes
+fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
+    let mut encoder = GzEncoder::new(content.as_bytes(), Compression::best());
+    let mut compressed = Vec::new();
+    encoder.read_to_end(&mut compressed)?;
+    let original_size_kb = content.len() as f64 / 1024.0;
+    let compressed_size_kb = compressed.len() as f64 / 1024.0;
+    let compression_ratio = (1.0 - (compressed.len() as f64 / content.len() as f64)) * 100.0;
+    log::debug!(
+        "Compression: {:.2} KB -> {:.2} KB ({:.1}% reduction)",
+        original_size_kb,
+        compressed_size_kb,
+        compression_ratio
+    );
+    Ok(compressed)
+}
+
+/// Decompress content that was compressed with gzip
+///
+/// @param compressed: The compressed content as bytes
+///
+/// @return: The decompressed content as string
+pub fn decompress_content(compressed: &[u8]) -> anyhow::Result<String> {
+    let mut decoder = GzDecoder::new(compressed);
+    let mut decompressed = String::new();
+    decoder.read_to_string(&mut decompressed)?;
+    Ok(decompressed)
+}
+
+/// Get the icon for the device
+///
+/// @param device: The device
+///
+/// @return: The icon for the device
 pub fn get_icon(device: &Device) -> Icon {
     match device.device_type.to_lowercase().as_str() {
         "desktop" => Icon::new(CustomIcon::Computer),
@@ -20,11 +58,15 @@ pub fn get_icon(device: &Device) -> Icon {
     }
 }
 
-// Get the devices from the server
-// @param server_url: The server URL
-// @param email: The email
-// @param key: The key
-// @return: The devices
+/// Get the devices from the server
+///
+/// @param server_url: The server URL
+///
+/// @param email: The email
+///
+/// @param key: The key
+///
+/// @return: The devices
 pub fn get_devices(
     server_url: Option<String>,
     email: Option<String>,
@@ -56,10 +98,15 @@ pub fn get_devices(
 }
 
 /// Fetch the user's encryption key from the server
+///
 /// The server manages a shared encryption key per user that all their devices can access
+///
 /// @param server_url: The server URL
+///
 /// @param email: The user's email
+///
 /// @param device_key: The decrypted device authentication key
+///
 /// @return: The user's encryption key (base64-encoded)
 fn fetch_encryption_key(server_url: &str, email: &str, device_key: &str) -> anyhow::Result<String> {
     let key_url = format!("{}/api/encryption-key", server_url);
@@ -84,12 +131,17 @@ pub struct ShareFilePayload {
     pub device_ids: Vec<String>,
 }
 
-// Share the file with the devices
-// @param server_url: The server URL
-// @param email: The email
-// @param key: The encrypted device authentication key
-// @param payload: The payload to share the file with (content will be encrypted)
-// @return: The result of the sharing
+/// Share the file with the devices
+///
+/// @param server_url: The server URL
+///
+/// @param email: The email
+///
+/// @param key: The encrypted device authentication key
+///
+/// @param payload: The payload to share the file with (content will be encrypted)
+///
+/// @return: The result of the sharing
 pub fn share_file(
     server_url: Option<String>,
     email: Option<String>,
@@ -118,33 +170,23 @@ pub fn share_file(
     if payload.device_ids.is_empty() {
         return Err(anyhow::anyhow!("Device IDs are missing"));
     }
-
     let server_url_str = server_url.as_ref().unwrap();
     let email_str = email.as_ref().unwrap();
     let decrypted_device_key = crypto_helper::decrypt(&key.unwrap())?;
     let encryption_key = fetch_encryption_key(server_url_str, email_str, &decrypted_device_key)?;
-    let encrypted_content = crypto_helper::encrypt_content(&payload.content, &encryption_key)?;
-    log::debug!(
-        "Encrypted {} bytes to {} bytes",
-        payload.content.len(),
-        encrypted_content.len()
-    );
-
-    // Create payload with encrypted content
+    let compressed_content = compress_content(&payload.content)?;
+    let encrypted_content = crypto_helper::encrypt_bytes(&compressed_content, &encryption_key)?;
     let encrypted_payload = ShareFilePayload {
         content: encrypted_content,
         file_name: payload.file_name,
         device_ids: payload.device_ids,
     };
-
-    // Send the encrypted content to the server
     let share_url = format!("{}/api/share", server_url_str);
     let mut response = ureq::post(&share_url)
         .header("Authorization", &format!("Bearer {}", decrypted_device_key))
         .header("X-User-Email", email_str)
         .header("Content-Type", "application/json")
         .send_json(encrypted_payload)?;
-
     if response.status() == 200 {
         log::info!("File shared successfully with end-to-end encryption");
         Ok(())
@@ -157,10 +199,15 @@ pub fn share_file(
 }
 
 /// Initial synchronization with the server
+///
 /// This endpoint returns both the encryption key and any shared files waiting for this device
+///
 /// @param server_url: The server URL
+///
 /// @param email: The email
+///
 /// @param key: The encrypted device authentication key
+///
 /// @return: The begin response containing encryption key and shared files
 pub fn initial_synchronization(
     server_url: Option<String>,
@@ -250,4 +297,59 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compress_decompress() {
+        let original = "This is a test string with some repetitive content. \
+                       This is a test string with some repetitive content. \
+                       This is a test string with some repetitive content.";
+
+        // Compress the content
+        let compressed = compress_content(original).expect("Compression should succeed");
+
+        // Compressed should be smaller than original
+        assert!(compressed.len() < original.len());
+
+        // Decompress the content
+        let decompressed = decompress_content(&compressed).expect("Decompression should succeed");
+
+        // Decompressed should match original
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_compress_empty_string() {
+        let original = "";
+
+        let compressed = compress_content(original).expect("Compression should succeed");
+        let decompressed = decompress_content(&compressed).expect("Decompression should succeed");
+
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_compress_small_content() {
+        // Small content might not compress well, but should still work
+        let original = "Hi!";
+
+        let compressed = compress_content(original).expect("Compression should succeed");
+        let decompressed = decompress_content(&compressed).expect("Decompression should succeed");
+
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_compress_unicode() {
+        let original = "Hello 世界! 🚀 Testing unicode compression.";
+
+        let compressed = compress_content(original).expect("Compression should succeed");
+        let decompressed = decompress_content(&compressed).expect("Decompression should succeed");
+
+        assert_eq!(decompressed, original);
+    }
 }
