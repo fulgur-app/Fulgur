@@ -42,15 +42,14 @@ pub const EMPTY: &str = "";
 
 /// Create a button
 ///
-/// @param id: The ID of the button
+/// ### Arguments
+/// - `id`: The ID of the button
+/// - `tooltip`: The tooltip of the button for the button
+/// - `icon`: The icon of the button
+/// - `border_color`: The color of the border of the button
 ///
-/// @param tooltip: The tooltip of the button for the button
-///
-/// @param icon: The icon of the button
-///
-/// @param border_color: The color of the border of the button
-///
-/// @return: The button
+/// ### Returns
+/// - `Button`: The button
 pub fn button_factory(
     id: &'static str,
     tooltip: &'static str,
@@ -73,15 +72,14 @@ pub fn button_factory(
 
 /// Create the a select state
 ///
-/// @param window: The window
+/// ### Arguments
+/// - `window`: The window
+/// - `current_value`: The current value
+/// - `options`: The options
+/// - `cx`: The application context
 ///
-/// @param current_value: The current value
-///
-/// @param options: The options
-///
-/// @param cx: The app context
-///
-/// @return: The select state entity
+/// ### Returns
+/// - `Entity<SelectState<Vec<SharedString>>>`: The select state entity
 pub fn create_select_state(
     window: &mut Window,
     current_value: String,
@@ -101,9 +99,12 @@ pub fn create_select_state(
 
 /// Format a date as ISO 8601 string
 ///
-/// @param time: The time to format
+/// ### Arguments
+/// - `time`: The time to format
 ///
-/// @return: The formatted date
+/// ### Returns
+/// - `Some(String)`: The formatted date
+/// - `None`: If the time could not be formatted
 pub fn format_system_time(time: SystemTime) -> Option<String> {
     let datetime: DateTime<Utc> = match time.try_into() {
         Ok(dt) => dt,

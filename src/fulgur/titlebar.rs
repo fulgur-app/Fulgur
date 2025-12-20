@@ -15,11 +15,12 @@ pub struct CustomTitleBar {
 impl CustomTitleBar {
     /// Create a new custom title bar
     ///
-    /// @param window: The window to create the title bar in
+    /// ### Arguments
+    /// - `_window`: The window to create the title bar in
+    /// - `_cx`: The application context
     ///
-    /// @param cx: The application context
-    ///
-    /// @return: The new custom title bar
+    /// ### Returns
+    /// - `Entity<CustomTitleBar>`: The new custom title bar
     pub fn new(_window: &mut Window, _cx: &mut App) -> Entity<Self> {
         #[cfg(not(target_os = "macos"))]
         let app_menu_bar = AppMenuBar::new(_window, _cx);
@@ -33,7 +34,8 @@ impl CustomTitleBar {
 
     /// Set the title of the title bar
     ///
-    /// @param title: The title to set (if None, the default title is used)
+    /// ### Arguments
+    /// - `title`: The optionaltitle to set (if None, the default title is used)
     pub fn set_title(&mut self, title: Option<String>) {
         if let Some(title) = title {
             self.title = format!("{} - Fulgur", title);
@@ -46,11 +48,12 @@ impl CustomTitleBar {
 impl Render for CustomTitleBar {
     /// Render the custom title bar
     ///
-    /// @param window: The window to render the title bar in
+    /// ### Arguments
+    /// - `_window`: The window to render the title bar in
+    /// - `cx`: The application context
     ///
-    /// @param cx: The application context
-    ///
-    /// @return: The rendered custom title bar
+    /// ### Returns
+    /// - `impl IntoElement`: The rendered custom title bar
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let mut title_bar = TitleBar::new().bg(cx.theme().tab_bar);
         #[cfg(not(target_os = "macos"))]

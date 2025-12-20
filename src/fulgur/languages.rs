@@ -8,9 +8,11 @@ pub fn init_languages() {}
 
 /// Get the Language enum from a file extension. Checks if the extension is a known language, if not, it returns Plain.
 ///
-/// @param extension: The file extension
+/// ### Arguments
+/// - `extension`: The file extension
 ///
-/// @return: The Language enum
+/// ### Returns
+/// - `Language`: The detectedLanguage
 pub fn language_from_extension(extension: &str) -> Language {
     if extension == "txt" {
         return Language::Plain;
@@ -29,18 +31,22 @@ pub fn language_from_extension(extension: &str) -> Language {
 
 /// Get the language name as a string
 ///
-/// @param language: The Language enum
+/// ### Arguments
+/// - `language`: The Language enum
 ///
-/// @return: The language name as a string
+/// ### Returns
+/// - `&'static str`: The language name as a string
 pub fn language_name(language: &Language) -> &'static str {
     language.name()
 }
 
 /// Get the pretty name of a language
 ///
-/// @param language: The Language enum
+/// ### Arguments
+/// - `language`: The Language enum
 ///
-/// @return: The pretty name of the language
+/// ### Returns
+/// - `String`: The pretty name of the language
 pub fn pretty_name(language: Language) -> String {
     let language_pretty = match language {
         Language::Plain => "Text",
@@ -82,9 +88,11 @@ pub fn pretty_name(language: Language) -> String {
 
 /// Get the Language enum from a pretty name (e.g., "JavaScript" -> Language::JavaScript)
 ///
-/// @param pretty_name_str: The pretty name of the language
+/// ### Arguments
+/// - `pretty_name_str`: The pretty name of the language
 ///
-/// @return: The Language enum, or Language::Plain if not found
+/// ### Returns
+/// - `Language`: The Language enum, or Language::Plain if not found
 pub fn language_from_pretty_name(pretty_name_str: &str) -> Language {
     Language::all()
         .find(|&lang| pretty_name(lang) == pretty_name_str)
@@ -93,13 +101,13 @@ pub fn language_from_pretty_name(pretty_name_str: &str) -> Language {
 
 /// Create the all languages select state
 ///
-/// @param current_language: The current language
+/// ### Arguments
+/// - `current_language`: The current language
+/// - `window`: The window
+/// - `cx`: The app context
 ///
-/// @param window: The window
-///
-/// @param cx: The app context
-///
-/// @return: The select state entity
+/// ### Returns
+/// - `Entity<SelectState<Vec<SharedString>>>`: The select state entity
 pub fn create_all_languages_select_state(
     current_language: String,
     window: &mut Window,
@@ -111,7 +119,8 @@ pub fn create_all_languages_select_state(
 
 /// Get all languages as a vector of SharedString
 ///
-/// @return: The vector of SharedString
+/// ### Returns
+/// - `Vec<SharedString>`: The list of all languages as SharedString
 fn all_languages() -> Vec<SharedString> {
     let mut languages = Language::all()
         .map(|language| SharedString::new(pretty_name(language).as_str()))
@@ -123,7 +132,8 @@ fn all_languages() -> Vec<SharedString> {
 impl Fulgur {
     /// Get the current language of the active tab
     ///
-    /// @return: The current language
+    /// ### Returns
+    /// - `Language`: The active tab's language
     pub fn get_current_language(&self) -> Language {
         let current_tab_language = match self.active_tab_index {
             Some(index) => {
@@ -140,7 +150,8 @@ impl Fulgur {
 
     /// Check if the current active tab's language is a Markdown language
     ///
-    /// @return: True if the current active tab's language is a Markdown language
+    /// ### Returns
+    /// - `True` if the active tab's language is a Markdown language, `False` otherwise
     pub fn is_markdown(&self) -> bool {
         let current_language = self.get_current_language();
         current_language == Language::Markdown || current_language == Language::MarkdownInline

@@ -11,7 +11,9 @@ const APP_SALT: &[u8] = b"Fulgur-Sync-Key-v1";
 
 /// Get a machine-specific encryption key, derived from the machine's unique ID + app salt
 ///
-/// @return: The machine-specific encryption key
+/// ### Returns
+/// - `Ok([u8; 32])`: The machine-specific encryption key
+/// - `Err(anyhow::Error)`: If the machine ID could not be retrieved
 fn get_machine_key() -> anyhow::Result<[u8; 32]> {
     let machine_id =
         machine_uid::get().map_err(|e| anyhow::anyhow!("Failed to get machine ID: {}", e))?;
@@ -45,9 +47,12 @@ fn get_machine_key() -> anyhow::Result<[u8; 32]> {
 
 /// Encrypt a string using machine-specific key
 ///
-/// @param plaintext: The string to encrypt
+/// ### Arguments
+/// - `plaintext`: The string to encrypt
 ///
-/// @return: Base64-encoded encrypted string (nonce + ciphertext)
+/// ### Returns
+/// - `Ok(String)`: The base64-encoded encrypted string (nonce + ciphertext)
+/// - `Err(anyhow::Error)`: If the encryption faile
 pub fn encrypt(plaintext: &str) -> anyhow::Result<String> {
     let key = get_machine_key()?;
     let cipher = Aes256Gcm::new_from_slice(&key)
@@ -63,9 +68,12 @@ pub fn encrypt(plaintext: &str) -> anyhow::Result<String> {
 
 /// Decrypt a base64-encoded encrypted string
 ///
-/// @param encrypted: Base64-encoded encrypted string (nonce + ciphertext)
+/// ### Arguments
+/// - `encrypted`: Base64-encoded encrypted string (nonce + ciphertext)
 ///
-/// @return: Decrypted plaintext string
+/// ### Returns
+/// - `Ok(String)`: The decrypted plaintext string
+/// - `Err(anyhow::Error)`: If the decryption failed
 pub fn decrypt(encrypted: &str) -> anyhow::Result<String> {
     let key = get_machine_key()?;
     let cipher = Aes256Gcm::new_from_slice(&key)
@@ -88,9 +96,12 @@ pub fn decrypt(encrypted: &str) -> anyhow::Result<String> {
 
 /// Convert base64 encryption key to bytes
 ///
-/// @param key_b64: Base64-encoded encryption key
+/// ### Arguments
+/// - `key_b64`: Base64-encoded encryption key
 ///
-/// @return: 32-byte encryption key
+/// ### Returns
+/// - `Ok([u8; 32])`: The 32-byte encryption key
+/// - `Err(anyhow::Error)`: If the encryption key could not be decoded
 pub fn decode_encryption_key(key_b64: &str) -> anyhow::Result<[u8; 32]> {
     let key_bytes = BASE64.decode(key_b64)?;
     if key_bytes.len() != 32 {
@@ -106,11 +117,13 @@ pub fn decode_encryption_key(key_b64: &str) -> anyhow::Result<[u8; 32]> {
 
 /// Encrypt bytes (e.g., compressed data) for file sharing
 ///
-/// @param content_bytes: The bytes to encrypt
+/// ### Arguments
+/// - `content_bytes`: The bytes to encrypt
+/// - `encryption_key_b64`: The base64-encoded encryption key from the server
 ///
-/// @param encryption_key_b64: The base64-encoded encryption key from the server
-///
-/// @return: Base64-encoded encrypted content (nonce + ciphertext)
+/// ### Returns
+/// - `Ok(String)`: The base64-encoded encrypted content (nonce + ciphertext)
+/// - `Err(anyhow::Error)`: If the encryption failed
 pub fn encrypt_bytes(content_bytes: &[u8], encryption_key_b64: &str) -> anyhow::Result<String> {
     let key_bytes = decode_encryption_key(encryption_key_b64)?;
     let cipher = Aes256Gcm::new_from_slice(&key_bytes)
@@ -126,11 +139,13 @@ pub fn encrypt_bytes(content_bytes: &[u8], encryption_key_b64: &str) -> anyhow::
 
 /// Decrypt bytes (e.g., compressed data) received from another device
 ///
-/// @param encrypted: Base64-encoded encrypted content (nonce + ciphertext)
+/// ### Arguments
+/// - `encrypted`: Base64-encoded encrypted content (nonce + ciphertext)
+/// - `encryption_key_b64`: The base64-encoded encryption key from the server
 ///
-/// @param encryption_key_b64: The base64-encoded encryption key from the server
-///
-/// @return: Decrypted bytes
+/// ### Returns
+/// - `Ok(Vec<u8>)`: The decrypted bytes
+/// - `Err(anyhow::Error)`: If the decryption failed
 pub fn decrypt_bytes(encrypted: &str, encryption_key_b64: &str) -> anyhow::Result<Vec<u8>> {
     let key_bytes = decode_encryption_key(encryption_key_b64)?;
     let cipher = Aes256Gcm::new_from_slice(&key_bytes)

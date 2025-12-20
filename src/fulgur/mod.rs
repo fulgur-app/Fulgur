@@ -82,11 +82,15 @@ pub struct Fulgur {
 }
 
 impl Fulgur {
-    // Create a new Fulgur instance
-    // @param window: The window to create the Fulgur instance in
-    // @param cx: The application context
-    // @param pending_files_from_macos: Arc to the pending files queue from macOS open events
-    // @return: The new Fulgur instance
+    /// Create a new Fulgur instance
+    ///
+    /// ### Arguments
+    /// - `window`: The window to create the Fulgur instance in
+    /// - `cx`: The application context
+    /// - `pending_files_from_macos`: Arc to the pending files queue from macOS open events
+    ///
+    /// ### Returns
+    /// - `Entity<Self>`: The new Fulgur instance
     pub fn new(
         window: &mut Window,
         cx: &mut App,
@@ -165,7 +169,8 @@ impl Fulgur {
 
     /// Initialize the Fulgur instance
     ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `cx`: The application context
     pub fn init(cx: &mut App) {
         languages::init_languages();
         let mut settings = Settings::load().unwrap_or_else(|_| Settings::new());
@@ -225,9 +230,11 @@ impl Fulgur {
 impl Focusable for Fulgur {
     /// Get the focus handle for the Fulgur instance
     ///
-    /// @param _cx: The application context
+    /// ### Arguments
+    /// - `_cx`: The application context
     ///
-    /// @return: The focus handle for the Fulgur instance
+    /// ### Returns
+    /// - `FocusHandle`: The focus handle for the Fulgur instance
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
@@ -236,11 +243,12 @@ impl Focusable for Fulgur {
 impl Render for Fulgur {
     /// Render the Fulgur instance
     ///
-    /// @param window: The window to render the Fulgur instance in
+    /// ### Arguments
+    /// - `window`: The window to render the Fulgur instance in
+    /// - `cx`: The application context
     ///
-    /// @param cx: The application context
-    ///
-    /// @return: The rendered Fulgur instance
+    /// ### Returns
+    /// - `impl IntoElement`: The rendered Fulgur instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let files_to_open = if let Ok(mut pending) = self.pending_files_from_macos.try_lock() {
             if pending.is_empty() {
@@ -467,8 +475,7 @@ impl Render for Fulgur {
                 }),
             )
             .on_action(cx.listener(|_this, _action: &About, window, cx| {
-                let entity = cx.entity();
-                about(entity, window, cx);
+                about(window, cx);
             }))
             .on_action(cx.listener(|_, _action: &GetTheme, _window, _cx| {
                 if let Err(e) =
@@ -484,13 +491,13 @@ impl Render for Fulgur {
                 this.check_for_updates(window, cx);
             }));
         app_content = app_content
-            .child(self.render_tab_bar(window, cx))
+            .child(self.render_tab_bar(cx))
             .child(self.render_content_area(active_tab, window, cx))
-            .children(self.render_markdown_bar(window, cx))
-            .children(self.render_search_bar(window, cx));
+            .children(self.render_markdown_bar(cx))
+            .children(self.render_search_bar(cx));
         if let Some(index) = self.active_tab_index {
             if let Some(Tab::Editor(_)) = self.tabs.get(index) {
-                app_content = app_content.child(self.render_status_bar(window, cx));
+                app_content = app_content.child(self.render_status_bar(cx));
             }
         }
         // Create root layout: TitleBar OUTSIDE of focus-tracked content
@@ -511,12 +518,10 @@ impl Render for Fulgur {
 
 /// Show the about dialog
 ///
-/// @param _entity: The Fulgur entity (unused but needed for consistent signature)
-///
-/// @param window: The window context
-///
-/// @param cx: The application context
-fn about(_entity: Entity<Fulgur>, window: &mut Window, cx: &mut App) {
+/// ### Arguments
+/// - `window`: The window context
+/// - `cx`: The application context
+fn about(window: &mut Window, cx: &mut App) {
     window.open_dialog(cx, |modal, _window, _cx| {
         modal
             .alert()
@@ -557,13 +562,13 @@ fn about(_entity: Entity<Fulgur>, window: &mut Window, cx: &mut App) {
 impl Fulgur {
     /// Render the content area (editor or settings)
     ///
-    /// @param active_tab: The active tab (if any)
+    /// ### Arguments
+    /// - `active_tab`: The active tab (if any)
+    /// - `window`: The window context
+    /// - `cx`: The application context
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
-    ///
-    /// @return: The rendered content area element (wrapped in AnyElement)
+    /// ### Returns
+    /// - `AnyElement`: The rendered content area element (wrapped in AnyElement)
     fn render_content_area(
         &self,
         active_tab: Option<Tab>,
@@ -631,9 +636,9 @@ impl Fulgur {
 
     /// Set the title of the title bar
     ///
-    /// @param title: The title to set (if None, the default title is used)
-    ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `title`: The title to set (if None, the default title is used)
+    /// - `cx`: The application context
     fn set_title(&self, title: Option<String>, cx: &mut Context<Self>) {
         self.title_bar.update(cx, |this, _cx| {
             this.set_title(title);

@@ -3,9 +3,11 @@ use simplelog::*;
 use std::fs::{self, File};
 use std::path::PathBuf;
 
-/// Get the path to the log file
+/// Get the path to the log file, create the log file directory if it doesn't exist
 ///
-/// @return: The path to the log file
+/// ### Returns
+/// - `Ok(PathBuf)`: The path to the log file
+/// - `Err(anyhow::Error)`: If the log file path could not be determined or created
 fn log_file_path() -> anyhow::Result<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -30,7 +32,9 @@ fn log_file_path() -> anyhow::Result<PathBuf> {
 
 /// Initialize the file logger
 ///
-/// @return: Result indicating success or failure
+/// ### Returns
+/// - `Ok(())`: If the logger was initialized successfully
+/// - `Err(anyhow::Error)`: If the logger could not be initialized
 pub fn init() -> anyhow::Result<()> {
     let log_path = log_file_path()?;
     #[cfg(debug_assertions)]
@@ -50,7 +54,9 @@ pub fn init() -> anyhow::Result<()> {
 
 /// Get the log file path for display purposes
 ///
-/// @return: The path to the log file as a string
+/// ### Returns
+/// - `Some(String)`: The path to the log file as a string
+/// - `None`: If the log file path could not be determined
 #[allow(dead_code)]
 pub fn get_log_path() -> Option<String> {
     log_file_path()

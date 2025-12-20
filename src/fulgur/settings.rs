@@ -40,7 +40,8 @@ pub struct SynchronizationSettings {
 impl SynchronizationSettings {
     /// Create a new synchronization settings instance
     ///
-    /// @return: The new synchronization settings instance
+    /// ### Returns
+    /// - `SynchronizationSettings`: The new synchronization settings instance
     pub fn new() -> Self {
         Self {
             is_synchronization_activated: false,
@@ -61,7 +62,8 @@ pub struct MarkdownSettings {
 impl MarkdownSettings {
     /// Create a new markdown settings instance
     ///
-    /// @return: The new markdown settings instance
+    /// ### Returns
+    /// - `MarkdownSettings`: The new markdown settings instance
     pub fn new() -> Self {
         Self {
             show_markdown_preview: true,
@@ -92,7 +94,8 @@ pub struct AppSettings {
 impl EditorSettings {
     /// Create a new editor settings instance
     ///
-    /// @return: The new editor settings instance
+    /// ### Returns
+    /// - `EditorSettings`: The new editor settings instance
     pub fn new() -> Self {
         Self {
             show_line_numbers: true,
@@ -108,7 +111,8 @@ impl EditorSettings {
 impl AppSettings {
     /// Create a new app settings instance
     ///
-    /// @return: The new app settings instance
+    /// ### Returns
+    /// - `AppSettings`: The new app settings instance
     pub fn new() -> Self {
         Self {
             confirm_exit: true,
@@ -128,9 +132,11 @@ pub struct RecentFiles {
 impl RecentFiles {
     /// Create a new recent files instance
     ///
-    /// @param max_files: The maximum number of files to store
+    /// ### Arguments
+    /// - `max_files`: The maximum number of files to store
     ///
-    /// @return: The new recent files instance
+    /// ### Returns
+    /// - `RecentFilles`: the recent files                                                                                                                                                                                                                                                                                                                                                                                                                    lf`: The new recent files instance
     pub fn new(max_files: usize) -> Self {
         Self {
             files: Vec::new(),
@@ -140,9 +146,8 @@ impl RecentFiles {
 
     /// Add a file to the recent files
     ///
-    /// @param file: The file to add
-    ///
-    /// @return: The result of the operation
+    /// ### Arguments
+    /// - `file`: The file to add
     pub fn add_file(&mut self, file: PathBuf) {
         self.files.push(file);
         if self.files.len() > self.max_files {
@@ -152,23 +157,21 @@ impl RecentFiles {
 
     /// Remove a file from the recent files
     ///
-    /// @param file: The file to remove
-    ///
-    /// @return: The result of the operation
+    /// ### Arguments
+    /// - `file`: The file to remove
     pub fn remove_file(&mut self, file: PathBuf) {
         self.files.retain(|f| f != &file);
     }
 
     /// Get the recent files
     ///
-    /// @return: The recent files
+    /// ### Returns
+    /// - `&Vec<PathBuf>`: The recent files
     pub fn get_files(&self) -> &Vec<PathBuf> {
         &self.files
     }
 
     /// Clear the recent files
-    ///
-    /// @return: The result of the operation
     pub fn clear(&mut self) {
         self.files.clear();
     }
@@ -191,9 +194,11 @@ pub struct ThemeFile {
 impl ThemeFile {
     /// Load a theme file from a path
     ///
-    /// @param path: The path to the theme file
+    /// ### Arguments
+    /// - `path`: The path to the theme file
     ///
-    /// @return: The theme file
+    /// ### Returns
+    /// - `anyhow::Result<Self>`: The theme file
     pub fn load(path: PathBuf) -> anyhow::Result<Self> {
         let json = fs::read_to_string(&path)?;
         let mut theme_file: ThemeFile = serde_json::from_str(&json)?;
@@ -211,9 +216,8 @@ pub struct Themes {
 impl Themes {
     /// Load the theme settings from the themes folder
     ///
-    /// @param path: The path to the themes folder
-    ///
-    /// @return: The theme settings
+    /// ### Returns
+    /// - `anyhow::Result<Self>`: The theme settings
     pub fn load() -> anyhow::Result<Self> {
         let themes_dir = themes_directory_path()?;
         let themes_files = fs::read_dir(&themes_dir)?;
@@ -244,9 +248,8 @@ impl Themes {
 
     /// Remove a theme from the user themes
     ///
-    /// @param theme_name: The name of the theme to remove
-    ///
-    /// @return: The result of the operation
+    /// ### Arguments
+    /// - `theme_name`: The name of the theme to remove
     #[allow(dead_code)]
     pub fn remove_theme(&mut self, theme_name: String) {
         self.user_themes.retain(|theme| theme.name != theme_name);
@@ -261,8 +264,10 @@ pub struct Settings {
 }
 
 impl Settings {
-    // Create a new settings instance
-    // @return: The new settings instance
+    /// Create a new settings instance
+    ///
+    /// ### Returns
+    /// - `Self`: The new settings instance
     pub fn new() -> Self {
         Self {
             editor_settings: EditorSettings::new(),
@@ -271,8 +276,10 @@ impl Settings {
         }
     }
 
-    // Get the path to the settings file
-    // @return: The path to the settings file
+    /// Get the path to the settings file
+    ///
+    /// ### Returns
+    /// - `anyhow::Result<PathBuf>`: The path to the settings file
     fn settings_file_path() -> anyhow::Result<PathBuf> {
         #[cfg(target_os = "windows")]
         {
@@ -294,8 +301,10 @@ impl Settings {
         }
     }
 
-    // Save the settings to the state file
-    // @return: The result of the operation
+    /// Save the settings to the state file
+    ///
+    /// ### Returns
+    /// - `anyhow::Result<()>`: The result of the operation
     pub fn save(&mut self) -> anyhow::Result<()> {
         if let Some(ref plaintext_key) = self.app_settings.synchronization_settings.key {
             if !plaintext_key.is_empty() {
@@ -320,8 +329,10 @@ impl Settings {
         Ok(())
     }
 
-    // Load the settings from the state file
-    // @return: The settings
+    /// Load the settings from the state file
+    ///
+    /// ### Returns
+    /// - `anyhow::Result<Self>`: The settings
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::settings_file_path()?;
         let json = fs::read_to_string(&path)?;
@@ -345,16 +356,23 @@ impl Settings {
         Ok(settings)
     }
 
-    // Get the recent files
-    // @return: The recent files
+    /// Get the recent files
+    ///
+    /// ### Returns
+    /// - `Vec<PathBuf>`: The recent files
     pub fn get_recent_files(&mut self) -> Vec<PathBuf> {
         let mut files = self.recent_files.get_files().clone();
         files.reverse();
         files
     }
 
-    // Add a file to the recent files
-    // @param file: The file to add
+    /// Add a file to the recent files
+    ///
+    /// ### Arguments
+    /// - `file`: The file to add
+    ///
+    /// ### Returns
+    /// - `anyhow::Result<()>`: The result of the operation
     pub fn add_file(&mut self, file: PathBuf) -> anyhow::Result<()> {
         if self.recent_files.get_files().contains(&file) {
             self.recent_files.remove_file(file.clone());
@@ -371,11 +389,15 @@ pub struct SettingsTab {
 }
 
 impl SettingsTab {
-    // Create a new settings tab
-    // @param id: The ID of the settings tab
-    // @param window: The window
-    // @param cx: The context
-    // @return: The settings tab
+    /// Create a new settings tab
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the settings tab
+    /// - `_window`: The window
+    /// - `_cx`: The context
+    ///
+    /// ### Returns
+    /// - `Self`: The settings tab
     pub fn new(id: usize, _window: &mut Window, _cx: &mut App) -> Self {
         Self {
             id,
@@ -387,9 +409,11 @@ impl SettingsTab {
 impl Fulgur {
     /// Create the Editor settings page
     ///
-    /// @param entity: The Fulgur entity
+    /// ### Arguments
+    /// - `entity`: The Fulgur entity
     ///
-    /// @return: The Editor settings page
+    /// ### Returns
+    /// - `SettingPage`: The Editor settings page
     fn create_editor_page(entity: Entity<Self>) -> SettingPage {
         let default_editor_settings = EditorSettings::new();
         SettingPage::new("Editor").default_open(true).groups(vec![
@@ -613,9 +637,11 @@ impl Fulgur {
 
     /// Create the Application settings page
     ///
-    /// @param entity: The Fulgur entity
+    /// ### Arguments
+    /// - `entity`: The Fulgur entity
     ///
-    /// @return: The Application settings page
+    /// ### Returns
+    /// - `SettingPage`: The Application settings page
     fn create_application_page(entity: Entity<Self>) -> SettingPage {
         let default_app_settings = AppSettings::new();
 
@@ -906,11 +932,12 @@ impl Fulgur {
 
     /// Create the Themes settings page
     ///
-    /// @param entity: The Fulgur entity
+    /// ### Arguments
+    /// - `entity`: The Fulgur entity
+    /// - `themes`: The themes to display
     ///
-    /// @param themes: The themes to display
-    ///
-    /// @return: The Themes settings page
+    /// ### Returns
+    /// - `SettingPage`: The Themes settings page
     fn create_themes_page(entity: Entity<Self>, themes: &Themes) -> SettingPage {
         let mut user_theme_items = Vec::new();
         let mut default_theme_items = Vec::new();
@@ -1026,11 +1053,12 @@ impl Fulgur {
 
     /// Create settings pages using the Settings component
     ///
-    /// @param window: The window
+    /// ### Arguments
+    /// - `window`: The window
+    /// - `cx`: The context
     ///
-    /// @param cx: The context
-    ///
-    /// @return: The settings pages
+    /// ### Returns
+    /// - `Vec<SettingPage>`: The settings pages
     fn create_settings_pages(
         &self,
         _window: &mut Window,
@@ -1049,11 +1077,12 @@ impl Fulgur {
 
     /// Render the settings
     ///
-    /// @param window: The window
+    /// ### Arguments
+    /// - `window`: The window
+    /// - `cx`: The context
     ///
-    /// @param cx: The context
-    ///
-    /// @return: The settings UI
+    /// ### Returns
+    /// - `impl IntoElement`: The settings UI
     pub fn render_settings(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("settings-scroll-container")
@@ -1079,9 +1108,8 @@ impl Fulgur {
 
     /// Clear the recent files
     ///
-    /// @param cx: The context
-    ///
-    /// @return: The result of the operation
+    /// ### Arguments
+    /// - `cx`: The context
     pub fn clear_recent_files(&mut self, cx: &mut Context<Self>) {
         self.settings.recent_files.clear();
         if let Err(e) = self.settings.save() {

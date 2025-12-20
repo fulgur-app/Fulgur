@@ -56,7 +56,8 @@ pub enum CustomIcon {
 impl CustomIcon {
     /// Get the path to the icon
     ///
-    /// @return: The path to the icon
+    /// ### Returns
+    /// - `SharedString`: The path to the icon
     pub fn path(self) -> SharedString {
         match self {
             Self::ALargeSmall => "icons/a-large-small.svg",
@@ -113,16 +114,19 @@ impl CustomIcon {
 
     /// Create an Icon from this CustomIcon
     ///
-    /// @return: The Icon
+    /// ### Returns
+    /// - `Icon`: The Icon
     pub fn icon(self) -> Icon {
         Icon::default().path(self.path())
     }
 
     /// Return the icon as a Entity<Icon>
     ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `cx`: The application context
     ///
-    /// @return: The icon as a Entity<Icon>
+    /// ### Returns
+    /// - `Entity<Icon>`: The icon as a Entity<Icon>
     pub fn view(self, cx: &mut App) -> Entity<Icon> {
         self.icon().view(cx)
     }
@@ -131,9 +135,11 @@ impl CustomIcon {
 impl From<CustomIcon> for Icon {
     /// Convert a CustomIcon to an Icon
     ///
-    /// @param val: The CustomIcon to convert
+    /// ### Arguments
+    /// - `val`: The CustomIcon to convert
     ///
-    /// @return: The Icon
+    /// ### Returns
+    /// - `Self`: The Icon
     fn from(val: CustomIcon) -> Self {
         Icon::default().path(val.path())
     }
@@ -142,9 +148,11 @@ impl From<CustomIcon> for Icon {
 impl From<CustomIcon> for AnyElement {
     /// Convert a CustomIcon to an AnyElement
     ///
-    /// @param val: The CustomIcon to convert
+    /// ### Arguments
+    /// - `val`: The CustomIcon to convert
     ///
-    /// @return: The AnyElement
+    /// ### Returns
+    /// - `Self`: The Icon as anAnyElement
     fn from(val: CustomIcon) -> Self {
         Icon::default().path(val.path()).into_any_element()
     }

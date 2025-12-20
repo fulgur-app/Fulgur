@@ -21,7 +21,9 @@ pub struct AppState {
 impl AppState {
     /// Get the path to the state file
     ///
-    /// @return: The path to the state file
+    /// ### Returns
+    /// - `Ok(PathBuf)`: The path to the state file
+    /// - `Err(anyhow::Error)`: If the state file path could not be determined
     fn state_file_path() -> anyhow::Result<PathBuf> {
         #[cfg(target_os = "windows")]
         {
@@ -46,7 +48,9 @@ impl AppState {
 
     /// Save the app state to disk
     ///
-    /// @return: The result of the save operation
+    /// ### Returns
+    /// - `Ok(())`: If the app state was saved successfully
+    /// - `Err(anyhow::Error)`: If the app state could not be saved
     pub fn save(&self) -> anyhow::Result<()> {
         let path = Self::state_file_path()?;
         let json = serde_json::to_string_pretty(self)?;
@@ -56,7 +60,9 @@ impl AppState {
 
     /// Load the app state from disk
     ///
-    /// @return: The loaded app state
+    /// ### Returns
+    /// - `Ok(AppState)`: The loaded app state
+    /// - `Err(anyhow::Error)`: If the app state could not be loaded
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::state_file_path()?;
         let json = fs::read_to_string(path)?;
@@ -67,9 +73,12 @@ impl AppState {
 
 /// Get the last modified time of a file as ISO 8601 string
 ///
-/// @param path: The path to the file
+/// ### Arguments
+/// - `path`: The path to the file
 ///
-/// @return: The last modified time of the file
+/// ### Returns
+/// - `Some(String)`: The last modified time of the file
+/// - `None`: If the file could not be found or the last modified time could not be determined
 pub fn get_file_modified_time(path: &PathBuf) -> Option<String> {
     let metadata = fs::metadata(path).ok()?;
     let modified = metadata.modified().ok()?;
@@ -79,11 +88,12 @@ pub fn get_file_modified_time(path: &PathBuf) -> Option<String> {
 
 /// Compare two ISO 8601 timestamps
 ///
-/// @param file_time: The time of the file
+/// ### Arguments
+/// - `file_time`: The time of the file
+/// - `saved_time`: The time of the saved file
 ///
-/// @param saved_time: The time of the saved file
-///
-/// @return: True if the file is newer than the saved file
+/// ### Returns
+/// - `True`: If the file is newer than the saved file, `False` otherwise
 pub fn is_file_newer(file_time: &str, saved_time: &str) -> bool {
     let file_dt = chrono::DateTime::parse_from_rfc3339(file_time).ok();
     let saved_dt = chrono::DateTime::parse_from_rfc3339(saved_time).ok();

@@ -25,17 +25,15 @@ pub struct EditorTab {
 
 /// Create a new input state with syntax highlighting
 ///
-/// @param window: The window to create the input state in
+/// ### Arguments
+/// - `window`: The window to create the input state in
+/// - `cx`: The application context
+/// - `language`: The language of the input state
+/// - `content`: The content of the input state
+/// - `settings`: The settings for the input state
 ///
-/// @param cx: The application context
-///
-/// @param language: The language of the input state
-///
-/// @param content: The content of the input state
-///
-/// @param settings: The settings for the input state
-///
-/// @return: The new input state
+/// ### Returns
+/// - `InputState`: The new input state
 fn make_input_state(
     window: &mut Window,
     cx: &mut Context<InputState>,
@@ -58,17 +56,15 @@ fn make_input_state(
 impl EditorTab {
     /// Create a new tab
     ///
-    /// @param id: The ID of the tab
+    /// ### Arguments
+    /// - `id`: The ID of the tab
+    /// - `title`: The title of the tab
+    /// - `window`: The window to create the tab in
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
     ///
-    /// @param title: The title of the tab
-    ///
-    /// @param window: The window to create the tab in
-    ///
-    /// @param cx: The application context
-    ///
-    /// @param settings: The settings for the input state
-    ///
-    /// @return: The new tab
+    /// ### Returns
+    /// - `EditorTab`: The new tab
     pub fn new(
         id: usize,
         title: impl Into<SharedString>,
@@ -95,19 +91,16 @@ impl EditorTab {
     /// Create a new tab from content with a given file name (no path)
     /// Used for shared files from sync server
     ///
-    /// @param id: The ID of the tab
+    /// ### Arguments
+    /// - `id`: The ID of the tab
+    /// - `contents`: The contents of the file
+    /// - `file_name`: The name of the file (displayed in tab bar)
+    /// - `window`: The window to create the tab in
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
     ///
-    /// @param contents: The contents of the file
-    ///
-    /// @param file_name: The name of the file (displayed in tab bar)
-    ///
-    /// @param window: The window to create the tab in
-    ///
-    /// @param cx: The application context
-    ///
-    /// @param settings: The settings for the input state
-    ///
-    /// @return: The new tab
+    /// ### Returns
+    /// - `EditorTab`: The new tab
     pub fn from_content(
         id: usize,
         contents: String,
@@ -139,21 +132,18 @@ impl EditorTab {
 
     /// Create a new tab from a file
     ///
-    /// @param id: The ID of the tab
+    /// ### Arguments
+    /// - `id`: The ID of the tab
+    /// - `path`: The path of the file
+    /// - `contents`: The contents of the file
+    /// - `encoding`: The encoding of the file
+    /// - `window`: The window to create the tab in
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
+    /// - `is_modified`: Whether the file is modified
     ///
-    /// @param path: The path of the file
-    ///
-    /// @param contents: The contents of the file
-    ///
-    /// @param encoding: The encoding of the file
-    ///
-    /// @param window: The window to create the tab in
-    ///
-    /// @param cx: The application context
-    ///
-    /// @param settings: The settings for the input state
-    ///
-    /// @return: The new tab
+    /// ### Returns
+    /// - `EditorTab`: The new tab
     pub fn from_file(
         id: usize,
         path: std::path::PathBuf,
@@ -191,13 +181,14 @@ impl EditorTab {
 
     /// Update the editor's display settings. Tab size cannot be changed after InputState creation.
     ///
-    /// @param window: The window context
+    /// ### Arguments
+    /// - `window`: The window context
     ///
-    /// @param cx: The application context
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
     ///
-    /// @param settings: The settings for the input state
-    ///
-    /// @return: The updated input state
+    /// ### Returns
+    /// - `InputState`: The updated input state
     pub fn update_settings(&self, window: &mut Window, cx: &mut App, settings: &EditorSettings) {
         self.content.update(cx, |input_state, cx| {
             input_state.set_line_number(settings.show_line_numbers, window, cx);
@@ -208,9 +199,11 @@ impl EditorTab {
 
     /// Check if the tab's content has been modified
     ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `cx`: The application context
     ///
-    /// @return: True if the tab's content has been modified, false otherwise
+    /// ### Returns
+    /// - `True` if the tab's content has been modified, `False` otherwise
     pub fn check_modified(&mut self, cx: &mut App) -> bool {
         let current_text = self.content.read(cx).text().to_string();
         self.modified = current_text != self.original_content;
@@ -219,7 +212,8 @@ impl EditorTab {
 
     /// Mark the tab as saved
     ///     
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `cx`: The application context
     pub fn mark_as_saved(&mut self, cx: &mut App) {
         self.original_content = self.content.read(cx).text().to_string();
         self.modified = false;
@@ -227,7 +221,9 @@ impl EditorTab {
 
     /// Get suggested filename for "Save as..." dialog
     ///
-    /// @return: The suggested filename, or None if UNTITLED
+    /// ### Returns
+    /// - `Some(String)`: The suggested filename
+    /// - `None`: If the title is UNTITLED
     pub fn get_suggested_filename(&self) -> Option<String> {
         let title_str = self.title.to_string();
         let cleaned = title_str.trim_end_matches(" •").trim();
@@ -240,13 +236,10 @@ impl EditorTab {
 
     /// Update the language/syntax highlighting based on the file extension
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
-    ///
-    /// @param settings: The settings for the input state
-    ///
-    /// @return: The updated input state
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
     pub fn update_language(
         &mut self,
         window: &mut Window,
@@ -262,15 +255,11 @@ impl EditorTab {
 
     /// Force the language/syntax highlighting based on the file extension
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
-    ///
-    /// @param language: The language to force
-    ///
-    /// @param settings: The settings for the input state
-    ///
-    /// @return: The updated input state
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    /// - `language`: The language to force
+    /// - `settings`: The settings for the input state
     pub fn force_language(
         &mut self,
         window: &mut Window,
@@ -286,13 +275,10 @@ impl EditorTab {
 
     /// Jump to a specific line
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
-    ///
-    /// @param jump: The jump to perform
-    ///
-    /// @return: The updated input state
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    /// - `jump`: The jump to perform
     pub fn jump_to_line(&mut self, window: &mut Window, cx: &mut App, jump: Jump) {
         self.content.update(cx, |input_state, cx| {
             input_state.set_cursor_position(
@@ -316,9 +302,12 @@ pub struct Jump {
 
 /// Extract the line number and character from a destination string
 ///
-/// @param destination: The destination string
+/// ### Arguments
+/// - `destination`: The destination string
 ///
-/// @return: The jump struct
+/// ### Returns
+/// - `Ok(Jump)`: The jump struct
+/// - `Err(anyhow::Error)`: If the destination string is not a valid jump
 pub fn extract_line_number(destination: SharedString) -> anyhow::Result<Jump> {
     let mut jump = Jump {
         line: 0,
@@ -343,9 +332,11 @@ pub fn extract_line_number(destination: SharedString) -> anyhow::Result<Jump> {
 
 /// Convert a string to a u32
 ///
-/// @param string: The string to convert
+/// ### Arguments
+/// - `string`: The string to convert
 ///
-/// @return: The u32 value of the string, or None if the string is not a valid u32
+/// ### Returns
+/// - `u32`: The u32 value of the string, or 0 if the string is not a valid u32
 fn string_to_u32(string: &str) -> u32 {
     if let Ok(line) = string.parse::<u32>() {
         line

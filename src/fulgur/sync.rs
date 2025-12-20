@@ -13,9 +13,12 @@ pub type Device = DeviceResponse;
 
 /// Compress content using gzip compression
 ///
-/// @param content: The content to compress
+/// ### Arguments
+/// - `content`: The content to compress
 ///
-/// @return: The compressed content as bytes
+/// ### Returns
+/// - `Ok(Vec<u8>)`: The compressed content as bytes
+/// - `Err(anyhow::Error)`: If the content could not be compressed
 fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
     let mut encoder = GzEncoder::new(content.as_bytes(), Compression::best());
     let mut compressed = Vec::new();
@@ -34,9 +37,12 @@ fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
 
 /// Decompress content that was compressed with gzip
 ///
-/// @param compressed: The compressed content as bytes
+/// ### Arguments
+/// - `compressed`: The compressed content as bytes
 ///
-/// @return: The decompressed content as string
+/// ### Returns
+/// - `Ok(String)`: The decompressed content as string
+/// - `Err(anyhow::Error)`: If the content could not be decompressed
 pub fn decompress_content(compressed: &[u8]) -> anyhow::Result<String> {
     let mut decoder = GzDecoder::new(compressed);
     let mut decompressed = String::new();
@@ -46,9 +52,11 @@ pub fn decompress_content(compressed: &[u8]) -> anyhow::Result<String> {
 
 /// Get the icon for the device
 ///
-/// @param device: The device
+/// ### Arguments
+/// - `device`: The device
 ///
-/// @return: The icon for the device
+/// ### Returns
+/// - `Icon`: The icon for the device
 pub fn get_icon(device: &Device) -> Icon {
     match device.device_type.to_lowercase().as_str() {
         "desktop" => Icon::new(CustomIcon::Computer),
@@ -60,13 +68,14 @@ pub fn get_icon(device: &Device) -> Icon {
 
 /// Get the devices from the server
 ///
-/// @param server_url: The server URL
+/// ### Arguments
+/// - `server_url`: The server URL
+/// - `email`: The email
+/// - `key`: The key
 ///
-/// @param email: The email
-///
-/// @param key: The key
-///
-/// @return: The devices
+/// ### Returns
+/// - `Ok(Vec<Device>)`: The devices
+/// - `Err(anyhow::Error)`: If the devices could not be retrieved
 pub fn get_devices(
     server_url: Option<String>,
     email: Option<String>,
@@ -97,17 +106,16 @@ pub fn get_devices(
     }
 }
 
-/// Fetch the user's encryption key from the server
+/// Fetch the user's encryption key from the server. The server manages a shared encryption key per user that all their devices can access.
 ///
-/// The server manages a shared encryption key per user that all their devices can access
+/// ### Arguments
+/// - `server_url`: The server URL
+/// - `email`: The user's email
+/// - `device_key`: The decrypted device authentication key
 ///
-/// @param server_url: The server URL
-///
-/// @param email: The user's email
-///
-/// @param device_key: The decrypted device authentication key
-///
-/// @return: The user's encryption key (base64-encoded)
+/// ### Returns
+/// - `Ok(String)`: The user's encryption key (base64-encoded)
+/// - `Err(anyhow::Error)`: If the encryption key could not be fetched
 fn fetch_encryption_key(server_url: &str, email: &str, device_key: &str) -> anyhow::Result<String> {
     let key_url = format!("{}/api/encryption-key", server_url);
     let mut response = ureq::get(&key_url)
@@ -133,15 +141,15 @@ pub struct ShareFilePayload {
 
 /// Share the file with the devices
 ///
-/// @param server_url: The server URL
+/// ### Arguments
+/// - `server_url`: The server URL
+/// - `email`: The email
+/// - `key`: The encrypted device authentication key
+/// - `payload`: The payload to share the file with (content will be encrypted)
 ///
-/// @param email: The email
-///
-/// @param key: The encrypted device authentication key
-///
-/// @param payload: The payload to share the file with (content will be encrypted)
-///
-/// @return: The expiration date of the shared file
+/// ### Returns
+/// - `Ok(String)`: The expiration date of the shared file
+/// - `Err(anyhow::Error)`: If the file could not be shared
 pub fn share_file(
     server_url: Option<String>,
     email: Option<String>,
@@ -207,17 +215,16 @@ pub fn share_file(
     }
 }
 
-/// Initial synchronization with the server
+/// Initial synchronization with the server. This endpoint returns both the encryption key and any shared files waiting for this device.
 ///
-/// This endpoint returns both the encryption key and any shared files waiting for this device
+/// ### Arguments
+/// - `server_url`: The server URL
+/// - `email`: The email
+/// - `key`: The encrypted device authentication key
 ///
-/// @param server_url: The server URL
-///
-/// @param email: The email
-///
-/// @param key: The encrypted device authentication key
-///
-/// @return: The begin response containing encryption key and shared files
+/// ### Returns
+/// - `Ok(BeginResponse)`: The begin response containing encryption key and shared files
+/// - `Err(anyhow::Error)`: If the synchronization could not be performed
 pub fn initial_synchronization(
     server_url: Option<String>,
     email: Option<String>,
@@ -252,11 +259,9 @@ pub fn initial_synchronization(
 
 /// Fetches shared files from the server and stores them for processing without blocking app startup
 ///
-/// @param entity: The Fulgur entity
-///
-/// @param cx: The application context
-///
-/// @return: The begin response from the server containing encryption key, device name, and shared files
+/// ### Arguments
+/// - `entity`: The Fulgur entity
+/// - `cx`: The application context
 pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &gpui::App) {
     if !entity
         .read(cx)

@@ -14,11 +14,9 @@ pub struct SearchMatch {
 impl Fulgur {
     /// Close the search bar and clear highlighting
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
-    ///
-    /// @return: The close search function
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
     pub(super) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_search = false;
         if let Some(active_index) = self.active_tab_index {
@@ -40,11 +38,9 @@ impl Fulgur {
 
     /// Find in file
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
-    ///
-    /// @return: The find in file function
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
     pub(super) fn find_in_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_search = !self.show_search;
         if self.show_search {
@@ -59,11 +55,9 @@ impl Fulgur {
 
     /// Perform search in the active tab
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
-    ///
-    /// @return: The perform search function
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
     pub(super) fn perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_matches.clear();
         self.current_match_index = None;
@@ -135,11 +129,12 @@ impl Fulgur {
 
     /// Find all matches in the text
     ///
-    /// @param text: The text to search in
+    /// ### Arguments
+    /// - `text`: The text to search in
+    /// - `query`: The search query
     ///
-    /// @param query: The search query
-    ///
-    /// @return: A vector of search matches
+    /// ### Returns
+    /// - `Vec<SearchMatch>`: A vector of search matches
     fn find_matches(&self, text: &str, query: &str) -> Vec<SearchMatch> {
         let mut matches = Vec::new();
         if query.is_empty() {
@@ -190,11 +185,12 @@ impl Fulgur {
 
     /// Get line and column from byte position
     ///
-    /// @param text: The text
+    /// ### Arguments
+    /// - `text`: The text
+    /// - `pos`: The byte position
     ///
-    /// @param pos: The byte position
-    ///
-    /// @return: A tuple of (line, column)
+    /// ### Returns
+    /// - `(usize, usize)`: A tuple of (line, column)
     fn get_line_col(&self, text: &str, pos: usize) -> (usize, usize) {
         let mut line = 0;
         let mut col = 0;
@@ -214,9 +210,9 @@ impl Fulgur {
 
     /// Navigate to the next search match
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
     pub(super) fn search_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.search_matches.is_empty() {
             return;
@@ -230,9 +226,11 @@ impl Fulgur {
         cx.notify();
     }
 
-    // Navigate to the previous search match
-    // @param window: The window context
-    // @param cx: The application context
+    /// Navigate to the previous search match
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
     pub(super) fn search_previous(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.search_matches.is_empty() {
             return;
@@ -252,9 +250,9 @@ impl Fulgur {
 
     /// Highlight the current search match
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
     fn highlight_current_match(&self, window: &mut Window, cx: &mut App) {
         if let Some(match_index) = self.current_match_index {
             if let Some(search_match) = self.search_matches.get(match_index) {
@@ -280,9 +278,9 @@ impl Fulgur {
 
     /// Replace the current search match
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
     pub(super) fn replace_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(match_index) = self.current_match_index {
             if let Some(search_match) = self.search_matches.get(match_index).cloned() {
@@ -317,9 +315,9 @@ impl Fulgur {
 
     /// Replace all search matches
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
     pub(super) fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.search_matches.is_empty() {
             return;
@@ -367,13 +365,13 @@ impl Fulgur {
 
 /// Replace all occurrences case-insensitively
 ///
-/// @param search_matches: The search matches
+/// ### Arguments
+/// - `search_matches`: The search matches
+/// - `text`: The text to search in
+/// - `replace`: The replacement text
 ///
-/// @param text: The text to search in
-///
-/// @param replace: The replacement text
-///
-/// @return: The text with replacements
+/// ### Returns
+/// - `String`: The text with replacements
 fn replace_case_insensitive(
     search_matches: &Vec<SearchMatch>,
     text: &str,
@@ -392,13 +390,13 @@ fn replace_case_insensitive(
 
 /// Replace whole words only
 ///
-/// @param search_matches: The search matches
+/// ### Arguments
+/// - `search_matches`: The search matches
+/// - `text`: The text to search in
+/// - `replace`: The replacement text
 ///
-/// @param text: The text to search in
-///
-/// @param replace: The replacement text
-///
-/// @return: The text with replacements
+/// ### Returns
+/// - `String`: The text with replacements
 fn replace_whole_words(search_matches: &Vec<SearchMatch>, text: &str, replace: &str) -> String {
     let mut result = String::new();
     let mut last_pos = 0;
@@ -413,13 +411,13 @@ fn replace_whole_words(search_matches: &Vec<SearchMatch>, text: &str, replace: &
 
 /// Replace whole words case-insensitively
 ///
-/// @param search_matches: The search matches
+/// ### Arguments
+/// - `search_matches`: The search matches
+/// - `text`: The text to search in
+/// - `replace`: The replacement text
 ///
-/// @param text: The text to search in
-///
-/// @param replace: The replacement text
-///
-/// @return: The text with replacements
+/// ### Returns
+/// - `String`: The text with replacements
 fn replace_whole_words_case_insensitive(
     search_matches: &Vec<SearchMatch>,
     text: &str,

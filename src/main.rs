@@ -3,7 +3,11 @@
 use gpui::*;
 use gpui_component::{Root, TitleBar};
 use rust_embed::RustEmbed;
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 mod fulgur;
 
@@ -19,9 +23,11 @@ pub struct Assets;
 impl AssetSource for Assets {
     /// Load an asset from the assets folder
     ///
-    /// @param path: The path to the asset
+    /// ### Arguments
+    /// - `path`: The path to the asset
     ///
-    /// @return: The asset data if found, otherwise None
+    /// ### Returns
+    /// - `Result<Option<Cow<'static, [u8]>>>`: The asset data if found, otherwise None
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         if path.is_empty() {
             return Ok(None);
@@ -40,9 +46,11 @@ impl AssetSource for Assets {
 
     /// List all assets in the assets folder
     ///
-    /// @param path: The path to the assets
+    /// ### Arguments
+    /// - `path`: The path to the assets
     ///
-    /// @return: The list of assets
+    /// ### Returns
+    /// - `Result<Vec<SharedString>>`: The list of assets
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         Ok(Self::iter()
             .filter_map(|p| p.starts_with(path).then(|| p.into()))
@@ -52,15 +60,18 @@ impl AssetSource for Assets {
 
 /// Convert a file:// URL string to a PathBuf
 ///
-/// @param url_string: The URL string to convert (e.g., "file:///Users/user/file.txt")
+/// ### Arguments
+/// - `url_string`: The URL string to convert (e.g., "file:///Users/user/file.txt")
 ///
-/// @return: The PathBuf if successful, None otherwise
-fn url_to_path(url_string: &str) -> Option<std::path::PathBuf> {
+/// ### Returns
+/// - `Some(PathBuf)`: The PathBuf if successful
+/// - `None`: If the URL could not be converted to a path
+fn url_to_path(url_string: &str) -> Option<PathBuf> {
     log::debug!("Converting URL to path: {}", url_string);
     let path_str = url_string.strip_prefix("file://").unwrap_or(url_string);
     match urlencoding::decode(path_str) {
         Ok(decoded) => {
-            let path = std::path::PathBuf::from(decoded.into_owned());
+            let path = PathBuf::from(decoded.into_owned());
             if path.exists() && path.is_file() {
                 log::debug!("Converted URL to valid file path: {:?}", path);
                 Some(path)
@@ -81,7 +92,7 @@ fn main() {
         log::error!("Failed to initialize logger: {}", e);
     }
     let current_version = env!("CARGO_PKG_VERSION");
-    log::info!("=== Fulgur Text Editor v{} Starting ===", current_version);
+    log::info!("=== Fulgur v{} Starting ===", current_version);
     log::info!("Platform: {}", std::env::consts::OS);
     log::info!("Architecture: {}", std::env::consts::ARCH);
     let args: Vec<String> = std::env::args().collect();
@@ -89,11 +100,11 @@ fn main() {
     if args.len() > 1 {
         log::info!("File to open from command-line: {}", args[1]);
     }
-    let cli_file_paths: Vec<std::path::PathBuf> = args
+    let cli_file_paths: Vec<PathBuf> = args
         .iter()
         .skip(1)
         .filter_map(|arg| {
-            let path = std::path::PathBuf::from(arg);
+            let path = PathBuf::from(arg);
             if path.exists() && path.is_file() {
                 log::debug!("Valid file argument found: {:?}", path);
                 Some(path)
@@ -107,16 +118,14 @@ fn main() {
         .collect();
 
     let app = Application::new().with_assets(Assets);
-    let pending_files: std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>> =
-        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
     let pending_files_clone = pending_files.clone();
     app.on_open_urls(move |urls| {
         log::debug!("Received {} file URL(s) from macOS open event", urls.len());
         for url in &urls {
             log::debug!("macOS open URL: {}", url);
         }
-        let file_paths: Vec<std::path::PathBuf> =
-            urls.iter().filter_map(|url| url_to_path(url)).collect();
+        let file_paths: Vec<PathBuf> = urls.iter().filter_map(|url| url_to_path(url)).collect();
 
         if file_paths.is_empty() {
             log::warn!("No valid file paths from macOS open event");

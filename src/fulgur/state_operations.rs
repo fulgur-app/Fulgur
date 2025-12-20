@@ -13,9 +13,12 @@ use std::fs;
 impl Fulgur {
     /// Save the current app state to disk
     ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `cx`: The application context
     ///
-    /// @return: The result of the save operation
+    /// ### Returns
+    /// - `Ok(())`: If the app state was saved successfully
+    /// - `Err(anyhow::Error)`: If the app state could not be saved
     pub fn save_state(&self, cx: &App) -> anyhow::Result<()> {
         log::debug!("Saving application state...");
         let mut tab_states = Vec::new();
@@ -73,9 +76,9 @@ impl Fulgur {
 
     /// Load app state from disk and restore tabs
     ///
-    /// @param window: The window to load the state from
-    ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `window`: The window to load the state from
+    /// - `cx`: The application context
     pub fn load_state(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         log::debug!("Loading application state...");
         // Temporarily disable indent guides during restoration to prevent crash
@@ -88,14 +91,12 @@ impl Fulgur {
                 app_state.tabs.len()
             );
             self.tabs.clear();
-
             for tab_state in app_state.tabs {
                 let tab = self.restore_tab_from_state(tab_state, window, cx);
                 if let Some(editor_tab) = tab {
                     self.tabs.push(Tab::Editor(editor_tab));
                 }
             }
-
             if let Some(index) = app_state.active_tab_index {
                 if index < self.tabs.len() {
                     self.active_tab_index = Some(index);
@@ -134,20 +135,18 @@ impl Fulgur {
     /// Restore a single tab from saved state:
     ///
     /// - If a file exists, it will be loaded from the file.
-    ///
     /// - If a file exists and was modified but unsaved in the last state save and not modified after externally, it'll be loaded from the saved state
-    ///
     /// - If a file does not exist, the saved content will be used.
-    ///
     /// - If no path and no content is provided, the tab will be skipped.
     ///
-    /// @param tab_state: The saved state of the tab
+    /// ### Arguments
+    /// - `tab_state`: The saved state of the tab
+    /// - `window`: The window to restore the tab to
+    /// - `cx`: The application context
     ///
-    /// @param window: The window to restore the tab to
-    ///
-    /// @param cx: The application context
-    ///
-    /// @return: The restored tab
+    /// ### Returns
+    /// - `Some(EditorTab)`: The restored tab
+    /// - `None`: If the tab could not be restored
     fn restore_tab_from_state(
         &self,
         tab_state: TabState,

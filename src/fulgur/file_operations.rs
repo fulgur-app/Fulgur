@@ -12,9 +12,11 @@ use gpui::*;
 
 /// Detect encoding from file bytes
 ///
-/// @param bytes: The bytes to detect encoding from
+/// ### Arguments
+/// - `bytes`: The bytes to detect encoding from
 ///
-/// @return: The detected encoding and decoded string
+/// ### Returns
+/// - `(String, String)`: The detected encoding and decoded string
 pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     if let Ok(text) = std::str::from_utf8(bytes) {
         log::debug!("File encoding detected as UTF-8");
@@ -46,9 +48,12 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
 impl Fulgur {
     /// Find the index of a tab with the given file path
     ///
-    /// @param path: The path to search for
+    /// ### Arguments
+    /// - `path`: The path to search for
     ///
-    /// @return: The index of the tab if found, None otherwise
+    /// ### Returns
+    /// - `Some(usize)`: The index of the tab if found
+    /// - `None`: If the tab was not found
     fn find_tab_by_path(&self, path: &PathBuf) -> Option<usize> {
         self.tabs.iter().position(|tab| {
             if let Tab::Editor(editor_tab) = tab {
@@ -65,13 +70,10 @@ impl Fulgur {
 
     /// Reload tab content from disk
     ///
-    /// @param tab_index: The index of the tab to reload
-    ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
-    ///
-    /// @return: The updated tab
+    /// ### Arguments
+    /// - `tab_index`: The index of the tab to reload
+    /// - `window`: The window context
+    /// - `cx`: The application context
     fn reload_tab_from_disk(
         &mut self,
         tab_index: usize,
@@ -106,16 +108,16 @@ impl Fulgur {
         }
     }
 
-    /// Internal helper function to open a file from a path
-    /// This function handles reading the file, detecting encoding, and creating the editor tab
+    /// Internal helper function to open a file from a path. This function handles reading the file, detecting encoding, and creating the editor tab
     ///
-    /// @param view: The view entity (WeakEntity)
+    /// ### Arguments
+    /// - `view`: The view entity (WeakEntity)
+    /// - `window`: The async window context
+    /// - `path`: The path to the file to open
     ///
-    /// @param window: The async window context
-    ///
-    /// @param path: The path to the file to open
-    ///
-    /// @return: None if the file could not be read, otherwise Some(())
+    /// ### Returns
+    /// - `None`: If the file could not be opened
+    /// - `Some(())`: If the file was opened successfully
     async fn open_file_from_path(
         view: WeakEntity<Self>,
         window: &mut AsyncWindowContext,
@@ -173,11 +175,9 @@ impl Fulgur {
 
     /// Open a file
     ///
-    /// @param window: The window to open the file in
-    ///
-    /// @param cx: The application context
-    ///
-    /// @return: None if the file could not be opened, otherwise Some(())
+    /// ### Arguments
+    /// - `window`: The window to open the file in
+    /// - `cx`: The application context
     pub(super) fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let path_future = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -230,13 +230,10 @@ impl Fulgur {
 
     /// Open a file from a given path
     ///
-    /// @param window: The window to open the file in
-    ///
-    /// @param cx: The application context
-    ///
-    /// @param path: The path to the file to open
-    ///
-    /// @return: None if the file could not be opened, otherwise Some(())
+    /// ### Arguments
+    /// - `window`: The window to open the file in
+    /// - `cx`: The application context
+    /// - `path`: The path to the file to open
     pub(super) fn do_open_file(
         &mut self,
         window: &mut Window,
@@ -273,19 +270,15 @@ impl Fulgur {
 
     /// Handle opening a file from the command line (double-click or "Open with")
     ///
-    /// This method implements smart tab handling:
-    ///
+    /// ### Behavior
     /// - If a tab exists for the file and is not modified: focus the tab
-    ///
     /// - If a tab exists for the file and is modified: reload content and focus the tab
-    ///
     /// - If no tab exists: open a new tab and focus it
     ///
-    /// @param window: The window to open the file in
-    ///
-    /// @param cx: The application context
-    ///
-    /// @param path: The path to the file to open
+    /// ### Arguments
+    /// - `window`: The window to open the file in
+    /// - `cx`: The application context
+    /// - `path`: The path to the file to open
     pub fn handle_open_file_from_cli(
         &mut self,
         window: &mut Window,
@@ -314,9 +307,9 @@ impl Fulgur {
 
     /// Save a file
     ///
-    /// @param window: The window to save the file in
-    ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `window`: The window to save the file in
+    /// - `cx`: The application context
     pub(super) fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;
@@ -350,9 +343,9 @@ impl Fulgur {
 
     /// Save a file as
     ///
-    /// @param window: The window to save the file as in
-    ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `window`: The window to save the file as in
+    /// - `cx`: The application context
     pub(super) fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;

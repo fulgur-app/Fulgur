@@ -42,9 +42,12 @@ pub struct UpdateInfo {
 
 /// Parse a version string into a Version struct
 ///
-/// @param version_str: The version string to parse
+/// ### Arguments
+/// - `version_str`: The version string to parse
 ///
-/// @return: The parsed version
+/// ### Returns
+/// - `Ok(Version)`: The parsed version
+/// - `Err(anyhow::Error)`: If the version string could not be parsed
 fn parse_version(version_str: &str) -> anyhow::Result<Version> {
     let cleaned = version_str.trim_start_matches('v');
     Version::parse(cleaned).map_err(|e| e.into())
@@ -52,9 +55,13 @@ fn parse_version(version_str: &str) -> anyhow::Result<Version> {
 
 /// Check for updates
 ///
-/// @param current_version: The current version of the application
+/// ### Arguments
+/// - `current_version`: The current version of the application
 ///
-/// @return: The update information if an update is available, otherwise None
+/// ### Returns
+/// - `Ok(Some(UpdateInfo))`: The update information if an update is available
+/// - `Ok(None)`: If no update is available
+/// - `Err(anyhow::Error)`: If the update check could not be performed
 pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<UpdateInfo>> {
     let mut response = ureq::get(GITHUB_API_URL)
         .header("User-Agent", "Fulgur")
@@ -84,9 +91,12 @@ pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<Updat
 
 /// Get the download URL for the platform-specific asset
 ///
-/// @param release: The release information
+/// ### Arguments
+/// - `release`: The release information
 ///
-/// @return: The download URL for the platform-specific asset
+/// ### Returns
+/// - `Ok(String)`: The download URL for the platform-specific asset
+/// - `Err(anyhow::Error)`: If the download URL could not be determined
 fn get_platform_download_url(release: &GitHubRelease) -> anyhow::Result<String> {
     let platform = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
@@ -115,11 +125,11 @@ fn get_platform_download_url(release: &GitHubRelease) -> anyhow::Result<String> 
 }
 
 impl Fulgur {
-    /// Check for updates, open the download page in the browser if an update is available + update the menus to show the update available action
+    /// Check for updates, open the download page in the browser if an update is available, update the menus to show the update available action and show notifications
     ///
-    /// @param window: The window context
-    ///
-    /// @param cx: The application context
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
     pub fn check_for_updates(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(update_link) = self.update_link.as_ref() {
             match open::that(update_link) {

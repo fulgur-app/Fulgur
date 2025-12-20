@@ -6,12 +6,16 @@ use crate::fulgur::{
 use gpui::*;
 use gpui_component::{ActiveTheme, button::Button, h_flex};
 
-// Create a markdown bar button
-// @param id: The ID of the button
-// @param tooltip: The tooltip of the button
-// @param icon: The icon of the button
-// @param border_color: The color of the border
-// @return: A markdown bar button
+/// Create a markdown bar button
+///
+/// ### Arguments
+/// - `id`: The ID of the button
+/// - `tooltip`: The tooltip of the button
+/// - `icon`: The icon of the button
+/// - `border_color`: The color of the border
+///
+/// ### Returns
+/// - `Button`: A markdown bar button
 pub fn markdown_bar_button_factory(
     id: &'static str,
     tooltip: &'static str,
@@ -24,9 +28,13 @@ pub fn markdown_bar_button_factory(
 }
 
 impl Fulgur {
-    // Handle bold action
-    // @param window: The window context
-    // @param cx: The application context
+    /// Handle bold action
+    ///
+    /// ### Arguments
+    /// - `prefix`: The prefix to insert or surround with
+    /// - `suffix`: The suffix to insert or surround with
+    /// - `window`: The window context
+    /// - `cx`: The application context
     pub fn insert_or_surround(
         &mut self,
         prefix: &str,
@@ -55,11 +63,14 @@ impl Fulgur {
         }
     }
 
-    // Render the markdown bar
-    // @param _window: The window context
-    // @param cx: The application context
-    // @return: The rendered markdown bar element
-    pub fn render_markdown_bar(&self, _window: &mut Window, cx: &mut Context<Self>) -> Option<Div> {
+    /// Render the markdown bar
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Option<Div>`: The rendered markdown bar element
+    pub fn render_markdown_bar(&self, cx: &mut Context<Self>) -> Option<Div> {
         if !self.is_markdown() {
             return None;
         }
