@@ -1,0 +1,23 @@
+# Configuration for cargo-about
+# This generates the THIRD-PARTY-LICENSES file for distribution
+
+# Use accepted licenses from common open-source projects
+accepted = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "0BSD",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "CC0-1.0",
+    "Zlib",
+    "NCSA",
+    "CDLA-Permissive-2.0",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+]
+
+# Filter out certain crates (e.g., your own workspace crates)
+filter-noassertion = true

@@ -36,6 +36,8 @@ Fulgur themes use the `gpui-component` format, configured with JSON files and he
 
 Install [cargo-packager](https://github.com/crabnebula-dev/cargo-packager) with `cargo install cargo-packager --locked`. It will bundle the app with a nice icon for each platform.
 
+Install [cargo-about](https://github.com/EmbarkStudios/cargo-about) with `cargo install cargo-about --locked`. It will generate the list of third parties licenses when packaging, as per the Apache 2.0 license's terms.
+
 #### MacOS
 
 Xcode must be installed (e.g. from the App Store) as well as the Xcode command line tools: `xcode-select –-install`.
