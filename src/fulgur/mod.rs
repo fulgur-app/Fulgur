@@ -554,6 +554,17 @@ fn about(window: &mut Window, cx: &mut App) {
                                     .href("https://github.com/PRRPCHT/Fulgur")
                                     .child("https://github.com/PRRPCHT/Fulgur"),
                             ),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(Icon::new(CustomIcon::File))
+                            .child(
+                                Link::new("license-link")
+                                    .href("http://www.apache.org/licenses/LICENSE-2.0")
+                                    .child("http://www.apache.org/licenses/LICENSE-2.0"),
+                            ),
                     ),
             )
     });
