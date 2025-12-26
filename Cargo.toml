@@ -2,31 +2,52 @@
 name = "Fulgur"
 version = "0.0.2"
 edition = "2024"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["rust", "text", "editor", "fulgur", "sync", "desktop", "multiplatform"]
+categories = ["text", "editor", "desktop", "multiplatform"]
+homepage = "https://fulgur.app"
 
 [dependencies]
 # Types
 fulgur-common = { path = "../Fulgur-common" }
 
-anyhow = "1.0.100"
-chardetng = "0.1.17"
-chrono = { version = "0.4", features = ["serde"] }
-encoding_rs = "0.8.35"
-gpui = "0.2.2"
-gpui-component = { version = "0.5.0", features = ["tree-sitter-languages"] }
-log = "0.4.29"
-lsp-types = "0.97"
+# Serialization
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+
+# Cryptography
+aes-gcm = "0.10.1"
+base64 = "0.22"
+
+# Networking
+ureq = { version = "3.1.4", features = ["json"] }
+
+# Encoding
+chardetng = "0.1.17"
+encoding_rs = "0.8.35"
+urlencoding = "2.1"
+
+# Logging
+log = "0.4.29"
+simplelog = "0.12"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+anyhow = "1.0.100"
+
+# GUI
+gpui = "0.2.2"
+gpui-component = { version = "0.5.0", features = ["tree-sitter-languages"] }
+
+# Others
+lsp-types = "0.97"
 rust-embed = "8.9.0"
 regex = "1.12.2"
-simplelog = "0.12"
-urlencoding = "2.1"
 open = "5.3.3"
-ureq = { version = "3.1.4", features = ["json"] }
 semver = "1.0.27"
-
-aes-gcm = "0.10"
-base64 = "0.22"
 machine-uid = "0.5"
 flate2 = "1.1.5"
 
