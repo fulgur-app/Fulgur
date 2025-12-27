@@ -105,6 +105,23 @@ impl Fulgur {
     ) {
         if index < self.tabs.len() {
             self.active_tab_index = Some(index);
+            let pending_path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) {
+                if let Some(path) = &editor_tab.file_path {
+                    if self.pending_conflicts.contains_key(path) {
+                        Some(path.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(path) = pending_path {
+                self.pending_conflicts.remove(&path);
+                self.show_file_conflict_dialog(path, index, window, cx);
+            }
             self.focus_active_tab(window, cx);
             if self.show_search {
                 self.perform_search(window, cx);
@@ -375,8 +392,16 @@ impl Fulgur {
     /// - `cx`: The application context
     fn remove_tab_by_id(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
+            let path_to_unwatch = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(pos) {
+                editor_tab.file_path.clone()
+            } else {
+                None
+            };
             self.tabs.remove(pos);
             self.close_tab_manage_focus(window, cx, pos);
+            if let Some(path) = path_to_unwatch {
+                self.unwatch_file(&path);
+            }
             cx.notify();
         }
     }

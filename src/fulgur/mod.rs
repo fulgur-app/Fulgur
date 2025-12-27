@@ -2,6 +2,7 @@ mod components_utils;
 mod crypto_helper;
 mod editor_tab;
 mod file_operations;
+mod file_watcher;
 mod icons;
 mod languages;
 pub mod logger;
@@ -22,9 +23,10 @@ mod titlebar;
 mod updater;
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{Arc, Mutex, atomic::AtomicBool},
+    time::Instant,
 };
 
 use fulgur_common::api::shares::SharedFileResponse;
@@ -33,6 +35,9 @@ use search_replace::SearchMatch;
 use settings::Settings;
 use tab::Tab;
 use titlebar::CustomTitleBar;
+
+use file_watcher::{FileWatchEvent, FileWatcher};
+use std::sync::mpsc::Receiver;
 
 use gpui::*;
 use gpui_component::{
@@ -79,6 +84,10 @@ pub struct Fulgur {
     encryption_key: Arc<Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
     device_name: Arc<Mutex<Option<String>>>, // Device name from server (thread-safe)
     pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>, // Shared files from sync server (thread-safe)
+    file_watcher: Option<FileWatcher>, // File watcher for external file changes
+    file_watch_events: Option<Receiver<FileWatchEvent>>, // Channel for file watch events
+    last_file_events: HashMap<PathBuf, Instant>, // Track last event time per file for debouncing
+    pending_conflicts: HashMap<PathBuf, usize>, // Deferred conflicts for inactive tabs (path -> tab_index)
 }
 
 impl Fulgur {
@@ -156,14 +165,20 @@ impl Fulgur {
                 encryption_key: Arc::new(Mutex::new(None)),
                 device_name: Arc::new(Mutex::new(None)),
                 pending_shared_files: Arc::new(Mutex::new(Vec::new())),
+                file_watcher: None, // Will be initialized after loading settings
+                file_watch_events: None, // Will be initialized after loading settings
+                last_file_events: HashMap::new(),
+                pending_conflicts: HashMap::new(),
             };
             entity
         });
         entity.update(cx, |this, cx| {
             this.load_state(window, cx);
+            if this.settings.editor_settings.watch_files {
+                this.start_file_watcher();
+            }
         });
         sync::begin_synchronization(&entity, cx);
-
         entity
     }
 
@@ -329,7 +344,18 @@ impl Render for Fulgur {
                 log::error!("Cannot decrypt shared files: encryption key not available");
             }
         }
-
+        let events: Vec<FileWatchEvent> = if let Some(ref rx) = self.file_watch_events {
+            let mut events = Vec::new();
+            while let Ok(event) = rx.try_recv() {
+                events.push(event);
+            }
+            events
+        } else {
+            Vec::new()
+        };
+        for event in events {
+            self.handle_file_watch_event(event, window, cx);
+        }
         if self.tabs.is_empty() {
             self.active_tab_index = None;
         }

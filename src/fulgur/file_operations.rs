@@ -1,3 +1,4 @@
+use std::ops::DerefMut;
 use std::path::PathBuf;
 
 use crate::fulgur::{
@@ -9,6 +10,10 @@ use crate::fulgur::{
 };
 use chardetng::EncodingDetector;
 use gpui::*;
+use gpui_component::{
+    WindowExt, button::ButtonVariant, dialog::DialogButtonProps, notification::NotificationType,
+    v_flex,
+};
 
 /// Detect encoding from file bytes
 ///
@@ -54,7 +59,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(usize)`: The index of the tab if found
     /// - `None`: If the tab was not found
-    fn find_tab_by_path(&self, path: &PathBuf) -> Option<usize> {
+    pub fn find_tab_by_path(&self, path: &PathBuf) -> Option<usize> {
         self.tabs.iter().position(|tab| {
             if let Tab::Editor(editor_tab) = tab {
                 if let Some(ref tab_path) = editor_tab.file_path {
@@ -74,7 +79,7 @@ impl Fulgur {
     /// - `tab_index`: The index of the tab to reload
     /// - `window`: The window context
     /// - `cx`: The application context
-    fn reload_tab_from_disk(
+    pub fn reload_tab_from_disk(
         &mut self,
         tab_index: usize,
         window: &mut Window,
@@ -151,6 +156,7 @@ impl Fulgur {
                     this.tabs.push(Tab::Editor(editor_tab));
                     this.active_tab_index = Some(this.tabs.len() - 1);
                     this.next_tab_id += 1;
+                    this.watch_file(&path);
                     this.focus_active_tab(window, cx);
                     if let Err(e) = this.settings.add_file(path.clone()) {
                         log::error!("Failed to add file to recent files: {}", e);
@@ -381,6 +387,16 @@ impl Fulgur {
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
+                        let old_path = if let Some(Tab::Editor(editor_tab)) =
+                            this.tabs.get(active_tab_index.unwrap())
+                        {
+                            editor_tab.file_path.clone()
+                        } else {
+                            None
+                        };
+                        if let Some(old_path) = old_path {
+                            this.unwatch_file(&old_path);
+                        }
                         if let Some(Tab::Editor(editor_tab)) =
                             this.tabs.get_mut(active_tab_index.unwrap())
                         {
@@ -395,11 +411,121 @@ impl Fulgur {
                             editor_tab.update_language(window, cx, &this.settings.editor_settings);
                             cx.notify();
                         }
+                        this.watch_file(&path);
                     });
                 })
                 .ok()?;
             Some(())
         })
         .detach();
+    }
+
+    /// Show notification when file is reloaded
+    ///
+    /// ### Arguments
+    /// - `path`: The path to the file that was reloaded
+    /// - `window`: The window to show the notification in
+    /// - `cx`: The application context
+    pub(super) fn show_notification_file_reloaded(
+        &self,
+        path: &PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+        let message = SharedString::from(format!("File {} has been updated externally", filename));
+        window.push_notification((NotificationType::Info, message), cx);
+    }
+
+    /// Show notification when file is deleted
+    ///
+    /// ### Arguments
+    /// - `path`: The path to the file that was deleted
+    /// - `window`: The window to show the notification in
+    /// - `cx`: The application context
+    pub(super) fn show_notification_file_deleted(
+        &self,
+        path: &PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+        let message = SharedString::from(format!("File '{}' deleted externally", filename));
+        window.push_notification((NotificationType::Warning, message), cx);
+    }
+
+    /// Show notification when file is renamed
+    ///
+    /// ### Arguments
+    /// - `from`: The path to the file that was renamed from
+    /// - `to`: The path to the file that was renamed to
+    /// - `window`: The window to show the notification in
+    /// - `cx`: The application context
+    pub(super) fn show_notification_file_renamed(
+        &self,
+        from: &PathBuf,
+        to: &PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let old_name = from.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+        let new_name = to.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+        let message = SharedString::from(format!("File renamed: {} → {}", old_name, new_name));
+        window.push_notification((NotificationType::Info, message), cx);
+    }
+
+    /// Show dialog when file is modified externally and has local changes
+    ///
+    /// ### Arguments
+    /// - `path`: The path to the file that has local changes
+    /// - `tab_index`: The index of the tab that has local changes
+    /// - `window`: The window to show the dialog in
+    /// - `cx`: The application context
+    pub(super) fn show_file_conflict_dialog(
+        &self,
+        path: PathBuf,
+        tab_index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let entity = cx.entity().clone();
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file")
+            .to_string();
+
+        window.open_dialog(cx.deref_mut(), move |modal, _, _| {
+            let entity_for_ok = entity.clone();
+            modal
+                .title(div().text_size(px(16.)).child("File Modified Externally"))
+                .keyboard(true)
+                .confirm()
+                .overlay_closable(false)
+                .close_button(false)
+                .button_props(
+                    DialogButtonProps::default()
+                        .cancel_text("Keep local changes")
+                        .cancel_variant(ButtonVariant::Secondary)
+                        .ok_text("Load from file")
+                        .ok_variant(ButtonVariant::Primary),
+                )
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .child(format!(
+                            "The file \"{}\" has been modified externally.",
+                            filename
+                        ))
+                        .child("You have unsaved changes in this file. Do you want to load the changes from the file?"),
+                )
+                .on_ok(move |_, window, cx| {
+                    entity_for_ok.update(cx, |this, cx| {
+                        this.reload_tab_from_disk(tab_index, window, cx);
+                    });
+                    true
+                })
+                .on_cancel(|_, _, _| true)
+        });
     }
 }

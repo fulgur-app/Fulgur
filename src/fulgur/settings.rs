@@ -80,6 +80,8 @@ pub struct EditorSettings {
     pub font_size: f32,
     pub tab_size: usize,
     pub markdown_settings: MarkdownSettings,
+    #[serde(default = "default_watch_files")]
+    pub watch_files: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -89,6 +91,14 @@ pub struct AppSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scrollbar_show: Option<ScrollbarShow>,
     pub synchronization_settings: SynchronizationSettings,
+}
+
+/// Default value for watch_files setting
+///
+/// ### Returns
+/// - `true`: enable file watcher by default
+fn default_watch_files() -> bool {
+    true
 }
 
 impl EditorSettings {
@@ -104,6 +114,7 @@ impl EditorSettings {
             font_size: 14.0,
             tab_size: 4,
             markdown_settings: MarkdownSettings::new(),
+            watch_files: default_watch_files(),
         }
     }
 }
@@ -631,6 +642,35 @@ impl Fulgur {
                     ),
                 )
                 .description("Show toolbar by default when opening Markdown files."),
+            ]),
+            SettingGroup::new().title("File Monitoring").items(vec![
+                SettingItem::new(
+                    "Watch Files",
+                    SettingField::switch(
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| entity.read(cx).settings.editor_settings.watch_files
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: bool, cx: &mut App| {
+                                entity.update(cx, |this, _cx| {
+                                    this.settings.editor_settings.watch_files = val;
+                                    if val {
+                                        this.start_file_watcher();
+                                    } else {
+                                        this.stop_file_watcher();
+                                    }
+                                    if let Err(e) = this.settings.save() {
+                                        log::error!("Failed to save settings: {}", e);
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_editor_settings.watch_files),
+                )
+                .description("Monitor files for external changes."),
             ]),
         ])
     }
