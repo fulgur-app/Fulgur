@@ -1,8 +1,8 @@
 use crate::fulgur::{
     Fulgur,
-    components_utils::{self, TAB_BAR_BUTTON_SIZE, TAB_BAR_HEIGHT, button_factory},
-    icons::CustomIcon,
     tab::Tab,
+    ui::components_utils::{self, TAB_BAR_BUTTON_SIZE, TAB_BAR_HEIGHT, button_factory},
+    ui::icons::CustomIcon,
 };
 use gpui::*;
 use gpui_component::{
@@ -108,7 +108,7 @@ impl Fulgur {
     /// - `action`: The action to handle
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn on_close_tab_action(
+    pub fn on_close_tab_action(
         &mut self,
         action: &CloseTabAction,
         window: &mut Window,
@@ -123,7 +123,7 @@ impl Fulgur {
     /// - `action`: The action to handle
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn on_close_tabs_to_left(
+    pub fn on_close_tabs_to_left(
         &mut self,
         action: &CloseTabsToLeft,
         window: &mut Window,
@@ -138,7 +138,7 @@ impl Fulgur {
     /// - `action`: The action to handle    
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn on_close_tabs_to_right(
+    pub fn on_close_tabs_to_right(
         &mut self,
         action: &CloseTabsToRight,
         window: &mut Window,
@@ -153,7 +153,7 @@ impl Fulgur {
     /// - `action`: The action to handle
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn on_close_all_tabs_action(
+    pub fn on_close_all_tabs_action(
         &mut self,
         _: &CloseAllTabsAction,
         window: &mut Window,
@@ -168,7 +168,7 @@ impl Fulgur {
     /// - `action`: The action to handle
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn on_close_all_other_tabs_action(
+    pub fn on_close_all_other_tabs_action(
         &mut self,
         _: &CloseAllOtherTabs,
         window: &mut Window,
@@ -182,7 +182,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn on_next_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_next_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(active_index) = self.active_tab_index {
             let next_index = (active_index + 1) % self.tabs.len();
             self.set_active_tab(next_index, window, cx);
@@ -194,7 +194,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn on_previous_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_previous_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(active_index) = self.active_tab_index {
             let previous_index = (active_index + self.tabs.len() - 1) % self.tabs.len();
             self.set_active_tab(previous_index, window, cx);
@@ -208,7 +208,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `Div`: The rendered tab bar element
-    pub(super) fn render_tab_bar(&self, cx: &mut Context<Self>) -> Div {
+    pub fn render_tab_bar(&self, cx: &mut Context<Self>) -> Div {
         let mut tab_bar = div()
             .flex()
             .items_center()
@@ -278,7 +278,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `AnyElement`: The rendered tab element
-    fn render_tab(&self, index: usize, tab: &Tab, cx: &mut Context<Self>) -> AnyElement {
+    pub fn render_tab(&self, index: usize, tab: &Tab, cx: &mut Context<Self>) -> AnyElement {
         let tab_id = tab.id();
         let is_active = match self.active_tab_index {
             Some(active_index) => index == active_index,

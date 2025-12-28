@@ -41,7 +41,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn find_in_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn find_in_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_search = !self.show_search;
         if self.show_search {
             let search_focus = self.search_input.read(cx).focus_handle(cx);
@@ -58,7 +58,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_matches.clear();
         self.current_match_index = None;
         let query = self.search_input.read(cx).text().to_string();

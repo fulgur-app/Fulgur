@@ -1,9 +1,14 @@
 use crate::fulgur::{
-    Fulgur, components_utils::UNTITLED, editor_tab::EditorTab, settings::SettingsTab, tab::Tab,
+    Fulgur,
+    tab::Tab,
+    ui::{
+        components_utils::UNTITLED,
+        tabs::{editor_tab::EditorTab, settings_tab::SettingsTab},
+    },
 };
 use gpui::*;
 use gpui_component::WindowExt;
-use std::ops::DerefMut;
+use std::{ops::DerefMut, path::PathBuf};
 
 impl Fulgur {
     /// Create a new tab
@@ -11,7 +16,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to create the tab in
     /// - `cx`: The application context
-    pub(super) fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let tab = Tab::Editor(EditorTab::new(
             self.next_tab_id,
             format!("{} {}", UNTITLED, self.next_tab_id),
@@ -31,7 +36,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to open settings in
     /// - `cx`: The application context
-    pub(super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(index) = self.tabs.iter().position(|t| matches!(t, Tab::Settings(_))) {
             self.set_active_tab(index, window, cx);
         } else {
@@ -49,7 +54,7 @@ impl Fulgur {
     /// - `tab_id`: The ID of the tab to close
     /// - `window`: The window to close the tab in
     /// - `cx`: The application context
-    pub(super) fn close_tab(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn close_tab(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
         if !self.tabs.iter().any(|t| t.id() == tab_id) {
             return;
         }
@@ -72,7 +77,7 @@ impl Fulgur {
     /// - `window`: The window to close the tab in
     /// - `cx`: The application context
     /// - `pos`: The position of the tab to close
-    pub(super) fn close_tab_manage_focus(
+    pub fn close_tab_manage_focus(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -97,17 +102,12 @@ impl Fulgur {
     /// - `index`: The index of the tab to set as active
     /// - `window`: The window to set the active tab in
     /// - `cx`: The application context
-    pub(super) fn set_active_tab(
-        &mut self,
-        index: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_active_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
             self.active_tab_index = Some(index);
             let pending_path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) {
                 if let Some(path) = &editor_tab.file_path {
-                    if self.pending_conflicts.contains_key(path) {
+                    if self.pending_conflicts.contains_key::<PathBuf>(path) {
                         Some(path.clone())
                     } else {
                         None
@@ -156,7 +156,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to close all tabs in
     /// - `cx`: The application context
-    pub(super) fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() {
             return;
         }
@@ -198,7 +198,7 @@ impl Fulgur {
     /// - `index`: The index of the tab (tabs to the left will be closed)
     /// - `window`: The window to close tabs in
     /// - `cx`: The application context
-    pub(super) fn close_tabs_to_left(
+    pub fn close_tabs_to_left(
         &mut self,
         index: usize,
         window: &mut Window,
@@ -245,7 +245,7 @@ impl Fulgur {
     /// - `index`: The index of the tab (tabs to the right will be closed)
     /// - `window`: The window to close tabs in
     /// - `cx`: The application context
-    pub(super) fn close_tabs_to_right(
+    pub fn close_tabs_to_right(
         &mut self,
         index: usize,
         window: &mut Window,
@@ -295,7 +295,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to close tabs in
     /// - `cx`: The application context
-    pub(super) fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(active_index) = self.active_tab_index else {
             return;
         };
@@ -358,7 +358,7 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `cx`: The application context
-    pub(super) fn update_modified_status(&mut self, cx: &mut Context<Self>) {
+    pub fn update_modified_status(&mut self, cx: &mut Context<Self>) {
         for tab in self.tabs.iter_mut() {
             if let Tab::Editor(editor_tab) = tab {
                 editor_tab.check_modified(cx);
@@ -390,7 +390,7 @@ impl Fulgur {
     /// - `tab_id`: The ID of the tab to remove
     /// - `window`: The window context
     /// - `cx`: The application context
-    fn remove_tab_by_id(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn remove_tab_by_id(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
             let path_to_unwatch = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(pos) {
                 editor_tab.file_path.clone()
@@ -412,7 +412,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     /// - `on_confirm`: Callback executed when user confirms closing
-    fn show_unsaved_changes_dialog<F>(
+    pub fn show_unsaved_changes_dialog<F>(
         &self,
         window: &mut Window,
         cx: &mut Context<Self>,

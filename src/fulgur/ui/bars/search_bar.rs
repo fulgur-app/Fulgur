@@ -1,10 +1,10 @@
 use crate::fulgur::{
     Fulgur,
-    components_utils::{
+    ui::components_utils::{
         CORNERS_SIZE, LINE_HEIGHT, SEARCH_BAR_BUTTON_SIZE, SEARCH_BAR_HEIGHT, TEXT_SIZE,
         button_factory,
     },
-    icons::CustomIcon,
+    ui::icons::CustomIcon,
 };
 use gpui::*;
 use gpui_component::{ActiveTheme, StyledExt, button::Button, input::Input};
@@ -70,7 +70,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(Div)`: The rendered search bar element
     /// - `None`: If the search bar is not shown
-    pub(super) fn render_search_bar(&self, cx: &mut Context<Self>) -> Option<Div> {
+    pub fn render_search_bar(&self, cx: &mut Context<Self>) -> Option<Div> {
         if !self.show_search {
             return None;
         }

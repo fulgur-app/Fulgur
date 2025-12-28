@@ -1,7 +1,7 @@
 use crate::fulgur::{
     Fulgur,
-    components_utils::{MARKDOWN_BAR_BUTTON_SIZE, MARKDOWN_BAR_HEIGHT, button_factory},
-    icons::CustomIcon,
+    ui::components_utils::{MARKDOWN_BAR_BUTTON_SIZE, MARKDOWN_BAR_HEIGHT, button_factory},
+    ui::icons::CustomIcon,
 };
 use gpui::*;
 use gpui_component::{ActiveTheme, button::Button, h_flex};

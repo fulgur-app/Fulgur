@@ -1,12 +1,11 @@
 use std::ops::DerefMut;
 
 use crate::fulgur::{
-    Fulgur,
-    components_utils::{EMPTY, UTF_8},
-    editor_tab,
-    icons::CustomIcon,
-    languages,
-    sync::{Device, ShareFilePayload, get_devices, get_icon, share_file},
+    Fulgur, editor_tab,
+    files::sync::{Device, ShareFilePayload, get_devices, get_icon, share_file},
+    ui::components_utils::{EMPTY, UTF_8},
+    ui::icons::CustomIcon,
+    ui::languages,
 };
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
@@ -375,7 +374,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `impl IntoElement`: The rendered status bar element
-    pub(super) fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (cursor_pos, language) = match self.active_tab_index {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {

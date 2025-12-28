@@ -1,42 +1,25 @@
-mod components_utils;
-mod crypto_helper;
-mod editor_tab;
-mod file_operations;
-mod file_watcher;
-mod icons;
-mod languages;
-pub mod logger;
-mod markdown_toolbar;
-mod menus;
-mod search_bar;
-mod search_replace;
+mod files;
 mod settings;
 mod state_operations;
 mod state_persistence;
-mod status_bar;
-mod sync;
-mod tab;
-mod tab_bar;
-mod tab_manager;
-mod themes;
-mod titlebar;
-mod updater;
+mod ui;
+pub mod utils;
 
+use fulgur_common::api::shares::SharedFileResponse;
+use settings::Settings;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{Arc, Mutex, atomic::AtomicBool},
     time::Instant,
 };
-
-use fulgur_common::api::shares::SharedFileResponse;
-use menus::*;
-use search_replace::SearchMatch;
-use settings::Settings;
 use tab::Tab;
-use titlebar::CustomTitleBar;
+use ui::{
+    bars::search_replace_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*,
+    themes,
+};
 
-use file_watcher::{FileWatchEvent, FileWatcher};
+use files::file_watcher::{FileWatchEvent, FileWatcher};
 use std::sync::mpsc::Receiver;
 
 use gpui::*;
@@ -52,7 +35,11 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::fulgur::{icons::CustomIcon, settings::Themes};
+use crate::fulgur::{
+    settings::Themes,
+    ui::{icons::CustomIcon, languages},
+    utils::crypto_helper,
+};
 
 pub struct Fulgur {
     focus_handle: FocusHandle,
@@ -178,7 +165,7 @@ impl Fulgur {
                 this.start_file_watcher();
             }
         });
-        sync::begin_synchronization(&entity, cx);
+        files::sync::begin_synchronization(&entity, cx);
         entity
     }
 
@@ -310,7 +297,7 @@ impl Render for Fulgur {
                     let decrypted_result =
                         crypto_helper::decrypt_bytes(&shared_file.content, &encryption_key)
                             .and_then(|compressed_bytes| {
-                                sync::decompress_content(&compressed_bytes)
+                                files::sync::decompress_content(&compressed_bytes)
                             });
                     match decrypted_result {
                         Ok(decrypted_content) => {

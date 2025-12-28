@@ -8,7 +8,7 @@ use gpui_component::{
     select::SelectState,
 };
 
-use crate::fulgur::icons::CustomIcon;
+use crate::fulgur::ui::icons::CustomIcon;
 
 /// The height of the tab bar
 pub const TAB_BAR_HEIGHT: Pixels = px(34.0);

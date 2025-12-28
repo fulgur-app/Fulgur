@@ -1,6 +1,6 @@
 use std::{sync::atomic::Ordering, thread, time::Duration};
 
-use crate::fulgur::{crypto_helper, icons::CustomIcon};
+use crate::fulgur::{crypto_helper, ui::icons::CustomIcon};
 use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
 use fulgur_common::api::BeginResponse;

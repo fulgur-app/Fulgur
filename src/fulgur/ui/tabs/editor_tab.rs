@@ -4,10 +4,9 @@ use gpui_component::highlighter::Language;
 use gpui_component::input::{InputState, Position, TabSize};
 use regex::Regex;
 
-use crate::fulgur::components_utils::{UNTITLED, UTF_8};
 use crate::fulgur::settings::EditorSettings;
-
-use super::languages::{language_from_extension, language_name};
+use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
+use crate::fulgur::ui::languages::{language_from_extension, language_name};
 
 #[derive(Clone)]
 pub struct EditorTab {

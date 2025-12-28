@@ -1,19 +1,15 @@
-use std::ops::DerefMut;
 use std::path::PathBuf;
 
 use crate::fulgur::{
     Fulgur,
-    components_utils::{UNTITLED, UTF_8},
     editor_tab::EditorTab,
-    menus,
     tab::Tab,
+    ui::components_utils::{UNTITLED, UTF_8},
+    ui::menus,
 };
 use chardetng::EncodingDetector;
 use gpui::*;
-use gpui_component::{
-    WindowExt, button::ButtonVariant, dialog::DialogButtonProps, notification::NotificationType,
-    v_flex,
-};
+use gpui_component::{WindowExt, notification::NotificationType};
 
 /// Detect encoding from file bytes
 ///
@@ -184,7 +180,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to open the file in
     /// - `cx`: The application context
-    pub(super) fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let path_future = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -240,12 +236,7 @@ impl Fulgur {
     /// - `window`: The window to open the file in
     /// - `cx`: The application context
     /// - `path`: The path to the file to open
-    pub(super) fn do_open_file(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        path: PathBuf,
-    ) {
+    pub fn do_open_file(&mut self, window: &mut Window, cx: &mut Context<Self>, path: PathBuf) {
         // Check if tab already exists for this path
         if let Some(tab_index) = self.find_tab_by_path(&path) {
             log::debug!(
@@ -316,7 +307,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to save the file in
     /// - `cx`: The application context
-    pub(super) fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;
         }
@@ -352,7 +343,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to save the file as in
     /// - `cx`: The application context
-    pub(super) fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.is_empty() || self.active_tab_index.is_none() {
             return;
         }
@@ -472,60 +463,5 @@ impl Fulgur {
         let new_name = to.file_name().and_then(|n| n.to_str()).unwrap_or("file");
         let message = SharedString::from(format!("File renamed: {} → {}", old_name, new_name));
         window.push_notification((NotificationType::Info, message), cx);
-    }
-
-    /// Show dialog when file is modified externally and has local changes
-    ///
-    /// ### Arguments
-    /// - `path`: The path to the file that has local changes
-    /// - `tab_index`: The index of the tab that has local changes
-    /// - `window`: The window to show the dialog in
-    /// - `cx`: The application context
-    pub(super) fn show_file_conflict_dialog(
-        &self,
-        path: PathBuf,
-        tab_index: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let entity = cx.entity().clone();
-        let filename = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("file")
-            .to_string();
-
-        window.open_dialog(cx.deref_mut(), move |modal, _, _| {
-            let entity_for_ok = entity.clone();
-            modal
-                .title(div().text_size(px(16.)).child("File Modified Externally"))
-                .keyboard(true)
-                .confirm()
-                .overlay_closable(false)
-                .close_button(false)
-                .button_props(
-                    DialogButtonProps::default()
-                        .cancel_text("Keep local changes")
-                        .cancel_variant(ButtonVariant::Secondary)
-                        .ok_text("Load from file")
-                        .ok_variant(ButtonVariant::Primary),
-                )
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .child(format!(
-                            "The file \"{}\" has been modified externally.",
-                            filename
-                        ))
-                        .child("You have unsaved changes in this file. Do you want to load the changes from the file?"),
-                )
-                .on_ok(move |_, window, cx| {
-                    entity_for_ok.update(cx, |this, cx| {
-                        this.reload_tab_from_disk(tab_index, window, cx);
-                    });
-                    true
-                })
-                .on_cancel(|_, _, _| true)
-        });
     }
 }

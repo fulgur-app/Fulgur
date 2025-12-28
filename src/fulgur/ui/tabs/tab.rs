@@ -1,9 +1,9 @@
 use gpui::*;
 
-use crate::fulgur::Fulgur;
-
-use super::editor_tab::EditorTab;
-use super::settings::SettingsTab;
+use crate::fulgur::{
+    Fulgur,
+    ui::tabs::{editor_tab::EditorTab, settings_tab::SettingsTab},
+};
 
 /// Enum representing different types of tabs
 #[derive(Clone)]

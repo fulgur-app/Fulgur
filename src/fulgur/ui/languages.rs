@@ -1,7 +1,7 @@
 use gpui::*;
 use gpui_component::{highlighter::Language, select::SelectState};
 
-use crate::fulgur::{Fulgur, components_utils::create_select_state};
+use crate::fulgur::{Fulgur, ui::components_utils::create_select_state};
 
 /// Initialize the language registry with all supported languages
 pub fn init_languages() {}
