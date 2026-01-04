@@ -62,7 +62,7 @@ embed-resource = "3.0.6"
 # ============================================================================
 
 [package.metadata.packager]
-before-packaging-command = "cargo build --release && cargo about generate licenses/about.hbs -c licenses/about.toml --workspace -o THIRD-PARTY-LICENSES"
+before-packaging-command = "cargo build --release"
 product-name = "Fulgur"
 resources = ["LICENCE", "THIRD-PARTY-LICENSES"]
 identifier = "app.fulgur.fulgur"

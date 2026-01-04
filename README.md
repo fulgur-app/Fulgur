@@ -38,7 +38,7 @@ Fulgur themes use the `gpui-component` format, configured with JSON files and he
 
 Install [cargo-packager](https://github.com/crabnebula-dev/cargo-packager) with `cargo install cargo-packager --locked`. It will bundle the app with a nice icon for each platform.
 
-Install [cargo-about](https://github.com/EmbarkStudios/cargo-about) with `cargo install cargo-about --locked`. It will generate the list of third parties licenses when packaging, as per the Apache 2.0 license's terms.
+Install [cargo-about](https://github.com/EmbarkStudios/cargo-about) with `cargo install cargo-about --locked`. It will generate the list of third parties licenses, as per the Apache 2.0 license's terms.
 
 #### MacOS
 
@@ -53,6 +53,7 @@ Install the [Windows SDK](https://developer.microsoft.com/en-us/windows/download
 Once all the prerequisites installed and set up:
 
 * Run `cargo build --release` to build an optimized version of Fulgur. May take some time on older systems.
+* Run `cd license && ./generate_license_file.sh` to update the 3rd party licences list if you plan to distribute Fulgur.
 * Run `cargo packager --release` to build an optimized version of Fulgur and make a pretty executable with an icon.
 
 ## License
