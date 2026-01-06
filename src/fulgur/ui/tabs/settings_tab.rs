@@ -2,11 +2,10 @@ use std::fs;
 
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Sizable, Size, StyledExt, WindowExt,
+    ActiveTheme, Sizable, Size, StyledExt,
     button::{Button, ButtonVariants},
     group_box::GroupBoxVariant,
     h_flex,
-    notification::NotificationType,
     setting::{
         NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage,
         Settings as SettingsComponent,
@@ -16,11 +15,10 @@ use gpui_component::{
 
 use crate::fulgur::{
     Fulgur, crypto_helper,
-    files::sync::initial_synchronization,
+    files::sync::perform_initial_synchronization,
     settings::{AppSettings, EditorSettings, Themes},
     themes,
-    ui::icons::CustomIcon,
-    ui::menus::build_menus,
+    ui::{icons::CustomIcon, menus::build_menus},
 };
 
 const DEVICE_KEY_PLACEHOLDER: &str = "<Device Key>";
@@ -50,6 +48,8 @@ impl SettingsTab {
 }
 
 impl Fulgur {
+    
+
     /// Create the Editor settings page
     ///
     /// ### Arguments
@@ -371,6 +371,11 @@ impl Fulgur {
                                             log::error!("Failed to save settings: {}", e);
                                         }
                                     });
+
+                                    // Trigger synchronization if activated
+                                    if val {
+                                        perform_initial_synchronization(entity.clone(), cx);
+                                    }
                                 }
                             },
                         )
@@ -515,83 +520,11 @@ impl Fulgur {
                                         .cursor_pointer()
                                         .on_click({
                                             let entity = entity.clone();
-                                            move |_, window, cx| {
-                                                let settings = entity.read(cx).settings.clone();
-                                                let server_url = settings
-                                                    .app_settings
-                                                    .synchronization_settings
-                                                    .server_url
-                                                    .clone();
-                                                let email = settings
-                                                    .app_settings
-                                                    .synchronization_settings
-                                                    .email
-                                                    .clone();
-                                                let key = settings
-                                                    .app_settings
-                                                    .synchronization_settings
-                                                    .key
-                                                    .clone();
-
-                                                let result =
-                                                    initial_synchronization(server_url, email, key);
-
-                                                let (notification, is_connected) = match result {
-                                                    Ok(begin_response) => {
-                                                        // Update encryption key and device name
-                                                        entity.update(cx, |this, _cx| {
-                                                            if let Ok(mut key) =
-                                                                this.encryption_key.lock()
-                                                            {
-                                                                *key = Some(
-                                                                    begin_response.encryption_key,
-                                                                );
-                                                            }
-                                                            if let Ok(mut name) =
-                                                                this.device_name.lock()
-                                                            {
-                                                                *name = Some(
-                                                                    begin_response
-                                                                        .device_name
-                                                                        .clone(),
-                                                                );
-                                                            }
-                                                            if let Ok(mut files) =
-                                                                this.pending_shared_files.lock()
-                                                            {
-                                                                *files = begin_response.shares;
-                                                            }
-                                                        });
-                                                        (
-                                                            (
-                                                                NotificationType::Success,
-                                                                SharedString::from(format!(
-                                                                    "Connection successful as {}",
-                                                                    begin_response.device_name
-                                                                )),
-                                                            ),
-                                                            true,
-                                                        )
-                                                    }
-                                                    Err(e) => (
-                                                        (
-                                                            NotificationType::Error,
-                                                            SharedString::from(format!(
-                                                                "Connection failed: {}",
-                                                                e.to_string()
-                                                            )),
-                                                        ),
-                                                        false,
-                                                    ),
-                                                };
-
-                                                window.push_notification(notification, cx);
-                                                entity.update(cx, |this, _cx| {
-                                                    this.is_connected.store(
-                                                        is_connected,
-                                                        std::sync::atomic::Ordering::Relaxed,
-                                                    );
-                                                });
+                                            move |_, _window, cx| {
+                                                perform_initial_synchronization(
+                                                    entity.clone(),
+                                                    cx,
+                                                );
                                             }
                                         }),
                                 )

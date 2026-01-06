@@ -5,7 +5,9 @@ use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
 use fulgur_common::api::BeginResponse;
 use fulgur_common::api::devices::DeviceResponse;
+use gpui::{App, Entity, SharedString};
 use gpui_component::Icon;
+use gpui_component::notification::NotificationType;
 use serde::Serialize;
 use std::io::Read;
 
@@ -534,6 +536,76 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                 is_connected.store(false, Ordering::Relaxed);
             }
         }
+    });
+}
+
+/// Perform initial synchronization with the server
+///
+/// This function reads the synchronization settings, attempts to connect to the server,
+/// and updates the application state accordingly. Stores notification to be shown on next render.
+///
+/// ### Arguments
+/// - `entity`: The Fulgur entity
+/// - `cx`: The context
+pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx: &mut App) {
+    let settings = entity.read(cx).settings.clone();
+    let server_url = settings
+        .app_settings
+        .synchronization_settings
+        .server_url
+        .clone();
+    let email = settings
+        .app_settings
+        .synchronization_settings
+        .email
+        .clone();
+    let key = settings
+        .app_settings
+        .synchronization_settings
+        .key
+        .clone();
+
+    let result = initial_synchronization(server_url, email, key);
+
+    let (notification, is_connected) = match result {
+        Ok(begin_response) => {
+            // Update encryption key and device name
+            entity.update(cx, |this, _cx| {
+                if let Ok(mut key) = this.encryption_key.lock() {
+                    *key = Some(begin_response.encryption_key);
+                }
+                if let Ok(mut name) = this.device_name.lock() {
+                    *name = Some(begin_response.device_name.clone());
+                }
+                if let Ok(mut files) = this.pending_shared_files.lock() {
+                    *files = begin_response.shares;
+                }
+            });
+            (
+                (
+                    NotificationType::Success,
+                    SharedString::from(format!(
+                        "Connection successful as {}",
+                        begin_response.device_name
+                    )),
+                ),
+                true,
+            )
+        }
+        Err(e) => (
+            (
+                NotificationType::Error,
+                SharedString::from(format!("Connection failed: {}", e.to_string())),
+            ),
+            false,
+        ),
+    };
+
+    entity.update(cx, |this, _cx| {
+        this.is_connected
+            .store(is_connected, std::sync::atomic::Ordering::Relaxed);
+        // Store notification to be displayed on next render
+        this.pending_notification = Some(notification);
     });
 }
 

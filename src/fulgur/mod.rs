@@ -28,6 +28,7 @@ use gpui_component::{
     highlighter::Language,
     input::{Input, InputEvent, InputState},
     link::Link,
+    notification::NotificationType,
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
     select::SelectState,
@@ -75,6 +76,7 @@ pub struct Fulgur {
     file_watch_events: Option<Receiver<FileWatchEvent>>, // Channel for file watch events
     last_file_events: HashMap<PathBuf, Instant>, // Track last event time per file for debouncing
     pending_conflicts: HashMap<PathBuf, usize>, // Deferred conflicts for inactive tabs (path -> tab_index)
+    pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
 }
 
 impl Fulgur {
@@ -156,6 +158,7 @@ impl Fulgur {
                 file_watch_events: None, // Will be initialized after loading settings
                 last_file_events: HashMap::new(),
                 pending_conflicts: HashMap::new(),
+                pending_notification: None,
             };
             entity
         });
@@ -252,6 +255,11 @@ impl Render for Fulgur {
     /// ### Returns
     /// - `impl IntoElement`: The rendered Fulgur instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Display pending notification if any
+        if let Some((notification_type, message)) = self.pending_notification.take() {
+            window.push_notification((notification_type, message), cx);
+        }
+
         let files_to_open = if let Ok(mut pending) = self.pending_files_from_macos.try_lock() {
             if pending.is_empty() {
                 Vec::new()
