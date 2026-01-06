@@ -1,5 +1,6 @@
 use std::{sync::atomic::Ordering, thread, time::Duration};
 
+use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::{crypto_helper, ui::icons::CustomIcon};
 use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
@@ -71,18 +72,17 @@ pub fn get_icon(device: &Device) -> Icon {
 /// Get the devices from the server
 ///
 /// ### Arguments
-/// - `server_url`: The server URL
-/// - `email`: The email
-/// - `key`: The key
+/// - `synchronization_settings`: The synchronization settings
 ///
 /// ### Returns
 /// - `Ok(Vec<Device>)`: The devices
-/// - `Err(anyhow::Error)`: If the devices could not be retrieved
+/// - `Err(SynchronizationError)`: If the devices could not be retrieved
 pub fn get_devices(
-    server_url: Option<String>,
-    email: Option<String>,
-    key: Option<String>,
+    synchronization_settings: &SynchronizationSettings,
 ) -> Result<Vec<Device>, SynchronizationError> {
+    let server_url = synchronization_settings.server_url.clone();
+    let email = synchronization_settings.email.clone();
+    let key = synchronization_settings.key.clone();
     if server_url.is_none() {
         return Err(SynchronizationError::ServerUrlMissing);
     }
@@ -161,12 +161,24 @@ pub fn get_devices(
 ///
 /// ### Returns
 /// - `Ok(String)`: The user's encryption key (base64-encoded)
-/// - `Err(anyhow::Error)`: If the encryption key could not be fetched
-fn fetch_encryption_key(server_url: &str, email: &str, device_key: &str) -> Result<String, SynchronizationError> {
-    let key_url = format!("{}/api/encryption-key", server_url);
+/// - `Err(SynchronizationError)`: If the encryption key could not be fetched
+fn fetch_encryption_key(synchronization_settings: &SynchronizationSettings) -> Result<String, SynchronizationError> {
+    let server_url = synchronization_settings.server_url.clone();
+    let email = synchronization_settings.email.clone();
+    let key = synchronization_settings.key.clone();
+    if server_url.is_none() {
+        return Err(SynchronizationError::ServerUrlMissing);
+    }
+    if email.is_none() {
+        return Err(SynchronizationError::EmailMissing);
+    }
+    if key.is_none() {
+        return Err(SynchronizationError::DeviceKeyMissing);
+    }
+    let key_url = format!("{}/api/encryption-key", server_url.unwrap());
     let mut response = match ureq::get(&key_url)
-        .header("Authorization", &format!("Bearer {}", device_key))
-        .header("X-User-Email", email)
+        .header("Authorization", &format!("Bearer {}", key.unwrap()))
+        .header("X-User-Email", email.unwrap())
         .call() {
             Ok(response) => response,
             Err(ureq::Error::StatusCode(code)) => {
@@ -237,20 +249,19 @@ pub struct ShareFilePayload {
 /// Share the file with the devices
 ///
 /// ### Arguments
-/// - `server_url`: The server URL
-/// - `email`: The email
-/// - `key`: The encrypted device authentication key
+/// - `synchronization_settings`: The synchronization settings
 /// - `payload`: The payload to share the file with (content will be encrypted)
 ///
 /// ### Returns
 /// - `Ok(String)`: The expiration date of the shared file
-/// - `Err(anyhow::Error)`: If the file could not be shared
+/// - `Err(SynchronizationError)`: If the file could not be shared
 pub fn share_file(
-    server_url: Option<String>,
-    email: Option<String>,
-    key: Option<String>,
+    synchronization_settings: &SynchronizationSettings,
     payload: ShareFilePayload,
 ) -> Result<String, SynchronizationError> {
+    let server_url = synchronization_settings.server_url.clone();
+    let email = synchronization_settings.email.clone();
+    let key = synchronization_settings.key.clone();
     if server_url.is_none() {
         return Err(SynchronizationError::ServerUrlMissing);
     }
@@ -282,7 +293,7 @@ pub fn share_file(
             return Err(SynchronizationError::EncryptedKeyDecryptionFailed);
         }
     };
-    let encryption_key = fetch_encryption_key(server_url_str, email_str, &decrypted_device_key)?;
+    let encryption_key = fetch_encryption_key(&synchronization_settings)?;
     let compressed_content = match compress_content(&payload.content) {
         Ok(content) => content,
         Err(e) => {
@@ -387,12 +398,13 @@ pub fn share_file(
 ///
 /// ### Returns
 /// - `Ok(BeginResponse)`: The begin response containing encryption key and shared files
-/// - `Err(anyhow::Error)`: If the synchronization could not be performed
+/// - `Err(SynchronizationError)`: If the synchronization could not be performed
 pub fn initial_synchronization(
-    server_url: Option<String>,
-    email: Option<String>,
-    key: Option<String>,
+    synchronization_settings: &SynchronizationSettings,
 ) -> Result<BeginResponse, SynchronizationError> {
+    let server_url = synchronization_settings.server_url.clone();
+    let email = synchronization_settings.email.clone();
+    let key = synchronization_settings.key.clone();
     if server_url.is_none() {
         return Err(SynchronizationError::ServerUrlMissing);
     }
@@ -517,7 +529,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             is_connected.store(false, std::sync::atomic::Ordering::Relaxed);
             return;
         }
-        match initial_synchronization(server_url, email, key) {
+        match initial_synchronization(&settings.app_settings.synchronization_settings) {
             Ok(begin_response) => {
                 log::info!("Successfully connected to sync server");
                 is_connected.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -541,32 +553,12 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
 
 /// Perform initial synchronization with the server
 ///
-/// This function reads the synchronization settings, attempts to connect to the server,
-/// and updates the application state accordingly. Stores notification to be shown on next render.
-///
 /// ### Arguments
 /// - `entity`: The Fulgur entity
 /// - `cx`: The context
-pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx: &mut App) {
-    let settings = entity.read(cx).settings.clone();
-    let server_url = settings
-        .app_settings
-        .synchronization_settings
-        .server_url
-        .clone();
-    let email = settings
-        .app_settings
-        .synchronization_settings
-        .email
-        .clone();
-    let key = settings
-        .app_settings
-        .synchronization_settings
-        .key
-        .clone();
-
-    let result = initial_synchronization(server_url, email, key);
-
+pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx: &mut App) -> bool {
+    let synchronization_settings = entity.read(cx).settings.app_settings.synchronization_settings.clone();
+    let result = initial_synchronization(&synchronization_settings);
     let (notification, is_connected) = match result {
         Ok(begin_response) => {
             // Update encryption key and device name
@@ -600,13 +592,13 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
             false,
         ),
     };
-
     entity.update(cx, |this, _cx| {
         this.is_connected
             .store(is_connected, std::sync::atomic::Ordering::Relaxed);
         // Store notification to be displayed on next render
         this.pending_notification = Some(notification);
     });
+    is_connected
 }
 
 pub enum SynchronizationError {

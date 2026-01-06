@@ -3,9 +3,7 @@ use std::ops::DerefMut;
 use crate::fulgur::{
     Fulgur, editor_tab,
     files::sync::{Device, ShareFilePayload, get_devices, get_icon, share_file},
-    ui::components_utils::{EMPTY, UTF_8},
-    ui::icons::CustomIcon,
-    ui::languages,
+    ui::{components_utils::{EMPTY, UTF_8}, icons::CustomIcon, languages},
 };
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
@@ -479,23 +477,15 @@ impl Fulgur {
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
-                let devices = get_devices(
-                    this.settings
-                        .app_settings
-                        .synchronization_settings
-                        .server_url
-                        .clone(),
-                    this.settings
-                        .app_settings
-                        .synchronization_settings
-                        .email
-                        .clone(),
-                    this.settings
-                        .app_settings
-                        .synchronization_settings
-                        .key
-                        .clone(),
-                );
+                if !this.settings.app_settings.synchronization_settings.is_synchronization_activated {
+                    log::warn!("Synchronization is not activated");
+                    return;
+                }
+                let is_connected = this.is_connected.load(std::sync::atomic::Ordering::Relaxed);
+                if !is_connected {
+                    log::warn!("Not connected to sync server");
+                }
+                let devices = get_devices(&this.settings.app_settings.synchronization_settings);
                 let devices = match devices {
                     Ok(devices) => devices,
                     Err(e) => {
@@ -535,21 +525,7 @@ impl Fulgur {
                                         device_ids: selected_ids,
                                     };
                                     share_file(
-                                        this.settings
-                                            .app_settings
-                                            .synchronization_settings
-                                            .server_url
-                                            .clone(),
-                                        this.settings
-                                            .app_settings
-                                            .synchronization_settings
-                                            .email
-                                            .clone(),
-                                        this.settings
-                                            .app_settings
-                                            .synchronization_settings
-                                            .key
-                                            .clone(),
+                                        &this.settings.app_settings.synchronization_settings,
                                         payload,
                                     )
                                 });
