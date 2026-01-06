@@ -499,7 +499,7 @@ impl Fulgur {
                 let devices = match devices {
                     Ok(devices) => devices,
                     Err(e) => {
-                        log::error!("Failed to get devices: {}", e);
+                        log::error!("Failed to get devices: {}", e.to_string());
                         return;
                     }
                 };
@@ -565,12 +565,12 @@ impl Fulgur {
                                         window.push_notification(notification, cx);
                                     }
                                     Err(e) => {
-                                        log::error!("Failed to share file: {}", e);
+                                        log::error!("Failed to share file: {}", e.to_string());
                                         let notification = (
                                             NotificationType::Error,
                                             SharedString::from(format!(
                                                 "Failed to share file: {}",
-                                                e
+                                                e.to_string()
                                             )),
                                         );
                                         window.push_notification(notification, cx);

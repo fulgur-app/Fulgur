@@ -578,7 +578,7 @@ impl Fulgur {
                                                             NotificationType::Error,
                                                             SharedString::from(format!(
                                                                 "Connection failed: {}",
-                                                                e
+                                                                e.to_string()
                                                             )),
                                                         ),
                                                         false,
