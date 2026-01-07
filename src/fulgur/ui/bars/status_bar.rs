@@ -2,7 +2,7 @@ use std::ops::DerefMut;
 
 use crate::fulgur::{
     Fulgur, editor_tab,
-    files::sync::{Device, ShareFilePayload, get_devices, get_icon, share_file},
+    files::sync::{Device, ShareFilePayload, SynchronizationStatus, get_devices, get_icon, get_sync_server_connection_status, share_file},
     ui::{components_utils::{EMPTY, UTF_8}, icons::CustomIcon, languages},
 };
 use gpui::{prelude::FluentBuilder, *};
@@ -462,6 +462,7 @@ impl Fulgur {
             }),
         );
         let is_markdown = self.is_markdown();
+        let is_connected = self.is_connected();
         let sync_button = status_bar_sync_button(
             Icon::new(CustomIcon::Zap),
             Icon::new(CustomIcon::ZapOff),
@@ -472,7 +473,7 @@ impl Fulgur {
             cx.theme().danger,
             cx.theme().danger_foreground,
             cx.theme().danger_hover,
-            self.is_connected.load(std::sync::atomic::Ordering::Relaxed),
+            is_connected,
         )
         .on_mouse_down(
             MouseButton::Left,
@@ -481,82 +482,97 @@ impl Fulgur {
                     log::warn!("Synchronization is not activated");
                     return;
                 }
-                let is_connected = this.is_connected.load(std::sync::atomic::Ordering::Relaxed);
-                if !is_connected {
+                if !this.is_connected() {
                     log::warn!("Not connected to sync server");
-                }
-                let devices = get_devices(&this.settings.app_settings.synchronization_settings);
-                let devices = match devices {
-                    Ok(devices) => devices,
-                    Err(e) => {
-                        log::error!("Failed to get devices: {}", e.to_string());
-                        return;
-                    }
-                };
-                let entity = cx.entity();
-                let state = cx.new(|_cx| DeviceSelectionState::new(devices));
-                window.open_dialog(cx.deref_mut(), move |modal, _window, _cx| {
-                    modal
-                        .confirm()
-                        .title("Share with...")
-                        .child(state.clone())
-                        .overlay_closable(true)
-                        .close_button(false)
-                        .on_ok({
-                            let state_clone = state.clone();
-                            let entity_clone = entity.clone();
-                            move |_event: &ClickEvent, window, cx| {
-                                let selected_ids = state_clone.read(cx).selected_ids.clone();
-                                let result = entity_clone.update(cx, |this, cx| {
-                                    let content = this
-                                        .get_active_editor_tab()
-                                        .map(|tab| tab.content.read(cx).value().to_string())
-                                        .unwrap_or_default();
-                                    let file_name = this
-                                        .get_active_editor_tab()
-                                        .and_then(|tab| tab.file_path.as_ref())
-                                        .and_then(|path| path.file_name())
-                                        .and_then(|name| name.to_str())
-                                        .unwrap_or("Untitled")
-                                        .to_string();
-                                    let payload = ShareFilePayload {
-                                        content,
-                                        file_name,
-                                        device_ids: selected_ids,
-                                    };
-                                    share_file(
-                                        &this.settings.app_settings.synchronization_settings,
-                                        payload,
-                                    )
-                                });
-                                match result {
-                                    Ok(expiration_date) => {
-                                        let notification = (
-                                            NotificationType::Success,
-                                            SharedString::from(format!(
-                                                "File shared successfully until {}",
-                                                expiration_date
-                                            )),
-                                        );
-                                        window.push_notification(notification, cx);
+                    let sync_server_connection_status = get_sync_server_connection_status(this.sync_server_connection_status.clone());
+                    let dialog_message = match sync_server_connection_status {
+                        SynchronizationStatus::AuthenticationFailed => "Authentication failed. Check your e-mail and device API key in the synchronization settings and try again.",
+                        SynchronizationStatus::Connected => "Connected to the synchronization server.",
+                        SynchronizationStatus::ConnectionFailed => "Connection failed. Check the URL to the server in the synchronization settings and try again.",
+                        SynchronizationStatus::Other => "An unknown error occurred while connecting to the synchronization server. Check your synchronization settings and try again.",
+                        SynchronizationStatus::NotActivated => "Synchronization is not activated. You can activate synchronization in the settings.",
+                        SynchronizationStatus::Disconnected => "Not connected to the synchronization server. Check your synchronization settings and try again.",
+                    };
+                    window.open_dialog(cx, move |dialog, _, _| {
+                        dialog
+                            .alert()
+                            .child(dialog_message)
+                    });
+                } else {
+                    //TODO: Handle the case where the connection status was not connected but the connection was successful, need to update the vakue
+                    let synchronization_settings = this.settings.app_settings.synchronization_settings.clone();
+                    let devices = get_devices(&synchronization_settings);
+                    let devices = match devices {
+                        Ok(devices) => devices,
+                        Err(e) => {
+                            log::error!("Failed to get devices: {}", e.to_string());
+                            return;
+                        }
+                    };
+                    let entity = cx.entity();
+                    let state = cx.new(|_cx| DeviceSelectionState::new(devices));
+                    window.open_dialog(cx.deref_mut(), move |modal, _window, _cx| {
+                        modal
+                            .confirm()
+                            .title("Share with...")
+                            .child(state.clone())
+                            .overlay_closable(true)
+                            .close_button(false)
+                            .on_ok({
+                                let state_clone = state.clone();
+                                let entity_clone = entity.clone();
+                                move |_event: &ClickEvent, window, cx| {
+                                    let selected_ids = state_clone.read(cx).selected_ids.clone();
+                                    let result = entity_clone.update(cx, |this, cx| {
+                                        let content = this
+                                            .get_active_editor_tab()
+                                            .map(|tab| tab.content.read(cx).value().to_string())
+                                            .unwrap_or_default();
+                                        let file_name = this
+                                            .get_active_editor_tab()
+                                            .and_then(|tab| tab.file_path.as_ref())
+                                            .and_then(|path| path.file_name())
+                                            .and_then(|name| name.to_str())
+                                            .unwrap_or("Untitled")
+                                            .to_string();
+                                        let payload = ShareFilePayload {
+                                            content,
+                                            file_name,
+                                            device_ids: selected_ids,
+                                        };
+                                        share_file(
+                                            &this.settings.app_settings.synchronization_settings,
+                                            payload,
+                                        )
+                                    });
+                                    match result {
+                                        Ok(expiration_date) => {
+                                            let notification = (
+                                                NotificationType::Success,
+                                                SharedString::from(format!(
+                                                    "File shared successfully until {}",
+                                                    expiration_date
+                                                )),
+                                            );
+                                            window.push_notification(notification, cx);
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to share file: {}", e.to_string());
+                                            let notification = (
+                                                NotificationType::Error,
+                                                SharedString::from(format!(
+                                                    "Failed to share file: {}",
+                                                    e.to_string()
+                                                )),
+                                            );
+                                            window.push_notification(notification, cx);
+                                        }
                                     }
-                                    Err(e) => {
-                                        log::error!("Failed to share file: {}", e.to_string());
-                                        let notification = (
-                                            NotificationType::Error,
-                                            SharedString::from(format!(
-                                                "Failed to share file: {}",
-                                                e.to_string()
-                                            )),
-                                        );
-                                        window.push_notification(notification, cx);
-                                    }
+                                    true
                                 }
-                                true
-                            }
-                        })
+                            })
                 });
-            }),
+            }}),
         );
         h_flex()
             .justify_between()

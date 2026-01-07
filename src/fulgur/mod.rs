@@ -4,13 +4,12 @@ mod state_operations;
 mod state_persistence;
 mod ui;
 pub mod utils;
-
 use fulgur_common::api::shares::SharedFileResponse;
 use settings::Settings;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{Arc, Mutex, atomic::AtomicBool},
+    sync::{Arc, Mutex},
     time::Instant,
 };
 use tab::Tab;
@@ -18,10 +17,8 @@ use ui::{
     bars::search_replace_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*,
     themes,
 };
-
 use files::file_watcher::{FileWatchEvent, FileWatcher};
 use std::sync::mpsc::Receiver;
-
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
@@ -35,11 +32,8 @@ use gpui_component::{
     text::TextView,
     v_flex,
 };
-
 use crate::fulgur::{
-    settings::Themes,
-    ui::{icons::CustomIcon, languages},
-    utils::crypto_helper,
+    files::sync::SynchronizationStatus, settings::Themes, ui::{icons::CustomIcon, languages}, utils::crypto_helper
 };
 
 pub struct Fulgur {
@@ -68,7 +62,7 @@ pub struct Fulgur {
     tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
     pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>, // Files from macOS "Open with" events
     update_link: Option<String>,
-    is_connected: Arc<AtomicBool>, // Shared sync connection status (thread-safe)
+    sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>, // Shared sync connection status (thread-safe)
     encryption_key: Arc<Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
     device_name: Arc<Mutex<Option<String>>>, // Device name from server (thread-safe)
     pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>, // Shared files from sync server (thread-safe)
@@ -98,6 +92,11 @@ impl Fulgur {
         let settings = match Settings::load() {
             Ok(settings) => settings,
             Err(_) => Settings::new(),
+        };
+        let synchronization_status = if settings.app_settings.synchronization_settings.is_synchronization_activated {
+            SynchronizationStatus::Connected
+        } else {
+            SynchronizationStatus::NotActivated
         };
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
@@ -150,7 +149,7 @@ impl Fulgur {
                 pending_files_from_macos,
                 themes,
                 update_link: None,
-                is_connected: Arc::new(AtomicBool::new(false)),
+                sync_server_connection_status: Arc::new(Mutex::new(synchronization_status)),
                 encryption_key: Arc::new(Mutex::new(None)),
                 device_name: Arc::new(Mutex::new(None)),
                 pending_shared_files: Arc::new(Mutex::new(Vec::new())),

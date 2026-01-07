@@ -1,5 +1,6 @@
-use std::{sync::atomic::Ordering, thread, time::Duration};
-
+use std::sync::{Arc, Mutex};
+use std::{thread, time::Duration};
+use crate::fulgur::Fulgur;
 use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::{crypto_helper, ui::icons::CustomIcon};
 use flate2::Compression;
@@ -359,7 +360,6 @@ pub fn share_file(
                 return Err(SynchronizationError::Other(e.to_string()));
             }
         };
-    
     if response.status() == 200 {
         let body = match response.body_mut().read_to_string() {
             Ok(body) => body,
@@ -430,7 +430,6 @@ pub fn initial_synchronization(
         .call() {
             Ok(response) => response,
             Err(ureq::Error::StatusCode(code)) => {
-                // HTTP status errors (401, 403, 404, 500, etc.)
                 log::error!("Failed to begin synchronization: HTTP status {}", code);
                 if code == 401 || code == 403 {
                     return Err(SynchronizationError::AuthenticationFailed);
@@ -439,7 +438,6 @@ pub fn initial_synchronization(
                 }
             }
             Err(ureq::Error::Io(io_error)) => {
-                // IO/connection errors
                 log::error!("Failed to begin synchronization (IO): {}", io_error);
                 return match io_error.kind() {
                     std::io::ErrorKind::ConnectionRefused => {
@@ -511,7 +509,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         return;
     }
     let settings = entity.read(cx).settings.clone();
-    let is_connected = entity.read(cx).is_connected.clone();
+    let sync_server_connection_status = entity.read(cx).sync_server_connection_status.clone();
     let pending_shared_files = entity.read(cx).pending_shared_files.clone();
     let encryption_key = entity.read(cx).encryption_key.clone();
     let device_name = entity.read(cx).device_name.clone();
@@ -526,13 +524,13 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         let email = settings.app_settings.synchronization_settings.email.clone();
         let key = settings.app_settings.synchronization_settings.key.clone();
         if server_url.is_none() || email.is_none() || key.is_none() {
-            is_connected.store(false, std::sync::atomic::Ordering::Relaxed);
+            set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Disconnected);
             return;
         }
         match initial_synchronization(&settings.app_settings.synchronization_settings) {
             Ok(begin_response) => {
                 log::info!("Successfully connected to sync server");
-                is_connected.store(true, std::sync::atomic::Ordering::Relaxed);
+                set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Connected);
                 if let Ok(mut key) = encryption_key.lock() {
                     *key = Some(begin_response.encryption_key);
                 }
@@ -545,23 +543,57 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             }
             Err(e) => {
                 log::error!("Failed to fetch shared files: {}", e.to_string());
-                is_connected.store(false, Ordering::Relaxed);
+                set_sync_server_connection_status(sync_server_connection_status, SynchronizationStatus::Disconnected);
             }
         }
     });
 }
+
+/// Get the synchronization status of the sync server
+///
+/// ### Arguments
+/// - `sync_server_connection_status`: The synchronization status of the sync server
+///
+/// ### Returns
+/// - `SynchronizationStatus`: The synchronization status of the sync server
+pub fn get_sync_server_connection_status(sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>) -> SynchronizationStatus {
+    match sync_server_connection_status.lock() {
+        Ok(status) => *status,
+        Err(e) => {
+            log::warn!("Failed to lock sync_server_connection_status: {}", e.to_string());
+            SynchronizationStatus::Disconnected
+        }
+    }
+}
+
+/// Set the synchronization status of the sync server
+///
+/// ### Arguments
+/// - `sync_server_connection_status`: The synchronization status of the sync server
+/// - `status`: The new synchronization status
+pub fn set_sync_server_connection_status(sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>, new_status: SynchronizationStatus) {
+    match sync_server_connection_status.lock() {
+        Ok(mut status) => *status = new_status,
+        Err(e) => {
+            log::warn!("Failed to lock sync_server_connection_status: {}", e.to_string());
+        }
+    }
+}
+
 
 /// Perform initial synchronization with the server
 ///
 /// ### Arguments
 /// - `entity`: The Fulgur entity
 /// - `cx`: The context
-pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx: &mut App) -> bool {
+///
+/// ### Returns
+/// - `SynchronizationStatus`: The status of the connection to the sync server
+pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx: &mut App) -> SynchronizationStatus {
     let synchronization_settings = entity.read(cx).settings.app_settings.synchronization_settings.clone();
     let result = initial_synchronization(&synchronization_settings);
-    let (notification, is_connected) = match result {
+    let (notification, sync_server_connection_status) = match result {
         Ok(begin_response) => {
-            // Update encryption key and device name
             entity.update(cx, |this, _cx| {
                 if let Ok(mut key) = this.encryption_key.lock() {
                     *key = Some(begin_response.encryption_key);
@@ -581,7 +613,7 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
                         begin_response.device_name
                     )),
                 ),
-                true,
+                SynchronizationStatus::Connected,
             )
         }
         Err(e) => (
@@ -589,16 +621,15 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
                 NotificationType::Error,
                 SharedString::from(format!("Connection failed: {}", e.to_string())),
             ),
-            false,
+            SynchronizationStatus::from_error(&e),
         ),
     };
     entity.update(cx, |this, _cx| {
-        this.is_connected
-            .store(is_connected, std::sync::atomic::Ordering::Relaxed);
+        set_sync_server_connection_status(this.sync_server_connection_status.clone(), sync_server_connection_status);
         // Store notification to be displayed on next render
         this.pending_notification = Some(notification);
     });
-    is_connected
+    sync_server_connection_status
 }
 
 pub enum SynchronizationError {
@@ -651,6 +682,58 @@ impl SynchronizationError {
             SynchronizationError::ServerError(e) => e.to_string(),
             SynchronizationError::ServerUrlMissing => "Server URL is missing".to_string(),
             SynchronizationError::Timeout(timeout) => format!("Timeout: {}", timeout),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum SynchronizationStatus {
+    Connected,
+    Disconnected,
+    AuthenticationFailed,
+    ConnectionFailed,
+    Other,
+    NotActivated,
+}
+
+impl SynchronizationStatus {
+    /// Convert the error to a synchronization status
+    ///
+    /// ### Arguments
+    /// - `error`: The error
+    ///
+    /// ### Returns
+    /// - `SynchronizationStatus`: The synchronization status
+    pub fn from_error(error: &SynchronizationError) -> SynchronizationStatus {
+        match error {
+            SynchronizationError::AuthenticationFailed => SynchronizationStatus::AuthenticationFailed,
+            SynchronizationError::HostNotFound => SynchronizationStatus::ConnectionFailed,
+            SynchronizationError::ConnectionFailed => SynchronizationStatus::ConnectionFailed,
+            SynchronizationError::Timeout(_) => SynchronizationStatus::ConnectionFailed,
+            _ => SynchronizationStatus::Other,
+        }
+    }
+}
+
+impl Fulgur {
+    /// Check if the Fulgur is connected to the sync server
+    ///
+    /// ### Returns
+    /// - `true` if Fulgur is connected to the sync server, `false` otherwise
+    pub fn is_connected(&self) -> bool {
+        match self.sync_server_connection_status.lock() {
+            Ok(status) => {
+                let deref_status = *status;
+                match deref_status {
+                    SynchronizationStatus::Connected => true,
+                    SynchronizationStatus::Disconnected => false,
+                    SynchronizationStatus::AuthenticationFailed => false,
+                    SynchronizationStatus::ConnectionFailed => false,
+                    SynchronizationStatus::Other => false,
+                    SynchronizationStatus::NotActivated => false,
+                }
+            },
+            Err(_) => false,
         }
     }
 }
