@@ -415,6 +415,7 @@ impl Fulgur {
                                         if let Err(e) = this.settings.save() {
                                             log::error!("Failed to save settings: {}", e);
                                         }
+                                        this.restart_sse_connection();
                                     });
                                 }
                             },
@@ -460,6 +461,7 @@ impl Fulgur {
                                         if let Err(e) = this.settings.save() {
                                             log::error!("Failed to save settings: {}", e);
                                         }
+                                        this.restart_sse_connection();
                                     });
                                 }
                             },
@@ -499,6 +501,7 @@ impl Fulgur {
                                         if let Err(e) = this.settings.save() {
                                             log::error!("Failed to save settings: {}", e);
                                         }
+                                        this.restart_sse_connection();
                                     });
                                 }
                             },
