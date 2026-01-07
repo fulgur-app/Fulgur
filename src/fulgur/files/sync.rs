@@ -176,9 +176,10 @@ fn fetch_encryption_key(synchronization_settings: &SynchronizationSettings) -> R
     if key.is_none() {
         return Err(SynchronizationError::DeviceKeyMissing);
     }
+    let decrypted_key = crypto_helper::decrypt(&key.unwrap()).unwrap();
     let key_url = format!("{}/api/encryption-key", server_url.unwrap());
     let mut response = match ureq::get(&key_url)
-        .header("Authorization", &format!("Bearer {}", key.unwrap()))
+        .header("Authorization", &format!("Bearer {}", decrypted_key))
         .header("X-User-Email", email.unwrap())
         .call() {
             Ok(response) => response,
