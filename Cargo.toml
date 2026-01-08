@@ -10,7 +10,7 @@ homepage = "https://fulgur.app"
 
 [dependencies]
 # Types
-fulgur-common = { path = "../Fulgur-common" }
+fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git" }
 
 # Serialization
 serde = { version = "1.0.228", features = ["derive"] }

@@ -1949,6 +1949,7 @@ dependencies = [
 [[package]]
 name = "fulgur-common"
 version = "0.2.0"
+source = "git+https://github.com/fulgur-app/Fulgur-common.git#3ac2866b41e0a86f9a569929672ced1278141ef4"
 dependencies = [
  "serde",
 ]
