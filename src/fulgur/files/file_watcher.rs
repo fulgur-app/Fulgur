@@ -106,6 +106,13 @@ impl FileWatcher {
     }
 
     /// Starts watching a file
+    /// 
+    /// ### Arguments
+    /// - `path`: The path to the file to watch
+    ///
+    /// ### Returns
+    /// - `Ok(())`: If the file was watched successfully
+    /// - `Err(String)`: If the file could not be watched
     pub fn watch_file(&mut self, path: PathBuf) -> Result<(), String> {
         if self.watched_paths.contains_key(&path) {
             return Ok(());
