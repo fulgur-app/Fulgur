@@ -71,6 +71,7 @@ pub struct Fulgur {
     file_watcher: Option<FileWatcher>, // File watcher for external file changes
     file_watch_events: Option<Receiver<FileWatchEvent>>, // Channel for file watch events
     last_file_events: HashMap<PathBuf, Instant>, // Track last event time per file for debouncing
+    last_file_saves: HashMap<PathBuf, Instant>, // Track when Fulgur saves files to ignore self-triggered events
     pending_conflicts: HashMap<PathBuf, usize>, // Deferred conflicts for inactive tabs (path -> tab_index)
     sse_events: Option<Receiver<files::sync::SseEvent>>, // Channel for SSE events from server
     sse_event_tx: Option<std::sync::mpsc::Sender<files::sync::SseEvent>>, // Sender for SSE connection
@@ -159,9 +160,10 @@ impl Fulgur {
                 encryption_key: Arc::new(Mutex::new(None)),
                 device_name: Arc::new(Mutex::new(None)),
                 pending_shared_files: Arc::new(Mutex::new(Vec::new())),
-                file_watcher: None, 
-                file_watch_events: None, 
+                file_watcher: None,
+                file_watch_events: None,
                 last_file_events: HashMap::new(),
+                last_file_saves: HashMap::new(),
                 pending_conflicts: HashMap::new(),
                 sse_events: None, 
                 sse_event_tx: None,

@@ -189,6 +189,11 @@ impl Fulgur {
                         return;
                     }
                 }
+                if let Some(&save_time) = self.last_file_saves.get(&path) {
+                    if now.duration_since(save_time) < Duration::from_millis(500) {
+                        return;
+                    }
+                }
                 self.last_file_events.insert(path.clone(), now);
                 if let Some(tab_index) = self.find_tab_by_path(&path) {
                     if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {

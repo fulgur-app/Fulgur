@@ -332,6 +332,7 @@ impl Fulgur {
             return;
         }
         log::debug!("File saved successfully: {:?}", path);
+        self.last_file_saves.insert(path.clone(), std::time::Instant::now());
         if let Tab::Editor(editor_tab) = &mut self.tabs[self.active_tab_index.unwrap()] {
             editor_tab.mark_as_saved(cx);
         }
@@ -388,6 +389,7 @@ impl Fulgur {
                         if let Some(old_path) = old_path {
                             this.unwatch_file(&old_path);
                         }
+                        this.last_file_saves.insert(path.clone(), std::time::Instant::now());
                         if let Some(Tab::Editor(editor_tab)) =
                             this.tabs.get_mut(active_tab_index.unwrap())
                         {
