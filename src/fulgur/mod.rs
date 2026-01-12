@@ -10,9 +10,8 @@ use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{Arc, Mutex},
-    sync::atomic::{AtomicBool, Ordering},
-    thread,
-    time::{Duration, Instant},
+    sync::atomic::AtomicBool,
+    time::Instant,
 };
 use tab::Tab;
 use ui::{
@@ -77,6 +76,7 @@ pub struct Fulgur {
     sse_event_tx: Option<std::sync::mpsc::Sender<files::sync::SseEvent>>, // Sender for SSE connection
     sse_shutdown_flag: Option<Arc<AtomicBool>>, // Flag to signal SSE thread to shutdown
     last_sse_event: Option<Instant>, // Track last SSE event time for debouncing
+    last_heartbeat: Arc<Mutex<Option<Instant>>>, // Track last heartbeat time for connection timeout detection (thread-safe)
     pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
 }
 
@@ -165,10 +165,11 @@ impl Fulgur {
                 last_file_events: HashMap::new(),
                 last_file_saves: HashMap::new(),
                 pending_conflicts: HashMap::new(),
-                sse_events: None, 
+                sse_events: None,
                 sse_event_tx: None,
                 sse_shutdown_flag: None,
                 last_sse_event: None,
+                last_heartbeat: Arc::new(Mutex::new(None)),
                 pending_notification: None,
             };
             entity
@@ -248,101 +249,7 @@ impl Fulgur {
         });
     }
 
-    /// Restart the SSE connection with new settings
-    ///
-    /// ### Description
-    /// Stops the current SSE connection and starts a new one with the updated settings.
-    /// Should be called when synchronization settings (server URL, email, or key) change.
-    pub fn restart_sse_connection(&mut self) {
-        if let Some(ref shutdown_flag) = self.sse_shutdown_flag {
-            log::info!("Signaling SSE connection to shutdown...");
-            shutdown_flag.store(true, Ordering::Relaxed);
-        }
-        thread::sleep(Duration::from_millis(100));
-        let (sse_tx, sse_rx) = std::sync::mpsc::channel();
-        let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
-        self.sse_events = Some(sse_rx);
-        self.sse_event_tx = Some(sse_tx.clone());
-        self.sse_shutdown_flag = Some(sse_shutdown_flag.clone());
-        if self.settings.app_settings.synchronization_settings.is_synchronization_activated {
-            let settings = self.settings.clone();
-            thread::spawn(move || {
-                // Small delay to ensure old connection is fully stopped
-                thread::sleep(Duration::from_millis(200));
-                match files::sync::initial_synchronization(&settings.app_settings.synchronization_settings) {
-                    Ok(_) => {
-                        log::info!("Initial sync succeeded, starting new SSE connection");
-                        if let Err(e) = files::sync::connect_sse(
-                            &settings.app_settings.synchronization_settings,
-                            sse_tx,
-                            sse_shutdown_flag,
-                        ) {
-                            log::error!("Failed to start new SSE connection: {}", e.to_string());
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Initial sync failed, not starting SSE: {}", e.to_string());
-                    }
-                }
-            });
-        } else {
-            log::info!("Synchronization is not activated, SSE connection not started");
-        }
-    }
-
-    /// Handle SSE (Server-Sent Events) from the sync server
-    ///
-    /// ### Arguments
-    /// - `event`: The SSE event to handle
-    /// - `window`: The window to show notifications in
-    /// - `cx`: The application context
-    fn handle_sse_event(
-        &mut self,
-        event: files::sync::SseEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Debounce: ignore events within 500ms of last event
-        let now = Instant::now();
-        if let Some(last_time) = self.last_sse_event {
-            if now.duration_since(last_time) < Duration::from_millis(500) {
-                return;
-            }
-        }
-        self.last_sse_event = Some(now);
-        match event {
-            files::sync::SseEvent::Heartbeat { timestamp } => {
-                log::debug!("SSE heartbeat received: {}", timestamp);
-            }
-            files::sync::SseEvent::ShareAvailable(notification) => {
-                log::info!(
-                    "File shared from device {}: {}",
-                    notification.source_device_id,
-                    notification.file_name
-                );
-                if let Ok(mut files) = self.pending_shared_files.lock() {
-                    let shared_file = fulgur_common::api::shares::SharedFileResponse {
-                        id: notification.share_id,
-                        source_device_id: notification.source_device_id.clone(),
-                        file_name: notification.file_name.clone(),
-                        file_size: notification.file_size as i32,
-                        content: notification.content,
-                        created_at: notification.created_at,
-                        expires_at: notification.expires_at,
-                    };
-                    files.push(shared_file);
-                }
-                let message = SharedString::from(format!(
-                    "New file received: {}",
-                    notification.file_name
-                ));
-                window.push_notification((NotificationType::Info, message), cx);
-            }
-            files::sync::SseEvent::Error(err) => {
-                log::error!("SSE error: {}", err);
-            }
-        }
-    }
+    
 }
 
 impl Focusable for Fulgur {

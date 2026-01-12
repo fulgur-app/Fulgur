@@ -1,16 +1,17 @@
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
+use std::time::Instant;
 use std::{thread, time::Duration};
-use crate::fulgur::Fulgur;
+use crate::fulgur::{Fulgur, files};
 use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::{crypto_helper, ui::icons::CustomIcon};
 use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
 use fulgur_common::api::BeginResponse;
 use fulgur_common::api::devices::DeviceResponse;
-use gpui::{App, Entity, SharedString};
-use gpui_component::Icon;
+use gpui::{App, Context, Entity, SharedString, Window};
+use gpui_component::{Icon, WindowExt};
 use gpui_component::notification::NotificationType;
 use serde::Serialize;
 use std::io::Read;
@@ -548,7 +549,12 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                 }
                 if let (Some(tx), Some(shutdown)) = (sse_tx, sse_shutdown_flag) {
                     log::info!("Starting SSE connection for real-time updates");
-                    if let Err(e) = connect_sse(&settings.app_settings.synchronization_settings, tx, shutdown) {
+                    if let Err(e) = connect_sse(
+                        &settings.app_settings.synchronization_settings,
+                        tx,
+                        shutdown,
+                        sync_server_connection_status.clone(),
+                    ) {
                         log::error!("Failed to start SSE connection: {}", e.to_string());
                     }
                 } else {
@@ -575,6 +581,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
 /// - `synchronization_settings`: The synchronization settings containing server URL, email, and key
 /// - `event_tx`: Channel sender for sending SSE events to the main thread
 /// - `shutdown_flag`: Atomic boolean flag to signal the SSE thread to shutdown
+/// - `sync_server_connection_status`: Arc-wrapped connection status to update on connection/disconnection
 ///
 /// ### Returns
 /// - `Ok(())`: If the SSE connection thread was spawned successfully
@@ -583,6 +590,7 @@ pub fn connect_sse(
     synchronization_settings: &SynchronizationSettings,
     event_tx: Sender<SseEvent>,
     shutdown_flag: Arc<AtomicBool>,
+    sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
 ) -> Result<(), SynchronizationError> {
     let server_url = synchronization_settings.server_url.clone()
         .ok_or(SynchronizationError::ServerUrlMissing)?;
@@ -606,9 +614,14 @@ pub fn connect_sse(
                 .header("Accept", "text/event-stream")
                 .call()
             {
-                Ok(resp) => resp,
+                Ok(resp) => {
+                    set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Connected);
+                    log::info!("SSE connection established");
+                    resp
+                },
                 Err(e) => {
                     log::error!("SSE connection failed: {}", e);
+                    set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Disconnected);
                     event_tx.send(SseEvent::Error(e.to_string())).ok();
                     if shutdown_flag.load(Ordering::Relaxed) {
                         log::info!("SSE connection shutdown requested, stopping...");
@@ -648,6 +661,7 @@ pub fn connect_sse(
                     }
                     Err(e) => {
                         log::error!("SSE stream error: {}", e);
+                        set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Disconnected);
                         event_tx.send(SseEvent::Error(e.to_string())).ok();
                         break;
                     }
@@ -659,6 +673,7 @@ pub fn connect_sse(
             }
             // When the connection is lost
             log::warn!("SSE connection closed, reconnecting in 5s...");
+            set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Disconnected);
             thread::sleep(Duration::from_secs(5));
         }
     });
@@ -830,6 +845,21 @@ impl SynchronizationStatus {
             _ => SynchronizationStatus::Other,
         }
     }
+
+    /// Check if the synchronization status is connected
+    ///
+    /// ### Returns
+    /// - `true` if the synchronization status is connected, `false` otherwise
+    pub fn is_connected(&self) -> bool {
+        match self {
+            SynchronizationStatus::Connected => true,
+            SynchronizationStatus::Disconnected => false,
+            SynchronizationStatus::AuthenticationFailed => false,
+            SynchronizationStatus::ConnectionFailed => false,
+            SynchronizationStatus::Other => false,
+            SynchronizationStatus::NotActivated => false,
+        }
+    }
 }
 
 // ============================================================================
@@ -927,6 +957,119 @@ impl Fulgur {
                 }
             },
             Err(_) => false,
+        }
+    }
+
+    /// Restart the SSE connection with new settings
+    ///
+    /// ### Description
+    /// Stops the current SSE connection and starts a new one with the updated settings.
+    /// Should be called when synchronization settings (server URL, email, or key) change.
+    pub fn restart_sse_connection(&mut self) {
+        if let Some(ref shutdown_flag) = self.sse_shutdown_flag {
+            log::info!("Signaling SSE connection to shutdown...");
+            shutdown_flag.store(true, Ordering::Relaxed);
+        }
+        thread::sleep(Duration::from_millis(100));
+        let (sse_tx, sse_rx) = std::sync::mpsc::channel();
+        let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
+        self.sse_events = Some(sse_rx);
+        self.sse_event_tx = Some(sse_tx.clone());
+        self.sse_shutdown_flag = Some(sse_shutdown_flag.clone());
+        if self.settings.app_settings.synchronization_settings.is_synchronization_activated {
+            let settings = self.settings.clone();
+            let sync_status = self.sync_server_connection_status.clone();
+            thread::spawn(move || {
+                // Small delay to ensure old connection is fully stopped
+                thread::sleep(Duration::from_millis(200));
+                match files::sync::initial_synchronization(&settings.app_settings.synchronization_settings) {
+                    Ok(_) => {
+                        log::info!("Initial sync succeeded, starting new SSE connection");
+                        if let Err(e) = files::sync::connect_sse(
+                            &settings.app_settings.synchronization_settings,
+                            sse_tx,
+                            sse_shutdown_flag,
+                            sync_status,
+                        ) {
+                            log::error!("Failed to start new SSE connection: {}", e.to_string());
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Initial sync failed, not starting SSE: {}", e.to_string());
+                    }
+                }
+            });
+        } else {
+            log::info!("Synchronization is not activated, SSE connection not started");
+        }
+    }
+
+    /// Handle SSE (Server-Sent Events) from the sync server
+    ///
+    /// ### Arguments
+    /// - `event`: The SSE event to handle
+    /// - `window`: The window to show notifications in
+    /// - `cx`: The application context
+    pub fn handle_sse_event(
+        &mut self,
+        event: files::sync::SseEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Debounce: ignore events within 500ms of last event
+        let now = Instant::now();
+        if let Some(last_time) = self.last_sse_event {
+            if now.duration_since(last_time) < Duration::from_millis(500) {
+                return;
+            }
+        }
+        self.last_sse_event = Some(now);
+        match event {
+            files::sync::SseEvent::Heartbeat { timestamp } => {
+                log::debug!("SSE heartbeat received: {}", timestamp);
+                let was_disconnected = if let Ok(status) = self.sync_server_connection_status.lock() {
+                    let deref_status = *status;
+                    !deref_status.is_connected()
+                } else {
+                    false
+                };
+                if let Ok(mut last_heartbeat) = self.last_heartbeat.lock() {
+                    *last_heartbeat = Some(now);
+                }
+                if was_disconnected {
+                    if let Ok(mut status) = self.sync_server_connection_status.lock() {
+                        *status = SynchronizationStatus::Connected;
+                        log::info!("Connection restored - heartbeat received after timeout");
+                    }
+                }
+            }
+            files::sync::SseEvent::ShareAvailable(notification) => {
+                log::info!(
+                    "File shared from device {}: {}",
+                    notification.source_device_id,
+                    notification.file_name
+                );
+                if let Ok(mut files) = self.pending_shared_files.lock() {
+                    let shared_file = fulgur_common::api::shares::SharedFileResponse {
+                        id: notification.share_id,
+                        source_device_id: notification.source_device_id.clone(),
+                        file_name: notification.file_name.clone(),
+                        file_size: notification.file_size as i32,
+                        content: notification.content,
+                        created_at: notification.created_at,
+                        expires_at: notification.expires_at,
+                    };
+                    files.push(shared_file);
+                }
+                let message = SharedString::from(format!(
+                    "New file received: {}",
+                    notification.file_name
+                ));
+                window.push_notification((NotificationType::Info, message), cx);
+            }
+            files::sync::SseEvent::Error(err) => {
+                log::error!("SSE error: {}", err);
+            }
         }
     }
 }
