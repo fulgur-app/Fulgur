@@ -54,6 +54,9 @@ semver = "1.0.27"
 machine-uid = "0.5"
 flate2 = "1.1.8"
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.6.1"
+
 [build-dependencies]
 embed-resource = "3.0.6"
 
