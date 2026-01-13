@@ -42,7 +42,7 @@ pub struct Fulgur {
     title_bar: Entity<CustomTitleBar>,
     tabs: Vec<Tab>,
     active_tab_index: Option<usize>,
-    next_tab_id: usize,
+    next_tab_id: usize, 
     show_search: bool,
     search_input: Entity<InputState>,
     replace_input: Entity<InputState>,
@@ -67,6 +67,7 @@ pub struct Fulgur {
     encryption_key: Arc<Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
     device_name: Arc<Mutex<Option<String>>>, // Device name from server (thread-safe)
     pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>, // Shared files from sync server (thread-safe)
+    token_state: Arc<Mutex<files::sync::TokenState>>, // JWT token state for API authentication (thread-safe)
     file_watcher: Option<FileWatcher>, // File watcher for external file changes
     file_watch_events: Option<Receiver<FileWatchEvent>>, // Channel for file watch events
     last_file_events: HashMap<PathBuf, Instant>, // Track last event time per file for debouncing
@@ -160,6 +161,7 @@ impl Fulgur {
                 encryption_key: Arc::new(Mutex::new(None)),
                 device_name: Arc::new(Mutex::new(None)),
                 pending_shared_files: Arc::new(Mutex::new(Vec::new())),
+                token_state: Arc::new(Mutex::new(files::sync::TokenState::new())),
                 file_watcher: None,
                 file_watch_events: None,
                 last_file_events: HashMap::new(),

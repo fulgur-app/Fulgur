@@ -8,15 +8,39 @@ use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::{crypto_helper, ui::icons::CustomIcon};
 use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
-use fulgur_common::api::BeginResponse;
+use fulgur_common::api::{AccessTokenResponse, BeginResponse};
 use fulgur_common::api::devices::DeviceResponse;
 use gpui::{App, Context, Entity, SharedString, Window};
+use chrono::{DateTime, Utc};
 use gpui_component::{Icon, WindowExt};
 use gpui_component::notification::NotificationType;
 use serde::Serialize;
 use std::io::Read;
 
 pub type Device = DeviceResponse;
+
+/// JWT access token state for thread-safe token management
+///
+/// ### Fields
+/// - `access_token`: The current JWT access token (None if not yet obtained)
+/// - `token_expires_at`: When the current token expires (None if no token)
+/// - `is_refreshing_token`: Lock flag to prevent concurrent token refreshes
+pub struct TokenState {
+    pub access_token: Option<String>,
+    pub token_expires_at: Option<DateTime<Utc>>,
+    pub is_refreshing_token: bool,
+}
+
+impl TokenState {
+    /// Create a new empty TokenState
+    pub fn new() -> Self {
+        Self {
+            access_token: None,
+            token_expires_at: None,
+            is_refreshing_token: false,
+        }
+    }
+}
 
 /// Compress content using gzip compression
 ///
@@ -73,17 +97,17 @@ pub fn get_icon(device: &Device) -> Icon {
     }
 }
 
-/// Get the devices from the server
+/// Request a JWT access token from the server using the device key
 ///
 /// ### Arguments
-/// - `synchronization_settings`: The synchronization settings
+/// - `synchronization_settings`: The synchronization settings containing device key
 ///
 /// ### Returns
-/// - `Ok(Vec<Device>)`: The devices
-/// - `Err(SynchronizationError)`: If the devices could not be retrieved
-pub fn get_devices(
+/// - `Ok(AccessTokenResponse)`: The JWT access token and expiration info
+/// - `Err(SynchronizationError)`: If the token request failed
+fn request_access_token(
     synchronization_settings: &SynchronizationSettings,
-) -> Result<Vec<Device>, SynchronizationError> {
+) -> Result<AccessTokenResponse, SynchronizationError> {
     let server_url = synchronization_settings.server_url.clone();
     let email = synchronization_settings.email.clone();
     let key = synchronization_settings.key.clone();
@@ -97,10 +121,162 @@ pub fn get_devices(
         return Err(SynchronizationError::DeviceKeyMissing);
     }
     let decrypted_key = crypto_helper::decrypt(&key.unwrap()).unwrap();
+    let token_url = format!("{}/api/token", server_url.unwrap());
+    log::debug!("Requesting JWT access token from server");
+    let mut response = match ureq::post(&token_url)
+        .header("Authorization", &format!("Bearer {}", decrypted_key))
+        .header("X-User-Email", email.unwrap())
+        .send("")
+    {
+        Ok(response) => response,
+        Err(ureq::Error::StatusCode(code)) => {
+            log::error!("Failed to obtain access token: HTTP status {}", code);
+            if code == 401 || code == 403 {
+                return Err(SynchronizationError::AuthenticationFailed);
+            } else {
+                return Err(SynchronizationError::ServerError(code));
+            }
+        }
+        Err(ureq::Error::Io(io_error)) => {
+            log::error!("Failed to obtain access token (IO): {}", io_error);
+            return match io_error.kind() {
+                std::io::ErrorKind::ConnectionRefused => {
+                    Err(SynchronizationError::ConnectionFailed)
+                }
+                std::io::ErrorKind::TimedOut => Err(SynchronizationError::ConnectionFailed),
+                _ => Err(SynchronizationError::Other(io_error.to_string())),
+            };
+        }
+        Err(ureq::Error::ConnectionFailed) => {
+            log::error!("Failed to obtain access token: Connection failed");
+            return Err(SynchronizationError::ConnectionFailed);
+        }
+        Err(ureq::Error::HostNotFound) => {
+            log::error!("Failed to obtain access token: Host not found");
+            return Err(SynchronizationError::HostNotFound);
+        }
+        Err(ureq::Error::Timeout(timeout)) => {
+            log::error!("Failed to obtain access token: Timeout ({})", timeout);
+            return Err(SynchronizationError::ConnectionFailed);
+        }
+        Err(e) => {
+            log::error!("Failed to obtain access token: {}", e);
+            return Err(SynchronizationError::Other(e.to_string()));
+        }
+    };
+    let body = match response.body_mut().read_to_string() {
+        Ok(body) => body,
+        Err(e) => {
+            log::error!("Failed to read access token response body: {}", e);
+            return Err(SynchronizationError::Other(e.to_string()));
+        }
+    };
+    let token_response: AccessTokenResponse = match serde_json::from_str(&body) {
+        Ok(response) => response,
+        Err(e) => {
+            log::error!("Failed to parse access token response: {}", e);
+            return Err(SynchronizationError::Other(e.to_string()));
+        }
+    };
+    log::info!(
+        "Access token obtained successfully (expires in {} seconds)",
+        token_response.expires_in
+    );
+    Ok(token_response)
+}
+
+/// Check if the access token is still valid (with 5-minute buffer for proactive refresh)
+///
+/// ### Arguments
+/// - `expires_at`: The token expiration time
+///
+/// ### Returns
+/// - `true` if the token is still valid (has >5 minutes remaining)
+/// - `false` if the token is expired or will expire in <5 minutes
+fn is_token_valid(expires_at: &DateTime<Utc>) -> bool {
+    let now = Utc::now();
+    let buffer = chrono::Duration::minutes(5);
+    *expires_at > now + buffer
+}
+
+/// Get a valid JWT access token, refreshing if necessary
+///
+/// ### Arguments
+/// - `synchronization_settings`: The synchronization settings
+/// - `token_state`: Arc to the token state (thread-safe)
+///
+/// ### Returns
+/// - `Ok(String)`: A valid JWT access token
+/// - `Err(SynchronizationError)`: If token refresh failed
+pub fn get_valid_token(
+    synchronization_settings: &SynchronizationSettings,
+    token_state: Arc<Mutex<TokenState>>,
+) -> Result<String, SynchronizationError> {
+    {
+        let state = token_state.lock().unwrap();
+        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at) {
+            if is_token_valid(exp_time) {
+                return Ok(token_str.clone());
+            }
+        }
+    }
+    {
+        let mut state = token_state.lock().unwrap();
+        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at) {
+            if is_token_valid(exp_time) && !state.is_refreshing_token {
+                return Ok(token_str.clone());
+            }
+        }
+        if state.is_refreshing_token {
+            drop(state);
+            thread::sleep(Duration::from_millis(100));
+            let state = token_state.lock().unwrap();
+            if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at) {
+                if is_token_valid(exp_time) {
+                    return Ok(token_str.clone());
+                }
+            }
+        } else {
+            state.is_refreshing_token = true;
+        }
+    }
+    log::debug!("Access token expired or missing, requesting new token");
+    let token_response = request_access_token(synchronization_settings)?;
+    let expires_at = DateTime::parse_from_rfc3339(&token_response.expires_at)
+        .map_err(|e| {
+            log::error!("Failed to parse token expiration time: {}", e);
+            SynchronizationError::Other(e.to_string())
+        })?
+        .with_timezone(&Utc);
+    let mut state = token_state.lock().unwrap();
+    state.access_token = Some(token_response.access_token.clone());
+    state.token_expires_at = Some(expires_at);
+    state.is_refreshing_token = false;
+    log::debug!("Access token refreshed successfully");
+    Ok(token_response.access_token)
+}
+
+/// Get the devices from the server
+///
+/// ### Arguments
+/// - `synchronization_settings`: The synchronization settings
+/// - `token_state`: Arc to the token state (thread-safe)
+///
+/// ### Returns
+/// - `Ok(Vec<Device>)`: The devices
+/// - `Err(SynchronizationError)`: If the devices could not be retrieved
+pub fn get_devices(
+    synchronization_settings: &SynchronizationSettings,
+    token_state: Arc<Mutex<TokenState>>,
+) -> Result<Vec<Device>, SynchronizationError> {
+    let server_url = synchronization_settings.server_url.clone();
+    if server_url.is_none() {
+        return Err(SynchronizationError::ServerUrlMissing);
+    }
+    let token = get_valid_token(synchronization_settings, token_state)?;
     let devices_url = format!("{}/api/devices", server_url.unwrap());
     let response = ureq::get(&devices_url)
-        .header("Authorization", &format!("Bearer {}", decrypted_key))
-        .header("X-User-Email", &email.unwrap())
+        .header("Authorization", &format!("Bearer {}", token))
         .call();
     match response {
         Ok(mut response) => {
@@ -166,24 +342,18 @@ pub fn get_devices(
 /// ### Returns
 /// - `Ok(String)`: The user's encryption key (base64-encoded)
 /// - `Err(SynchronizationError)`: If the encryption key could not be fetched
-fn fetch_encryption_key(synchronization_settings: &SynchronizationSettings) -> Result<String, SynchronizationError> {
+fn fetch_encryption_key(
+    synchronization_settings: &SynchronizationSettings,
+    token_state: Arc<Mutex<TokenState>>,
+) -> Result<String, SynchronizationError> {
     let server_url = synchronization_settings.server_url.clone();
-    let email = synchronization_settings.email.clone();
-    let key = synchronization_settings.key.clone();
     if server_url.is_none() {
         return Err(SynchronizationError::ServerUrlMissing);
     }
-    if email.is_none() {
-        return Err(SynchronizationError::EmailMissing);
-    }
-    if key.is_none() {
-        return Err(SynchronizationError::DeviceKeyMissing);
-    }
-    let decrypted_key = crypto_helper::decrypt(&key.unwrap()).unwrap();
+    let token = get_valid_token(synchronization_settings, Arc::clone(&token_state))?;
     let key_url = format!("{}/api/encryption-key", server_url.unwrap());
     let mut response = match ureq::get(&key_url)
-        .header("Authorization", &format!("Bearer {}", decrypted_key))
-        .header("X-User-Email", email.unwrap())
+        .header("Authorization", &format!("Bearer {}", token))
         .call() {
             Ok(response) => response,
             Err(ureq::Error::StatusCode(code)) => {
@@ -263,18 +433,11 @@ pub struct ShareFilePayload {
 pub fn share_file(
     synchronization_settings: &SynchronizationSettings,
     payload: ShareFilePayload,
+    token_state: Arc<Mutex<TokenState>>,
 ) -> Result<String, SynchronizationError> {
     let server_url = synchronization_settings.server_url.clone();
-    let email = synchronization_settings.email.clone();
-    let key = synchronization_settings.key.clone();
     if server_url.is_none() {
         return Err(SynchronizationError::ServerUrlMissing);
-    }
-    if email.is_none() {
-        return Err(SynchronizationError::EmailMissing);
-    }
-    if key.is_none() {
-        return Err(SynchronizationError::DeviceKeyMissing);
     }
     if payload.content.is_empty() {
         return Err(SynchronizationError::ContentMissing);
@@ -289,16 +452,9 @@ pub fn share_file(
     if payload.device_ids.is_empty() {
         return Err(SynchronizationError::DeviceIdsMissing);
     }
+    let token = get_valid_token(synchronization_settings, Arc::clone(&token_state))?;
+    let encryption_key = fetch_encryption_key(synchronization_settings, Arc::clone(&token_state))?;
     let server_url_str = server_url.as_ref().unwrap();
-    let email_str = email.as_ref().unwrap();
-    let decrypted_device_key = match crypto_helper::decrypt(&key.unwrap()) {
-        Ok(key) => key,
-        Err(e) => {
-            log::error!("Failed to decrypt device key: {}", e);
-            return Err(SynchronizationError::EncryptedKeyDecryptionFailed);
-        }
-    };
-    let encryption_key = fetch_encryption_key(&synchronization_settings)?;
     let compressed_content = match compress_content(&payload.content) {
         Ok(content) => content,
         Err(e) => {
@@ -320,8 +476,7 @@ pub fn share_file(
     };
     let share_url = format!("{}/api/share", server_url_str);
     let mut response = match ureq::post(&share_url)
-        .header("Authorization", &format!("Bearer {}", decrypted_device_key))
-        .header("X-User-Email", email_str)
+        .header("Authorization", &format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .send_json(encrypted_payload) {
             Ok(response) => response,
@@ -405,32 +560,17 @@ pub fn share_file(
 /// - `Err(SynchronizationError)`: If the synchronization could not be performed
 pub fn initial_synchronization(
     synchronization_settings: &SynchronizationSettings,
+    token_state: Arc<Mutex<TokenState>>,
 ) -> Result<BeginResponse, SynchronizationError> {
     let server_url = synchronization_settings.server_url.clone();
-    let email = synchronization_settings.email.clone();
-    let key = synchronization_settings.key.clone();
     if server_url.is_none() {
         return Err(SynchronizationError::ServerUrlMissing);
     }
-    if email.is_none() {
-        return Err(SynchronizationError::EmailMissing);
-    }
-    if key.is_none() {
-        return Err(SynchronizationError::DeviceKeyMissing);
-    }
+    let token = get_valid_token(synchronization_settings, token_state)?;
     let server_url_str = server_url.as_ref().unwrap();
-    let email_str = email.as_ref().unwrap();
-    let decrypted_device_key = match crypto_helper::decrypt(&key.unwrap()) {
-        Ok(key) => key,
-        Err(e) => {
-            log::error!("Failed to decrypt device key: {}", e);
-            return Err(SynchronizationError::EncryptedKeyDecryptionFailed);
-        }
-    };
     let begin_url = format!("{}/api/begin", server_url_str);
     let mut response = match ureq::get(&begin_url)
-        .header("Authorization", &format!("Bearer {}", decrypted_device_key))
-        .header("X-User-Email", email_str)
+        .header("Authorization", &format!("Bearer {}", token))
         .call() {
             Ok(response) => response,
             Err(ureq::Error::StatusCode(code)) => {
@@ -519,7 +659,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     let device_name = entity.read(cx).device_name.clone();
     let sse_tx = entity.read(cx).sse_event_tx.clone();
     let sse_shutdown_flag = entity.read(cx).sse_shutdown_flag.clone();
-
+    let token_state = entity.read(cx).token_state.clone();
     thread::spawn(move || {
         // Small delay to ensure app initialization doesn't block
         thread::sleep(Duration::from_millis(100));
@@ -534,7 +674,10 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Disconnected);
             return;
         }
-        match initial_synchronization(&settings.app_settings.synchronization_settings) {
+        match initial_synchronization(
+            &settings.app_settings.synchronization_settings,
+            Arc::clone(&token_state),
+        ) {
             Ok(begin_response) => {
                 log::info!("Successfully connected to sync server");
                 set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Connected);
@@ -554,6 +697,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                         tx,
                         shutdown,
                         sync_server_connection_status.clone(),
+                        Arc::clone(&token_state),
                     ) {
                         log::error!("Failed to start SSE connection: {}", e.to_string());
                     }
@@ -591,26 +735,31 @@ pub fn connect_sse(
     event_tx: Sender<SseEvent>,
     shutdown_flag: Arc<AtomicBool>,
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
+    token_state: Arc<Mutex<TokenState>>,
 ) -> Result<(), SynchronizationError> {
     let server_url = synchronization_settings.server_url.clone()
         .ok_or(SynchronizationError::ServerUrlMissing)?;
-    let key = synchronization_settings.key.clone()
-        .ok_or(SynchronizationError::DeviceKeyMissing)?;
-    let email = synchronization_settings.email.clone()
-        .ok_or(SynchronizationError::EmailMissing)?;
-    let decrypted_key = crypto_helper::decrypt(&key)
-        .map_err(|_| SynchronizationError::EncryptedKeyDecryptionFailed)?;
     let sse_url = format!("{}/api/sse", server_url);
+    let settings_clone = synchronization_settings.clone();
+    let token_state_clone = Arc::clone(&token_state);
     thread::spawn(move || {
         loop {
             if shutdown_flag.load(Ordering::Relaxed) {
                 log::info!("SSE connection shutdown requested, stopping...");
                 break;
             }
+            let token = match get_valid_token(&settings_clone, Arc::clone(&token_state_clone)) {
+                Ok(t) => t,
+                Err(e) => {
+                    log::error!("Failed to get valid token for SSE: {}", e.to_string());
+                    set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::AuthenticationFailed);
+                    thread::sleep(Duration::from_secs(5));
+                    continue;
+                }
+            };
             log::info!("Connecting to SSE endpoint: {}", sse_url);
             let response = match ureq::get(&sse_url)
-                .header("Authorization", &format!("Bearer {}", decrypted_key))
-                .header("X-User-Email", &email)
+                .header("Authorization", &format!("Bearer {}", token))
                 .header("Accept", "text/event-stream")
                 .call()
             {
@@ -723,7 +872,8 @@ pub fn set_sync_server_connection_status(sync_server_connection_status: Arc<Mute
 /// - `SynchronizationStatus`: The status of the connection to the sync server
 pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx: &mut App) -> SynchronizationStatus {
     let synchronization_settings = entity.read(cx).settings.app_settings.synchronization_settings.clone();
-    let result = initial_synchronization(&synchronization_settings);
+    let token_state = Arc::clone(&entity.read(cx).token_state);
+    let result = initial_synchronization(&synchronization_settings, token_state);
     let (notification, sync_server_connection_status) = match result {
         Ok(begin_response) => {
             entity.update(cx, |this, _cx| {
@@ -979,10 +1129,14 @@ impl Fulgur {
         if self.settings.app_settings.synchronization_settings.is_synchronization_activated {
             let settings = self.settings.clone();
             let sync_status = self.sync_server_connection_status.clone();
+            let token_state = Arc::clone(&self.token_state);
             thread::spawn(move || {
                 // Small delay to ensure old connection is fully stopped
                 thread::sleep(Duration::from_millis(200));
-                match files::sync::initial_synchronization(&settings.app_settings.synchronization_settings) {
+                match files::sync::initial_synchronization(
+                    &settings.app_settings.synchronization_settings,
+                    Arc::clone(&token_state),
+                ) {
                     Ok(_) => {
                         log::info!("Initial sync succeeded, starting new SSE connection");
                         if let Err(e) = files::sync::connect_sse(
@@ -990,6 +1144,7 @@ impl Fulgur {
                             sse_tx,
                             sse_shutdown_flag,
                             sync_status,
+                            token_state,
                         ) {
                             log::error!("Failed to start new SSE connection: {}", e.to_string());
                         }

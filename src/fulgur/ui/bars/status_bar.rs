@@ -1,4 +1,5 @@
 use std::ops::DerefMut;
+use std::sync::Arc;
 
 use crate::fulgur::{
     Fulgur, editor_tab,
@@ -363,7 +364,11 @@ fn handle_share_file_ok(
             file_name,
             device_ids: selected_ids,
         };
-        share_file(&this.settings.app_settings.synchronization_settings, payload)
+        share_file(
+            &this.settings.app_settings.synchronization_settings,
+            payload,
+            Arc::clone(&this.token_state),
+        )
     });
     match result {
         Ok(expiration_date) => {
@@ -425,7 +430,7 @@ fn handle_sync_button_click(
             .app_settings
             .synchronization_settings
             .clone();
-        let devices = get_devices(&synchronization_settings);
+        let devices = get_devices(&synchronization_settings, Arc::clone(&instance.token_state));
         let devices = match devices {
             Ok(devices) => devices,
             Err(e) => {
