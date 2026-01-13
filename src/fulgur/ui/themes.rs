@@ -358,6 +358,7 @@ impl Fulgur {
             sheet
                 .title("Select Theme")
                 .size(px(400.))
+                .overlay(false)
                 .child(
                     v_flex()
                         .overflow_y_scrollbar()
