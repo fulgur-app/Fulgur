@@ -38,31 +38,31 @@ use crate::fulgur::{
 };
 
 pub struct Fulgur {
-    focus_handle: FocusHandle,
-    title_bar: Entity<CustomTitleBar>,
-    tabs: Vec<Tab>,
-    active_tab_index: Option<usize>,
-    next_tab_id: usize, 
-    show_search: bool,
-    search_input: Entity<InputState>,
-    replace_input: Entity<InputState>,
-    match_case: bool,
-    match_whole_word: bool,
-    search_matches: Vec<SearchMatch>,
-    current_match_index: Option<usize>,
-    _search_subscription: gpui::Subscription,
-    last_search_query: String,
-    pub jump_to_line_input: Entity<InputState>,
-    pending_jump: Option<editor_tab::Jump>,
-    jump_to_line_dialog_open: bool,
-    pub settings: Settings,
-    pub language_dropdown: Entity<SelectState<Vec<SharedString>>>,
-    settings_changed: bool,
-    pub themes: Option<Themes>,
+    focus_handle: FocusHandle, // The focus handle for the application
+    title_bar: Entity<CustomTitleBar>, // The title bar of the application
+    tabs: Vec<Tab>, // The tabs in the application
+    active_tab_index: Option<usize>, // Index of the active tab
+    next_tab_id: usize, // The next tab ID 
+    show_search: bool, // Flag to indicate that the search bar should be shown
+    search_input: Entity<InputState>, // Input for the search input in the search bar
+    replace_input: Entity<InputState>, // Input for the replace input in the search bar
+    match_case: bool, // Flag to indicate that the search should be case-sensitive
+    match_whole_word: bool, // Flag to indicate that the search should match whole words only
+    search_matches: Vec<SearchMatch>, // Search matches found in the current search
+    current_match_index: Option<usize>, // Index of the current search match
+    _search_subscription: gpui::Subscription, // Subscription for the search input
+    last_search_query: String, // Last search query entered by the user
+    pub jump_to_line_input: Entity<InputState>, // Input for jumping to a line in the editor
+    pending_jump: Option<editor_tab::Jump>, // Pending jump to line action
+    jump_to_line_dialog_open: bool, // Flag to indicate that the jump to line dialog is open
+    pub settings: Settings, // The settings for the application
+    pub language_dropdown: Entity<SelectState<Vec<SharedString>>>, // Dropdown for selecting the language of the editor
+    settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
+    pub themes: Option<Themes>, // The themes available to the user
     rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
     pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>, // Files from macOS "Open with" events
-    update_link: Option<String>,
+    update_link: Option<String>, // Link to download the app's update
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>, // Shared sync connection status (thread-safe)
     encryption_key: Arc<Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
     device_name: Arc<Mutex<Option<String>>>, // Device name from server (thread-safe)
