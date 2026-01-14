@@ -606,8 +606,8 @@ fn about(window: &mut Window, cx: &mut App) {
                             .child(Icon::new(CustomIcon::GitHub))
                             .child(
                                 Link::new("github-link")
-                                    .href("https://github.com/PRRPCHT/Fulgur")
-                                    .child("https://github.com/PRRPCHT/Fulgur"),
+                                    .href("https://github.com/fulgur-app/Fulgur")
+                                    .child("https://github.com/fulgur-app/Fulgur"),
                             ),
                     )
                     .child(
