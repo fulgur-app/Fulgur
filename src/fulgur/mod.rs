@@ -4,22 +4,14 @@ mod state_operations;
 mod state_persistence;
 mod ui;
 pub mod utils;
-use fulgur_common::api::shares::SharedFileResponse;
-use settings::Settings;
-use std::{
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    sync::atomic::AtomicBool,
-    time::Instant,
-};
-use tab::Tab;
-use ui::{
-    bars::search_replace_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*,
-    themes,
+use crate::fulgur::{
+    files::sync::SynchronizationStatus,
+    settings::Themes,
+    ui::{icons::CustomIcon, languages},
+    utils::crypto_helper,
 };
 use files::file_watcher::{FileWatchEvent, FileWatcher};
-use std::sync::mpsc::Receiver;
+use fulgur_common::api::shares::SharedFileResponse;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
@@ -33,20 +25,32 @@ use gpui_component::{
     text::TextView,
     v_flex,
 };
-use crate::fulgur::{
-    files::sync::SynchronizationStatus, settings::Themes, ui::{icons::CustomIcon, languages}, utils::crypto_helper
+use parking_lot::Mutex;
+use settings::Settings;
+use std::sync::mpsc::Receiver;
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::Arc,
+    sync::atomic::AtomicBool,
+    time::Instant,
+};
+use tab::Tab;
+use ui::{
+    bars::search_replace_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*,
+    themes,
 };
 
 pub struct Fulgur {
-    focus_handle: FocusHandle, // The focus handle for the application
-    title_bar: Entity<CustomTitleBar>, // The title bar of the application
-    tabs: Vec<Tab>, // The tabs in the application
-    active_tab_index: Option<usize>, // Index of the active tab
-    next_tab_id: usize, // The next tab ID 
-    show_search: bool, // Flag to indicate that the search bar should be shown
-    search_input: Entity<InputState>, // Input for the search input in the search bar
-    replace_input: Entity<InputState>, // Input for the replace input in the search bar
-    match_case: bool, // Flag to indicate that the search should be case-sensitive
+    focus_handle: FocusHandle,          // The focus handle for the application
+    title_bar: Entity<CustomTitleBar>,  // The title bar of the application
+    tabs: Vec<Tab>,                     // The tabs in the application
+    active_tab_index: Option<usize>,    // Index of the active tab
+    next_tab_id: usize,                 // The next tab ID
+    show_search: bool,                  // Flag to indicate that the search bar should be shown
+    search_input: Entity<InputState>,   // Input for the search input in the search bar
+    replace_input: Entity<InputState>,  // Input for the replace input in the search bar
+    match_case: bool,                   // Flag to indicate that the search should be case-sensitive
     match_whole_word: bool, // Flag to indicate that the search should match whole words only
     search_matches: Vec<SearchMatch>, // Search matches found in the current search
     current_match_index: Option<usize>, // Index of the current search match
@@ -65,10 +69,10 @@ pub struct Fulgur {
     update_link: Option<String>, // Link to download the app's update
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>, // Shared sync connection status (thread-safe)
     encryption_key: Arc<Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
-    device_name: Arc<Mutex<Option<String>>>, // Device name from server (thread-safe)
+    device_name: Arc<Mutex<Option<String>>>,    // Device name from server (thread-safe)
     pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>, // Shared files from sync server (thread-safe)
     token_state: Arc<Mutex<files::sync::TokenState>>, // JWT token state for API authentication (thread-safe)
-    file_watcher: Option<FileWatcher>, // File watcher for external file changes
+    file_watcher: Option<FileWatcher>,                // File watcher for external file changes
     file_watch_events: Option<Receiver<FileWatchEvent>>, // Channel for file watch events
     last_file_events: HashMap<PathBuf, Instant>, // Track last event time per file for debouncing
     last_file_saves: HashMap<PathBuf, Instant>, // Track when Fulgur saves files to ignore self-triggered events
@@ -76,7 +80,7 @@ pub struct Fulgur {
     sse_events: Option<Receiver<files::sync::SseEvent>>, // Channel for SSE events from server
     sse_event_tx: Option<std::sync::mpsc::Sender<files::sync::SseEvent>>, // Sender for SSE connection
     sse_shutdown_flag: Option<Arc<AtomicBool>>, // Flag to signal SSE thread to shutdown
-    last_sse_event: Option<Instant>, // Track last SSE event time for debouncing
+    last_sse_event: Option<Instant>,            // Track last SSE event time for debouncing
     last_heartbeat: Arc<Mutex<Option<Instant>>>, // Track last heartbeat time for connection timeout detection (thread-safe)
     pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
 }
@@ -101,7 +105,11 @@ impl Fulgur {
             Ok(settings) => settings,
             Err(_) => Settings::new(),
         };
-        let synchronization_status = if settings.app_settings.synchronization_settings.is_synchronization_activated {
+        let synchronization_status = if settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated
+        {
             SynchronizationStatus::Connected
         } else {
             SynchronizationStatus::NotActivated
@@ -250,8 +258,6 @@ impl Fulgur {
             cx.set_menus(menus);
         });
     }
-
-    
 }
 
 impl Focusable for Fulgur {
@@ -277,12 +283,10 @@ impl Render for Fulgur {
     /// ### Returns
     /// - `impl IntoElement`: The rendered Fulgur instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Display pending notification if any
         if let Some((notification_type, message)) = self.pending_notification.take() {
             window.push_notification((notification_type, message), cx);
         }
-
-        let files_to_open = if let Ok(mut pending) = self.pending_files_from_macos.try_lock() {
+        let files_to_open = if let Some(mut pending) = self.pending_files_from_macos.try_lock() {
             if pending.is_empty() {
                 Vec::new()
             } else {
@@ -298,9 +302,7 @@ impl Render for Fulgur {
         for file_path in files_to_open {
             self.handle_open_file_from_cli(window, cx, file_path);
         }
-
-        // Process pending shared files from sync server
-        let shared_files_to_open = if let Ok(mut pending) = self.pending_shared_files.try_lock() {
+        let shared_files_to_open = if let Some(mut pending) = self.pending_shared_files.try_lock() {
             if pending.is_empty() {
                 Vec::new()
             } else {
@@ -313,15 +315,8 @@ impl Render for Fulgur {
         } else {
             Vec::new()
         };
-
         if !shared_files_to_open.is_empty() {
-            // Get encryption key for decrypting shared files
-            let encryption_key_opt = if let Ok(key) = self.encryption_key.lock() {
-                key.clone()
-            } else {
-                None
-            };
-
+            let encryption_key_opt = self.encryption_key.lock().clone();
             if let Some(encryption_key) = encryption_key_opt {
                 for shared_file in shared_files_to_open {
                     let decrypted_result =

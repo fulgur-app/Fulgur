@@ -22,6 +22,7 @@ dependencies = [
  "machine-uid",
  "notify 8.2.0",
  "open",
+ "parking_lot",
  "regex",
  "rust-embed",
  "semver",

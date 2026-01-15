@@ -1,3 +1,5 @@
+use crate::fulgur::Fulgur;
+use crate::fulgur::settings::{Settings, Themes};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
@@ -6,13 +8,11 @@ use gpui_component::scroll::ScrollableElement;
 use gpui_component::{
     Disableable, Sizable, Theme, ThemeMode, ThemeRegistry, WindowExt, h_flex, v_flex,
 };
+use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-
-use crate::fulgur::Fulgur;
-use crate::fulgur::settings::{Settings, Themes};
+use std::sync::Arc;
 
 // Embed bundled themes into the binary
 #[derive(RustEmbed)]
@@ -174,9 +174,7 @@ fn make_select_theme_item(
                                 if let Err(e) = fulgur.settings.save() {
                                     log::error!("Failed to save settings: {}", e);
                                 }
-                                if let Ok(mut current) = current_theme_shared.lock() {
-                                    *current = theme_name_clone;
-                                }
+                                *current_theme_shared.lock() = theme_name_clone.clone();
                                 cx.notify();
                             });
                             cx.refresh_windows();
@@ -321,7 +319,7 @@ impl Fulgur {
     }
 
     /// Open theme selector as a sheet (sliding panel from right side)
-    ///     
+    ///
     /// This is an alternative to the dialog-based theme selector
     ///
     /// ### Arguments
@@ -349,11 +347,7 @@ impl Fulgur {
             let entity_light = entity.clone();
             let current_theme_shared_dark = current_theme_shared.clone();
             let current_theme_shared_light = current_theme_shared.clone();
-            let current_theme_display = current_theme_shared
-                .lock()
-                .ok()
-                .map(|t| t.clone())
-                .unwrap_or(current_theme.clone());
+            let current_theme_display = current_theme_shared.lock().clone();
             let max_height = px((viewport_height - px(150.0)).into()); //TODO: Make this dynamic based on the content
             sheet
                 .title("Select Theme")

@@ -1,21 +1,22 @@
-use std::sync::{Arc, Mutex};
+use crate::fulgur::settings::SynchronizationSettings;
+use crate::fulgur::{Fulgur, files};
+use crate::fulgur::{crypto_helper, ui::icons::CustomIcon};
+use chrono::{DateTime, Utc};
+use flate2::Compression;
+use flate2::read::{GzDecoder, GzEncoder};
+use fulgur_common::api::devices::DeviceResponse;
+use fulgur_common::api::{AccessTokenResponse, BeginResponse};
+use gpui::{App, Context, Entity, SharedString, Window};
+use gpui_component::notification::NotificationType;
+use gpui_component::{Icon, WindowExt};
+use parking_lot::Mutex;
+use serde::Serialize;
+use std::io::Read;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::time::Instant;
 use std::{thread, time::Duration};
-use crate::fulgur::{Fulgur, files};
-use crate::fulgur::settings::SynchronizationSettings;
-use crate::fulgur::{crypto_helper, ui::icons::CustomIcon};
-use flate2::Compression;
-use flate2::read::{GzDecoder, GzEncoder};
-use fulgur_common::api::{AccessTokenResponse, BeginResponse};
-use fulgur_common::api::devices::DeviceResponse;
-use gpui::{App, Context, Entity, SharedString, Window};
-use chrono::{DateTime, Utc};
-use gpui_component::{Icon, WindowExt};
-use gpui_component::notification::NotificationType;
-use serde::Serialize;
-use std::io::Read;
 
 pub type Device = DeviceResponse;
 
@@ -213,7 +214,7 @@ pub fn get_valid_token(
     token_state: Arc<Mutex<TokenState>>,
 ) -> Result<String, SynchronizationError> {
     {
-        let state = token_state.lock().unwrap();
+        let state = token_state.lock();
         if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at) {
             if is_token_valid(exp_time) {
                 return Ok(token_str.clone());
@@ -221,7 +222,7 @@ pub fn get_valid_token(
         }
     }
     {
-        let mut state = token_state.lock().unwrap();
+        let mut state = token_state.lock();
         if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at) {
             if is_token_valid(exp_time) && !state.is_refreshing_token {
                 return Ok(token_str.clone());
@@ -230,8 +231,10 @@ pub fn get_valid_token(
         if state.is_refreshing_token {
             drop(state);
             thread::sleep(Duration::from_millis(100));
-            let state = token_state.lock().unwrap();
-            if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at) {
+            let state = token_state.lock();
+            if let (Some(token_str), Some(exp_time)) =
+                (&state.access_token, &state.token_expires_at)
+            {
                 if is_token_valid(exp_time) {
                     return Ok(token_str.clone());
                 }
@@ -248,7 +251,7 @@ pub fn get_valid_token(
             SynchronizationError::Other(e.to_string())
         })?
         .with_timezone(&Utc);
-    let mut state = token_state.lock().unwrap();
+    let mut state = token_state.lock();
     state.access_token = Some(token_response.access_token.clone());
     state.token_expires_at = Some(expires_at);
     state.is_refreshing_token = false;
@@ -354,45 +357,44 @@ fn fetch_encryption_key(
     let key_url = format!("{}/api/encryption-key", server_url.unwrap());
     let mut response = match ureq::get(&key_url)
         .header("Authorization", &format!("Bearer {}", token))
-        .call() {
-            Ok(response) => response,
-            Err(ureq::Error::StatusCode(code)) => {
-                log::error!("Failed to fetch encryption key: HTTP status {}", code);
-                if code == 401 || code == 403 {
-                    return Err(SynchronizationError::AuthenticationFailed);
-                } else {
-                    return Err(SynchronizationError::ServerError(code));
+        .call()
+    {
+        Ok(response) => response,
+        Err(ureq::Error::StatusCode(code)) => {
+            log::error!("Failed to fetch encryption key: HTTP status {}", code);
+            if code == 401 || code == 403 {
+                return Err(SynchronizationError::AuthenticationFailed);
+            } else {
+                return Err(SynchronizationError::ServerError(code));
+            }
+        }
+        Err(ureq::Error::Io(io_error)) => {
+            log::error!("Failed to fetch encryption key (IO): {}", io_error);
+            return match io_error.kind() {
+                std::io::ErrorKind::ConnectionRefused => {
+                    Err(SynchronizationError::ConnectionFailed)
                 }
-            }
-            Err(ureq::Error::Io(io_error)) => {
-                log::error!("Failed to fetch encryption key (IO): {}", io_error);
-                return match io_error.kind() {
-                    std::io::ErrorKind::ConnectionRefused => {
-                        Err(SynchronizationError::ConnectionFailed)
-                    }
-                    std::io::ErrorKind::TimedOut => {
-                        Err(SynchronizationError::ConnectionFailed)
-                    }
-                    _ => Err(SynchronizationError::Other(io_error.to_string())),
-                };
-            }
-            Err(ureq::Error::ConnectionFailed) => {
-                log::error!("Failed to fetch encryption key: Connection failed");
-                return Err(SynchronizationError::ConnectionFailed);
-            }
-            Err(ureq::Error::HostNotFound) => {
-                log::error!("Failed to fetch encryption key: Host not found");
-                return Err(SynchronizationError::HostNotFound);
-            }
-            Err(ureq::Error::Timeout(timeout)) => {
-                log::error!("Failed to fetch encryption key: Timeout ({})", timeout);
-                return Err(SynchronizationError::Timeout(timeout.to_string()));
-            }
-            Err(e) => {
-                log::error!("Failed to fetch encryption key: {}", e);
-                return Err(SynchronizationError::Other(e.to_string()));
-            }
-        };
+                std::io::ErrorKind::TimedOut => Err(SynchronizationError::ConnectionFailed),
+                _ => Err(SynchronizationError::Other(io_error.to_string())),
+            };
+        }
+        Err(ureq::Error::ConnectionFailed) => {
+            log::error!("Failed to fetch encryption key: Connection failed");
+            return Err(SynchronizationError::ConnectionFailed);
+        }
+        Err(ureq::Error::HostNotFound) => {
+            log::error!("Failed to fetch encryption key: Host not found");
+            return Err(SynchronizationError::HostNotFound);
+        }
+        Err(ureq::Error::Timeout(timeout)) => {
+            log::error!("Failed to fetch encryption key: Timeout ({})", timeout);
+            return Err(SynchronizationError::Timeout(timeout.to_string()));
+        }
+        Err(e) => {
+            log::error!("Failed to fetch encryption key: {}", e);
+            return Err(SynchronizationError::Other(e.to_string()));
+        }
+    };
     let body = match response.body_mut().read_to_string() {
         Ok(body) => body,
         Err(e) => {
@@ -462,7 +464,8 @@ pub fn share_file(
             return Err(SynchronizationError::CompressionFailed);
         }
     };
-    let encrypted_content = match crypto_helper::encrypt_bytes(&compressed_content, &encryption_key) {
+    let encrypted_content = match crypto_helper::encrypt_bytes(&compressed_content, &encryption_key)
+    {
         Ok(content) => content,
         Err(e) => {
             log::error!("Failed to encrypt content: {}", e);
@@ -478,47 +481,48 @@ pub fn share_file(
     let mut response = match ureq::post(&share_url)
         .header("Authorization", &format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .send_json(encrypted_payload) {
-            Ok(response) => response,
-            Err(ureq::Error::StatusCode(code)) => {
-                log::error!("Failed to share file: HTTP status {}", code);
-                if code == 401 || code == 403 {
-                    return Err(SynchronizationError::AuthenticationFailed);
-                } else if code == 400 {
-                    return Err(SynchronizationError::BadRequest);
-                } else {
-                    return Err(SynchronizationError::ServerError(code));
+        .send_json(encrypted_payload)
+    {
+        Ok(response) => response,
+        Err(ureq::Error::StatusCode(code)) => {
+            log::error!("Failed to share file: HTTP status {}", code);
+            if code == 401 || code == 403 {
+                return Err(SynchronizationError::AuthenticationFailed);
+            } else if code == 400 {
+                return Err(SynchronizationError::BadRequest);
+            } else {
+                return Err(SynchronizationError::ServerError(code));
+            }
+        }
+        Err(ureq::Error::Io(io_error)) => {
+            log::error!("Failed to share file (IO): {}", io_error);
+            return match io_error.kind() {
+                std::io::ErrorKind::ConnectionRefused => {
+                    Err(SynchronizationError::ConnectionFailed)
                 }
-            }
-            Err(ureq::Error::Io(io_error)) => {
-                log::error!("Failed to share file (IO): {}", io_error);
-                return match io_error.kind() {
-                    std::io::ErrorKind::ConnectionRefused => {
-                        Err(SynchronizationError::ConnectionFailed)
-                    }
-                    std::io::ErrorKind::TimedOut => {
-                        Err(SynchronizationError::Timeout(io_error.to_string()))
-                    }
-                    _ => Err(SynchronizationError::Other(io_error.to_string())),
-                };
-            }
-            Err(ureq::Error::ConnectionFailed) => {
-                log::error!("Failed to share file: Connection failed");
-                return Err(SynchronizationError::ConnectionFailed);
-            }
-            Err(ureq::Error::HostNotFound) => {
-                log::error!("Failed to share file: Host not found");
-                return Err(SynchronizationError::HostNotFound);
-            }
-            Err(ureq::Error::Timeout(timeout)) => {
-                log::error!("Failed to share file: Timeout ({})", timeout);
-                return Err(SynchronizationError::Timeout(timeout.to_string()));
-            }
-            Err(e) => {
-                log::error!("Failed to share file: {}", e);
-                return Err(SynchronizationError::Other(e.to_string()));
-            }
-        };
+                std::io::ErrorKind::TimedOut => {
+                    Err(SynchronizationError::Timeout(io_error.to_string()))
+                }
+                _ => Err(SynchronizationError::Other(io_error.to_string())),
+            };
+        }
+        Err(ureq::Error::ConnectionFailed) => {
+            log::error!("Failed to share file: Connection failed");
+            return Err(SynchronizationError::ConnectionFailed);
+        }
+        Err(ureq::Error::HostNotFound) => {
+            log::error!("Failed to share file: Host not found");
+            return Err(SynchronizationError::HostNotFound);
+        }
+        Err(ureq::Error::Timeout(timeout)) => {
+            log::error!("Failed to share file: Timeout ({})", timeout);
+            return Err(SynchronizationError::Timeout(timeout.to_string()));
+        }
+        Err(e) => {
+            log::error!("Failed to share file: {}", e);
+            return Err(SynchronizationError::Other(e.to_string()));
+        }
+    };
     if response.status() == 200 {
         let body = match response.body_mut().read_to_string() {
             Ok(body) => body,
@@ -544,7 +548,9 @@ pub fn share_file(
         );
         Ok(expiration_date.to_string())
     } else {
-        Err(SynchronizationError::ServerError(response.status().as_u16()))
+        Err(SynchronizationError::ServerError(
+            response.status().as_u16(),
+        ))
     }
 }
 
@@ -571,51 +577,50 @@ pub fn initial_synchronization(
     let begin_url = format!("{}/api/begin", server_url_str);
     let mut response = match ureq::get(&begin_url)
         .header("Authorization", &format!("Bearer {}", token))
-        .call() {
-            Ok(response) => response,
-            Err(ureq::Error::StatusCode(code)) => {
-                log::error!("Failed to begin synchronization: HTTP status {}", code);
-                if code == 401 || code == 403 {
-                    return Err(SynchronizationError::AuthenticationFailed);
-                } else {
-                    return Err(SynchronizationError::ServerError(code));
+        .call()
+    {
+        Ok(response) => response,
+        Err(ureq::Error::StatusCode(code)) => {
+            log::error!("Failed to begin synchronization: HTTP status {}", code);
+            if code == 401 || code == 403 {
+                return Err(SynchronizationError::AuthenticationFailed);
+            } else {
+                return Err(SynchronizationError::ServerError(code));
+            }
+        }
+        Err(ureq::Error::Io(io_error)) => {
+            log::error!("Failed to begin synchronization (IO): {}", io_error);
+            return match io_error.kind() {
+                std::io::ErrorKind::ConnectionRefused => {
+                    Err(SynchronizationError::ConnectionFailed)
                 }
-            }
-            Err(ureq::Error::Io(io_error)) => {
-                log::error!("Failed to begin synchronization (IO): {}", io_error);
-                return match io_error.kind() {
-                    std::io::ErrorKind::ConnectionRefused => {
-                        Err(SynchronizationError::ConnectionFailed)
-                    }
-                    std::io::ErrorKind::TimedOut => {
-                        Err(SynchronizationError::Timeout(io_error.to_string()))
-                    }
-                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => {
-                        Err(SynchronizationError::ConnectionFailed)
-                    }
-                    std::io::ErrorKind::AddrNotAvailable => {
-                        Err(SynchronizationError::HostNotFound)
-                    }
-                    _ => Err(SynchronizationError::Other(io_error.to_string())),
-                };
-            }
-            Err(ureq::Error::ConnectionFailed) => {
-                log::error!("Failed to begin synchronization: Connection failed");
-                return Err(SynchronizationError::ConnectionFailed);
-            }
-            Err(ureq::Error::HostNotFound) => {
-                log::error!("Failed to begin synchronization: Host not found");
-                return Err(SynchronizationError::HostNotFound);
-            }
-            Err(ureq::Error::Timeout(timeout)) => {
-                log::error!("Failed to begin synchronization: Timeout ({})", timeout);
-                return Err(SynchronizationError::Timeout(timeout.to_string()));
-            }
-            Err(e) => {
-                log::error!("Failed to begin synchronization: {}", e);
-                return Err(SynchronizationError::Other(e.to_string()));
-            }
-        };
+                std::io::ErrorKind::TimedOut => {
+                    Err(SynchronizationError::Timeout(io_error.to_string()))
+                }
+                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => {
+                    Err(SynchronizationError::ConnectionFailed)
+                }
+                std::io::ErrorKind::AddrNotAvailable => Err(SynchronizationError::HostNotFound),
+                _ => Err(SynchronizationError::Other(io_error.to_string())),
+            };
+        }
+        Err(ureq::Error::ConnectionFailed) => {
+            log::error!("Failed to begin synchronization: Connection failed");
+            return Err(SynchronizationError::ConnectionFailed);
+        }
+        Err(ureq::Error::HostNotFound) => {
+            log::error!("Failed to begin synchronization: Host not found");
+            return Err(SynchronizationError::HostNotFound);
+        }
+        Err(ureq::Error::Timeout(timeout)) => {
+            log::error!("Failed to begin synchronization: Timeout ({})", timeout);
+            return Err(SynchronizationError::Timeout(timeout.to_string()));
+        }
+        Err(e) => {
+            log::error!("Failed to begin synchronization: {}", e);
+            return Err(SynchronizationError::Other(e.to_string()));
+        }
+    };
     let body = match response.body_mut().read_to_string() {
         Ok(body) => body,
         Err(e) => {
@@ -671,7 +676,10 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         let email = settings.app_settings.synchronization_settings.email.clone();
         let key = settings.app_settings.synchronization_settings.key.clone();
         if server_url.is_none() || email.is_none() || key.is_none() {
-            set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Disconnected);
+            set_sync_server_connection_status(
+                sync_server_connection_status.clone(),
+                SynchronizationStatus::Disconnected,
+            );
             return;
         }
         match initial_synchronization(
@@ -680,14 +688,20 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         ) {
             Ok(begin_response) => {
                 log::info!("Successfully connected to sync server");
-                set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Connected);
-                if let Ok(mut key) = encryption_key.lock() {
+                set_sync_server_connection_status(
+                    sync_server_connection_status.clone(),
+                    SynchronizationStatus::Connected,
+                );
+                {
+                    let mut key = encryption_key.lock();
                     *key = Some(begin_response.encryption_key);
                 }
-                if let Ok(mut device_name) = device_name.lock() {
+                {
+                    let mut device_name = device_name.lock();
                     *device_name = Some(begin_response.device_name);
                 }
-                if let Ok(mut files) = pending_shared_files.lock() {
+                {
+                    let mut files = pending_shared_files.lock();
                     *files = begin_response.shares;
                 }
                 if let (Some(tx), Some(shutdown)) = (sse_tx, sse_shutdown_flag) {
@@ -702,12 +716,17 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                         log::error!("Failed to start SSE connection: {}", e.to_string());
                     }
                 } else {
-                    log::warn!("SSE event sender or shutdown flag not available, cannot start SSE connection");
+                    log::warn!(
+                        "SSE event sender or shutdown flag not available, cannot start SSE connection"
+                    );
                 }
             }
             Err(e) => {
                 log::error!("Failed to fetch shared files: {}", e.to_string());
-                set_sync_server_connection_status(sync_server_connection_status, SynchronizationStatus::Disconnected);
+                set_sync_server_connection_status(
+                    sync_server_connection_status,
+                    SynchronizationStatus::Disconnected,
+                );
             }
         }
     });
@@ -737,7 +756,9 @@ pub fn connect_sse(
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
     token_state: Arc<Mutex<TokenState>>,
 ) -> Result<(), SynchronizationError> {
-    let server_url = synchronization_settings.server_url.clone()
+    let server_url = synchronization_settings
+        .server_url
+        .clone()
         .ok_or(SynchronizationError::ServerUrlMissing)?;
     let sse_url = format!("{}/api/sse", server_url);
     let settings_clone = synchronization_settings.clone();
@@ -752,7 +773,10 @@ pub fn connect_sse(
                 Ok(t) => t,
                 Err(e) => {
                     log::error!("Failed to get valid token for SSE: {}", e.to_string());
-                    set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::AuthenticationFailed);
+                    set_sync_server_connection_status(
+                        sync_server_connection_status.clone(),
+                        SynchronizationStatus::AuthenticationFailed,
+                    );
                     thread::sleep(Duration::from_secs(5));
                     continue;
                 }
@@ -764,13 +788,19 @@ pub fn connect_sse(
                 .call()
             {
                 Ok(resp) => {
-                    set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Connected);
+                    set_sync_server_connection_status(
+                        sync_server_connection_status.clone(),
+                        SynchronizationStatus::Connected,
+                    );
                     log::info!("SSE connection established");
                     resp
-                },
+                }
                 Err(e) => {
                     log::error!("SSE connection failed: {}", e);
-                    set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Disconnected);
+                    set_sync_server_connection_status(
+                        sync_server_connection_status.clone(),
+                        SynchronizationStatus::Disconnected,
+                    );
                     event_tx.send(SseEvent::Error(e.to_string())).ok();
                     if shutdown_flag.load(Ordering::Relaxed) {
                         log::info!("SSE connection shutdown requested, stopping...");
@@ -787,13 +817,16 @@ pub fn connect_sse(
             use std::io::BufRead;
             for line in reader.lines() {
                 if shutdown_flag.load(Ordering::Relaxed) {
-                    log::info!("SSE connection shutdown requested during event reading, stopping...");
+                    log::info!(
+                        "SSE connection shutdown requested during event reading, stopping..."
+                    );
                     break;
                 }
                 match line {
                     Ok(line) => {
                         if line.starts_with("event:") {
-                            current_event_type = line.trim_start_matches("event:").trim().to_string();
+                            current_event_type =
+                                line.trim_start_matches("event:").trim().to_string();
                         } else if line.starts_with("data:") {
                             current_data.push_str(line.trim_start_matches("data:").trim());
                         } else if line.is_empty() && !current_data.is_empty() {
@@ -810,7 +843,10 @@ pub fn connect_sse(
                     }
                     Err(e) => {
                         log::error!("SSE stream error: {}", e);
-                        set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Disconnected);
+                        set_sync_server_connection_status(
+                            sync_server_connection_status.clone(),
+                            SynchronizationStatus::Disconnected,
+                        );
                         event_tx.send(SseEvent::Error(e.to_string())).ok();
                         break;
                     }
@@ -822,7 +858,10 @@ pub fn connect_sse(
             }
             // When the connection is lost
             log::warn!("SSE connection closed, reconnecting in 5s...");
-            set_sync_server_connection_status(sync_server_connection_status.clone(), SynchronizationStatus::Disconnected);
+            set_sync_server_connection_status(
+                sync_server_connection_status.clone(),
+                SynchronizationStatus::Disconnected,
+            );
             thread::sleep(Duration::from_secs(5));
         }
     });
@@ -837,14 +876,10 @@ pub fn connect_sse(
 ///
 /// ### Returns
 /// - `SynchronizationStatus`: The synchronization status of the sync server
-pub fn get_sync_server_connection_status(sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>) -> SynchronizationStatus {
-    match sync_server_connection_status.lock() {
-        Ok(status) => *status,
-        Err(e) => {
-            log::warn!("Failed to lock sync_server_connection_status: {}", e.to_string());
-            SynchronizationStatus::Disconnected
-        }
-    }
+pub fn get_sync_server_connection_status(
+    sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
+) -> SynchronizationStatus {
+    *sync_server_connection_status.lock()
 }
 
 /// Set the synchronization status of the sync server
@@ -852,15 +887,12 @@ pub fn get_sync_server_connection_status(sync_server_connection_status: Arc<Mute
 /// ### Arguments
 /// - `sync_server_connection_status`: The synchronization status of the sync server
 /// - `status`: The new synchronization status
-pub fn set_sync_server_connection_status(sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>, new_status: SynchronizationStatus) {
-    match sync_server_connection_status.lock() {
-        Ok(mut status) => *status = new_status,
-        Err(e) => {
-            log::warn!("Failed to lock sync_server_connection_status: {}", e.to_string());
-        }
-    }
+pub fn set_sync_server_connection_status(
+    sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
+    new_status: SynchronizationStatus,
+) {
+    *sync_server_connection_status.lock() = new_status;
 }
-
 
 /// Perform initial synchronization with the server
 ///
@@ -870,20 +902,31 @@ pub fn set_sync_server_connection_status(sync_server_connection_status: Arc<Mute
 ///
 /// ### Returns
 /// - `SynchronizationStatus`: The status of the connection to the sync server
-pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx: &mut App) -> SynchronizationStatus {
-    let synchronization_settings = entity.read(cx).settings.app_settings.synchronization_settings.clone();
+pub fn perform_initial_synchronization(
+    entity: Entity<crate::fulgur::Fulgur>,
+    cx: &mut App,
+) -> SynchronizationStatus {
+    let synchronization_settings = entity
+        .read(cx)
+        .settings
+        .app_settings
+        .synchronization_settings
+        .clone();
     let token_state = Arc::clone(&entity.read(cx).token_state);
     let result = initial_synchronization(&synchronization_settings, token_state);
     let (notification, sync_server_connection_status) = match result {
         Ok(begin_response) => {
             entity.update(cx, |this, _cx| {
-                if let Ok(mut key) = this.encryption_key.lock() {
+                {
+                    let mut key = this.encryption_key.lock();
                     *key = Some(begin_response.encryption_key);
                 }
-                if let Ok(mut name) = this.device_name.lock() {
+                {
+                    let mut name = this.device_name.lock();
                     *name = Some(begin_response.device_name.clone());
                 }
-                if let Ok(mut files) = this.pending_shared_files.lock() {
+                {
+                    let mut files = this.pending_shared_files.lock();
                     *files = begin_response.shares;
                 }
             });
@@ -907,7 +950,10 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
         ),
     };
     entity.update(cx, |this, _cx| {
-        set_sync_server_connection_status(this.sync_server_connection_status.clone(), sync_server_connection_status);
+        set_sync_server_connection_status(
+            this.sync_server_connection_status.clone(),
+            sync_server_connection_status,
+        );
         // Store notification to be displayed on next render
         this.pending_notification = Some(notification);
     });
@@ -924,7 +970,6 @@ pub enum SynchronizationError {
     DeviceIdsMissing,
     DeviceKeyMissing,
     EmailMissing,
-    EncryptedKeyDecryptionFailed,
     EncryptionFailed,
     FileNameMissing,
     HostNotFound,
@@ -953,7 +998,6 @@ impl SynchronizationError {
             SynchronizationError::DeviceIdsMissing => "Device IDs are missing".to_string(),
             SynchronizationError::DeviceKeyMissing => "Key is missing".to_string(),
             SynchronizationError::EmailMissing => "Email is missing".to_string(),
-            SynchronizationError::EncryptedKeyDecryptionFailed => "Encrypted key decryption failed".to_string(),
             SynchronizationError::EncryptionFailed => "Encryption failed".to_string(),
             SynchronizationError::FileNameMissing => "File name is missing".to_string(),
             SynchronizationError::HostNotFound => "Host not found".to_string(),
@@ -988,7 +1032,9 @@ impl SynchronizationStatus {
     /// - `SynchronizationStatus`: The synchronization status
     pub fn from_error(error: &SynchronizationError) -> SynchronizationStatus {
         match error {
-            SynchronizationError::AuthenticationFailed => SynchronizationStatus::AuthenticationFailed,
+            SynchronizationError::AuthenticationFailed => {
+                SynchronizationStatus::AuthenticationFailed
+            }
             SynchronizationError::HostNotFound => SynchronizationStatus::ConnectionFailed,
             SynchronizationError::ConnectionFailed => SynchronizationStatus::ConnectionFailed,
             SynchronizationError::Timeout(_) => SynchronizationStatus::ConnectionFailed,
@@ -1031,7 +1077,7 @@ pub struct ShareNotification {
     pub file_name: String,
     pub file_size: i64,
     pub file_hash: String,
-    pub content: String,  // Encrypted and base64 encoded
+    pub content: String, // Encrypted and base64 encoded
     pub created_at: String,
     pub expires_at: String,
 }
@@ -1058,24 +1104,24 @@ impl SseEvent {
     /// - `SseEvent`: The parsed event
     fn parse(event_type: &str, data: &str) -> Self {
         match event_type {
-            "heartbeat" => {
-                match serde_json::from_str::<HeartbeatData>(data) {
-                    Ok(hb) => SseEvent::Heartbeat { timestamp: hb.timestamp },
-                    Err(e) => {
-                        log::warn!("Failed to parse heartbeat: {}", e);
-                        SseEvent::Heartbeat { timestamp: String::new() }
+            "heartbeat" => match serde_json::from_str::<HeartbeatData>(data) {
+                Ok(hb) => SseEvent::Heartbeat {
+                    timestamp: hb.timestamp,
+                },
+                Err(e) => {
+                    log::warn!("Failed to parse heartbeat: {}", e);
+                    SseEvent::Heartbeat {
+                        timestamp: String::new(),
                     }
                 }
-            }
-            "share_available" => {
-                match serde_json::from_str::<ShareNotification>(data) {
-                    Ok(notification) => SseEvent::ShareAvailable(notification),
-                    Err(e) => {
-                        log::error!("Failed to parse share notification: {}", e);
-                        SseEvent::Error(format!("Invalid share notification: {}", e))
-                    }
+            },
+            "share_available" => match serde_json::from_str::<ShareNotification>(data) {
+                Ok(notification) => SseEvent::ShareAvailable(notification),
+                Err(e) => {
+                    log::error!("Failed to parse share notification: {}", e);
+                    SseEvent::Error(format!("Invalid share notification: {}", e))
                 }
-            }
+            },
             "" => {
                 // No event type means generic message event
                 SseEvent::Error(format!("Unknown event (no event type): {}", data))
@@ -1094,20 +1140,7 @@ impl Fulgur {
     /// ### Returns
     /// - `true` if Fulgur is connected to the sync server, `false` otherwise
     pub fn is_connected(&self) -> bool {
-        match self.sync_server_connection_status.lock() {
-            Ok(status) => {
-                let deref_status = *status;
-                match deref_status {
-                    SynchronizationStatus::Connected => true,
-                    SynchronizationStatus::Disconnected => false,
-                    SynchronizationStatus::AuthenticationFailed => false,
-                    SynchronizationStatus::ConnectionFailed => false,
-                    SynchronizationStatus::Other => false,
-                    SynchronizationStatus::NotActivated => false,
-                }
-            },
-            Err(_) => false,
-        }
+        self.sync_server_connection_status.lock().is_connected()
     }
 
     /// Restart the SSE connection with new settings
@@ -1126,7 +1159,12 @@ impl Fulgur {
         self.sse_events = Some(sse_rx);
         self.sse_event_tx = Some(sse_tx.clone());
         self.sse_shutdown_flag = Some(sse_shutdown_flag.clone());
-        if self.settings.app_settings.synchronization_settings.is_synchronization_activated {
+        if self
+            .settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated
+        {
             let settings = self.settings.clone();
             let sync_status = self.sync_server_connection_status.clone();
             let token_state = Arc::clone(&self.token_state);
@@ -1182,20 +1220,14 @@ impl Fulgur {
         match event {
             files::sync::SseEvent::Heartbeat { timestamp } => {
                 log::debug!("SSE heartbeat received: {}", timestamp);
-                let was_disconnected = if let Ok(status) = self.sync_server_connection_status.lock() {
-                    let deref_status = *status;
-                    !deref_status.is_connected()
-                } else {
-                    false
-                };
-                if let Ok(mut last_heartbeat) = self.last_heartbeat.lock() {
+                let was_disconnected = !self.sync_server_connection_status.lock().is_connected();
+                {
+                    let mut last_heartbeat = self.last_heartbeat.lock();
                     *last_heartbeat = Some(now);
                 }
                 if was_disconnected {
-                    if let Ok(mut status) = self.sync_server_connection_status.lock() {
-                        *status = SynchronizationStatus::Connected;
-                        log::info!("Connection restored - heartbeat received after timeout");
-                    }
+                    *self.sync_server_connection_status.lock() = SynchronizationStatus::Connected;
+                    log::info!("Connection restored - heartbeat received after timeout");
                 }
             }
             files::sync::SseEvent::ShareAvailable(notification) => {
@@ -1204,7 +1236,8 @@ impl Fulgur {
                     notification.source_device_id,
                     notification.file_name
                 );
-                if let Ok(mut files) = self.pending_shared_files.lock() {
+                {
+                    let mut files = self.pending_shared_files.lock();
                     let shared_file = fulgur_common::api::shares::SharedFileResponse {
                         id: notification.share_id,
                         source_device_id: notification.source_device_id.clone(),
@@ -1216,10 +1249,8 @@ impl Fulgur {
                     };
                     files.push(shared_file);
                 }
-                let message = SharedString::from(format!(
-                    "New file received: {}",
-                    notification.file_name
-                ));
+                let message =
+                    SharedString::from(format!("New file received: {}", notification.file_name));
                 window.push_notification((NotificationType::Info, message), cx);
             }
             files::sync::SseEvent::Error(err) => {

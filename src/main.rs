@@ -2,12 +2,9 @@
 
 use gpui::*;
 use gpui_component::{Root, TitleBar};
+use parking_lot::Mutex;
 use rust_embed::RustEmbed;
-use std::{
-    borrow::Cow,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
 mod fulgur;
 
@@ -142,14 +139,13 @@ fn main() {
             "Processing {} valid file(s) from macOS open event",
             file_paths.len()
         );
-        if let Ok(mut pending) = pending_files_clone.lock() {
+        {
+            let mut pending = pending_files_clone.lock();
             pending.extend(file_paths);
             log::debug!(
                 "Added files to pending queue, total pending: {}",
                 pending.len()
             );
-        } else {
-            log::error!("Failed to lock pending files queue");
         }
     });
     app.run(move |cx| {
