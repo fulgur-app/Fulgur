@@ -33,7 +33,7 @@ log = "0.4.29"
 simplelog = "0.12.2"
 
 # Time
-chrono = { version = "0.4.43", features = ["serde"] }
+time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
 
 # Error handling
 anyhow = "1.0.100"

@@ -82,8 +82,10 @@ impl AppState {
 pub fn get_file_modified_time(path: &PathBuf) -> Option<String> {
     let metadata = fs::metadata(path).ok()?;
     let modified = metadata.modified().ok()?;
-    let datetime: chrono::DateTime<chrono::Utc> = modified.into();
-    Some(datetime.to_rfc3339())
+    let datetime = time::OffsetDateTime::from(modified);
+    datetime
+        .format(&time::format_description::well_known::Rfc3339)
+        .ok()
 }
 
 /// Compare two ISO 8601 timestamps
@@ -95,9 +97,11 @@ pub fn get_file_modified_time(path: &PathBuf) -> Option<String> {
 /// ### Returns
 /// - `True`: If the file is newer than the saved file, `False` otherwise
 pub fn is_file_newer(file_time: &str, saved_time: &str) -> bool {
-    let file_dt = chrono::DateTime::parse_from_rfc3339(file_time).ok();
-    let saved_dt = chrono::DateTime::parse_from_rfc3339(saved_time).ok();
-
+    let file_dt =
+        time::OffsetDateTime::parse(file_time, &time::format_description::well_known::Rfc3339).ok();
+    let saved_dt =
+        time::OffsetDateTime::parse(saved_time, &time::format_description::well_known::Rfc3339)
+            .ok();
     match (file_dt, saved_dt) {
         (Some(file), Some(saved)) => file > saved,
         _ => false,
@@ -122,7 +126,10 @@ mod tests {
         let result = get_file_modified_time(&file_path);
         assert!(result.is_some());
         let timestamp = result.unwrap();
-        assert!(chrono::DateTime::parse_from_rfc3339(&timestamp).is_ok());
+        assert!(
+            time::OffsetDateTime::parse(&timestamp, &time::format_description::well_known::Rfc3339)
+                .is_ok()
+        );
         fs::remove_file(&file_path).ok();
     }
 

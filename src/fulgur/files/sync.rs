@@ -1,7 +1,6 @@
 use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::{Fulgur, files};
 use crate::fulgur::{crypto_helper, ui::icons::CustomIcon};
-use chrono::{DateTime, Utc};
 use flate2::Compression;
 use flate2::read::{GzDecoder, GzEncoder};
 use fulgur_common::api::devices::DeviceResponse;
@@ -17,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::time::Instant;
 use std::{thread, time::Duration};
+use time::OffsetDateTime;
 
 pub type Device = DeviceResponse;
 
@@ -28,7 +28,7 @@ pub type Device = DeviceResponse;
 /// - `is_refreshing_token`: Lock flag to prevent concurrent token refreshes
 pub struct TokenState {
     pub access_token: Option<String>,
-    pub token_expires_at: Option<DateTime<Utc>>,
+    pub token_expires_at: Option<OffsetDateTime>,
     pub is_refreshing_token: bool,
 }
 
@@ -194,9 +194,9 @@ fn request_access_token(
 /// ### Returns
 /// - `true` if the token is still valid (has >5 minutes remaining)
 /// - `false` if the token is expired or will expire in <5 minutes
-fn is_token_valid(expires_at: &DateTime<Utc>) -> bool {
-    let now = Utc::now();
-    let buffer = chrono::Duration::minutes(5);
+fn is_token_valid(expires_at: &OffsetDateTime) -> bool {
+    let now = OffsetDateTime::now_utc();
+    let buffer = time::Duration::minutes(5);
     *expires_at > now + buffer
 }
 
@@ -245,12 +245,14 @@ pub fn get_valid_token(
     }
     log::debug!("Access token expired or missing, requesting new token");
     let token_response = request_access_token(synchronization_settings)?;
-    let expires_at = DateTime::parse_from_rfc3339(&token_response.expires_at)
-        .map_err(|e| {
-            log::error!("Failed to parse token expiration time: {}", e);
-            SynchronizationError::Other(e.to_string())
-        })?
-        .with_timezone(&Utc);
+    let expires_at = OffsetDateTime::parse(
+        &token_response.expires_at,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .map_err(|e| {
+        log::error!("Failed to parse token expiration time: {}", e);
+        SynchronizationError::Other(e.to_string())
+    })?;
     let mut state = token_state.lock();
     state.access_token = Some(token_response.access_token.clone());
     state.token_expires_at = Some(expires_at);

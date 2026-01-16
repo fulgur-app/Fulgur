@@ -10,7 +10,6 @@ dependencies = [
  "anyhow",
  "base64",
  "chardetng",
- "chrono",
  "embed-resource",
  "encoding_rs",
  "flate2",
@@ -30,6 +29,7 @@ dependencies = [
  "serde_json",
  "simplelog",
  "tikv-jemallocator",
+ "time",
  "ureq",
  "urlencoding",
 ]
@@ -895,7 +895,6 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
- "serde",
  "wasm-bindgen",
  "windows-link 0.2.1",
 ]
@@ -1371,6 +1370,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ececcb659e7ba858fb4f10388c250a7252eb0a27373f1a72b8748afdd248e587"
 dependencies = [
  "powerfmt",
+ "serde_core",
 ]
 
 [[package]]
