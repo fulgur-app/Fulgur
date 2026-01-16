@@ -5,7 +5,7 @@ use crate::fulgur::{
     Fulgur, editor_tab,
     sync::{
         share::{Device, ShareFilePayload, get_devices, get_icon, share_file},
-        sync::{SynchronizationStatus, get_sync_server_connection_status},
+        sync::SynchronizationStatus,
     },
     ui::{
         components_utils::{EMPTY, UTF_8},
@@ -418,63 +418,105 @@ fn handle_sync_button_click(instance: &mut Fulgur, window: &mut Window, cx: &mut
         return;
     }
     if !instance.is_connected() {
-        log::warn!("Not connected to sync server");
-        let sync_server_connection_status =
-            get_sync_server_connection_status(instance.sync_server_connection_status.clone());
-        let dialog_message = match sync_server_connection_status {
-            SynchronizationStatus::AuthenticationFailed => {
-                "Authentication failed. Check your e-mail and device API key in the synchronization settings and try again."
-            }
-            SynchronizationStatus::Connected => "Connected to the synchronization server.",
-            SynchronizationStatus::ConnectionFailed => {
-                "Connection failed. Check the URL to the server in the synchronization settings and try again."
-            }
-            SynchronizationStatus::Other => {
-                "An unknown error occurred while connecting to the synchronization server. Check your synchronization settings and try again."
-            }
-            SynchronizationStatus::NotActivated => {
-                "Synchronization is not activated. You can activate synchronization in the settings."
-            }
-            SynchronizationStatus::Disconnected => {
-                "Not connected to the synchronization server. Check your synchronization settings and try again."
-            }
-        };
-        window.open_dialog(cx, move |dialog, _, _| dialog.alert().child(dialog_message));
-    } else {
+        log::info!("Not connected to sync server, attempting reconnection...");
+        window.push_notification(
+            (
+                NotificationType::Info,
+                SharedString::from("Attempting to connect to sync server..."),
+            ),
+            cx,
+        );
         let synchronization_settings = instance
             .settings
             .app_settings
             .synchronization_settings
             .clone();
-        let devices = get_devices(&synchronization_settings, Arc::clone(&instance.token_state));
-        let devices = match devices {
-            Ok(devices) => devices,
+        let token_state = Arc::clone(&instance.token_state);
+        let result = crate::fulgur::sync::sync::initial_synchronization(
+            &synchronization_settings,
+            token_state,
+        );
+        match result {
+            Ok(begin_response) => {
+                {
+                    let mut key = instance.encryption_key.lock();
+                    *key = Some(begin_response.encryption_key);
+                }
+                {
+                    let mut device_name = instance.device_name.lock();
+                    *device_name = Some(begin_response.device_name.clone());
+                }
+                {
+                    let mut files = instance.pending_shared_files.lock();
+                    *files = begin_response.shares;
+                }
+                *instance.sync_server_connection_status.lock() = SynchronizationStatus::Connected;
+                // window.push_notification(
+                //     (
+                //         NotificationType::Success,
+                //         SharedString::from("Connected to sync server successfully"),
+                //     ),
+                //     cx,
+                // );
+                instance.restart_sse_connection();
+            }
             Err(e) => {
-                log::error!("Failed to get devices: {}", e.to_string());
+                let connection_status = SynchronizationStatus::from_error(&e);
+                *instance.sync_server_connection_status.lock() = connection_status;
+                let dialog_message = match connection_status {
+                    SynchronizationStatus::AuthenticationFailed => {
+                        "Authentication failed. Check your e-mail and device API key in the synchronization settings."
+                    }
+                    SynchronizationStatus::ConnectionFailed => {
+                        "Connection failed. Check the server URL in the synchronization settings."
+                    }
+                    SynchronizationStatus::Other => {
+                        "An error occurred while connecting to the sync server. Check your synchronization settings."
+                    }
+                    SynchronizationStatus::NotActivated => {
+                        "Synchronization is not activated. You can activate synchronization in the settings."
+                    }
+                    SynchronizationStatus::Disconnected => {
+                        "Could not connect to the sync server. Check your synchronization settings."
+                    }
+                    SynchronizationStatus::Connected => {
+                        // Should not happen
+                        "Unknown error occurred."
+                    }
+                };
+                window.open_dialog(cx, move |dialog, _, _| dialog.alert().child(dialog_message));
                 return;
             }
-        };
-        let entity = cx.entity();
-        let state = cx.new(|_cx| DeviceSelectionState::new(devices));
-        window.open_dialog(cx.deref_mut(), move |modal, _window, _cx| {
-            let state_clone_for_ok = state.clone();
-            let entity_clone = entity.clone();
-            modal
-                .confirm()
-                .title("Share with...")
-                .child(state.clone())
-                .overlay_closable(true)
-                .close_button(false)
-                .on_ok(move |_event: &ClickEvent, window, cx| {
-                    handle_share_file_ok(
-                        state_clone_for_ok.clone(),
-                        entity_clone.clone(),
-                        window,
-                        cx,
-                    )
-                })
-        });
+        }
     }
+    let synchronization_settings = instance
+        .settings
+        .app_settings
+        .synchronization_settings
+        .clone();
+    let devices = get_devices(&synchronization_settings, Arc::clone(&instance.token_state));
+    let devices = match devices {
+        Ok(devices) => devices,
+        Err(e) => {
+            log::error!("Failed to get devices: {}", e.to_string());
+            return;
+        }
+    };
+    let entity = cx.entity();
+    let state = cx.new(|_cx| DeviceSelectionState::new(devices));
+    window.open_dialog(cx.deref_mut(), move |modal, _window, _cx| {
+        let state_clone_for_ok = state.clone();
+        let entity_clone = entity.clone();
+        modal
+            .confirm()
+            .title("Share with...")
+            .child(state.clone())
+            .overlay_closable(true)
+            .close_button(false)
+            .on_ok(move |_event: &ClickEvent, window, cx| {
+                handle_share_file_ok(state_clone_for_ok.clone(), entity_clone.clone(), window, cx)
+            })
+    });
 }
 
 /// Jump to line
