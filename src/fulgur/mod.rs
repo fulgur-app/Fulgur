@@ -2,11 +2,12 @@ mod files;
 mod settings;
 mod state_operations;
 mod state_persistence;
+mod sync;
 mod ui;
 pub mod utils;
 use crate::fulgur::{
-    files::sync::SynchronizationStatus,
     settings::Themes,
+    sync::sync::SynchronizationStatus,
     ui::{icons::CustomIcon, languages},
     utils::crypto_helper,
 };
@@ -71,14 +72,14 @@ pub struct Fulgur {
     encryption_key: Arc<Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
     device_name: Arc<Mutex<Option<String>>>,    // Device name from server (thread-safe)
     pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>, // Shared files from sync server (thread-safe)
-    token_state: Arc<Mutex<files::sync::TokenState>>, // JWT token state for API authentication (thread-safe)
-    file_watcher: Option<FileWatcher>,                // File watcher for external file changes
+    token_state: Arc<Mutex<sync::access_token::TokenState>>, // JWT token state for API authentication (thread-safe)
+    file_watcher: Option<FileWatcher>, // File watcher for external file changes
     file_watch_events: Option<Receiver<FileWatchEvent>>, // Channel for file watch events
     last_file_events: HashMap<PathBuf, Instant>, // Track last event time per file for debouncing
     last_file_saves: HashMap<PathBuf, Instant>, // Track when Fulgur saves files to ignore self-triggered events
     pending_conflicts: HashMap<PathBuf, usize>, // Deferred conflicts for inactive tabs (path -> tab_index)
-    sse_events: Option<Receiver<files::sync::SseEvent>>, // Channel for SSE events from server
-    sse_event_tx: Option<std::sync::mpsc::Sender<files::sync::SseEvent>>, // Sender for SSE connection
+    sse_events: Option<Receiver<sync::sse::SseEvent>>, // Channel for SSE events from server
+    sse_event_tx: Option<std::sync::mpsc::Sender<sync::sse::SseEvent>>, // Sender for SSE connection
     sse_shutdown_flag: Option<Arc<AtomicBool>>, // Flag to signal SSE thread to shutdown
     last_sse_event: Option<Instant>,            // Track last SSE event time for debouncing
     last_heartbeat: Arc<Mutex<Option<Instant>>>, // Track last heartbeat time for connection timeout detection (thread-safe)
@@ -169,7 +170,7 @@ impl Fulgur {
                 encryption_key: Arc::new(Mutex::new(None)),
                 device_name: Arc::new(Mutex::new(None)),
                 pending_shared_files: Arc::new(Mutex::new(Vec::new())),
-                token_state: Arc::new(Mutex::new(files::sync::TokenState::new())),
+                token_state: Arc::new(Mutex::new(sync::access_token::TokenState::new())),
                 file_watcher: None,
                 file_watch_events: None,
                 last_file_events: HashMap::new(),
@@ -196,7 +197,7 @@ impl Fulgur {
                 this.start_file_watcher();
             }
         });
-        files::sync::begin_synchronization(&entity, cx);
+        sync::sync::begin_synchronization(&entity, cx);
         entity
     }
 
@@ -322,7 +323,7 @@ impl Render for Fulgur {
                     let decrypted_result =
                         crypto_helper::decrypt_bytes(&shared_file.content, &encryption_key)
                             .and_then(|compressed_bytes| {
-                                files::sync::decompress_content(&compressed_bytes)
+                                sync::share::decompress_content(&compressed_bytes)
                             });
                     match decrypted_result {
                         Ok(decrypted_content) => {
@@ -368,7 +369,7 @@ impl Render for Fulgur {
         for event in events {
             self.handle_file_watch_event(event, window, cx);
         }
-        let sse_events: Vec<files::sync::SseEvent> = if let Some(ref rx) = self.sse_events {
+        let sse_events: Vec<sync::sse::SseEvent> = if let Some(ref rx) = self.sse_events {
             let mut events = Vec::new();
             while let Ok(event) = rx.try_recv() {
                 events.push(event);

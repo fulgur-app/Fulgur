@@ -15,8 +15,8 @@ use gpui_component::{
 
 use crate::fulgur::{
     Fulgur, crypto_helper,
-    files::sync::perform_initial_synchronization,
     settings::{AppSettings, EditorSettings, Themes},
+    sync::sync::perform_initial_synchronization,
     themes,
     ui::{icons::CustomIcon, menus::build_menus},
 };
@@ -48,8 +48,6 @@ impl SettingsTab {
 }
 
 impl Fulgur {
-    
-
     /// Create the Editor settings page
     ///
     /// ### Arguments
@@ -524,10 +522,7 @@ impl Fulgur {
                                         .on_click({
                                             let entity = entity.clone();
                                             move |_, _window, cx| {
-                                                perform_initial_synchronization(
-                                                    entity.clone(),
-                                                    cx,
-                                                );
+                                                perform_initial_synchronization(entity.clone(), cx);
                                             }
                                         }),
                                 )

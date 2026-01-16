@@ -3,8 +3,15 @@ use std::sync::Arc;
 
 use crate::fulgur::{
     Fulgur, editor_tab,
-    files::sync::{Device, ShareFilePayload, SynchronizationStatus, get_devices, get_icon, get_sync_server_connection_status, share_file},
-    ui::{components_utils::{EMPTY, UTF_8}, icons::CustomIcon, languages},
+    sync::{
+        share::{Device, ShareFilePayload, get_devices, get_icon, share_file},
+        sync::{SynchronizationStatus, get_sync_server_connection_status},
+    },
+    ui::{
+        components_utils::{EMPTY, UTF_8},
+        icons::CustomIcon,
+        languages,
+    },
 };
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
@@ -374,7 +381,10 @@ fn handle_share_file_ok(
         Ok(expiration_date) => {
             let notification = (
                 NotificationType::Success,
-                SharedString::from(format!("File shared successfully until {}", expiration_date)),
+                SharedString::from(format!(
+                    "File shared successfully until {}",
+                    expiration_date
+                )),
             );
             window.push_notification(notification, cx);
         }
@@ -397,11 +407,7 @@ fn handle_share_file_ok(
 /// - `instance`: The Fulgur instance
 /// - `window`: The window context
 /// - `cx`: The application context
-fn handle_sync_button_click(
-    instance: &mut Fulgur,
-    window: &mut Window,
-    cx: &mut Context<Fulgur>,
-) {
+fn handle_sync_button_click(instance: &mut Fulgur, window: &mut Window, cx: &mut Context<Fulgur>) {
     if !instance
         .settings
         .app_settings
@@ -416,12 +422,22 @@ fn handle_sync_button_click(
         let sync_server_connection_status =
             get_sync_server_connection_status(instance.sync_server_connection_status.clone());
         let dialog_message = match sync_server_connection_status {
-            SynchronizationStatus::AuthenticationFailed => "Authentication failed. Check your e-mail and device API key in the synchronization settings and try again.",
+            SynchronizationStatus::AuthenticationFailed => {
+                "Authentication failed. Check your e-mail and device API key in the synchronization settings and try again."
+            }
             SynchronizationStatus::Connected => "Connected to the synchronization server.",
-            SynchronizationStatus::ConnectionFailed => "Connection failed. Check the URL to the server in the synchronization settings and try again.",
-            SynchronizationStatus::Other => "An unknown error occurred while connecting to the synchronization server. Check your synchronization settings and try again.",
-            SynchronizationStatus::NotActivated => "Synchronization is not activated. You can activate synchronization in the settings.",
-            SynchronizationStatus::Disconnected => "Not connected to the synchronization server. Check your synchronization settings and try again.",
+            SynchronizationStatus::ConnectionFailed => {
+                "Connection failed. Check the URL to the server in the synchronization settings and try again."
+            }
+            SynchronizationStatus::Other => {
+                "An unknown error occurred while connecting to the synchronization server. Check your synchronization settings and try again."
+            }
+            SynchronizationStatus::NotActivated => {
+                "Synchronization is not activated. You can activate synchronization in the settings."
+            }
+            SynchronizationStatus::Disconnected => {
+                "Not connected to the synchronization server. Check your synchronization settings and try again."
+            }
         };
         window.open_dialog(cx, move |dialog, _, _| dialog.alert().child(dialog_message));
     } else {
@@ -487,11 +503,7 @@ pub fn jump_to_line(instance: &mut Fulgur, window: &mut Window, cx: &mut Context
             .overlay_closable(true)
             .close_button(false)
             .on_ok(move |_event: &ClickEvent, _window, cx| {
-                handle_jump_to_line_ok(
-                    jump_to_line_input_clone.clone(),
-                    entity_clone.clone(),
-                    cx,
-                )
+                handle_jump_to_line_ok(jump_to_line_input_clone.clone(), entity_clone.clone(), cx)
             })
     });
 }
@@ -538,7 +550,6 @@ fn set_language(
 }
 
 impl Fulgur {
-
     pub fn jump_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         jump_to_line(self, window, cx);
     }
