@@ -229,7 +229,7 @@ impl Fulgur {
                 KeyBinding::new("ctrl-shift-w", CloseAllFiles, None),
                 KeyBinding::new("cmd-q", Quit, None),
                 #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-q", Quit, None),
+                KeyBinding::new("alt-f4", Quit, None),
                 #[cfg(target_os = "macos")]
                 KeyBinding::new("cmd-s", SaveFile, None),
                 #[cfg(not(target_os = "macos"))]
