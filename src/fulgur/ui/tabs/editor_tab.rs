@@ -6,7 +6,7 @@ use regex::Regex;
 
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
-use crate::fulgur::ui::languages::{language_from_extension, language_name};
+use crate::fulgur::ui::languages::{SupportedLanguage, language_from_extension, to_language};
 
 #[derive(Clone)]
 pub struct EditorTab {
@@ -17,7 +17,7 @@ pub struct EditorTab {
     pub modified: bool,
     pub original_content: String,
     pub encoding: String,
-    pub language: Language,
+    pub language: SupportedLanguage,
     pub show_markdown_toolbar: bool,
     pub show_markdown_preview: bool,
 }
@@ -41,7 +41,7 @@ fn make_input_state(
     settings: &EditorSettings,
 ) -> InputState {
     InputState::new(window, cx)
-        .code_editor(language_name(&language).to_string())
+        .code_editor(&language.name().to_string())
         .line_number(settings.show_line_numbers)
         .indent_guides(settings.show_indent_guides)
         .tab_size(TabSize {
@@ -71,8 +71,9 @@ impl EditorTab {
         cx: &mut App,
         settings: &EditorSettings,
     ) -> Self {
-        let language = Language::Plain;
-        let content = cx.new(|cx| make_input_state(window, cx, language, None, settings));
+        let language = SupportedLanguage::Plain;
+        let content =
+            cx.new(|cx| make_input_state(window, cx, to_language(&language), None, settings));
         Self {
             id,
             title: title.into(),
@@ -113,8 +114,15 @@ impl EditorTab {
             .and_then(|ext| ext.to_str())
             .unwrap_or("");
         let language = language_from_extension(extension);
-        let content =
-            cx.new(|cx| make_input_state(window, cx, language, Some(contents.clone()), settings));
+        let content = cx.new(|cx| {
+            make_input_state(
+                window,
+                cx,
+                to_language(&language),
+                Some(contents.clone()),
+                settings,
+            )
+        });
         Self {
             id,
             title: file_name.into(),
@@ -161,8 +169,15 @@ impl EditorTab {
 
         let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
         let language = language_from_extension(extension);
-        let content =
-            cx.new(|cx| make_input_state(window, cx, language, Some(contents.clone()), settings));
+        let content = cx.new(|cx| {
+            make_input_state(
+                window,
+                cx,
+                to_language(&language),
+                Some(contents.clone()),
+                settings,
+            )
+        });
         let title = format!("{}{}", file_name, if is_modified { " •" } else { "" });
         Self {
             id,
@@ -210,7 +225,7 @@ impl EditorTab {
     }
 
     /// Mark the tab as saved
-    ///     
+    ///
     /// ### Arguments
     /// - `cx`: The application context
     pub fn mark_as_saved(&mut self, cx: &mut App) {
@@ -263,13 +278,20 @@ impl EditorTab {
         &mut self,
         window: &mut Window,
         cx: &mut App,
-        language: Language,
+        language: SupportedLanguage,
         settings: &EditorSettings,
     ) {
         let current_content = self.content.read(cx).text().to_string();
         self.language = language;
-        self.content =
-            cx.new(|cx| make_input_state(window, cx, language, Some(current_content), settings));
+        self.content = cx.new(|cx| {
+            make_input_state(
+                window,
+                cx,
+                to_language(&language),
+                Some(current_content),
+                settings,
+            )
+        });
     }
 
     /// Jump to a specific line

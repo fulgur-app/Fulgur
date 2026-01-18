@@ -80,6 +80,7 @@ pub fn button_factory(
 ///
 /// ### Returns
 /// - `Entity<SelectState<Vec<SharedString>>>`: The select state entity
+#[allow(dead_code)]
 pub fn create_select_state(
     window: &mut Window,
     current_value: String,

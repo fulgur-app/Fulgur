@@ -8,7 +8,7 @@ pub mod utils;
 use crate::fulgur::{
     settings::Themes,
     sync::sync::SynchronizationStatus,
-    ui::{icons::CustomIcon, languages},
+    ui::{icons::CustomIcon, languages, languages::SupportedLanguage},
     utils::crypto_helper,
 };
 use files::file_watcher::{FileWatchEvent, FileWatcher};
@@ -16,13 +16,11 @@ use fulgur_common::api::shares::SharedFileResponse;
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
-    highlighter::Language,
     input::{Input, InputEvent, InputState},
     link::Link,
     notification::NotificationType,
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
-    select::SelectState,
     text::TextView,
     v_flex,
 };
@@ -61,7 +59,6 @@ pub struct Fulgur {
     pending_jump: Option<editor_tab::Jump>, // Pending jump to line action
     jump_to_line_dialog_open: bool, // Flag to indicate that the jump to line dialog is open
     pub settings: Settings, // The settings for the application
-    pub language_dropdown: Entity<SelectState<Vec<SharedString>>>, // Dropdown for selecting the language of the editor
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
     pub themes: Option<Themes>, // The themes available to the user
     rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
@@ -119,8 +116,6 @@ impl Fulgur {
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
         let jump_to_line_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
-        let language_dropdown =
-            languages::create_all_languages_select_state("Plain".into(), window, cx);
         let themes = match Themes::load() {
             Ok(themes) => Some(themes),
             Err(e) => {
@@ -159,7 +154,6 @@ impl Fulgur {
                 pending_jump: None,
                 jump_to_line_dialog_open: false,
                 settings,
-                language_dropdown,
                 settings_changed: false,
                 rendered_tabs: HashSet::new(),
                 tabs_pending_update: HashSet::new(),
@@ -647,7 +641,8 @@ impl Fulgur {
                         .font_family("Monaco")
                         .text_size(px(self.settings.editor_settings.font_size))
                         .focus_bordered(false);
-                    if editor_tab.language == Language::Markdown && editor_tab.show_markdown_preview
+                    if editor_tab.language == SupportedLanguage::Markdown
+                        && editor_tab.show_markdown_preview
                     {
                         return v_flex()
                             .w_full()

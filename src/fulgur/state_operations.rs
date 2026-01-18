@@ -4,7 +4,10 @@ use crate::fulgur::{
     files::file_operations::detect_encoding_and_decode,
     state_persistence::*,
     tab::Tab,
-    ui::components_utils::{UNTITLED, UTF_8},
+    ui::{
+        components_utils::{UNTITLED, UTF_8},
+        languages::SupportedLanguage,
+    },
 };
 use gpui::*;
 use gpui_component::{highlighter::Language, input::TabSize};
@@ -232,7 +235,7 @@ impl Fulgur {
                 modified: true,
                 original_content: String::new(),
                 encoding: "UTF-8".to_string(),
-                language: Language::Plain,
+                language: SupportedLanguage::Plain,
                 show_markdown_toolbar: self
                     .settings
                     .editor_settings

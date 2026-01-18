@@ -10,17 +10,15 @@ use crate::fulgur::{
     ui::{
         components_utils::{EMPTY, UTF_8},
         icons::CustomIcon,
-        languages,
+        languages::{self, SupportedLanguage},
     },
 };
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
     ActiveTheme, Icon, WindowExt, h_flex,
-    highlighter::Language,
     input::{Input, InputState, Position},
     notification::NotificationType,
     scroll::ScrollableElement,
-    select::{Select, SelectState},
     v_flex,
 };
 
@@ -301,42 +299,6 @@ fn handle_jump_to_line_ok(
     false
 }
 
-/// Handle language selection dialog OK action
-///
-/// ### Arguments
-/// - `language_dropdown`: The language dropdown entity
-/// - `entity`: The Fulgur entity
-/// - `window`: The window context
-/// - `cx`: The application context
-///
-/// ### Returns
-/// - `bool`: Always returns true
-fn handle_set_language_ok(
-    language_dropdown: Entity<SelectState<Vec<SharedString>>>,
-    entity: Entity<Fulgur>,
-    window: &mut Window,
-    cx: &mut App,
-) -> bool {
-    if let Some(language_name) = language_dropdown.read(cx).selected_value() {
-        let language = languages::language_from_pretty_name(language_name);
-        entity.update(cx, |this, cx| {
-            if let Some(index) = this.active_tab_index {
-                if let Some(tab) = this.tabs.get_mut(index) {
-                    if let Some(editor_tab) = tab.as_editor_mut() {
-                        editor_tab.force_language(
-                            window,
-                            cx,
-                            language,
-                            &this.settings.editor_settings,
-                        );
-                    }
-                }
-            }
-        });
-    }
-    true
-}
-
 /// Handle share file dialog OK action
 ///
 /// ### Arguments
@@ -550,47 +512,6 @@ pub fn jump_to_line(instance: &mut Fulgur, window: &mut Window, cx: &mut Context
     });
 }
 
-/// Set the language via a dialog
-///
-/// ### Arguments
-/// - `instance`: The Fulgur instance
-/// - `window`: The window context
-/// - `cx`: The application context
-/// - `current_language`: The current language
-fn set_language(
-    instance: &mut Fulgur,
-    window: &mut Window,
-    cx: &mut Context<Fulgur>,
-    current_language: SharedString,
-) {
-    let language_dropdown = instance.language_dropdown.clone();
-    language_dropdown.update(cx, |select_state, cx| {
-        select_state.set_selected_value(&current_language, window, cx);
-        cx.notify();
-    });
-    let entity = cx.entity().clone();
-    window.open_dialog(cx.deref_mut(), move |modal, window, cx| {
-        let focus_handle = language_dropdown.read(cx).focus_handle(cx);
-        window.focus(&focus_handle);
-        let language_dropdown_clone = language_dropdown.clone();
-        let entity_clone = entity.clone();
-        modal
-            .confirm()
-            .keyboard(true)
-            .child(Select::new(&language_dropdown))
-            .overlay_closable(true)
-            .close_button(false)
-            .on_ok(move |_event: &ClickEvent, window, cx| {
-                handle_set_language_ok(
-                    language_dropdown_clone.clone(),
-                    entity_clone.clone(),
-                    window,
-                    cx,
-                )
-            })
-    });
-}
-
 impl Fulgur {
     pub fn jump_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         jump_to_line(self, window, cx);
@@ -612,13 +533,13 @@ impl Fulgur {
                         Some(editor_tab.language),
                     )
                 } else {
-                    (Position::default(), Some(Language::Plain))
+                    (Position::default(), Some(SupportedLanguage::Plain))
                 }
             }
             None => (Position::default(), None),
         };
         let language = match language {
-            Some(language) => languages::pretty_name(language),
+            Some(language) => languages::pretty_name(&language),
             None => EMPTY.to_string(),
         };
         let encoding = match self.active_tab_index {
@@ -647,12 +568,12 @@ impl Fulgur {
                 jump_to_line(this, window, cx);
             }),
         );
-        let language_shared = SharedString::from(language.clone());
         let language_button =
             status_bar_button_factory(language, cx.theme().border, cx.theme().muted).on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
-                    set_language(this, window, cx, language_shared.clone());
+                    //set_language(this, window, cx, language_shared.clone());
+                    this.render_select_language_sheet(window, cx);
                 }),
             );
         let active_editor_tab = self.get_active_editor_tab();
