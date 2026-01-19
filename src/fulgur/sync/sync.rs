@@ -194,6 +194,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
 ///
 /// ### Returns
 /// - `SynchronizationStatus`: The synchronization status of the sync server
+#[allow(dead_code)]
 pub fn get_sync_server_connection_status(
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
 ) -> SynchronizationStatus {
