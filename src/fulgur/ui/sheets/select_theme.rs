@@ -2,7 +2,7 @@ use std::{fs, sync::Arc};
 
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
-    Disableable, Sizable, Theme, ThemeMode, ThemeRegistry, WindowExt,
+    ActiveTheme, Sizable, Theme, ThemeMode, ThemeRegistry, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     notification::NotificationType,
@@ -31,50 +31,38 @@ fn make_select_theme_item(
     theme_name: String,
     is_current_theme: bool,
     current_theme_shared: Arc<Mutex<String>>,
-) -> Div {
-    let button_id = format!("Select_{}", theme_name);
-    let button_id = SharedString::from(button_id);
+    cx: &mut App,
+) -> Stateful<Div> {
+    let id = SharedString::from(format!("Select_{}", theme_name));
     h_flex()
+        .id(id)
+        .cursor_pointer()
         .justify_between()
-        .py_1()
-        .child(div().py_1().text_sm().child(theme_name.clone()))
-        .when(!is_current_theme, |this| {
-            this.child(
-                Button::new(button_id.clone())
-                    .child("Select")
-                    .small()
-                    .cursor_pointer()
-                    .on_click(move |_this, _window, cx| {
-                        if let Some(theme_config) = ThemeRegistry::global(cx)
-                            .themes()
-                            .get(theme_name.as_str())
-                            .cloned()
-                        {
-                            Theme::global_mut(cx).apply_config(&theme_config);
-                            let theme_name_clone = theme_name.clone();
-                            entity.update(cx, |fulgur, cx| {
-                                fulgur.settings.app_settings.theme =
-                                    theme_name_clone.clone().into();
-                                if let Err(e) = fulgur.settings.save() {
-                                    log::error!("Failed to save settings: {}", e);
-                                }
-                                *current_theme_shared.lock() = theme_name_clone.clone();
-                                cx.notify();
-                            });
-                            cx.refresh_windows();
-                        }
-                    }),
-            )
+        .my_2()
+        .border_1()
+        .border_color(cx.theme().border)
+        .child(div().p_2().text_sm().child(theme_name.clone()))
+        .when(is_current_theme, |this| this.bg(cx.theme().muted))
+        .on_click(move |_this, _window, cx| {
+            if let Some(theme_config) = ThemeRegistry::global(cx)
+                .themes()
+                .get(theme_name.as_str())
+                .cloned()
+            {
+                Theme::global_mut(cx).apply_config(&theme_config);
+                let theme_name_clone = theme_name.clone();
+                entity.update(cx, |fulgur, cx| {
+                    fulgur.settings.app_settings.theme = theme_name_clone.clone().into();
+                    if let Err(e) = fulgur.settings.save() {
+                        log::error!("Failed to save settings: {}", e);
+                    }
+                    *current_theme_shared.lock() = theme_name_clone.clone();
+                    cx.notify();
+                });
+                cx.refresh_windows();
+            }
         })
-        .when(is_current_theme, |this| {
-            this.child(
-                Button::new(button_id)
-                    .child("Select")
-                    .primary()
-                    .small()
-                    .disabled(true),
-            )
-        })
+        .hover(|this| this.bg(cx.theme().muted))
 }
 
 /// Make a select theme list
@@ -92,6 +80,7 @@ fn make_select_theme_list(
     themes: Vec<String>,
     current_theme: String,
     current_theme_shared: Arc<Mutex<String>>,
+    cx: &mut App,
 ) -> Div {
     let entity = entity.clone();
     div().rounded_md().children(
@@ -104,9 +93,10 @@ fn make_select_theme_list(
                     theme.clone(),
                     theme.to_string() == current_theme,
                     current_theme_shared.clone(),
+                    cx,
                 )
             })
-            .collect::<Vec<Div>>(),
+            .collect::<Vec<Stateful<Div>>>(),
     )
 }
 
@@ -244,6 +234,7 @@ impl Fulgur {
                             dark_themes.clone(),
                             current_theme_display.clone(),
                             current_theme_shared_dark,
+                            cx,
                         ))
                         .child(div().text_lg().mt_4().child("Light themes"))
                         .child(make_select_theme_list(
@@ -251,6 +242,7 @@ impl Fulgur {
                             light_themes.clone(),
                             current_theme_display.clone(),
                             current_theme_shared_light,
+                            cx,
                         )),
                 )
                 .footer({
