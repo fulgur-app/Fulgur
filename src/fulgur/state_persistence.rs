@@ -2,24 +2,135 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+/// Persisted state of a single editor tab
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TabState {
+    /// Unique identifier for the tab within its window
     pub id: usize,
+    /// Display title shown in the tab bar (usually the filename)
     pub title: String,
+    /// Path to the file on disk, if the tab has an associated file. `None` for unsaved/new tabs.
     pub file_path: Option<PathBuf>,
+    /// The text content of the tab, stored for unsaved tabs or when the file may have been modified since last save
     pub content: Option<String>,
+    /// ISO 8601 timestamp of when the content was last saved to disk. Used to detect if the file has been modified externally.
     pub last_saved: Option<String>,
 }
 
+/// Serialized window bounds that can be saved to JSON
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct WindowState {
-    pub tabs: Vec<TabState>,
-    pub active_tab_index: Option<usize>,
-    pub next_tab_id: usize,
+pub struct SerializedWindowBounds {
+    /// Window state: "Windowed", "Maximized", or "Fullscreen"
+    pub state: String,
+    /// X position of window origin in pixels
+    pub x: f32,
+    /// Y position of window origin in pixels
+    pub y: f32,
+    /// Window width in pixels
+    pub width: f32,
+    /// Window height in pixels
+    pub height: f32,
+    /// Display ID (monitor) where the window was located
+    #[serde(default)]
+    pub display_id: Option<u32>,
 }
 
+impl Default for SerializedWindowBounds {
+    fn default() -> Self {
+        Self {
+            state: "Windowed".to_string(),
+            x: 100.0,
+            y: 100.0,
+            width: 1200.0,
+            height: 800.0,
+            display_id: None,
+        }
+    }
+}
+
+impl SerializedWindowBounds {
+    /// Convert GPUI WindowBounds to SerializedWindowBounds
+    ///
+    /// ### Arguments
+    /// - `bounds`: The GPUI WindowBounds to convert
+    /// - `display_id`: Optional display ID (monitor) for the window
+    ///
+    /// ### Returns
+    /// - `SerializedWindowBounds`: The serialized window bounds
+    pub fn from_gpui_bounds(bounds: gpui::WindowBounds, display_id: Option<u32>) -> Self {
+        use gpui::WindowBounds;
+        match bounds {
+            WindowBounds::Windowed(rect) => Self {
+                state: "Windowed".to_string(),
+                x: rect.origin.x.into(),
+                y: rect.origin.y.into(),
+                width: rect.size.width.into(),
+                height: rect.size.height.into(),
+                display_id,
+            },
+            WindowBounds::Maximized(rect) => Self {
+                state: "Maximized".to_string(),
+                x: rect.origin.x.into(),
+                y: rect.origin.y.into(),
+                width: rect.size.width.into(),
+                height: rect.size.height.into(),
+                display_id,
+            },
+            WindowBounds::Fullscreen(rect) => Self {
+                state: "Fullscreen".to_string(),
+                x: rect.origin.x.into(),
+                y: rect.origin.y.into(),
+                width: rect.size.width.into(),
+                height: rect.size.height.into(),
+                display_id,
+            },
+        }
+    }
+
+    /// Convert SerializedWindowBounds to GPUI WindowBounds
+    ///
+    /// ### Returns
+    /// - `gpui::WindowBounds`: The GPUI window bounds
+    pub fn to_gpui_bounds(&self) -> gpui::WindowBounds {
+        use gpui::{Bounds, WindowBounds, point, px, size};
+        let bounds = Bounds {
+            origin: point(px(self.x), px(self.y)),
+            size: size(px(self.width), px(self.height)),
+        };
+        match self.state.as_str() {
+            "Maximized" => WindowBounds::Maximized(bounds),
+            "Fullscreen" => WindowBounds::Fullscreen(bounds),
+            _ => WindowBounds::Windowed(bounds), // Default to Windowed for unknown states
+        }
+    }
+}
+
+/// Persisted state of a single application window
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WindowState {
+    /// All tabs in this window, in display order
+    pub tabs: Vec<TabState>,
+    /// Index of the currently active/visible tab, if any
+    pub active_tab_index: Option<usize>,
+    /// Counter for generating unique tab IDs within this window
+    pub next_tab_id: usize,
+    /// Window position, size, and display state (windowed/maximized/fullscreen)
+    #[serde(default)]
+    pub window_bounds: SerializedWindowBounds,
+}
+
+/// Top-level container for all persisted application state
+///
+/// This struct is serialized to `state.json` and contains the complete
+/// state of all windows. On startup, each window in this list is restored
+/// with its tabs, positions, and content.
+///
+/// File location:
+/// - Windows: `%APPDATA%\Fulgur\state.json`
+/// - macOS/Linux: `~/.fulgur/state.json`
 #[derive(Serialize, Deserialize, Debug)]
 pub struct WindowsState {
+    /// All application windows to be restored
     pub windows: Vec<WindowState>,
 }
 

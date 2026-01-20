@@ -195,8 +195,36 @@ async fn create_window(
     window_index: usize,
     cli_file_paths: Vec<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
+    let (window_bounds, saved_display_id) =
+        if let Ok(windows_state) = fulgur::state_persistence::WindowsState::load() {
+            if let Some(window_state) = windows_state.windows.get(window_index) {
+                (
+                    Some(window_state.window_bounds.to_gpui_bounds()),
+                    window_state.window_bounds.display_id,
+                )
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+    let display_id = if let Some(saved_id) = saved_display_id {
+        cx.update(|cx| {
+            cx.displays()
+                .into_iter()
+                .find(|display| {
+                    let display_id_u32: u32 = display.id().into();
+                    display_id_u32 == saved_id
+                })
+                .map(|display| display.id())
+        })?
+    } else {
+        None
+    };
     let window_options = gpui::WindowOptions {
         titlebar: Some(gpui_component::TitleBar::title_bar_options()),
+        window_bounds,
+        display_id,
         #[cfg(target_os = "linux")]
         window_decorations: Some(gpui::WindowDecorations::Client),
         ..Default::default()

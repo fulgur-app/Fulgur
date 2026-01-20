@@ -72,6 +72,7 @@ pub struct Fulgur {
     sse_shutdown_flag: Option<Arc<AtomicBool>>, // Flag to signal SSE thread to shutdown
     last_sse_event: Option<Instant>,            // Track last SSE event time for debouncing
     pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
+    cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
 }
 
 impl Fulgur {
@@ -110,7 +111,7 @@ impl Fulgur {
                 self.quit(window, cx);
                 false
             } else {
-                if let Err(e) = self.save_state(cx) {
+                if let Err(e) = self.save_state(cx, window) {
                     log::error!("Failed to save app state: {}", e);
                 }
                 cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
@@ -127,7 +128,7 @@ impl Fulgur {
             cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
                 manager.unregister(self.window_id);
             });
-            if let Err(e) = self.save_state(cx) {
+            if let Err(e) = self.save_state(cx, window) {
                 log::error!("Failed to save app state: {}", e);
             }
             true
@@ -239,6 +240,7 @@ impl Fulgur {
                 sse_shutdown_flag: None,
                 last_sse_event: None,
                 pending_notification: None,
+                cached_window_bounds: None,
             };
             entity
         });
@@ -357,6 +359,12 @@ impl Render for Fulgur {
     /// ### Returns
     /// - `impl IntoElement`: The rendered Fulgur instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let display_id = window.display(cx).map(|d| d.id().into());
+        self.cached_window_bounds =
+            Some(state_persistence::SerializedWindowBounds::from_gpui_bounds(
+                window.window_bounds(),
+                display_id,
+            ));
         cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
             manager.set_focused(self.window_id);
         });

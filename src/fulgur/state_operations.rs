@@ -18,25 +18,28 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `cx`: The application context
+    /// - `window`: The window to save (needed for window bounds)
     ///
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved
-    pub fn save_state(&self, cx: &App) -> anyhow::Result<()> {
+    pub fn save_state(&self, cx: &App, window: &Window) -> anyhow::Result<()> {
         log::debug!("Saving application state...");
         let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
         let mut windows_state = WindowsState { windows: vec![] };
         let current_window_id = self.window_id;
         let all_window_ids = window_manager.get_all_window_ids();
-        for window_id in all_window_ids {
-            if window_id == current_window_id {
-                windows_state.windows.push(self.build_window_state(cx));
+        for window_id in all_window_ids.iter() {
+            if *window_id == current_window_id {
+                windows_state
+                    .windows
+                    .push(self.build_window_state(cx, window));
             } else {
-                if let Some(weak_entity) = window_manager.get_window(window_id) {
+                if let Some(weak_entity) = window_manager.get_window(*window_id) {
                     if let Some(entity) = weak_entity.upgrade() {
                         windows_state
                             .windows
-                            .push(entity.read(cx).build_window_state(cx));
+                            .push(entity.read(cx).build_window_state_without_bounds(cx));
                     }
                 }
             }
@@ -223,14 +226,14 @@ impl Fulgur {
         Some(tab)
     }
 
-    /// Build WindowState for this window (helper for save_all_windows_state)
+    /// Build tab states for all tabs in this window
     ///
     /// ### Arguments
-    /// - `cx`: The application context.
+    /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `WindowState`: The WindowState for this window.
-    pub fn build_window_state(&self, cx: &App) -> WindowState {
+    /// - `Vec<TabState>`: The tab states for all tabs
+    fn build_tab_states(&self, cx: &App) -> Vec<TabState> {
         let mut tab_states = Vec::new();
         for tab in &self.tabs {
             if let Some(editor_tab) = tab.as_editor() {
@@ -269,10 +272,43 @@ impl Fulgur {
                 tab_states.push(tab_state);
             }
         }
+        tab_states
+    }
+
+    /// Build WindowState for this window without window bounds (for cross-window saves)
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `WindowState`: The WindowState for this window (with cached bounds)
+    pub fn build_window_state_without_bounds(&self, cx: &App) -> WindowState {
+        let window_bounds = self.cached_window_bounds.clone().unwrap_or_default();
         WindowState {
-            tabs: tab_states,
+            tabs: self.build_tab_states(cx),
             active_tab_index: self.active_tab_index,
             next_tab_id: self.next_tab_id,
+            window_bounds,
+        }
+    }
+
+    /// Build WindowState for this window (with window bounds)
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    /// - `window`: The window (needed for bounds)
+    ///
+    /// ### Returns
+    /// - `WindowState`: The WindowState for this window
+    pub fn build_window_state(&self, cx: &App, window: &Window) -> WindowState {
+        let display_id = window.display(cx).map(|d| d.id().into());
+        let window_bounds =
+            SerializedWindowBounds::from_gpui_bounds(window.window_bounds(), display_id);
+        WindowState {
+            tabs: self.build_tab_states(cx),
+            active_tab_index: self.active_tab_index,
+            next_tab_id: self.next_tab_id,
+            window_bounds,
         }
     }
 
@@ -289,11 +325,12 @@ impl Fulgur {
         log::debug!("Saving all windows state...");
         let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
         let mut windows_state = WindowsState { windows: vec![] };
-        for weak_entity in window_manager.get_all_windows() {
+        for weak_entity in window_manager.get_all_windows().iter() {
             if let Some(entity) = weak_entity.upgrade() {
+                // Each window has cached bounds that are updated in render
                 windows_state
                     .windows
-                    .push(entity.read(cx).build_window_state(cx));
+                    .push(entity.read(cx).build_window_state_without_bounds(cx));
             }
         }
         windows_state.save()?;

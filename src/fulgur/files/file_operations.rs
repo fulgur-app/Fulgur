@@ -167,7 +167,7 @@ impl Fulgur {
                     };
                     this.set_title(title, cx);
                     log::debug!("File opened successfully in new tab: {:?}", path);
-                    let _ = this.save_state(cx);
+                    let _ = this.save_state(cx, window);
                     cx.notify();
                 });
             })
