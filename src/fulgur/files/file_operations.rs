@@ -241,7 +241,9 @@ impl Fulgur {
     /// - `path`: The path to the file to open
     pub fn do_open_file(&mut self, window: &mut Window, cx: &mut Context<Self>, path: PathBuf) {
         let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
-        if let Some(existing_window_id) = window_manager.find_window_with_file(&path, cx) {
+        if let Some(existing_window_id) =
+            window_manager.find_window_with_file(&path, self.window_id, cx)
+        {
             if existing_window_id == self.window_id {
                 if let Some(tab_index) = self.find_tab_by_path(&path) {
                     log::debug!(

@@ -105,14 +105,26 @@ impl WindowManager {
     ///
     /// ### Arguments
     /// - `path`: The path of the file to search for
+    /// - `current_window_id`: The current window ID to skip (can't read while already borrowed)
     /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `Option<WindowId>`: The ID of the window that has the file open, if any
-    pub fn find_window_with_file(&self, path: &PathBuf, cx: &App) -> Option<WindowId> {
+    pub fn find_window_with_file(
+        &self,
+        path: &PathBuf,
+        current_window_id: WindowId,
+        cx: &App,
+    ) -> Option<WindowId> {
         for (window_id, weak_entity) in &self.windows {
+            // Skip the current window since it's already borrowed in the render context
+            if *window_id == current_window_id {
+                continue;
+            }
+
             if let Some(entity) = weak_entity.upgrade() {
-                if entity.read(cx).find_tab_by_path(path).is_some() {
+                let read = entity.read(cx);
+                if read.find_tab_by_path(path).is_some() {
                     return Some(*window_id);
                 }
             }
