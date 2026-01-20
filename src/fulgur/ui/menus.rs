@@ -84,6 +84,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
                 MenuItem::action("Select theme", SelectTheme),
                 MenuItem::action("Get more themes...", GetTheme),
                 MenuItem::Separator,
+                MenuItem::action("Close Window", CloseWindow),
                 MenuItem::action("Quit", Quit),
             ],
         },
@@ -126,10 +127,6 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
                 MenuItem::Separator,
                 MenuItem::action("Jump to line", JumpToLine),
             ],
-        },
-        Menu {
-            name: "Window".into(),
-            items: vec![MenuItem::action("Close Window", CloseWindow)],
         },
     ]
 }

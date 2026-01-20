@@ -3,10 +3,10 @@ use std::fs;
 use std::path::PathBuf;
 
 /// Persisted state of a single editor tab
+///
+/// Tab IDs are not persisted as they are assigned at runtime based on position.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TabState {
-    /// Unique identifier for the tab within its window
-    pub id: usize,
     /// Display title shown in the tab bar (usually the filename)
     pub title: String,
     /// Path to the file on disk, if the tab has an associated file. `None` for unsaved/new tabs.
@@ -106,14 +106,14 @@ impl SerializedWindowBounds {
 }
 
 /// Persisted state of a single application window
+///
+/// Tab IDs are assigned at runtime, so next_tab_id is not persisted.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WindowState {
     /// All tabs in this window, in display order
     pub tabs: Vec<TabState>,
     /// Index of the currently active/visible tab, if any
     pub active_tab_index: Option<usize>,
-    /// Counter for generating unique tab IDs within this window
-    pub next_tab_id: usize,
     /// Window position, size, and display state (windowed/maximized/fullscreen)
     #[serde(default)]
     pub window_bounds: SerializedWindowBounds,

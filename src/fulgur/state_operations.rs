@@ -71,10 +71,12 @@ impl Fulgur {
                     window_state.tabs.len()
                 );
                 self.tabs.clear();
+                let mut tab_id = 0;
                 for tab_state in &window_state.tabs {
-                    let tab = self.restore_tab_from_state(tab_state.clone(), window, cx);
+                    let tab = self.restore_tab_from_state(tab_state.clone(), tab_id, window, cx);
                     if let Some(editor_tab) = tab {
                         self.tabs.push(Tab::Editor(editor_tab));
+                        tab_id += 1;
                     }
                 }
                 if let Some(index) = window_state.active_tab_index {
@@ -86,7 +88,7 @@ impl Fulgur {
                         self.active_tab_index = None;
                     }
                 }
-                self.next_tab_id = window_state.next_tab_id;
+                self.next_tab_id = tab_id;
                 cx.notify();
             }
         } else {
@@ -120,6 +122,7 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `tab_state`: The saved state of the tab
+    /// - `tab_id`: The ID to assign to this tab (based on position)
     /// - `window`: The window to restore the tab to
     /// - `cx`: The application context
     ///
@@ -129,6 +132,7 @@ impl Fulgur {
     fn restore_tab_from_state(
         &self,
         tab_state: TabState,
+        tab_id: usize,
         window: &mut Window,
         cx: &mut App,
     ) -> Option<EditorTab> {
@@ -179,7 +183,7 @@ impl Fulgur {
         };
         let tab = if let Some(file_path) = path {
             EditorTab::from_file(
-                tab_state.id,
+                tab_id,
                 file_path,
                 content,
                 encoding,
@@ -202,7 +206,7 @@ impl Fulgur {
                     .default_value(content)
             });
             EditorTab {
-                id: tab_state.id,
+                id: tab_id,
                 title: tab_state.title.into(),
                 content: content_entity,
                 file_path: None,
@@ -245,7 +249,6 @@ impl Fulgur {
                 let tab_state = if let Some(ref path) = editor_tab.file_path {
                     if is_modified {
                         TabState {
-                            id: editor_tab.id,
                             title: editor_tab.title.to_string(),
                             file_path: Some(path.clone()),
                             content: Some(current_content),
@@ -253,7 +256,6 @@ impl Fulgur {
                         }
                     } else {
                         TabState {
-                            id: editor_tab.id,
                             title: editor_tab.title.to_string(),
                             file_path: Some(path.clone()),
                             content: None,
@@ -262,7 +264,6 @@ impl Fulgur {
                     }
                 } else {
                     TabState {
-                        id: editor_tab.id,
                         title: editor_tab.title.to_string(),
                         file_path: None,
                         content: Some(current_content),
@@ -287,7 +288,6 @@ impl Fulgur {
         WindowState {
             tabs: self.build_tab_states(cx),
             active_tab_index: self.active_tab_index,
-            next_tab_id: self.next_tab_id,
             window_bounds,
         }
     }
@@ -307,7 +307,6 @@ impl Fulgur {
         WindowState {
             tabs: self.build_tab_states(cx),
             active_tab_index: self.active_tab_index,
-            next_tab_id: self.next_tab_id,
             window_bounds,
         }
     }
