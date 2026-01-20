@@ -28,6 +28,7 @@ impl Fulgur {
         self.active_tab_index = Some(self.tabs.len() - 1);
         self.next_tab_id += 1;
         self.focus_active_tab(window, cx);
+        let _ = self.save_state(cx);
         cx.notify();
     }
 
@@ -44,6 +45,7 @@ impl Fulgur {
             self.tabs.push(settings_tab);
             self.active_tab_index = Some(self.tabs.len() - 1);
             self.next_tab_id += 1;
+            let _ = self.save_state(cx);
             cx.notify();
         }
     }

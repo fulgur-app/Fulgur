@@ -1,0 +1,72 @@
+use crate::fulgur::{settings::Settings, settings::Themes, sync::sync::SynchronizationStatus};
+use fulgur_common::api::shares::SharedFileResponse;
+use parking_lot::Mutex;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+/// State that is shared across all windows. This includes settings, themes, and sync-related state.
+pub struct SharedAppState {
+    /// Settings (shared across all windows)
+    pub settings: Arc<Mutex<Settings>>,
+    /// Available themes
+    pub themes: Arc<Mutex<Option<Themes>>>,
+    /// Sync server connection status (already Arc<Mutex>)
+    pub sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
+    /// Encryption key from server (already Arc<Mutex>)
+    pub encryption_key: Arc<Mutex<Option<String>>>,
+    /// Device name from server (already Arc<Mutex>)
+    pub device_name: Arc<Mutex<Option<String>>>,
+    /// Pending shared files from sync server (already Arc<Mutex>)
+    pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
+    /// JWT token state (already Arc<Mutex>)
+    pub token_state: Arc<Mutex<crate::fulgur::sync::access_token::TokenState>>,
+    /// Last heartbeat time for sync connection (already Arc<Mutex>)
+    pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
+    /// Update link if available
+    pub update_link: Arc<Mutex<Option<String>>>,
+    /// Files from macOS "Open with" events (already Arc<Mutex>)
+    pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
+    /// Flag to track if sync has been initialized (to prevent multiple initializations)
+    pub sync_initialized: Arc<AtomicBool>,
+}
+
+impl gpui::Global for SharedAppState {}
+
+impl SharedAppState {
+    /// Create a new shared app state
+    ///
+    /// ### Arguments
+    /// - `pending_files_from_macos`: Arc to the pending files queue from macOS open events
+    ///
+    /// ### Returns
+    /// - `Self`: The new shared app state
+    pub fn new(pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>) -> Self {
+        let settings = Settings::load().unwrap_or_else(|_| Settings::new());
+        let themes = Themes::load().ok();
+        let synchronization_status = if settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated
+        {
+            SynchronizationStatus::Connected
+        } else {
+            SynchronizationStatus::NotActivated
+        };
+        Self {
+            settings: Arc::new(Mutex::new(settings)),
+            themes: Arc::new(Mutex::new(themes)),
+            sync_server_connection_status: Arc::new(Mutex::new(synchronization_status)),
+            encryption_key: Arc::new(Mutex::new(None)),
+            device_name: Arc::new(Mutex::new(None)),
+            pending_shared_files: Arc::new(Mutex::new(Vec::new())),
+            token_state: Arc::new(Mutex::new(
+                crate::fulgur::sync::access_token::TokenState::new(),
+            )),
+            last_heartbeat: Arc::new(Mutex::new(None)),
+            update_link: Arc::new(Mutex::new(None)),
+            pending_files_from_macos,
+            sync_initialized: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}

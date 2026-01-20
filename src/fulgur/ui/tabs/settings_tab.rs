@@ -400,7 +400,7 @@ impl Fulgur {
                             {
                                 let entity = entity.clone();
                                 move |val: SharedString, cx: &mut App| {
-                                    entity.update(cx, |this, _cx| {
+                                    entity.update(cx, |this, cx| {
                                         let url = if val.is_empty() {
                                             None
                                         } else {
@@ -413,7 +413,7 @@ impl Fulgur {
                                         if let Err(e) = this.settings.save() {
                                             log::error!("Failed to save settings: {}", e);
                                         }
-                                        this.restart_sse_connection();
+                                        this.restart_sse_connection(cx);
                                     });
                                 }
                             },
@@ -448,7 +448,7 @@ impl Fulgur {
                             {
                                 let entity = entity.clone();
                                 move |val: SharedString, cx: &mut App| {
-                                    entity.update(cx, |this, _cx| {
+                                    entity.update(cx, |this, cx| {
                                         let email = if val.is_empty() {
                                             None
                                         } else {
@@ -459,7 +459,7 @@ impl Fulgur {
                                         if let Err(e) = this.settings.save() {
                                             log::error!("Failed to save settings: {}", e);
                                         }
-                                        this.restart_sse_connection();
+                                        this.restart_sse_connection(cx);
                                     });
                                 }
                             },
@@ -481,7 +481,7 @@ impl Fulgur {
                             {
                                 let entity = entity.clone();
                                 move |val: SharedString, cx: &mut App| {
-                                    entity.update(cx, |this, _cx| {
+                                    entity.update(cx, |this, cx| {
                                         let key = if val.is_empty() {
                                             None
                                         } else {
@@ -499,7 +499,7 @@ impl Fulgur {
                                         if let Err(e) = this.settings.save() {
                                             log::error!("Failed to save settings: {}", e);
                                         }
-                                        this.restart_sse_connection();
+                                        this.restart_sse_connection(cx);
                                     });
                                 }
                             },
@@ -672,7 +672,8 @@ impl Fulgur {
             Self::create_editor_page(entity.clone()),
             Self::create_application_page(entity.clone()),
         ];
-        if let Some(ref themes) = self.themes {
+        let themes = self.shared_state(cx).themes.lock().clone();
+        if let Some(ref themes) = themes {
             pages.push(Self::create_themes_page(entity, themes));
         }
         pages
@@ -720,7 +721,7 @@ impl Fulgur {
         }
         let menus = build_menus(
             &self.settings.recent_files.get_files(),
-            self.update_link.clone(),
+            self.shared_state(cx).update_link.lock().clone(),
         );
         cx.set_menus(menus);
     }

@@ -11,14 +11,19 @@ pub struct TabState {
     pub last_saved: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct AppState {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WindowState {
     pub tabs: Vec<TabState>,
     pub active_tab_index: Option<usize>,
     pub next_tab_id: usize,
 }
 
-impl AppState {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WindowsState {
+    pub windows: Vec<WindowState>,
+}
+
+impl WindowsState {
     /// Get the path to the state file
     ///
     /// ### Returns
@@ -58,16 +63,18 @@ impl AppState {
         Ok(())
     }
 
-    /// Load the app state from disk
+    /// Load the windows state from disk
     ///
     /// ### Returns
-    /// - `Ok(AppState)`: The loaded app state
-    /// - `Err(anyhow::Error)`: If the app state could not be loaded
+    /// - `Ok(WindowsState)`: The loaded windows state
+    /// - `Err(anyhow::Error)`: If the windows state could not be loaded
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::state_file_path()?;
         let json = fs::read_to_string(path)?;
-        let state: AppState = serde_json::from_str(&json)?;
-        Ok(state)
+        if let Ok(state) = serde_json::from_str::<WindowsState>(&json) {
+            return Ok(state);
+        }
+        Err(anyhow::anyhow!("Failed to parse state file"))
     }
 }
 

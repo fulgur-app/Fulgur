@@ -1,3 +1,4 @@
+use gpui::App;
 use std::{
     sync::{
         Arc,
@@ -236,8 +237,11 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `true` if Fulgur is connected to the sync server, `false` otherwise
-    pub fn is_connected(&self) -> bool {
-        self.sync_server_connection_status.lock().is_connected()
+    pub fn is_connected(&self, cx: &App) -> bool {
+        self.shared_state(cx)
+            .sync_server_connection_status
+            .lock()
+            .is_connected()
     }
 
     /// Restart the SSE connection with new settings
@@ -245,7 +249,7 @@ impl Fulgur {
     /// ### Description
     /// Stops the current SSE connection and starts a new one with the updated settings.
     /// Should be called when synchronization settings (server URL, email, or key) change.
-    pub fn restart_sse_connection(&mut self) {
+    pub fn restart_sse_connection(&mut self, cx: &mut Context<Self>) {
         if let Some(ref shutdown_flag) = self.sse_shutdown_flag {
             log::info!("Signaling SSE connection to shutdown...");
             shutdown_flag.store(true, Ordering::Relaxed);
@@ -263,8 +267,8 @@ impl Fulgur {
             .is_synchronization_activated
         {
             let settings = self.settings.clone();
-            let sync_status = self.sync_server_connection_status.clone();
-            let token_state = Arc::clone(&self.token_state);
+            let sync_status = self.shared_state(cx).sync_server_connection_status.clone();
+            let token_state = Arc::clone(&self.shared_state(cx).token_state);
             thread::spawn(move || {
                 // Small delay to ensure old connection is fully stopped
                 thread::sleep(Duration::from_millis(200));
@@ -317,13 +321,18 @@ impl Fulgur {
         match event {
             SseEvent::Heartbeat { timestamp } => {
                 log::debug!("SSE heartbeat received: {}", timestamp);
-                let was_disconnected = !self.sync_server_connection_status.lock().is_connected();
+                let was_disconnected = !self
+                    .shared_state(cx)
+                    .sync_server_connection_status
+                    .lock()
+                    .is_connected();
                 {
-                    let mut last_heartbeat = self.last_heartbeat.lock();
+                    let mut last_heartbeat = self.shared_state(cx).last_heartbeat.lock();
                     *last_heartbeat = Some(now);
                 }
                 if was_disconnected {
-                    *self.sync_server_connection_status.lock() = SynchronizationStatus::Connected;
+                    *self.shared_state(cx).sync_server_connection_status.lock() =
+                        SynchronizationStatus::Connected;
                     log::info!("Connection restored - heartbeat received after timeout");
                 }
             }
@@ -334,7 +343,7 @@ impl Fulgur {
                     notification.file_name
                 );
                 {
-                    let mut files = self.pending_shared_files.lock();
+                    let mut files = self.shared_state(cx).pending_shared_files.lock();
                     let shared_file = fulgur_common::api::shares::SharedFileResponse {
                         id: notification.share_id,
                         source_device_id: notification.source_device_id.clone(),
