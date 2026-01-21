@@ -315,7 +315,7 @@ impl Fulgur {
             }),
         );
         let is_markdown = self.is_markdown();
-        let is_connected = self.is_connected();
+        let is_connected = self.is_connected(cx);
         let sync_button = status_bar_sync_button(
             Icon::new(CustomIcon::Zap),
             Icon::new(CustomIcon::ZapOff),

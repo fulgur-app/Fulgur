@@ -28,6 +28,7 @@ impl Fulgur {
         self.active_tab_index = Some(self.tabs.len() - 1);
         self.next_tab_id += 1;
         self.focus_active_tab(window, cx);
+        let _ = self.save_state(cx, window);
         cx.notify();
     }
 
@@ -44,6 +45,7 @@ impl Fulgur {
             self.tabs.push(settings_tab);
             self.active_tab_index = Some(self.tabs.len() - 1);
             self.next_tab_id += 1;
+            let _ = self.save_state(cx, window);
             cx.notify();
         }
     }
@@ -62,12 +64,12 @@ impl Fulgur {
         if self.check_tab_modified(tab_id) {
             self.show_unsaved_changes_dialog(window, cx, move |this, window, cx| {
                 this.remove_tab_by_id(tab_id, window, cx);
-                let _ = this.save_state(cx);
+                let _ = this.save_state(cx, window);
             });
         } else {
             self.remove_tab_by_id(tab_id, window, cx);
             self.focus_active_tab(window, cx);
-            let _ = self.save_state(cx);
+            let _ = self.save_state(cx, window);
         }
     }
 
@@ -188,7 +190,7 @@ impl Fulgur {
             self.active_tab_index = None;
             self.next_tab_id = 1;
         }
-        let _ = self.save_state(cx);
+        let _ = self.save_state(cx, window);
         cx.notify();
     }
 
@@ -285,7 +287,7 @@ impl Fulgur {
                 self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
             }
         }
-        let _ = self.save_state(cx);
+        let _ = self.save_state(cx, window);
         self.focus_active_tab(window, cx);
         cx.notify();
     }
@@ -350,7 +352,7 @@ impl Fulgur {
             }
         }
         self.focus_active_tab(window, cx);
-        let _ = self.save_state(cx);
+        let _ = self.save_state(cx, window);
         cx.notify();
     }
 
@@ -466,10 +468,10 @@ impl Fulgur {
                     .title(div().text_size(px(16.)).child("Quit Fulgur"))
                     .keyboard(true)
                     .confirm()
-                    .on_ok(move |_, _window, cx| {
+                    .on_ok(move |_, window, cx| {
                         let entity_ok_footer = entity_ok.clone();
                         entity_ok_footer.update(cx, |this, cx| {
-                            if let Err(e) = this.save_state(cx) {
+                            if let Err(e) = this.save_state(cx, window) {
                                 log::error!("Failed to save app state: {}", e);
                             }
                         });
@@ -487,7 +489,7 @@ impl Fulgur {
             });
             return;
         }
-        if let Err(e) = self.save_state(cx) {
+        if let Err(e) = self.save_state(cx, window) {
             log::error!("Failed to save app state: {}", e);
         }
         cx.quit();

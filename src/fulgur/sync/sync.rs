@@ -112,14 +112,23 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     {
         return;
     }
+    let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+    if shared
+        .sync_initialized
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        log::debug!("Sync already initialized by another window");
+        return;
+    }
+    log::info!("Initializing sync system");
     let settings = entity.read(cx).settings.clone();
-    let sync_server_connection_status = entity.read(cx).sync_server_connection_status.clone();
-    let pending_shared_files = entity.read(cx).pending_shared_files.clone();
-    let encryption_key = entity.read(cx).encryption_key.clone();
-    let device_name = entity.read(cx).device_name.clone();
+    let sync_server_connection_status = shared.sync_server_connection_status.clone();
+    let pending_shared_files = shared.pending_shared_files.clone();
+    let encryption_key = shared.encryption_key.clone();
+    let device_name = shared.device_name.clone();
     let sse_tx = entity.read(cx).sse_event_tx.clone();
     let sse_shutdown_flag = entity.read(cx).sse_shutdown_flag.clone();
-    let token_state = entity.read(cx).token_state.clone();
+    let token_state = shared.token_state.clone();
     thread::spawn(move || {
         // Small delay to ensure app initialization doesn't block
         thread::sleep(Duration::from_millis(100));
@@ -231,24 +240,24 @@ pub fn perform_initial_synchronization(
         .app_settings
         .synchronization_settings
         .clone();
-    let token_state = Arc::clone(&entity.read(cx).token_state);
+    let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+    let token_state = Arc::clone(&shared.token_state);
     let result = initial_synchronization(&synchronization_settings, token_state);
     let (notification, sync_server_connection_status) = match result {
         Ok(begin_response) => {
-            entity.update(cx, |this, _cx| {
-                {
-                    let mut key = this.encryption_key.lock();
-                    *key = Some(begin_response.encryption_key);
-                }
-                {
-                    let mut name = this.device_name.lock();
-                    *name = Some(begin_response.device_name.clone());
-                }
-                {
-                    let mut files = this.pending_shared_files.lock();
-                    *files = begin_response.shares;
-                }
-            });
+            let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+            {
+                let mut key = shared.encryption_key.lock();
+                *key = Some(begin_response.encryption_key);
+            }
+            {
+                let mut name = shared.device_name.lock();
+                *name = Some(begin_response.device_name.clone());
+            }
+            {
+                let mut files = shared.pending_shared_files.lock();
+                *files = begin_response.shares;
+            }
             (
                 (
                     NotificationType::Success,
@@ -268,9 +277,10 @@ pub fn perform_initial_synchronization(
             SynchronizationStatus::from_error(&e),
         ),
     };
-    entity.update(cx, |this, _cx| {
+    entity.update(cx, |this, cx| {
+        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
         set_sync_server_connection_status(
-            this.sync_server_connection_status.clone(),
+            shared.sync_server_connection_status.clone(),
             sync_server_connection_status,
         );
         // Store notification to be displayed on next render

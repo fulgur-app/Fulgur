@@ -14,64 +14,40 @@ use gpui_component::{highlighter::Language, input::TabSize};
 use std::fs;
 
 impl Fulgur {
-    /// Save the current app state to disk
+    /// Save the current app state to disk (saves all windows in multi-window mode)
     ///
     /// ### Arguments
     /// - `cx`: The application context
+    /// - `window`: The window to save (needed for window bounds)
     ///
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved
-    pub fn save_state(&self, cx: &App) -> anyhow::Result<()> {
+    pub fn save_state(&self, cx: &App, window: &Window) -> anyhow::Result<()> {
         log::debug!("Saving application state...");
-        let mut tab_states = Vec::new();
-
-        for tab in &self.tabs {
-            if let Some(editor_tab) = tab.as_editor() {
-                let current_content = editor_tab.content.read(cx).text().to_string();
-                let is_modified = current_content != editor_tab.original_content;
-                if editor_tab.file_path.is_none() && current_content.is_empty() {
-                    continue;
+        let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
+        let mut windows_state = WindowsState { windows: vec![] };
+        let current_window_id = self.window_id;
+        let all_window_ids = window_manager.get_all_window_ids();
+        for window_id in all_window_ids.iter() {
+            if *window_id == current_window_id {
+                windows_state
+                    .windows
+                    .push(self.build_window_state(cx, window));
+            } else {
+                if let Some(weak_entity) = window_manager.get_window(*window_id) {
+                    if let Some(entity) = weak_entity.upgrade() {
+                        windows_state
+                            .windows
+                            .push(entity.read(cx).build_window_state_without_bounds(cx));
+                    }
                 }
-                let tab_state = if let Some(ref path) = editor_tab.file_path {
-                    if is_modified {
-                        TabState {
-                            id: editor_tab.id,
-                            title: editor_tab.title.to_string(),
-                            file_path: Some(path.clone()),
-                            content: Some(current_content),
-                            last_saved: get_file_modified_time(path),
-                        }
-                    } else {
-                        TabState {
-                            id: editor_tab.id,
-                            title: editor_tab.title.to_string(),
-                            file_path: Some(path.clone()),
-                            content: None,
-                            last_saved: None,
-                        }
-                    }
-                } else {
-                    TabState {
-                        id: editor_tab.id,
-                        title: editor_tab.title.to_string(),
-                        file_path: None,
-                        content: Some(current_content),
-                        last_saved: None,
-                    }
-                };
-
-                tab_states.push(tab_state);
             }
         }
-        let app_state = AppState {
-            tabs: tab_states,
-            active_tab_index: self.active_tab_index,
-            next_tab_id: self.next_tab_id,
-        };
-        app_state.save()?;
+        windows_state.save()?;
         log::debug!(
-            "Application state saved successfully ({} tabs)",
+            "Application state saved successfully ({} windows, {} tabs in this window)",
+            windows_state.windows.len(),
             self.tabs.len()
         );
         Ok(())
@@ -82,37 +58,39 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to load the state from
     /// - `cx`: The application context
-    pub fn load_state(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        log::debug!("Loading application state...");
+    /// - `window_index`: Index of the window state to restore (0 = first window, etc.)
+    pub fn load_state(&mut self, window: &mut Window, cx: &mut Context<Self>, window_index: usize) {
+        log::debug!("Loading application state for window {}...", window_index);
         // Temporarily disable indent guides during restoration to prevent crash
         let original_indent_guides = self.settings.editor_settings.show_indent_guides;
         self.settings.editor_settings.show_indent_guides = false;
-
-        if let Ok(app_state) = AppState::load() {
-            log::debug!(
-                "State loaded successfully, restoring {} tabs",
-                app_state.tabs.len()
-            );
-            self.tabs.clear();
-            for tab_state in app_state.tabs {
-                let tab = self.restore_tab_from_state(tab_state, window, cx);
-                if let Some(editor_tab) = tab {
-                    self.tabs.push(Tab::Editor(editor_tab));
+        if let Ok(windows_state) = WindowsState::load() {
+            if let Some(window_state) = windows_state.windows.get(window_index) {
+                log::debug!(
+                    "State loaded successfully, restoring {} tabs",
+                    window_state.tabs.len()
+                );
+                self.tabs.clear();
+                let mut tab_id = 0;
+                for tab_state in &window_state.tabs {
+                    let tab = self.restore_tab_from_state(tab_state.clone(), tab_id, window, cx);
+                    if let Some(editor_tab) = tab {
+                        self.tabs.push(Tab::Editor(editor_tab));
+                        tab_id += 1;
+                    }
                 }
-            }
-            if let Some(index) = app_state.active_tab_index {
-                if index < self.tabs.len() {
-                    self.active_tab_index = Some(index);
-                } else if !self.tabs.is_empty() {
-                    self.active_tab_index = Some(0);
-                } else {
-                    self.active_tab_index = None;
+                if let Some(index) = window_state.active_tab_index {
+                    if index < self.tabs.len() {
+                        self.active_tab_index = Some(index);
+                    } else if !self.tabs.is_empty() {
+                        self.active_tab_index = Some(0);
+                    } else {
+                        self.active_tab_index = None;
+                    }
                 }
+                self.next_tab_id = tab_id;
+                cx.notify();
             }
-
-            self.next_tab_id = app_state.next_tab_id;
-
-            cx.notify();
         } else {
             log::warn!("Failed to load application state, starting fresh");
         }
@@ -144,6 +122,7 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `tab_state`: The saved state of the tab
+    /// - `tab_id`: The ID to assign to this tab (based on position)
     /// - `window`: The window to restore the tab to
     /// - `cx`: The application context
     ///
@@ -153,6 +132,7 @@ impl Fulgur {
     fn restore_tab_from_state(
         &self,
         tab_state: TabState,
+        tab_id: usize,
         window: &mut Window,
         cx: &mut App,
     ) -> Option<EditorTab> {
@@ -201,10 +181,9 @@ impl Fulgur {
                 return None;
             }
         };
-
         let tab = if let Some(file_path) = path {
             EditorTab::from_file(
-                tab_state.id,
+                tab_id,
                 file_path,
                 content,
                 encoding,
@@ -226,9 +205,8 @@ impl Fulgur {
                     .soft_wrap(self.settings.editor_settings.soft_wrap)
                     .default_value(content)
             });
-
             EditorTab {
-                id: tab_state.id,
+                id: tab_id,
                 title: tab_state.title.into(),
                 content: content_entity,
                 file_path: None,
@@ -250,5 +228,115 @@ impl Fulgur {
         };
 
         Some(tab)
+    }
+
+    /// Build tab states for all tabs in this window
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Vec<TabState>`: The tab states for all tabs
+    fn build_tab_states(&self, cx: &App) -> Vec<TabState> {
+        let mut tab_states = Vec::new();
+        for tab in &self.tabs {
+            if let Some(editor_tab) = tab.as_editor() {
+                let current_content = editor_tab.content.read(cx).text().to_string();
+                let is_modified = current_content != editor_tab.original_content;
+                if editor_tab.file_path.is_none() && current_content.is_empty() {
+                    continue;
+                }
+                let tab_state = if let Some(ref path) = editor_tab.file_path {
+                    if is_modified {
+                        TabState {
+                            title: editor_tab.title.to_string(),
+                            file_path: Some(path.clone()),
+                            content: Some(current_content),
+                            last_saved: get_file_modified_time(path),
+                        }
+                    } else {
+                        TabState {
+                            title: editor_tab.title.to_string(),
+                            file_path: Some(path.clone()),
+                            content: None,
+                            last_saved: None,
+                        }
+                    }
+                } else {
+                    TabState {
+                        title: editor_tab.title.to_string(),
+                        file_path: None,
+                        content: Some(current_content),
+                        last_saved: None,
+                    }
+                };
+                tab_states.push(tab_state);
+            }
+        }
+        tab_states
+    }
+
+    /// Build WindowState for this window without window bounds (for cross-window saves)
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `WindowState`: The WindowState for this window (with cached bounds)
+    pub fn build_window_state_without_bounds(&self, cx: &App) -> WindowState {
+        let window_bounds = self.cached_window_bounds.clone().unwrap_or_default();
+        WindowState {
+            tabs: self.build_tab_states(cx),
+            active_tab_index: self.active_tab_index,
+            window_bounds,
+        }
+    }
+
+    /// Build WindowState for this window (with window bounds)
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    /// - `window`: The window (needed for bounds)
+    ///
+    /// ### Returns
+    /// - `WindowState`: The WindowState for this window
+    pub fn build_window_state(&self, cx: &App, window: &Window) -> WindowState {
+        let display_id = window.display(cx).map(|d| d.id().into());
+        let window_bounds =
+            SerializedWindowBounds::from_gpui_bounds(window.window_bounds(), display_id);
+        WindowState {
+            tabs: self.build_tab_states(cx),
+            active_tab_index: self.active_tab_index,
+            window_bounds,
+        }
+    }
+
+    /// Save all windows' state to disk
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Ok(())`: If all windows' state was saved successfully
+    /// - `Err(anyhow::Error)`: If the state could not be saved
+    #[allow(dead_code)]
+    pub fn save_all_windows_state(cx: &mut App) -> anyhow::Result<()> {
+        log::debug!("Saving all windows state...");
+        let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
+        let mut windows_state = WindowsState { windows: vec![] };
+        for weak_entity in window_manager.get_all_windows().iter() {
+            if let Some(entity) = weak_entity.upgrade() {
+                // Each window has cached bounds that are updated in render
+                windows_state
+                    .windows
+                    .push(entity.read(cx).build_window_state_without_bounds(cx));
+            }
+        }
+        windows_state.save()?;
+        log::debug!(
+            "All windows state saved successfully ({} windows)",
+            windows_state.windows.len()
+        );
+        Ok(())
     }
 }
