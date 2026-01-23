@@ -60,6 +60,7 @@ pub struct Fulgur {
     jump_to_line_dialog_open: bool, // Flag to indicate that the jump to line dialog is open
     pub settings: Settings, // The settings for the application (local copy for fast access)
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
+    local_settings_version: u64, // Track the version of settings this window has loaded
     rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
     file_watcher: Option<FileWatcher>, // File watcher for external file changes
@@ -85,6 +86,65 @@ impl Fulgur {
     /// - `&'a shared_state::SharedAppState`: The shared application state
     fn shared_state<'a>(&self, cx: &'a App) -> &'a shared_state::SharedAppState {
         cx.global::<shared_state::SharedAppState>()
+    }
+
+    /// Update settings and propagate to all windows
+    ///
+    /// This method should be called whenever settings are changed. It will:
+    /// 1. Save settings to disk
+    /// 2. Update shared settings in SharedAppState
+    /// 3. Increment the shared settings version (so other windows detect the change)
+    /// 4. Set settings_changed flag for this window
+    /// 5. Force all windows to re-render immediately
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `anyhow::Result<()>`: Result of the operation
+    fn update_and_propagate_settings(&mut self, cx: &mut Context<Self>) -> anyhow::Result<()> {
+        // Save settings to disk
+        self.settings.save()?;
+        
+        // Update shared settings
+        let shared = self.shared_state(cx);
+        *shared.settings.lock() = self.settings.clone();
+        
+        // Increment the version counter so other windows detect the change
+        let new_version = shared.settings_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        self.local_settings_version = new_version;
+        
+        // Mark settings as changed for this window
+        self.settings_changed = true;
+        
+        log::debug!(
+            "Window {:?} updated settings to version {}, notifying other windows",
+            self.window_id,
+            new_version
+        );
+        
+        // Force other windows to re-render immediately
+        // (Skip the current window to avoid reentrancy issues - it will re-render naturally)
+        let current_window_id = self.window_id;
+        let window_manager = cx.global::<window_manager::WindowManager>();
+        let all_windows = window_manager.get_all_windows();
+        
+        // Defer notifications to avoid reentrancy issues
+        cx.defer(move |cx| {
+            for weak_window in all_windows.iter() {
+                if let Some(window_entity) = weak_window.upgrade() {
+                    // Skip the current window (already updating)
+                    let should_notify = window_entity.read(cx).window_id != current_window_id;
+                    if should_notify {
+                        window_entity.update(cx, |_, cx| {
+                            cx.notify();
+                        });
+                    }
+                }
+            }
+        });
+        
+        Ok(())
     }
 
     /// Handle window close request
@@ -228,6 +288,7 @@ impl Fulgur {
                 jump_to_line_dialog_open: false,
                 settings,
                 settings_changed: false,
+                local_settings_version: 0,
                 rendered_tabs: HashSet::new(),
                 tabs_pending_update: HashSet::new(),
                 file_watcher: None,
@@ -370,6 +431,22 @@ impl Render for Fulgur {
         });
         if let Some((notification_type, message)) = self.pending_notification.take() {
             window.push_notification((notification_type, message), cx);
+        }
+        // Check if settings have been updated in another window
+        let shared = self.shared_state(cx);
+        let shared_version = shared.settings_version.load(std::sync::atomic::Ordering::Relaxed);
+        if shared_version > self.local_settings_version {
+            // Settings have been updated in another window - reload them
+            let shared_settings = shared.settings.lock().clone();
+            self.settings = shared_settings;
+            self.local_settings_version = shared_version;
+            self.settings_changed = true;
+            log::debug!(
+                "Window {:?} detected settings change from another window (version {} -> {})",
+                self.window_id,
+                self.local_settings_version,
+                shared_version
+            );
         }
         let shared = self.shared_state(cx);
         let should_process_files = cx
@@ -571,7 +648,7 @@ impl Render for Fulgur {
                     Theme::global_mut(cx).apply_config(&theme_config);
                     this.settings.app_settings.theme = theme_name;
                     this.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_show);
-                    if let Err(e) = this.settings.save() {
+                    if let Err(e) = this.update_and_propagate_settings(cx) {
                         log::error!("Failed to save settings: {}", e);
                     }
                 }

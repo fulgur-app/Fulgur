@@ -3,12 +3,14 @@ use fulgur_common::api::shares::SharedFileResponse;
 use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 
 /// State that is shared across all windows. This includes settings, themes, and sync-related state.
 pub struct SharedAppState {
     /// Settings (shared across all windows)
     pub settings: Arc<Mutex<Settings>>,
+    /// Settings version counter, incremented whenever settings change. All windows check this to detect when they need to reload settings.
+    pub settings_version: Arc<AtomicU64>,
     /// Available themes
     pub themes: Arc<Mutex<Option<Themes>>>,
     /// Sync server connection status (already Arc<Mutex>)
@@ -55,6 +57,7 @@ impl SharedAppState {
         };
         Self {
             settings: Arc::new(Mutex::new(settings)),
+            settings_version: Arc::new(AtomicU64::new(0)),
             themes: Arc::new(Mutex::new(themes)),
             sync_server_connection_status: Arc::new(Mutex::new(synchronization_status)),
             encryption_key: Arc::new(Mutex::new(None)),
