@@ -9,8 +9,11 @@ pub mod utils;
 pub mod window_manager;
 use crate::fulgur::{
     editor_tab::EditorTab,
-    ui::{icons::CustomIcon, languages, languages::SupportedLanguage},
-    utils::crypto_helper,
+    ui::{
+        icons::CustomIcon,
+        languages::{self, SupportedLanguage},
+    },
+    utils::crypto_helper::{self, load_private_key_from_keychain},
 };
 use files::file_watcher::{FileWatchEvent, FileWatcher};
 use gpui::*;
@@ -105,30 +108,33 @@ impl Fulgur {
     fn update_and_propagate_settings(&mut self, cx: &mut Context<Self>) -> anyhow::Result<()> {
         // Save settings to disk
         self.settings.save()?;
-        
+
         // Update shared settings
         let shared = self.shared_state(cx);
         *shared.settings.lock() = self.settings.clone();
-        
+
         // Increment the version counter so other windows detect the change
-        let new_version = shared.settings_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let new_version = shared
+            .settings_version
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
         self.local_settings_version = new_version;
-        
+
         // Mark settings as changed for this window
         self.settings_changed = true;
-        
+
         log::debug!(
             "Window {:?} updated settings to version {}, notifying other windows",
             self.window_id,
             new_version
         );
-        
+
         // Force other windows to re-render immediately
         // (Skip the current window to avoid reentrancy issues - it will re-render naturally)
         let current_window_id = self.window_id;
         let window_manager = cx.global::<window_manager::WindowManager>();
         let all_windows = window_manager.get_all_windows();
-        
+
         // Defer notifications to avoid reentrancy issues
         cx.defer(move |cx| {
             for weak_window in all_windows.iter() {
@@ -143,7 +149,7 @@ impl Fulgur {
                 }
             }
         });
-        
+
         Ok(())
     }
 
@@ -434,7 +440,9 @@ impl Render for Fulgur {
         }
         // Check if settings have been updated in another window
         let shared = self.shared_state(cx);
-        let shared_version = shared.settings_version.load(std::sync::atomic::Ordering::Relaxed);
+        let shared_version = shared
+            .settings_version
+            .load(std::sync::atomic::Ordering::Relaxed);
         if shared_version > self.local_settings_version {
             // Settings have been updated in another window - reload them
             let shared_settings = shared.settings.lock().clone();
@@ -490,7 +498,13 @@ impl Render for Fulgur {
                 Vec::new()
             };
         if !shared_files_to_open.is_empty() {
-            let encryption_key_opt = self.shared_state(cx).encryption_key.lock().clone();
+            let encryption_key_opt = match load_private_key_from_keychain() {
+                Ok(key) => key,
+                Err(_) => {
+                    log::error!("Cannot decrypt shared files: encryption key not available");
+                    None
+                }
+            };
             if let Some(encryption_key) = encryption_key_opt {
                 for shared_file in shared_files_to_open {
                     let decrypted_result =

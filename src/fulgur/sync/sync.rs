@@ -1,6 +1,6 @@
 use std::{sync::Arc, thread, time::Duration};
 
-use fulgur_common::api::BeginResponse;
+use fulgur_common::api::sync::{BeginResponse, InitialSynchronizationPayload};
 use gpui::{App, Entity, SharedString};
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 use super::access_token::{TokenState, get_valid_token};
 use super::sse::connect_sse;
 use crate::fulgur::settings::SynchronizationSettings;
+use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 
 /// Initial synchronization with the server. This endpoint returns both the encryption key and any shared files waiting for this device.
 ///
@@ -27,12 +28,19 @@ pub fn initial_synchronization(
     if server_url.is_none() {
         return Err(SynchronizationError::ServerUrlMissing);
     }
+    let public_key = synchronization_settings.public_key.clone();
+    if public_key.is_none() {
+        return Err(SynchronizationError::MissingEncryptionKey); //TODO
+    }
     let token = get_valid_token(synchronization_settings, token_state)?;
     let server_url_str = server_url.as_ref().unwrap();
     let begin_url = format!("{}/api/begin", server_url_str);
-    let mut response = match ureq::get(&begin_url)
+    let payload = InitialSynchronizationPayload {
+        public_key: public_key.unwrap(),
+    };
+    let mut response = match ureq::post(begin_url)
         .header("Authorization", &format!("Bearer {}", token))
-        .call()
+        .send_json(payload)
     {
         Ok(response) => response,
         Err(ureq::Error::StatusCode(code)) => {
@@ -138,7 +146,16 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             .server_url
             .clone();
         let email = settings.app_settings.synchronization_settings.email.clone();
-        let key = settings.app_settings.synchronization_settings.key.clone();
+        let key = match load_device_api_key_from_keychain() {
+            Ok(value) => value,
+            Err(_) => {
+                set_sync_server_connection_status(
+                    sync_server_connection_status.clone(),
+                    SynchronizationStatus::Disconnected,
+                );
+                return;
+            }
+        };
         if server_url.is_none() || email.is_none() || key.is_none() {
             set_sync_server_connection_status(
                 sync_server_connection_status.clone(),
@@ -156,10 +173,6 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                     sync_server_connection_status.clone(),
                     SynchronizationStatus::Connected,
                 );
-                {
-                    let mut key = encryption_key.lock();
-                    *key = Some(begin_response.encryption_key);
-                }
                 {
                     let mut device_name = device_name.lock();
                     *device_name = Some(begin_response.device_name);
@@ -247,10 +260,6 @@ pub fn perform_initial_synchronization(
         Ok(begin_response) => {
             let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
             {
-                let mut key = shared.encryption_key.lock();
-                *key = Some(begin_response.encryption_key);
-            }
-            {
                 let mut name = shared.device_name.lock();
                 *name = Some(begin_response.device_name.clone());
             }
@@ -304,6 +313,7 @@ pub enum SynchronizationError {
     HostNotFound,
     InvalidResponse(String),
     MissingEncryptionKey,
+    MissingPublicKey(String),
     MissingExpirationDate,
     Other(String),
     ServerError(u16),
@@ -333,6 +343,9 @@ impl SynchronizationError {
             SynchronizationError::InvalidResponse(e) => e.to_string(),
             SynchronizationError::MissingEncryptionKey => "Missing encryption key".to_string(),
             SynchronizationError::MissingExpirationDate => "Missing expiration date".to_string(),
+            SynchronizationError::MissingPublicKey(e) => {
+                format!("Missing public key for device: {e}")
+            }
             SynchronizationError::Other(e) => e.to_string(),
             SynchronizationError::ServerError(e) => e.to_string(),
             SynchronizationError::ServerUrlMissing => "Server URL is missing".to_string(),

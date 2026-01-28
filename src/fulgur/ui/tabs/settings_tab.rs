@@ -354,16 +354,21 @@ impl Fulgur {
                                 let entity = entity.clone();
                                 move |val: bool, cx: &mut App| {
                                     entity.update(cx, |this, cx| {
-                                        this.settings
-                                            .app_settings
-                                            .synchronization_settings
-                                            .is_synchronization_activated = val;
-                                        if let Err(e) = this.update_and_propagate_settings(cx) {
-                                            log::error!("Failed to save settings: {}", e);
-                                        }
-                                    });
-
-                                    // Trigger synchronization if activated
+                                            this.settings
+                                                .app_settings
+                                                .synchronization_settings
+                                                .is_synchronization_activated = val;
+                                            if val {
+                                                if let Err(e) =
+                                                    crypto_helper::check_private_public_keys(&mut this.settings)
+                                                {
+                                                    log::error!("Failed to check private/public keys: {}", e);
+                                                }
+                                            }
+                                            if let Err(e) = this.update_and_propagate_settings(cx) {
+                                                log::error!("Failed to save settings: {}", e);
+                                            }
+                                        });
                                     if val {
                                         perform_initial_synchronization(entity.clone(), cx);
                                     }
@@ -477,20 +482,26 @@ impl Fulgur {
                                     entity.update(cx, |this, cx| {
                                         let key = if val.is_empty() {
                                             None
+                                        } else if val.to_string() == DEVICE_KEY_PLACEHOLDER {
+                                            return;
                                         } else {
-                                            if val.to_string() == DEVICE_KEY_PLACEHOLDER {
-                                                None
-                                            } else {
-                                                Some(
-                                                    crypto_helper::encrypt(&val.to_string())
-                                                        .unwrap(),
-                                                )
-                                            }
+                                            Some(val.to_string())
                                         };
-                                        this.settings.app_settings.synchronization_settings.key =
-                                            key;
-                                        if let Err(e) = this.update_and_propagate_settings(cx) {
-                                            log::error!("Failed to save settings: {}", e);
+                                        if let Err(e) =
+                                            crypto_helper::save_device_api_key_to_keychain(key)
+                                        {
+                                            log::error!("Failed to save device API key: {}", e);
+                                        } else {
+                                            log::info!("Device API key saved successfully");
+                                            {
+                                                let mut token_state =
+                                                    this.shared_state(cx).token_state.lock();
+                                                token_state.access_token = None;
+                                                token_state.token_expires_at = None;
+                                                log::debug!(
+                                                    "Cleared cached access token for new device"
+                                                );
+                                            }
                                         }
                                         this.restart_sse_connection(cx);
                                     });
@@ -498,7 +509,9 @@ impl Fulgur {
                             },
                         ),
                     )
-                    .description("Device Key for synchronization (stored encrypted)."),
+                    .description(
+                        "Device Key for synchronization (stored in keychain).",
+                    ),
                     SettingItem::render({
                         let entity = entity.clone();
                         move |_options, _window, _cx| {
@@ -515,6 +528,13 @@ impl Fulgur {
                                         .on_click({
                                             let entity = entity.clone();
                                             move |_, _window, cx| {
+                                                let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+                                                {
+                                                    let mut token_state = shared.token_state.lock();
+                                                    token_state.access_token = None;
+                                                    token_state.token_expires_at = None;
+                                                    log::debug!("Cleared cached token before manual synchronization");
+                                                }
                                                 perform_initial_synchronization(entity.clone(), cx);
                                             }
                                         }),
