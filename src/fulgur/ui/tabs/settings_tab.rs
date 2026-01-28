@@ -377,7 +377,7 @@ impl Fulgur {
                         )
                         .default_value(default_app_settings.synchronization_settings.is_synchronization_activated),
                     )
-                    .description("Activate synchronization with the server."),
+                    .description("Activate synchronization with the server and saves the relevant keys in the system's keychain."),
                     SettingItem::new(
                         "Server URL",
                         SettingField::input(
