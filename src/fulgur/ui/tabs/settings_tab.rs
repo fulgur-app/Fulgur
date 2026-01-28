@@ -375,7 +375,7 @@ impl Fulgur {
                                 }
                             },
                         )
-                        .default_value(default_app_settings.confirm_exit),
+                        .default_value(default_app_settings.synchronization_settings.is_synchronization_activated),
                     )
                     .description("Activate synchronization with the server."),
                     SettingItem::new(

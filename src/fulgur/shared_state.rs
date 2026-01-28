@@ -46,13 +46,23 @@ impl SharedAppState {
     /// - `Self`: The new shared app state
     pub fn new(pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>) -> Self {
         let mut settings = Settings::load().unwrap_or_else(|_| Settings::new());
-        if check_private_public_keys(&mut settings).is_err() {
-            log::error!("Cannot create public/private keys pair, sync deactivated");
-            settings
-                .app_settings
-                .synchronization_settings
-                .is_synchronization_activated = false;
+        if settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated
+        {
+            if let Err(e) = check_private_public_keys(&mut settings) {
+                log::error!(
+                    "Cannot create public/private keys pair, sync deactivated: {}",
+                    e
+                );
+                settings
+                    .app_settings
+                    .synchronization_settings
+                    .is_synchronization_activated = false;
+            }
         }
+
         let themes = Themes::load().ok();
         let synchronization_status = if settings
             .app_settings
