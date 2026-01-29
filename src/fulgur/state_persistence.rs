@@ -2,23 +2,139 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+/// Persisted state of a single editor tab
+///
+/// Tab IDs are not persisted as they are assigned at runtime based on position.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TabState {
-    pub id: usize,
+    /// Display title shown in the tab bar (usually the filename)
     pub title: String,
+    /// Path to the file on disk, if the tab has an associated file. `None` for unsaved/new tabs.
     pub file_path: Option<PathBuf>,
+    /// The text content of the tab, stored for unsaved tabs or when the file may have been modified since last save
     pub content: Option<String>,
+    /// ISO 8601 timestamp of when the content was last saved to disk. Used to detect if the file has been modified externally.
     pub last_saved: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct AppState {
-    pub tabs: Vec<TabState>,
-    pub active_tab_index: Option<usize>,
-    pub next_tab_id: usize,
+/// Serialized window bounds that can be saved to JSON
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SerializedWindowBounds {
+    /// Window state: "Windowed", "Maximized", or "Fullscreen"
+    pub state: String,
+    /// X position of window origin in pixels
+    pub x: f32,
+    /// Y position of window origin in pixels
+    pub y: f32,
+    /// Window width in pixels
+    pub width: f32,
+    /// Window height in pixels
+    pub height: f32,
+    /// Display ID (monitor) where the window was located
+    #[serde(default)]
+    pub display_id: Option<u32>,
 }
 
-impl AppState {
+impl Default for SerializedWindowBounds {
+    fn default() -> Self {
+        Self {
+            state: "Windowed".to_string(),
+            x: 100.0,
+            y: 100.0,
+            width: 1200.0,
+            height: 800.0,
+            display_id: None,
+        }
+    }
+}
+
+impl SerializedWindowBounds {
+    /// Convert GPUI WindowBounds to SerializedWindowBounds
+    ///
+    /// ### Arguments
+    /// - `bounds`: The GPUI WindowBounds to convert
+    /// - `display_id`: Optional display ID (monitor) for the window
+    ///
+    /// ### Returns
+    /// - `SerializedWindowBounds`: The serialized window bounds
+    pub fn from_gpui_bounds(bounds: gpui::WindowBounds, display_id: Option<u32>) -> Self {
+        use gpui::WindowBounds;
+        match bounds {
+            WindowBounds::Windowed(rect) => Self {
+                state: "Windowed".to_string(),
+                x: rect.origin.x.into(),
+                y: rect.origin.y.into(),
+                width: rect.size.width.into(),
+                height: rect.size.height.into(),
+                display_id,
+            },
+            WindowBounds::Maximized(rect) => Self {
+                state: "Maximized".to_string(),
+                x: rect.origin.x.into(),
+                y: rect.origin.y.into(),
+                width: rect.size.width.into(),
+                height: rect.size.height.into(),
+                display_id,
+            },
+            WindowBounds::Fullscreen(rect) => Self {
+                state: "Fullscreen".to_string(),
+                x: rect.origin.x.into(),
+                y: rect.origin.y.into(),
+                width: rect.size.width.into(),
+                height: rect.size.height.into(),
+                display_id,
+            },
+        }
+    }
+
+    /// Convert SerializedWindowBounds to GPUI WindowBounds
+    ///
+    /// ### Returns
+    /// - `gpui::WindowBounds`: The GPUI window bounds
+    pub fn to_gpui_bounds(&self) -> gpui::WindowBounds {
+        use gpui::{Bounds, WindowBounds, point, px, size};
+        let bounds = Bounds {
+            origin: point(px(self.x), px(self.y)),
+            size: size(px(self.width), px(self.height)),
+        };
+        match self.state.as_str() {
+            "Maximized" => WindowBounds::Maximized(bounds),
+            "Fullscreen" => WindowBounds::Fullscreen(bounds),
+            _ => WindowBounds::Windowed(bounds), // Default to Windowed for unknown states
+        }
+    }
+}
+
+/// Persisted state of a single application window
+///
+/// Tab IDs are assigned at runtime, so next_tab_id is not persisted.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WindowState {
+    /// All tabs in this window, in display order
+    pub tabs: Vec<TabState>,
+    /// Index of the currently active/visible tab, if any
+    pub active_tab_index: Option<usize>,
+    /// Window position, size, and display state (windowed/maximized/fullscreen)
+    #[serde(default)]
+    pub window_bounds: SerializedWindowBounds,
+}
+
+/// Top-level container for all persisted application state
+///
+/// This struct is serialized to `state.json` and contains the complete
+/// state of all windows. On startup, each window in this list is restored
+/// with its tabs, positions, and content.
+///
+/// File location:
+/// - Windows: `%APPDATA%\Fulgur\state.json`
+/// - macOS/Linux: `~/.fulgur/state.json`
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WindowsState {
+    /// All application windows to be restored
+    pub windows: Vec<WindowState>,
+}
+
+impl WindowsState {
     /// Get the path to the state file
     ///
     /// ### Returns
@@ -58,16 +174,18 @@ impl AppState {
         Ok(())
     }
 
-    /// Load the app state from disk
+    /// Load the windows state from disk
     ///
     /// ### Returns
-    /// - `Ok(AppState)`: The loaded app state
-    /// - `Err(anyhow::Error)`: If the app state could not be loaded
+    /// - `Ok(WindowsState)`: The loaded windows state
+    /// - `Err(anyhow::Error)`: If the windows state could not be loaded
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::state_file_path()?;
         let json = fs::read_to_string(path)?;
-        let state: AppState = serde_json::from_str(&json)?;
-        Ok(state)
+        if let Ok(state) = serde_json::from_str::<WindowsState>(&json) {
+            return Ok(state);
+        }
+        Err(anyhow::anyhow!("Failed to parse state file"))
     }
 }
 
@@ -82,8 +200,10 @@ impl AppState {
 pub fn get_file_modified_time(path: &PathBuf) -> Option<String> {
     let metadata = fs::metadata(path).ok()?;
     let modified = metadata.modified().ok()?;
-    let datetime: chrono::DateTime<chrono::Utc> = modified.into();
-    Some(datetime.to_rfc3339())
+    let datetime = time::OffsetDateTime::from(modified);
+    datetime
+        .format(&time::format_description::well_known::Rfc3339)
+        .ok()
 }
 
 /// Compare two ISO 8601 timestamps
@@ -95,9 +215,11 @@ pub fn get_file_modified_time(path: &PathBuf) -> Option<String> {
 /// ### Returns
 /// - `True`: If the file is newer than the saved file, `False` otherwise
 pub fn is_file_newer(file_time: &str, saved_time: &str) -> bool {
-    let file_dt = chrono::DateTime::parse_from_rfc3339(file_time).ok();
-    let saved_dt = chrono::DateTime::parse_from_rfc3339(saved_time).ok();
-
+    let file_dt =
+        time::OffsetDateTime::parse(file_time, &time::format_description::well_known::Rfc3339).ok();
+    let saved_dt =
+        time::OffsetDateTime::parse(saved_time, &time::format_description::well_known::Rfc3339)
+            .ok();
     match (file_dt, saved_dt) {
         (Some(file), Some(saved)) => file > saved,
         _ => false,
@@ -122,7 +244,10 @@ mod tests {
         let result = get_file_modified_time(&file_path);
         assert!(result.is_some());
         let timestamp = result.unwrap();
-        assert!(chrono::DateTime::parse_from_rfc3339(&timestamp).is_ok());
+        assert!(
+            time::OffsetDateTime::parse(&timestamp, &time::format_description::well_known::Rfc3339)
+                .is_ok()
+        );
         fs::remove_file(&file_path).ok();
     }
 

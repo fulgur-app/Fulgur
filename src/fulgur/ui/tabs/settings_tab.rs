@@ -15,8 +15,8 @@ use gpui_component::{
 
 use crate::fulgur::{
     Fulgur, crypto_helper,
-    files::sync::perform_initial_synchronization,
     settings::{AppSettings, EditorSettings, Themes},
+    sync::sync::perform_initial_synchronization,
     themes,
     ui::{icons::CustomIcon, menus::build_menus},
 };
@@ -48,8 +48,6 @@ impl SettingsTab {
 }
 
 impl Fulgur {
-    
-
     /// Create the Editor settings page
     ///
     /// ### Arguments
@@ -79,10 +77,9 @@ impl Fulgur {
                         {
                             let entity = entity.clone();
                             move |val: f64, cx: &mut App| {
-                                entity.update(cx, |this, _cx| {
+                                entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.font_size = val as f32;
-                                    this.settings_changed = true;
-                                    if let Err(e) = this.settings.save() {
+                                    if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {}", e);
                                     }
                                 });
@@ -110,10 +107,9 @@ impl Fulgur {
                         {
                             let entity = entity.clone();
                             move |val: f64, cx: &mut App| {
-                                entity.update(cx, |this, _cx| {
+                                entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.tab_size = val as usize;
-                                    this.settings_changed = true;
-                                    if let Err(e) = this.settings.save() {
+                                    if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {}", e);
                                     }
                                 });
@@ -135,10 +131,9 @@ impl Fulgur {
                         {
                             let entity = entity.clone();
                             move |val: bool, cx: &mut App| {
-                                entity.update(cx, |this, _cx| {
+                                entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.show_indent_guides = val;
-                                    this.settings_changed = true;
-                                    if let Err(e) = this.settings.save() {
+                                    if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {}", e);
                                     }
                                 });
@@ -162,10 +157,9 @@ impl Fulgur {
                         {
                             let entity = entity.clone();
                             move |val: bool, cx: &mut App| {
-                                entity.update(cx, |this, _cx| {
+                                entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.show_line_numbers = val;
-                                    this.settings_changed = true;
-                                    if let Err(e) = this.settings.save() {
+                                    if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {}", e);
                                     }
                                 });
@@ -185,10 +179,9 @@ impl Fulgur {
                         {
                             let entity = entity.clone();
                             move |val: bool, cx: &mut App| {
-                                entity.update(cx, |this, _cx| {
+                                entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.soft_wrap = val;
-                                    this.settings_changed = true;
-                                    if let Err(e) = this.settings.save() {
+                                    if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {}", e);
                                     }
                                 });
@@ -217,13 +210,12 @@ impl Fulgur {
                         {
                             let entity = entity.clone();
                             move |val: bool, cx: &mut App| {
-                                entity.update(cx, |this, _cx| {
+                                entity.update(cx, |this, cx| {
                                     this.settings
                                         .editor_settings
                                         .markdown_settings
                                         .show_markdown_preview = val;
-                                    this.settings_changed = true;
-                                    if let Err(e) = this.settings.save() {
+                                    if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {}", e);
                                     }
                                 });
@@ -254,13 +246,12 @@ impl Fulgur {
                         {
                             let entity = entity.clone();
                             move |val: bool, cx: &mut App| {
-                                entity.update(cx, |this, _cx| {
+                                entity.update(cx, |this, cx| {
                                     this.settings
                                         .editor_settings
                                         .markdown_settings
                                         .show_markdown_toolbar = val;
-                                    this.settings_changed = true;
-                                    if let Err(e) = this.settings.save() {
+                                    if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {}", e);
                                     }
                                 });
@@ -286,14 +277,14 @@ impl Fulgur {
                         {
                             let entity = entity.clone();
                             move |val: bool, cx: &mut App| {
-                                entity.update(cx, |this, _cx| {
+                                entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.watch_files = val;
                                     if val {
                                         this.start_file_watcher();
                                     } else {
                                         this.stop_file_watcher();
                                     }
-                                    if let Err(e) = this.settings.save() {
+                                    if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {}", e);
                                     }
                                 });
@@ -331,9 +322,9 @@ impl Fulgur {
                             {
                                 let entity = entity.clone();
                                 move |val: bool, cx: &mut App| {
-                                    entity.update(cx, |this, _cx| {
+                                    entity.update(cx, |this, cx| {
                                         this.settings.app_settings.confirm_exit = val;
-                                        if let Err(e) = this.settings.save() {
+                                        if let Err(e) = this.update_and_propagate_settings(cx) {
                                             log::error!("Failed to save settings: {}", e);
                                         }
                                     });
@@ -362,26 +353,31 @@ impl Fulgur {
                             {
                                 let entity = entity.clone();
                                 move |val: bool, cx: &mut App| {
-                                    entity.update(cx, |this, _cx| {
-                                        this.settings
-                                            .app_settings
-                                            .synchronization_settings
-                                            .is_synchronization_activated = val;
-                                        if let Err(e) = this.settings.save() {
-                                            log::error!("Failed to save settings: {}", e);
-                                        }
-                                    });
-
-                                    // Trigger synchronization if activated
+                                    entity.update(cx, |this, cx| {
+                                            this.settings
+                                                .app_settings
+                                                .synchronization_settings
+                                                .is_synchronization_activated = val;
+                                            if val {
+                                                if let Err(e) =
+                                                    crypto_helper::check_private_public_keys(&mut this.settings)
+                                                {
+                                                    log::error!("Failed to check private/public keys: {}", e);
+                                                }
+                                            }
+                                            if let Err(e) = this.update_and_propagate_settings(cx) {
+                                                log::error!("Failed to save settings: {}", e);
+                                            }
+                                        });
                                     if val {
                                         perform_initial_synchronization(entity.clone(), cx);
                                     }
                                 }
                             },
                         )
-                        .default_value(default_app_settings.confirm_exit),
+                        .default_value(default_app_settings.synchronization_settings.is_synchronization_activated),
                     )
-                    .description("Activate synchronization with the server."),
+                    .description("Activate synchronization with the server and saves the relevant keys in the system's keychain."),
                     SettingItem::new(
                         "Server URL",
                         SettingField::input(
@@ -402,7 +398,7 @@ impl Fulgur {
                             {
                                 let entity = entity.clone();
                                 move |val: SharedString, cx: &mut App| {
-                                    entity.update(cx, |this, _cx| {
+                                    entity.update(cx, |this, cx| {
                                         let url = if val.is_empty() {
                                             None
                                         } else {
@@ -412,10 +408,10 @@ impl Fulgur {
                                             .app_settings
                                             .synchronization_settings
                                             .server_url = url;
-                                        if let Err(e) = this.settings.save() {
+                                        if let Err(e) = this.update_and_propagate_settings(cx) {
                                             log::error!("Failed to save settings: {}", e);
                                         }
-                                        this.restart_sse_connection();
+                                        this.restart_sse_connection(cx);
                                     });
                                 }
                             },
@@ -450,7 +446,7 @@ impl Fulgur {
                             {
                                 let entity = entity.clone();
                                 move |val: SharedString, cx: &mut App| {
-                                    entity.update(cx, |this, _cx| {
+                                    entity.update(cx, |this, cx| {
                                         let email = if val.is_empty() {
                                             None
                                         } else {
@@ -458,10 +454,10 @@ impl Fulgur {
                                         };
                                         this.settings.app_settings.synchronization_settings.email =
                                             email;
-                                        if let Err(e) = this.settings.save() {
+                                        if let Err(e) = this.update_and_propagate_settings(cx) {
                                             log::error!("Failed to save settings: {}", e);
                                         }
-                                        this.restart_sse_connection();
+                                        this.restart_sse_connection(cx);
                                     });
                                 }
                             },
@@ -483,31 +479,39 @@ impl Fulgur {
                             {
                                 let entity = entity.clone();
                                 move |val: SharedString, cx: &mut App| {
-                                    entity.update(cx, |this, _cx| {
+                                    entity.update(cx, |this, cx| {
                                         let key = if val.is_empty() {
                                             None
+                                        } else if val.to_string() == DEVICE_KEY_PLACEHOLDER {
+                                            return;
                                         } else {
-                                            if val.to_string() == DEVICE_KEY_PLACEHOLDER {
-                                                None
-                                            } else {
-                                                Some(
-                                                    crypto_helper::encrypt(&val.to_string())
-                                                        .unwrap(),
-                                                )
-                                            }
+                                            Some(val.to_string())
                                         };
-                                        this.settings.app_settings.synchronization_settings.key =
-                                            key;
-                                        if let Err(e) = this.settings.save() {
-                                            log::error!("Failed to save settings: {}", e);
+                                        if let Err(e) =
+                                            crypto_helper::save_device_api_key_to_keychain(key)
+                                        {
+                                            log::error!("Failed to save device API key: {}", e);
+                                        } else {
+                                            log::info!("Device API key saved successfully");
+                                            {
+                                                let mut token_state =
+                                                    this.shared_state(cx).token_state.lock();
+                                                token_state.access_token = None;
+                                                token_state.token_expires_at = None;
+                                                log::debug!(
+                                                    "Cleared cached access token for new device"
+                                                );
+                                            }
                                         }
-                                        this.restart_sse_connection();
+                                        this.restart_sse_connection(cx);
                                     });
                                 }
                             },
                         ),
                     )
-                    .description("Device Key for synchronization (stored encrypted)."),
+                    .description(
+                        "Device Key for synchronization (stored in keychain).",
+                    ),
                     SettingItem::render({
                         let entity = entity.clone();
                         move |_options, _window, _cx| {
@@ -524,10 +528,14 @@ impl Fulgur {
                                         .on_click({
                                             let entity = entity.clone();
                                             move |_, _window, cx| {
-                                                perform_initial_synchronization(
-                                                    entity.clone(),
-                                                    cx,
-                                                );
+                                                let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+                                                {
+                                                    let mut token_state = shared.token_state.lock();
+                                                    token_state.access_token = None;
+                                                    token_state.token_expires_at = None;
+                                                    log::debug!("Cleared cached token before manual synchronization");
+                                                }
+                                                perform_initial_synchronization(entity.clone(), cx);
                                             }
                                         }),
                                 )
@@ -677,7 +685,8 @@ impl Fulgur {
             Self::create_editor_page(entity.clone()),
             Self::create_application_page(entity.clone()),
         ];
-        if let Some(ref themes) = self.themes {
+        let themes = self.shared_state(cx).themes.lock().clone();
+        if let Some(ref themes) = themes {
             pages.push(Self::create_themes_page(entity, themes));
         }
         pages
@@ -720,12 +729,12 @@ impl Fulgur {
     /// - `cx`: The context
     pub fn clear_recent_files(&mut self, cx: &mut Context<Self>) {
         self.settings.recent_files.clear();
-        if let Err(e) = self.settings.save() {
+        if let Err(e) = self.update_and_propagate_settings(cx) {
             log::error!("Failed to save settings: {}", e);
         }
         let menus = build_menus(
             &self.settings.recent_files.get_files(),
-            self.update_link.clone(),
+            self.shared_state(cx).update_link.lock().clone(),
         );
         cx.set_menus(menus);
     }

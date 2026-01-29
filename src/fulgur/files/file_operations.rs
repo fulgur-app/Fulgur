@@ -157,10 +157,9 @@ impl Fulgur {
                     if let Err(e) = this.settings.add_file(path.clone()) {
                         log::error!("Failed to add file to recent files: {}", e);
                     }
-                    let menus = menus::build_menus(
-                        &this.settings.get_recent_files(),
-                        this.update_link.clone(),
-                    );
+                    let shared = this.shared_state(cx);
+                    let update_link = shared.update_link.lock().clone();
+                    let menus = menus::build_menus(&this.settings.get_recent_files(), update_link);
                     cx.set_menus(menus);
                     let title = match path.file_name() {
                         Some(file_name) => Some(file_name.to_string_lossy().to_string()),
@@ -168,6 +167,7 @@ impl Fulgur {
                     };
                     this.set_title(title, cx);
                     log::debug!("File opened successfully in new tab: {:?}", path);
+                    let _ = this.save_state(cx, window);
                     cx.notify();
                 });
             })
@@ -232,33 +232,53 @@ impl Fulgur {
 
     /// Open a file from a given path
     ///
+    /// ### Behavior
+    /// First detects if the file is already open, and will focus on that tab if that's the case.
+    ///
     /// ### Arguments
     /// - `window`: The window to open the file in
     /// - `cx`: The application context
     /// - `path`: The path to the file to open
     pub fn do_open_file(&mut self, window: &mut Window, cx: &mut Context<Self>, path: PathBuf) {
-        // Check if tab already exists for this path
-        if let Some(tab_index) = self.find_tab_by_path(&path) {
-            log::debug!(
-                "Tab already exists for {:?} at index {}, focusing and reloading",
-                path,
-                tab_index
-            );
-            if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
-                if editor_tab.modified {
-                    log::debug!("Tab is modified, reloading content from disk");
-                    self.reload_tab_from_disk(tab_index, window, cx);
-                } else {
-                    log::debug!("Tab is not modified, just focusing it");
+        let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
+        if let Some(existing_window_id) =
+            window_manager.find_window_with_file(&path, self.window_id, cx)
+        {
+            if existing_window_id == self.window_id {
+                if let Some(tab_index) = self.find_tab_by_path(&path) {
+                    log::debug!(
+                        "Tab already exists for {:?} at index {}, focusing and reloading",
+                        path,
+                        tab_index
+                    );
+                    if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
+                        if editor_tab.modified {
+                            log::debug!("Tab is modified, reloading content from disk");
+                            self.reload_tab_from_disk(tab_index, window, cx);
+                        } else {
+                            log::debug!("Tab is not modified, just focusing it");
+                        }
+                    }
+                    self.active_tab_index = Some(tab_index);
+                    self.focus_active_tab(window, cx);
+                    cx.notify();
                 }
+                return;
+            } else {
+                let file_name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Unknown file");
+                let message = format!("File '{}' is already open in another window", file_name);
+                window.push_notification((NotificationType::Info, SharedString::from(message)), cx);
+                log::debug!(
+                    "File {:?} is already open in window {:?}",
+                    path,
+                    existing_window_id
+                );
+                return;
             }
-            self.active_tab_index = Some(tab_index);
-            self.focus_active_tab(window, cx);
-            cx.notify();
-            return;
         }
-
-        // No existing tab, open new one
         cx.spawn_in(window, async move |view, window| {
             Self::open_file_from_path(view, window, path).await
         })
@@ -268,8 +288,8 @@ impl Fulgur {
     /// Handle opening a file from the command line (double-click or "Open with")
     ///
     /// ### Behavior
-    /// - If a tab exists for the file and is not modified: focus the tab
-    /// - If a tab exists for the file and is modified: reload content and focus the tab
+    /// - If a tab exists for the file in this window: focus the tab (reload if modified)
+    /// - If a tab exists in another window: show notification
     /// - If no tab exists: open a new tab and focus it
     ///
     /// ### Arguments
@@ -283,23 +303,7 @@ impl Fulgur {
         path: PathBuf,
     ) {
         log::debug!("Handling file open from CLI: {:?}", path);
-        if let Some(tab_index) = self.find_tab_by_path(&path) {
-            log::debug!("Tab already exists for {:?} at index {}", path, tab_index);
-            if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
-                if editor_tab.modified {
-                    log::debug!("Tab is modified, reloading content from disk");
-                    self.reload_tab_from_disk(tab_index, window, cx);
-                } else {
-                    log::debug!("Tab is not modified, just focusing it");
-                }
-            }
-            self.active_tab_index = Some(tab_index);
-            self.focus_active_tab(window, cx);
-            cx.notify();
-        } else {
-            log::debug!("No existing tab found, opening new tab for {:?}", path);
-            self.do_open_file(window, cx, path);
-        }
+        self.do_open_file(window, cx, path);
     }
 
     /// Save a file
@@ -332,7 +336,8 @@ impl Fulgur {
             return;
         }
         log::debug!("File saved successfully: {:?}", path);
-        self.last_file_saves.insert(path.clone(), std::time::Instant::now());
+        self.last_file_saves
+            .insert(path.clone(), std::time::Instant::now());
         if let Tab::Editor(editor_tab) = &mut self.tabs[self.active_tab_index.unwrap()] {
             editor_tab.mark_as_saved(cx);
         }
@@ -389,7 +394,8 @@ impl Fulgur {
                         if let Some(old_path) = old_path {
                             this.unwatch_file(&old_path);
                         }
-                        this.last_file_saves.insert(path.clone(), std::time::Instant::now());
+                        this.last_file_saves
+                            .insert(path.clone(), std::time::Instant::now());
                         if let Some(Tab::Editor(editor_tab)) =
                             this.tabs.get_mut(active_tab_index.unwrap())
                         {

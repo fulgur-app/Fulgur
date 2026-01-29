@@ -1,15 +1,38 @@
 mod files;
 mod settings;
+pub mod shared_state;
 mod state_operations;
-mod state_persistence;
+pub mod state_persistence;
+mod sync;
 mod ui;
 pub mod utils;
-use fulgur_common::api::shares::SharedFileResponse;
+pub mod window_manager;
+use crate::fulgur::{
+    editor_tab::EditorTab,
+    ui::{
+        icons::CustomIcon,
+        languages::{self, SupportedLanguage},
+    },
+    utils::crypto_helper::{self, load_private_key_from_keychain},
+};
+use files::file_watcher::{FileWatchEvent, FileWatcher};
+use gpui::*;
+use gpui_component::{
+    ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
+    input::{Input, InputEvent, InputState},
+    link::Link,
+    notification::NotificationType,
+    resizable::{h_resizable, resizable_panel},
+    scroll::ScrollableElement,
+    text::TextView,
+    v_flex,
+};
 use settings::Settings;
+use std::sync::mpsc::Receiver;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
     sync::atomic::AtomicBool,
     time::Instant,
 };
@@ -18,35 +41,18 @@ use ui::{
     bars::search_replace_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*,
     themes,
 };
-use files::file_watcher::{FileWatchEvent, FileWatcher};
-use std::sync::mpsc::Receiver;
-use gpui::*;
-use gpui_component::{
-    ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
-    highlighter::Language,
-    input::{Input, InputEvent, InputState},
-    link::Link,
-    notification::NotificationType,
-    resizable::{h_resizable, resizable_panel},
-    scroll::ScrollableElement,
-    select::SelectState,
-    text::TextView,
-    v_flex,
-};
-use crate::fulgur::{
-    files::sync::SynchronizationStatus, settings::Themes, ui::{icons::CustomIcon, languages}, utils::crypto_helper
-};
 
 pub struct Fulgur {
-    focus_handle: FocusHandle, // The focus handle for the application
-    title_bar: Entity<CustomTitleBar>, // The title bar of the application
-    tabs: Vec<Tab>, // The tabs in the application
-    active_tab_index: Option<usize>, // Index of the active tab
-    next_tab_id: usize, // The next tab ID 
+    pub window_id: WindowId,                             // The ID of this window
+    focus_handle: FocusHandle,                           // The focus handle for the application
+    title_bar: Entity<CustomTitleBar>,                   // The title bar of the application
+    tabs: Vec<Tab>,                                      // The tabs in the application
+    active_tab_index: Option<usize>,                     // Index of the active tab
+    next_tab_id: usize,                                  // The next tab ID
     show_search: bool, // Flag to indicate that the search bar should be shown
     search_input: Entity<InputState>, // Input for the search input in the search bar
     replace_input: Entity<InputState>, // Input for the replace input in the search bar
-    match_case: bool, // Flag to indicate that the search should be case-sensitive
+    match_case: bool,  // Flag to indicate that the search should be case-sensitive
     match_whole_word: bool, // Flag to indicate that the search should match whole words only
     search_matches: Vec<SearchMatch>, // Search matches found in the current search
     current_match_index: Option<usize>, // Index of the current search match
@@ -55,70 +61,206 @@ pub struct Fulgur {
     pub jump_to_line_input: Entity<InputState>, // Input for jumping to a line in the editor
     pending_jump: Option<editor_tab::Jump>, // Pending jump to line action
     jump_to_line_dialog_open: bool, // Flag to indicate that the jump to line dialog is open
-    pub settings: Settings, // The settings for the application
-    pub language_dropdown: Entity<SelectState<Vec<SharedString>>>, // Dropdown for selecting the language of the editor
+    pub settings: Settings, // The settings for the application (local copy for fast access)
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
-    pub themes: Option<Themes>, // The themes available to the user
+    local_settings_version: u64, // Track the version of settings this window has loaded
     rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
-    pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>, // Files from macOS "Open with" events
-    update_link: Option<String>, // Link to download the app's update
-    sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>, // Shared sync connection status (thread-safe)
-    encryption_key: Arc<Mutex<Option<String>>>, // User's encryption key from server (thread-safe)
-    device_name: Arc<Mutex<Option<String>>>, // Device name from server (thread-safe)
-    pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>, // Shared files from sync server (thread-safe)
-    token_state: Arc<Mutex<files::sync::TokenState>>, // JWT token state for API authentication (thread-safe)
     file_watcher: Option<FileWatcher>, // File watcher for external file changes
     file_watch_events: Option<Receiver<FileWatchEvent>>, // Channel for file watch events
     last_file_events: HashMap<PathBuf, Instant>, // Track last event time per file for debouncing
     last_file_saves: HashMap<PathBuf, Instant>, // Track when Fulgur saves files to ignore self-triggered events
     pending_conflicts: HashMap<PathBuf, usize>, // Deferred conflicts for inactive tabs (path -> tab_index)
-    sse_events: Option<Receiver<files::sync::SseEvent>>, // Channel for SSE events from server
-    sse_event_tx: Option<std::sync::mpsc::Sender<files::sync::SseEvent>>, // Sender for SSE connection
+    sse_events: Option<Receiver<sync::sse::SseEvent>>, // Channel for SSE events from server
+    sse_event_tx: Option<std::sync::mpsc::Sender<sync::sse::SseEvent>>, // Sender for SSE connection
     sse_shutdown_flag: Option<Arc<AtomicBool>>, // Flag to signal SSE thread to shutdown
-    last_sse_event: Option<Instant>, // Track last SSE event time for debouncing
-    last_heartbeat: Arc<Mutex<Option<Instant>>>, // Track last heartbeat time for connection timeout detection (thread-safe)
+    last_sse_event: Option<Instant>,            // Track last SSE event time for debouncing
     pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
+    cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
 }
 
 impl Fulgur {
+    /// Get shared application state
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `&'a shared_state::SharedAppState`: The shared application state
+    fn shared_state<'a>(&self, cx: &'a App) -> &'a shared_state::SharedAppState {
+        cx.global::<shared_state::SharedAppState>()
+    }
+
+    /// Update settings and propagate to all windows
+    ///
+    /// This method should be called whenever settings are changed. It will:
+    /// 1. Save settings to disk
+    /// 2. Update shared settings in SharedAppState
+    /// 3. Increment the shared settings version (so other windows detect the change)
+    /// 4. Set settings_changed flag for this window
+    /// 5. Force all windows to re-render immediately
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `anyhow::Result<()>`: Result of the operation
+    fn update_and_propagate_settings(&mut self, cx: &mut Context<Self>) -> anyhow::Result<()> {
+        // Save settings to disk
+        self.settings.save()?;
+
+        // Update shared settings
+        let shared = self.shared_state(cx);
+        *shared.settings.lock() = self.settings.clone();
+
+        // Increment the version counter so other windows detect the change
+        let new_version = shared
+            .settings_version
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        self.local_settings_version = new_version;
+
+        // Mark settings as changed for this window
+        self.settings_changed = true;
+
+        log::debug!(
+            "Window {:?} updated settings to version {}, notifying other windows",
+            self.window_id,
+            new_version
+        );
+
+        // Force other windows to re-render immediately
+        // (Skip the current window to avoid reentrancy issues - it will re-render naturally)
+        let current_window_id = self.window_id;
+        let window_manager = cx.global::<window_manager::WindowManager>();
+        let all_windows = window_manager.get_all_windows();
+
+        // Defer notifications to avoid reentrancy issues
+        cx.defer(move |cx| {
+            for weak_window in all_windows.iter() {
+                if let Some(window_entity) = weak_window.upgrade() {
+                    // Skip the current window (already updating)
+                    let should_notify = window_entity.read(cx).window_id != current_window_id;
+                    if should_notify {
+                        window_entity.update(cx, |_, cx| {
+                            cx.notify();
+                        });
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Handle window close request
+    ///
+    /// ### Behavior
+    /// - If this is the last window: treat as quit (show confirm dialog if enabled)
+    /// - If multiple windows exist: just close this window (after saving state)
+    ///
+    /// ### Arguments
+    /// - `window`: The window being closed
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: Allow window to close
+    /// - `false`: Prevent window from closing (e.g., waiting for user confirmation)
+    pub fn on_window_close_requested(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let window_count = cx.global::<window_manager::WindowManager>().window_count();
+        if window_count == 1 {
+            if self.settings.app_settings.confirm_exit {
+                self.quit(window, cx);
+                false
+            } else {
+                if let Err(e) = self.save_state(cx, window) {
+                    log::error!("Failed to save app state: {}", e);
+                }
+                cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
+                    manager.unregister(self.window_id);
+                });
+                true
+            }
+        } else {
+            log::debug!(
+                "Closing window {:?} ({} windows remaining)",
+                self.window_id,
+                window_count - 1
+            );
+            cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
+                manager.unregister(self.window_id);
+            });
+            if let Err(e) = self.save_state(cx, window) {
+                log::error!("Failed to save app state: {}", e);
+            }
+            true
+        }
+    }
+
+    /// Open a new Fulgur window (completely empty)
+    ///
+    /// ### Arguments
+    /// - `cx` - The context for the application
+    pub fn open_new_window(&self, cx: &mut Context<Self>) {
+        let async_cx = cx.to_async();
+        async_cx
+            .spawn(async move |cx| {
+                let window_options = WindowOptions {
+                    titlebar: Some(gpui_component::TitleBar::title_bar_options()),
+                    #[cfg(target_os = "linux")]
+                    window_decorations: Some(gpui::WindowDecorations::Client),
+                    ..Default::default()
+                };
+                let window = cx.open_window(window_options, |window, cx| {
+                    window.set_window_title("Fulgur");
+                    let view = Fulgur::new(window, cx, usize::MAX); // usize::MAX = new empty window
+                    let window_handle = window.window_handle();
+                    let window_id = window_handle.window_id();
+                    view.update(cx, |fulgur, _cx| {
+                        fulgur.window_id = window_id;
+                    });
+                    cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
+                        manager.register(window_id, view.downgrade());
+                    });
+                    let view_clone = view.clone();
+                    window.on_window_should_close(cx, move |window, cx| {
+                        view_clone.update(cx, |fulgur, cx| {
+                            fulgur.on_window_close_requested(window, cx)
+                        })
+                    });
+                    view.read(cx).focus_active_tab(window, cx);
+                    cx.new(|cx| gpui_component::Root::new(view, window, cx))
+                })?;
+                window.update(cx, |_, window, _| {
+                    window.activate_window();
+                })?;
+                Ok::<_, anyhow::Error>(())
+            })
+            .detach();
+    }
+
     /// Create a new Fulgur instance
     ///
     /// ### Arguments
     /// - `window`: The window to create the Fulgur instance in
     /// - `cx`: The application context
-    /// - `pending_files_from_macos`: Arc to the pending files queue from macOS open events
+    /// - `window_index`: Index of this window in saved state (0 = first window, etc.). Use usize::MAX for new empty windows.
     ///
     /// ### Returns
     /// - `Entity<Self>`: The new Fulgur instance
-    pub fn new(
-        window: &mut Window,
-        cx: &mut App,
-        pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
-    ) -> Entity<Self> {
+    pub fn new(window: &mut Window, cx: &mut App, window_index: usize) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
-        let settings = match Settings::load() {
-            Ok(settings) => settings,
-            Err(_) => Settings::new(),
-        };
-        let synchronization_status = if settings.app_settings.synchronization_settings.is_synchronization_activated {
-            SynchronizationStatus::Connected
-        } else {
-            SynchronizationStatus::NotActivated
-        };
+        let shared = cx.global::<shared_state::SharedAppState>();
+        let settings = shared.settings.lock().clone();
+        let window_id = WindowId::default();
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
         let jump_to_line_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
-        let language_dropdown =
-            languages::create_all_languages_select_state("Plain".into(), window, cx);
-        let themes = match Themes::load() {
-            Ok(themes) => Some(themes),
-            Err(e) => {
-                log::error!("Failed to load themes: {}", e);
-                None
-            }
-        };
         let entity = cx.new(|cx| {
             let _search_subscription = cx.subscribe(
                 &search_input,
@@ -132,6 +274,7 @@ impl Fulgur {
                 },
             );
             let entity = Self {
+                window_id,
                 focus_handle: cx.focus_handle(),
                 title_bar,
                 tabs: vec![],
@@ -150,18 +293,10 @@ impl Fulgur {
                 pending_jump: None,
                 jump_to_line_dialog_open: false,
                 settings,
-                language_dropdown,
                 settings_changed: false,
+                local_settings_version: 0,
                 rendered_tabs: HashSet::new(),
                 tabs_pending_update: HashSet::new(),
-                pending_files_from_macos,
-                themes,
-                update_link: None,
-                sync_server_connection_status: Arc::new(Mutex::new(synchronization_status)),
-                encryption_key: Arc::new(Mutex::new(None)),
-                device_name: Arc::new(Mutex::new(None)),
-                pending_shared_files: Arc::new(Mutex::new(Vec::new())),
-                token_state: Arc::new(Mutex::new(files::sync::TokenState::new())),
                 file_watcher: None,
                 file_watch_events: None,
                 last_file_events: HashMap::new(),
@@ -171,8 +306,8 @@ impl Fulgur {
                 sse_event_tx: None,
                 sse_shutdown_flag: None,
                 last_sse_event: None,
-                last_heartbeat: Arc::new(Mutex::new(None)),
                 pending_notification: None,
+                cached_window_bounds: None,
             };
             entity
         });
@@ -182,13 +317,25 @@ impl Fulgur {
             this.sse_events = Some(sse_rx);
             this.sse_event_tx = Some(sse_tx);
             this.sse_shutdown_flag = Some(sse_shutdown_flag);
-
-            this.load_state(window, cx);
+            if window_index == usize::MAX {
+                let initial_tab = Tab::Editor(EditorTab::new(
+                    0,
+                    crate::fulgur::ui::components_utils::UNTITLED,
+                    window,
+                    cx,
+                    &this.settings.editor_settings,
+                ));
+                this.tabs.push(initial_tab);
+                this.active_tab_index = Some(0);
+                this.next_tab_id = 1;
+            } else {
+                this.load_state(window, cx, window_index);
+            }
             if this.settings.editor_settings.watch_files {
                 this.start_file_watcher();
             }
         });
-        files::sync::begin_synchronization(&entity, cx);
+        sync::sync::begin_synchronization(&entity, cx);
         entity
     }
 
@@ -211,6 +358,10 @@ impl Fulgur {
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-n", NewFile, None),
                 #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-shift-n", NewWindow, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-shift-n", NewWindow, None),
+                #[cfg(target_os = "macos")]
                 KeyBinding::new("cmd-w", CloseFile, None),
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-w", CloseFile, None),
@@ -220,7 +371,7 @@ impl Fulgur {
                 KeyBinding::new("ctrl-shift-w", CloseAllFiles, None),
                 KeyBinding::new("cmd-q", Quit, None),
                 #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-q", Quit, None),
+                KeyBinding::new("alt-f4", Quit, None),
                 #[cfg(target_os = "macos")]
                 KeyBinding::new("cmd-s", SaveFile, None),
                 #[cfg(not(target_os = "macos"))]
@@ -250,8 +401,6 @@ impl Fulgur {
             cx.set_menus(menus);
         });
     }
-
-    
 }
 
 impl Focusable for Fulgur {
@@ -277,20 +426,56 @@ impl Render for Fulgur {
     /// ### Returns
     /// - `impl IntoElement`: The rendered Fulgur instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Display pending notification if any
+        let display_id = window.display(cx).map(|d| d.id().into());
+        self.cached_window_bounds =
+            Some(state_persistence::SerializedWindowBounds::from_gpui_bounds(
+                window.window_bounds(),
+                display_id,
+            ));
+        cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
+            manager.set_focused(self.window_id);
+        });
         if let Some((notification_type, message)) = self.pending_notification.take() {
             window.push_notification((notification_type, message), cx);
         }
-
-        let files_to_open = if let Ok(mut pending) = self.pending_files_from_macos.try_lock() {
-            if pending.is_empty() {
-                Vec::new()
+        // Check if settings have been updated in another window
+        let shared = self.shared_state(cx);
+        let shared_version = shared
+            .settings_version
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if shared_version > self.local_settings_version {
+            // Settings have been updated in another window - reload them
+            let shared_settings = shared.settings.lock().clone();
+            self.settings = shared_settings;
+            self.local_settings_version = shared_version;
+            self.settings_changed = true;
+            log::debug!(
+                "Window {:?} detected settings change from another window (version {} -> {})",
+                self.window_id,
+                self.local_settings_version,
+                shared_version
+            );
+        }
+        let shared = self.shared_state(cx);
+        let should_process_files = cx
+            .global::<window_manager::WindowManager>()
+            .get_last_focused()
+            .map(|id| id == self.window_id)
+            .unwrap_or(true); // If no last focused window, allow this one to process
+        let files_to_open = if should_process_files {
+            if let Some(mut pending) = shared.pending_files_from_macos.try_lock() {
+                if pending.is_empty() {
+                    Vec::new()
+                } else {
+                    log::info!(
+                        "Processing {} pending file(s) from macOS open event in window {:?}",
+                        pending.len(),
+                        self.window_id
+                    );
+                    pending.drain(..).collect()
+                }
             } else {
-                log::info!(
-                    "Processing {} pending file(s) from macOS open event",
-                    pending.len()
-                );
-                pending.drain(..).collect()
+                Vec::new()
             }
         } else {
             Vec::new()
@@ -298,42 +483,39 @@ impl Render for Fulgur {
         for file_path in files_to_open {
             self.handle_open_file_from_cli(window, cx, file_path);
         }
-
-        // Process pending shared files from sync server
-        let shared_files_to_open = if let Ok(mut pending) = self.pending_shared_files.try_lock() {
-            if pending.is_empty() {
+        let shared_files_to_open =
+            if let Some(mut pending) = self.shared_state(cx).pending_shared_files.try_lock() {
+                if pending.is_empty() {
+                    Vec::new()
+                } else {
+                    log::info!(
+                        "Processing {} shared file(s) from sync server",
+                        pending.len()
+                    );
+                    pending.drain(..).collect()
+                }
+            } else {
                 Vec::new()
-            } else {
-                log::info!(
-                    "Processing {} shared file(s) from sync server",
-                    pending.len()
-                );
-                pending.drain(..).collect()
-            }
-        } else {
-            Vec::new()
-        };
-
-        if !shared_files_to_open.is_empty() {
-            // Get encryption key for decrypting shared files
-            let encryption_key_opt = if let Ok(key) = self.encryption_key.lock() {
-                key.clone()
-            } else {
-                None
             };
-
+        if !shared_files_to_open.is_empty() {
+            let encryption_key_opt = match load_private_key_from_keychain() {
+                Ok(key) => key,
+                Err(_) => {
+                    log::error!("Cannot decrypt shared files: encryption key not available");
+                    None
+                }
+            };
             if let Some(encryption_key) = encryption_key_opt {
                 for shared_file in shared_files_to_open {
                     let decrypted_result =
                         crypto_helper::decrypt_bytes(&shared_file.content, &encryption_key)
                             .and_then(|compressed_bytes| {
-                                files::sync::decompress_content(&compressed_bytes)
+                                sync::share::decompress_content(&compressed_bytes)
                             });
                     match decrypted_result {
                         Ok(decrypted_content) => {
                             let tab_id = self.next_tab_id;
                             self.next_tab_id += 1;
-
                             let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
                                 tab_id,
                                 decrypted_content,
@@ -342,10 +524,8 @@ impl Render for Fulgur {
                                 cx,
                                 &self.settings.editor_settings,
                             ));
-
                             self.tabs.push(new_tab);
                             self.active_tab_index = Some(self.tabs.len() - 1);
-
                             log::info!("Opened shared file: {}", shared_file.file_name);
                         }
                         Err(e) => {
@@ -373,7 +553,7 @@ impl Render for Fulgur {
         for event in events {
             self.handle_file_watch_event(event, window, cx);
         }
-        let sse_events: Vec<files::sync::SseEvent> = if let Some(ref rx) = self.sse_events {
+        let sse_events: Vec<sync::sse::SseEvent> = if let Some(ref rx) = self.sse_events {
             let mut events = Vec::new();
             while let Ok(event) = rx.try_recv() {
                 events.push(event);
@@ -445,6 +625,9 @@ impl Render for Fulgur {
             .on_action(cx.listener(|this, _action: &NewFile, window, cx| {
                 this.new_tab(window, cx);
             }))
+            .on_action(cx.listener(|this, _action: &NewWindow, _window, cx| {
+                this.open_new_window(cx);
+            }))
             .on_action(cx.listener(|this, _action: &OpenFile, window, cx| {
                 this.open_file(window, cx);
             }))
@@ -479,7 +662,7 @@ impl Render for Fulgur {
                     Theme::global_mut(cx).apply_config(&theme_config);
                     this.settings.app_settings.theme = theme_name;
                     this.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_show);
-                    if let Err(e) = this.settings.save() {
+                    if let Err(e) = this.update_and_propagate_settings(cx) {
                         log::error!("Failed to save settings: {}", e);
                     }
                 }
@@ -651,7 +834,8 @@ impl Fulgur {
                         .font_family("Monaco")
                         .text_size(px(self.settings.editor_settings.font_size))
                         .focus_bordered(false);
-                    if editor_tab.language == Language::Markdown && editor_tab.show_markdown_preview
+                    if editor_tab.language == SupportedLanguage::Markdown
+                        && editor_tab.show_markdown_preview
                     {
                         return v_flex()
                             .w_full()

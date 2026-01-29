@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use std::time::SystemTime;
+use time::OffsetDateTime;
 
 use gpui::*;
 use gpui_component::{
@@ -80,6 +80,7 @@ pub fn button_factory(
 ///
 /// ### Returns
 /// - `Entity<SelectState<Vec<SharedString>>>`: The select state entity
+#[allow(dead_code)]
 pub fn create_select_state(
     window: &mut Window,
     current_value: String,
@@ -106,10 +107,8 @@ pub fn create_select_state(
 /// - `Some(String)`: The formatted date
 /// - `None`: If the time could not be formatted
 pub fn format_system_time(time: SystemTime) -> Option<String> {
-    let datetime: DateTime<Utc> = match time.try_into() {
-        Ok(dt) => dt,
-        Err(_) => return None,
-    };
-
-    Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string())
+    let datetime = OffsetDateTime::from(time);
+    let format =
+        time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]").ok()?;
+    datetime.format(&format).ok()
 }

@@ -14,11 +14,33 @@ Themes are a core part of the Fulgur experience, with several included by defaul
 
 Version 0.2.0 also introduces Sync mode, allowing you to securely send files between Fulgur instances similar to how you share tabs between browsers. The best part: [Fulgurant](https://github.com/fulgur-app/fulgurant), the sync server, is self-hostable, keeping your data private.
 
+
+
+### Screenshots
+
+![](assets/readme/fulgur_1.webp)
+
+↑ The main window.
+
+![](assets/readme/fulgur_2.webp)
+
+↑ Markdown preview and toolbar.
+
+![](assets/readme/fulgur_3.webp)
+
+↑ The share panel when connected to  Fulgurant server.
+
+![](assets/readme/fulgur_4.webp)
+
+↑ The theme selection panel.
+
 ### Limitations
 
 Fulgur is currently in alpha development. While it has been stable in testing, several features are still being implemented and issues remain to be resolved:
 
 * Drag and drop support
+* Profiles support
+* DONE in 0.3.0 ~~Multi-windows support~~
 * Syntax highlighting for additional languages
 * DONE in 0.2.0 ~~Sync mode functionality~~
 * Various edge cases

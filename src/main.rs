@@ -1,13 +1,10 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use gpui::*;
-use gpui_component::{Root, TitleBar};
+// gpui_component is used in create_window function
+use parking_lot::Mutex;
 use rust_embed::RustEmbed;
-use std::{
-    borrow::Cow,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
 mod fulgur;
 
@@ -142,70 +139,130 @@ fn main() {
             "Processing {} valid file(s) from macOS open event",
             file_paths.len()
         );
-        if let Ok(mut pending) = pending_files_clone.lock() {
+        {
+            let mut pending = pending_files_clone.lock();
             pending.extend(file_paths);
             log::debug!(
                 "Added files to pending queue, total pending: {}",
                 pending.len()
             );
-        } else {
-            log::error!("Failed to lock pending files queue");
         }
     });
     app.run(move |cx| {
         // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
         fulgur::Fulgur::init(cx);
-        cx.spawn(async move |cx| {
-            let window_options = WindowOptions {
-                titlebar: Some(TitleBar::title_bar_options()),
-                // IMPORTANT: window_decorations is ONLY set on Linux!
-                // Windows and macOS use the default (None)
-                #[cfg(target_os = "linux")]
-                window_decorations: Some(gpui::WindowDecorations::Client),
-                ..Default::default()
-            };
-            let window = cx.open_window(window_options, |window, cx| {
-                window.set_window_title("Fulgur");
-                let view = fulgur::Fulgur::new(window, cx, pending_files.clone());
-                let view_clone = view.clone();
-
-                window.on_window_should_close(cx, move |window, cx| {
-                    view_clone.update(cx, |fulgur, cx| {
-                        if fulgur.settings.app_settings.confirm_exit {
-                            fulgur.quit(window, cx);
-                            false
-                        } else {
-                            if let Err(e) = fulgur.save_state(cx) {
-                                log::error!("Failed to save app state: {}", e);
-                            }
-                            true
-                        }
-                    })
-                });
-                if !cli_file_paths.is_empty() {
-                    log::debug!(
-                        "Processing {} command-line file arguments",
-                        cli_file_paths.len()
-                    );
-                    for file_path in cli_file_paths.iter() {
-                        view.update(cx, |fulgur, cx| {
-                            fulgur.handle_open_file_from_cli(window, cx, file_path.clone());
-                        });
-                    }
+        let shared_state = fulgur::shared_state::SharedAppState::new(pending_files.clone());
+        cx.set_global(shared_state);
+        cx.set_global(fulgur::window_manager::WindowManager::new());
+        let windows_state = fulgur::state_persistence::WindowsState::load().ok();
+        let num_saved_windows = windows_state
+            .as_ref()
+            .map(|ws| ws.windows.len())
+            .unwrap_or(0);
+        if num_saved_windows > 0 {
+            log::info!("Restoring {} saved window(s)", num_saved_windows);
+        } else {
+            log::info!("No saved state, creating initial window");
+        }
+        if let Some(ws) = windows_state {
+            for (index, _window_state) in ws.windows.iter().enumerate() {
+                let cli_files = if index == 0 {
+                    cli_file_paths.clone()
                 } else {
-                    view.read(cx).focus_active_tab(window, cx);
-                }
+                    vec![]
+                };
+                let window_index = index;
 
-                cx.new(|cx| Root::new(view, window, cx))
-            })?;
-            window
-                .update(cx, |_, window, _| {
-                    window.activate_window();
-                })
-                .expect("failed to update window");
-            Ok::<_, anyhow::Error>(())
-        })
-        .detach();
+                cx.spawn(async move |cx| create_window(cx, window_index, cli_files).await)
+                    .detach();
+            }
+        } else {
+            cx.spawn(async move |cx| create_window(cx, 0, cli_file_paths).await)
+                .detach();
+        }
     });
+}
+
+/// Create a new window
+///
+/// ### Arguments
+/// * `cx` - The application context
+/// * `window_index` - The index of the window to create
+/// * `cli_file_paths` - The paths of the files to open in the window
+async fn create_window(
+    cx: &mut gpui::AsyncApp,
+    window_index: usize,
+    cli_file_paths: Vec<std::path::PathBuf>,
+) -> anyhow::Result<()> {
+    let (window_bounds, saved_display_id) =
+        if let Ok(windows_state) = fulgur::state_persistence::WindowsState::load() {
+            if let Some(window_state) = windows_state.windows.get(window_index) {
+                (
+                    Some(window_state.window_bounds.to_gpui_bounds()),
+                    window_state.window_bounds.display_id,
+                )
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+    let display_id = if let Some(saved_id) = saved_display_id {
+        cx.update(|cx| {
+            cx.displays()
+                .into_iter()
+                .find(|display| {
+                    let display_id_u32: u32 = display.id().into();
+                    display_id_u32 == saved_id
+                })
+                .map(|display| display.id())
+        })?
+    } else {
+        None
+    };
+    let window_options = gpui::WindowOptions {
+        titlebar: Some(gpui_component::TitleBar::title_bar_options()),
+        window_bounds,
+        display_id,
+        #[cfg(target_os = "linux")]
+        window_decorations: Some(gpui::WindowDecorations::Client),
+        ..Default::default()
+    };
+    let window = cx.open_window(window_options, |window, cx| {
+        window.set_window_title("Fulgur");
+        let view = fulgur::Fulgur::new(window, cx, window_index);
+        let window_handle = window.window_handle();
+        let window_id = window_handle.window_id();
+        view.update(cx, |fulgur, _cx| {
+            fulgur.window_id = window_id;
+        });
+        cx.update_global::<fulgur::window_manager::WindowManager, _>(|manager, _| {
+            manager.register(window_id, view.downgrade());
+        });
+        let view_clone = view.clone();
+        window.on_window_should_close(cx, move |window, cx| {
+            view_clone.update(cx, |fulgur, cx| {
+                fulgur.on_window_close_requested(window, cx)
+            })
+        });
+        if !cli_file_paths.is_empty() {
+            log::debug!(
+                "Processing {} command-line file arguments",
+                cli_file_paths.len()
+            );
+            for file_path in cli_file_paths.iter() {
+                view.update(cx, |fulgur, cx| {
+                    fulgur.handle_open_file_from_cli(window, cx, file_path.clone());
+                });
+            }
+        } else {
+            view.read(cx).focus_active_tab(window, cx);
+        }
+        cx.new(|cx| gpui_component::Root::new(view, window, cx))
+    })?;
+    window.update(cx, |_, window, _| {
+        window.activate_window();
+    })?;
+    Ok(())
 }

@@ -1,7 +1,7 @@
 use semver::Version;
 use serde::Deserialize;
 
-const GITHUB_API_URL: &str = "https://api.github.com/repos/PRRPCHT/Fulgur/releases/latest";
+const GITHUB_API_URL: &str = "https://api.github.com/repos/fulgur-app/Fulgur/releases/latest";
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]

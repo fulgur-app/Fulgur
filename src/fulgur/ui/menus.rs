@@ -16,6 +16,7 @@ actions!(
         Quit,
         CloseWindow,
         NewFile,
+        NewWindow,
         OpenFile,
         SaveFileAs,
         SaveFile,
@@ -83,6 +84,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
                 MenuItem::action("Select theme", SelectTheme),
                 MenuItem::action("Get more themes...", GetTheme),
                 MenuItem::Separator,
+                MenuItem::action("Close Window", CloseWindow),
                 MenuItem::action("Quit", Quit),
             ],
         },
@@ -90,6 +92,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
             name: "File".into(),
             items: vec![
                 MenuItem::action("New", NewFile),
+                MenuItem::action("New Window", NewWindow),
                 MenuItem::action("Open...", OpenFile),
                 MenuItem::Submenu(Menu {
                     name: "Recent Files".into(),
@@ -125,10 +128,6 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
                 MenuItem::action("Jump to line", JumpToLine),
             ],
         },
-        Menu {
-            name: "Window".into(),
-            items: vec![MenuItem::action("Close Window", CloseWindow)],
-        },
     ]
 }
 
@@ -139,7 +138,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn check_for_updates(&self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(update_link) = self.update_link.as_ref() {
+        if let Some(update_link) = self.shared_state(cx).update_link.lock().as_ref() {
             match open::that(update_link) {
                 Ok(_) => {
                     log::debug!("Successfully opened browser");
@@ -166,10 +165,13 @@ impl Fulgur {
                 .update(|window, cx| {
                     if let Some(update_info) = update_info {
                         let _ = view.update(cx, |this, cx| {
-                            this.update_link = Some(update_info.download_url.clone());
+                            {
+                                let mut update_link = this.shared_state(cx).update_link.lock();
+                                *update_link = Some(update_info.download_url.clone());
+                            }
                             let menus = build_menus(
                                 &this.settings.recent_files.get_files(),
-                                this.update_link.clone(),
+                                this.shared_state(cx).update_link.lock().clone(),
                             );
                             cx.set_menus(menus);
                             cx.notify();
