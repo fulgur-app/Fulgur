@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use crate::fulgur::crypto_helper;
 use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::sync::sync::SynchronizationError;
-use fulgur_common::api::AccessTokenResponse;
+use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
+use fulgur_common::api::sync::AccessTokenResponse;
 use parking_lot::Mutex;
 use time::OffsetDateTime;
 
@@ -45,21 +45,23 @@ fn request_access_token(
 ) -> Result<AccessTokenResponse, SynchronizationError> {
     let server_url = synchronization_settings.server_url.clone();
     let email = synchronization_settings.email.clone();
-    let key = synchronization_settings.key.clone();
+    let device_api_key = match load_device_api_key_from_keychain() {
+        Ok(value) => value,
+        Err(_) => return Err(SynchronizationError::DeviceKeyMissing),
+    };
     if server_url.is_none() {
         return Err(SynchronizationError::ServerUrlMissing);
     }
     if email.is_none() {
         return Err(SynchronizationError::EmailMissing);
     }
-    if key.is_none() {
+    if device_api_key.is_none() {
         return Err(SynchronizationError::DeviceKeyMissing);
     }
-    let decrypted_key = crypto_helper::decrypt(&key.unwrap()).unwrap();
     let token_url = format!("{}/api/token", server_url.unwrap());
     log::debug!("Requesting JWT access token from server");
     let mut response = match ureq::post(&token_url)
-        .header("Authorization", &format!("Bearer {}", decrypted_key))
+        .header("Authorization", &format!("Bearer {}", device_api_key.unwrap()))
         .header("X-User-Email", email.unwrap())
         .send("")
     {

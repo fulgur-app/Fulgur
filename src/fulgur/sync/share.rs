@@ -4,10 +4,9 @@ use flate2::{
     Compression,
     read::{GzDecoder, GzEncoder},
 };
-use fulgur_common::api::devices::DeviceResponse;
+use fulgur_common::api::{devices::DeviceResponse, shares::ShareFilePayload};
 use gpui_component::Icon;
 use parking_lot::Mutex;
-use serde::Serialize;
 
 use crate::fulgur::{
     settings::SynchronizationSettings,
@@ -152,167 +151,79 @@ pub fn get_devices(
     }
 }
 
-/// Fetch the user's encryption key from the server. The server manages a shared encryption key per user that all their devices can access.
+/// Encrypt and compress content for a specific device
 ///
 /// ### Arguments
-/// - `server_url`: The server URL
-/// - `email`: The user's email
-/// - `device_key`: The decrypted device authentication key
+/// - `content`: The content to encrypt
+/// - `device_public_key`: The device's public key for encryption
 ///
 /// ### Returns
-/// - `Ok(String)`: The user's encryption key (base64-encoded)
-/// - `Err(SynchronizationError)`: If the encryption key could not be fetched
-fn fetch_encryption_key(
-    synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<Mutex<TokenState>>,
+/// - `Ok(String)`: The encrypted and compressed content (base64-encoded)
+/// - `Err(SynchronizationError)`: If encryption or compression failed
+fn encrypt_content_for_device(
+    content: &str,
+    device_public_key: &str,
 ) -> Result<String, SynchronizationError> {
-    let server_url = synchronization_settings.server_url.clone();
-    if server_url.is_none() {
-        return Err(SynchronizationError::ServerUrlMissing);
-    }
-    let token = get_valid_token(synchronization_settings, Arc::clone(&token_state))?;
-    let key_url = format!("{}/api/encryption-key", server_url.unwrap());
-    let mut response = match ureq::get(&key_url)
-        .header("Authorization", &format!("Bearer {}", token))
-        .call()
-    {
-        Ok(response) => response,
-        Err(ureq::Error::StatusCode(code)) => {
-            log::error!("Failed to fetch encryption key: HTTP status {}", code);
-            if code == 401 || code == 403 {
-                return Err(SynchronizationError::AuthenticationFailed);
-            } else {
-                return Err(SynchronizationError::ServerError(code));
-            }
-        }
-        Err(ureq::Error::Io(io_error)) => {
-            log::error!("Failed to fetch encryption key (IO): {}", io_error);
-            return match io_error.kind() {
-                std::io::ErrorKind::ConnectionRefused => {
-                    Err(SynchronizationError::ConnectionFailed)
-                }
-                std::io::ErrorKind::TimedOut => Err(SynchronizationError::ConnectionFailed),
-                _ => Err(SynchronizationError::Other(io_error.to_string())),
-            };
-        }
-        Err(ureq::Error::ConnectionFailed) => {
-            log::error!("Failed to fetch encryption key: Connection failed");
-            return Err(SynchronizationError::ConnectionFailed);
-        }
-        Err(ureq::Error::HostNotFound) => {
-            log::error!("Failed to fetch encryption key: Host not found");
-            return Err(SynchronizationError::HostNotFound);
-        }
-        Err(ureq::Error::Timeout(timeout)) => {
-            log::error!("Failed to fetch encryption key: Timeout ({})", timeout);
-            return Err(SynchronizationError::Timeout(timeout.to_string()));
-        }
-        Err(e) => {
-            log::error!("Failed to fetch encryption key: {}", e);
-            return Err(SynchronizationError::Other(e.to_string()));
-        }
-    };
-    let body = match response.body_mut().read_to_string() {
-        Ok(body) => body,
-        Err(e) => {
-            log::error!("Failed to read response body: {}", e);
-            return Err(SynchronizationError::InvalidResponse(e.to_string()));
-        }
-    };
-    let json: serde_json::Value = match serde_json::from_str(&body) {
-        Ok(json) => json,
-        Err(e) => {
-            log::error!("Failed to parse response body: {}", e);
-            return Err(SynchronizationError::InvalidResponse(e.to_string()));
-        }
-    };
-    let encryption_key = json["encryption_key"]
-        .as_str()
-        .ok_or_else(|| SynchronizationError::MissingEncryptionKey)?;
-    log::debug!("Fetched encryption key from server");
-    Ok(encryption_key.to_string())
+    let compressed_content = compress_content(content).map_err(|e| {
+        log::error!("Failed to compress content: {}", e);
+        SynchronizationError::CompressionFailed
+    })?;
+    crypto_helper::encrypt_bytes(&compressed_content, device_public_key).map_err(|e| {
+        log::error!("Failed to encrypt content: {}", e);
+        SynchronizationError::EncryptionFailed
+    })
 }
 
-#[derive(Serialize)]
-pub struct ShareFilePayload {
-    pub content: String,
-    pub file_name: String,
-    pub device_ids: Vec<String>,
-}
-
-/// Share the file with the devices
+/// Send a share request to the server for a single device
 ///
 /// ### Arguments
-/// - `synchronization_settings`: The synchronization settings
-/// - `payload`: The payload to share the file with (content will be encrypted)
+/// - `share_url`: The share endpoint URL
+/// - `token`: The authentication token
+/// - `encrypted_content`: The encrypted content
+/// - `file_name`: The file name
+/// - `device_id`: The device ID
 ///
 /// ### Returns
-/// - `Ok(String)`: The expiration date of the shared file
-/// - `Err(SynchronizationError)`: If the file could not be shared
-pub fn share_file(
-    synchronization_settings: &SynchronizationSettings,
-    payload: ShareFilePayload,
-    token_state: Arc<Mutex<TokenState>>,
+/// - `Ok(String)`: The expiration date from the response
+/// - `Err(SynchronizationError)`: If the request failed
+fn send_share_request(
+    share_url: &str,
+    token: &str,
+    encrypted_content: String,
+    file_name: &str,
+    device_id: &str,
 ) -> Result<String, SynchronizationError> {
-    let server_url = synchronization_settings.server_url.clone();
-    if server_url.is_none() {
-        return Err(SynchronizationError::ServerUrlMissing);
-    }
-    if payload.content.is_empty() {
-        return Err(SynchronizationError::ContentMissing);
-    }
-    if payload.content.len() > 1024 * 1024 {
-        // 1MB
-        return Err(SynchronizationError::ContentTooLarge);
-    }
-    if payload.file_name.is_empty() {
-        return Err(SynchronizationError::FileNameMissing);
-    }
-    if payload.device_ids.is_empty() {
-        return Err(SynchronizationError::DeviceIdsMissing);
-    }
-    let token = get_valid_token(synchronization_settings, Arc::clone(&token_state))?;
-    let encryption_key = fetch_encryption_key(synchronization_settings, Arc::clone(&token_state))?;
-    let server_url_str = server_url.as_ref().unwrap();
-    let compressed_content = match compress_content(&payload.content) {
-        Ok(content) => content,
-        Err(e) => {
-            log::error!("Failed to compress content: {}", e);
-            return Err(SynchronizationError::CompressionFailed);
-        }
-    };
-    let encrypted_content = match crypto_helper::encrypt_bytes(&compressed_content, &encryption_key)
-    {
-        Ok(content) => content,
-        Err(e) => {
-            log::error!("Failed to encrypt content: {}", e);
-            return Err(SynchronizationError::EncryptionFailed);
-        }
-    };
     let encrypted_payload = ShareFilePayload {
         content: encrypted_content,
-        file_name: payload.file_name.clone(),
-        device_ids: payload.device_ids,
+        file_name: file_name.to_string(),
+        device_id: device_id.to_string(),
     };
-    let share_url = format!("{}/api/share", server_url_str);
-    let mut response = match ureq::post(&share_url)
+    let mut response = match ureq::post(share_url)
         .header("Authorization", &format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .send_json(encrypted_payload)
     {
         Ok(response) => response,
         Err(ureq::Error::StatusCode(code)) => {
-            log::error!("Failed to share file: HTTP status {}", code);
-            if code == 401 || code == 403 {
-                return Err(SynchronizationError::AuthenticationFailed);
+            log::error!(
+                "Failed to share file to device {}: HTTP status {}",
+                device_id,
+                code
+            );
+            return if code == 401 || code == 403 {
+                Err(SynchronizationError::AuthenticationFailed)
             } else if code == 400 {
-                return Err(SynchronizationError::BadRequest);
+                Err(SynchronizationError::BadRequest)
             } else {
-                return Err(SynchronizationError::ServerError(code));
-            }
+                Err(SynchronizationError::ServerError(code))
+            };
         }
         Err(ureq::Error::Io(io_error)) => {
-            log::error!("Failed to share file (IO): {}", io_error);
+            log::error!(
+                "Failed to share file to device {} (IO): {}",
+                device_id,
+                io_error
+            );
             return match io_error.kind() {
                 std::io::ErrorKind::ConnectionRefused => {
                     Err(SynchronizationError::ConnectionFailed)
@@ -324,43 +235,47 @@ pub fn share_file(
             };
         }
         Err(ureq::Error::ConnectionFailed) => {
-            log::error!("Failed to share file: Connection failed");
+            log::error!(
+                "Failed to share file to device {}: Connection failed",
+                device_id
+            );
             return Err(SynchronizationError::ConnectionFailed);
         }
         Err(ureq::Error::HostNotFound) => {
-            log::error!("Failed to share file: Host not found");
+            log::error!(
+                "Failed to share file to device {}: Host not found",
+                device_id
+            );
             return Err(SynchronizationError::HostNotFound);
         }
         Err(ureq::Error::Timeout(timeout)) => {
-            log::error!("Failed to share file: Timeout ({})", timeout);
+            log::error!(
+                "Failed to share file to device {}: Timeout ({})",
+                device_id,
+                timeout
+            );
             return Err(SynchronizationError::Timeout(timeout.to_string()));
         }
         Err(e) => {
-            log::error!("Failed to share file: {}", e);
+            log::error!("Failed to share file to device {}: {}", device_id, e);
             return Err(SynchronizationError::Other(e.to_string()));
         }
     };
     if response.status() == 200 {
-        let body = match response.body_mut().read_to_string() {
-            Ok(body) => body,
-            Err(e) => {
-                log::error!("Failed to read response body: {}", e);
-                return Err(SynchronizationError::InvalidResponse(e.to_string()));
-            }
-        };
-        let json: serde_json::Value = match serde_json::from_str(&body) {
-            Ok(json) => json,
-            Err(e) => {
-                log::error!("Failed to parse response body: {}", e);
-                return Err(SynchronizationError::InvalidResponse(e.to_string()));
-            }
-        };
+        let body = response.body_mut().read_to_string().map_err(|e| {
+            log::error!("Failed to read response body: {}", e);
+            SynchronizationError::InvalidResponse(e.to_string())
+        })?;
+        let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
+            log::error!("Failed to parse response body: {}", e);
+            SynchronizationError::InvalidResponse(e.to_string())
+        })?;
         let expiration_date = json["expiration_date"]
             .as_str()
             .ok_or_else(|| SynchronizationError::MissingExpirationDate)?;
         log::info!(
-            "File {} shared successfully until {}",
-            payload.file_name,
+            "File shared successfully to device {} until {}",
+            device_id,
             expiration_date
         );
         Ok(expiration_date.to_string())
@@ -369,4 +284,149 @@ pub fn share_file(
             response.status().as_u16(),
         ))
     }
+}
+
+/// Result of sharing a file with devices
+pub struct ShareResult {
+    pub successes: Vec<(String, String)>, // (device_id, expiration_date)
+    pub failures: Vec<(String, SynchronizationError)>, // (device_id, error)
+}
+
+impl ShareResult {
+    /// Check if all shares were successful
+    /// 
+    /// ### Returns
+    /// - `true`: If all shares were successful, `false`` otherwise
+    pub fn is_complete_success(&self) -> bool {
+        self.failures.is_empty()
+    }
+
+    /// Get a summary message for the share operation
+    ///
+    /// ### Returns
+    /// - `String`: The message
+    pub fn summary_message(&self) -> String {
+        let total = self.successes.len() + self.failures.len();
+        if self.is_complete_success() {
+            if let Some((_, expiration)) = self.successes.first() {
+                format!(
+                    "File shared successfully to {} device(s) until {}",
+                    total, expiration
+                )
+            } else {
+                "File shared successfully".to_string()
+            }
+        } else if self.successes.is_empty() {
+            format!("Failed to share file to all {} device(s)", total)
+        } else {
+            format!(
+                "File shared to {}/{} device(s). {} failed.",
+                self.successes.len(),
+                total,
+                self.failures.len()
+            )
+        }
+    }
+}
+
+/// Share a file with multiple devices (per-device encryption)
+///
+/// ### Arguments
+/// - `synchronization_settings`: The synchronization settings
+/// - `content`: The content of the file
+/// - `file_name`: The name of the file
+/// - `device_ids`: The ids of the devices to sent the file to
+/// - `devices`: The list of all devices (with their public keys)
+/// - `token_state`: Thread-safe token state 
+///
+/// ### Returns
+/// - `Ok(ShareResult)`: Results of sharing with each device
+/// - `Err(SynchronizationError)`: If validation or setup failed
+pub fn share_file(
+    synchronization_settings: &SynchronizationSettings,
+    content: String,
+    file_name: String,
+    device_ids: Vec<String>,
+    devices: &[Device],
+    token_state: Arc<Mutex<TokenState>>,
+) -> Result<ShareResult, SynchronizationError> {
+    let server_url = synchronization_settings
+        .server_url
+        .as_ref()
+        .ok_or(SynchronizationError::ServerUrlMissing)?;
+    if content.is_empty() {
+        return Err(SynchronizationError::ContentMissing);
+    }
+    if content.len() > 1024 * 1024 {
+        return Err(SynchronizationError::ContentTooLarge);
+    }
+    if file_name.is_empty() {
+        return Err(SynchronizationError::FileNameMissing);
+    }
+    if device_ids.is_empty() {
+        return Err(SynchronizationError::DeviceIdsMissing);
+    }
+    let token = get_valid_token(synchronization_settings, Arc::clone(&token_state))?;
+    let share_url = format!("{}/api/share", server_url);
+    let mut successes = Vec::new();
+    let mut failures = Vec::new();
+    for device_id in &device_ids {
+        let device = match devices.iter().find(|d| &d.id == device_id) {
+            Some(d) => d,
+            None => {
+                log::warn!("Device {} not found, skipping", device_id);
+                failures.push((
+                    device_id.clone(),
+                    SynchronizationError::Other(format!("Device {} not found", device_id)),
+                ));
+                continue;
+            }
+        };
+        let public_key = match &device.public_key {
+            Some(key) => key,
+            None => {
+                log::warn!("Device {} has no public key, skipping", device_id);
+                failures.push((
+                    device_id.clone(),
+                    SynchronizationError::MissingPublicKey(device.name.clone()),
+                ));
+                continue;
+            }
+        };
+        let encrypted_content = match encrypt_content_for_device(&content, public_key) {
+            Ok(content) => content,
+            Err(e) => {
+                log::error!(
+                    "Failed to encrypt content for device {}: {}",
+                    device_id,
+                    e.to_string()
+                );
+                failures.push((device_id.clone(), e));
+                continue;
+            }
+        };
+        match send_share_request(&share_url, &token, encrypted_content, &file_name, device_id) {
+            Ok(expiration_date) => {
+                successes.push((device_id.clone(), expiration_date));
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to share file to device {}: {}",
+                    device_id,
+                    e.to_string()
+                );
+                failures.push((device_id.clone(), e));
+            }
+        }
+    }
+    log::info!(
+        "File '{}' shared: {} succeeded, {} failed",
+        file_name,
+        successes.len(),
+        failures.len()
+    );
+    Ok(ShareResult {
+        successes,
+        failures,
+    })
 }

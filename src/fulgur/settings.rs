@@ -4,10 +4,7 @@ use gpui::SharedString;
 use gpui_component::scroll::ScrollbarShow;
 use serde::{Deserialize, Serialize};
 
-use crate::fulgur::{
-    crypto_helper,
-    themes::{BundledThemes, themes_directory_path},
-};
+use crate::fulgur::themes::{BundledThemes, themes_directory_path};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SynchronizationSettings {
@@ -15,9 +12,11 @@ pub struct SynchronizationSettings {
     pub server_url: Option<String>,
     pub email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub encrypted_key: Option<String>,
-    #[serde(skip)]
-    pub key: Option<String>,
+    pub public_key: Option<String>,
+    //#[serde(skip_serializing_if = "Option::is_none")]
+    //pub encrypted_key: Option<String>,
+    //#[serde(skip)]
+    //pub key: Option<String>,
 }
 
 impl SynchronizationSettings {
@@ -30,8 +29,7 @@ impl SynchronizationSettings {
             is_synchronization_activated: false,
             server_url: None,
             email: None,
-            encrypted_key: None,
-            key: None,
+            public_key: None,
         }
     }
 }
@@ -300,23 +298,6 @@ impl Settings {
     /// ### Returns
     /// - `anyhow::Result<()>`: The result of the operation
     pub fn save(&mut self) -> anyhow::Result<()> {
-        if let Some(ref plaintext_key) = self.app_settings.synchronization_settings.key {
-            if !plaintext_key.is_empty() {
-                match crypto_helper::encrypt(plaintext_key) {
-                    Ok(encrypted) => {
-                        self.app_settings.synchronization_settings.encrypted_key = Some(encrypted);
-                    }
-                    Err(e) => {
-                        log::error!("Failed to encrypt key: {}", e);
-                        return Err(e);
-                    }
-                }
-            } else {
-                self.app_settings.synchronization_settings.encrypted_key = None;
-            }
-        } else {
-            self.app_settings.synchronization_settings.encrypted_key = None;
-        }
         let path = Self::settings_file_path()?;
         let json = serde_json::to_string_pretty(&self)?;
         fs::write(path, json)?;
@@ -330,23 +311,7 @@ impl Settings {
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::settings_file_path()?;
         let json = fs::read_to_string(&path)?;
-        let mut settings: Settings = serde_json::from_str(&json)?;
-        if let Some(ref encrypted_key) =
-            settings.app_settings.synchronization_settings.encrypted_key
-        {
-            match crypto_helper::decrypt(encrypted_key) {
-                Ok(decrypted) => {
-                    settings.app_settings.synchronization_settings.key = Some(decrypted);
-                    log::info!("Successfully decrypted sync key");
-                }
-                Err(e) => {
-                    log::error!("Failed to decrypt sync key: {}", e);
-                    settings.app_settings.synchronization_settings.encrypted_key = None;
-                    settings.app_settings.synchronization_settings.key = None;
-                }
-            }
-        }
-
+        let settings: Settings = serde_json::from_str(&json)?;
         Ok(settings)
     }
 

@@ -13,7 +13,7 @@ use gpui_component::{
 use crate::fulgur::{
     Fulgur,
     sync::{
-        share::{Device, ShareFilePayload, get_devices, get_icon, share_file},
+        share::{Device, get_devices, get_icon, share_file},
         sync::SynchronizationStatus,
     },
     ui::icons::CustomIcon,
@@ -41,7 +41,7 @@ fn make_device_item(
     let device_name = device.name.clone();
     let device_expires = device.expires_at.clone();
     let device_for_icon = device;
-
+    let has_public_key = device.public_key.is_some();
     h_flex()
         .id(("share-device-sheet", idx))
         .items_center()
@@ -52,33 +52,52 @@ fn make_device_item(
         .rounded_sm()
         .border_color(cx.theme().border)
         .border_1()
-        .cursor_pointer()
-        .hover(|this| this.bg(cx.theme().muted))
-        .when(is_selected, |this| {
+        .when(has_public_key, |this| this.cursor_pointer())
+        .when(!has_public_key, |this| this.opacity(0.5))
+        .when(has_public_key, |this| {
+            this.hover(|hover| hover.bg(cx.theme().muted))
+        })
+        .when(is_selected && has_public_key, |this| {
             this.bg(cx.theme().accent)
                 .text_color(cx.theme().accent_foreground)
         })
         .child(
-            h_flex()
-                .items_center()
-                .justify_start()
-                .gap_2()
-                .child(get_icon(&device_for_icon))
-                .child(div().child(device_name))
+            v_flex()
+                .gap_1()
                 .child(
-                    div()
-                        .text_xs()
-                        .child(format!("Expires: {}", device_expires)),
-                ),
+                    h_flex()
+                        .items_center()
+                        .justify_start()
+                        .gap_2()
+                        .child(get_icon(&device_for_icon))
+                        .child(div().child(device_name))
+                        .child(
+                            div()
+                                .text_xs()
+                                .child(format!("Expires: {}", device_expires)),
+                        ),
+                )
+                .when(!has_public_key, |this| {
+                    this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child("No public key for this device"),
+                    )
+                }),
         )
-        .when(is_selected, |this| this.child(Icon::new(CustomIcon::Zap)))
-        .on_click(move |_event, _window, _cx| {
-            let mut ids = selected_ids.lock();
-            if let Some(pos) = ids.iter().position(|id| id == &device_id) {
-                ids.remove(pos);
-            } else {
-                ids.push(device_id.clone());
-            }
+        .when(is_selected && has_public_key, |this| {
+            this.child(Icon::new(CustomIcon::Zap))
+        })
+        .when(has_public_key, |this| {
+            this.on_click(move |_event, _window, _cx| {
+                let mut ids = selected_ids.lock();
+                if let Some(pos) = ids.iter().position(|id| id == &device_id) {
+                    ids.remove(pos);
+                } else {
+                    ids.push(device_id.clone());
+                }
+            })
         })
 }
 
@@ -112,11 +131,13 @@ fn make_device_list(
 ///
 /// ### Arguments
 /// - `selected_ids`: The selected device IDs
+/// - `devices`: The list of all devices (with their public keys)
 /// - `entity`: The Fulgur entity
 /// - `window`: The window context
 /// - `cx`: The application context
 fn handle_share_file(
     selected_ids: Arc<parking_lot::Mutex<Vec<String>>>,
+    devices: Arc<Vec<Device>>,
     entity: Entity<Fulgur>,
     window: &mut Window,
     cx: &mut App,
@@ -144,28 +165,38 @@ fn handle_share_file(
             .and_then(|name| name.to_str())
             .unwrap_or("Untitled")
             .to_string();
-        let payload = ShareFilePayload {
-            content,
-            file_name,
-            device_ids: ids,
-        };
         share_file(
             &this.settings.app_settings.synchronization_settings,
-            payload,
+            content,
+            file_name,
+            ids,
+            &devices,
             Arc::clone(&this.shared_state(cx).token_state),
         )
     });
     match result {
-        Ok(expiration_date) => {
-            let notification = (
-                NotificationType::Success,
-                SharedString::from(format!(
-                    "File shared successfully until {}",
-                    expiration_date
-                )),
-            );
-            window.push_notification(notification, cx);
-            window.close_sheet(cx);
+        Ok(share_result) => {
+            if share_result.is_complete_success() {
+                let notification = (
+                    NotificationType::Success,
+                    SharedString::from(share_result.summary_message()),
+                );
+                window.push_notification(notification, cx);
+                window.close_sheet(cx);
+            } else if share_result.successes.is_empty() {
+                let notification = (
+                    NotificationType::Error,
+                    SharedString::from(share_result.summary_message()),
+                );
+                window.push_notification(notification, cx);
+            } else {
+                let notification = (
+                    NotificationType::Warning,
+                    SharedString::from(share_result.summary_message()),
+                );
+                window.push_notification(notification, cx);
+                window.close_sheet(cx);
+            }
         }
         Err(e) => {
             log::error!("Failed to share file: {}", e.to_string());
@@ -212,10 +243,6 @@ impl Fulgur {
             );
             match result {
                 Ok(begin_response) => {
-                    {
-                        let mut key = self.shared_state(cx).encryption_key.lock();
-                        *key = Some(begin_response.encryption_key);
-                    }
                     {
                         let mut device_name = self.shared_state(cx).device_name.lock();
                         *device_name = Some(begin_response.device_name.clone());
@@ -285,6 +312,7 @@ impl Fulgur {
             let selected_ids_for_ok = selected_ids.clone();
             let entity_for_ok = entity.clone();
             let devices_ref = devices.clone();
+            let devices_button = devices.clone();
             sheet
                 .title("Share with...")
                 .size(px(400.))
@@ -319,6 +347,7 @@ impl Fulgur {
                                 .on_click(move |_, window, cx| {
                                     handle_share_file(
                                         selected_ids_for_ok.clone(),
+                                        devices_button.clone(),
                                         entity_for_ok.clone(),
                                         window,
                                         cx,

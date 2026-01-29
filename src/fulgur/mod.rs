@@ -9,8 +9,11 @@ pub mod utils;
 pub mod window_manager;
 use crate::fulgur::{
     editor_tab::EditorTab,
-    ui::{icons::CustomIcon, languages, languages::SupportedLanguage},
-    utils::crypto_helper,
+    ui::{
+        icons::CustomIcon,
+        languages::{self, SupportedLanguage},
+    },
+    utils::crypto_helper::{self, load_private_key_from_keychain},
 };
 use files::file_watcher::{FileWatchEvent, FileWatcher};
 use gpui::*;
@@ -499,7 +502,13 @@ impl Render for Fulgur {
                 Vec::new()
             };
         if !shared_files_to_open.is_empty() {
-            let encryption_key_opt = self.shared_state(cx).encryption_key.lock().clone();
+            let encryption_key_opt = match load_private_key_from_keychain() {
+                Ok(key) => key,
+                Err(_) => {
+                    log::error!("Cannot decrypt shared files: encryption key not available");
+                    None
+                }
+            };
             if let Some(encryption_key) = encryption_key_opt {
                 for shared_file in shared_files_to_open {
                     let decrypted_result =
