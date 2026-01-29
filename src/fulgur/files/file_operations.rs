@@ -240,44 +240,41 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `path`: The path to the file to open
     pub fn do_open_file(&mut self, window: &mut Window, cx: &mut Context<Self>, path: PathBuf) {
+        if let Some(tab_index) = self.find_tab_by_path(&path) {
+            log::debug!(
+                "Tab already exists for {:?} at index {}, focusing and reloading if modified",
+                path,
+                tab_index
+            );
+            if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
+                if editor_tab.modified {
+                    log::debug!("Tab is modified, reloading content from disk");
+                    self.reload_tab_from_disk(tab_index, window, cx);
+                } else {
+                    log::debug!("Tab is not modified, just focusing it");
+                }
+            }
+            self.active_tab_index = Some(tab_index);
+            self.focus_active_tab(window, cx);
+            cx.notify();
+            return;
+        }
         let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
         if let Some(existing_window_id) =
             window_manager.find_window_with_file(&path, self.window_id, cx)
         {
-            if existing_window_id == self.window_id {
-                if let Some(tab_index) = self.find_tab_by_path(&path) {
-                    log::debug!(
-                        "Tab already exists for {:?} at index {}, focusing and reloading",
-                        path,
-                        tab_index
-                    );
-                    if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
-                        if editor_tab.modified {
-                            log::debug!("Tab is modified, reloading content from disk");
-                            self.reload_tab_from_disk(tab_index, window, cx);
-                        } else {
-                            log::debug!("Tab is not modified, just focusing it");
-                        }
-                    }
-                    self.active_tab_index = Some(tab_index);
-                    self.focus_active_tab(window, cx);
-                    cx.notify();
-                }
-                return;
-            } else {
-                let file_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("Unknown file");
-                let message = format!("File '{}' is already open in another window", file_name);
-                window.push_notification((NotificationType::Info, SharedString::from(message)), cx);
-                log::debug!(
-                    "File {:?} is already open in window {:?}",
-                    path,
-                    existing_window_id
-                );
-                return;
-            }
+            let file_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Unknown file");
+            let message = format!("File '{}' is already open in another window", file_name);
+            window.push_notification((NotificationType::Info, SharedString::from(message)), cx);
+            log::debug!(
+                "File {:?} is already open in window {:?}",
+                path,
+                existing_window_id
+            );
+            return;
         }
         cx.spawn_in(window, async move |view, window| {
             Self::open_file_from_path(view, window, path).await

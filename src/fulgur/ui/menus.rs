@@ -18,6 +18,7 @@ actions!(
         NewFile,
         NewWindow,
         OpenFile,
+        OpenPath,
         SaveFileAs,
         SaveFile,
         CloseFile,
@@ -94,6 +95,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
                 MenuItem::action("New", NewFile),
                 MenuItem::action("New Window", NewWindow),
                 MenuItem::action("Open...", OpenFile),
+                MenuItem::action("Open from path...", OpenPath),
                 MenuItem::Submenu(Menu {
                     name: "Recent Files".into(),
                     items: recent_files_items,

@@ -105,30 +105,33 @@ impl Fulgur {
     fn update_and_propagate_settings(&mut self, cx: &mut Context<Self>) -> anyhow::Result<()> {
         // Save settings to disk
         self.settings.save()?;
-        
+
         // Update shared settings
         let shared = self.shared_state(cx);
         *shared.settings.lock() = self.settings.clone();
-        
+
         // Increment the version counter so other windows detect the change
-        let new_version = shared.settings_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let new_version = shared
+            .settings_version
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
         self.local_settings_version = new_version;
-        
+
         // Mark settings as changed for this window
         self.settings_changed = true;
-        
+
         log::debug!(
             "Window {:?} updated settings to version {}, notifying other windows",
             self.window_id,
             new_version
         );
-        
+
         // Force other windows to re-render immediately
         // (Skip the current window to avoid reentrancy issues - it will re-render naturally)
         let current_window_id = self.window_id;
         let window_manager = cx.global::<window_manager::WindowManager>();
         let all_windows = window_manager.get_all_windows();
-        
+
         // Defer notifications to avoid reentrancy issues
         cx.defer(move |cx| {
             for weak_window in all_windows.iter() {
@@ -143,7 +146,7 @@ impl Fulgur {
                 }
             }
         });
-        
+
         Ok(())
     }
 
@@ -349,6 +352,10 @@ impl Fulgur {
                 KeyBinding::new("ctrl-o", OpenFile, None),
                 #[cfg(target_os = "macos")]
                 KeyBinding::new("cmd-n", NewFile, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-shift-o", OpenPath, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-shift-o", OpenPath, None),
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-n", NewFile, None),
                 #[cfg(target_os = "macos")]
@@ -434,7 +441,9 @@ impl Render for Fulgur {
         }
         // Check if settings have been updated in another window
         let shared = self.shared_state(cx);
-        let shared_version = shared.settings_version.load(std::sync::atomic::Ordering::Relaxed);
+        let shared_version = shared
+            .settings_version
+            .load(std::sync::atomic::Ordering::Relaxed);
         if shared_version > self.local_settings_version {
             // Settings have been updated in another window - reload them
             let shared_settings = shared.settings.lock().clone();
@@ -616,6 +625,9 @@ impl Render for Fulgur {
             }))
             .on_action(cx.listener(|this, _action: &OpenFile, window, cx| {
                 this.open_file(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &OpenPath, window, cx| {
+                this.show_open_from_path_dialog(window, cx);
             }))
             .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
                 if let Some(index) = this.active_tab_index {
