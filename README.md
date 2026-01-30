@@ -14,7 +14,7 @@ Themes are a core part of the Fulgur experience, with several included by defaul
 
 Version 0.2.0 also introduces Sync mode, allowing you to securely send files between Fulgur instances similar to how you share tabs between browsers. The best part: [Fulgurant](https://github.com/fulgur-app/fulgurant), the sync server, is self-hostable, keeping your data private.
 
-
+Version 0.3.0 introduces multi-window support, allowing you to open multiple Fulgur windows simultaneously, as well as a much more robust and secure encryption system using the system's keychain. As a result it limits compatibility issues on some desktop environments on Linux.
 
 ### Screenshots
 
@@ -44,7 +44,9 @@ Fulgur is currently in alpha development. While it has been stable in testing, s
 * Syntax highlighting for additional languages
 * DONE in 0.2.0 ~~Sync mode functionality~~
 * Various edge cases
-* Compatibility issues on some desktop environments, such as double title bars in XFCE
+* Compatibility issues on some desktop environments on Linux
+
+**Note that breaking changes may occur in future releases until v1.0.0.**
 
 ### Themes
 
