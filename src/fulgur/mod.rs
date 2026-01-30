@@ -355,6 +355,10 @@ impl Fulgur {
                 KeyBinding::new("ctrl-o", OpenFile, None),
                 #[cfg(target_os = "macos")]
                 KeyBinding::new("cmd-n", NewFile, None),
+                #[cfg(target_os = "macos")]
+                KeyBinding::new("cmd-shift-o", OpenPath, None),
+                #[cfg(not(target_os = "macos"))]
+                KeyBinding::new("ctrl-shift-o", OpenPath, None),
                 #[cfg(not(target_os = "macos"))]
                 KeyBinding::new("ctrl-n", NewFile, None),
                 #[cfg(target_os = "macos")]
@@ -630,6 +634,9 @@ impl Render for Fulgur {
             }))
             .on_action(cx.listener(|this, _action: &OpenFile, window, cx| {
                 this.open_file(window, cx);
+            }))
+            .on_action(cx.listener(|this, _action: &OpenPath, window, cx| {
+                this.show_open_from_path_dialog(window, cx);
             }))
             .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
                 if let Some(index) = this.active_tab_index {
