@@ -196,3 +196,132 @@ pub fn get_valid_token(
     log::debug!("Access token refreshed successfully");
     Ok(token_response.access_token)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::OffsetDateTime;
+
+    #[test]
+    fn test_is_token_valid_with_future_expiration() {
+        // Token expires 10 minutes from now (well beyond the 5-minute buffer)
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(10);
+        assert!(
+            is_token_valid(&expires_at),
+            "Token expiring in 10 minutes should be valid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_past_expiration() {
+        // Token expired 5 minutes ago
+        let expires_at = OffsetDateTime::now_utc() - time::Duration::minutes(5);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expired 5 minutes ago should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_expiring_in_less_than_buffer() {
+        // Token expires in 3 minutes (less than 5-minute buffer)
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(3);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expiring in 3 minutes should be invalid (within buffer)"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_expiring_in_exactly_buffer_time() {
+        // Token expires in exactly 5 minutes
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(5);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expiring in exactly 5 minutes should be invalid (at buffer boundary)"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_one_second_past_expiration() {
+        // Token expired 1 second ago
+        let expires_at = OffsetDateTime::now_utc() - time::Duration::seconds(1);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expired 1 second ago should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_one_hour_remaining() {
+        // Token expires in 1 hour (well beyond the 5-minute buffer)
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::hours(1);
+        assert!(
+            is_token_valid(&expires_at),
+            "Token expiring in 1 hour should be valid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_expiring_in_six_minutes() {
+        // Token expires in 6 minutes (just beyond the 5-minute buffer)
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(6);
+        assert!(
+            is_token_valid(&expires_at),
+            "Token expiring in 6 minutes should be valid (beyond buffer)"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_expiring_in_four_minutes_59_seconds() {
+        // Token expires in 4 minutes 59 seconds (just under the 5-minute buffer)
+        let expires_at =
+            OffsetDateTime::now_utc() + time::Duration::minutes(4) + time::Duration::seconds(59);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expiring in 4:59 should be invalid (within buffer)"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_far_future_expiration() {
+        // Token expires in 1 day
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::days(1);
+        assert!(
+            is_token_valid(&expires_at),
+            "Token expiring in 1 day should be valid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_far_past_expiration() {
+        // Token expired 1 day ago
+        let expires_at = OffsetDateTime::now_utc() - time::Duration::days(1);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expired 1 day ago should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_boundary_case_five_minutes_one_second() {
+        // Token expires in 5 minutes 1 second (just beyond the buffer)
+        let expires_at =
+            OffsetDateTime::now_utc() + time::Duration::minutes(5) + time::Duration::seconds(1);
+        assert!(
+            is_token_valid(&expires_at),
+            "Token expiring in 5:01 should be valid (just beyond buffer)"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_current_time() {
+        // Token expires right now (edge case)
+        let expires_at = OffsetDateTime::now_utc();
+
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expiring right now should be invalid"
+        );
+    }
+}
