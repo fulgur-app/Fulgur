@@ -294,7 +294,7 @@ pub struct ShareResult {
 
 impl ShareResult {
     /// Check if all shares were successful
-    /// 
+    ///
     /// ### Returns
     /// - `true`: If all shares were successful, `false`` otherwise
     pub fn is_complete_success(&self) -> bool {
@@ -310,14 +310,18 @@ impl ShareResult {
         if self.is_complete_success() {
             if let Some((_, expiration)) = self.successes.first() {
                 format!(
-                    "File shared successfully to {} device(s) until {}",
+                    "File shared successfully to {} device(s) until {}.",
                     total, expiration
                 )
             } else {
-                "File shared successfully".to_string()
+                if total == 0 {
+                    "The file was not shared.".to_string()
+                } else {
+                    "File shared successfully.".to_string()
+                }
             }
         } else if self.successes.is_empty() {
-            format!("Failed to share file to all {} device(s)", total)
+            format!("Failed to share file to all {} device(s).", total)
         } else {
             format!(
                 "File shared to {}/{} device(s). {} failed.",
@@ -337,7 +341,7 @@ impl ShareResult {
 /// - `file_name`: The name of the file
 /// - `device_ids`: The ids of the devices to sent the file to
 /// - `devices`: The list of all devices (with their public keys)
-/// - `token_state`: Thread-safe token state 
+/// - `token_state`: Thread-safe token state
 ///
 /// ### Returns
 /// - `Ok(ShareResult)`: Results of sharing with each device
@@ -429,4 +433,213 @@ pub fn share_file(
         successes,
         failures,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========== Compression Tests ==========
+
+    #[test]
+    fn test_roundtrip_empty_string() {
+        let original = "";
+        let compressed = compress_content(original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_roundtrip_ascii_text() {
+        let original = "The quick brown fox jumps over the lazy dog.";
+        let compressed = compress_content(original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_roundtrip_unicode_text() {
+        let original = "Héllo Wörld! 你好世界 🌍 Привет";
+        let compressed = compress_content(original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_roundtrip_multiline_text() {
+        let original = "Line 1\nLine 2\r\nLine 3\n\tIndented\n\nEmpty line above";
+        let compressed = compress_content(original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_roundtrip_special_characters() {
+        let original = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~";
+        let compressed = compress_content(original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_roundtrip_large_repetitive_content() {
+        let original = "AAAA".repeat(5000);
+        let compressed = compress_content(&original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+        // Should compress very well
+        assert!(compressed.len() < original.len() / 10);
+    }
+
+    #[test]
+    fn test_roundtrip_json_like_content() {
+        let original = r#"{"name": "test", "value": 123, "nested": {"key": "value"}}"#;
+        let compressed = compress_content(original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_roundtrip_code_like_content() {
+        let original = r#"
+fn main() {
+    let x = 42;
+    println!("Hello, world! {}", x);
+}
+"#;
+        let compressed = compress_content(original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_roundtrip_mixed_unicode() {
+        let original = "English, 中文, 日本語, 한국어, العربية, עברית, Ελληνικά, Русский";
+        let compressed = compress_content(original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_roundtrip_emoji_heavy() {
+        let original = "🔥🎉🚀💻⚡️🌟✨🎯🌈🦄🐉🌸🍕🎮🎨🎭🎪🎬🎤🎧🎼";
+        let compressed = compress_content(original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_roundtrip_very_large_content() {
+        let original = "Lorem ipsum dolor sit amet. ".repeat(10000);
+        assert!(original.len() > 250000); // Over 250KB
+        let compressed = compress_content(&original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    // ========== ShareResult Tests ==========
+
+    #[test]
+    fn test_share_result_is_complete_success_all_successful() {
+        let result = ShareResult {
+            successes: vec![
+                ("device1".to_string(), "2025-01-01".to_string()),
+                ("device2".to_string(), "2025-01-01".to_string()),
+            ],
+            failures: vec![],
+        };
+        assert!(result.is_complete_success());
+    }
+
+    #[test]
+    fn test_share_result_is_complete_success_with_failures() {
+        let result = ShareResult {
+            successes: vec![("device1".to_string(), "2025-01-01".to_string())],
+            failures: vec![(
+                "device2".to_string(),
+                SynchronizationError::ConnectionFailed,
+            )],
+        };
+        assert!(!result.is_complete_success());
+    }
+
+    #[test]
+    fn test_share_result_is_complete_success_all_failed() {
+        let result = ShareResult {
+            successes: vec![],
+            failures: vec![
+                (
+                    "device1".to_string(),
+                    SynchronizationError::ConnectionFailed,
+                ),
+                (
+                    "device2".to_string(),
+                    SynchronizationError::AuthenticationFailed,
+                ),
+            ],
+        };
+        assert!(!result.is_complete_success());
+    }
+
+    #[test]
+    fn test_share_result_summary_message_complete_success() {
+        let result = ShareResult {
+            successes: vec![
+                ("device1".to_string(), "2025-12-31".to_string()),
+                ("device2".to_string(), "2025-12-31".to_string()),
+            ],
+            failures: vec![],
+        };
+        let message = result.summary_message();
+        assert!(message.contains("File shared successfully"));
+        assert!(message.contains("2 device(s)"));
+        assert!(message.contains("2025-12-31"));
+    }
+
+    #[test]
+    fn test_share_result_summary_message_all_failed() {
+        let result = ShareResult {
+            successes: vec![],
+            failures: vec![
+                (
+                    "device1".to_string(),
+                    SynchronizationError::ConnectionFailed,
+                ),
+                (
+                    "device2".to_string(),
+                    SynchronizationError::AuthenticationFailed,
+                ),
+            ],
+        };
+        let message = result.summary_message();
+        assert!(message.contains("Failed to share file to all"));
+        assert!(message.contains("2 device(s)"));
+    }
+
+    #[test]
+    fn test_share_result_summary_message_partial_success() {
+        let result = ShareResult {
+            successes: vec![
+                ("device1".to_string(), "2025-12-31".to_string()),
+                ("device2".to_string(), "2025-12-31".to_string()),
+            ],
+            failures: vec![(
+                "device3".to_string(),
+                SynchronizationError::ConnectionFailed,
+            )],
+        };
+        let message = result.summary_message();
+        assert!(message.contains("2/3 device(s)"));
+        assert!(message.contains("1 failed"));
+    }
+
+    #[test]
+    fn test_share_result_summary_message_empty() {
+        let result = ShareResult {
+            successes: vec![],
+            failures: vec![],
+        };
+        let message = result.summary_message();
+        assert_eq!(message, "The file was not shared.");
+    }
 }
