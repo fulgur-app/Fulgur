@@ -1,6 +1,3 @@
 /target
 REFERENCE_
 **/.DS_Store
-
-# Generated license file (regenerated on each build)
-THIRD-PARTY-LICENSES
