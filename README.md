@@ -8,13 +8,13 @@ Your lightning fast, multiplatform, themable text editor, with synchronization b
 
 ### What is Fulgur?
 
-Fulgur is a straightforward text editor built for speed and reliability across multiple platforms. It's not designed to replace full-featured IDEs like VS Code, IntelliJ, or Zed, nor does it aim to match the extensive capabilities of editors like Emacs or Vim. Instead, Fulgur focuses on being fast, dependable, and built with modern technologies.
+Fulgur is a **straightforward text editor** built for speed and reliability across multiple platforms. It's not designed to replace full-featured IDEs like VS Code, IntelliJ, or Zed, nor does it aim to match the extensive capabilities of editors like Emacs or Vim. Instead, Fulgur focuses on being fast, dependable, and **built with modern technologies**.
 
 Themes are a core part of the Fulgur experience, with several included by default.
 
-Version 0.2.0 also introduces Sync mode, allowing you to securely send files between Fulgur instances similar to how you share tabs between browsers. The best part: [Fulgurant](https://github.com/fulgur-app/fulgurant), the sync server, is self-hostable, keeping your data private.
+Version 0.2.0 also introduces Sync mode, allowing you to **securely send files between Fulgur instances** similar to how you share tabs between browsers. The best part: [Fulgurant](https://github.com/fulgur-app/fulgurant), **the open source sync server, is self-hostable**, keeping your data private.
 
-Version 0.3.0 introduces multi-window support, allowing you to open multiple Fulgur windows simultaneously, as well as a much more robust and secure encryption system using the system's keychain. As a result it limits compatibility issues on some desktop environments on Linux.
+Version 0.3.0 introduces **multi-window support**, allowing you to open multiple Fulgur windows simultaneously, as well as a much more **robust and secure end-to-end encryption system** using the system's keychain. As a result it limits compatibility issues on some desktop environments on Linux.
 
 ### Screenshots
 
