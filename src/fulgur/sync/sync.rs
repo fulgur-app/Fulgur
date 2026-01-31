@@ -132,7 +132,6 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     let settings = entity.read(cx).settings.clone();
     let sync_server_connection_status = shared.sync_server_connection_status.clone();
     let pending_shared_files = shared.pending_shared_files.clone();
-    let encryption_key = shared.encryption_key.clone();
     let device_name = shared.device_name.clone();
     let sse_tx = entity.read(cx).sse_event_tx.clone();
     let sse_shutdown_flag = entity.read(cx).sse_shutdown_flag.clone();

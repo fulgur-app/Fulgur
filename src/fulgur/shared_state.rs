@@ -16,8 +16,6 @@ pub struct SharedAppState {
     pub themes: Arc<Mutex<Option<Themes>>>,
     /// Sync server connection status (already Arc<Mutex>)
     pub sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
-    /// Encryption key from server (already Arc<Mutex>)
-    pub encryption_key: Arc<Mutex<Option<String>>>,
     /// Device name from server (already Arc<Mutex>)
     pub device_name: Arc<Mutex<Option<String>>>,
     /// Pending shared files from sync server (already Arc<Mutex>)
@@ -78,7 +76,6 @@ impl SharedAppState {
             settings_version: Arc::new(AtomicU64::new(0)),
             themes: Arc::new(Mutex::new(themes)),
             sync_server_connection_status: Arc::new(Mutex::new(synchronization_status)),
-            encryption_key: Arc::new(Mutex::new(None)),
             device_name: Arc::new(Mutex::new(None)),
             pending_shared_files: Arc::new(Mutex::new(Vec::new())),
             token_state: Arc::new(Mutex::new(
