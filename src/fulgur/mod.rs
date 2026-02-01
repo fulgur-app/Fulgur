@@ -38,7 +38,7 @@ use std::{
 };
 use tab::Tab;
 use ui::{
-    bars::search_replace_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*,
+    bars::search_bar_actions::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*,
     themes,
 };
 
