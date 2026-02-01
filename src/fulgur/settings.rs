@@ -340,3 +340,164 @@ impl Settings {
         self.save()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn recent_files_new_creates_empty_list_with_correct_max() {
+        let recent_files = RecentFiles::new(5);
+        assert_eq!(recent_files.get_files().len(), 0);
+        assert_eq!(recent_files.max_files, 5);
+    }
+
+    #[test]
+    fn recent_files_new_with_zero_max() {
+        let recent_files = RecentFiles::new(0);
+        assert_eq!(recent_files.get_files().len(), 0);
+        assert_eq!(recent_files.max_files, 0);
+    }
+
+    #[test]
+    fn recent_files_new_with_large_max() {
+        let recent_files = RecentFiles::new(1000);
+        assert_eq!(recent_files.get_files().len(), 0);
+        assert_eq!(recent_files.max_files, 1000);
+    }
+
+    #[test]
+    fn recent_files_add_file_below_max() {
+        let mut recent_files = RecentFiles::new(5);
+        let file1 = PathBuf::from("/path/to/file1.txt");
+        let file2 = PathBuf::from("/path/to/file2.txt");
+
+        recent_files.add_file(file1.clone());
+        assert_eq!(recent_files.get_files().len(), 1);
+        assert_eq!(recent_files.get_files()[0], file1);
+
+        recent_files.add_file(file2.clone());
+        assert_eq!(recent_files.get_files().len(), 2);
+        assert_eq!(recent_files.get_files()[1], file2);
+    }
+
+    #[test]
+    fn recent_files_add_file_at_max_evicts_oldest() {
+        let mut recent_files = RecentFiles::new(3);
+        let file1 = PathBuf::from("/path/to/file1.txt");
+        let file2 = PathBuf::from("/path/to/file2.txt");
+        let file3 = PathBuf::from("/path/to/file3.txt");
+        let file4 = PathBuf::from("/path/to/file4.txt");
+
+        recent_files.add_file(file1.clone());
+        recent_files.add_file(file2.clone());
+        recent_files.add_file(file3.clone());
+        assert_eq!(recent_files.get_files().len(), 3);
+
+        // Adding 4th file should evict file1
+        recent_files.add_file(file4.clone());
+        assert_eq!(recent_files.get_files().len(), 3);
+        assert!(!recent_files.get_files().contains(&file1));
+        assert_eq!(recent_files.get_files()[0], file2);
+        assert_eq!(recent_files.get_files()[1], file3);
+        assert_eq!(recent_files.get_files()[2], file4);
+    }
+
+    #[test]
+    fn recent_files_lru_eviction_behavior() {
+        let mut recent_files = RecentFiles::new(3);
+        let file1 = PathBuf::from("/path/to/file1.txt");
+        let file2 = PathBuf::from("/path/to/file2.txt");
+        let file3 = PathBuf::from("/path/to/file3.txt");
+        let file4 = PathBuf::from("/path/to/file4.txt");
+        let file5 = PathBuf::from("/path/to/file5.txt");
+
+        recent_files.add_file(file1.clone());
+        recent_files.add_file(file2.clone());
+        recent_files.add_file(file3.clone());
+        recent_files.add_file(file4.clone());
+        recent_files.add_file(file5.clone());
+
+        // Should keep most recently added files (file3, file4, file5)
+        assert_eq!(recent_files.get_files().len(), 3);
+        assert_eq!(recent_files.get_files()[0], file3);
+        assert_eq!(recent_files.get_files()[1], file4);
+        assert_eq!(recent_files.get_files()[2], file5);
+        assert!(!recent_files.get_files().contains(&file1));
+        assert!(!recent_files.get_files().contains(&file2));
+    }
+
+    #[test]
+    fn recent_files_remove_existing_file() {
+        let mut recent_files = RecentFiles::new(5);
+        let file1 = PathBuf::from("/path/to/file1.txt");
+        let file2 = PathBuf::from("/path/to/file2.txt");
+        let file3 = PathBuf::from("/path/to/file3.txt");
+
+        recent_files.add_file(file1.clone());
+        recent_files.add_file(file2.clone());
+        recent_files.add_file(file3.clone());
+        assert_eq!(recent_files.get_files().len(), 3);
+
+        recent_files.remove_file(file2.clone());
+        assert_eq!(recent_files.get_files().len(), 2);
+        assert!(!recent_files.get_files().contains(&file2));
+        assert_eq!(recent_files.get_files()[0], file1);
+        assert_eq!(recent_files.get_files()[1], file3);
+    }
+
+    #[test]
+    fn recent_files_remove_non_existing_file() {
+        let mut recent_files = RecentFiles::new(5);
+        let file1 = PathBuf::from("/path/to/file1.txt");
+        let file2 = PathBuf::from("/path/to/file2.txt");
+        let non_existing = PathBuf::from("/path/to/nonexisting.txt");
+
+        recent_files.add_file(file1.clone());
+        recent_files.add_file(file2.clone());
+        assert_eq!(recent_files.get_files().len(), 2);
+
+        // Should not change anything
+        recent_files.remove_file(non_existing);
+        assert_eq!(recent_files.get_files().len(), 2);
+        assert_eq!(recent_files.get_files()[0], file1);
+        assert_eq!(recent_files.get_files()[1], file2);
+    }
+
+    #[test]
+    fn recent_files_remove_from_empty_list() {
+        let mut recent_files = RecentFiles::new(5);
+        let file1 = PathBuf::from("/path/to/file1.txt");
+
+        // Should not panic
+        recent_files.remove_file(file1);
+        assert_eq!(recent_files.get_files().len(), 0);
+    }
+
+    #[test]
+    fn recent_files_clear_removes_all_files() {
+        let mut recent_files = RecentFiles::new(5);
+        let file1 = PathBuf::from("/path/to/file1.txt");
+        let file2 = PathBuf::from("/path/to/file2.txt");
+        let file3 = PathBuf::from("/path/to/file3.txt");
+
+        recent_files.add_file(file1);
+        recent_files.add_file(file2);
+        recent_files.add_file(file3);
+        assert_eq!(recent_files.get_files().len(), 3);
+
+        recent_files.clear();
+        assert_eq!(recent_files.get_files().len(), 0);
+    }
+
+    #[test]
+    fn recent_files_clear_empty_list() {
+        let mut recent_files = RecentFiles::new(5);
+        assert_eq!(recent_files.get_files().len(), 0);
+
+        // Should not panic
+        recent_files.clear();
+        assert_eq!(recent_files.get_files().len(), 0);
+    }
+}
