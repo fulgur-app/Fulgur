@@ -1,3 +1,5 @@
+use std::u32;
+
 // Represents a single editor tab with its content
 use gpui::*;
 use gpui_component::highlighter::Language;
@@ -340,11 +342,13 @@ pub fn extract_line_number(destination: SharedString) -> anyhow::Result<Jump> {
             if destination.contains(":") {
                 let parts = destination.split(":").collect::<Vec<&str>>();
                 if parts.len() == 2 {
-                    jump.line = string_to_u32(parts[0]) - 1;
+                    let line = string_to_u32(parts[0]);
+                    jump.line = if line > 0 { line - 1 } else { 0 };
                     jump.character = Some(string_to_u32(parts[1]));
                 }
             } else {
-                jump.line = string_to_u32(destination.as_str()) - 1;
+                let line = string_to_u32(destination.as_str());
+                jump.line = if line > 0 { line - 1 } else { 0 };
             }
         })
         .ok_or(anyhow::anyhow!("Invalid destination"))?;
@@ -359,10 +363,12 @@ pub fn extract_line_number(destination: SharedString) -> anyhow::Result<Jump> {
 /// ### Returns
 /// - `u32`: The u32 value of the string, or 0 if the string is not a valid u32
 fn string_to_u32(string: &str) -> u32 {
-    if let Ok(line) = string.parse::<u32>() {
-        line
-    } else {
-        0
+    match string.parse::<u32>() {
+        Ok(line) => line,
+        Err(e) => match e.kind() {
+            std::num::IntErrorKind::PosOverflow => u32::MAX,
+            _ => 0,
+        },
     }
 }
 
@@ -409,12 +415,10 @@ mod tests {
 
     #[test]
     fn test_extract_line_number_line_0() {
-        // Line 0 is technically valid but results in index -1 (underflow to u32::MAX)
-        // The regex allows it, so we test actual behavior
+        // Line 0 should lead to the first line
         let destination = SharedString::from("0");
         let result = extract_line_number(destination).unwrap();
-        // 0 - 1 with unsigned wraps to u32::MAX
-        assert_eq!(result.line, u32::MAX);
+        assert_eq!(result.line, 0);
         assert_eq!(result.character, None);
     }
 
@@ -440,8 +444,7 @@ mod tests {
         // Number larger than u32::MAX should cause parse to fail, returning 0
         let destination = SharedString::from("99999999999999999999");
         let result = extract_line_number(destination).unwrap();
-        // string_to_u32 returns 0 on parse failure, then 0-1 wraps to u32::MAX
-        assert_eq!(result.line, u32::MAX);
+        assert_eq!(result.line, u32::MAX - 1);
         assert_eq!(result.character, None);
     }
 
@@ -525,7 +528,7 @@ mod tests {
         let result = extract_line_number(destination).unwrap();
         assert_eq!(result.line, 9);
         // Overflow causes parse to fail, string_to_u32 returns 0
-        assert_eq!(result.character, Some(0));
+        assert_eq!(result.character, Some(u32::MAX));
     }
 
     // ========== string_to_u32() tests ==========
@@ -555,8 +558,8 @@ mod tests {
     #[test]
     fn test_string_to_u32_overflow() {
         // Numbers larger than u32::MAX return 0
-        assert_eq!(string_to_u32("99999999999999999999"), 0);
-        assert_eq!(string_to_u32("4294967296"), 0); // u32::MAX + 1
+        assert_eq!(string_to_u32("99999999999999999999"), u32::MAX);
+        assert_eq!(string_to_u32("4294967296"), u32::MAX);
     }
 
     #[test]

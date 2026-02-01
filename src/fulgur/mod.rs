@@ -709,7 +709,7 @@ impl Render for Fulgur {
                 this.on_previous_tab(window, cx);
             }))
             .on_action(cx.listener(|this, _action: &JumpToLine, window, cx| {
-                this.jump_to_line(window, cx);
+                this.show_jump_to_line_dialog(window, cx);
             }))
             .on_action(cx.listener(|this, action: &OpenRecentFile, window, cx| {
                 this.do_open_file(window, cx, action.0.clone());

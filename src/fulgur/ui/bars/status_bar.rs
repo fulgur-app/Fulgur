@@ -1,7 +1,5 @@
-use std::ops::DerefMut;
-
 use crate::fulgur::{
-    Fulgur, editor_tab,
+    Fulgur,
     ui::{
         components_utils::{EMPTY, UTF_8},
         icons::CustomIcon,
@@ -9,10 +7,7 @@ use crate::fulgur::{
     },
 };
 use gpui::{prelude::FluentBuilder, *};
-use gpui_component::{
-    ActiveTheme, Icon, WindowExt, h_flex,
-    input::{Input, InputState, Position},
-};
+use gpui_component::{ActiveTheme, Icon, h_flex, input::Position};
 
 /// Create a status bar item
 ///
@@ -151,73 +146,7 @@ pub fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl
     status_bar_item_factory(content, border_color) //.border_r_1()
 }
 
-/// Handle the click on OK button in the jump to line dialog
-///
-/// ### Arguments
-/// - `jump_to_line_input`: The input state entity
-/// - `entity`: The Fulgur entity
-/// - `cx`: The application context
-///
-/// ### Returns
-/// - `true` if the jump to line is successful, `false` otherwise
-fn handle_jump_to_line_ok(
-    jump_to_line_input: Entity<InputState>,
-    entity: Entity<Fulgur>,
-    cx: &mut App,
-) -> bool {
-    let text = jump_to_line_input.read(cx).value();
-    let text_shared = SharedString::from(text);
-    let jump = editor_tab::extract_line_number(text_shared);
-    entity.update(cx, |this, cx| {
-        if let Ok(jump) = jump {
-            this.pending_jump = Some(jump);
-            this.jump_to_line_dialog_open = false;
-            cx.notify();
-            true
-        } else {
-            this.pending_jump = None;
-            false
-        }
-    });
-    false
-}
-
-/// Jump to line
-///
-/// ### Arguments
-/// - `instance`: The Fulgur instance
-/// - `window`: The window context
-/// - `cx`: The application context
-pub fn jump_to_line(instance: &mut Fulgur, window: &mut Window, cx: &mut Context<Fulgur>) {
-    let jump_to_line_input = instance.jump_to_line_input.clone();
-    jump_to_line_input.update(cx, |input_state, cx| {
-        input_state.set_value("", window, cx);
-        cx.notify();
-    });
-    let entity = cx.entity().clone();
-    instance.jump_to_line_dialog_open = true;
-    window.open_dialog(cx.deref_mut(), move |modal, window, cx| {
-        let focus_handle = jump_to_line_input.read(cx).focus_handle(cx);
-        window.focus(&focus_handle);
-        let jump_to_line_input_clone = jump_to_line_input.clone();
-        let entity_clone = entity.clone();
-        modal
-            .confirm()
-            .keyboard(true)
-            .child(Input::new(&jump_to_line_input))
-            .overlay_closable(true)
-            .close_button(false)
-            .on_ok(move |_event: &ClickEvent, _window, cx| {
-                handle_jump_to_line_ok(jump_to_line_input_clone.clone(), entity_clone.clone(), cx)
-            })
-    });
-}
-
 impl Fulgur {
-    pub fn jump_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        jump_to_line(self, window, cx);
-    }
-
     /// Render the status bar
     ///
     /// ### Arguments
@@ -266,7 +195,7 @@ impl Fulgur {
         let jump_to_line_button = jump_to_line_button.on_mouse_down(
             MouseButton::Left,
             cx.listener(|this, _event: &MouseDownEvent, window, cx| {
-                jump_to_line(this, window, cx);
+                this.show_jump_to_line_dialog(window, cx);
             }),
         );
         let language_button =
