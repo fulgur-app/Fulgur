@@ -261,77 +261,60 @@ pub fn decrypt(encrypted: &str) -> anyhow::Result<String> {
     String::from_utf8(plaintext).map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))
 }
 
-/// Convert base64 encryption key to bytes
-///
-/// ### Arguments
-/// - `key_b64`: Base64-encoded encryption key
-///
-/// ### Returns
-/// - `Ok([u8; 32])`: The 32-byte encryption key
-/// - `Err(anyhow::Error)`: If the encryption key could not be decoded
-pub fn decode_encryption_key(key_b64: &str) -> anyhow::Result<[u8; 32]> {
-    let key_bytes = BASE64.decode(key_b64)?;
-    if key_bytes.len() != 32 {
-        return Err(anyhow::anyhow!(
-            "Invalid encryption key length: expected 32 bytes, got {}",
-            key_bytes.len()
-        ));
-    }
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&key_bytes);
-    Ok(key)
-}
-
-/// Encrypt bytes (e.g., compressed data) for file sharing
+/// Encrypt bytes (e.g., compressed data) for file sharing using age encryption
 ///
 /// ### Arguments
 /// - `content_bytes`: The bytes to encrypt
-/// - `encryption_key_b64`: The base64-encoded encryption key from the server
+/// - `recipient_public_key`: The recipient's age x25519 public key (format: "age1...")
 ///
 /// ### Returns
-/// - `Ok(String)`: The base64-encoded encrypted content (nonce + ciphertext)
+/// - `Ok(String)`: The base64-encoded encrypted content
 /// - `Err(anyhow::Error)`: If the encryption failed
-pub fn encrypt_bytes(content_bytes: &[u8], encryption_key_b64: &str) -> anyhow::Result<String> {
-    let key_bytes = decode_encryption_key(encryption_key_b64)?;
-    let cipher = Aes256Gcm::new_from_slice(&key_bytes)
-        .map_err(|e| anyhow::anyhow!("Failed to create cipher: {}", e))?;
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher
-        .encrypt(&nonce, content_bytes)
-        .map_err(|e| anyhow::anyhow!("Encryption failed: {}", e))?;
-    let mut combined = nonce.to_vec();
-    combined.extend_from_slice(&ciphertext);
-    Ok(BASE64.encode(combined))
+pub fn encrypt_bytes(content_bytes: &[u8], recipient_public_key: &str) -> anyhow::Result<String> {
+    let recipient: Recipient = recipient_public_key
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse recipient public key: {}", e))?;
+    let recipients: Vec<Box<dyn age::Recipient>> = vec![Box::new(recipient)];
+    let encryptor = age::Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref()))
+        .map_err(|e| anyhow::anyhow!("Failed to create encryptor: {}", e))?;
+    let mut encrypted = vec![];
+    let mut writer = encryptor
+        .wrap_output(&mut encrypted)
+        .map_err(|e| anyhow::anyhow!("Failed to create encryption writer: {}", e))?;
+    std::io::Write::write_all(&mut writer, content_bytes)
+        .map_err(|e| anyhow::anyhow!("Failed to write encrypted data: {}", e))?;
+    writer
+        .finish()
+        .map_err(|e| anyhow::anyhow!("Failed to finish encryption: {}", e))?;
+    // Encode to base64 for transmission
+    Ok(BASE64.encode(encrypted))
 }
 
-/// Decrypt bytes (e.g., compressed data) received from another device
+/// Decrypt bytes (e.g., compressed data) received from another device using age decryption
 ///
 /// ### Arguments
-/// - `encrypted`: Base64-encoded encrypted content (nonce + ciphertext)
-/// - `encryption_key_b64`: The base64-encoded encryption key from the server
+/// - `encrypted_b64`: Base64-encoded encrypted content
+/// - `private_key_str`: The recipient's age x25519 private key
 ///
 /// ### Returns
 /// - `Ok(Vec<u8>)`: The decrypted bytes
 /// - `Err(anyhow::Error)`: If the decryption failed
-pub fn decrypt_bytes(encrypted: &str, encryption_key_b64: &str) -> anyhow::Result<Vec<u8>> {
-    let key_bytes = decode_encryption_key(encryption_key_b64)?;
-    let cipher = Aes256Gcm::new_from_slice(&key_bytes)
-        .map_err(|e| anyhow::anyhow!("Failed to create cipher: {}", e))?;
-    let combined = BASE64
-        .decode(encrypted)
+pub fn decrypt_bytes(encrypted_b64: &str, private_key_str: &str) -> anyhow::Result<Vec<u8>> {
+    let encrypted = BASE64
+        .decode(encrypted_b64)
         .map_err(|e| anyhow::anyhow!("Failed to decode base64: {}", e))?;
-    if combined.len() < 12 {
-        return Err(anyhow::anyhow!(
-            "Invalid encrypted data: too short (expected at least 12 bytes for nonce)"
-        ));
-    }
-    let (nonce_bytes, ciphertext) = combined.split_at(12);
-    let nonce = Nonce::from_slice(nonce_bytes);
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))?;
-
-    Ok(plaintext)
+    let identity: Identity = private_key_str
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse private key: {}", e))?;
+    let decryptor = age::Decryptor::new(&encrypted[..])
+        .map_err(|e| anyhow::anyhow!("Failed to create decryptor: {}", e))?;
+    let mut decrypted = vec![];
+    let mut reader = decryptor
+        .decrypt(std::iter::once(&identity as &dyn age::Identity))
+        .map_err(|e| anyhow::anyhow!("Failed to decrypt: {}", e))?;
+    std::io::Read::read_to_end(&mut reader, &mut decrypted)
+        .map_err(|e| anyhow::anyhow!("Failed to read decrypted data: {}", e))?;
+    Ok(decrypted)
 }
 
 #[cfg(test)]
@@ -356,44 +339,55 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_bytes() {
-        let key_bytes = [42u8; 32]; // Simple test key
-        let encryption_key = BASE64.encode(&key_bytes);
+        // Generate a key pair for testing
+        let (private_key, public_key) = generate_key_pair();
+        let public_key_str = public_key.to_string();
+        let private_key_str = serialize(private_key);
+
         let original_bytes = b"This is a test file content with some data!";
         let encrypted =
-            encrypt_bytes(original_bytes, &encryption_key).expect("Encryption should succeed");
+            encrypt_bytes(original_bytes, &public_key_str).expect("Encryption should succeed");
         assert_ne!(encrypted, String::from_utf8_lossy(original_bytes));
         let decrypted =
-            decrypt_bytes(&encrypted, &encryption_key).expect("Decryption should succeed");
+            decrypt_bytes(&encrypted, &private_key_str).expect("Decryption should succeed");
         assert_eq!(decrypted, original_bytes);
     }
 
     #[test]
     fn test_encrypt_produces_different_ciphertext() {
-        let key_bytes = [42u8; 32];
-        let encryption_key = BASE64.encode(&key_bytes);
+        // Generate a key pair for testing
+        let (private_key, public_key) = generate_key_pair();
+        let public_key_str = public_key.to_string();
+        let private_key_str = serialize(private_key);
+
         let content_bytes = b"Same content";
-        let encrypted1 = encrypt_bytes(content_bytes, &encryption_key).unwrap();
-        let encrypted2 = encrypt_bytes(content_bytes, &encryption_key).unwrap();
+        let encrypted1 = encrypt_bytes(content_bytes, &public_key_str).unwrap();
+        let encrypted2 = encrypt_bytes(content_bytes, &public_key_str).unwrap();
+        // Age encryption uses random nonces, so ciphertexts should differ
         assert_ne!(encrypted1, encrypted2);
         assert_eq!(
-            decrypt_bytes(&encrypted1, &encryption_key).unwrap(),
+            decrypt_bytes(&encrypted1, &private_key_str).unwrap(),
             content_bytes
         );
         assert_eq!(
-            decrypt_bytes(&encrypted2, &encryption_key).unwrap(),
+            decrypt_bytes(&encrypted2, &private_key_str).unwrap(),
             content_bytes
         );
     }
 
     #[test]
     fn test_decrypt_with_wrong_key_fails() {
-        let key_bytes1 = [42u8; 32];
-        let key_bytes2 = [99u8; 32];
-        let encryption_key1 = BASE64.encode(&key_bytes1);
-        let encryption_key2 = BASE64.encode(&key_bytes2);
+        // Generate two different key pairs
+        let (private_key1, public_key1) = generate_key_pair();
+        let (private_key2, _public_key2) = generate_key_pair();
+        let public_key1_str = public_key1.to_string();
+        let private_key2_str = serialize(private_key2);
+
         let content_bytes = b"Secret data";
-        let encrypted = encrypt_bytes(content_bytes, &encryption_key1).unwrap();
-        let result = decrypt_bytes(&encrypted, &encryption_key2);
+        // Encrypt with public_key1
+        let encrypted = encrypt_bytes(content_bytes, &public_key1_str).unwrap();
+        // Try to decrypt with private_key2 (should fail)
+        let result = decrypt_bytes(&encrypted, &private_key2_str);
         assert!(result.is_err());
     }
 }
