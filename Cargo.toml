@@ -24,7 +24,7 @@ sha2 = "0.10"
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "linux-native"] }
 
 # Networking
-ureq = { version = "3.1.4", features = ["json"] }
+ureq = { version = "3.2.0", features = ["json"] }
 
 # Encoding
 chardetng = "0.1.17"
@@ -39,11 +39,11 @@ simplelog = "0.12.2"
 time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
 
 # Error handling
-anyhow = "1.0.100"
+anyhow = "1.0.101"
 
 # GUI
 gpui = "0.2.2"
-gpui-component = { version = "0.5.0", features = ["tree-sitter-languages"] }
+gpui-component = { version = "0.5.1", features = ["tree-sitter-languages"] }
 
 # Filesystem
 notify = "8.2.0"
@@ -52,10 +52,10 @@ open = "5.3.3"
 # Others
 lsp-types = "0.97"
 rust-embed = "8.11.0"
-regex = "1.12.2"
+regex = "1.12.3"
 semver = "1.0.27"
-machine-uid = "0.5"
-flate2 = "1.1.8"
+machine-uid = "0.5.4"
+flate2 = "1.1.9"
 parking_lot = "0.12.5"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
