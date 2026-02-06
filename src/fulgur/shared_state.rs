@@ -43,7 +43,10 @@ impl SharedAppState {
     /// ### Returns
     /// - `Self`: The new shared app state
     pub fn new(pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>) -> Self {
-        let mut settings = Settings::load().unwrap_or_else(|_| Settings::new());
+        let mut settings = Settings::load().unwrap_or_else(|e| {
+            log::error!("Failed to load settings in shared state, using defaults: {}", e);
+            Settings::new()
+        });
         if settings
             .app_settings
             .synchronization_settings

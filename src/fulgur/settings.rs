@@ -13,6 +13,7 @@ pub struct SynchronizationSettings {
     pub email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_key: Option<String>,
+    #[serde(default = "default_is_deduplication")]
     pub is_deduplication: bool,
     //#[serde(skip_serializing_if = "Option::is_none")]
     //pub encrypted_key: Option<String>,
@@ -81,6 +82,14 @@ pub struct AppSettings {
 /// ### Returns
 /// - `true`: enable file watcher by default
 fn default_watch_files() -> bool {
+    true
+}
+
+/// Default value for is_deduplication setting
+///
+/// ### Returns
+/// - `true`: enable deduplication by default
+fn default_is_deduplication() -> bool {
     true
 }
 
@@ -501,5 +510,61 @@ mod tests {
         // Should not panic
         recent_files.clear();
         assert_eq!(recent_files.get_files().len(), 0);
+    }
+
+    #[test]
+    fn settings_load_without_is_deduplication_field() {
+        let json = r#"{
+            "editor_settings": {
+                "show_line_numbers": true,
+                "show_indent_guides": true,
+                "soft_wrap": false,
+                "font_size": 14.0,
+                "tab_size": 4,
+                "markdown_settings": {
+                    "show_markdown_preview": true,
+                    "show_markdown_toolbar": false
+                },
+                "watch_files": true
+            },
+            "app_settings": {
+                "confirm_exit": true,
+                "theme": "Catppuccin Frappe",
+                "synchronization_settings": {
+                    "is_synchronization_activated": true,
+                    "server_url": "http://localhost:3000",
+                    "email": "test@example.com",
+                    "public_key": "age1abc123"
+                }
+            },
+            "recent_files": {
+                "files": [],
+                "max_files": 10
+            }
+        }"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        // is_deduplication should default to true when missing from JSON
+        assert!(
+            settings
+                .app_settings
+                .synchronization_settings
+                .is_deduplication
+        );
+        // Other settings should be preserved
+        assert_eq!(settings.app_settings.theme, "Catppuccin Frappe");
+        assert!(
+            settings
+                .app_settings
+                .synchronization_settings
+                .is_synchronization_activated
+        );
+        assert_eq!(
+            settings.app_settings.synchronization_settings.server_url,
+            Some("http://localhost:3000".to_string())
+        );
+        assert_eq!(
+            settings.app_settings.synchronization_settings.email,
+            Some("test@example.com".to_string())
+        );
     }
 }

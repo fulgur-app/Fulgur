@@ -345,7 +345,10 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn init(cx: &mut App) {
         languages::init_languages();
-        let mut settings = Settings::load().unwrap_or_else(|_| Settings::new());
+        let mut settings = Settings::load().unwrap_or_else(|e| {
+            log::error!("Failed to load settings, using defaults: {}", e);
+            Settings::new()
+        });
         let recent_files = settings.get_recent_files();
         themes::init(&settings, cx, move |cx| {
             cx.bind_keys([
