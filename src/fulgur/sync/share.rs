@@ -1,4 +1,6 @@
-use std::{io::Read, sync::Arc};
+use std::{io::Read, path::PathBuf, sync::Arc};
+
+use sha2::{Digest, Sha256};
 
 use flate2::{
     Compression,
@@ -182,6 +184,7 @@ fn encrypt_content_for_device(
 /// - `encrypted_content`: The encrypted content
 /// - `file_name`: The file name
 /// - `device_id`: The device ID
+/// - `deduplication_hash`: Optional SHA256 hash of the file path for server-side deduplication
 ///
 /// ### Returns
 /// - `Ok(String)`: The expiration date from the response
@@ -192,11 +195,13 @@ fn send_share_request(
     encrypted_content: String,
     file_name: &str,
     device_id: &str,
+    deduplication_hash: Option<String>,
 ) -> Result<String, SynchronizationError> {
     let encrypted_payload = ShareFilePayload {
         content: encrypted_content,
         file_name: file_name.to_string(),
         device_id: device_id.to_string(),
+        deduplication_hash,
     };
     let mut response = match ureq::post(share_url)
         .header("Authorization", &format!("Bearer {}", token))
@@ -342,6 +347,7 @@ impl ShareResult {
 /// - `device_ids`: The ids of the devices to sent the file to
 /// - `devices`: The list of all devices (with their public keys)
 /// - `token_state`: Thread-safe token state
+/// - `file_path`: Optional file path (used for deduplication hash)
 ///
 /// ### Returns
 /// - `Ok(ShareResult)`: Results of sharing with each device
@@ -353,6 +359,7 @@ pub fn share_file(
     device_ids: Vec<String>,
     devices: &[Device],
     token_state: Arc<Mutex<TokenState>>,
+    file_path: Option<PathBuf>,
 ) -> Result<ShareResult, SynchronizationError> {
     let server_url = synchronization_settings
         .server_url
@@ -372,6 +379,14 @@ pub fn share_file(
     }
     let token = get_valid_token(synchronization_settings, Arc::clone(&token_state))?;
     let share_url = format!("{}/api/share", server_url);
+    let deduplication_hash = if synchronization_settings.is_deduplication {
+        file_path.as_ref().map(|path| {
+            let hash = Sha256::digest(path.to_string_lossy().as_bytes());
+            format!("{:x}", hash)
+        })
+    } else {
+        None
+    };
     let mut successes = Vec::new();
     let mut failures = Vec::new();
     for device_id in &device_ids {
@@ -409,7 +424,14 @@ pub fn share_file(
                 continue;
             }
         };
-        match send_share_request(&share_url, &token, encrypted_content, &file_name, device_id) {
+        match send_share_request(
+            &share_url,
+            &token,
+            encrypted_content,
+            &file_name,
+            device_id,
+            deduplication_hash.clone(),
+        ) {
             Ok(expiration_date) => {
                 successes.push((device_id.clone(), expiration_date));
             }

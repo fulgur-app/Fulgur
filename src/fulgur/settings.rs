@@ -13,6 +13,7 @@ pub struct SynchronizationSettings {
     pub email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_key: Option<String>,
+    pub is_deduplication: bool,
     //#[serde(skip_serializing_if = "Option::is_none")]
     //pub encrypted_key: Option<String>,
     //#[serde(skip)]
@@ -30,6 +31,7 @@ impl SynchronizationSettings {
             server_url: None,
             email: None,
             public_key: None,
+            is_deduplication: true,
         }
     }
 }

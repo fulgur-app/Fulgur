@@ -29,6 +29,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2",
  "simplelog",
  "tikv-jemallocator",
  "time",
@@ -2135,7 +2136,7 @@ dependencies = [
 [[package]]
 name = "fulgur-common"
 version = "0.3.0"
-source = "git+https://github.com/fulgur-app/Fulgur-common.git#0937aca159875dfcb9ea34d1d5b7379b1fb56728"
+source = "git+https://github.com/fulgur-app/Fulgur-common.git#1d69d7cce41f933c5f5fea6c18ccc633ee5a1aa1"
 dependencies = [
  "serde",
 ]

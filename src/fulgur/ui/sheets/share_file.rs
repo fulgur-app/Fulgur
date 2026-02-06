@@ -154,13 +154,16 @@ fn handle_share_file(
         return;
     }
     let result = entity.update(cx, |this, cx| {
-        let content = this
-            .get_active_editor_tab()
+        let active_tab = this.get_active_editor_tab();
+        let content = active_tab
+            .as_ref()
             .map(|tab| tab.content.read(cx).value().to_string())
             .unwrap_or_default();
-        let file_name = this
-            .get_active_editor_tab()
-            .and_then(|tab| tab.file_path.as_ref())
+        let file_path = active_tab
+            .as_ref()
+            .and_then(|tab| tab.file_path.clone());
+        let file_name = file_path
+            .as_ref()
             .and_then(|path| path.file_name())
             .and_then(|name| name.to_str())
             .unwrap_or("Untitled")
@@ -172,6 +175,7 @@ fn handle_share_file(
             ids,
             &devices,
             Arc::clone(&this.shared_state(cx).token_state),
+            file_path,
         )
     });
     match result {

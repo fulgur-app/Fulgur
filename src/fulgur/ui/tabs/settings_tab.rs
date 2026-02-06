@@ -379,6 +379,38 @@ impl Fulgur {
                     )
                     .description("Activate synchronization with the server and saves the relevant keys in the system's keychain."),
                     SettingItem::new(
+                        "Deduplication",
+                        SettingField::switch(
+                            {
+                                let entity = entity.clone();
+                                move |cx: &App| {
+                                    entity
+                                        .read(cx)
+                                        .settings
+                                        .app_settings
+                                        .synchronization_settings
+                                        .is_deduplication
+                                }
+                            },
+                            {
+                                let entity = entity.clone();
+                                move |val: bool, cx: &mut App| {
+                                    entity.update(cx, |this, cx| {
+                                        this.settings
+                                            .app_settings
+                                            .synchronization_settings
+                                            .is_deduplication = val;
+                                        if let Err(e) = this.update_and_propagate_settings(cx) {
+                                            log::error!("Failed to save settings: {}", e);
+                                        }
+                                    });
+                                }
+                            },
+                        )
+                        .default_value(default_app_settings.synchronization_settings.is_deduplication),
+                    )
+                    .description("Avoid duplicate shares of the same file on the server."),
+                    SettingItem::new(
                         "Server URL",
                         SettingField::input(
                             {
