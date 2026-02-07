@@ -766,7 +766,11 @@ impl Fulgur {
         }
         let menus = build_menus(
             &self.settings.recent_files.get_files(),
-            self.shared_state(cx).update_link.lock().clone(),
+            if let Some(info) = self.shared_state(cx).update_info.lock().clone() {
+                Some(info.download_url)
+            } else {
+                None
+            },
         );
         cx.set_menus(menus);
     }

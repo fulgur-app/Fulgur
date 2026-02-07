@@ -264,5 +264,29 @@ async fn create_window(
     window.update(cx, |_, window, _| {
         window.activate_window();
     })?;
+
+    // Check for updates on first window only
+    if window_index == 0 {
+        let update_info = cx.update(|cx| {
+            cx.global::<fulgur::shared_state::SharedAppState>()
+                .update_info
+                .clone()
+        })?;
+        let current_version = env!("CARGO_PKG_VERSION").to_string();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            log::info!("Checking for updates...");
+            match fulgur::utils::updater::check_for_updates(current_version) {
+                Ok(Some(new_update_info)) => {
+                    *update_info.lock() = Some(new_update_info);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log::warn!("Failed to check for updates: {}", e);
+                }
+            }
+        });
+    }
+
     Ok(())
 }

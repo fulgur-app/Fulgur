@@ -158,7 +158,12 @@ impl Fulgur {
                         log::error!("Failed to add file to recent files: {}", e);
                     }
                     let shared = this.shared_state(cx);
-                    let update_link = shared.update_link.lock().clone();
+                    let update_info = shared.update_info.lock().clone();
+                    let update_link = if let Some(info) = update_info {
+                        Some(info.download_url.clone())
+                    } else {
+                        None
+                    };
                     let menus = menus::build_menus(&this.settings.get_recent_files(), update_link);
                     cx.set_menus(menus);
                     let title = match path.file_name() {

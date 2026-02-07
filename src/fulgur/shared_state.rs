@@ -1,4 +1,5 @@
 use crate::fulgur::utils::crypto_helper::check_private_public_keys;
+use crate::fulgur::utils::updater::UpdateInfo;
 use crate::fulgur::{settings::Settings, settings::Themes, sync::sync::SynchronizationStatus};
 use fulgur_common::api::shares::SharedFileResponse;
 use parking_lot::Mutex;
@@ -24,8 +25,8 @@ pub struct SharedAppState {
     pub token_state: Arc<Mutex<crate::fulgur::sync::access_token::TokenState>>,
     /// Last heartbeat time for sync connection (already Arc<Mutex>)
     pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
-    /// Update link if available
-    pub update_link: Arc<Mutex<Option<String>>>,
+    /// Update info if available
+    pub update_info: Arc<Mutex<Option<UpdateInfo>>>,
     /// Files from macOS "Open with" events (already Arc<Mutex>)
     pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
     /// Flag to track if sync has been initialized (to prevent multiple initializations)
@@ -44,7 +45,10 @@ impl SharedAppState {
     /// - `Self`: The new shared app state
     pub fn new(pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>) -> Self {
         let mut settings = Settings::load().unwrap_or_else(|e| {
-            log::error!("Failed to load settings in shared state, using defaults: {}", e);
+            log::error!(
+                "Failed to load settings in shared state, using defaults: {}",
+                e
+            );
             Settings::new()
         });
         if settings
@@ -85,7 +89,7 @@ impl SharedAppState {
                 crate::fulgur::sync::access_token::TokenState::new(),
             )),
             last_heartbeat: Arc::new(Mutex::new(None)),
-            update_link: Arc::new(Mutex::new(None)),
+            update_info: Arc::new(Mutex::new(None)),
             pending_files_from_macos,
             sync_initialized: Arc::new(AtomicBool::new(false)),
         }

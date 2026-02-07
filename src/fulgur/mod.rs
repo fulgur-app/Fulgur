@@ -12,6 +12,7 @@ use crate::fulgur::{
     ui::{
         icons::CustomIcon,
         languages::{self, SupportedLanguage},
+        notifications::update_notification::make_update_notification,
     },
     utils::crypto_helper::{self, load_private_key_from_keychain},
 };
@@ -75,7 +76,7 @@ pub struct Fulgur {
     sse_event_tx: Option<std::sync::mpsc::Sender<sync::sse::SseEvent>>, // Sender for SSE connection
     sse_shutdown_flag: Option<Arc<AtomicBool>>, // Flag to signal SSE thread to shutdown
     last_sse_event: Option<Instant>,            // Track last SSE event time for debouncing
-    pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
+    pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
 }
 
@@ -444,6 +445,14 @@ impl Render for Fulgur {
         });
         if let Some((notification_type, message)) = self.pending_notification.take() {
             window.push_notification((notification_type, message), cx);
+        }
+        let update_info = {
+            let shared = self.shared_state(cx);
+            shared.update_info.lock().take()
+        };
+        if let Some(update_info) = update_info {
+            let notification = make_update_notification(&update_info);
+            window.push_notification(notification, cx);
         }
         // Check if settings have been updated in another window
         let shared = self.shared_state(cx);

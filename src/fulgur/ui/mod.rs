@@ -4,6 +4,7 @@ pub mod dialogs;
 pub mod icons;
 pub mod languages;
 pub mod menus;
+pub mod notifications;
 pub mod sheets;
 pub mod tabs;
 pub mod themes;
