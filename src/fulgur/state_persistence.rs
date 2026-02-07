@@ -36,6 +36,10 @@ pub struct SerializedWindowBounds {
 }
 
 impl Default for SerializedWindowBounds {
+    /// Default values for serialized window bounds
+    ///
+    /// ### Returns
+    /// - `SerializedWindowBounds`: The default serialized window bounds
     fn default() -> Self {
         Self {
             state: "Windowed".to_string(),

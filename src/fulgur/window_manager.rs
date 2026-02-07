@@ -15,6 +15,9 @@ impl Global for WindowManager {}
 
 impl WindowManager {
     /// Create a new window manager
+    ///
+    /// ### Returns
+    /// - `WindowManager`: A new window manager instance
     pub fn new() -> Self {
         Self {
             windows: HashMap::new(),
@@ -134,6 +137,10 @@ impl WindowManager {
 }
 
 impl Default for WindowManager {
+    /// Create a default window manager
+    ///
+    /// ### Returns
+    /// - `WindowManager`: A new window manager instance
     fn default() -> Self {
         Self::new()
     }
