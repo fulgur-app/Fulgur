@@ -335,7 +335,7 @@ impl Fulgur {
                 let last_modified = file_info.as_ref().and_then(|meta| {
                     meta.modified()
                         .ok()
-                        .map(|modified| components_utils::format_system_time(modified))
+                        .map(components_utils::format_system_time)
                 });
                 let last_modified = last_modified.unwrap_or_default();
                 Tooltip::element(move |_, cx| {

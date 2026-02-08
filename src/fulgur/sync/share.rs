@@ -416,7 +416,7 @@ pub fn share_file(
                 log::error!(
                     "Failed to encrypt content for device {}: {}",
                     device_id,
-                    e.to_string()
+                    e
                 );
                 failures.push((device_id.clone(), e));
                 continue;
@@ -437,7 +437,7 @@ pub fn share_file(
                 log::error!(
                     "Failed to share file to device {}: {}",
                     device_id,
-                    e.to_string()
+                    e
                 );
                 failures.push((device_id.clone(), e));
             }

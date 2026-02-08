@@ -80,34 +80,28 @@ pub fn status_bar_toggle_button_factory(
     button
 }
 
+/// Parameters for the sync button styling
+pub struct SyncButtonStyle {
+    pub connected_icon: Icon,
+    pub disconnected_icon: Icon,
+    pub border_color: Hsla,
+    pub connected_color: Hsla,
+    pub connected_foreground_color: Hsla,
+    pub connected_hover_color: Hsla,
+    pub disconnected_color: Hsla,
+    pub disconnected_foreground_color: Hsla,
+    pub disconnected_hover_color: Hsla,
+}
+
 /// Create a status bar sync button
 ///
 /// ### Arguments
-/// - `connected_icon`: The icon to display when connected
-/// - `disconnected_icon`: The icon to display when disconnected
-/// - `border_color`: The color of the border
-/// - `connected_color`: The color of the connected button
-/// - `connected_foreground_color`: The foreground color of the connected button
-/// - `connected_hover_color`: The hover color of the connected button
-/// - `disconnected_color`: The color of the disconnected button
-/// - `disconnected_foreground_color`: The foreground color of the disconnected button
-/// - `disconnected_hover_color`: The hover color of the disconnected button
+/// - `style`: The styling parameters for the sync button
 /// - `is_connected`: Whether the device is connected
 ///
 /// ### Returns
 /// - `Div`: A status bar sync button
-pub fn status_bar_sync_button(
-    connected_icon: Icon,
-    disconnected_icon: Icon,
-    border_color: Hsla,
-    connected_color: Hsla,
-    connected_foreground_color: Hsla,
-    connected_hover_color: Hsla,
-    disconnected_color: Hsla,
-    disconnected_foreground_color: Hsla,
-    disconnected_hover_color: Hsla,
-    is_connected: bool,
-) -> Div {
+pub fn status_bar_sync_button(style: SyncButtonStyle, is_connected: bool) -> Div {
     let mut button = div()
         .text_sm()
         .flex()
@@ -115,20 +109,20 @@ pub fn status_bar_sync_button(
         .justify_center()
         .px_4()
         .py_1()
-        .border_color(border_color)
+        .border_color(style.border_color)
         .cursor_pointer();
     if is_connected {
         button = button
-            .child(connected_icon)
-            .bg(connected_color)
-            .text_color(connected_foreground_color)
-            .hover(|this| this.bg(connected_hover_color));
+            .child(style.connected_icon)
+            .bg(style.connected_color)
+            .text_color(style.connected_foreground_color)
+            .hover(|this| this.bg(style.connected_hover_color));
     } else {
         button = button
-            .child(disconnected_icon)
-            .bg(disconnected_color)
-            .text_color(disconnected_foreground_color)
-            .hover(|this| this.bg(disconnected_hover_color));
+            .child(style.disconnected_icon)
+            .bg(style.disconnected_color)
+            .text_color(style.disconnected_foreground_color)
+            .hover(|this| this.bg(style.disconnected_hover_color));
     }
     button
 }
@@ -246,15 +240,17 @@ impl Fulgur {
         let is_markdown = self.is_markdown();
         let is_connected = self.is_connected(cx);
         let sync_button = status_bar_sync_button(
-            Icon::new(CustomIcon::Zap),
-            Icon::new(CustomIcon::ZapOff),
-            cx.theme().border,
-            cx.theme().primary,
-            cx.theme().primary_foreground,
-            cx.theme().primary_hover,
-            cx.theme().danger,
-            cx.theme().danger_foreground,
-            cx.theme().danger_hover,
+            SyncButtonStyle {
+                connected_icon: Icon::new(CustomIcon::Zap),
+                disconnected_icon: Icon::new(CustomIcon::ZapOff),
+                border_color: cx.theme().border,
+                connected_color: cx.theme().primary,
+                connected_foreground_color: cx.theme().primary_foreground,
+                connected_hover_color: cx.theme().primary_hover,
+                disconnected_color: cx.theme().danger,
+                disconnected_foreground_color: cx.theme().danger_foreground,
+                disconnected_hover_color: cx.theme().danger_hover,
+            },
             is_connected,
         )
         .on_mouse_down(

@@ -449,7 +449,7 @@ impl Fulgur {
                                 .synchronization_settings
                                 .server_url
                                 .clone()
-                                .map(|s| SharedString::from(s))
+                                .map(SharedString::from)
                                 .unwrap_or_default(),
                         ),
                     )
@@ -495,7 +495,7 @@ impl Fulgur {
                                 .synchronization_settings
                                 .email
                                 .clone()
-                                .map(|s| SharedString::from(s))
+                                .map(SharedString::from)
                                 .unwrap_or_default(),
                         ),
                     )

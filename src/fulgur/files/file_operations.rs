@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::fulgur::{
     Fulgur,
-    editor_tab::EditorTab,
+    editor_tab::{EditorTab, FromFileParams},
     tab::Tab,
     ui::components_utils::{UNTITLED, UTF_8},
     ui::menus,
@@ -140,14 +140,16 @@ impl Fulgur {
             .update(|window, cx| {
                 _ = view.update(cx, |this, cx| {
                     let editor_tab = EditorTab::from_file(
-                        this.next_tab_id,
-                        path.clone(),
-                        contents,
-                        encoding,
+                        FromFileParams {
+                            id: this.next_tab_id,
+                            path: path.clone(),
+                            contents,
+                            encoding,
+                            is_modified: false,
+                        },
                         window,
                         cx,
                         &this.settings.editor_settings,
-                        false,
                     );
                     this.tabs.push(Tab::Editor(editor_tab));
                     this.active_tab_index = Some(this.tabs.len() - 1);

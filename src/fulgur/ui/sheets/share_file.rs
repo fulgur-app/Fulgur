@@ -201,10 +201,10 @@ fn handle_share_file(
             }
         }
         Err(e) => {
-            log::error!("Failed to share file: {}", e.to_string());
+            log::error!("Failed to share file: {}", e);
             let notification = (
                 NotificationType::Error,
-                SharedString::from(format!("Failed to share file: {}", e.to_string())),
+                SharedString::from(format!("Failed to share file: {}", e)),
             );
             window.push_notification(notification, cx);
         }
@@ -292,11 +292,11 @@ impl Fulgur {
         let devices = match devices {
             Ok(devices) => devices,
             Err(e) => {
-                log::error!("Failed to get devices: {}", e.to_string());
+                log::error!("Failed to get devices: {}", e);
                 window.push_notification(
                     (
                         NotificationType::Error,
-                        SharedString::from(format!("Failed to get devices: {}", e.to_string())),
+                        SharedString::from(format!("Failed to get devices: {}", e)),
                     ),
                     cx,
                 );

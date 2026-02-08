@@ -66,7 +66,7 @@ pub fn connect_sse(
             let token = match get_valid_token(&settings_clone, Arc::clone(&token_state_clone)) {
                 Ok(t) => t,
                 Err(e) => {
-                    log::error!("Failed to get valid token for SSE: {}", e.to_string());
+                    log::error!("Failed to get valid token for SSE: {}", e);
                     set_sync_server_connection_status(
                         sync_server_connection_status.clone(),
                         SynchronizationStatus::AuthenticationFailed,
@@ -288,11 +288,11 @@ impl Fulgur {
                             sync_status,
                             token_state,
                         ) {
-                            log::error!("Failed to start new SSE connection: {}", e.to_string());
+                            log::error!("Failed to start new SSE connection: {}", e);
                         }
                     }
                     Err(e) => {
-                        log::error!("Initial sync failed, not starting SSE: {}", e.to_string());
+                        log::error!("Initial sync failed, not starting SSE: {}", e);
                     }
                 }
             });

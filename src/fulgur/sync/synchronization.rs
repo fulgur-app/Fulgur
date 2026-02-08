@@ -1,4 +1,4 @@
-use std::{sync::Arc, thread, time::Duration};
+use std::{fmt, sync::Arc, thread, time::Duration};
 
 use fulgur_common::api::sync::{BeginResponse, InitialSynchronizationPayload};
 use gpui::{App, Entity, SharedString};
@@ -189,7 +189,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                         sync_server_connection_status.clone(),
                         Arc::clone(&token_state),
                     ) {
-                        log::error!("Failed to start SSE connection: {}", e.to_string());
+                        log::error!("Failed to start SSE connection: {}", e);
                     }
                 } else {
                     log::warn!(
@@ -198,7 +198,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                 }
             }
             Err(e) => {
-                log::error!("Failed to fetch shared files: {}", e.to_string());
+                log::error!("Failed to fetch shared files: {}", e);
                 set_sync_server_connection_status(
                     sync_server_connection_status,
                     SynchronizationStatus::Disconnected,
@@ -280,7 +280,7 @@ pub fn perform_initial_synchronization(
         Err(e) => (
             (
                 NotificationType::Error,
-                SharedString::from(format!("Connection failed: {}", e.to_string())),
+                SharedString::from(format!("Connection failed: {}", e)),
             ),
             SynchronizationStatus::from_error(&e),
         ),
@@ -320,35 +320,31 @@ pub enum SynchronizationError {
     Timeout(String),
 }
 
-impl SynchronizationError {
-    /// Convert the error to a string
-    ///
-    /// ### Returns
-    /// - `String`: The error message
-    pub fn to_string(&self) -> String {
+impl fmt::Display for SynchronizationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SynchronizationError::AuthenticationFailed => "Authentication failed".to_string(),
-            SynchronizationError::BadRequest => "Bad request".to_string(),
-            SynchronizationError::CompressionFailed => "Compression failed".to_string(),
-            SynchronizationError::ConnectionFailed => "Cannot connect to sync server".to_string(),
-            SynchronizationError::ContentMissing => "Content is missing".to_string(),
-            SynchronizationError::ContentTooLarge => "Content is too large to share".to_string(),
-            SynchronizationError::DeviceIdsMissing => "Device IDs are missing".to_string(),
-            SynchronizationError::DeviceKeyMissing => "Key is missing".to_string(),
-            SynchronizationError::EmailMissing => "Email is missing".to_string(),
-            SynchronizationError::EncryptionFailed => "Encryption failed".to_string(),
-            SynchronizationError::FileNameMissing => "File name is missing".to_string(),
-            SynchronizationError::HostNotFound => "Host not found".to_string(),
-            SynchronizationError::InvalidResponse(e) => e.to_string(),
-            SynchronizationError::MissingEncryptionKey => "Missing encryption key".to_string(),
-            SynchronizationError::MissingExpirationDate => "Missing expiration date".to_string(),
+            SynchronizationError::AuthenticationFailed => write!(f, "Authentication failed"),
+            SynchronizationError::BadRequest => write!(f, "Bad request"),
+            SynchronizationError::CompressionFailed => write!(f, "Compression failed"),
+            SynchronizationError::ConnectionFailed => write!(f, "Cannot connect to sync server"),
+            SynchronizationError::ContentMissing => write!(f, "Content is missing"),
+            SynchronizationError::ContentTooLarge => write!(f, "Content is too large to share"),
+            SynchronizationError::DeviceIdsMissing => write!(f, "Device IDs are missing"),
+            SynchronizationError::DeviceKeyMissing => write!(f, "Key is missing"),
+            SynchronizationError::EmailMissing => write!(f, "Email is missing"),
+            SynchronizationError::EncryptionFailed => write!(f, "Encryption failed"),
+            SynchronizationError::FileNameMissing => write!(f, "File name is missing"),
+            SynchronizationError::HostNotFound => write!(f, "Host not found"),
+            SynchronizationError::InvalidResponse(e) => write!(f, "{}", e),
+            SynchronizationError::MissingEncryptionKey => write!(f, "Missing encryption key"),
+            SynchronizationError::MissingExpirationDate => write!(f, "Missing expiration date"),
             SynchronizationError::MissingPublicKey(e) => {
-                format!("Missing public key for device: {e}")
+                write!(f, "Missing public key for device: {}", e)
             }
-            SynchronizationError::Other(e) => e.to_string(),
-            SynchronizationError::ServerError(e) => e.to_string(),
-            SynchronizationError::ServerUrlMissing => "Server URL is missing".to_string(),
-            SynchronizationError::Timeout(timeout) => format!("Timeout: {}", timeout),
+            SynchronizationError::Other(e) => write!(f, "{}", e),
+            SynchronizationError::ServerError(e) => write!(f, "{}", e),
+            SynchronizationError::ServerUrlMissing => write!(f, "Server URL is missing"),
+            SynchronizationError::Timeout(timeout) => write!(f, "Timeout: {}", timeout),
         }
     }
 }

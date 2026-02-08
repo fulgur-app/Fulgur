@@ -22,6 +22,15 @@ pub struct EditorTab {
     pub show_markdown_preview: bool,
 }
 
+/// Parameters for creating an editor tab from a file
+pub struct FromFileParams {
+    pub id: usize,
+    pub path: std::path::PathBuf,
+    pub contents: String,
+    pub encoding: String,
+    pub is_modified: bool,
+}
+
 /// Create a new input state with syntax highlighting
 ///
 /// ### Arguments
@@ -140,53 +149,54 @@ impl EditorTab {
     /// Create a new tab from a file
     ///
     /// ### Arguments
-    /// - `id`: The ID of the tab
-    /// - `path`: The path of the file
-    /// - `contents`: The contents of the file
-    /// - `encoding`: The encoding of the file
+    /// - `params`: The parameters for creating the tab
     /// - `window`: The window to create the tab in
     /// - `cx`: The application context
     /// - `settings`: The settings for the input state
-    /// - `is_modified`: Whether the file is modified
     ///
     /// ### Returns
     /// - `EditorTab`: The new tab
     pub fn from_file(
-        id: usize,
-        path: std::path::PathBuf,
-        contents: String,
-        encoding: String,
+        params: FromFileParams,
         window: &mut Window,
         cx: &mut App,
         settings: &EditorSettings,
-        is_modified: bool,
     ) -> Self {
-        let file_name = path
+        let file_name = params
+            .path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(UNTITLED)
             .to_string();
 
-        let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+        let extension = params
+            .path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
         let language = language_from_extension(extension);
         let content = cx.new(|cx| {
             make_input_state(
                 window,
                 cx,
                 to_language(&language),
-                Some(contents.clone()),
+                Some(params.contents.clone()),
                 settings,
             )
         });
-        let title = format!("{}{}", file_name, if is_modified { " •" } else { "" });
+        let title = format!(
+            "{}{}",
+            file_name,
+            if params.is_modified { " •" } else { "" }
+        );
         Self {
-            id,
+            id: params.id,
             title: title.into(),
             content,
-            file_path: Some(path),
-            modified: is_modified,
-            original_content: contents,
-            encoding,
+            file_path: Some(params.path),
+            modified: params.is_modified,
+            original_content: params.contents,
+            encoding: params.encoding,
             language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,

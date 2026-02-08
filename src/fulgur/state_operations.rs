@@ -1,6 +1,6 @@
 use crate::fulgur::{
     Fulgur,
-    editor_tab::EditorTab,
+    editor_tab::{EditorTab, FromFileParams},
     files::file_operations::detect_encoding_and_decode,
     state_persistence::*,
     tab::Tab,
@@ -177,14 +177,16 @@ impl Fulgur {
         };
         let tab = if let Some(file_path) = path {
             EditorTab::from_file(
-                tab_id,
-                file_path,
-                content,
-                encoding,
+                FromFileParams {
+                    id: tab_id,
+                    path: file_path,
+                    contents: content,
+                    encoding,
+                    is_modified,
+                },
                 window,
                 cx,
                 &self.settings.editor_settings,
-                is_modified,
             )
         } else {
             let content_entity = cx.new(|cx| {
