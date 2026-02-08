@@ -413,11 +413,7 @@ pub fn share_file(
         let encrypted_content = match encrypt_content_for_device(&content, public_key) {
             Ok(content) => content,
             Err(e) => {
-                log::error!(
-                    "Failed to encrypt content for device {}: {}",
-                    device_id,
-                    e
-                );
+                log::error!("Failed to encrypt content for device {}: {}", device_id, e);
                 failures.push((device_id.clone(), e));
                 continue;
             }
@@ -434,11 +430,7 @@ pub fn share_file(
                 successes.push((device_id.clone(), expiration_date));
             }
             Err(e) => {
-                log::error!(
-                    "Failed to share file to device {}: {}",
-                    device_id,
-                    e
-                );
+                log::error!("Failed to share file to device {}: {}", device_id, e);
                 failures.push((device_id.clone(), e));
             }
         }

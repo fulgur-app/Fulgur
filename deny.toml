@@ -1,0 +1,89 @@
+# cargo-deny configuration for Fulgur
+# https://embarkstudios.github.io/cargo-deny/
+
+# ============================================================================
+# Licenses
+# ============================================================================
+[licenses]
+# List of licenses that are allowed
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-DFS-2016",
+]
+
+# Confidence threshold for license detection (0.0 to 1.0)
+confidence-threshold = 0.8
+
+# Allow licenses that are exceptions (e.g., font licenses)
+exceptions = [
+    # Add any specific crate exceptions here if needed
+    # { allow = ["SOME-LICENSE"], name = "crate-name" },
+]
+
+# ============================================================================
+# Security Advisories
+# ============================================================================
+[advisories]
+# The path where advisory databases are stored
+db-path = "~/.cargo/advisory-db"
+
+# The url(s) of the advisory databases to use
+db-urls = ["https://github.com/rustsec/advisory-db"]
+
+# Ignore yanked crates
+ignore-yanked = false
+
+# List of advisory IDs to ignore
+ignore = [
+    # Unmaintained transitive dependencies from GPUI/gpui-component
+    # These are outside of Fulgur's control and come from the GUI framework
+    "RUSTSEC-2025-0052",  # async-std - unmaintained (from gpui)
+    "RUSTSEC-2024-0384",  # instant - unmaintained (from gpui-component)
+    "RUSTSEC-2024-0436",  # paste - unmaintained (from gpui-component)
+    "RUSTSEC-2025-0134",  # rustls-pemfile - unmaintained (from gpui)
+]
+
+# Warn about unmaintained crates instead of failing
+# Direct dependencies will still warn, but transitive ones are ignored above
+unmaintained = "warn"
+
+# ============================================================================
+# Banned Dependencies
+# ============================================================================
+[bans]
+# Warn on multiple versions of the same crate
+multiple-versions = "warn"
+
+# Warn on wildcard dependencies (dependencies without a version constraint)
+wildcards = "allow"
+
+# List of crates that are allowed to have multiple versions
+skip = [
+    # Add crates here that are OK to have multiple versions
+]
+
+# List of explicitly banned crates
+deny = [
+    # Add any crates you want to ban here
+]
+
+# ============================================================================
+# Sources
+# ============================================================================
+[sources]
+# Allow crates from crates.io
+unknown-registry = "deny"
+
+# Allow git sources
+unknown-git = "warn"
+
+# List of allowed git sources
+allow-git = [
+    "https://github.com/fulgur-app/Fulgur-common.git",
+]
