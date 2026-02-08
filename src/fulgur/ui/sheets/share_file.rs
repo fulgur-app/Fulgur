@@ -14,7 +14,7 @@ use crate::fulgur::{
     Fulgur,
     sync::{
         share::{Device, get_devices, get_icon, share_file},
-        sync::SynchronizationStatus,
+        synchronization::SynchronizationStatus,
     },
     ui::icons::CustomIcon,
 };
@@ -69,7 +69,7 @@ fn make_device_item(
                         .items_center()
                         .justify_start()
                         .gap_2()
-                        .child(get_icon(&device_for_icon))
+                        .child(get_icon(device_for_icon))
                         .child(div().child(device_name))
                         .child(
                             div()
@@ -159,9 +159,7 @@ fn handle_share_file(
             .as_ref()
             .map(|tab| tab.content.read(cx).value().to_string())
             .unwrap_or_default();
-        let file_path = active_tab
-            .as_ref()
-            .and_then(|tab| tab.file_path.clone());
+        let file_path = active_tab.as_ref().and_then(|tab| tab.file_path.clone());
         let file_name = file_path
             .as_ref()
             .and_then(|path| path.file_name())
@@ -241,7 +239,7 @@ impl Fulgur {
             let synchronization_settings =
                 self.settings.app_settings.synchronization_settings.clone();
             let token_state = Arc::clone(&self.shared_state(cx).token_state);
-            let result = crate::fulgur::sync::sync::initial_synchronization(
+            let result = crate::fulgur::sync::synchronization::initial_synchronization(
                 &synchronization_settings,
                 token_state,
             );

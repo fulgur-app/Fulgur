@@ -41,8 +41,7 @@ impl Fulgur {
                 .child(Input::new(&jump_to_line_input))
                 .on_ok(move |_, _, cx| {
                     let text = jump_to_line_input_clone.read(cx).value();
-                    let text_shared = SharedString::from(text);
-                    let jump_result = editor_tab::extract_line_number(text_shared);
+                    let jump_result = editor_tab::extract_line_number(text);
                     let is_ok = jump_result.is_ok();
                     entity_for_ok.update(cx, |this, cx| {
                         if let Ok(jump) = jump_result {

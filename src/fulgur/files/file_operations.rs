@@ -166,10 +166,9 @@ impl Fulgur {
                     };
                     let menus = menus::build_menus(&this.settings.get_recent_files(), update_link);
                     cx.set_menus(menus);
-                    let title = match path.file_name() {
-                        Some(file_name) => Some(file_name.to_string_lossy().to_string()),
-                        None => None,
-                    };
+                    let title = path
+                        .file_name()
+                        .map(|file_name| file_name.to_string_lossy().to_string());
                     this.set_title(title, cx);
                     log::debug!("File opened successfully in new tab: {:?}", path);
                     let _ = this.save_state(cx, window);
@@ -429,7 +428,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn show_notification_file_reloaded(
         &self,
-        path: &PathBuf,
+        path: &std::path::Path,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -446,7 +445,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn show_notification_file_deleted(
         &self,
-        path: &PathBuf,
+        path: &std::path::Path,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -464,8 +463,8 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn show_notification_file_renamed(
         &self,
-        from: &PathBuf,
-        to: &PathBuf,
+        from: &std::path::Path,
+        to: &std::path::Path,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

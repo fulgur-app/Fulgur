@@ -263,18 +263,15 @@ impl Fulgur {
         let jump_to_line_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
         let entity = cx.new(|cx| {
-            let _search_subscription = cx.subscribe(
-                &search_input,
-                |this: &mut Self, _, ev: &InputEvent, cx| match ev {
-                    InputEvent::Change => {
-                        if this.show_search {
-                            cx.notify();
-                        }
+            let _search_subscription =
+                cx.subscribe(&search_input, |this: &mut Self, _, ev: &InputEvent, cx| {
+                    if let InputEvent::Change = ev
+                        && this.show_search
+                    {
+                        cx.notify();
                     }
-                    _ => {}
-                },
-            );
-            let entity = Self {
+                });
+            Self {
                 window_id,
                 focus_handle: cx.focus_handle(),
                 title_bar,
@@ -309,8 +306,7 @@ impl Fulgur {
                 last_sse_event: None,
                 pending_notification: None,
                 cached_window_bounds: None,
-            };
-            entity
+            }
         });
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
         let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
@@ -336,7 +332,7 @@ impl Fulgur {
                 this.start_file_watcher();
             }
         });
-        sync::sync::begin_synchronization(&entity, cx);
+        sync::synchronization::begin_synchronization(&entity, cx);
         entity
     }
 
@@ -616,12 +612,11 @@ impl Render for Fulgur {
                 cx.notify();
             }
         }
-        if let Some(jump) = self.pending_jump.take() {
-            if let Some(index) = self.active_tab_index {
-                if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(index) {
-                    editor_tab.jump_to_line(window, cx, jump);
-                }
-            }
+        if let Some(jump) = self.pending_jump.take()
+            && let Some(index) = self.active_tab_index
+            && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
+        {
+            editor_tab.jump_to_line(window, cx, jump);
         }
         if !self.jump_to_line_dialog_open {
             window.close_dialog(cx);
@@ -686,7 +681,7 @@ impl Render for Fulgur {
                     }
                 }
                 cx.refresh_windows();
-                let menus = build_menus(&this.settings.recent_files.get_files(), None);
+                let menus = build_menus(this.settings.recent_files.get_files(), None);
                 cx.set_menus(menus);
             }))
             .on_action(
@@ -752,10 +747,10 @@ impl Render for Fulgur {
             .child(self.render_content_area(active_tab, window, cx))
             .children(self.render_markdown_bar(cx))
             .children(self.render_search_bar(cx));
-        if let Some(index) = self.active_tab_index {
-            if let Some(Tab::Editor(_)) = self.tabs.get(index) {
-                app_content = app_content.child(self.render_status_bar(cx));
-            }
+        if let Some(index) = self.active_tab_index
+            && let Some(Tab::Editor(_)) = self.tabs.get(index)
+        {
+            app_content = app_content.child(self.render_status_bar(cx));
         }
         // Create root layout: TitleBar OUTSIDE of focus-tracked content
         // This is critical for Windows hit-testing to work!
@@ -763,13 +758,12 @@ impl Render for Fulgur {
             .size_full()
             .child(self.title_bar.clone())
             .child(app_content);
-        let main_div = div()
+        div()
             .size_full()
             .child(root_content)
             .children(Root::render_sheet_layer(window, cx))
             .children(Root::render_notification_layer(window, cx))
-            .children(Root::render_dialog_layer(window, cx));
-        main_div
+            .children(Root::render_dialog_layer(window, cx))
     }
 }
 

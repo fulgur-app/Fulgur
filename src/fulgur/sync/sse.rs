@@ -19,7 +19,9 @@ use crate::fulgur::{
     settings::SynchronizationSettings,
     sync::{
         access_token::{TokenState, get_valid_token},
-        sync::{SynchronizationError, SynchronizationStatus, set_sync_server_connection_status},
+        synchronization::{
+            SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
+        },
     },
 };
 
@@ -29,6 +31,7 @@ use crate::fulgur::{
 /// Establishes a persistent connection to the server's SSE endpoint to receive:
 /// - Heartbeat events to keep connection alive
 /// - Share notifications when files are shared from other devices
+///
 /// The connection runs in a background thread and automatically reconnects on failure.
 ///
 /// ### Arguments
@@ -272,7 +275,7 @@ impl Fulgur {
             thread::spawn(move || {
                 // Small delay to ensure old connection is fully stopped
                 thread::sleep(Duration::from_millis(200));
-                match super::sync::initial_synchronization(
+                match super::synchronization::initial_synchronization(
                     &settings.app_settings.synchronization_settings,
                     Arc::clone(&token_state),
                 ) {
@@ -312,10 +315,10 @@ impl Fulgur {
     ) {
         // Debounce: ignore events within 500ms of last event
         let now = Instant::now();
-        if let Some(last_time) = self.last_sse_event {
-            if now.duration_since(last_time) < Duration::from_millis(500) {
-                return;
-            }
+        if let Some(last_time) = self.last_sse_event
+            && now.duration_since(last_time) < Duration::from_millis(500)
+        {
+            return;
         }
         self.last_sse_event = Some(now);
         match event {

@@ -290,7 +290,7 @@ impl Fulgur {
     /// ### Returns
     /// - `SupportedLanguage`: The active tab's language
     pub fn get_current_language(&self) -> SupportedLanguage {
-        let current_tab_language = match self.active_tab_index {
+        match self.active_tab_index {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
                     editor_tab.language
@@ -299,8 +299,7 @@ impl Fulgur {
                 }
             }
             None => SupportedLanguage::Plain,
-        };
-        current_tab_language
+        }
     }
 
     /// Check if the current active tab's language is a Markdown language

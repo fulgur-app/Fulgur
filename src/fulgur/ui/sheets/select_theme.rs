@@ -91,7 +91,7 @@ fn make_select_theme_list(
                 make_select_theme_item(
                     entity.clone(),
                     theme.clone(),
-                    theme.to_string() == current_theme,
+                    *theme == current_theme,
                     current_theme_shared.clone(),
                     cx,
                 )

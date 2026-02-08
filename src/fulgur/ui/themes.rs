@@ -64,10 +64,10 @@ fn extract_bundled_themes(themes_dir: &PathBuf) -> anyhow::Result<()> {
     fs::create_dir_all(themes_dir)?;
     for file in BundledThemes::iter() {
         let file_path = themes_dir.join(file.as_ref());
-        if !file_path.exists() {
-            if let Some(content) = BundledThemes::get(&file) {
-                fs::write(&file_path, content.data.as_ref())?;
-            }
+        if !file_path.exists()
+            && let Some(content) = BundledThemes::get(&file)
+        {
+            fs::write(&file_path, content.data.as_ref())?;
         }
     }
     Ok(())

@@ -87,14 +87,14 @@ impl Fulgur {
     ) {
         if self.tabs.is_empty() {
             self.active_tab_index = None;
-        } else {
-            if self.active_tab_index.is_some() && self.active_tab_index.unwrap() >= self.tabs.len()
-            {
-                self.active_tab_index = Some(self.tabs.len() - 1);
-            } else if self.active_tab_index.is_some() && pos < self.active_tab_index.unwrap() {
-                self.active_tab_index = Some(self.active_tab_index.unwrap() - 1);
-            }
+        } else if self.active_tab_index.is_some()
+            && self.active_tab_index.unwrap() >= self.tabs.len()
+        {
+            self.active_tab_index = Some(self.tabs.len() - 1);
+        } else if self.active_tab_index.is_some() && pos < self.active_tab_index.unwrap() {
+            self.active_tab_index = Some(self.active_tab_index.unwrap() - 1);
         }
+
         self.focus_active_tab(window, cx);
     }
 
@@ -138,16 +138,16 @@ impl Fulgur {
     /// - `window`: The window to focus the tab in
     /// - `cx`: The application context
     pub fn focus_active_tab(&self, window: &mut Window, cx: &App) {
-        if let Some(active_tab_index) = self.active_tab_index {
-            if let Some(active_tab) = self.tabs.get(active_tab_index) {
-                match active_tab {
-                    Tab::Editor(editor_tab) => {
-                        let focus_handle = editor_tab.content.read(cx).focus_handle(cx);
-                        window.focus(&focus_handle);
-                    }
-                    Tab::Settings(_) => {
-                        // Settings don't have focusable content, just keep window focus
-                    }
+        if let Some(active_tab_index) = self.active_tab_index
+            && let Some(active_tab) = self.tabs.get(active_tab_index)
+        {
+            match active_tab {
+                Tab::Editor(editor_tab) => {
+                    let focus_handle = editor_tab.content.read(cx).focus_handle(cx);
+                    window.focus(&focus_handle);
+                }
+                Tab::Settings(_) => {
+                    // Settings don't have focusable content, just keep window focus
                 }
             }
         }
@@ -232,10 +232,10 @@ impl Fulgur {
                 self.remove_tab_by_id(tab_id, window, cx);
             }
         }
-        if let Some(active_idx) = self.active_tab_index {
-            if active_idx >= self.tabs.len() {
-                self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
-            }
+        if let Some(active_idx) = self.active_tab_index
+            && active_idx >= self.tabs.len()
+        {
+            self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
         }
         self.focus_active_tab(window, cx);
         cx.notify();
@@ -282,10 +282,10 @@ impl Fulgur {
                 self.remove_tab_by_id(tab_id, window, cx);
             }
         }
-        if let Some(active_idx) = self.active_tab_index {
-            if active_idx >= self.tabs.len() {
-                self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
-            }
+        if let Some(active_idx) = self.active_tab_index
+            && active_idx >= self.tabs.len()
+        {
+            self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
         }
         let _ = self.save_state(cx, window);
         self.focus_active_tab(window, cx);
@@ -329,12 +329,11 @@ impl Fulgur {
                 self.show_unsaved_changes_dialog(window, cx, move |this, window, cx| {
                     this.remove_tab_by_id(tab_id, window, cx);
                     if !this.tabs.is_empty() {
-                        if let Some(remaining_active_id) = active_tab_id_for_closure {
-                            if let Some(new_active_pos) =
+                        if let Some(remaining_active_id) = active_tab_id_for_closure
+                            && let Some(new_active_pos) =
                                 this.tabs.iter().position(|t| t.id() == remaining_active_id)
-                            {
-                                this.active_tab_index = Some(new_active_pos);
-                            }
+                        {
+                            this.active_tab_index = Some(new_active_pos);
                         }
                         this.close_other_tabs(window, cx);
                     }
@@ -344,12 +343,11 @@ impl Fulgur {
                 self.remove_tab_by_id(tab_id, window, cx);
             }
         }
-        if let Some(remaining_active_id) = active_tab_id {
-            if let Some(new_active_pos) =
+        if let Some(remaining_active_id) = active_tab_id
+            && let Some(new_active_pos) =
                 self.tabs.iter().position(|t| t.id() == remaining_active_id)
-            {
-                self.active_tab_index = Some(new_active_pos);
-            }
+        {
+            self.active_tab_index = Some(new_active_pos);
         }
         self.focus_active_tab(window, cx);
         let _ = self.save_state(cx, window);
@@ -376,12 +374,11 @@ impl Fulgur {
     /// ### Returns
     /// - `True`: If the tab has unsaved changes, `False` otherwise
     fn check_tab_modified(&self, tab_id: usize) -> bool {
-        if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
-            if let Some(tab) = self.tabs.get(pos) {
-                if let Tab::Editor(editor_tab) = tab {
-                    return editor_tab.modified;
-                }
-            }
+        if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id)
+            && let Some(tab) = self.tabs.get(pos)
+            && let Tab::Editor(editor_tab) = tab
+        {
+            return editor_tab.modified;
         }
         false
     }

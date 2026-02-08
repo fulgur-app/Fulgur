@@ -1,6 +1,8 @@
 use crate::fulgur::utils::crypto_helper::check_private_public_keys;
 use crate::fulgur::utils::updater::UpdateInfo;
-use crate::fulgur::{settings::Settings, settings::Themes, sync::sync::SynchronizationStatus};
+use crate::fulgur::{
+    settings::Settings, settings::Themes, sync::synchronization::SynchronizationStatus,
+};
 use fulgur_common::api::shares::SharedFileResponse;
 use parking_lot::Mutex;
 use std::path::PathBuf;
@@ -55,17 +57,16 @@ impl SharedAppState {
             .app_settings
             .synchronization_settings
             .is_synchronization_activated
+            && let Err(e) = check_private_public_keys(&mut settings)
         {
-            if let Err(e) = check_private_public_keys(&mut settings) {
-                log::error!(
-                    "Cannot create public/private keys pair, sync deactivated: {}",
-                    e
-                );
-                settings
-                    .app_settings
-                    .synchronization_settings
-                    .is_synchronization_activated = false;
-            }
+            log::error!(
+                "Cannot create public/private keys pair, sync deactivated: {}",
+                e
+            );
+            settings
+                .app_settings
+                .synchronization_settings
+                .is_synchronization_activated = false;
         }
 
         let themes = Themes::load().ok();

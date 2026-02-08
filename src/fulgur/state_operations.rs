@@ -34,14 +34,12 @@ impl Fulgur {
                 windows_state
                     .windows
                     .push(self.build_window_state(cx, window));
-            } else {
-                if let Some(weak_entity) = window_manager.get_window(*window_id) {
-                    if let Some(entity) = weak_entity.upgrade() {
-                        windows_state
-                            .windows
-                            .push(entity.read(cx).build_window_state_without_bounds(cx));
-                    }
-                }
+            } else if let Some(weak_entity) = window_manager.get_window(*window_id)
+                && let Some(entity) = weak_entity.upgrade()
+            {
+                windows_state
+                    .windows
+                    .push(entity.read(cx).build_window_state_without_bounds(cx));
             }
         }
         windows_state.save()?;
@@ -162,24 +160,20 @@ impl Fulgur {
                 } else {
                     (saved_content, None, UTF_8.to_string())
                 }
-            } else {
-                if saved_path.exists() {
-                    if let Ok(bytes) = fs::read(&saved_path) {
-                        let (enc, file_content) = detect_encoding_and_decode(&bytes);
-                        (file_content, Some(saved_path), enc)
-                    } else {
-                        return None;
-                    }
+            } else if saved_path.exists() {
+                if let Ok(bytes) = fs::read(&saved_path) {
+                    let (enc, file_content) = detect_encoding_and_decode(&bytes);
+                    (file_content, Some(saved_path), enc)
                 } else {
                     return None;
                 }
-            }
-        } else {
-            if let Some(saved_content) = tab_state.content {
-                (saved_content, None, UTF_8.to_string())
             } else {
                 return None;
             }
+        } else if let Some(saved_content) = tab_state.content {
+            (saved_content, None, UTF_8.to_string())
+        } else {
+            return None;
         };
         let tab = if let Some(file_path) = path {
             EditorTab::from_file(

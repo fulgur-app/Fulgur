@@ -66,38 +66,36 @@ impl Fulgur {
     /// - `(String, Option<String>)`: A tuple of (filename, optional parent folder)
     fn get_tab_display_title(&self, index: usize, tab: &Tab) -> (String, Option<String>) {
         let base_title = tab.title();
-        if let Some(editor_tab) = tab.as_editor() {
-            if let Some(ref path) = editor_tab.file_path {
-                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                let duplicate_count = self
-                    .tabs
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, t)| {
-                        if *i == index {
-                            return false;
-                        }
-                        if let Some(editor) = t.as_editor() {
-                            if let Some(ref other_path) = editor.file_path {
-                                if let Some(other_filename) =
-                                    other_path.file_name().and_then(|n| n.to_str())
-                                {
-                                    return other_filename == filename;
-                                }
-                            }
-                        }
-                        false
-                    })
-                    .count();
-                if duplicate_count > 0 {
-                    if let Some(parent) = path.parent() {
-                        if let Some(parent_name) = parent.file_name().and_then(|n| n.to_str()) {
-                            return (filename.to_string(), Some(format!("../{}", parent_name)));
-                        }
+        if let Some(editor_tab) = tab.as_editor()
+            && let Some(ref path) = editor_tab.file_path
+        {
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let duplicate_count = self
+                .tabs
+                .iter()
+                .enumerate()
+                .filter(|(i, t)| {
+                    if *i == index {
+                        return false;
                     }
-                }
-                return (filename.to_string(), None);
+                    if let Some(editor) = t.as_editor()
+                        && let Some(ref other_path) = editor.file_path
+                        && let Some(other_filename) =
+                            other_path.file_name().and_then(|n| n.to_str())
+                    {
+                        return other_filename == filename;
+                    }
+                    false
+                })
+                .count();
+            if duplicate_count > 0
+                && let Some(parent) = path.parent()
+                && let Some(parent_name) = parent.file_name().and_then(|n| n.to_str())
+            {
+                return (filename.to_string(), Some(format!("../{}", parent_name)));
             }
+
+            return (filename.to_string(), None);
         }
         (base_title.to_string(), None)
     }
@@ -135,7 +133,7 @@ impl Fulgur {
     /// Handle close tabs to right action from context menu
     ///
     /// ### Arguments
-    /// - `action`: The action to handle    
+    /// - `action`: The action to handle
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn on_close_tabs_to_right(
@@ -324,14 +322,14 @@ impl Fulgur {
             tab_div = tab_div.tooltip(move |window, cx| {
                 let path_clone = path.clone();
                 let file_info = std::fs::metadata(&path).ok();
-                let file_size = file_info.as_ref().and_then(|meta| {
+                let file_size = file_info.as_ref().map(|meta| {
                     let size = meta.len();
                     if size < 1024 {
-                        Some(format!("{} B", size))
+                        format!("{} B", size)
                     } else if size < 1024 * 1024 {
-                        Some(format!("{:.1} KB", size as f64 / 1024.0))
+                        format!("{:.1} KB", size as f64 / 1024.0)
                     } else {
-                        Some(format!("{:.1} MB", size as f64 / (1024.0 * 1024.0)))
+                        format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
                     }
                 });
                 let last_modified = file_info.as_ref().and_then(|meta| {

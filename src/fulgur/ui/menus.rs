@@ -49,9 +49,7 @@ pub struct OpenRecentFile(pub PathBuf);
 /// - `Vec<Menu>`: The menus for the Fulgur instance
 pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec<Menu> {
     let recent_files_items = if recent_files.is_empty() {
-        let mut items = Vec::new();
-        items.push(MenuItem::action("No recent files", NoneAction));
-        items
+        vec![MenuItem::action("No recent files", NoneAction)]
     } else {
         let mut items: Vec<MenuItem> = recent_files
             .iter()
@@ -171,7 +169,7 @@ impl Fulgur {
                                 *update_info = Some(new_update_info);
                             }
                             let menus = build_menus(
-                                &this.settings.recent_files.get_files(),
+                                this.settings.recent_files.get_files(),
                                 Some(download_url),
                             );
                             cx.set_menus(menus);

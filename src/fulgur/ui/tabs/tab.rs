@@ -78,12 +78,11 @@ impl Fulgur {
     /// - `Some(&EditorTab)`: The active editor tab
     /// - `None`: If there is no active editor tab
     pub fn get_active_editor_tab(&self) -> Option<&EditorTab> {
-        if let Some(index) = self.active_tab_index {
-            if let Some(tab) = self.tabs.get(index) {
-                if let Some(editor_tab) = tab.as_editor() {
-                    return Some(editor_tab);
-                }
-            }
+        if let Some(index) = self.active_tab_index
+            && let Some(tab) = self.tabs.get(index)
+            && let Some(editor_tab) = tab.as_editor()
+        {
+            return Some(editor_tab);
         }
         None
     }
@@ -94,12 +93,11 @@ impl Fulgur {
     /// - `Some(&mut EditorTab)`: The active editor tab as mutable
     /// - `None`: If there is no active editor tab
     pub fn get_active_editor_tab_mut(&mut self) -> Option<&mut EditorTab> {
-        if let Some(index) = self.active_tab_index {
-            if let Some(tab) = self.tabs.get_mut(index) {
-                if let Some(editor_tab) = tab.as_editor_mut() {
-                    return Some(editor_tab);
-                }
-            }
+        if let Some(index) = self.active_tab_index
+            && let Some(tab) = self.tabs.get_mut(index)
+            && let Some(editor_tab) = tab.as_editor_mut()
+        {
+            return Some(editor_tab);
         }
         None
     }

@@ -14,7 +14,7 @@ use crate::fulgur::{
     settings::SynchronizationSettings,
     sync::{
         access_token::{TokenState, get_valid_token},
-        sync::SynchronizationError,
+        synchronization::SynchronizationError,
     },
     ui::icons::CustomIcon,
     utils::crypto_helper,
@@ -277,7 +277,7 @@ fn send_share_request(
         })?;
         let expiration_date = json["expiration_date"]
             .as_str()
-            .ok_or_else(|| SynchronizationError::MissingExpirationDate)?;
+            .ok_or(SynchronizationError::MissingExpirationDate)?;
         log::info!(
             "File shared successfully to device {} until {}",
             device_id,
@@ -318,12 +318,10 @@ impl ShareResult {
                     "File shared successfully to {} device(s) until {}.",
                     total, expiration
                 )
+            } else if total == 0 {
+                "The file was not shared.".to_string()
             } else {
-                if total == 0 {
-                    "The file was not shared.".to_string()
-                } else {
-                    "File shared successfully.".to_string()
-                }
+                "File shared successfully.".to_string()
             }
         } else if self.successes.is_empty() {
             format!("Failed to share file to all {} device(s).", total)

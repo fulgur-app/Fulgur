@@ -15,9 +15,9 @@ use std::hash::{Hash, Hasher};
 use crate::fulgur::settings::Settings;
 
 // Names of the entries in the keychain
-const PRIVATE_KEY_NAME: &'static str = "private_key";
-const DEVICE_API_KEY: &'static str = "device_api_key";
-const SERVICE_NAME: &'static str = "Fulgur";
+const PRIVATE_KEY_NAME: &str = "private_key";
+const DEVICE_API_KEY: &str = "device_api_key";
+const SERVICE_NAME: &str = "Fulgur";
 
 /// Generate a matching pair of private/public keys
 ///
@@ -378,7 +378,7 @@ mod tests {
     #[test]
     fn test_decrypt_with_wrong_key_fails() {
         // Generate two different key pairs
-        let (private_key1, public_key1) = generate_key_pair();
+        let (_private_key1, public_key1) = generate_key_pair();
         let (private_key2, _public_key2) = generate_key_pair();
         let public_key1_str = public_key1.to_string();
         let private_key2_str = serialize(private_key2);

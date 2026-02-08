@@ -40,10 +40,10 @@ impl AssetSource for Assets {
             return Ok(Some(data.data));
         }
         let path_without_prefix = path.strip_prefix("assets/").unwrap_or(path);
-        if path_without_prefix != path {
-            if let Some(data) = Self::get(path_without_prefix) {
-                return Ok(Some(data.data));
-            }
+        if path_without_prefix != path
+            && let Some(data) = Self::get(path_without_prefix)
+        {
+            return Ok(Some(data.data));
         }
         Ok(None)
     }

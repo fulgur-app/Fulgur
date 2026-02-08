@@ -19,16 +19,15 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_search = false;
-        if let Some(active_index) = self.active_tab_index {
-            if let Some(tab) = self.tabs.get(active_index) {
-                if let Some(editor_tab) = tab.as_editor() {
-                    editor_tab.content.update(cx, |content, _cx| {
-                        if let Some(diagnostics) = content.diagnostics_mut() {
-                            diagnostics.clear();
-                        }
-                    });
+        if let Some(active_index) = self.active_tab_index
+            && let Some(tab) = self.tabs.get(active_index)
+            && let Some(editor_tab) = tab.as_editor()
+        {
+            editor_tab.content.update(cx, |content, _cx| {
+                if let Some(diagnostics) = content.diagnostics_mut() {
+                    diagnostics.clear();
                 }
-            }
+            });
         }
         self.search_matches.clear();
         self.current_match_index = None;
@@ -62,68 +61,68 @@ impl Fulgur {
         self.search_matches.clear();
         self.current_match_index = None;
         let query = self.search_input.read(cx).text().to_string();
-        if let Some(active_index) = self.active_tab_index {
-            if let Some(tab) = self.tabs.get(active_index) {
-                if let Some(editor_tab) = tab.as_editor() {
-                    editor_tab.content.update(cx, |content, _cx| {
-                        if let Some(diagnostics) = content.diagnostics_mut() {
-                            diagnostics.clear();
-                        }
-                    });
-                    if query.is_empty() {
-                        cx.notify();
-                        return;
-                    }
-                    let text = editor_tab.content.read(cx).text().to_string();
-                    let cursor_pos = editor_tab.content.read(cx).cursor();
-                    self.search_matches = self.find_matches(&text, &query);
-                    editor_tab.content.update(cx, |content, cx| {
-                        if let Some(diagnostics) = content.diagnostics_mut() {
-                            for search_match in &self.search_matches {
-                                let diagnostic = Diagnostic {
-                                    range: lsp_types::Range {
-                                        start: Position {
-                                            line: search_match.line as u32,
-                                            character: search_match.col as u32,
-                                        },
-                                        end: Position {
-                                            line: search_match.line as u32,
-                                            character: (search_match.col
-                                                + (search_match.end - search_match.start))
-                                                as u32,
-                                        },
-                                    },
-                                    severity: Some(DiagnosticSeverity::WARNING),
-                                    message: "Search match".to_string(),
-                                    source: None,
-                                    code: None,
-                                    related_information: None,
-                                    tags: None,
-                                    code_description: None,
-                                    data: None,
-                                };
-                                diagnostics.push(diagnostic);
-                            }
-                        }
-                        cx.notify();
-                    });
-                    if !self.search_matches.is_empty() {
-                        let mut found_after_cursor = false;
-                        for (idx, m) in self.search_matches.iter().enumerate() {
-                            if m.start >= cursor_pos {
-                                self.current_match_index = Some(idx);
-                                found_after_cursor = true;
-                                break;
-                            }
-                        }
-                        if !found_after_cursor {
-                            self.current_match_index = Some(0);
-                        }
-                        self.highlight_current_match(window, cx);
+        if let Some(active_index) = self.active_tab_index
+            && let Some(tab) = self.tabs.get(active_index)
+            && let Some(editor_tab) = tab.as_editor()
+        {
+            editor_tab.content.update(cx, |content, _cx| {
+                if let Some(diagnostics) = content.diagnostics_mut() {
+                    diagnostics.clear();
+                }
+            });
+            if query.is_empty() {
+                cx.notify();
+                return;
+            }
+            let text = editor_tab.content.read(cx).text().to_string();
+            let cursor_pos = editor_tab.content.read(cx).cursor();
+            self.search_matches = self.find_matches(&text, &query);
+            editor_tab.content.update(cx, |content, cx| {
+                if let Some(diagnostics) = content.diagnostics_mut() {
+                    for search_match in &self.search_matches {
+                        let diagnostic = Diagnostic {
+                            range: lsp_types::Range {
+                                start: Position {
+                                    line: search_match.line as u32,
+                                    character: search_match.col as u32,
+                                },
+                                end: Position {
+                                    line: search_match.line as u32,
+                                    character: (search_match.col
+                                        + (search_match.end - search_match.start))
+                                        as u32,
+                                },
+                            },
+                            severity: Some(DiagnosticSeverity::WARNING),
+                            message: "Search match".to_string(),
+                            source: None,
+                            code: None,
+                            related_information: None,
+                            tags: None,
+                            code_description: None,
+                            data: None,
+                        };
+                        diagnostics.push(diagnostic);
                     }
                 }
+                cx.notify();
+            });
+            if !self.search_matches.is_empty() {
+                let mut found_after_cursor = false;
+                for (idx, m) in self.search_matches.iter().enumerate() {
+                    if m.start >= cursor_pos {
+                        self.current_match_index = Some(idx);
+                        found_after_cursor = true;
+                        break;
+                    }
+                }
+                if !found_after_cursor {
+                    self.current_match_index = Some(0);
+                }
+                self.highlight_current_match(window, cx);
             }
         }
+
         cx.notify();
     }
 
@@ -159,12 +158,12 @@ impl Fulgur {
                     || !text
                         .chars()
                         .nth(absolute_pos - 1)
-                        .map_or(false, |c| c.is_alphanumeric() || c == '_');
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
                 let is_word_end = end_pos >= text.len()
                     || !text
                         .chars()
                         .nth(end_pos)
-                        .map_or(false, |c| c.is_alphanumeric() || c == '_');
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
 
                 if !is_word_start || !is_word_end {
                     start_pos = absolute_pos + 1;
@@ -254,25 +253,22 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     fn highlight_current_match(&self, window: &mut Window, cx: &mut App) {
-        if let Some(match_index) = self.current_match_index {
-            if let Some(search_match) = self.search_matches.get(match_index) {
-                if let Some(active_index) = self.active_tab_index {
-                    if let Some(tab) = self.tabs.get(active_index) {
-                        if let Some(editor_tab) = tab.as_editor() {
-                            editor_tab.content.update(cx, |content, cx| {
-                                content.set_cursor_position(
-                                    Position {
-                                        line: search_match.line as u32,
-                                        character: search_match.col as u32,
-                                    },
-                                    window,
-                                    cx,
-                                );
-                            });
-                        }
-                    }
-                }
-            }
+        if let Some(match_index) = self.current_match_index
+            && let Some(search_match) = self.search_matches.get(match_index)
+            && let Some(active_index) = self.active_tab_index
+            && let Some(tab) = self.tabs.get(active_index)
+            && let Some(editor_tab) = tab.as_editor()
+        {
+            editor_tab.content.update(cx, |content, cx| {
+                content.set_cursor_position(
+                    Position {
+                        line: search_match.line as u32,
+                        character: search_match.col as u32,
+                    },
+                    window,
+                    cx,
+                );
+            });
         }
     }
 
@@ -282,32 +278,29 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub(super) fn replace_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(match_index) = self.current_match_index {
-            if let Some(search_match) = self.search_matches.get(match_index).cloned() {
-                if let Some(active_index) = self.active_tab_index {
-                    if let Some(tab) = self.tabs.get_mut(active_index) {
-                        if let Some(editor_tab) = tab.as_editor_mut() {
-                            let replace_text = self.replace_input.read(cx).text().to_string();
-                            let text = editor_tab.content.read(cx).text().to_string();
-                            let mut new_text = String::new();
-                            new_text.push_str(&text[..search_match.start]);
-                            new_text.push_str(&replace_text);
-                            new_text.push_str(&text[search_match.end..]);
-                            editor_tab.content.update(cx, |content, cx| {
-                                content.set_value(&new_text, window, cx);
-                            });
-                            self.perform_search(window, cx);
-                            if !self.search_matches.is_empty() {
-                                if match_index < self.search_matches.len() {
-                                    self.current_match_index = Some(match_index);
-                                } else {
-                                    self.current_match_index = Some(0);
-                                }
-                                self.highlight_current_match(window, cx);
-                            }
-                        }
-                    }
+        if let Some(match_index) = self.current_match_index
+            && let Some(search_match) = self.search_matches.get(match_index).cloned()
+            && let Some(active_index) = self.active_tab_index
+            && let Some(tab) = self.tabs.get_mut(active_index)
+            && let Some(editor_tab) = tab.as_editor_mut()
+        {
+            let replace_text = self.replace_input.read(cx).text().to_string();
+            let text = editor_tab.content.read(cx).text().to_string();
+            let mut new_text = String::new();
+            new_text.push_str(&text[..search_match.start]);
+            new_text.push_str(&replace_text);
+            new_text.push_str(&text[search_match.end..]);
+            editor_tab.content.update(cx, |content, cx| {
+                content.set_value(&new_text, window, cx);
+            });
+            self.perform_search(window, cx);
+            if !self.search_matches.is_empty() {
+                if match_index < self.search_matches.len() {
+                    self.current_match_index = Some(match_index);
+                } else {
+                    self.current_match_index = Some(0);
                 }
+                self.highlight_current_match(window, cx);
             }
         }
         cx.notify();
@@ -327,36 +320,30 @@ impl Fulgur {
             let search_query = self.search_input.read(cx).text().to_string();
             let match_case = self.match_case;
             let match_whole_word = self.match_whole_word;
-            if let Some(tab) = self.tabs.get(active_index) {
-                if let Some(editor_tab) = tab.as_editor() {
-                    let text = editor_tab.content.read(cx).text().to_string();
-                    let new_text = if match_case {
-                        if match_whole_word {
-                            replace_whole_words(&self.search_matches, &text, &replace_text)
-                        } else {
-                            text.replace(&search_query, &replace_text)
-                        }
+            if let Some(tab) = self.tabs.get(active_index)
+                && let Some(editor_tab) = tab.as_editor()
+            {
+                let text = editor_tab.content.read(cx).text().to_string();
+                let new_text = if match_case {
+                    if match_whole_word {
+                        replace_whole_words(&self.search_matches, &text, &replace_text)
                     } else {
-                        if match_whole_word {
-                            replace_whole_words_case_insensitive(
-                                &self.search_matches,
-                                &text,
-                                &replace_text,
-                            )
-                        } else {
-                            replace_case_insensitive(&self.search_matches, &text, &replace_text)
-                        }
-                    };
-                    if let Some(tab) = self.tabs.get_mut(active_index) {
-                        if let Some(editor_tab_mut) = tab.as_editor_mut() {
-                            editor_tab_mut.content.update(cx, |content, cx| {
-                                content.set_value(&new_text, window, cx);
-                            });
-                        }
+                        text.replace(&search_query, &replace_text)
                     }
-                    self.search_matches.clear();
-                    self.current_match_index = None;
+                } else if match_whole_word {
+                    replace_whole_words_case_insensitive(&self.search_matches, &text, &replace_text)
+                } else {
+                    replace_case_insensitive(&self.search_matches, &text, &replace_text)
+                };
+                if let Some(tab) = self.tabs.get_mut(active_index)
+                    && let Some(editor_tab_mut) = tab.as_editor_mut()
+                {
+                    editor_tab_mut.content.update(cx, |content, cx| {
+                        content.set_value(&new_text, window, cx);
+                    });
                 }
+                self.search_matches.clear();
+                self.current_match_index = None;
             }
         }
         cx.notify();
@@ -372,11 +359,7 @@ impl Fulgur {
 ///
 /// ### Returns
 /// - `String`: The text with replacements
-fn replace_case_insensitive(
-    search_matches: &Vec<SearchMatch>,
-    text: &str,
-    replace: &str,
-) -> String {
+fn replace_case_insensitive(search_matches: &[SearchMatch], text: &str, replace: &str) -> String {
     let mut result = String::new();
     let mut last_pos = 0;
     for m in search_matches.iter() {
@@ -397,7 +380,7 @@ fn replace_case_insensitive(
 ///
 /// ### Returns
 /// - `String`: The text with replacements
-fn replace_whole_words(search_matches: &Vec<SearchMatch>, text: &str, replace: &str) -> String {
+fn replace_whole_words(search_matches: &[SearchMatch], text: &str, replace: &str) -> String {
     let mut result = String::new();
     let mut last_pos = 0;
     for m in search_matches.iter() {
@@ -419,7 +402,7 @@ fn replace_whole_words(search_matches: &Vec<SearchMatch>, text: &str, replace: &
 /// ### Returns
 /// - `String`: The text with replacements
 fn replace_whole_words_case_insensitive(
-    search_matches: &Vec<SearchMatch>,
+    search_matches: &[SearchMatch],
     text: &str,
     replace: &str,
 ) -> String {

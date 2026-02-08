@@ -16,7 +16,7 @@ use gpui_component::{
 use crate::fulgur::{
     Fulgur, crypto_helper,
     settings::{AppSettings, EditorSettings, Themes},
-    sync::sync::perform_initial_synchronization,
+    sync::synchronization::perform_initial_synchronization,
     themes,
     ui::{icons::CustomIcon, menus::build_menus},
 };
@@ -66,7 +66,6 @@ impl Fulgur {
                             min: 8.0,
                             max: 24.0,
                             step: 2.0,
-                            ..Default::default()
                         },
                         {
                             let entity = entity.clone();
@@ -98,7 +97,6 @@ impl Fulgur {
                             min: 2.0,
                             max: 12.0,
                             step: 2.0,
-                            ..Default::default()
                         },
                         {
                             let entity = entity.clone();
@@ -358,12 +356,10 @@ impl Fulgur {
                                                 .app_settings
                                                 .synchronization_settings
                                                 .is_synchronization_activated = val;
-                                            if val {
-                                                if let Err(e) =
+                                            if val && let Err(e) =
                                                     crypto_helper::check_private_public_keys(&mut this.settings)
-                                                {
+                                            {
                                                     log::error!("Failed to check private/public keys: {}", e);
-                                                }
                                             }
                                             if let Err(e) = this.update_and_propagate_settings(cx) {
                                                 log::error!("Failed to save settings: {}", e);
@@ -514,7 +510,7 @@ impl Fulgur {
                                     entity.update(cx, |this, cx| {
                                         let key = if val.is_empty() {
                                             None
-                                        } else if val.to_string() == DEVICE_KEY_PLACEHOLDER {
+                                        } else if val == DEVICE_KEY_PLACEHOLDER {
                                             return;
                                         } else {
                                             Some(val.to_string())
@@ -765,7 +761,7 @@ impl Fulgur {
             log::error!("Failed to save settings: {}", e);
         }
         let menus = build_menus(
-            &self.settings.recent_files.get_files(),
+            self.settings.recent_files.get_files(),
             if let Some(info) = self.shared_state(cx).update_info.lock().clone() {
                 Some(info.download_url)
             } else {

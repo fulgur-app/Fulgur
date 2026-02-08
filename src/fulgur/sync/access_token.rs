@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::fulgur::settings::SynchronizationSettings;
-use crate::fulgur::sync::sync::SynchronizationError;
+use crate::fulgur::sync::synchronization::SynchronizationError;
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use fulgur_common::api::sync::AccessTokenResponse;
 use parking_lot::Mutex;
@@ -61,7 +61,10 @@ fn request_access_token(
     let token_url = format!("{}/api/token", server_url.unwrap());
     log::debug!("Requesting JWT access token from server");
     let mut response = match ureq::post(&token_url)
-        .header("Authorization", &format!("Bearer {}", device_api_key.unwrap()))
+        .header(
+            "Authorization",
+            &format!("Bearer {}", device_api_key.unwrap()),
+        )
         .header("X-User-Email", email.unwrap())
         .send("")
     {
@@ -151,29 +154,30 @@ pub fn get_valid_token(
 ) -> Result<String, SynchronizationError> {
     {
         let state = token_state.lock();
-        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at) {
-            if is_token_valid(exp_time) {
-                return Ok(token_str.clone());
-            }
+        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
+            && is_token_valid(exp_time)
+        {
+            return Ok(token_str.clone());
         }
     }
     {
         let mut state = token_state.lock();
-        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at) {
-            if is_token_valid(exp_time) && !state.is_refreshing_token {
-                return Ok(token_str.clone());
-            }
+        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
+            && is_token_valid(exp_time)
+            && !state.is_refreshing_token
+        {
+            return Ok(token_str.clone());
         }
+
         if state.is_refreshing_token {
             drop(state);
             thread::sleep(Duration::from_millis(100));
             let state = token_state.lock();
             if let (Some(token_str), Some(exp_time)) =
                 (&state.access_token, &state.token_expires_at)
+                && is_token_valid(exp_time)
             {
-                if is_token_valid(exp_time) {
-                    return Ok(token_str.clone());
-                }
+                return Ok(token_str.clone());
             }
         } else {
             state.is_refreshing_token = true;

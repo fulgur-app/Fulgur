@@ -1,5 +1,3 @@
-use std::u32;
-
 // Represents a single editor tab with its content
 use gpui::*;
 use gpui_component::highlighter::Language;
@@ -43,7 +41,7 @@ fn make_input_state(
     settings: &EditorSettings,
 ) -> InputState {
     InputState::new(window, cx)
-        .code_editor(&language.name().to_string())
+        .code_editor(language.name().to_string())
         .line_number(settings.show_line_numbers)
         .indent_guides(settings.show_indent_guides)
         .tab_size(TabSize {
@@ -374,8 +372,6 @@ fn string_to_u32(string: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use std::u32;
-
     use super::{extract_line_number, string_to_u32};
     use gpui::SharedString;
 
