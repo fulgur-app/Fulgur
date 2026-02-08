@@ -11,6 +11,7 @@ homepage = "https://fulgur.app"
 [dependencies]
 # Types
 fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git" }
+lsp-types = "0.97"
 
 # Serialization
 serde = { version = "1.0.228", features = ["derive"] }
@@ -20,7 +21,7 @@ serde_json = "1.0.149"
 aes-gcm = "0.10.3"
 base64 = "0.22.1"
 age = "0.11.2"
-sha2 = "0.10"
+sha2 = "0.10.9"
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "linux-native"] }
 
 # Networking
@@ -36,7 +37,7 @@ log = "0.4.29"
 simplelog = "0.12.2"
 
 # Time
-time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
+time = { version = "0.3.47", features = ["serde", "macros", "formatting", "parsing"] }
 
 # Error handling
 anyhow = "1.0.101"
@@ -48,14 +49,17 @@ gpui-component = { version = "0.5.1", features = ["tree-sitter-languages"] }
 # Filesystem
 notify = "8.2.0"
 open = "5.3.3"
+flate2 = "1.1.9"
+
+# Security - forcing minimum versions for transitive dependencies
+# Fix RUSTSEC-2026-0007: Integer overflow in BytesMut::reserve
+bytes = "1.11.1"
 
 # Others
-lsp-types = "0.97"
 rust-embed = "8.11.0"
 regex = "1.12.3"
 semver = "1.0.27"
 machine-uid = "0.5.4"
-flate2 = "1.1.9"
 parking_lot = "0.12.5"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
