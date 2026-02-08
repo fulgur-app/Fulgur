@@ -87,12 +87,12 @@ impl Fulgur {
     ) {
         if self.tabs.is_empty() {
             self.active_tab_index = None;
-        } else if self.active_tab_index.is_some()
-            && self.active_tab_index.unwrap() >= self.tabs.len()
-        {
-            self.active_tab_index = Some(self.tabs.len() - 1);
-        } else if self.active_tab_index.is_some() && pos < self.active_tab_index.unwrap() {
-            self.active_tab_index = Some(self.active_tab_index.unwrap() - 1);
+        } else if let Some(active_index) = self.active_tab_index {
+            if active_index >= self.tabs.len() {
+                self.active_tab_index = Some(self.tabs.len() - 1);
+            } else if pos < active_index {
+                self.active_tab_index = Some(active_index - 1);
+            }
         }
 
         self.focus_active_tab(window, cx);
