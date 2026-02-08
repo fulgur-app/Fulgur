@@ -31,7 +31,18 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config libssl-dev
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            pkg-config \
+            libssl-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -66,7 +77,18 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev pkg-config libssl-dev
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            pkg-config \
+            libssl-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
