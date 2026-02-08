@@ -36,8 +36,8 @@ db-path = "~/.cargo/advisory-db"
 # The url(s) of the advisory databases to use
 db-urls = ["https://github.com/rustsec/advisory-db"]
 
-# Ignore yanked crates
-ignore-yanked = false
+# Warn on yanked crates
+yanked = "warn"
 
 # List of advisory IDs to ignore
 ignore = [
@@ -49,9 +49,9 @@ ignore = [
     "RUSTSEC-2025-0134",  # rustls-pemfile - unmaintained (from gpui)
 ]
 
-# Warn about unmaintained crates instead of failing
-# Direct dependencies will still warn, but transitive ones are ignored above
-unmaintained = "warn"
+# Check unmaintained crates in transitive dependencies
+# Using "all" would check everything, "none" would skip the check
+unmaintained = "all"
 
 # ============================================================================
 # Banned Dependencies
