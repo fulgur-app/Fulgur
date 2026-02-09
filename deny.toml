@@ -18,10 +18,9 @@ allow = [
     "Unicode-3.0",
     "CC0-1.0",
     "MPL-2.0",
-    "0BSD"
+    "0BSD",
     "NCSA",
     "CDLA-Permissive-2.0",
-
 ]
 
 # Confidence threshold for license detection (0.0 to 1.0)
