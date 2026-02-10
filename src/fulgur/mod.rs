@@ -405,31 +405,16 @@ impl Fulgur {
             cx.set_menus(menus);
         });
     }
-}
 
-impl Focusable for Fulgur {
-    /// Get the focus handle for the Fulgur instance
+    /// Process window state updates during the render cycle:
+    /// 1. Cache the current window bounds and display ID for state persistence
+    /// 2. Update the global WindowManager to track this window as focused
+    /// 3. Display any pending notifications that were queued during event processing
     ///
     /// ### Arguments
-    /// - `_cx`: The application context
-    ///
-    /// ### Returns
-    /// - `FocusHandle`: The focus handle for the Fulgur instance
-    fn focus_handle(&self, _cx: &App) -> FocusHandle {
-        self.focus_handle.clone()
-    }
-}
-
-impl Render for Fulgur {
-    /// Render the Fulgur instance
-    ///
-    /// ### Arguments
-    /// - `window`: The window to render the Fulgur instance in
+    /// - `window`: The window being rendered
     /// - `cx`: The application context
-    ///
-    /// ### Returns
-    /// - `impl IntoElement`: The rendered Fulgur instance
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn process_window_state_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let display_id = window.display(cx).map(|d| d.id().into());
         self.cached_window_bounds =
             Some(state_persistence::SerializedWindowBounds::from_gpui_bounds(
@@ -442,6 +427,14 @@ impl Render for Fulgur {
         if let Some((notification_type, message)) = self.pending_notification.take() {
             window.push_notification((notification_type, message), cx);
         }
+    }
+
+    /// Process update notifications from the background update checker
+    ///
+    /// ### Arguments
+    /// - `window`: The window to display the notification in
+    /// - `cx`: The application context
+    fn process_update_notifications(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let update_info = {
             let shared = self.shared_state(cx);
             shared.update_info.lock().take()
@@ -450,7 +443,13 @@ impl Render for Fulgur {
             let notification = make_update_notification(&update_info);
             window.push_notification(notification, cx);
         }
-        // Check if settings have been updated in another window
+    }
+
+    /// Synchronize settings from other windows
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    fn synchronize_settings_from_other_windows(&mut self, cx: &mut Context<Self>) {
         let shared = self.shared_state(cx);
         let shared_version = shared
             .settings_version
@@ -468,6 +467,14 @@ impl Render for Fulgur {
                 shared_version
             );
         }
+    }
+
+    /// Process pending files from macOS "Open With" events
+    ///
+    /// ### Arguments
+    /// - `window`: The window to open files in
+    /// - `cx`: The application context
+    fn process_pending_files_from_macos(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let shared = self.shared_state(cx);
         let should_process_files = cx
             .global::<window_manager::WindowManager>()
@@ -495,6 +502,14 @@ impl Render for Fulgur {
         for file_path in files_to_open {
             self.handle_open_file_from_cli(window, cx, file_path);
         }
+    }
+
+    /// Process shared files from the sync server
+    ///
+    /// ### Arguments
+    /// - `window`: The window to create new tabs in
+    /// - `cx`: The application context
+    fn process_shared_files_from_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let shared_files_to_open =
             if let Some(mut pending) = self.shared_state(cx).pending_shared_files.try_lock() {
                 if pending.is_empty() {
@@ -553,6 +568,17 @@ impl Render for Fulgur {
                 log::error!("Cannot decrypt shared files: encryption key not available");
             }
         }
+    }
+
+    /// Collect and process file watch events:
+    /// - Modified: File content changed externally (may trigger auto-reload or conflict dialog)
+    /// - Deleted: File was deleted externally (shows notification)
+    /// - Renamed: File was moved/renamed (updates tab path and continues watching)
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the tabs with watched files
+    /// - `cx`: The application context
+    fn process_file_watch_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let events: Vec<FileWatchEvent> = if let Some(ref rx) = self.file_watch_events {
             let mut events = Vec::new();
             while let Ok(event) = rx.try_recv() {
@@ -565,6 +591,17 @@ impl Render for Fulgur {
         for event in events {
             self.handle_file_watch_event(event, window, cx);
         }
+    }
+
+    /// Collect and process Server-Sent Events from the sync server:
+    /// - Heartbeat: Periodic keepalive messages to detect connection timeouts
+    /// - ShareAvailable: Another device has shared a file (triggers file download and decryption)
+    /// - Error: Connection or server errors (updates connection status in UI)
+    ///
+    /// ### Arguments
+    /// - `window`: The window to handle events in
+    /// - `cx`: The application context
+    fn process_sse_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let sse_events: Vec<sync::sse::SseEvent> = if let Some(ref rx) = self.sse_events {
             let mut events = Vec::new();
             while let Ok(event) = rx.try_recv() {
@@ -577,9 +614,14 @@ impl Render for Fulgur {
         for event in sse_events {
             self.handle_sse_event(event, window, cx);
         }
-        if self.tabs.is_empty() {
-            self.active_tab_index = None;
-        }
+    }
+
+    /// Update search results if the search query has changed
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the search bar and editor
+    /// - `cx`: The application context
+    fn update_search_if_needed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.show_search {
             let current_query = self.search_input.read(cx).text().to_string();
             if current_query != self.last_search_query {
@@ -587,9 +629,17 @@ impl Render for Fulgur {
                 self.perform_search(window, cx);
             }
         }
+    }
+
+    /// Propagate settings changes to tabs
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the tabs
+    /// - `cx`: The application context
+    fn propagate_settings_to_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.tabs_pending_update.is_empty() {
             let settings = self.settings.editor_settings.clone();
-            for tab_index in self.tabs_pending_update.drain().collect::<Vec<_>>() {
+            for tab_index in self.tabs_pending_update.drain() {
                 if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
                     editor_tab.update_settings(window, cx, &settings);
                 }
@@ -604,6 +654,13 @@ impl Render for Fulgur {
             }
             self.settings_changed = false;
         }
+    }
+
+    /// Track newly rendered tabs and mark them for settings update
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    fn track_newly_rendered_tabs(&mut self, cx: &mut Context<Self>) {
         if let Some(index) = self.active_tab_index {
             let is_newly_rendered = !self.rendered_tabs.contains(&index);
             self.rendered_tabs.insert(index);
@@ -612,20 +669,37 @@ impl Render for Fulgur {
                 cx.notify();
             }
         }
+    }
+
+    /// Handle pending jump-to-line action
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the editor
+    /// - `cx`: The application context
+    fn handle_pending_jump_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(jump) = self.pending_jump.take()
             && let Some(index) = self.active_tab_index
             && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
         {
             editor_tab.jump_to_line(window, cx, jump);
         }
-        if !self.jump_to_line_dialog_open {
-            window.close_dialog(cx);
-            self.jump_to_line_dialog_open = true;
-        }
-        self.update_modified_status(cx);
-        let active_tab = self
-            .active_tab_index
-            .and_then(|index| self.tabs.get(index).cloned());
+    }
+
+    /// Build the main application content with all action handlers
+    ///
+    /// ### Arguments
+    /// - `active_tab`: The currently active tab (if any) to render in the content area
+    /// - `window`: The window to build the content for
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `impl IntoElement`: The fully constructed content area with all action handlers attached
+    fn build_app_content_with_actions(
+        &self,
+        active_tab: Option<Tab>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let mut app_content = div()
             .id("app-content")
             .size_full()
@@ -752,6 +826,24 @@ impl Render for Fulgur {
         {
             app_content = app_content.child(self.render_status_bar(cx));
         }
+        app_content
+    }
+
+    /// Assemble the final UI tree with all layers
+    ///
+    /// ### Arguments
+    /// - `app_content`: The main content area (from `build_app_content_with_actions()`)
+    /// - `window`: The window to assemble the UI for
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `impl IntoElement`: The complete UI tree ready to be rendered
+    fn assemble_ui_tree(
+        &self,
+        app_content: impl IntoElement,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         // Create root layout: TitleBar OUTSIDE of focus-tracked content
         // This is critical for Windows hit-testing to work!
         let root_content = v_flex()
@@ -764,6 +856,56 @@ impl Render for Fulgur {
             .children(Root::render_sheet_layer(window, cx))
             .children(Root::render_notification_layer(window, cx))
             .children(Root::render_dialog_layer(window, cx))
+    }
+}
+
+impl Focusable for Fulgur {
+    /// Get the focus handle for the Fulgur instance
+    ///
+    /// ### Arguments
+    /// - `_cx`: The application context
+    ///
+    /// ### Returns
+    /// - `FocusHandle`: The focus handle for the Fulgur instance
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for Fulgur {
+    /// Render the Fulgur instance
+    ///
+    /// ### Arguments
+    /// - `window`: The window to render the Fulgur instance in
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `impl IntoElement`: The rendered Fulgur instance
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.process_window_state_updates(window, cx);
+        self.process_update_notifications(window, cx);
+        self.synchronize_settings_from_other_windows(cx);
+        self.process_pending_files_from_macos(window, cx);
+        self.process_shared_files_from_sync(window, cx);
+        self.process_file_watch_events(window, cx);
+        self.process_sse_events(window, cx);
+        if self.tabs.is_empty() {
+            self.active_tab_index = None;
+        }
+        self.update_search_if_needed(window, cx);
+        self.propagate_settings_to_tabs(window, cx);
+        self.track_newly_rendered_tabs(cx);
+        self.handle_pending_jump_to_line(window, cx);
+        if !self.jump_to_line_dialog_open {
+            window.close_dialog(cx);
+            self.jump_to_line_dialog_open = true;
+        }
+        self.update_modified_status(cx);
+        let active_tab = self
+            .active_tab_index
+            .and_then(|index| self.tabs.get(index).cloned());
+        let app_content = self.build_app_content_with_actions(active_tab.clone(), window, cx);
+        self.assemble_ui_tree(app_content, window, cx)
     }
 }
 
