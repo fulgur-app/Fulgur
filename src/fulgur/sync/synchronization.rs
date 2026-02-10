@@ -24,19 +24,16 @@ pub fn initial_synchronization(
     synchronization_settings: &SynchronizationSettings,
     token_state: Arc<Mutex<TokenState>>,
 ) -> Result<BeginResponse, SynchronizationError> {
-    let server_url = synchronization_settings.server_url.clone();
-    if server_url.is_none() {
+    let Some(server_url) = synchronization_settings.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
-    }
-    let public_key = synchronization_settings.public_key.clone();
-    if public_key.is_none() {
+    };
+    let Some(public_key) = synchronization_settings.public_key.clone() else {
         return Err(SynchronizationError::MissingEncryptionKey); //TODO
-    }
+    };
     let token = get_valid_token(synchronization_settings, token_state)?;
-    let server_url_str = server_url.as_ref().unwrap();
-    let begin_url = format!("{}/api/begin", server_url_str);
+    let begin_url = format!("{}/api/begin", server_url);
     let payload = InitialSynchronizationPayload {
-        public_key: public_key.unwrap(),
+        public_key: public_key,
     };
     let mut response = match ureq::post(begin_url)
         .header("Authorization", &format!("Bearer {}", token))

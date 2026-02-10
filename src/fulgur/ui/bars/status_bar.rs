@@ -200,43 +200,47 @@ impl Fulgur {
                     this.render_select_language_sheet(window, cx);
                 }),
             );
-        let active_editor_tab = self.get_active_editor_tab();
-        let show_markdown_preview = active_editor_tab.unwrap().show_markdown_preview; //TODO: Handle the case where there is no active editor tab even if it shouldn't happen
-        let preview_button = status_bar_toggle_button_factory(
-            "Preview".to_string(),
-            cx.theme().border,
-            cx.theme().muted,
-            show_markdown_preview,
-        )
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
-                let active_editor_tab = this.get_active_editor_tab_mut();
-                if let Some(active_editor_tab) = active_editor_tab {
-                    active_editor_tab.show_markdown_preview =
-                        !active_editor_tab.show_markdown_preview;
-                }
-                cx.notify();
-            }),
-        );
-        let show_markdown_toolbar = active_editor_tab.unwrap().show_markdown_toolbar; //TODO: Handle the case where there is no active editor tab even if it shouldn't happen
-        let toolbar_button = status_bar_toggle_button_factory(
-            "Toolbar".to_string(),
-            cx.theme().border,
-            cx.theme().muted,
-            show_markdown_toolbar,
-        )
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
-                let active_editor_tab = this.get_active_editor_tab_mut();
-                if let Some(active_editor_tab) = active_editor_tab {
-                    active_editor_tab.show_markdown_toolbar =
-                        !active_editor_tab.show_markdown_toolbar;
-                }
-                cx.notify();
-            }),
-        );
+        let (preview_button, toolbar_button) = match self.get_active_editor_tab() {
+            None => (div(), div()),
+            Some(active_editor_tab) => {
+                let show_markdown_preview = active_editor_tab.show_markdown_preview;
+                let preview_button = status_bar_toggle_button_factory(
+                    "Preview".to_string(),
+                    cx.theme().border,
+                    cx.theme().muted,
+                    show_markdown_preview,
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                        if let Some(active_editor_tab) = this.get_active_editor_tab_mut() {
+                            active_editor_tab.show_markdown_preview =
+                                !active_editor_tab.show_markdown_preview;
+                        }
+                        cx.notify();
+                    }),
+                );
+                let show_markdown_toolbar = active_editor_tab.show_markdown_toolbar;
+                let toolbar_button = status_bar_toggle_button_factory(
+                    "Toolbar".to_string(),
+                    cx.theme().border,
+                    cx.theme().muted,
+                    show_markdown_toolbar,
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                        let active_editor_tab = this.get_active_editor_tab_mut();
+                        if let Some(active_editor_tab) = active_editor_tab {
+                            active_editor_tab.show_markdown_toolbar =
+                                !active_editor_tab.show_markdown_toolbar;
+                        }
+                        cx.notify();
+                    }),
+                );
+                (preview_button, toolbar_button)
+            }
+        };
         let is_markdown = self.is_markdown();
         let is_connected = self.is_connected(cx);
         let sync_button = status_bar_sync_button(

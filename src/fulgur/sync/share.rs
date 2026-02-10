@@ -90,12 +90,11 @@ pub fn get_devices(
     synchronization_settings: &SynchronizationSettings,
     token_state: Arc<Mutex<TokenState>>,
 ) -> Result<Vec<Device>, SynchronizationError> {
-    let server_url = synchronization_settings.server_url.clone();
-    if server_url.is_none() {
+    let Some(server_url) = synchronization_settings.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
-    }
+    };
     let token = get_valid_token(synchronization_settings, token_state)?;
-    let devices_url = format!("{}/api/devices", server_url.unwrap());
+    let devices_url = format!("{}/api/devices", server_url);
     let response = ureq::get(&devices_url)
         .header("Authorization", &format!("Bearer {}", token))
         .call();

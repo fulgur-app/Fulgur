@@ -43,29 +43,23 @@ impl TokenState {
 fn request_access_token(
     synchronization_settings: &SynchronizationSettings,
 ) -> Result<AccessTokenResponse, SynchronizationError> {
-    let server_url = synchronization_settings.server_url.clone();
-    let email = synchronization_settings.email.clone();
-    let device_api_key = match load_device_api_key_from_keychain() {
+    let Some(server_url) = synchronization_settings.server_url.clone() else {
+        return Err(SynchronizationError::ServerUrlMissing);
+    };
+    let Some(email) = synchronization_settings.email.clone() else {
+        return Err(SynchronizationError::EmailMissing);
+    };
+    let Some(device_api_key) = (match load_device_api_key_from_keychain() {
         Ok(value) => value,
         Err(_) => return Err(SynchronizationError::DeviceKeyMissing),
-    };
-    if server_url.is_none() {
-        return Err(SynchronizationError::ServerUrlMissing);
-    }
-    if email.is_none() {
-        return Err(SynchronizationError::EmailMissing);
-    }
-    if device_api_key.is_none() {
+    }) else {
         return Err(SynchronizationError::DeviceKeyMissing);
-    }
-    let token_url = format!("{}/api/token", server_url.unwrap());
+    };
+    let token_url = format!("{}/api/token", server_url);
     log::debug!("Requesting JWT access token from server");
     let mut response = match ureq::post(&token_url)
-        .header(
-            "Authorization",
-            &format!("Bearer {}", device_api_key.unwrap()),
-        )
-        .header("X-User-Email", email.unwrap())
+        .header("Authorization", &format!("Bearer {}", device_api_key))
+        .header("X-User-Email", email)
         .send("")
     {
         Ok(response) => response,

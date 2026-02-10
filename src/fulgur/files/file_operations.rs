@@ -315,20 +315,20 @@ impl Fulgur {
     /// - `window`: The window to save the file in
     /// - `cx`: The application context
     pub fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.is_empty() || self.active_tab_index.is_none() {
+        if self.tabs.is_empty() {
             return;
         }
-        let active_tab = &self.tabs[self.active_tab_index.unwrap()];
+        let Some(active_tab_index) = self.active_tab_index else {
+            return;
+        };
+        let active_tab = &self.tabs[active_tab_index];
         let (path, content_entity) = match active_tab {
             Tab::Editor(editor_tab) => {
-                if editor_tab.file_path.is_none() {
+                let Some(file_path) = editor_tab.file_path.clone() else {
                     self.save_file_as(window, cx);
                     return;
-                }
-                (
-                    editor_tab.file_path.clone().unwrap(),
-                    editor_tab.content.clone(),
-                )
+                };
+                (file_path, editor_tab.content.clone())
             }
             Tab::Settings(_) => return,
         };
@@ -341,7 +341,7 @@ impl Fulgur {
         log::debug!("File saved successfully: {:?}", path);
         self.last_file_saves
             .insert(path.clone(), std::time::Instant::now());
-        if let Tab::Editor(editor_tab) = &mut self.tabs[self.active_tab_index.unwrap()] {
+        if let Tab::Editor(editor_tab) = &mut self.tabs[active_tab_index] {
             editor_tab.mark_as_saved(cx);
         }
         cx.notify();
@@ -353,25 +353,26 @@ impl Fulgur {
     /// - `window`: The window to save the file as in
     /// - `cx`: The application context
     pub fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.is_empty() || self.active_tab_index.is_none() {
+        if self.tabs.is_empty() {
             return;
         }
-        let active_tab_index = self.active_tab_index;
-        let (content_entity, directory, suggested_filename) =
-            match &self.tabs[active_tab_index.unwrap()] {
-                Tab::Editor(editor_tab) => {
-                    let dir = if let Some(ref path) = editor_tab.file_path {
-                        path.parent()
-                            .unwrap_or(std::path::Path::new("."))
-                            .to_path_buf()
-                    } else {
-                        std::env::current_dir().unwrap_or_default()
-                    };
-                    let suggested = editor_tab.get_suggested_filename();
-                    (editor_tab.content.clone(), dir, suggested)
-                }
-                Tab::Settings(_) => return,
-            };
+        let Some(active_tab_index) = self.active_tab_index else {
+            return;
+        };
+        let (content_entity, directory, suggested_filename) = match &self.tabs[active_tab_index] {
+            Tab::Editor(editor_tab) => {
+                let dir = if let Some(ref path) = editor_tab.file_path {
+                    path.parent()
+                        .unwrap_or(std::path::Path::new("."))
+                        .to_path_buf()
+                } else {
+                    std::env::current_dir().unwrap_or_default()
+                };
+                let suggested = editor_tab.get_suggested_filename();
+                (editor_tab.content.clone(), dir, suggested)
+            }
+            Tab::Settings(_) => return,
+        };
         let path_future = cx.prompt_for_new_path(&directory, suggested_filename.as_deref());
         cx.spawn_in(window, async move |view, window| {
             let path = path_future.await.ok()?.ok()??;
@@ -388,7 +389,7 @@ impl Fulgur {
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
                         let old_path = if let Some(Tab::Editor(editor_tab)) =
-                            this.tabs.get(active_tab_index.unwrap())
+                            this.tabs.get(active_tab_index)
                         {
                             editor_tab.file_path.clone()
                         } else {
@@ -399,9 +400,7 @@ impl Fulgur {
                         }
                         this.last_file_saves
                             .insert(path.clone(), std::time::Instant::now());
-                        if let Some(Tab::Editor(editor_tab)) =
-                            this.tabs.get_mut(active_tab_index.unwrap())
-                        {
+                        if let Some(Tab::Editor(editor_tab)) = this.tabs.get_mut(active_tab_index) {
                             editor_tab.file_path = Some(path.clone());
                             editor_tab.title = path
                                 .file_name()
