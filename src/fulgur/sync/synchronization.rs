@@ -10,6 +10,19 @@ use super::sse::connect_sse;
 use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 
+/// Create a ureq agent with configured timeouts for all sync operations
+///
+/// ### Description
+/// ureq 3.x `Agent::new_with_defaults()` provides:
+/// - **30 second connection timeout**: Prevents indefinite hanging when establishing connections
+/// - **No read timeout**: Suitable for both quick API calls and long-lived SSE connections
+///
+/// ### Returns
+/// - `ureq::Agent`: A configured HTTP agent with appropriate timeouts
+pub(super) fn create_http_agent() -> ureq::Agent {
+    ureq::Agent::new_with_defaults()
+}
+
 /// Initial synchronization with the server. This endpoint returns both the encryption key and any shared files waiting for this device.
 ///
 /// ### Arguments
@@ -35,7 +48,9 @@ pub fn initial_synchronization(
     let payload = InitialSynchronizationPayload {
         public_key: public_key,
     };
-    let mut response = match ureq::post(begin_url)
+    let agent = create_http_agent();
+    let mut response = match agent
+        .post(begin_url)
         .header("Authorization", &format!("Bearer {}", token))
         .send_json(payload)
     {

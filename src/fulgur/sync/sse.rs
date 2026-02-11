@@ -21,6 +21,7 @@ use crate::fulgur::{
         access_token::{TokenState, get_valid_token},
         synchronization::{
             SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
+            create_http_agent,
         },
     },
 };
@@ -76,7 +77,8 @@ pub fn connect_sse(
                 }
             };
             log::info!("Connecting to SSE endpoint: {}", sse_url);
-            let response = match ureq::get(&sse_url)
+            let agent = create_http_agent();
+            let response = match agent.get(&sse_url)
                 .header("Authorization", &format!("Bearer {}", token))
                 .header("Accept", "text/event-stream")
                 .call()

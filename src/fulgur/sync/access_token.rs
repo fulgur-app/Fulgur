@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::fulgur::settings::SynchronizationSettings;
-use crate::fulgur::sync::synchronization::SynchronizationError;
+use crate::fulgur::sync::synchronization::{SynchronizationError, create_http_agent};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use fulgur_common::api::sync::AccessTokenResponse;
 use parking_lot::Mutex;
@@ -57,7 +57,8 @@ fn request_access_token(
     };
     let token_url = format!("{}/api/token", server_url);
     log::debug!("Requesting JWT access token from server");
-    let mut response = match ureq::post(&token_url)
+    let agent = create_http_agent();
+    let mut response = match agent.post(&token_url)
         .header("Authorization", &format!("Bearer {}", device_api_key))
         .header("X-User-Email", email)
         .send("")

@@ -14,7 +14,7 @@ use crate::fulgur::{
     settings::SynchronizationSettings,
     sync::{
         access_token::{TokenState, get_valid_token},
-        synchronization::SynchronizationError,
+        synchronization::{SynchronizationError, create_http_agent},
     },
     ui::icons::CustomIcon,
     utils::crypto_helper,
@@ -95,7 +95,8 @@ pub fn get_devices(
     };
     let token = get_valid_token(synchronization_settings, token_state)?;
     let devices_url = format!("{}/api/devices", server_url);
-    let response = ureq::get(&devices_url)
+    let agent = create_http_agent();
+    let response = agent.get(&devices_url)
         .header("Authorization", &format!("Bearer {}", token))
         .call();
     match response {
@@ -198,7 +199,8 @@ fn send_share_request(
         device_id: device_id.to_string(),
         deduplication_hash,
     };
-    let mut response = match ureq::post(share_url)
+    let agent = create_http_agent();
+    let mut response = match agent.post(share_url)
         .header("Authorization", &format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .send_json(encrypted_payload)
