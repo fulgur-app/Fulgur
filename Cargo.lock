@@ -30,6 +30,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "simplelog",
+ "tempfile",
  "tikv-jemallocator",
  "time",
  "ureq",

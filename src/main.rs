@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
-mod fulgur;
+use fulgur::fulgur;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;

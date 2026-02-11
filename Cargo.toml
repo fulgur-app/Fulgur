@@ -8,6 +8,10 @@ keywords = ["rust", "text", "editor", "fulgur", "sync", "desktop", "multiplatfor
 categories = ["text", "editor", "desktop", "multiplatform"]
 homepage = "https://fulgur.app"
 
+[lib]
+name = "fulgur"
+path = "src/lib.rs"
+
 [dependencies]
 # Types
 fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git" }
@@ -65,6 +69,9 @@ tikv-jemallocator = "0.6.1"
 
 [build-dependencies]
 embed-resource = "3.0.6"
+
+[dev-dependencies]
+tempfile = "3.15.0"
 
 # ============================================================================
 # cargo-packager configuration

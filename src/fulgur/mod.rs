@@ -1,5 +1,5 @@
 mod files;
-mod settings;
+pub mod settings;
 pub mod shared_state;
 mod state_operations;
 pub mod state_persistence;

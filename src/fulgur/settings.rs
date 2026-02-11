@@ -282,7 +282,8 @@ impl Settings {
     /// Get the path to the settings file
     ///
     /// ### Returns
-    /// - `anyhow::Result<PathBuf>`: The path to the settings file
+    /// - `Ok(PathBuf)`: The path to the settings file
+    /// - `Err(anyhow::Error)`: If there was an error getting the path
     fn settings_file_path() -> anyhow::Result<PathBuf> {
         #[cfg(target_os = "windows")]
         {
@@ -304,26 +305,60 @@ impl Settings {
         }
     }
 
-    /// Save the settings to the state file
+    /// Save the settings to a specific path
+    ///
+    /// ### Description
+    /// Core implementation for saving settings. Can be used with custom paths
+    /// for testing or alternative storage locations.
+    ///
+    /// ### Arguments
+    /// - `path`: The path to save the settings to
     ///
     /// ### Returns
-    /// - `anyhow::Result<()>`: The result of the operation
-    pub fn save(&mut self) -> anyhow::Result<()> {
-        let path = Self::settings_file_path()?;
+    /// - `Ok(())`: The result of the operation
+    /// - `Err(anyhow::Error)`: If there was an error saving the settings
+    pub fn save_to_path(&mut self, path: &PathBuf) -> anyhow::Result<()> {
         let json = serde_json::to_string_pretty(&self)?;
         fs::write(path, json)?;
         Ok(())
     }
 
-    /// Load the settings from the state file
+    /// Load the settings from a specific path
+    ///
+    /// ### Description
+    /// Core implementation for loading settings. Can be used with custom paths
+    /// for testing or alternative storage locations.
+    ///
+    /// ### Arguments
+    /// - `path`: The path to load the settings from
     ///
     /// ### Returns
-    /// - `anyhow::Result<Self>`: The settings
-    pub fn load() -> anyhow::Result<Self> {
-        let path = Self::settings_file_path()?;
-        let json = fs::read_to_string(&path)?;
+    /// - `Ok(Settings)`: The loaded settings
+    /// - `Err(anyhow::Error)`: If there was an error loading the settings
+    pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
+        let json = fs::read_to_string(path)?;
         let settings: Settings = serde_json::from_str(&json)?;
         Ok(settings)
+    }
+
+    /// Save the settings to the default state file location
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The result of the operation
+    /// - `Err(anyhow::Error)`: If there was an error saving the settings
+    pub fn save(&mut self) -> anyhow::Result<()> {
+        let path = Self::settings_file_path()?;
+        self.save_to_path(&path)
+    }
+
+    /// Load the settings from the default state file location
+    ///
+    /// ### Returns
+    /// - `Ok(Settings)`: The loaded settings
+    /// - `Err(anyhow::Error)`: If there was an error loading the settings
+    pub fn load() -> anyhow::Result<Self> {
+        let path = Self::settings_file_path()?;
+        Self::load_from_path(&path)
     }
 
     /// Get the recent files
@@ -342,7 +377,8 @@ impl Settings {
     /// - `file`: The file to add
     ///
     /// ### Returns
-    /// - `anyhow::Result<()>`: The result of the operation
+    /// - `Ok(())`: The result of the operation
+    /// - `Err(anyhow::Error)`: If there was an error adding the file
     pub fn add_file(&mut self, file: PathBuf) -> anyhow::Result<()> {
         if self.recent_files.get_files().contains(&file) {
             self.recent_files.remove_file(file.clone());
