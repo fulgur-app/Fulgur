@@ -577,3 +577,208 @@ fn test_state_json_structure_validation() {
         Some(100.0)
     );
 }
+
+#[test]
+fn test_state_preserves_window_order() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let state_path = temp_state_path(&temp_dir);
+    let mut windows = Vec::new();
+    for i in 0..5 {
+        windows.push(WindowState {
+            tabs: vec![TabState {
+                title: format!("Window {} Marker", i),
+                file_path: None,
+                content: Some(format!("This is window number {}", i)),
+                last_saved: None,
+            }],
+            active_tab_index: Some(0),
+            window_bounds: SerializedWindowBounds {
+                state: "Windowed".to_string(),
+                x: (i as f32) * 100.0,
+                y: (i as f32) * 100.0,
+                width: 800.0,
+                height: 600.0,
+                display_id: Some(i as u32),
+            },
+        });
+    }
+    let original = WindowsState { windows };
+    original
+        .save_to_path(&state_path)
+        .expect("Failed to save state");
+    let loaded = WindowsState::load_from_path(&state_path).expect("Failed to load state");
+    assert_eq!(loaded.windows.len(), 5);
+    for i in 0..5 {
+        assert_eq!(
+            loaded.windows[i].tabs[0].title,
+            format!("Window {} Marker", i),
+            "Window order should be preserved"
+        );
+        assert_eq!(
+            loaded.windows[i].window_bounds.x,
+            (i as f32) * 100.0,
+            "Window position should match index"
+        );
+    }
+}
+
+#[test]
+fn test_state_windows_with_different_active_tabs() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let state_path = temp_state_path(&temp_dir);
+    let original = WindowsState {
+        windows: vec![
+            WindowState {
+                tabs: vec![
+                    create_file_tab_unmodified(),
+                    create_file_tab_modified(),
+                    create_unsaved_tab(),
+                ],
+                active_tab_index: Some(0), // First tab active
+                window_bounds: SerializedWindowBounds::default(),
+            },
+            WindowState {
+                tabs: vec![
+                    create_file_tab_unmodified(),
+                    create_file_tab_modified(),
+                    create_unsaved_tab(),
+                ],
+                active_tab_index: Some(1), // Second tab active
+                window_bounds: SerializedWindowBounds::default(),
+            },
+            WindowState {
+                tabs: vec![
+                    create_file_tab_unmodified(),
+                    create_file_tab_modified(),
+                    create_unsaved_tab(),
+                ],
+                active_tab_index: Some(2), // Third tab active
+                window_bounds: SerializedWindowBounds::default(),
+            },
+            WindowState {
+                tabs: vec![
+                    create_file_tab_unmodified(),
+                    create_file_tab_modified(),
+                    create_unsaved_tab(),
+                ],
+                active_tab_index: None, // No active tab
+                window_bounds: SerializedWindowBounds::default(),
+            },
+        ],
+    };
+    original
+        .save_to_path(&state_path)
+        .expect("Failed to save state");
+    let loaded = WindowsState::load_from_path(&state_path).expect("Failed to load state");
+    assert_eq!(loaded.windows.len(), 4);
+    assert_eq!(loaded.windows[0].active_tab_index, Some(0));
+    assert_eq!(loaded.windows[1].active_tab_index, Some(1));
+    assert_eq!(loaded.windows[2].active_tab_index, Some(2));
+    assert_eq!(loaded.windows[3].active_tab_index, None);
+}
+
+#[test]
+fn test_state_windows_on_different_displays() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let state_path = temp_state_path(&temp_dir);
+    let original = WindowsState {
+        windows: vec![
+            WindowState {
+                tabs: vec![create_unsaved_tab()],
+                active_tab_index: Some(0),
+                window_bounds: SerializedWindowBounds {
+                    state: "Windowed".to_string(),
+                    x: 100.0,
+                    y: 100.0,
+                    width: 1200.0,
+                    height: 800.0,
+                    display_id: Some(1), // Primary display
+                },
+            },
+            WindowState {
+                tabs: vec![create_unsaved_tab()],
+                active_tab_index: Some(0),
+                window_bounds: SerializedWindowBounds {
+                    state: "Maximized".to_string(),
+                    x: 1920.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                    display_id: Some(2), // Secondary display
+                },
+            },
+            WindowState {
+                tabs: vec![create_unsaved_tab()],
+                active_tab_index: Some(0),
+                window_bounds: SerializedWindowBounds {
+                    state: "Fullscreen".to_string(),
+                    x: 3840.0,
+                    y: 0.0,
+                    width: 2560.0,
+                    height: 1440.0,
+                    display_id: Some(3), // Tertiary display
+                },
+            },
+        ],
+    };
+    original
+        .save_to_path(&state_path)
+        .expect("Failed to save state");
+    let loaded = WindowsState::load_from_path(&state_path).expect("Failed to load state");
+    assert_eq!(loaded.windows.len(), 3);
+    assert_eq!(loaded.windows[0].window_bounds.display_id, Some(1));
+    assert_eq!(loaded.windows[1].window_bounds.display_id, Some(2));
+    assert_eq!(loaded.windows[2].window_bounds.display_id, Some(3));
+    assert_eq!(loaded.windows[0].window_bounds.x, 100.0);
+    assert_eq!(loaded.windows[1].window_bounds.x, 1920.0);
+    assert_eq!(loaded.windows[2].window_bounds.x, 3840.0);
+}
+
+#[test]
+fn test_state_mixed_window_and_tab_counts() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let state_path = temp_state_path(&temp_dir);
+    let original = WindowsState {
+        windows: vec![
+            WindowState {
+                tabs: vec![create_file_tab_unmodified()], // 1 tab
+                active_tab_index: Some(0),
+                window_bounds: SerializedWindowBounds::default(),
+            },
+            WindowState {
+                tabs: vec![
+                    create_file_tab_unmodified(),
+                    create_file_tab_modified(),
+                    create_unsaved_tab(),
+                    create_file_tab_unmodified(),
+                    create_file_tab_modified(),
+                ], // 5 tabs
+                active_tab_index: Some(2),
+                window_bounds: SerializedWindowBounds::default(),
+            },
+            WindowState {
+                tabs: vec![], // 0 tabs
+                active_tab_index: None,
+                window_bounds: SerializedWindowBounds::default(),
+            },
+            WindowState {
+                tabs: vec![create_file_tab_unmodified(), create_unsaved_tab()], // 2 tabs
+                active_tab_index: Some(1),
+                window_bounds: SerializedWindowBounds::default(),
+            },
+        ],
+    };
+    original
+        .save_to_path(&state_path)
+        .expect("Failed to save state");
+    let loaded = WindowsState::load_from_path(&state_path).expect("Failed to load state");
+    assert_eq!(loaded.windows.len(), 4);
+    assert_eq!(loaded.windows[0].tabs.len(), 1);
+    assert_eq!(loaded.windows[1].tabs.len(), 5);
+    assert_eq!(loaded.windows[2].tabs.len(), 0);
+    assert_eq!(loaded.windows[3].tabs.len(), 2);
+    assert_eq!(loaded.windows[0].active_tab_index, Some(0));
+    assert_eq!(loaded.windows[1].active_tab_index, Some(2));
+    assert_eq!(loaded.windows[2].active_tab_index, None);
+    assert_eq!(loaded.windows[3].active_tab_index, Some(1));
+}
