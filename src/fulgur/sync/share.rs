@@ -155,21 +155,17 @@ pub fn get_devices(
 /// Encrypt and compress content for a specific device
 ///
 /// ### Arguments
-/// - `content`: The content to encrypt
+/// - `compressed_content`: The content to encrypt
 /// - `device_public_key`: The device's public key for encryption
 ///
 /// ### Returns
 /// - `Ok(String)`: The encrypted and compressed content (base64-encoded)
 /// - `Err(SynchronizationError)`: If encryption or compression failed
 fn encrypt_content_for_device(
-    content: &str,
+    compressed_content: &[u8],
     device_public_key: &str,
 ) -> Result<String, SynchronizationError> {
-    let compressed_content = compress_content(content).map_err(|e| {
-        log::error!("Failed to compress content: {}", e);
-        SynchronizationError::CompressionFailed
-    })?;
-    crypto_helper::encrypt_bytes(&compressed_content, device_public_key).map_err(|e| {
+    crypto_helper::encrypt_bytes(compressed_content, device_public_key).map_err(|e| {
         log::error!("Failed to encrypt content: {}", e);
         SynchronizationError::EncryptionFailed
     })
@@ -384,6 +380,13 @@ pub fn share_file(
     } else {
         None
     };
+    let compressed_content = match compress_content(&content) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Failed to compress content: {}", e);
+            return Err(SynchronizationError::CompressionFailed);
+        }
+    };
     let mut successes = Vec::new();
     let mut failures = Vec::new();
     for device_id in &device_ids {
@@ -409,7 +412,7 @@ pub fn share_file(
                 continue;
             }
         };
-        let encrypted_content = match encrypt_content_for_device(&content, public_key) {
+        let encrypted_content = match encrypt_content_for_device(&compressed_content, public_key) {
             Ok(content) => content,
             Err(e) => {
                 log::error!("Failed to encrypt content for device {}: {}", device_id, e);
