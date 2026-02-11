@@ -23,6 +23,64 @@ pub(super) fn create_http_agent() -> ureq::Agent {
     ureq::Agent::new_with_defaults()
 }
 
+/// Handle ureq errors and convert them to SynchronizationError with appropriate logging
+///
+/// ### Description
+/// Centralizes ureq error handling logic that was duplicated across sync modules.
+/// Maps all ureq error variants to appropriate SynchronizationError types and logs
+/// the error with context.
+///
+/// ### Arguments
+/// - `error`: The ureq error to handle
+/// - `context`: Human-readable context for logging (e.g., "Failed to get devices")
+///
+/// ### Returns
+/// - `SynchronizationError`: The mapped synchronization error
+pub(super) fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationError {
+    match error {
+        ureq::Error::StatusCode(code) => {
+            log::error!("{}: HTTP status {}", context, code);
+            if code == 401 || code == 403 {
+                SynchronizationError::AuthenticationFailed
+            } else if code == 400 {
+                SynchronizationError::BadRequest
+            } else {
+                SynchronizationError::ServerError(code)
+            }
+        }
+        ureq::Error::Io(io_error) => {
+            log::error!("{} (IO): {}", context, io_error);
+            match io_error.kind() {
+                std::io::ErrorKind::ConnectionRefused => SynchronizationError::ConnectionFailed,
+                std::io::ErrorKind::TimedOut => {
+                    SynchronizationError::Timeout(io_error.to_string())
+                }
+                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => {
+                    SynchronizationError::ConnectionFailed
+                }
+                std::io::ErrorKind::AddrNotAvailable => SynchronizationError::HostNotFound,
+                _ => SynchronizationError::Other(io_error.to_string()),
+            }
+        }
+        ureq::Error::ConnectionFailed => {
+            log::error!("{}: Connection failed", context);
+            SynchronizationError::ConnectionFailed
+        }
+        ureq::Error::HostNotFound => {
+            log::error!("{}: Host not found", context);
+            SynchronizationError::HostNotFound
+        }
+        ureq::Error::Timeout(timeout) => {
+            log::error!("{}: Timeout ({})", context, timeout);
+            SynchronizationError::Timeout(timeout.to_string())
+        }
+        e => {
+            log::error!("{}: {}", context, e);
+            SynchronizationError::Other(e.to_string())
+        }
+    }
+}
+
 /// Initial synchronization with the server. This endpoint returns both the encryption key and any shared files waiting for this device.
 ///
 /// ### Arguments
@@ -49,53 +107,11 @@ pub fn initial_synchronization(
         public_key: public_key,
     };
     let agent = create_http_agent();
-    let mut response = match agent
+    let mut response = agent
         .post(begin_url)
         .header("Authorization", &format!("Bearer {}", token))
         .send_json(payload)
-    {
-        Ok(response) => response,
-        Err(ureq::Error::StatusCode(code)) => {
-            log::error!("Failed to begin synchronization: HTTP status {}", code);
-            if code == 401 || code == 403 {
-                return Err(SynchronizationError::AuthenticationFailed);
-            } else {
-                return Err(SynchronizationError::ServerError(code));
-            }
-        }
-        Err(ureq::Error::Io(io_error)) => {
-            log::error!("Failed to begin synchronization (IO): {}", io_error);
-            return match io_error.kind() {
-                std::io::ErrorKind::ConnectionRefused => {
-                    Err(SynchronizationError::ConnectionFailed)
-                }
-                std::io::ErrorKind::TimedOut => {
-                    Err(SynchronizationError::Timeout(io_error.to_string()))
-                }
-                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => {
-                    Err(SynchronizationError::ConnectionFailed)
-                }
-                std::io::ErrorKind::AddrNotAvailable => Err(SynchronizationError::HostNotFound),
-                _ => Err(SynchronizationError::Other(io_error.to_string())),
-            };
-        }
-        Err(ureq::Error::ConnectionFailed) => {
-            log::error!("Failed to begin synchronization: Connection failed");
-            return Err(SynchronizationError::ConnectionFailed);
-        }
-        Err(ureq::Error::HostNotFound) => {
-            log::error!("Failed to begin synchronization: Host not found");
-            return Err(SynchronizationError::HostNotFound);
-        }
-        Err(ureq::Error::Timeout(timeout)) => {
-            log::error!("Failed to begin synchronization: Timeout ({})", timeout);
-            return Err(SynchronizationError::Timeout(timeout.to_string()));
-        }
-        Err(e) => {
-            log::error!("Failed to begin synchronization: {}", e);
-            return Err(SynchronizationError::Other(e.to_string()));
-        }
-    };
+        .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization"))?;
     let body = match response.body_mut().read_to_string() {
         Ok(body) => body,
         Err(e) => {

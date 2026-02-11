@@ -14,7 +14,7 @@ use crate::fulgur::{
     settings::SynchronizationSettings,
     sync::{
         access_token::{TokenState, get_valid_token},
-        synchronization::{SynchronizationError, create_http_agent},
+        synchronization::{SynchronizationError, create_http_agent, handle_ureq_error},
     },
     ui::icons::CustomIcon,
     utils::crypto_helper,
@@ -96,61 +96,18 @@ pub fn get_devices(
     let token = get_valid_token(synchronization_settings, token_state)?;
     let devices_url = format!("{}/api/devices", server_url);
     let agent = create_http_agent();
-    let response = agent.get(&devices_url)
+    let mut response = agent.get(&devices_url)
         .header("Authorization", &format!("Bearer {}", token))
-        .call();
-    match response {
-        Ok(mut response) => {
-            let devices: Vec<Device> = match response.body_mut().read_json::<Vec<Device>>() {
-                Ok(devices) => devices,
-                Err(e) => {
-                    log::error!("Failed to read devices: {}", e);
-                    return Err(SynchronizationError::InvalidResponse(e.to_string()));
-                }
-            };
-            log::debug!("Retrieved {} devices from server", devices.len());
-            Ok(devices)
-        }
-        Err(ureq::Error::StatusCode(code)) => {
-            log::error!("Failed to get devices: HTTP status {}", code);
-            if code == 401 || code == 403 {
-                Err(SynchronizationError::AuthenticationFailed)
-            } else {
-                Err(SynchronizationError::ServerError(code))
-            }
-        }
-        Err(ureq::Error::Io(io_error)) => {
-            log::error!("Failed to get devices (IO): {}", io_error);
-            match io_error.kind() {
-                std::io::ErrorKind::ConnectionRefused => {
-                    Err(SynchronizationError::ConnectionFailed)
-                }
-                std::io::ErrorKind::TimedOut => {
-                    Err(SynchronizationError::Timeout(io_error.to_string()))
-                }
-                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => {
-                    Err(SynchronizationError::Other(io_error.to_string()))
-                }
-                _ => Err(SynchronizationError::Other(io_error.to_string())),
-            }
-        }
-        Err(ureq::Error::ConnectionFailed) => {
-            log::error!("Failed to get devices: Connection failed");
-            Err(SynchronizationError::ConnectionFailed)
-        }
-        Err(ureq::Error::HostNotFound) => {
-            log::error!("Failed to get devices: Host not found");
-            Err(SynchronizationError::HostNotFound)
-        }
-        Err(ureq::Error::Timeout(timeout)) => {
-            log::error!("Failed to get devices: Timeout ({})", timeout);
-            Err(SynchronizationError::Timeout(timeout.to_string()))
-        }
-        Err(e) => {
-            log::error!("Failed to get devices: {}", e);
-            Err(SynchronizationError::Other(e.to_string()))
-        }
-    }
+        .call()
+        .map_err(|e| handle_ureq_error(e, "Failed to get devices"))?;
+
+    let devices: Vec<Device> = response.body_mut().read_json::<Vec<Device>>().map_err(|e| {
+        log::error!("Failed to read devices: {}", e);
+        SynchronizationError::InvalidResponse(e.to_string())
+    })?;
+
+    log::debug!("Retrieved {} devices from server", devices.len());
+    Ok(devices)
 }
 
 /// Encrypt and compress content for a specific device
@@ -200,69 +157,11 @@ fn send_share_request(
         deduplication_hash,
     };
     let agent = create_http_agent();
-    let mut response = match agent.post(share_url)
+    let mut response = agent.post(share_url)
         .header("Authorization", &format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .send_json(encrypted_payload)
-    {
-        Ok(response) => response,
-        Err(ureq::Error::StatusCode(code)) => {
-            log::error!(
-                "Failed to share file to device {}: HTTP status {}",
-                device_id,
-                code
-            );
-            return if code == 401 || code == 403 {
-                Err(SynchronizationError::AuthenticationFailed)
-            } else if code == 400 {
-                Err(SynchronizationError::BadRequest)
-            } else {
-                Err(SynchronizationError::ServerError(code))
-            };
-        }
-        Err(ureq::Error::Io(io_error)) => {
-            log::error!(
-                "Failed to share file to device {} (IO): {}",
-                device_id,
-                io_error
-            );
-            return match io_error.kind() {
-                std::io::ErrorKind::ConnectionRefused => {
-                    Err(SynchronizationError::ConnectionFailed)
-                }
-                std::io::ErrorKind::TimedOut => {
-                    Err(SynchronizationError::Timeout(io_error.to_string()))
-                }
-                _ => Err(SynchronizationError::Other(io_error.to_string())),
-            };
-        }
-        Err(ureq::Error::ConnectionFailed) => {
-            log::error!(
-                "Failed to share file to device {}: Connection failed",
-                device_id
-            );
-            return Err(SynchronizationError::ConnectionFailed);
-        }
-        Err(ureq::Error::HostNotFound) => {
-            log::error!(
-                "Failed to share file to device {}: Host not found",
-                device_id
-            );
-            return Err(SynchronizationError::HostNotFound);
-        }
-        Err(ureq::Error::Timeout(timeout)) => {
-            log::error!(
-                "Failed to share file to device {}: Timeout ({})",
-                device_id,
-                timeout
-            );
-            return Err(SynchronizationError::Timeout(timeout.to_string()));
-        }
-        Err(e) => {
-            log::error!("Failed to share file to device {}: {}", device_id, e);
-            return Err(SynchronizationError::Other(e.to_string()));
-        }
-    };
+        .map_err(|e| handle_ureq_error(e, &format!("Failed to share file to device {}", device_id)))?;
     if response.status() == 200 {
         let body = response.body_mut().read_to_string().map_err(|e| {
             log::error!("Failed to read response body: {}", e);
