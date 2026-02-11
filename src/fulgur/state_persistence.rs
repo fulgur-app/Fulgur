@@ -166,30 +166,52 @@ impl WindowsState {
         }
     }
 
-    /// Save the app state to disk
+    /// Save the app state to a specific path
+    ///
+    /// ### Arguments
+    /// - `path`: The path to save the state to
+    ///
+    /// ### Returns
+    /// - `Ok(())`: If the app state was saved successfully
+    /// - `Err(anyhow::Error)`: If the app state could not be saved
+    pub fn save_to_path(&self, path: &PathBuf) -> anyhow::Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
+        fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Load the windows state from a specific path
+    ///
+    /// ### Arguments
+    /// - `path`: The path to load the state from
+    ///
+    /// ### Returns
+    /// - `Ok(WindowsState)`: The loaded windows state
+    /// - `Err(anyhow::Error)`: If the windows state could not be loaded
+    pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
+        let json = fs::read_to_string(path)?;
+        let state = serde_json::from_str::<WindowsState>(&json)?;
+        Ok(state)
+    }
+
+    /// Save the app state to the default state file location
     ///
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved
     pub fn save(&self) -> anyhow::Result<()> {
         let path = Self::state_file_path()?;
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        self.save_to_path(&path)
     }
 
-    /// Load the windows state from disk
+    /// Load the windows state from the default state file location
     ///
     /// ### Returns
     /// - `Ok(WindowsState)`: The loaded windows state
     /// - `Err(anyhow::Error)`: If the windows state could not be loaded
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::state_file_path()?;
-        let json = fs::read_to_string(path)?;
-        if let Ok(state) = serde_json::from_str::<WindowsState>(&json) {
-            return Ok(state);
-        }
-        Err(anyhow::anyhow!("Failed to parse state file"))
+        Self::load_from_path(&path)
     }
 }
 
