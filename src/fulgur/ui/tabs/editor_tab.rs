@@ -3,10 +3,14 @@ use gpui::*;
 use gpui_component::highlighter::Language;
 use gpui_component::input::{InputState, Position, TabSize};
 use regex::Regex;
+use std::sync::LazyLock;
 
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
 use crate::fulgur::ui::languages::{SupportedLanguage, language_from_extension, to_language};
+
+/// Regex for matching line numbers and line:column positions
+static LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+|\d+:\d+)$").unwrap());
 
 #[derive(Clone)]
 pub struct EditorTab {
@@ -344,7 +348,7 @@ pub fn extract_line_number(destination: SharedString) -> anyhow::Result<Jump> {
         line: 0,
         character: None,
     };
-    let re = Regex::new(r"^(\d+|\d+:\d+)$").unwrap();
+    let re = LINE_REGEX.clone();
     re.is_match(destination.as_str())
         .then(|| {
             if destination.contains(":") {
