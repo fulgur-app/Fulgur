@@ -1,4 +1,4 @@
-mod files;
+pub mod files;
 pub mod settings;
 pub mod shared_state;
 mod state_operations;
