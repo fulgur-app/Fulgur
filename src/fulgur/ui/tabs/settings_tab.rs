@@ -595,8 +595,7 @@ impl Fulgur {
                 .map(|t| format!("{} ({})", t.name, t.mode))
                 .collect::<Vec<String>>()
                 .join(", ");
-            let button_id = format!("delete-theme-{}", theme_name);
-            let button_id_static: &'static str = Box::leak(button_id.into_boxed_str());
+            let button_id = SharedString::from(format!("delete-theme-{}", theme_name));
             user_theme_items.push(SettingItem::render({
                 let entity = entity.clone();
                 move |_options, _window, cx| {
@@ -622,7 +621,7 @@ impl Fulgur {
                                 ),
                         )
                         .child(
-                            Button::new(button_id_static)
+                            Button::new(button_id.clone())
                                 .icon(CustomIcon::Close)
                                 .small()
                                 .cursor_pointer()
