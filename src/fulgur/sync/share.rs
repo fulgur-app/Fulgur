@@ -303,54 +303,86 @@ pub fn share_file(
             return Err(SynchronizationError::CompressionFailed);
         }
     };
+    // Parallelize encryption and HTTP requests across devices
+    let results: Vec<(String, Result<String, SynchronizationError>)> =
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = device_ids
+                .iter()
+                .map(|device_id| {
+                    let device_id = device_id.clone();
+                    let share_url = share_url.clone();
+                    let token = token.clone();
+                    let file_name = file_name.clone();
+                    let deduplication_hash = deduplication_hash.clone();
+                    let compressed_content = compressed_content.clone();
+                    scope.spawn(move || {
+                        let device = match devices.iter().find(|d| d.id == device_id) {
+                            Some(d) => d,
+                            None => {
+                                log::warn!("Device {} not found, skipping", device_id);
+                                return (
+                                    device_id.clone(),
+                                    Err(SynchronizationError::Other(format!(
+                                        "Device {} not found",
+                                        device_id
+                                    ))),
+                                );
+                            }
+                        };
+                        let public_key = match &device.public_key {
+                            Some(key) => key,
+                            None => {
+                                log::warn!("Device {} has no public key, skipping", device_id);
+                                return (
+                                    device_id.clone(),
+                                    Err(SynchronizationError::MissingPublicKey(
+                                        device.name.clone(),
+                                    )),
+                                );
+                            }
+                        };
+                        let encrypted_content =
+                            match encrypt_content_for_device(&compressed_content, public_key) {
+                                Ok(content) => content,
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to encrypt content for device {}: {}",
+                                        device_id,
+                                        e
+                                    );
+                                    return (device_id.clone(), Err(e));
+                                }
+                            };
+                        let result = send_share_request(
+                            &share_url,
+                            &token,
+                            encrypted_content,
+                            &file_name,
+                            &device_id,
+                            deduplication_hash.clone(),
+                            http_agent,
+                        );
+                        match &result {
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::error!("Failed to share file to device {}: {}", device_id, e);
+                            }
+                        }
+                        (device_id.clone(), result)
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
     let mut successes = Vec::new();
     let mut failures = Vec::new();
-    for device_id in &device_ids {
-        let device = match devices.iter().find(|d| &d.id == device_id) {
-            Some(d) => d,
-            None => {
-                log::warn!("Device {} not found, skipping", device_id);
-                failures.push((
-                    device_id.clone(),
-                    SynchronizationError::Other(format!("Device {} not found", device_id)),
-                ));
-                continue;
-            }
-        };
-        let public_key = match &device.public_key {
-            Some(key) => key,
-            None => {
-                log::warn!("Device {} has no public key, skipping", device_id);
-                failures.push((
-                    device_id.clone(),
-                    SynchronizationError::MissingPublicKey(device.name.clone()),
-                ));
-                continue;
-            }
-        };
-        let encrypted_content = match encrypt_content_for_device(&compressed_content, public_key) {
-            Ok(content) => content,
-            Err(e) => {
-                log::error!("Failed to encrypt content for device {}: {}", device_id, e);
-                failures.push((device_id.clone(), e));
-                continue;
-            }
-        };
-        match send_share_request(
-            &share_url,
-            &token,
-            encrypted_content,
-            &file_name,
-            device_id,
-            deduplication_hash.clone(),
-            http_agent,
-        ) {
+    for (device_id, result) in results {
+        match result {
             Ok(expiration_date) => {
-                successes.push((device_id.clone(), expiration_date));
+                successes.push((device_id, expiration_date));
             }
             Err(e) => {
-                log::error!("Failed to share file to device {}: {}", device_id, e);
-                failures.push((device_id.clone(), e));
+                failures.push((device_id, e));
             }
         }
     }
