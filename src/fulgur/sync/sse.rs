@@ -24,6 +24,7 @@ use crate::fulgur::{
             create_http_agent,
         },
     },
+    utils::retry::BackoffCalculator,
 };
 
 /// Connect to SSE (Server-Sent Events) endpoint on the sync serverfor real-time notifications
@@ -59,6 +60,9 @@ pub fn connect_sse(
     let settings_clone = synchronization_settings.clone();
     let token_state_clone = Arc::clone(&token_state);
     thread::spawn(move || {
+        // Exponential backoff for reconnection attempts (1s, 2s, 4s, 8s... up to 5 minutes)
+        let mut backoff = BackoffCalculator::default_settings();
+
         loop {
             if shutdown_flag.load(Ordering::Relaxed) {
                 log::info!("SSE connection shutdown requested, stopping...");
@@ -72,7 +76,9 @@ pub fn connect_sse(
                         sync_server_connection_status.clone(),
                         SynchronizationStatus::AuthenticationFailed,
                     );
-                    thread::sleep(Duration::from_secs(5));
+                    let delay = backoff.record_failure();
+                    log::info!("Retrying SSE connection after {:?}", delay);
+                    thread::sleep(delay);
                     continue;
                 }
             };
@@ -89,6 +95,7 @@ pub fn connect_sse(
                         SynchronizationStatus::Connected,
                     );
                     log::info!("SSE connection established");
+                    backoff.record_success(); // Reset backoff on successful connection
                     resp
                 }
                 Err(e) => {
@@ -102,7 +109,9 @@ pub fn connect_sse(
                         log::info!("SSE connection shutdown requested, stopping...");
                         break;
                     }
-                    thread::sleep(Duration::from_secs(5));
+                    let delay = backoff.record_failure();
+                    log::info!("Retrying SSE connection after {:?}", delay);
+                    thread::sleep(delay);
                     continue;
                 }
             };
@@ -153,12 +162,13 @@ pub fn connect_sse(
                 break;
             }
             // When the connection is lost
-            log::warn!("SSE connection closed, reconnecting in 5s...");
+            let delay = backoff.record_failure();
+            log::warn!("SSE connection closed, reconnecting after {:?}", delay);
             set_sync_server_connection_status(
                 sync_server_connection_status.clone(),
                 SynchronizationStatus::Disconnected,
             );
-            thread::sleep(Duration::from_secs(5));
+            thread::sleep(delay);
         }
     });
 
