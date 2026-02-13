@@ -1,5 +1,6 @@
 use gpui::App;
 use std::{
+    io::{BufReader, Read},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -20,12 +21,77 @@ use crate::fulgur::{
     sync::{
         access_token::{TokenState, get_valid_token},
         synchronization::{
-            SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
-            create_http_agent,
+            SynchronizationError, SynchronizationStatus, create_http_agent,
+            set_sync_server_connection_status,
         },
     },
     utils::retry::BackoffCalculator,
 };
+
+/// Error type for line reading with shutdown support
+enum ReadError {
+    /// I/O error during reading
+    Io(std::io::Error),
+    /// Shutdown was requested
+    Shutdown,
+}
+
+/// Read a line from a buffered reader with periodic shutdown checks
+///
+/// ### Arguments
+/// - `reader`: The buffered reader to read from
+/// - `shutdown_flag`: Atomic flag to check for shutdown requests
+///
+/// ### Returns
+/// - `Ok(Some(String))`: A line was read successfully
+/// - `Ok(None)`: End of stream reached
+/// - `Err(ReadError::Shutdown)`: Shutdown was requested
+/// - `Err(ReadError::Io)`: I/O error occurred
+fn read_line_with_timeout<R: Read>(
+    reader: &mut BufReader<R>,
+    shutdown_flag: &Arc<AtomicBool>,
+) -> Result<Option<String>, ReadError> {
+    let mut line = String::new();
+    let mut byte = [0u8; 1];
+
+    loop {
+        if shutdown_flag.load(Ordering::Relaxed) {
+            return Err(ReadError::Shutdown);
+        }
+        match reader.read(&mut byte) {
+            Ok(0) => {
+                // End of stream
+                if line.is_empty() {
+                    return Ok(None);
+                } else {
+                    return Ok(Some(line));
+                }
+            }
+            Ok(_) => {
+                if byte[0] == b'\n' {
+                    // End of line (handle both \n and \r\n)
+                    if line.ends_with('\r') {
+                        line.pop();
+                    }
+                    return Ok(Some(line));
+                } else {
+                    line.push(byte[0] as char);
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // Non-blocking read would block, sleep briefly and retry
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                continue;
+            }
+            Err(e) => {
+                return Err(ReadError::Io(e));
+            }
+        }
+    }
+}
 
 /// Connect to SSE (Server-Sent Events) endpoint on the sync serverfor real-time notifications
 ///
@@ -84,7 +150,8 @@ pub fn connect_sse(
             };
             log::info!("Connecting to SSE endpoint: {}", sse_url);
             let agent = create_http_agent();
-            let response = match agent.get(&sse_url)
+            let response = match agent
+                .get(&sse_url)
                 .header("Authorization", &format!("Bearer {}", token))
                 .header("Accept", "text/event-stream")
                 .call()
@@ -116,19 +183,21 @@ pub fn connect_sse(
                 }
             };
             let mut response = response;
-            let reader = std::io::BufReader::new(response.body_mut().as_reader());
+            let mut reader = std::io::BufReader::new(response.body_mut().as_reader());
             let mut current_event_type = String::new();
             let mut current_data = String::new();
-            use std::io::BufRead;
-            for line in reader.lines() {
+
+            loop {
                 if shutdown_flag.load(Ordering::Relaxed) {
                     log::info!(
                         "SSE connection shutdown requested during event reading, stopping..."
                     );
                     break;
                 }
-                match line {
-                    Ok(line) => {
+
+                let line_result = read_line_with_timeout(&mut reader, &shutdown_flag);
+                match line_result {
+                    Ok(Some(line)) => {
                         if line.starts_with("event:") {
                             current_event_type =
                                 line.trim_start_matches("event:").trim().to_string();
@@ -146,7 +215,16 @@ pub fn connect_sse(
                             current_data.clear();
                         }
                     }
-                    Err(e) => {
+                    Ok(None) => {
+                        // End of stream
+                        log::info!("SSE stream ended");
+                        break;
+                    }
+                    Err(ReadError::Shutdown) => {
+                        log::info!("SSE connection shutdown requested");
+                        break;
+                    }
+                    Err(ReadError::Io(e)) => {
                         log::error!("SSE stream error: {}", e);
                         set_sync_server_connection_status(
                             sync_server_connection_status.clone(),
