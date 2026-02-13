@@ -53,9 +53,7 @@ fn make_select_theme_item(
                 let theme_name_clone = theme_name.clone();
                 entity.update(cx, |fulgur, cx| {
                     fulgur.settings.app_settings.theme = theme_name_clone.clone().into();
-                    if let Err(e) = fulgur.update_and_propagate_settings(cx) {
-                        log::error!("Failed to save settings: {}", e);
-                    }
+                    let _ = fulgur.update_and_propagate_settings(cx);
                     *current_theme_shared.lock() = theme_name_clone.clone();
                     cx.notify();
                 });

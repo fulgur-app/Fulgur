@@ -173,7 +173,13 @@ impl Fulgur {
                         .map(|file_name| file_name.to_string_lossy().to_string());
                     this.set_title(title, cx);
                     log::debug!("File opened successfully in new tab: {:?}", path);
-                    let _ = this.save_state(cx, window);
+                    if let Err(e) = this.save_state(cx, window) {
+                        log::error!("Failed to save app state after opening file: {}", e);
+                        this.pending_notification = Some((
+                            NotificationType::Warning,
+                            format!("File opened but failed to save state: {}", e).into(),
+                        ));
+                    }
                     cx.notify();
                 });
             })

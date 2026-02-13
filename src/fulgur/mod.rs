@@ -187,7 +187,14 @@ impl Fulgur {
     /// - `anyhow::Result<()>`: Result of the operation
     fn update_and_propagate_settings(&mut self, cx: &mut Context<Self>) -> anyhow::Result<()> {
         // Save settings to disk
-        self.settings.save()?;
+        if let Err(e) = self.settings.save() {
+            log::error!("Failed to save settings: {}", e);
+            self.pending_notification = Some((
+                NotificationType::Error,
+                format!("Failed to save settings: {}", e).into(),
+            ));
+            return Err(e);
+        }
 
         // Update shared settings
         let shared = self.shared_state(cx);
@@ -258,7 +265,13 @@ impl Fulgur {
                 false
             } else {
                 if let Err(e) = self.save_state(cx, window) {
-                    log::error!("Failed to save app state: {}", e);
+                    log::error!("Failed to save app state on window close: {}", e);
+                    self.pending_notification = Some((
+                        NotificationType::Error,
+                        format!("Failed to save application state: {}. Close anyway?", e).into(),
+                    ));
+                    cx.notify();
+                    return false; // Prevent close, let user try again or force close
                 }
                 cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
                     manager.unregister(self.window_id);
@@ -271,12 +284,18 @@ impl Fulgur {
                 self.window_id,
                 window_count - 1
             );
+            if let Err(e) = self.save_state(cx, window) {
+                log::error!("Failed to save app state on window close: {}", e);
+                self.pending_notification = Some((
+                    NotificationType::Error,
+                    format!("Failed to save application state: {}. Close anyway?", e).into(),
+                ));
+                cx.notify();
+                return false; // Prevent close, let user try again or force close
+            }
             cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
                 manager.unregister(self.window_id);
             });
-            if let Err(e) = self.save_state(cx, window) {
-                log::error!("Failed to save app state: {}", e);
-            }
             true
         }
     }
@@ -815,9 +834,7 @@ impl Fulgur {
                     Theme::global_mut(cx).apply_config(&theme_config);
                     this.settings.app_settings.theme = theme_name;
                     this.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_show);
-                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                        log::error!("Failed to save settings: {}", e);
-                    }
+                    let _ = this.update_and_propagate_settings(cx);
                 }
                 cx.refresh_windows();
                 let menus = build_menus(this.settings.recent_files.get_files(), None);

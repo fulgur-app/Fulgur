@@ -78,9 +78,7 @@ impl Fulgur {
                             move |val: f64, cx: &mut App| {
                                 entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.font_size = val as f32;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -107,9 +105,7 @@ impl Fulgur {
                             move |val: f64, cx: &mut App| {
                                 entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.tab_size = val as usize;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -131,9 +127,7 @@ impl Fulgur {
                             move |val: bool, cx: &mut App| {
                                 entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.show_indent_guides = val;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -157,9 +151,7 @@ impl Fulgur {
                             move |val: bool, cx: &mut App| {
                                 entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.show_line_numbers = val;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -179,9 +171,7 @@ impl Fulgur {
                             move |val: bool, cx: &mut App| {
                                 entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.soft_wrap = val;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -213,9 +203,7 @@ impl Fulgur {
                                         .editor_settings
                                         .markdown_settings
                                         .show_markdown_preview = val;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -249,9 +237,7 @@ impl Fulgur {
                                         .editor_settings
                                         .markdown_settings
                                         .show_markdown_toolbar = val;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -282,9 +268,7 @@ impl Fulgur {
                                     } else {
                                         this.stop_file_watcher();
                                     }
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
