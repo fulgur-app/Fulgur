@@ -21,11 +21,11 @@ use crate::fulgur::{
     sync::{
         access_token::{TokenState, get_valid_token},
         synchronization::{
-            SynchronizationError, SynchronizationStatus,
-            set_sync_server_connection_status,
+            SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
         },
     },
     utils::retry::BackoffCalculator,
+    utils::sanitize::sanitize_filename,
 };
 
 /// Error type for line reading with shutdown support
@@ -137,7 +137,11 @@ pub fn connect_sse(
                 log::info!("SSE connection shutdown requested, stopping...");
                 break;
             }
-            let token = match get_valid_token(&settings_clone, Arc::clone(&token_state_clone), &http_agent_clone) {
+            let token = match get_valid_token(
+                &settings_clone,
+                Arc::clone(&token_state_clone),
+                &http_agent_clone,
+            ) {
                 Ok(t) => t,
                 Err(e) => {
                     log::error!("Failed to get valid token for SSE: {}", e);
@@ -435,17 +439,19 @@ impl Fulgur {
                 }
             }
             SseEvent::ShareAvailable(notification) => {
+                let safe_filename = sanitize_filename(&notification.file_name);
                 log::info!(
-                    "File shared from device {}: {}",
+                    "File shared from device {}: {} (sanitized: {})",
                     notification.source_device_id,
-                    notification.file_name
+                    notification.file_name,
+                    safe_filename
                 );
                 {
                     let mut files = self.shared_state(cx).pending_shared_files.lock();
                     let shared_file = fulgur_common::api::shares::SharedFileResponse {
                         id: notification.share_id,
                         source_device_id: notification.source_device_id.clone(),
-                        file_name: notification.file_name.clone(),
+                        file_name: safe_filename.clone(),
                         file_size: notification.file_size as i32,
                         content: notification.content,
                         created_at: notification.created_at,
@@ -453,8 +459,7 @@ impl Fulgur {
                     };
                     files.push(shared_file);
                 }
-                let message =
-                    SharedString::from(format!("New file received: {}", notification.file_name));
+                let message = SharedString::from(format!("New file received: {}", safe_filename));
                 window.push_notification((NotificationType::Info, message), cx);
             }
             SseEvent::Error(err) => {

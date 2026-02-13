@@ -9,6 +9,7 @@ use super::access_token::{TokenState, get_valid_token};
 use super::sse::connect_sse;
 use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
+use crate::fulgur::utils::sanitize::sanitize_filename;
 
 /// Handle ureq errors and convert them to SynchronizationError with appropriate logging
 ///
@@ -39,9 +40,7 @@ pub(super) fn handle_ureq_error(error: ureq::Error, context: &str) -> Synchroniz
             log::error!("{} (IO): {}", context, io_error);
             match io_error.kind() {
                 std::io::ErrorKind::ConnectionRefused => SynchronizationError::ConnectionFailed,
-                std::io::ErrorKind::TimedOut => {
-                    SynchronizationError::Timeout(io_error.to_string())
-                }
+                std::io::ErrorKind::TimedOut => SynchronizationError::Timeout(io_error.to_string()),
                 std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => {
                     SynchronizationError::ConnectionFailed
                 }
@@ -195,7 +194,14 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                 }
                 {
                     let mut files = pending_shared_files.lock();
-                    *files = begin_response.shares;
+                    *files = begin_response
+                        .shares
+                        .into_iter()
+                        .map(|mut share| {
+                            share.file_name = sanitize_filename(&share.file_name);
+                            share
+                        })
+                        .collect();
                 }
                 if let (Some(tx), Some(shutdown)) = (sse_tx, sse_shutdown_flag) {
                     log::info!("Starting SSE connection for real-time updates");
