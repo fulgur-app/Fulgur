@@ -1,5 +1,6 @@
-use std::{fs, path::PathBuf};
+use std::{fs, io::Write, path::PathBuf};
 
+use fs2::FileExt;
 use gpui::SharedString;
 use gpui_component::scroll::ScrollbarShow;
 use serde::{Deserialize, Serialize};
@@ -309,7 +310,8 @@ impl Settings {
     ///
     /// ### Description
     /// Core implementation for saving settings. Can be used with custom paths
-    /// for testing or alternative storage locations.
+    /// for testing or alternative storage locations. Uses file locking to prevent
+    /// corruption when multiple windows write simultaneously.
     ///
     /// ### Arguments
     /// - `path`: The path to save the settings to
@@ -318,8 +320,25 @@ impl Settings {
     /// - `Ok(())`: The result of the operation
     /// - `Err(anyhow::Error)`: If there was an error saving the settings
     pub fn save_to_path(&mut self, path: &PathBuf) -> anyhow::Result<()> {
+        // Serialize settings to JSON first (fast, no I/O)
         let json = serde_json::to_string_pretty(&self)?;
-        fs::write(path, json)?;
+
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(path)
+            .map_err(|e| anyhow::anyhow!("Failed to open settings file: {}", e))?;
+        file.lock_exclusive()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire lock on settings file: {}", e))?;
+        file.set_len(0)
+            .map_err(|e| anyhow::anyhow!("Failed to truncate settings file: {}", e))?;
+        let mut writer = std::io::BufWriter::new(&file);
+        writer
+            .write_all(json.as_bytes())
+            .map_err(|e| anyhow::anyhow!("Failed to write settings: {}", e))?;
+        writer
+            .flush()
+            .map_err(|e| anyhow::anyhow!("Failed to flush settings: {}", e))?;
         Ok(())
     }
 
@@ -327,7 +346,8 @@ impl Settings {
     ///
     /// ### Description
     /// Core implementation for loading settings. Can be used with custom paths
-    /// for testing or alternative storage locations.
+    /// for testing or alternative storage locations. Uses shared file locking to
+    /// allow concurrent reads while preventing reads during writes.
     ///
     /// ### Arguments
     /// - `path`: The path to load the settings from
@@ -336,8 +356,19 @@ impl Settings {
     /// - `Ok(Settings)`: The loaded settings
     /// - `Err(anyhow::Error)`: If there was an error loading the settings
     pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
-        let json = fs::read_to_string(path)?;
-        let settings: Settings = serde_json::from_str(&json)?;
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .open(path)
+            .map_err(|e| anyhow::anyhow!("Failed to open settings file for reading: {}", e))?;
+        file.lock_shared().map_err(|e| {
+            anyhow::anyhow!("Failed to acquire shared lock on settings file: {}", e)
+        })?;
+        let mut reader = std::io::BufReader::new(&file);
+        let mut json = String::new();
+        std::io::Read::read_to_string(&mut reader, &mut json)
+            .map_err(|e| anyhow::anyhow!("Failed to read settings: {}", e))?;
+        let settings: Settings = serde_json::from_str(&json)
+            .map_err(|e| anyhow::anyhow!("Failed to parse settings: {}", e))?;
         Ok(settings)
     }
 

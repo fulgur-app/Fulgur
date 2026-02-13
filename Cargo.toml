@@ -53,6 +53,7 @@ gpui-component = { version = "0.5.1", features = ["tree-sitter-languages"] }
 notify = "8.2.0"
 open = "5.3.3"
 flate2 = "1.1.9"
+fs2 = "0.4.3"
 
 # Security - forcing minimum versions for transitive dependencies
 # Fix RUSTSEC-2026-0007: Integer overflow in BytesMut::reserve
