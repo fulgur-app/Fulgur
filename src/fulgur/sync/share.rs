@@ -31,7 +31,7 @@ pub type Device = DeviceResponse;
 /// - `Ok(Vec<u8>)`: The compressed content as bytes
 /// - `Err(anyhow::Error)`: If the content could not be compressed
 fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
-    let mut encoder = GzEncoder::new(content.as_bytes(), Compression::best());
+    let mut encoder = GzEncoder::new(content.as_bytes(), Compression::default());
     let mut compressed = Vec::new();
     encoder.read_to_end(&mut compressed)?;
     let original_size_kb = content.len() as f64 / 1024.0;
@@ -97,15 +97,19 @@ pub fn get_devices(
     };
     let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
     let devices_url = format!("{}/api/devices", server_url);
-    let mut response = http_agent.get(&devices_url)
+    let mut response = http_agent
+        .get(&devices_url)
         .header("Authorization", &format!("Bearer {}", token))
         .call()
         .map_err(|e| handle_ureq_error(e, "Failed to get devices"))?;
 
-    let devices: Vec<Device> = response.body_mut().read_json::<Vec<Device>>().map_err(|e| {
-        log::error!("Failed to read devices: {}", e);
-        SynchronizationError::InvalidResponse(e.to_string())
-    })?;
+    let devices: Vec<Device> = response
+        .body_mut()
+        .read_json::<Vec<Device>>()
+        .map_err(|e| {
+            log::error!("Failed to read devices: {}", e);
+            SynchronizationError::InvalidResponse(e.to_string())
+        })?;
 
     log::debug!("Retrieved {} devices from server", devices.len());
     Ok(devices)
@@ -159,11 +163,14 @@ fn send_share_request(
         device_id: device_id.to_string(),
         deduplication_hash,
     };
-    let mut response = http_agent.post(share_url)
+    let mut response = http_agent
+        .post(share_url)
         .header("Authorization", &format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .send_json(encrypted_payload)
-        .map_err(|e| handle_ureq_error(e, &format!("Failed to share file to device {}", device_id)))?;
+        .map_err(|e| {
+            handle_ureq_error(e, &format!("Failed to share file to device {}", device_id))
+        })?;
     if response.status() == 200 {
         let body = response.body_mut().read_to_string().map_err(|e| {
             log::error!("Failed to read response body: {}", e);
@@ -275,7 +282,11 @@ pub fn share_file(
     if device_ids.is_empty() {
         return Err(SynchronizationError::DeviceIdsMissing);
     }
-    let token = get_valid_token(synchronization_settings, Arc::clone(&token_state), http_agent)?;
+    let token = get_valid_token(
+        synchronization_settings,
+        Arc::clone(&token_state),
+        http_agent,
+    )?;
     let share_url = format!("{}/api/share", server_url);
     let deduplication_hash = if synchronization_settings.is_deduplication {
         file_path.as_ref().map(|path| {
