@@ -14,7 +14,7 @@ use crate::fulgur::{
     settings::SynchronizationSettings,
     sync::{
         access_token::{TokenState, get_valid_token},
-        synchronization::{SynchronizationError, create_http_agent, handle_ureq_error},
+        synchronization::{SynchronizationError, handle_ureq_error},
     },
     ui::icons::CustomIcon,
     utils::crypto_helper,
@@ -82,6 +82,7 @@ pub fn get_icon(device: &Device) -> Icon {
 /// ### Arguments
 /// - `synchronization_settings`: The synchronization settings
 /// - `token_state`: Arc to the token state (thread-safe)
+/// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(Vec<Device>)`: The devices
@@ -89,14 +90,14 @@ pub fn get_icon(device: &Device) -> Icon {
 pub fn get_devices(
     synchronization_settings: &SynchronizationSettings,
     token_state: Arc<Mutex<TokenState>>,
+    http_agent: &ureq::Agent,
 ) -> Result<Vec<Device>, SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
-    let token = get_valid_token(synchronization_settings, token_state)?;
+    let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
     let devices_url = format!("{}/api/devices", server_url);
-    let agent = create_http_agent();
-    let mut response = agent.get(&devices_url)
+    let mut response = http_agent.get(&devices_url)
         .header("Authorization", &format!("Bearer {}", token))
         .call()
         .map_err(|e| handle_ureq_error(e, "Failed to get devices"))?;
@@ -138,6 +139,7 @@ fn encrypt_content_for_device(
 /// - `file_name`: The file name
 /// - `device_id`: The device ID
 /// - `deduplication_hash`: Optional SHA256 hash of the file path for server-side deduplication
+/// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(String)`: The expiration date from the response
@@ -149,6 +151,7 @@ fn send_share_request(
     file_name: &str,
     device_id: &str,
     deduplication_hash: Option<String>,
+    http_agent: &ureq::Agent,
 ) -> Result<String, SynchronizationError> {
     let encrypted_payload = ShareFilePayload {
         content: encrypted_content,
@@ -156,8 +159,7 @@ fn send_share_request(
         device_id: device_id.to_string(),
         deduplication_hash,
     };
-    let agent = create_http_agent();
-    let mut response = agent.post(share_url)
+    let mut response = http_agent.post(share_url)
         .header("Authorization", &format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .send_json(encrypted_payload)
@@ -242,6 +244,7 @@ impl ShareResult {
 /// - `devices`: The list of all devices (with their public keys)
 /// - `token_state`: Thread-safe token state
 /// - `file_path`: Optional file path (used for deduplication hash)
+/// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(ShareResult)`: Results of sharing with each device
@@ -254,6 +257,7 @@ pub fn share_file(
     devices: &[Device],
     token_state: Arc<Mutex<TokenState>>,
     file_path: Option<PathBuf>,
+    http_agent: &ureq::Agent,
 ) -> Result<ShareResult, SynchronizationError> {
     let server_url = synchronization_settings
         .server_url
@@ -271,7 +275,7 @@ pub fn share_file(
     if device_ids.is_empty() {
         return Err(SynchronizationError::DeviceIdsMissing);
     }
-    let token = get_valid_token(synchronization_settings, Arc::clone(&token_state))?;
+    let token = get_valid_token(synchronization_settings, Arc::clone(&token_state), http_agent)?;
     let share_url = format!("{}/api/share", server_url);
     let deduplication_hash = if synchronization_settings.is_deduplication {
         file_path.as_ref().map(|path| {
@@ -328,6 +332,7 @@ pub fn share_file(
             &file_name,
             device_id,
             deduplication_hash.clone(),
+            http_agent,
         ) {
             Ok(expiration_date) => {
                 successes.push((device_id.clone(), expiration_date));

@@ -33,6 +33,8 @@ pub struct SharedAppState {
     pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
     /// Flag to track if sync has been initialized (to prevent multiple initializations)
     pub sync_initialized: Arc<AtomicBool>,
+    /// Shared HTTP agent for connection pooling across all requests
+    pub http_agent: Arc<ureq::Agent>,
 }
 
 impl gpui::Global for SharedAppState {}
@@ -93,6 +95,7 @@ impl SharedAppState {
             update_info: Arc::new(Mutex::new(None)),
             pending_files_from_macos,
             sync_initialized: Arc::new(AtomicBool::new(false)),
+            http_agent: Arc::new(ureq::Agent::new_with_defaults()),
         }
     }
 }

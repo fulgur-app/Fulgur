@@ -10,19 +10,6 @@ use super::sse::connect_sse;
 use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 
-/// Create a ureq agent with configured timeouts for all sync operations
-///
-/// ### Description
-/// ureq 3.x `Agent::new_with_defaults()` provides:
-/// - **30 second connection timeout**: Prevents indefinite hanging when establishing connections
-/// - **No read timeout**: Suitable for both quick API calls and long-lived SSE connections
-///
-/// ### Returns
-/// - `ureq::Agent`: A configured HTTP agent with appropriate timeouts
-pub(super) fn create_http_agent() -> ureq::Agent {
-    ureq::Agent::new_with_defaults()
-}
-
 /// Handle ureq errors and convert them to SynchronizationError with appropriate logging
 ///
 /// ### Description
@@ -94,6 +81,7 @@ pub(super) fn handle_ureq_error(error: ureq::Error, context: &str) -> Synchroniz
 pub fn initial_synchronization(
     synchronization_settings: &SynchronizationSettings,
     token_state: Arc<Mutex<TokenState>>,
+    http_agent: &ureq::Agent,
 ) -> Result<BeginResponse, SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
@@ -101,13 +89,12 @@ pub fn initial_synchronization(
     let Some(public_key) = synchronization_settings.public_key.clone() else {
         return Err(SynchronizationError::MissingEncryptionKey); //TODO
     };
-    let token = get_valid_token(synchronization_settings, token_state)?;
+    let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
     let begin_url = format!("{}/api/begin", server_url);
     let payload = InitialSynchronizationPayload {
         public_key: public_key,
     };
-    let agent = create_http_agent();
-    let mut response = agent
+    let mut response = http_agent
         .post(begin_url)
         .header("Authorization", &format!("Bearer {}", token))
         .send_json(payload)
@@ -164,6 +151,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     let sse_tx = entity.read(cx).sse_state.sse_event_tx.clone();
     let sse_shutdown_flag = entity.read(cx).sse_state.sse_shutdown_flag.clone();
     let token_state = shared.token_state.clone();
+    let http_agent = Arc::clone(&shared.http_agent);
     thread::spawn(move || {
         // Small delay to ensure app initialization doesn't block
         thread::sleep(Duration::from_millis(100));
@@ -193,6 +181,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         match initial_synchronization(
             &settings.app_settings.synchronization_settings,
             Arc::clone(&token_state),
+            &http_agent,
         ) {
             Ok(begin_response) => {
                 log::info!("Successfully connected to sync server");
@@ -216,6 +205,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                         shutdown,
                         sync_server_connection_status.clone(),
                         Arc::clone(&token_state),
+                        Arc::clone(&http_agent),
                     ) {
                         log::error!("Failed to start SSE connection: {}", e);
                     }
@@ -282,7 +272,8 @@ pub fn perform_initial_synchronization(
         .clone();
     let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
     let token_state = Arc::clone(&shared.token_state);
-    let result = initial_synchronization(&synchronization_settings, token_state);
+    let http_agent = &shared.http_agent;
+    let result = initial_synchronization(&synchronization_settings, token_state, http_agent);
     let (notification, sync_server_connection_status) = match result {
         Ok(begin_response) => {
             let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();

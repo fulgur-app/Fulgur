@@ -174,6 +174,7 @@ fn handle_share_file(
             &devices,
             Arc::clone(&this.shared_state(cx).token_state),
             file_path,
+            &this.shared_state(cx).http_agent,
         )
     });
     match result {
@@ -239,9 +240,11 @@ impl Fulgur {
             let synchronization_settings =
                 self.settings.app_settings.synchronization_settings.clone();
             let token_state = Arc::clone(&self.shared_state(cx).token_state);
+            let http_agent = &self.shared_state(cx).http_agent;
             let result = crate::fulgur::sync::synchronization::initial_synchronization(
                 &synchronization_settings,
                 token_state,
+                http_agent,
             );
             match result {
                 Ok(begin_response) => {
@@ -288,6 +291,7 @@ impl Fulgur {
         let devices = get_devices(
             &synchronization_settings,
             Arc::clone(&self.shared_state(cx).token_state),
+            &self.shared_state(cx).http_agent,
         );
         let devices = match devices {
             Ok(devices) => devices,

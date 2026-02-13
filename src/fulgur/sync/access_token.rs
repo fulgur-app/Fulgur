@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::fulgur::settings::SynchronizationSettings;
-use crate::fulgur::sync::synchronization::{SynchronizationError, create_http_agent, handle_ureq_error};
+use crate::fulgur::sync::synchronization::{SynchronizationError, handle_ureq_error};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use fulgur_common::api::sync::AccessTokenResponse;
 use parking_lot::Mutex;
@@ -36,12 +36,14 @@ impl TokenState {
 ///
 /// ### Arguments
 /// - `synchronization_settings`: The synchronization settings containing device key
+/// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(AccessTokenResponse)`: The JWT access token and expiration info
 /// - `Err(SynchronizationError)`: If the token request failed
 fn request_access_token(
     synchronization_settings: &SynchronizationSettings,
+    http_agent: &ureq::Agent,
 ) -> Result<AccessTokenResponse, SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
@@ -57,8 +59,7 @@ fn request_access_token(
     };
     let token_url = format!("{}/api/token", server_url);
     log::debug!("Requesting JWT access token from server");
-    let agent = create_http_agent();
-    let mut response = agent.post(&token_url)
+    let mut response = http_agent.post(&token_url)
         .header("Authorization", &format!("Bearer {}", device_api_key))
         .header("X-User-Email", email)
         .send("")
@@ -110,6 +111,7 @@ fn is_token_valid(expires_at: &OffsetDateTime) -> bool {
 pub fn get_valid_token(
     synchronization_settings: &SynchronizationSettings,
     token_state: Arc<Mutex<TokenState>>,
+    http_agent: &ureq::Agent,
 ) -> Result<String, SynchronizationError> {
     {
         let state = token_state.lock();
@@ -143,7 +145,7 @@ pub fn get_valid_token(
         }
     }
     log::debug!("Access token expired or missing, requesting new token");
-    let token_response = request_access_token(synchronization_settings)?;
+    let token_response = request_access_token(synchronization_settings, http_agent)?;
     let expires_at = OffsetDateTime::parse(
         &token_response.expires_at,
         &time::format_description::well_known::Rfc3339,

@@ -21,7 +21,7 @@ use crate::fulgur::{
     sync::{
         access_token::{TokenState, get_valid_token},
         synchronization::{
-            SynchronizationError, SynchronizationStatus, create_http_agent,
+            SynchronizationError, SynchronizationStatus,
             set_sync_server_connection_status,
         },
     },
@@ -107,6 +107,7 @@ fn read_line_with_timeout<R: Read>(
 /// - `event_tx`: Channel sender for sending SSE events to the main thread
 /// - `shutdown_flag`: Atomic boolean flag to signal the SSE thread to shutdown
 /// - `sync_server_connection_status`: Arc-wrapped connection status to update on connection/disconnection
+/// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(())`: If the SSE connection thread was spawned successfully
@@ -117,6 +118,7 @@ pub fn connect_sse(
     shutdown_flag: Arc<AtomicBool>,
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
     token_state: Arc<Mutex<TokenState>>,
+    http_agent: Arc<ureq::Agent>,
 ) -> Result<(), SynchronizationError> {
     let server_url = synchronization_settings
         .server_url
@@ -125,6 +127,7 @@ pub fn connect_sse(
     let sse_url = format!("{}/api/sse", server_url);
     let settings_clone = synchronization_settings.clone();
     let token_state_clone = Arc::clone(&token_state);
+    let http_agent_clone = Arc::clone(&http_agent);
     thread::spawn(move || {
         // Exponential backoff for reconnection attempts (1s, 2s, 4s, 8s... up to 5 minutes)
         let mut backoff = BackoffCalculator::default_settings();
@@ -134,7 +137,7 @@ pub fn connect_sse(
                 log::info!("SSE connection shutdown requested, stopping...");
                 break;
             }
-            let token = match get_valid_token(&settings_clone, Arc::clone(&token_state_clone)) {
+            let token = match get_valid_token(&settings_clone, Arc::clone(&token_state_clone), &http_agent_clone) {
                 Ok(t) => t,
                 Err(e) => {
                     log::error!("Failed to get valid token for SSE: {}", e);
@@ -149,8 +152,7 @@ pub fn connect_sse(
                 }
             };
             log::info!("Connecting to SSE endpoint: {}", sse_url);
-            let agent = create_http_agent();
-            let response = match agent
+            let response = match http_agent_clone
                 .get(&sse_url)
                 .header("Authorization", &format!("Bearer {}", token))
                 .header("Accept", "text/event-stream")
@@ -362,12 +364,14 @@ impl Fulgur {
             let settings = self.settings.clone();
             let sync_status = self.shared_state(cx).sync_server_connection_status.clone();
             let token_state = Arc::clone(&self.shared_state(cx).token_state);
+            let http_agent = Arc::clone(&self.shared_state(cx).http_agent);
             thread::spawn(move || {
                 // Small delay to ensure old connection is fully stopped
                 thread::sleep(Duration::from_millis(200));
                 match super::synchronization::initial_synchronization(
                     &settings.app_settings.synchronization_settings,
                     Arc::clone(&token_state),
+                    &http_agent,
                 ) {
                     Ok(_) => {
                         log::info!("Initial sync succeeded, starting new SSE connection");
@@ -377,6 +381,7 @@ impl Fulgur {
                             sse_shutdown_flag,
                             sync_status,
                             token_state,
+                            http_agent,
                         ) {
                             log::error!("Failed to start new SSE connection: {}", e);
                         }
