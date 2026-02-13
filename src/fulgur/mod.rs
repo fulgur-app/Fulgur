@@ -1,9 +1,9 @@
 pub mod files;
 pub mod settings;
 pub mod shared_state;
-mod state_operations;
+pub mod state_operations;
 pub mod state_persistence;
-mod sync;
+pub mod sync;
 mod ui;
 pub mod utils;
 pub mod window_manager;

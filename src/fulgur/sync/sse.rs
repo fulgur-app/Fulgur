@@ -205,7 +205,7 @@ impl SseEvent {
     ///
     /// ### Returns
     /// - `SseEvent`: The parsed event
-    fn parse(event_type: &str, data: &str) -> Self {
+    pub fn parse(event_type: &str, data: &str) -> Self {
         match event_type {
             "heartbeat" => match serde_json::from_str::<HeartbeatData>(data) {
                 Ok(hb) => SseEvent::Heartbeat {

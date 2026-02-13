@@ -12,6 +12,73 @@ use crate::fulgur::{
 use gpui::*;
 use gpui_component::{highlighter::Language, input::TabSize};
 use std::fs;
+use std::path::PathBuf;
+
+/// Decision for how to restore a tab from saved state
+#[derive(Debug, PartialEq, Eq)]
+pub enum TabRestoreDecision {
+    /// Load content from file on disk
+    LoadFromFile { path: PathBuf },
+    /// Use saved content with file path
+    UseSavedContentWithPath { path: PathBuf, content: String },
+    /// Use saved content without file path (unsaved tab)
+    UseSavedContentNoPath { content: String },
+    /// Skip this tab (cannot be restored)
+    Skip,
+}
+
+/// Determine how to restore a tab based on saved state and file system state
+///
+/// ### Arguments
+/// - `saved_path`: The saved file path (if any)
+/// - `saved_content`: The saved content (if any)
+/// - `last_saved`: The last saved timestamp as ISO 8601 string (if any)
+/// - `file_exists`: Whether the file exists on disk
+/// - `file_modified_time`: The file's modification time as ISO 8601 string (if it exists)
+/// - `can_read_file`: Whether the file can be read successfully
+///
+/// ### Returns
+/// - `TabRestoreDecision`: The decision for how to restore this tab
+pub fn determine_tab_restore_strategy(
+    saved_path: Option<PathBuf>,
+    saved_content: Option<String>,
+    last_saved: Option<String>,
+    file_exists: bool,
+    file_modified_time: Option<String>,
+    can_read_file: bool,
+) -> TabRestoreDecision {
+    match (saved_path, saved_content) {
+        // Case 1: Has both path and content (modified file)
+        (Some(path), Some(content)) => {
+            if file_exists {
+                if let (Some(ref saved_time), Some(ref file_time)) = (last_saved, file_modified_time) {
+                    if is_file_newer(file_time, saved_time) {
+                        if can_read_file {
+                            TabRestoreDecision::LoadFromFile { path }
+                        } else {
+                            TabRestoreDecision::UseSavedContentWithPath { path, content }
+                        }
+                    } else {
+                        TabRestoreDecision::UseSavedContentWithPath { path, content }
+                    }
+                } else {
+                    TabRestoreDecision::UseSavedContentWithPath { path, content }
+                }
+            } else {
+                TabRestoreDecision::UseSavedContentNoPath { content }
+            }
+        }
+        (Some(path), None) => {
+            if file_exists && can_read_file {
+                TabRestoreDecision::LoadFromFile { path }
+            } else {
+                TabRestoreDecision::Skip
+            }
+        }
+        (None, Some(content)) => TabRestoreDecision::UseSavedContentNoPath { content },
+        (None, None) => TabRestoreDecision::Skip,
+    }
+}
 
 impl Fulgur {
     /// Save the current app state to disk (saves all windows in multi-window mode)
@@ -135,45 +202,42 @@ impl Fulgur {
         cx: &mut App,
     ) -> Option<EditorTab> {
         log::debug!("Restoring tab: {}", tab_state.title);
-        let is_modified = tab_state.content.is_some();
-        let (content, path, encoding) = if let Some(saved_path) = tab_state.file_path {
-            if let Some(saved_content) = tab_state.content {
-                if saved_path.exists() {
-                    if let Some(ref saved_time) = tab_state.last_saved {
-                        if let Some(file_time) = get_file_modified_time(&saved_path) {
-                            if is_file_newer(&file_time, saved_time) {
-                                if let Ok(bytes) = fs::read(&saved_path) {
-                                    let (enc, file_content) = detect_encoding_and_decode(&bytes);
-                                    (file_content, Some(saved_path), enc)
-                                } else {
-                                    (saved_content, Some(saved_path), UTF_8.to_string())
-                                }
-                            } else {
-                                (saved_content, Some(saved_path), UTF_8.to_string())
-                            }
-                        } else {
-                            (saved_content, Some(saved_path), UTF_8.to_string())
-                        }
-                    } else {
-                        (saved_content, Some(saved_path), UTF_8.to_string())
-                    }
-                } else {
-                    (saved_content, None, UTF_8.to_string())
-                }
-            } else if saved_path.exists() {
-                if let Ok(bytes) = fs::read(&saved_path) {
-                    let (enc, file_content) = detect_encoding_and_decode(&bytes);
-                    (file_content, Some(saved_path), enc)
-                } else {
-                    return None;
-                }
-            } else {
-                return None;
+
+        let file_exists = tab_state
+            .file_path
+            .as_ref()
+            .map(|p| p.exists())
+            .unwrap_or(false);
+        let file_modified_time = tab_state
+            .file_path
+            .as_ref()
+            .and_then(|p| get_file_modified_time(p));
+        let can_read_file = tab_state
+            .file_path
+            .as_ref()
+            .map(|p| fs::read(p).is_ok())
+            .unwrap_or(false);
+        let decision = determine_tab_restore_strategy(
+            tab_state.file_path.clone(),
+            tab_state.content.clone(),
+            tab_state.last_saved,
+            file_exists,
+            file_modified_time,
+            can_read_file,
+        );
+        let (content, path, encoding, is_modified) = match decision {
+            TabRestoreDecision::LoadFromFile { path } => {
+                let bytes = fs::read(&path).ok()?;
+                let (enc, file_content) = detect_encoding_and_decode(&bytes);
+                (file_content, Some(path), enc, false)
             }
-        } else if let Some(saved_content) = tab_state.content {
-            (saved_content, None, UTF_8.to_string())
-        } else {
-            return None;
+            TabRestoreDecision::UseSavedContentWithPath { path, content } => {
+                (content, Some(path), UTF_8.to_string(), true)
+            }
+            TabRestoreDecision::UseSavedContentNoPath { content } => {
+                (content, None, UTF_8.to_string(), true)
+            }
+            TabRestoreDecision::Skip => return None,
         };
         let tab = if let Some(file_path) = path {
             EditorTab::from_file(
