@@ -161,8 +161,8 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     let sync_server_connection_status = shared.sync_server_connection_status.clone();
     let pending_shared_files = shared.pending_shared_files.clone();
     let device_name = shared.device_name.clone();
-    let sse_tx = entity.read(cx).sse_event_tx.clone();
-    let sse_shutdown_flag = entity.read(cx).sse_shutdown_flag.clone();
+    let sse_tx = entity.read(cx).sse_state.sse_event_tx.clone();
+    let sse_shutdown_flag = entity.read(cx).sse_state.sse_shutdown_flag.clone();
     let token_state = shared.token_state.clone();
     thread::spawn(move || {
         // Small delay to ensure app initialization doesn't block

@@ -192,17 +192,17 @@ impl Fulgur {
         match event {
             FileWatchEvent::Modified(path) => {
                 let now = Instant::now();
-                if let Some(&last_time) = self.last_file_events.get(&path)
+                if let Some(&last_time) = self.file_watch_state.last_file_events.get(&path)
                     && now.duration_since(last_time) < Duration::from_millis(500)
                 {
                     return;
                 }
-                if let Some(&save_time) = self.last_file_saves.get(&path)
+                if let Some(&save_time) = self.file_watch_state.last_file_saves.get(&path)
                     && now.duration_since(save_time) < Duration::from_millis(500)
                 {
                     return;
                 }
-                self.last_file_events.insert(path.clone(), now);
+                self.file_watch_state.last_file_events.insert(path.clone(), now);
                 if let Some(tab_index) = self.find_tab_by_path(&path)
                     && let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index)
                 {
@@ -212,7 +212,7 @@ impl Fulgur {
                         if is_active {
                             self.show_file_conflict_dialog(path, tab_index, window, cx);
                         } else {
-                            self.pending_conflicts.insert(path, tab_index);
+                            self.file_watch_state.pending_conflicts.insert(path, tab_index);
                         }
                     } else {
                         self.reload_tab_from_disk(tab_index, window, cx);
@@ -260,16 +260,16 @@ impl Fulgur {
                 log::warn!("Failed to watch file {}: {}", path.display(), e);
             }
         }
-        self.file_watcher = Some(watcher);
-        self.file_watch_events = Some(receiver);
+        self.file_watch_state.file_watcher = Some(watcher);
+        self.file_watch_state.file_watch_events = Some(receiver);
     }
 
     /// Stop the file watcher
     pub fn stop_file_watcher(&mut self) {
-        if let Some(mut watcher) = self.file_watcher.take() {
+        if let Some(mut watcher) = self.file_watch_state.file_watcher.take() {
             watcher.stop();
         }
-        self.file_watch_events = None;
+        self.file_watch_state.file_watch_events = None;
     }
 
     /// Add a file to the watcher
@@ -277,7 +277,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `path`: The path to the file to watch
     pub fn watch_file(&mut self, path: &std::path::Path) {
-        if let Some(watcher) = &mut self.file_watcher
+        if let Some(watcher) = &mut self.file_watch_state.file_watcher
             && let Err(e) = watcher.watch_file(path.to_path_buf())
         {
             log::warn!("Failed to watch file {}: {}", path.display(), e);
@@ -289,7 +289,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `path`: The path to the file to unwatch
     pub fn unwatch_file(&mut self, path: &PathBuf) {
-        if let Some(watcher) = &mut self.file_watcher {
+        if let Some(watcher) = &mut self.file_watch_state.file_watcher {
             watcher.unwatch_file(path);
         }
     }

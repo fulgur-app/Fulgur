@@ -109,7 +109,7 @@ impl Fulgur {
             self.active_tab_index = Some(index);
             let pending_path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) {
                 if let Some(path) = &editor_tab.file_path {
-                    if self.pending_conflicts.contains_key::<PathBuf>(path) {
+                    if self.file_watch_state.pending_conflicts.contains_key::<PathBuf>(path) {
                         Some(path.clone())
                     } else {
                         None
@@ -121,11 +121,11 @@ impl Fulgur {
                 None
             };
             if let Some(path) = pending_path {
-                self.pending_conflicts.remove(&path);
+                self.file_watch_state.pending_conflicts.remove(&path);
                 self.show_file_conflict_dialog(path, index, window, cx);
             }
             self.focus_active_tab(window, cx);
-            if self.show_search {
+            if self.search_state.show_search {
                 self.perform_search(window, cx);
             }
             cx.notify();

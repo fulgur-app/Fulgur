@@ -18,7 +18,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub(super) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_search = false;
+        self.search_state.show_search = false;
         if let Some(active_index) = self.active_tab_index
             && let Some(tab) = self.tabs.get(active_index)
             && let Some(editor_tab) = tab.as_editor()
@@ -29,8 +29,8 @@ impl Fulgur {
                 }
             });
         }
-        self.search_matches.clear();
-        self.current_match_index = None;
+        self.search_state.search_matches.clear();
+        self.search_state.current_match_index = None;
         self.focus_active_tab(window, cx);
         cx.notify();
     }
@@ -41,9 +41,9 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn find_in_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_search = !self.show_search;
-        if self.show_search {
-            let search_focus = self.search_input.read(cx).focus_handle(cx);
+        self.search_state.show_search = !self.search_state.show_search;
+        if self.search_state.show_search {
+            let search_focus = self.search_state.search_input.read(cx).focus_handle(cx);
             window.focus(&search_focus);
             self.perform_search(window, cx);
         } else {
@@ -58,9 +58,9 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.search_matches.clear();
-        self.current_match_index = None;
-        let query = self.search_input.read(cx).text().to_string();
+        self.search_state.search_matches.clear();
+        self.search_state.current_match_index = None;
+        let query = self.search_state.search_input.read(cx).text().to_string();
         if let Some(active_index) = self.active_tab_index
             && let Some(tab) = self.tabs.get(active_index)
             && let Some(editor_tab) = tab.as_editor()
@@ -76,10 +76,10 @@ impl Fulgur {
             }
             let text = editor_tab.content.read(cx).text().to_string();
             let cursor_pos = editor_tab.content.read(cx).cursor();
-            self.search_matches = self.find_matches(&text, &query);
+            self.search_state.search_matches = self.find_matches(&text, &query);
             editor_tab.content.update(cx, |content, cx| {
                 if let Some(diagnostics) = content.diagnostics_mut() {
-                    for search_match in &self.search_matches {
+                    for search_match in &self.search_state.search_matches {
                         let diagnostic = Diagnostic {
                             range: lsp_types::Range {
                                 start: Position {
@@ -107,17 +107,17 @@ impl Fulgur {
                 }
                 cx.notify();
             });
-            if !self.search_matches.is_empty() {
+            if !self.search_state.search_matches.is_empty() {
                 let mut found_after_cursor = false;
-                for (idx, m) in self.search_matches.iter().enumerate() {
+                for (idx, m) in self.search_state.search_matches.iter().enumerate() {
                     if m.start >= cursor_pos {
-                        self.current_match_index = Some(idx);
+                        self.search_state.current_match_index = Some(idx);
                         found_after_cursor = true;
                         break;
                     }
                 }
                 if !found_after_cursor {
-                    self.current_match_index = Some(0);
+                    self.search_state.current_match_index = Some(0);
                 }
                 self.highlight_current_match(window, cx);
             }
@@ -139,12 +139,12 @@ impl Fulgur {
         if query.is_empty() {
             return matches;
         }
-        let search_text = if self.match_case {
+        let search_text = if self.search_state.match_case {
             text.to_string()
         } else {
             text.to_lowercase()
         };
-        let search_query = if self.match_case {
+        let search_query = if self.search_state.match_case {
             query.to_string()
         } else {
             query.to_lowercase()
@@ -153,7 +153,7 @@ impl Fulgur {
         while let Some(pos) = search_text[start_pos..].find(&search_query) {
             let absolute_pos = start_pos + pos;
             let end_pos = absolute_pos + query.len();
-            if self.match_whole_word {
+            if self.search_state.match_whole_word {
                 let is_word_start = absolute_pos == 0
                     || !text
                         .chars()
@@ -213,13 +213,13 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub(super) fn search_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.search_matches.is_empty() {
+        if self.search_state.search_matches.is_empty() {
             return;
         }
-        if let Some(current) = self.current_match_index {
-            self.current_match_index = Some((current + 1) % self.search_matches.len());
+        if let Some(current) = self.search_state.current_match_index {
+            self.search_state.current_match_index = Some((current + 1) % self.search_state.search_matches.len());
         } else {
-            self.current_match_index = Some(0);
+            self.search_state.current_match_index = Some(0);
         }
         self.highlight_current_match(window, cx);
         cx.notify();
@@ -231,17 +231,17 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub(super) fn search_previous(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.search_matches.is_empty() {
+        if self.search_state.search_matches.is_empty() {
             return;
         }
-        if let Some(current) = self.current_match_index {
-            self.current_match_index = Some(if current == 0 {
-                self.search_matches.len() - 1
+        if let Some(current) = self.search_state.current_match_index {
+            self.search_state.current_match_index = Some(if current == 0 {
+                self.search_state.search_matches.len() - 1
             } else {
                 current - 1
             });
         } else {
-            self.current_match_index = Some(0);
+            self.search_state.current_match_index = Some(0);
         }
         self.highlight_current_match(window, cx);
         cx.notify();
@@ -253,8 +253,8 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     fn highlight_current_match(&self, window: &mut Window, cx: &mut App) {
-        if let Some(match_index) = self.current_match_index
-            && let Some(search_match) = self.search_matches.get(match_index)
+        if let Some(match_index) = self.search_state.current_match_index
+            && let Some(search_match) = self.search_state.search_matches.get(match_index)
             && let Some(active_index) = self.active_tab_index
             && let Some(tab) = self.tabs.get(active_index)
             && let Some(editor_tab) = tab.as_editor()
@@ -278,13 +278,13 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub(super) fn replace_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(match_index) = self.current_match_index
-            && let Some(search_match) = self.search_matches.get(match_index).cloned()
+        if let Some(match_index) = self.search_state.current_match_index
+            && let Some(search_match) = self.search_state.search_matches.get(match_index).cloned()
             && let Some(active_index) = self.active_tab_index
             && let Some(tab) = self.tabs.get_mut(active_index)
             && let Some(editor_tab) = tab.as_editor_mut()
         {
-            let replace_text = self.replace_input.read(cx).text().to_string();
+            let replace_text = self.search_state.replace_input.read(cx).text().to_string();
             let text = editor_tab.content.read(cx).text().to_string();
             let mut new_text = String::new();
             new_text.push_str(&text[..search_match.start]);
@@ -294,11 +294,11 @@ impl Fulgur {
                 content.set_value(&new_text, window, cx);
             });
             self.perform_search(window, cx);
-            if !self.search_matches.is_empty() {
-                if match_index < self.search_matches.len() {
-                    self.current_match_index = Some(match_index);
+            if !self.search_state.search_matches.is_empty() {
+                if match_index < self.search_state.search_matches.len() {
+                    self.search_state.current_match_index = Some(match_index);
                 } else {
-                    self.current_match_index = Some(0);
+                    self.search_state.current_match_index = Some(0);
                 }
                 self.highlight_current_match(window, cx);
             }
@@ -312,28 +312,28 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub(super) fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.search_matches.is_empty() {
+        if self.search_state.search_matches.is_empty() {
             return;
         }
         if let Some(active_index) = self.active_tab_index {
-            let replace_text = self.replace_input.read(cx).text().to_string();
-            let search_query = self.search_input.read(cx).text().to_string();
-            let match_case = self.match_case;
-            let match_whole_word = self.match_whole_word;
+            let replace_text = self.search_state.replace_input.read(cx).text().to_string();
+            let search_query = self.search_state.search_input.read(cx).text().to_string();
+            let match_case = self.search_state.match_case;
+            let match_whole_word = self.search_state.match_whole_word;
             if let Some(tab) = self.tabs.get(active_index)
                 && let Some(editor_tab) = tab.as_editor()
             {
                 let text = editor_tab.content.read(cx).text().to_string();
                 let new_text = if match_case {
                     if match_whole_word {
-                        replace_whole_words(&self.search_matches, &text, &replace_text)
+                        replace_whole_words(&self.search_state.search_matches, &text, &replace_text)
                     } else {
                         text.replace(&search_query, &replace_text)
                     }
                 } else if match_whole_word {
-                    replace_whole_words_case_insensitive(&self.search_matches, &text, &replace_text)
+                    replace_whole_words_case_insensitive(&self.search_state.search_matches, &text, &replace_text)
                 } else {
-                    replace_case_insensitive(&self.search_matches, &text, &replace_text)
+                    replace_case_insensitive(&self.search_state.search_matches, &text, &replace_text)
                 };
                 if let Some(tab) = self.tabs.get_mut(active_index)
                     && let Some(editor_tab_mut) = tab.as_editor_mut()
@@ -342,8 +342,8 @@ impl Fulgur {
                         content.set_value(&new_text, window, cx);
                     });
                 }
-                self.search_matches.clear();
-                self.current_match_index = None;
+                self.search_state.search_matches.clear();
+                self.search_state.current_match_index = None;
             }
         }
         cx.notify();

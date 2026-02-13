@@ -43,39 +43,118 @@ use ui::{
     themes,
 };
 
+/// File watching state for external file change detection
+pub struct FileWatchState {
+    pub file_watcher: Option<FileWatcher>,
+    pub file_watch_events: Option<Receiver<FileWatchEvent>>,
+    pub last_file_events: HashMap<PathBuf, Instant>,
+    pub last_file_saves: HashMap<PathBuf, Instant>,
+    pub pending_conflicts: HashMap<PathBuf, usize>,
+}
+
+impl FileWatchState {
+    /// Create a new FileWatchState with all fields initialized to default/empty values
+    ///
+    /// ### Returns
+    /// `Self: a new FileWatchState
+    pub fn new() -> Self {
+        Self {
+            file_watcher: None,
+            file_watch_events: None,
+            last_file_events: HashMap::new(),
+            last_file_saves: HashMap::new(),
+            pending_conflicts: HashMap::new(),
+        }
+    }
+}
+
+/// Server-Sent Events state for sync functionality
+pub struct SseState {
+    pub sse_events: Option<Receiver<sync::sse::SseEvent>>,
+    pub sse_event_tx: Option<std::sync::mpsc::Sender<sync::sse::SseEvent>>,
+    pub sse_shutdown_flag: Option<Arc<AtomicBool>>,
+    pub last_sse_event: Option<Instant>,
+}
+
+impl SseState {
+    /// Create a new SseState with all fields initialized to None
+    ///
+    /// ### Returns
+    /// `Self`: a new SseState
+    pub fn new() -> Self {
+        Self {
+            sse_events: None,
+            sse_event_tx: None,
+            sse_shutdown_flag: None,
+            last_sse_event: None,
+        }
+    }
+}
+
+/// Search and replace functionality state
+///
+/// This struct groups all state related to the search/replace feature.
+/// It manages the search UI state, search results, and the subscription
+/// to search input changes.
+pub struct SearchState {
+    pub show_search: bool,
+    pub search_input: Entity<InputState>,
+    pub replace_input: Entity<InputState>,
+    pub match_case: bool,
+    pub match_whole_word: bool,
+    pub search_matches: Vec<SearchMatch>,
+    pub current_match_index: Option<usize>,
+    pub last_search_query: String,
+    pub search_subscription: gpui::Subscription,
+}
+
+impl SearchState {
+    /// Create a new SearchState
+    ///
+    /// ### Arguments
+    /// - `search_input`: The search input entity
+    /// - `replace_input`: The replace input entity
+    /// - `search_subscription`: The subscription to search input changes
+    ///
+    /// ### Returns
+    /// `Self`: A new SearchState instance with default values
+    pub fn new(
+        search_input: Entity<InputState>,
+        replace_input: Entity<InputState>,
+        search_subscription: gpui::Subscription,
+    ) -> Self {
+        Self {
+            show_search: false,
+            search_input,
+            replace_input,
+            match_case: false,
+            match_whole_word: false,
+            search_matches: Vec::new(),
+            current_match_index: None,
+            last_search_query: String::new(),
+            search_subscription,
+        }
+    }
+}
+
 pub struct Fulgur {
-    pub window_id: WindowId,                             // The ID of this window
-    focus_handle: FocusHandle,                           // The focus handle for the application
-    title_bar: Entity<CustomTitleBar>,                   // The title bar of the application
-    tabs: Vec<Tab>,                                      // The tabs in the application
-    active_tab_index: Option<usize>,                     // Index of the active tab
-    next_tab_id: usize,                                  // The next tab ID
-    show_search: bool, // Flag to indicate that the search bar should be shown
-    search_input: Entity<InputState>, // Input for the search input in the search bar
-    replace_input: Entity<InputState>, // Input for the replace input in the search bar
-    match_case: bool,  // Flag to indicate that the search should be case-sensitive
-    match_whole_word: bool, // Flag to indicate that the search should match whole words only
-    search_matches: Vec<SearchMatch>, // Search matches found in the current search
-    current_match_index: Option<usize>, // Index of the current search match
-    _search_subscription: gpui::Subscription, // Subscription for the search input
-    last_search_query: String, // Last search query entered by the user
+    pub window_id: WindowId,                    // The ID of this window
+    focus_handle: FocusHandle,                  // The focus handle for the application
+    title_bar: Entity<CustomTitleBar>,          // The title bar of the application
+    tabs: Vec<Tab>,                             // The tabs in the application
+    active_tab_index: Option<usize>,            // Index of the active tab
+    next_tab_id: usize,                         // The next tab ID
+    pub search_state: SearchState,              // Search and replace functionality state
     pub jump_to_line_input: Entity<InputState>, // Input for jumping to a line in the editor
-    pending_jump: Option<editor_tab::Jump>, // Pending jump to line action
+    pending_jump: Option<editor_tab::Jump>,     // Pending jump to line action
     jump_to_line_dialog_open: bool, // Flag to indicate that the jump to line dialog is open
-    pub settings: Settings, // The settings for the application (local copy for fast access)
+    pub settings: Settings,         // The settings for the application (local copy for fast access)
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
     local_settings_version: u64, // Track the version of settings this window has loaded
     rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
-    file_watcher: Option<FileWatcher>, // File watcher for external file changes
-    file_watch_events: Option<Receiver<FileWatchEvent>>, // Channel for file watch events
-    last_file_events: HashMap<PathBuf, Instant>, // Track last event time per file for debouncing
-    last_file_saves: HashMap<PathBuf, Instant>, // Track when Fulgur saves files to ignore self-triggered events
-    pending_conflicts: HashMap<PathBuf, usize>, // Deferred conflicts for inactive tabs (path -> tab_index)
-    sse_events: Option<Receiver<sync::sse::SseEvent>>, // Channel for SSE events from server
-    sse_event_tx: Option<std::sync::mpsc::Sender<sync::sse::SseEvent>>, // Sender for SSE connection
-    sse_shutdown_flag: Option<Arc<AtomicBool>>, // Flag to signal SSE thread to shutdown
-    last_sse_event: Option<Instant>,            // Track last SSE event time for debouncing
+    pub file_watch_state: FileWatchState, // File watching state for external file change detection
+    pub sse_state: SseState, // Server-Sent Events state for sync functionality
     pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
 }
@@ -263,10 +342,10 @@ impl Fulgur {
         let jump_to_line_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
         let entity = cx.new(|cx| {
-            let _search_subscription =
+            let search_subscription =
                 cx.subscribe(&search_input, |this: &mut Self, _, ev: &InputEvent, cx| {
                     if let InputEvent::Change = ev
-                        && this.show_search
+                        && this.search_state.show_search
                     {
                         cx.notify();
                     }
@@ -278,15 +357,7 @@ impl Fulgur {
                 tabs: vec![],
                 active_tab_index: None,
                 next_tab_id: 0,
-                show_search: false,
-                search_input,
-                replace_input,
-                match_case: false,
-                match_whole_word: false,
-                search_matches: Vec::new(),
-                current_match_index: None,
-                _search_subscription,
-                last_search_query: String::new(),
+                search_state: SearchState::new(search_input, replace_input, search_subscription),
                 jump_to_line_input,
                 pending_jump: None,
                 jump_to_line_dialog_open: false,
@@ -295,15 +366,8 @@ impl Fulgur {
                 local_settings_version: 0,
                 rendered_tabs: HashSet::new(),
                 tabs_pending_update: HashSet::new(),
-                file_watcher: None,
-                file_watch_events: None,
-                last_file_events: HashMap::new(),
-                last_file_saves: HashMap::new(),
-                pending_conflicts: HashMap::new(),
-                sse_events: None,
-                sse_event_tx: None,
-                sse_shutdown_flag: None,
-                last_sse_event: None,
+                file_watch_state: FileWatchState::new(),
+                sse_state: SseState::new(),
                 pending_notification: None,
                 cached_window_bounds: None,
             }
@@ -311,9 +375,9 @@ impl Fulgur {
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
         let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
         entity.update(cx, |this, cx| {
-            this.sse_events = Some(sse_rx);
-            this.sse_event_tx = Some(sse_tx);
-            this.sse_shutdown_flag = Some(sse_shutdown_flag);
+            this.sse_state.sse_events = Some(sse_rx);
+            this.sse_state.sse_event_tx = Some(sse_tx);
+            this.sse_state.sse_shutdown_flag = Some(sse_shutdown_flag);
             if window_index == usize::MAX {
                 let initial_tab = Tab::Editor(EditorTab::new(
                     0,
@@ -579,15 +643,16 @@ impl Fulgur {
     /// - `window`: The window containing the tabs with watched files
     /// - `cx`: The application context
     fn process_file_watch_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let events: Vec<FileWatchEvent> = if let Some(ref rx) = self.file_watch_events {
-            let mut events = Vec::new();
-            while let Ok(event) = rx.try_recv() {
-                events.push(event);
-            }
-            events
-        } else {
-            Vec::new()
-        };
+        let events: Vec<FileWatchEvent> =
+            if let Some(ref rx) = self.file_watch_state.file_watch_events {
+                let mut events = Vec::new();
+                while let Ok(event) = rx.try_recv() {
+                    events.push(event);
+                }
+                events
+            } else {
+                Vec::new()
+            };
         for event in events {
             self.handle_file_watch_event(event, window, cx);
         }
@@ -602,7 +667,7 @@ impl Fulgur {
     /// - `window`: The window to handle events in
     /// - `cx`: The application context
     fn process_sse_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let sse_events: Vec<sync::sse::SseEvent> = if let Some(ref rx) = self.sse_events {
+        let sse_events: Vec<sync::sse::SseEvent> = if let Some(ref rx) = self.sse_state.sse_events {
             let mut events = Vec::new();
             while let Ok(event) = rx.try_recv() {
                 events.push(event);
@@ -622,10 +687,10 @@ impl Fulgur {
     /// - `window`: The window containing the search bar and editor
     /// - `cx`: The application context
     fn update_search_if_needed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.show_search {
-            let current_query = self.search_input.read(cx).text().to_string();
-            if current_query != self.last_search_query {
-                self.last_search_query = current_query;
+        if self.search_state.show_search {
+            let current_query = self.search_state.search_input.read(cx).text().to_string();
+            if current_query != self.search_state.last_search_query {
+                self.search_state.last_search_query = current_query;
                 self.perform_search(window, cx);
             }
         }

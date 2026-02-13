@@ -343,16 +343,16 @@ impl Fulgur {
     /// Stops the current SSE connection and starts a new one with the updated settings.
     /// Should be called when synchronization settings (server URL, email, or key) change.
     pub fn restart_sse_connection(&mut self, cx: &mut Context<Self>) {
-        if let Some(ref shutdown_flag) = self.sse_shutdown_flag {
+        if let Some(ref shutdown_flag) = self.sse_state.sse_shutdown_flag {
             log::info!("Signaling SSE connection to shutdown...");
             shutdown_flag.store(true, Ordering::Relaxed);
         }
         thread::sleep(Duration::from_millis(100));
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
         let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
-        self.sse_events = Some(sse_rx);
-        self.sse_event_tx = Some(sse_tx.clone());
-        self.sse_shutdown_flag = Some(sse_shutdown_flag.clone());
+        self.sse_state.sse_events = Some(sse_rx);
+        self.sse_state.sse_event_tx = Some(sse_tx.clone());
+        self.sse_state.sse_shutdown_flag = Some(sse_shutdown_flag.clone());
         if self
             .settings
             .app_settings
@@ -405,12 +405,12 @@ impl Fulgur {
     ) {
         // Debounce: ignore events within 500ms of last event
         let now = Instant::now();
-        if let Some(last_time) = self.last_sse_event
+        if let Some(last_time) = self.sse_state.last_sse_event
             && now.duration_since(last_time) < Duration::from_millis(500)
         {
             return;
         }
-        self.last_sse_event = Some(now);
+        self.sse_state.last_sse_event = Some(now);
         match event {
             SseEvent::Heartbeat { timestamp } => {
                 log::debug!("SSE heartbeat received: {}", timestamp);
