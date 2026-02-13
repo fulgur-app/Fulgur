@@ -140,6 +140,95 @@ jobs:
       - name: Check with minimum Rust version
         run: cargo check --all-features --verbose
 
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            pkg-config \
+            libssl-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate code coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Generate coverage summary
+        id: coverage
+        run: |
+          COVERAGE=$(cargo llvm-cov --all-features --workspace --summary-only | grep -oP 'TOTAL.*\K\d+\.\d+(?=%)')
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+
+      - name: Discord notification - Coverage
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          COVERAGE: ${{ steps.coverage.outputs.percentage }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TIMESTAMP: ${{ github.event.head_commit.timestamp }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            COLOR=3066993
+            TITLE="📊 Fulgur Code Coverage"
+            DESCRIPTION="Coverage: **${COVERAGE}%**"
+          else
+            COLOR=15105570
+            TITLE="❌ Fulgur Code Coverage - Failed"
+            DESCRIPTION="Failed to generate coverage report"
+          fi
+
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"embeds\": [{
+                \"title\": \"$TITLE\",
+                \"description\": \"$DESCRIPTION\",
+                \"color\": $COLOR,
+                \"fields\": [
+                  {\"name\": \"Branch\", \"value\": \"$BRANCH\", \"inline\": true},
+                  {\"name\": \"Commit\", \"value\": \"\`$COMMIT_SHA\`\", \"inline\": true},
+                  {\"name\": \"Author\", \"value\": \"$ACTOR\", \"inline\": true}
+                ],
+                \"url\": \"$RUN_URL\",
+                \"timestamp\": \"$TIMESTAMP\"
+              }]
+            }"
+
   security:
     name: Security Audit
     runs-on: ubuntu-latest
