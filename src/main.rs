@@ -93,7 +93,7 @@ fn url_to_path(url_string: &str) -> Option<PathBuf> {
 
 fn main() {
     if let Err(e) = fulgur::utils::logger::init() {
-        log::error!("Failed to initialize logger: {}", e);
+        eprintln!("Failed to initialize logger: {}", e);
     }
     let current_version = env!("CARGO_PKG_VERSION");
     log::info!("=== Fulgur v{} Starting ===", current_version);
