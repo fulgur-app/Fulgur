@@ -297,6 +297,15 @@ fn test_stop_watcher() {
     // Give watcher time to initialize
     thread::sleep(Duration::from_millis(100));
     watcher.stop();
+
+    // Drain any pending events from before the stop
+    // (these could be from the initial watch setup)
+    thread::sleep(Duration::from_millis(200));
+    while rx.try_recv().is_ok() {
+        // Drain all pending events
+    }
+
+    // Now modify the file - we should NOT receive events for this
     fs::write(&file_path, "modified after stop").expect("Failed to modify file");
     thread::sleep(Duration::from_millis(500));
     let event = rx.try_recv();
