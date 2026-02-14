@@ -217,7 +217,8 @@ impl Fulgur {
             return;
         }
         if let Some(current) = self.search_state.current_match_index {
-            self.search_state.current_match_index = Some((current + 1) % self.search_state.search_matches.len());
+            self.search_state.current_match_index =
+                Some((current + 1) % self.search_state.search_matches.len());
         } else {
             self.search_state.current_match_index = Some(0);
         }
@@ -331,9 +332,17 @@ impl Fulgur {
                         text.replace(&search_query, &replace_text)
                     }
                 } else if match_whole_word {
-                    replace_whole_words_case_insensitive(&self.search_state.search_matches, &text, &replace_text)
+                    replace_whole_words_case_insensitive(
+                        &self.search_state.search_matches,
+                        &text,
+                        &replace_text,
+                    )
                 } else {
-                    replace_case_insensitive(&self.search_state.search_matches, &text, &replace_text)
+                    replace_case_insensitive(
+                        &self.search_state.search_matches,
+                        &text,
+                        &replace_text,
+                    )
                 };
                 if let Some(tab) = self.tabs.get_mut(active_index)
                     && let Some(editor_tab_mut) = tab.as_editor_mut()

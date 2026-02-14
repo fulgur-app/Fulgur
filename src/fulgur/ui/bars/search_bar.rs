@@ -165,7 +165,8 @@ impl Fulgur {
                         )
                         .line_height(LINE_HEIGHT)
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.search_state.match_whole_word = !this.search_state.match_whole_word;
+                            this.search_state.match_whole_word =
+                                !this.search_state.match_whole_word;
                             this.perform_search(window, cx);
                         })),
                     ),
@@ -193,7 +194,11 @@ impl Fulgur {
                     .child(if self.search_state.search_matches.is_empty() {
                         "No matches".to_string()
                     } else if let Some(current) = self.search_state.current_match_index {
-                        format!("{} of {}", current + 1, self.search_state.search_matches.len())
+                        format!(
+                            "{} of {}",
+                            current + 1,
+                            self.search_state.search_matches.len()
+                        )
                     } else {
                         format!("{} matches", self.search_state.search_matches.len())
                     }),

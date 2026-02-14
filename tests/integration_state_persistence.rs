@@ -340,8 +340,8 @@ fn test_window_bounds_variants() {
         original
             .save_to_path(&state_path)
             .unwrap_or_else(|_| panic!("Failed to save {} state", label));
-        let loaded =
-            WindowsState::load_from_path(&state_path).unwrap_or_else(|_| panic!("Failed to load {}", label));
+        let loaded = WindowsState::load_from_path(&state_path)
+            .unwrap_or_else(|_| panic!("Failed to load {}", label));
         assert_eq!(loaded.windows[0].window_bounds.state, bounds.state);
         assert_eq!(loaded.windows[0].window_bounds.x, bounds.x);
         assert_eq!(loaded.windows[0].window_bounds.y, bounds.y);

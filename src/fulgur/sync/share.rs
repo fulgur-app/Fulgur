@@ -311,7 +311,8 @@ pub fn share_file(
     // Parallelize encryption and HTTP requests across devices
     let results: Vec<(String, Result<String, SynchronizationError>)> =
         std::thread::scope(|scope| {
-            let handles: Vec<_> = request.device_ids
+            let handles: Vec<_> = request
+                .device_ids
                 .iter()
                 .map(|device_id| {
                     let device_id = device_id.clone();

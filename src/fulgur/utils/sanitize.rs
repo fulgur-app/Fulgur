@@ -23,10 +23,7 @@
 pub fn sanitize_filename(filename: &str) -> String {
     // Normalize path separators to Unix style, then split and take the last component
     let normalized = filename.replace('\\', "/");
-    let base_name = normalized
-        .split('/')
-        .rfind(|s| !s.is_empty())
-        .unwrap_or("");
+    let base_name = normalized.split('/').rfind(|s| !s.is_empty()).unwrap_or("");
 
     // Remove control characters and null bytes
     let sanitized = base_name
@@ -64,7 +61,10 @@ mod tests {
     fn test_sanitize_path_separators() {
         assert_eq!(sanitize_filename("path/to/file.txt"), "file.txt");
         assert_eq!(sanitize_filename("C:\\Users\\file.txt"), "file.txt");
-        assert_eq!(sanitize_filename("/absolute/path/to/document.pdf"), "document.pdf");
+        assert_eq!(
+            sanitize_filename("/absolute/path/to/document.pdf"),
+            "document.pdf"
+        );
     }
 
     #[test]

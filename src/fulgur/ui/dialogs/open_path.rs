@@ -3,10 +3,7 @@ use std::path::PathBuf;
 
 use gpui::*;
 use gpui_component::{
-    WindowExt,
-    button::ButtonVariant,
-    dialog::DialogButtonProps,
-    notification::NotificationType,
+    WindowExt, button::ButtonVariant, dialog::DialogButtonProps, notification::NotificationType,
 };
 
 use super::path_browser::PathBrowser;

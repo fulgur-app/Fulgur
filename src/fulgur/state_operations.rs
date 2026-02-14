@@ -51,7 +51,9 @@ pub fn determine_tab_restore_strategy(
         // Case 1: Has both path and content (modified file)
         (Some(path), Some(content)) => {
             if file_exists {
-                if let (Some(ref saved_time), Some(ref file_time)) = (last_saved, file_modified_time) {
+                if let (Some(ref saved_time), Some(ref file_time)) =
+                    (last_saved, file_modified_time)
+                {
                     if is_file_newer(file_time, saved_time) {
                         if can_read_file {
                             TabRestoreDecision::LoadFromFile { path }

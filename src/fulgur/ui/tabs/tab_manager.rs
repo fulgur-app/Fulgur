@@ -133,7 +133,11 @@ impl Fulgur {
             self.active_tab_index = Some(index);
             let pending_path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) {
                 if let Some(path) = &editor_tab.file_path {
-                    if self.file_watch_state.pending_conflicts.contains_key::<PathBuf>(path) {
+                    if self
+                        .file_watch_state
+                        .pending_conflicts
+                        .contains_key::<PathBuf>(path)
+                    {
                         Some(path.clone())
                     } else {
                         None
@@ -318,7 +322,10 @@ impl Fulgur {
             self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
         }
         if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after closing tabs to right: {}", e);
+            log::error!(
+                "Failed to save app state after closing tabs to right: {}",
+                e
+            );
             self.pending_notification = Some((
                 gpui_component::notification::NotificationType::Warning,
                 format!("Tabs closed but failed to save state: {}", e).into(),
@@ -509,15 +516,18 @@ impl Fulgur {
                     .confirm()
                     .on_ok(move |_, window, cx| {
                         let entity_ok_footer = entity_ok.clone();
-                        let save_result = entity_ok_footer.update(cx, |this, cx| {
-                            this.save_state(cx, window)
-                        });
+                        let save_result =
+                            entity_ok_footer.update(cx, |this, cx| this.save_state(cx, window));
                         if let Err(e) = save_result {
                             log::error!("Failed to save app state on quit: {}", e);
                             entity_ok_footer.update(cx, |this, _cx| {
                                 this.pending_notification = Some((
                                     gpui_component::notification::NotificationType::Error,
-                                    format!("Failed to save application state: {}. Quit anyway?", e).into(),
+                                    format!(
+                                        "Failed to save application state: {}. Quit anyway?",
+                                        e
+                                    )
+                                    .into(),
                                 ));
                             });
                             cx.refresh_windows();
