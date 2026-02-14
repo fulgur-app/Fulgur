@@ -316,24 +316,9 @@ impl Settings {
     /// - `Ok(PathBuf)`: The path to the settings file
     /// - `Err(anyhow::Error)`: If there was an error getting the path
     fn settings_file_path() -> anyhow::Result<PathBuf> {
-        #[cfg(target_os = "windows")]
-        {
-            let app_data = std::env::var("APPDATA")?;
-            let mut path = PathBuf::from(app_data);
-            path.push("Fulgur");
-            fs::create_dir_all(&path)?;
-            path.push("settings.json");
-            Ok(path)
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let home = std::env::var("HOME")?;
-            let mut path = PathBuf::from(home);
-            path.push(".fulgur");
-            fs::create_dir_all(&path)?;
-            path.push("settings.json");
-            Ok(path)
-        }
+        let mut path = crate::fulgur::utils::paths::config_dir()?;
+        path.push("settings.json");
+        Ok(path)
     }
 
     /// Save the settings to a specific path

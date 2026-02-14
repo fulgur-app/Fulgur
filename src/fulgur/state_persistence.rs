@@ -148,25 +148,9 @@ impl WindowsState {
     /// - `Ok(PathBuf)`: The path to the state file
     /// - `Err(anyhow::Error)`: If the state file path could not be determined
     fn state_file_path() -> anyhow::Result<PathBuf> {
-        #[cfg(target_os = "windows")]
-        {
-            let app_data = std::env::var("APPDATA")?;
-            let mut path = PathBuf::from(app_data);
-            path.push("Fulgur");
-            fs::create_dir_all(&path)?;
-            path.push("state.json");
-            Ok(path)
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            let home = std::env::var("HOME")?;
-            let mut path = PathBuf::from(home);
-            path.push(".fulgur");
-            fs::create_dir_all(&path)?;
-            path.push("state.json");
-            Ok(path)
-        }
+        let mut path = crate::fulgur::utils::paths::config_dir()?;
+        path.push("state.json");
+        Ok(path)
     }
 
     /// Save the app state to a specific path
