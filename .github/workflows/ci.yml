@@ -294,3 +294,235 @@ jobs:
                 "timestamp": "${{ github.event.head_commit.timestamp }}"
               }]
             }'
+
+  unused-deps:
+    name: Unused Dependencies Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            pkg-config \
+            libssl-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-udeps
+        uses: taiki-e/install-action@cargo-udeps
+
+      - name: Check for unused dependencies
+        run: cargo +nightly udeps --all-targets
+
+      - name: Discord notification - Success
+        if: success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "✅ Fulgur Dependency Check - Passed",
+                "description": "No unused dependencies detected",
+                "color": 3066993,
+                "fields": [
+                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
+                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
+                ],
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "timestamp": "${{ github.event.head_commit.timestamp }}"
+              }]
+            }'
+
+      - name: Discord notification - Failure
+        if: failure()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "⚠️ Fulgur Dependency Check - Unused Dependencies Found",
+                "description": "Unused dependencies detected in Cargo.toml",
+                "color": 15105570,
+                "fields": [
+                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
+                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
+                ],
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "timestamp": "${{ github.event.head_commit.timestamp }}"
+              }]
+            }'
+
+  docs:
+    name: Documentation Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            pkg-config \
+            libssl-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build documentation
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
+      - name: Discord notification - Success
+        if: success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "✅ Fulgur Documentation - Built Successfully",
+                "description": "Documentation built without errors or warnings",
+                "color": 3066993,
+                "fields": [
+                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
+                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
+                ],
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "timestamp": "${{ github.event.head_commit.timestamp }}"
+              }]
+            }'
+
+      - name: Discord notification - Failure
+        if: failure()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "❌ Fulgur Documentation - Build Failed",
+                "description": "Documentation build errors or warnings detected",
+                "color": 15105570,
+                "fields": [
+                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
+                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
+                ],
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "timestamp": "${{ github.event.head_commit.timestamp }}"
+              }]
+            }'
+
+  unsafe-audit:
+    name: Unsafe Code Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            pkg-config \
+            libssl-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-geiger
+        uses: taiki-e/install-action@cargo-geiger
+
+      - name: Run cargo-geiger
+        id: geiger
+        run: |
+          OUTPUT=$(cargo geiger --output-format GitHubMarkdown || true)
+          echo "$OUTPUT"
+          echo "$OUTPUT" > geiger-report.md
+
+          # Extract unsafe statistics from first-party code (fulgur crate)
+          UNSAFE_COUNT=$(echo "$OUTPUT" | grep "^| fulgur " | awk -F'|' '{print $6}' | tr -d ' ' || echo "0")
+          echo "unsafe_count=$UNSAFE_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Discord notification - Report
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          UNSAFE_COUNT: ${{ steps.geiger.outputs.unsafe_count }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            COLOR=3066993
+            TITLE="🔒 Fulgur Unsafe Code Audit"
+            DESCRIPTION="Unsafe expressions in first-party code: **${UNSAFE_COUNT}**"
+          else
+            COLOR=15105570
+            TITLE="❌ Fulgur Unsafe Code Audit - Failed"
+            DESCRIPTION="Failed to generate unsafe code report"
+          fi
+
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"embeds\": [{
+                \"title\": \"$TITLE\",
+                \"description\": \"$DESCRIPTION\",
+                \"color\": $COLOR,
+                \"fields\": [
+                  {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\", \"inline\": true},
+                  {\"name\": \"Commit\", \"value\": \"\`${{ github.sha }}\`\", \"inline\": true},
+                  {\"name\": \"Author\", \"value\": \"${{ github.actor }}\", \"inline\": true}
+                ],
+                \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+              }]
+            }"
