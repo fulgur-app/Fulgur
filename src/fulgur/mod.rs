@@ -19,7 +19,7 @@ use crate::fulgur::{
 use files::file_watcher::{FileWatchEvent, FileWatcher};
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, Root, Theme, ThemeRegistry, WindowExt, h_flex,
+    ActiveTheme, Icon, Root, WindowExt, h_flex,
     input::{Input, InputEvent, InputState},
     link::Link,
     notification::NotificationType,
@@ -155,6 +155,40 @@ impl SearchState {
             search_subscription,
         }
     }
+}
+
+/// Macro to simplify action handler registration
+///
+/// This macro reduces boilerplate for simple action handlers that just call a method.
+/// Instead of writing:
+/// ```ignore
+/// .on_action(cx.listener(|this, _action: &ActionType, window, cx| {
+///     this.method(window, cx);
+/// }))
+/// ```
+/// You can write:
+/// ```ignore
+/// register_action!(div, cx, ActionType => method)
+/// ```
+macro_rules! register_action {
+    // Simple action → method call (uses window, cx)
+    ($div:expr, $cx:expr, $action:ty => $method:ident) => {
+        $div = $div.on_action($cx.listener(|this, _: &$action, window, cx| {
+            this.$method(window, cx);
+        }));
+    };
+    // Action with parameter → method call with extracted param
+    ($div:expr, $cx:expr, $action:ty => $method:ident($param:ident)) => {
+        $div = $div.on_action($cx.listener(|this, action: &$action, window, cx| {
+            this.$method(window, cx, action.$param.clone());
+        }));
+    };
+    // Static function call (no 'this' needed)
+    ($div:expr, $cx:expr, $action:ty => call $func:path) => {
+        $div = $div.on_action($cx.listener(|_, _: &$action, window, cx| {
+            $func(window, cx);
+        }));
+    };
 }
 
 pub struct Fulgur {
@@ -814,55 +848,32 @@ impl Fulgur {
             .flex()
             .flex_col()
             .gap_0()
-            .track_focus(&self.focus_handle)
-            .on_action(cx.listener(|this, _action: &NewFile, window, cx| {
-                this.new_tab(window, cx);
-            }))
+            .track_focus(&self.focus_handle);
+        register_action!(app_content, cx, NewFile => new_tab);
+        register_action!(app_content, cx, OpenFile => open_file);
+        register_action!(app_content, cx, OpenPath => show_open_from_path_dialog);
+        register_action!(app_content, cx, CloseAllFiles => close_all_tabs);
+        register_action!(app_content, cx, SaveFile => save_file);
+        register_action!(app_content, cx, SaveFileAs => save_file_as);
+        register_action!(app_content, cx, Quit => quit);
+        register_action!(app_content, cx, SettingsTab => open_settings);
+        register_action!(app_content, cx, FindInFile => find_in_file);
+        register_action!(app_content, cx, NextTab => on_next_tab);
+        register_action!(app_content, cx, PreviousTab => on_previous_tab);
+        register_action!(app_content, cx, JumpToLine => show_jump_to_line_dialog);
+        register_action!(app_content, cx, SelectTheme => select_theme_sheet);
+        register_action!(app_content, cx, About => call about);
+        app_content = app_content
             .on_action(cx.listener(|this, _action: &NewWindow, _window, cx| {
                 this.open_new_window(cx);
-            }))
-            .on_action(cx.listener(|this, _action: &OpenFile, window, cx| {
-                this.open_file(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &OpenPath, window, cx| {
-                this.show_open_from_path_dialog(window, cx);
             }))
             .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
                 if let Some(index) = this.active_tab_index {
                     this.close_tab(index, window, cx);
                 }
             }))
-            .on_action(cx.listener(|this, _action: &CloseAllFiles, window, cx| {
-                this.close_all_tabs(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &SaveFile, window, cx| {
-                this.save_file(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &SaveFileAs, window, cx| {
-                this.save_file_as(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &Quit, window, cx| {
-                this.quit(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &SettingsTab, window, cx| {
-                this.open_settings(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &FindInFile, window, cx| {
-                this.find_in_file(window, cx);
-            }))
             .on_action(cx.listener(|this, action: &SwitchTheme, _window, cx| {
-                let theme_name = action.0.clone();
-                if let Some(theme_config) =
-                    ThemeRegistry::global(cx).themes().get(&theme_name).cloned()
-                {
-                    Theme::global_mut(cx).apply_config(&theme_config);
-                    this.settings.app_settings.theme = theme_name;
-                    this.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_show);
-                    let _ = this.update_and_propagate_settings(cx);
-                }
-                cx.refresh_windows();
-                let menus = build_menus(this.settings.recent_files.get_files(), None);
-                cx.set_menus(menus);
+                this.switch_to_theme(action.0.clone(), cx);
             }))
             .on_action(
                 cx.listener(|this, action: &tab_bar::CloseTabAction, window, cx| {
@@ -889,15 +900,6 @@ impl Fulgur {
                     this.on_close_all_other_tabs_action(action, window, cx);
                 }),
             )
-            .on_action(cx.listener(|this, _action: &NextTab, window, cx| {
-                this.on_next_tab(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &PreviousTab, window, cx| {
-                this.on_previous_tab(window, cx);
-            }))
-            .on_action(cx.listener(|this, _action: &JumpToLine, window, cx| {
-                this.show_jump_to_line_dialog(window, cx);
-            }))
             .on_action(cx.listener(|this, action: &OpenRecentFile, window, cx| {
                 this.do_open_file(window, cx, action.0.clone());
             }))
@@ -906,18 +908,8 @@ impl Fulgur {
                     this.clear_recent_files(cx);
                 }),
             )
-            .on_action(cx.listener(|_this, _action: &About, window, cx| {
-                about(window, cx);
-            }))
             .on_action(cx.listener(|_, _action: &GetTheme, _window, _cx| {
-                if let Err(e) =
-                    open::that("https://github.com/longbridge/gpui-component/tree/main/themes")
-                {
-                    log::error!("Failed to open browser: {}", e);
-                }
-            }))
-            .on_action(cx.listener(|this, _action: &SelectTheme, window, cx| {
-                this.select_theme_sheet(window, cx);
+                tab_bar::open_theme_repository();
             }))
             .on_action(cx.listener(|this, _action: &CheckForUpdates, window, cx| {
                 this.check_for_updates(window, cx);

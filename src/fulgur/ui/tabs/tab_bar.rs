@@ -6,7 +6,7 @@ use crate::fulgur::{
 };
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Sizable, StyledExt,
+    ActiveTheme, Sizable, StyledExt, Theme, ThemeRegistry,
     button::{Button, ButtonVariants},
     h_flex,
     menu::ContextMenuExt,
@@ -197,6 +197,30 @@ impl Fulgur {
             let previous_index = (active_index + self.tabs.len() - 1) % self.tabs.len();
             self.set_active_tab(previous_index, window, cx);
         }
+    }
+
+    /// Handle theme switching action
+    ///
+    /// Applies the selected theme, updates settings, refreshes windows, and rebuilds menus.
+    ///
+    /// ### Arguments
+    /// - `theme_name`: The name of the theme to switch to (as SharedString from action)
+    /// - `cx`: The application context
+    pub fn switch_to_theme(&mut self, theme_name: gpui::SharedString, cx: &mut Context<Self>) {
+        if let Some(theme_config) = ThemeRegistry::global(cx)
+            .themes()
+            .get(theme_name.as_ref())
+            .cloned()
+        {
+            Theme::global_mut(cx).apply_config(&theme_config);
+            self.settings.app_settings.theme = theme_name;
+            self.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_show);
+            let _ = self.update_and_propagate_settings(cx);
+        }
+        cx.refresh_windows();
+        let menus =
+            crate::fulgur::ui::menus::build_menus(self.settings.recent_files.get_files(), None);
+        cx.set_menus(menus);
     }
 
     /// Render the tab bar
@@ -440,5 +464,14 @@ impl Fulgur {
             });
 
         tab_with_content.into_any_element()
+    }
+}
+
+/// Opens the theme repository in the default browser
+///
+/// This is a standalone helper function for the GetTheme action.
+pub fn open_theme_repository() {
+    if let Err(e) = open::that("https://github.com/longbridge/gpui-component/tree/main/themes") {
+        log::error!("Failed to open browser: {}", e);
     }
 }
