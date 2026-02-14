@@ -3,9 +3,8 @@ use time::OffsetDateTime;
 
 use gpui::*;
 use gpui_component::{
-    IndexPath, Sizable, StyledExt,
+    Sizable, StyledExt,
     button::{Button, ButtonVariants},
-    select::SelectState,
 };
 
 use crate::fulgur::ui::icons::CustomIcon;
@@ -68,34 +67,6 @@ pub fn button_factory(
         .border_color(border_color)
         .cursor_pointer()
         .corner_radii(CORNERS_SIZE)
-}
-
-/// Create the a select state
-///
-/// ### Arguments
-/// - `window`: The window
-/// - `current_value`: The current value
-/// - `options`: The options
-/// - `cx`: The application context
-///
-/// ### Returns
-/// - `Entity<SelectState<Vec<SharedString>>>`: The select state entity
-#[allow(dead_code)]
-pub fn create_select_state(
-    window: &mut Window,
-    current_value: String,
-    options: Vec<SharedString>,
-    cx: &mut App,
-) -> Entity<SelectState<Vec<SharedString>>> {
-    let selected_index = options.iter().position(|s| s.as_ref() == current_value);
-    cx.new(|cx| {
-        SelectState::new(
-            options,
-            selected_index.map(|i| IndexPath::default().row(i)),
-            window,
-            cx,
-        )
-    })
 }
 
 /// Format a date as ISO 8601 string

@@ -127,19 +127,6 @@ pub fn status_bar_sync_button(style: SyncButtonStyle, is_connected: bool) -> Div
     button
 }
 
-/// Create a status bar left item
-///
-/// ### Arguments
-/// - `content`: The content of the status bar left item
-/// - `border_color`: The color of the border
-///
-/// ### Returns
-/// - `impl IntoElement`: A status bar left item
-#[allow(dead_code)]
-pub fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
-    status_bar_item_factory(content, border_color) //.border_r_1()
-}
-
 impl Fulgur {
     /// Render the status bar
     ///

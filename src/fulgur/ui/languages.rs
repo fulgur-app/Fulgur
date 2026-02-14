@@ -1,10 +1,6 @@
-use gpui::*;
 use gpui_component::highlighter::Language;
 
 use crate::fulgur::Fulgur;
-
-/// Initialize the language registry with all supported languages
-pub fn init_languages() {}
 
 /// Lists all supported languages, including some that are not supported by the language registry but are close enough.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -268,20 +264,6 @@ impl SupportedLanguage {
             SupportedLanguage::Zig,
         ]
     }
-}
-
-/// Get all languages as a vector of SharedString
-///
-/// ### Returns
-/// - `Vec<SharedString>`: The list of all languages as SharedString
-#[allow(dead_code)]
-pub fn all_languages() -> Vec<SharedString> {
-    let mut languages = SupportedLanguage::all()
-        .iter()
-        .map(|language| SharedString::new(pretty_name(language).as_str()))
-        .collect::<Vec<SharedString>>();
-    languages.sort();
-    languages
 }
 
 impl Fulgur {

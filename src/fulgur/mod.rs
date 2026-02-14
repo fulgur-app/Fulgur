@@ -10,8 +10,7 @@ pub mod window_manager;
 use crate::fulgur::{
     editor_tab::EditorTab,
     ui::{
-        icons::CustomIcon,
-        languages::{self, SupportedLanguage},
+        icons::CustomIcon, languages::SupportedLanguage,
         notifications::update_notification::make_update_notification,
     },
     utils::crypto_helper::{self, load_private_key_from_keychain},
@@ -505,7 +504,6 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     pub fn init(cx: &mut App) {
-        languages::init_languages();
         let mut settings = Settings::load().unwrap_or_else(|e| {
             log::error!("Failed to load settings, using defaults: {}", e);
             Settings::new()

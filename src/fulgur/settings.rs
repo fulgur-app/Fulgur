@@ -273,15 +273,6 @@ impl Themes {
             user_themes,
         })
     }
-
-    /// Remove a theme from the user themes
-    ///
-    /// ### Arguments
-    /// - `theme_name`: The name of the theme to remove
-    #[allow(dead_code)]
-    pub fn remove_theme(&mut self, theme_name: String) {
-        self.user_themes.retain(|theme| theme.name != theme_name);
-    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -51,15 +51,3 @@ pub fn init() -> anyhow::Result<()> {
     log::info!("Logger initialized at: {:?}", log_path);
     Ok(())
 }
-
-/// Get the log file path for display purposes
-///
-/// ### Returns
-/// - `Some(String)`: The path to the log file as a string
-/// - `None`: If the log file path could not be determined
-#[allow(dead_code)]
-pub fn get_log_path() -> Option<String> {
-    log_file_path()
-        .ok()
-        .map(|p| p.to_string_lossy().to_string())
-}

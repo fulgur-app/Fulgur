@@ -5,7 +5,7 @@ use gpui::{App, Entity, SharedString};
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
 
-use super::access_token::{TokenState, get_valid_token};
+use super::access_token::{TokenStateManager, get_valid_token};
 use super::sse::connect_sse;
 use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
@@ -79,7 +79,7 @@ pub(super) fn handle_ureq_error(error: ureq::Error, context: &str) -> Synchroniz
 /// - `Err(SynchronizationError)`: If the synchronization could not be performed
 pub fn initial_synchronization(
     synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<Mutex<TokenState>>,
+    token_state: Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<BeginResponse, SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {
@@ -229,20 +229,6 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             }
         }
     });
-}
-
-/// Get the synchronization status of the sync server
-///
-/// ### Arguments
-/// - `sync_server_connection_status`: The synchronization status of the sync server
-///
-/// ### Returns
-/// - `SynchronizationStatus`: The synchronization status of the sync server
-#[allow(dead_code)]
-pub fn get_sync_server_connection_status(
-    sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
-) -> SynchronizationStatus {
-    *sync_server_connection_status.lock()
 }
 
 /// Set the synchronization status of the sync server

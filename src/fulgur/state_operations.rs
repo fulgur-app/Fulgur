@@ -372,33 +372,4 @@ impl Fulgur {
             window_bounds,
         }
     }
-
-    /// Save all windows' state to disk
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    ///
-    /// ### Returns
-    /// - `Ok(())`: If all windows' state was saved successfully
-    /// - `Err(anyhow::Error)`: If the state could not be saved
-    #[allow(dead_code)]
-    pub fn save_all_windows_state(cx: &mut App) -> anyhow::Result<()> {
-        log::debug!("Saving all windows state...");
-        let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
-        let mut windows_state = WindowsState { windows: vec![] };
-        for weak_entity in window_manager.get_all_windows().iter() {
-            if let Some(entity) = weak_entity.upgrade() {
-                // Each window has cached bounds that are updated in render
-                windows_state
-                    .windows
-                    .push(entity.read(cx).build_window_state_without_bounds(cx));
-            }
-        }
-        windows_state.save()?;
-        log::debug!(
-            "All windows state saved successfully ({} windows)",
-            windows_state.windows.len()
-        );
-        Ok(())
-    }
 }
