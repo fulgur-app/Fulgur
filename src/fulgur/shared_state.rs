@@ -68,7 +68,8 @@ pub struct SharedAppState {
 impl gpui::Global for SharedAppState {}
 
 impl SharedAppState {
-    /// Create a new shared app state
+    /// Create a new shared app state by orchestrating the initialization of shared application state
+    /// by loading settings, themes, and determining the initial synchronization status.
     ///
     /// ### Arguments
     /// - `pending_files_from_macos`: Arc to the pending files queue from macOS open events
@@ -76,6 +77,30 @@ impl SharedAppState {
     /// ### Returns
     /// - `Self`: The new shared app state
     pub fn new(pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>) -> Self {
+        let settings = Self::load_and_validate_settings();
+        let themes = Self::load_themes();
+        let synchronization_status = Self::determine_initial_sync_status(&settings);
+
+        Self {
+            settings: Arc::new(Mutex::new(settings)),
+            settings_version: Arc::new(AtomicU64::new(0)),
+            themes: Arc::new(Mutex::new(themes)),
+            sync_state: SyncState::new(synchronization_status),
+            update_info: Arc::new(Mutex::new(None)),
+            pending_files_from_macos,
+            http_agent: Arc::new(ureq::Agent::new_with_defaults()),
+        }
+    }
+
+    /// Load settings from disk and validate encryption keys
+    ///
+    /// If settings cannot be loaded, returns default settings with an error log.
+    /// If synchronization is activated but keys cannot be validated, disables
+    /// synchronization and logs an error.
+    ///
+    /// ### Returns
+    /// - `Settings`: The loaded and validated settings (or defaults on error)
+    fn load_and_validate_settings() -> Settings {
         let mut settings = Settings::load().unwrap_or_else(|e| {
             log::error!(
                 "Failed to load settings in shared state, using defaults: {}",
@@ -99,8 +124,27 @@ impl SharedAppState {
                 .is_synchronization_activated = false;
         }
 
-        let themes = Themes::load().ok();
-        let synchronization_status = if settings
+        settings
+    }
+
+    /// Load themes from disk
+    ///
+    /// ### Returns
+    /// - `Some(Themes)`: The loaded themes
+    /// - `None`: If themes cannot be loaded
+    fn load_themes() -> Option<Themes> {
+        Themes::load().ok()
+    }
+
+    /// Determine the initial synchronization status based on settings
+    ///
+    /// ### Arguments
+    /// - `settings`: The application settings
+    ///
+    /// ### Returns
+    /// - `SynchronizationStatus`: Connected if sync is activated, NotActivated otherwise
+    fn determine_initial_sync_status(settings: &Settings) -> SynchronizationStatus {
+        if settings
             .app_settings
             .synchronization_settings
             .is_synchronization_activated
@@ -108,15 +152,6 @@ impl SharedAppState {
             SynchronizationStatus::Connected
         } else {
             SynchronizationStatus::NotActivated
-        };
-        Self {
-            settings: Arc::new(Mutex::new(settings)),
-            settings_version: Arc::new(AtomicU64::new(0)),
-            themes: Arc::new(Mutex::new(themes)),
-            sync_state: SyncState::new(synchronization_status),
-            update_info: Arc::new(Mutex::new(None)),
-            pending_files_from_macos,
-            http_agent: Arc::new(ureq::Agent::new_with_defaults()),
         }
     }
 }
