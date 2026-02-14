@@ -50,10 +50,10 @@ jobs:
           shared-key: ${{ matrix.os }}-cargo
 
       - name: Check build
-        run: cargo check --all-features --verbose
+        run: cargo check --all-features --quiet
 
       - name: Run tests
-        run: cargo test --all-features --verbose
+        run: cargo test --all-features
 
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -138,7 +138,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check with minimum Rust version
-        run: cargo check --all-features --verbose
+        run: cargo check --all-features --quiet
 
   coverage:
     name: Code Coverage
