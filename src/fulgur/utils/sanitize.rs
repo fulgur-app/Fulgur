@@ -26,7 +26,7 @@ pub fn sanitize_filename(filename: &str) -> String {
     let base_name = normalized
         .split('/')
         .filter(|s| !s.is_empty())
-        .last()
+        .next_back()
         .unwrap_or("");
 
     // Remove control characters and null bytes

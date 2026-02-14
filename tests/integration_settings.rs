@@ -399,16 +399,15 @@ fn test_settings_backward_compatibility_with_missing_fields() {
     }"#;
     std::fs::write(&settings_path, minimal_json).expect("Failed to write minimal JSON");
     let loaded = Settings::load_from_path(&settings_path).expect("Failed to load settings");
-    assert_eq!(
-        loaded.editor_settings.watch_files, true,
+    assert!(
+        loaded.editor_settings.watch_files,
         "watch_files should default to true"
     );
-    assert_eq!(
+    assert!(
         loaded
             .app_settings
             .synchronization_settings
             .is_deduplication,
-        true,
         "is_deduplication should default to true"
     );
     assert_eq!(
@@ -429,9 +428,9 @@ fn test_settings_multiple_save_load_cycles() {
     for i in 0..5 {
         settings
             .save_to_path(&settings_path)
-            .expect(&format!("Failed to save on iteration {}", i));
+            .unwrap_or_else(|_| panic!("Failed to save on iteration {}", i));
         let loaded = Settings::load_from_path(&settings_path)
-            .expect(&format!("Failed to load on iteration {}", i));
+            .unwrap_or_else(|_| panic!("Failed to load on iteration {}", i));
         assert_settings_equal(&settings, &loaded, &format!("Iteration {} roundtrip", i));
         settings.editor_settings.font_size += 0.5;
         settings = loaded;

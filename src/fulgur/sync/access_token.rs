@@ -21,6 +21,16 @@ pub struct TokenState {
     pub is_refreshing_token: bool,
 }
 
+/// Create a new empty TokenState
+///
+/// ### Returns
+/// - `TokenState`: A new TokenState with all fields initialized to default/empty values
+impl Default for TokenState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TokenState {
     /// Create a new empty TokenState
     pub fn new() -> Self {
@@ -59,7 +69,8 @@ fn request_access_token(
     };
     let token_url = format!("{}/api/token", server_url);
     log::debug!("Requesting JWT access token from server");
-    let mut response = http_agent.post(&token_url)
+    let mut response = http_agent
+        .post(&token_url)
         .header("Authorization", &format!("Bearer {}", device_api_key))
         .header("X-User-Email", email)
         .send("")

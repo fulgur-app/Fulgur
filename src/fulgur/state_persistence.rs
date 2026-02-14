@@ -185,6 +185,7 @@ impl WindowsState {
         // Serialize state to JSON first (fast, no I/O)
         let json = serde_json::to_string_pretty(self)?;
 
+        #[allow(clippy::suspicious_open_options)]
         let file = fs::OpenOptions::new()
             .write(true)
             .create(true)

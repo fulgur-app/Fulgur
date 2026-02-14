@@ -22,6 +22,12 @@ pub struct SynchronizationSettings {
     //pub key: Option<String>,
 }
 
+impl Default for SynchronizationSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SynchronizationSettings {
     /// Create a new synchronization settings instance
     ///
@@ -42,6 +48,12 @@ impl SynchronizationSettings {
 pub struct MarkdownSettings {
     pub show_markdown_preview: bool,
     pub show_markdown_toolbar: bool,
+}
+
+impl Default for MarkdownSettings {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MarkdownSettings {
@@ -94,6 +106,12 @@ fn default_is_deduplication() -> bool {
     true
 }
 
+impl Default for EditorSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EditorSettings {
     /// Create a new editor settings instance
     ///
@@ -109,6 +127,12 @@ impl EditorSettings {
             markdown_settings: MarkdownSettings::new(),
             watch_files: default_watch_files(),
         }
+    }
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -267,6 +291,12 @@ pub struct Settings {
     pub recent_files: RecentFiles,
 }
 
+impl Default for Settings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Settings {
     /// Create a new settings instance
     ///
@@ -323,6 +353,7 @@ impl Settings {
         // Serialize settings to JSON first (fast, no I/O)
         let json = serde_json::to_string_pretty(&self)?;
 
+        #[allow(clippy::suspicious_open_options)]
         let file = fs::OpenOptions::new()
             .write(true)
             .create(true)

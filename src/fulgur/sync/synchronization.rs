@@ -91,7 +91,7 @@ pub fn initial_synchronization(
     let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
     let begin_url = format!("{}/api/begin", server_url);
     let payload = InitialSynchronizationPayload {
-        public_key: public_key,
+        public_key,
     };
     let mut response = http_agent
         .post(begin_url)

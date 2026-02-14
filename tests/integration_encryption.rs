@@ -342,12 +342,12 @@ fn test_keychain_persistence_across_multiple_operations() {
     for i in 0..10 {
         let original = format!("Test message number {}", i);
         let encrypted = encrypt_bytes(original.as_bytes(), &public_str)
-            .expect(&format!("Encryption {} should succeed", i));
+            .unwrap_or_else(|_| panic!("Encryption {} should succeed", i));
         let loaded_private = load_from_test_keychain(entry_name)
             .expect("Load should succeed")
             .expect("Key should exist");
         let decrypted = decrypt_bytes(&encrypted, &loaded_private)
-            .expect(&format!("Decryption {} should succeed", i));
+            .unwrap_or_else(|_| panic!("Decryption {} should succeed", i));
         assert_eq!(
             String::from_utf8(decrypted).unwrap(),
             original,

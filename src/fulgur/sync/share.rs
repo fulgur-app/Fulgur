@@ -22,6 +22,14 @@ use crate::fulgur::{
 
 pub type Device = DeviceResponse;
 
+/// Parameters for sharing a file
+pub struct ShareFileRequest {
+    pub content: String,
+    pub file_name: String,
+    pub device_ids: Vec<String>,
+    pub file_path: Option<PathBuf>,
+}
+
 /// Compress content using gzip compression
 ///
 /// ### Arguments
@@ -258,28 +266,25 @@ impl ShareResult {
 /// - `Err(SynchronizationError)`: If validation or setup failed
 pub fn share_file(
     synchronization_settings: &SynchronizationSettings,
-    content: String,
-    file_name: String,
-    device_ids: Vec<String>,
+    request: ShareFileRequest,
     devices: &[Device],
     token_state: Arc<Mutex<TokenState>>,
-    file_path: Option<PathBuf>,
     http_agent: &ureq::Agent,
 ) -> Result<ShareResult, SynchronizationError> {
     let server_url = synchronization_settings
         .server_url
         .as_ref()
         .ok_or(SynchronizationError::ServerUrlMissing)?;
-    if content.is_empty() {
+    if request.content.is_empty() {
         return Err(SynchronizationError::ContentMissing);
     }
-    if content.len() > 1024 * 1024 {
+    if request.content.len() > 1024 * 1024 {
         return Err(SynchronizationError::ContentTooLarge);
     }
-    if file_name.is_empty() {
+    if request.file_name.is_empty() {
         return Err(SynchronizationError::FileNameMissing);
     }
-    if device_ids.is_empty() {
+    if request.device_ids.is_empty() {
         return Err(SynchronizationError::DeviceIdsMissing);
     }
     let token = get_valid_token(
@@ -289,14 +294,14 @@ pub fn share_file(
     )?;
     let share_url = format!("{}/api/share", server_url);
     let deduplication_hash = if synchronization_settings.is_deduplication {
-        file_path.as_ref().map(|path| {
+        request.file_path.as_ref().map(|path| {
             let hash = Sha256::digest(path.to_string_lossy().as_bytes());
             format!("{:x}", hash)
         })
     } else {
         None
     };
-    let compressed_content = match compress_content(&content) {
+    let compressed_content = match compress_content(&request.content) {
         Ok(c) => c,
         Err(e) => {
             log::error!("Failed to compress content: {}", e);
@@ -306,13 +311,13 @@ pub fn share_file(
     // Parallelize encryption and HTTP requests across devices
     let results: Vec<(String, Result<String, SynchronizationError>)> =
         std::thread::scope(|scope| {
-            let handles: Vec<_> = device_ids
+            let handles: Vec<_> = request.device_ids
                 .iter()
                 .map(|device_id| {
                     let device_id = device_id.clone();
                     let share_url = share_url.clone();
                     let token = token.clone();
-                    let file_name = file_name.clone();
+                    let file_name = request.file_name.clone();
                     let deduplication_hash = deduplication_hash.clone();
                     let compressed_content = compressed_content.clone();
                     scope.spawn(move || {
@@ -388,7 +393,7 @@ pub fn share_file(
     }
     log::info!(
         "File '{}' shared: {} succeeded, {} failed",
-        file_name,
+        request.file_name,
         successes.len(),
         failures.len()
     );

@@ -211,7 +211,7 @@ impl Fulgur {
         let file_modified_time = tab_state
             .file_path
             .as_ref()
-            .and_then(|p| get_file_modified_time(p));
+            .and_then(get_file_modified_time);
         let can_read_file = tab_state
             .file_path
             .as_ref()

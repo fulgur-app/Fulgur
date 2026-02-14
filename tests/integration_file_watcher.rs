@@ -5,7 +5,7 @@
 //! directories for isolation.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -37,9 +37,9 @@ fn create_test_file(temp_dir: &TempDir, filename: &str, content: &str) -> PathBu
 ///
 /// ### Returns
 /// - `bool`: True if paths are equivalent (after canonicalization)
-fn paths_equal(path1: &PathBuf, path2: &PathBuf) -> bool {
-    let canon1 = path1.canonicalize().unwrap_or_else(|_| path1.clone());
-    let canon2 = path2.canonicalize().unwrap_or_else(|_| path2.clone());
+fn paths_equal(path1: &Path, path2: &Path) -> bool {
+    let canon1 = path1.canonicalize().unwrap_or_else(|_| path1.to_path_buf());
+    let canon2 = path2.canonicalize().unwrap_or_else(|_| path2.to_path_buf());
     canon1 == canon2
 }
 
@@ -300,7 +300,7 @@ fn test_stop_watcher() {
 
     // Drain any pending events from before the stop
     // (these could be from the initial watch setup)
-    thread::sleep(Duration::from_millis(200));
+    thread::sleep(Duration::from_millis(500));
     while rx.try_recv().is_ok() {
         // Drain all pending events
     }

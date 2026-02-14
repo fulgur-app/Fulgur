@@ -339,9 +339,9 @@ fn test_window_bounds_variants() {
         };
         original
             .save_to_path(&state_path)
-            .expect(&format!("Failed to save {} state", label));
+            .unwrap_or_else(|_| panic!("Failed to save {} state", label));
         let loaded =
-            WindowsState::load_from_path(&state_path).expect(&format!("Failed to load {}", label));
+            WindowsState::load_from_path(&state_path).unwrap_or_else(|_| panic!("Failed to load {}", label));
         assert_eq!(loaded.windows[0].window_bounds.state, bounds.state);
         assert_eq!(loaded.windows[0].window_bounds.x, bounds.x);
         assert_eq!(loaded.windows[0].window_bounds.y, bounds.y);
@@ -494,9 +494,9 @@ fn test_state_multiple_save_load_cycles() {
     for i in 0..5 {
         state
             .save_to_path(&state_path)
-            .expect(&format!("Failed to save on iteration {}", i));
+            .unwrap_or_else(|_| panic!("Failed to save on iteration {}", i));
         let loaded = WindowsState::load_from_path(&state_path)
-            .expect(&format!("Failed to load on iteration {}", i));
+            .unwrap_or_else(|_| panic!("Failed to load on iteration {}", i));
         assert_eq!(state.windows.len(), loaded.windows.len());
         assert_window_state_equal(
             &state.windows[0],

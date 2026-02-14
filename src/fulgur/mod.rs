@@ -52,6 +52,16 @@ pub struct FileWatchState {
     pub pending_conflicts: HashMap<PathBuf, usize>,
 }
 
+impl Default for FileWatchState {
+    /// Create a new FileWatchState with all fields initialized to default/empty values
+    ///
+    /// ### Returns
+    /// `Self`: A new FileWatchState
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileWatchState {
     /// Create a new FileWatchState with all fields initialized to default/empty values
     ///
@@ -74,6 +84,16 @@ pub struct SseState {
     pub sse_event_tx: Option<std::sync::mpsc::Sender<sync::sse::SseEvent>>,
     pub sse_shutdown_flag: Option<Arc<AtomicBool>>,
     pub last_sse_event: Option<Instant>,
+}
+
+impl Default for SseState {
+    /// Create a new SseState with all fields initialized to default/empty values
+    ///
+    /// ### Returns
+    /// `Self`: A new SseState
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SseState {

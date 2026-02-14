@@ -13,7 +13,7 @@ use gpui_component::{
 use crate::fulgur::{
     Fulgur,
     sync::{
-        share::{Device, get_devices, get_icon, share_file},
+        share::{Device, ShareFileRequest, get_devices, get_icon, share_file},
         synchronization::SynchronizationStatus,
     },
     ui::icons::CustomIcon,
@@ -168,12 +168,14 @@ fn handle_share_file(
             .to_string();
         share_file(
             &this.settings.app_settings.synchronization_settings,
-            content,
-            file_name,
-            ids,
+            ShareFileRequest {
+                content,
+                file_name,
+                device_ids: ids,
+                file_path,
+            },
             &devices,
             Arc::clone(&this.shared_state(cx).token_state),
-            file_path,
             &this.shared_state(cx).http_agent,
         )
     });

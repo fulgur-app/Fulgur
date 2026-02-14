@@ -161,7 +161,7 @@ impl BackoffCalculator {
     pub fn record_failure(&mut self) -> Duration {
         self.consecutive_failures += 1;
 
-        let exponent = (self.consecutive_failures - 1) as u32;
+        let exponent = self.consecutive_failures - 1;
         let delay_secs = self.initial_delay.as_secs_f64() * self.multiplier.powi(exponent as i32);
         let capped_delay = delay_secs.min(self.max_delay.as_secs_f64());
 
