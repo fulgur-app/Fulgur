@@ -11,6 +11,94 @@ pub struct SearchMatch {
     pub col: usize,
 }
 
+/// Get line and column from byte position
+///
+/// ### Arguments
+/// - `text`: The text
+/// - `pos`: The byte position
+///
+/// ### Returns
+/// - `(usize, usize)`: A tuple of (line, column)
+pub(super) fn get_line_col(text: &str, pos: usize) -> (usize, usize) {
+    let mut line = 0;
+    let mut col = 0;
+    for (i, ch) in text.chars().enumerate() {
+        if i >= pos {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
+}
+
+/// Find all matches in the text
+///
+/// ### Arguments
+/// - `text`: The text to search in
+/// - `query`: The search query
+/// - `match_case`: Whether to match case
+/// - `match_whole_word`: Whether to match whole words only
+///
+/// ### Returns
+/// - `Vec<SearchMatch>`: A vector of search matches
+pub(super) fn find_matches(
+    text: &str,
+    query: &str,
+    match_case: bool,
+    match_whole_word: bool,
+) -> Vec<SearchMatch> {
+    let mut matches = Vec::new();
+    if query.is_empty() {
+        return matches;
+    }
+    let search_text = if match_case {
+        text.to_string()
+    } else {
+        text.to_lowercase()
+    };
+    let search_query = if match_case {
+        query.to_string()
+    } else {
+        query.to_lowercase()
+    };
+    let mut start_pos = 0;
+    while let Some(pos) = search_text[start_pos..].find(&search_query) {
+        let absolute_pos = start_pos + pos;
+        let end_pos = absolute_pos + query.len();
+        if match_whole_word {
+            let is_word_start = absolute_pos == 0
+                || !text
+                    .chars()
+                    .nth(absolute_pos - 1)
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_');
+            let is_word_end = end_pos >= text.len()
+                || !text
+                    .chars()
+                    .nth(end_pos)
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_');
+
+            if !is_word_start || !is_word_end {
+                start_pos = absolute_pos + 1;
+                continue;
+            }
+        }
+        let (line, col) = get_line_col(text, absolute_pos);
+        matches.push(SearchMatch {
+            start: absolute_pos,
+            end: end_pos,
+            line,
+            col,
+        });
+        start_pos = absolute_pos + 1;
+    }
+    matches
+}
+
 impl Fulgur {
     /// Close the search bar and clear highlighting
     ///
@@ -135,76 +223,12 @@ impl Fulgur {
     /// ### Returns
     /// - `Vec<SearchMatch>`: A vector of search matches
     fn find_matches(&self, text: &str, query: &str) -> Vec<SearchMatch> {
-        let mut matches = Vec::new();
-        if query.is_empty() {
-            return matches;
-        }
-        let search_text = if self.search_state.match_case {
-            text.to_string()
-        } else {
-            text.to_lowercase()
-        };
-        let search_query = if self.search_state.match_case {
-            query.to_string()
-        } else {
-            query.to_lowercase()
-        };
-        let mut start_pos = 0;
-        while let Some(pos) = search_text[start_pos..].find(&search_query) {
-            let absolute_pos = start_pos + pos;
-            let end_pos = absolute_pos + query.len();
-            if self.search_state.match_whole_word {
-                let is_word_start = absolute_pos == 0
-                    || !text
-                        .chars()
-                        .nth(absolute_pos - 1)
-                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
-                let is_word_end = end_pos >= text.len()
-                    || !text
-                        .chars()
-                        .nth(end_pos)
-                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
-
-                if !is_word_start || !is_word_end {
-                    start_pos = absolute_pos + 1;
-                    continue;
-                }
-            }
-            let (line, col) = self.get_line_col(text, absolute_pos);
-            matches.push(SearchMatch {
-                start: absolute_pos,
-                end: end_pos,
-                line,
-                col,
-            });
-            start_pos = absolute_pos + 1;
-        }
-        matches
-    }
-
-    /// Get line and column from byte position
-    ///
-    /// ### Arguments
-    /// - `text`: The text
-    /// - `pos`: The byte position
-    ///
-    /// ### Returns
-    /// - `(usize, usize)`: A tuple of (line, column)
-    fn get_line_col(&self, text: &str, pos: usize) -> (usize, usize) {
-        let mut line = 0;
-        let mut col = 0;
-        for (i, ch) in text.chars().enumerate() {
-            if i >= pos {
-                break;
-            }
-            if ch == '\n' {
-                line += 1;
-                col = 0;
-            } else {
-                col += 1;
-            }
-        }
-        (line, col)
+        find_matches(
+            text,
+            query,
+            self.search_state.match_case,
+            self.search_state.match_whole_word,
+        )
     }
 
     /// Navigate to the next search match
@@ -429,7 +453,7 @@ fn replace_whole_words_case_insensitive(
 #[cfg(test)]
 mod tests {
     use super::{
-        SearchMatch, replace_case_insensitive, replace_whole_words,
+        SearchMatch, find_matches, get_line_col, replace_case_insensitive, replace_whole_words,
         replace_whole_words_case_insensitive,
     };
 
@@ -654,5 +678,311 @@ mod tests {
         ];
         let result = replace_whole_words(&matches, text, "example");
         assert_eq!(result, "example word example");
+    }
+
+    #[test]
+    fn test_get_line_col_start_of_text() {
+        let text = "hello world";
+        assert_eq!(get_line_col(text, 0), (0, 0));
+    }
+
+    #[test]
+    fn test_get_line_col_middle_of_first_line() {
+        let text = "hello world";
+        assert_eq!(get_line_col(text, 6), (0, 6)); // 'w' in "world"
+    }
+
+    #[test]
+    fn test_get_line_col_end_of_first_line() {
+        let text = "hello world";
+        assert_eq!(get_line_col(text, 11), (0, 11)); // end of line
+    }
+
+    #[test]
+    fn test_get_line_col_start_of_second_line() {
+        let text = "hello\nworld";
+        assert_eq!(get_line_col(text, 6), (1, 0)); // 'w' in "world"
+    }
+
+    #[test]
+    fn test_get_line_col_middle_of_second_line() {
+        let text = "hello\nworld";
+        assert_eq!(get_line_col(text, 9), (1, 3)); // 'l' in "world"
+    }
+
+    #[test]
+    fn test_get_line_col_multiple_lines() {
+        let text = "line1\nline2\nline3";
+        assert_eq!(get_line_col(text, 0), (0, 0)); // 'l' in "line1"
+        assert_eq!(get_line_col(text, 6), (1, 0)); // 'l' in "line2"
+        assert_eq!(get_line_col(text, 12), (2, 0)); // 'l' in "line3"
+    }
+
+    #[test]
+    fn test_get_line_col_after_newline() {
+        let text = "hello\n\nworld";
+        assert_eq!(get_line_col(text, 6), (1, 0)); // empty line
+        assert_eq!(get_line_col(text, 7), (2, 0)); // 'w' in "world"
+    }
+
+    #[test]
+    fn test_get_line_col_empty_text() {
+        let text = "";
+        assert_eq!(get_line_col(text, 0), (0, 0));
+    }
+
+    #[test]
+    fn test_get_line_col_windows_line_endings() {
+        let text = "hello\r\nworld";
+        assert_eq!(get_line_col(text, 5), (0, 5)); // '\r'
+        assert_eq!(get_line_col(text, 7), (1, 0)); // 'w' in "world"
+    }
+
+    #[test]
+    fn test_get_line_col_mixed_line_endings() {
+        let text = "line1\nline2\r\nline3";
+        assert_eq!(get_line_col(text, 0), (0, 0)); // 'l' in "line1"
+        assert_eq!(get_line_col(text, 6), (1, 0)); // 'l' in "line2"
+        // Note: '\r' is counted as a regular character (col increment), only '\n' triggers new line
+        assert_eq!(get_line_col(text, 14), (2, 1)); // 'l' in "line3" (after \r\n)
+    }
+
+    #[test]
+    fn test_get_line_col_unicode_characters() {
+        let text = "hello 世界\nworld";
+        assert_eq!(get_line_col(text, 6), (0, 6)); // '世'
+        assert_eq!(get_line_col(text, 9), (1, 0)); // 'w' in "world"
+    }
+
+    #[test]
+    fn test_find_matches_empty_query() {
+        let text = "hello world";
+        let matches = find_matches(text, "", false, false);
+        assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_find_matches_single_match() {
+        let text = "hello world";
+        let matches = find_matches(text, "world", false, false);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].start, 6);
+        assert_eq!(matches[0].end, 11);
+        assert_eq!(matches[0].line, 0);
+        assert_eq!(matches[0].col, 6);
+    }
+
+    #[test]
+    fn test_find_matches_multiple_matches() {
+        let text = "hello hello hello";
+        let matches = find_matches(text, "hello", false, false);
+        assert_eq!(matches.len(), 3);
+        assert_eq!(matches[0].start, 0);
+        assert_eq!(matches[1].start, 6);
+        assert_eq!(matches[2].start, 12);
+    }
+
+    #[test]
+    fn test_find_matches_case_sensitive_match() {
+        let text = "Hello hello HELLO";
+        let matches = find_matches(text, "hello", true, false);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].start, 6); // Only lowercase "hello"
+    }
+
+    #[test]
+    fn test_find_matches_case_insensitive_match() {
+        let text = "Hello hello HELLO";
+        let matches = find_matches(text, "hello", false, false);
+        assert_eq!(matches.len(), 3); // All three variants
+    }
+
+    #[test]
+    fn test_find_matches_whole_word_match() {
+        let text = "hello helloworld hello";
+        let matches = find_matches(text, "hello", false, true);
+        assert_eq!(matches.len(), 2); // Only standalone "hello", not "helloworld"
+        assert_eq!(matches[0].start, 0);
+        assert_eq!(matches[1].start, 17);
+    }
+
+    #[test]
+    fn test_find_matches_whole_word_with_punctuation() {
+        let text = "hello, hello. hello! hello?";
+        let matches = find_matches(text, "hello", false, true);
+        assert_eq!(matches.len(), 4); // All match - punctuation is word boundary
+    }
+
+    #[test]
+    fn test_find_matches_whole_word_with_underscore() {
+        let text = "hello hello_world _hello";
+        let matches = find_matches(text, "hello", false, true);
+        assert_eq!(matches.len(), 1); // Only standalone "hello", not "hello_world" or "_hello"
+        assert_eq!(matches[0].start, 0);
+    }
+
+    #[test]
+    fn test_find_matches_whole_word_start_of_line() {
+        let text = "hello world";
+        let matches = find_matches(text, "hello", false, true);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].start, 0);
+    }
+
+    #[test]
+    fn test_find_matches_whole_word_end_of_line() {
+        let text = "world hello";
+        let matches = find_matches(text, "hello", false, true);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].start, 6);
+    }
+
+    #[test]
+    fn test_find_matches_multiline() {
+        let text = "line1 hello\nline2 hello\nline3 hello";
+        let matches = find_matches(text, "hello", false, false);
+        assert_eq!(matches.len(), 3);
+        assert_eq!(matches[0].line, 0);
+        assert_eq!(matches[1].line, 1);
+        assert_eq!(matches[2].line, 2);
+    }
+
+    #[test]
+    fn test_find_matches_overlapping_not_found() {
+        let text = "aaa";
+        let matches = find_matches(text, "aa", false, false);
+        // Should find "aa" at positions 0 and 1 (overlapping matches)
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].start, 0);
+        assert_eq!(matches[1].start, 1);
+    }
+
+    #[test]
+    fn test_find_matches_no_matches() {
+        let text = "hello world";
+        let matches = find_matches(text, "foo", false, false);
+        assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_find_matches_partial_word_match() {
+        let text = "testing test retest";
+        let matches = find_matches(text, "test", false, false);
+        assert_eq!(matches.len(), 3); // "testing", "test", "retest" all contain "test"
+    }
+
+    #[test]
+    fn test_find_matches_partial_word_whole_word_disabled() {
+        let text = "testing test retest";
+        let matches = find_matches(text, "test", false, true);
+        assert_eq!(matches.len(), 1); // Only standalone "test"
+        assert_eq!(matches[0].start, 8);
+    }
+
+    #[test]
+    fn test_find_matches_unicode() {
+        let text = "hello 世界 hello";
+        let matches = find_matches(text, "hello", false, false);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].line, 0);
+        assert_eq!(matches[1].line, 0);
+    }
+
+    // Note: Case-insensitive search with Unicode that changes byte length when lowercased
+    // (like Cyrillic) is not well-supported by the current implementation.
+    // The current approach of lowercasing the entire string breaks byte position tracking.
+    // For now, we test basic Unicode support with case-sensitive search only.
+
+    #[test]
+    fn test_find_matches_unicode_case_sensitive() {
+        let text = "hello 世界 hello"; // Chinese characters don't change case
+        let matches = find_matches(text, "hello", true, false);
+        assert_eq!(matches.len(), 2);
+    }
+
+    #[test]
+    fn test_find_matches_empty_text() {
+        let text = "";
+        let matches = find_matches(text, "hello", false, false);
+        assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_find_matches_query_longer_than_text() {
+        let text = "hi";
+        let matches = find_matches(text, "hello", false, false);
+        assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_find_matches_special_characters() {
+        let text = "hello (world) [test] {foo}";
+        let matches = find_matches(text, "(world)", false, false);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].start, 6);
+    }
+
+    #[test]
+    fn test_find_matches_regex_chars_literal() {
+        let text = "test.*test";
+        let matches = find_matches(text, ".*", false, false);
+        assert_eq!(matches.len(), 1); // Should find literal ".*", not regex
+        assert_eq!(matches[0].start, 4);
+    }
+
+    #[test]
+    fn test_find_matches_whitespace() {
+        let text = "hello  world   test"; // Multiple spaces
+        let matches = find_matches(text, "  ", false, false);
+        // Finds overlapping matches: positions 5, 12, 13
+        assert_eq!(matches.len(), 3);
+    }
+
+    #[test]
+    fn test_find_matches_newlines() {
+        let text = "line1\n\nline2";
+        let matches = find_matches(text, "\n", false, false);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].start, 5);
+        assert_eq!(matches[1].start, 6);
+    }
+
+    #[test]
+    fn test_find_matches_tabs() {
+        let text = "hello\tworld\ttest";
+        let matches = find_matches(text, "\t", false, false);
+        assert_eq!(matches.len(), 2);
+    }
+
+    #[test]
+    fn test_find_matches_whole_word_numbers() {
+        let text = "123 test123 456test 789";
+        let matches = find_matches(text, "123", false, true);
+        assert_eq!(matches.len(), 1); // Only standalone "123"
+        assert_eq!(matches[0].start, 0);
+    }
+
+    #[test]
+    fn test_find_matches_single_character() {
+        let text = "a b a c a";
+        let matches = find_matches(text, "a", false, false);
+        assert_eq!(matches.len(), 3);
+    }
+
+    #[test]
+    fn test_find_matches_single_character_whole_word() {
+        let text = "a ba ca da";
+        let matches = find_matches(text, "a", false, true);
+        assert_eq!(matches.len(), 1); // Only standalone "a"
+        assert_eq!(matches[0].start, 0);
+    }
+
+    #[test]
+    fn test_find_matches_line_col_accuracy() {
+        let text = "line1\nline2 hello\nline3";
+        let matches = find_matches(text, "hello", false, false);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].line, 1);
+        assert_eq!(matches[0].col, 6); // "hello" starts at column 6 of line 2
     }
 }
