@@ -213,6 +213,28 @@ pub struct Fulgur {
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
 }
 
+/// Collect all available events from an optional receiver
+///
+/// This helper drains all pending events from a channel using `try_recv()`.
+/// It's used for both file watch events and SSE events to avoid code duplication.
+///
+/// ### Arguments
+/// - `receiver`: Optional reference to a receiver channel
+///
+/// ### Returns
+/// - `Vec<T>`: Vector containing all available events, or empty vec if receiver is None
+fn collect_events<T>(receiver: &Option<Receiver<T>>) -> Vec<T> {
+    if let Some(rx) = receiver {
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        events
+    } else {
+        Vec::new()
+    }
+}
+
 impl Fulgur {
     /// Get shared application state
     ///
@@ -725,16 +747,7 @@ impl Fulgur {
     /// - `window`: The window containing the tabs with watched files
     /// - `cx`: The application context
     fn process_file_watch_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let events: Vec<FileWatchEvent> =
-            if let Some(ref rx) = self.file_watch_state.file_watch_events {
-                let mut events = Vec::new();
-                while let Ok(event) = rx.try_recv() {
-                    events.push(event);
-                }
-                events
-            } else {
-                Vec::new()
-            };
+        let events = collect_events(&self.file_watch_state.file_watch_events);
         for event in events {
             self.handle_file_watch_event(event, window, cx);
         }
@@ -749,15 +762,7 @@ impl Fulgur {
     /// - `window`: The window to handle events in
     /// - `cx`: The application context
     fn process_sse_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let sse_events: Vec<sync::sse::SseEvent> = if let Some(ref rx) = self.sse_state.sse_events {
-            let mut events = Vec::new();
-            while let Ok(event) = rx.try_recv() {
-                events.push(event);
-            }
-            events
-        } else {
-            Vec::new()
-        };
+        let sse_events = collect_events(&self.sse_state.sse_events);
         for event in sse_events {
             self.handle_sse_event(event, window, cx);
         }
