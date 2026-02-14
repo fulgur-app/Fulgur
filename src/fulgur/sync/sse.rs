@@ -338,7 +338,8 @@ impl Fulgur {
     /// - `true` if Fulgur is connected to the sync server, `false` otherwise
     pub fn is_connected(&self, cx: &App) -> bool {
         self.shared_state(cx)
-            .sync_server_connection_status
+            .sync_state
+            .connection_status
             .lock()
             .is_connected()
     }
@@ -366,8 +367,8 @@ impl Fulgur {
             .is_synchronization_activated
         {
             let settings = self.settings.clone();
-            let sync_status = self.shared_state(cx).sync_server_connection_status.clone();
-            let token_state = Arc::clone(&self.shared_state(cx).token_state);
+            let sync_status = self.shared_state(cx).sync_state.connection_status.clone();
+            let token_state = Arc::clone(&self.shared_state(cx).sync_state.token_state);
             let http_agent = Arc::clone(&self.shared_state(cx).http_agent);
             thread::spawn(move || {
                 // Small delay to ensure old connection is fully stopped
@@ -425,15 +426,16 @@ impl Fulgur {
                 log::debug!("SSE heartbeat received: {}", timestamp);
                 let was_disconnected = !self
                     .shared_state(cx)
-                    .sync_server_connection_status
+                    .sync_state
+                    .connection_status
                     .lock()
                     .is_connected();
                 {
-                    let mut last_heartbeat = self.shared_state(cx).last_heartbeat.lock();
+                    let mut last_heartbeat = self.shared_state(cx).sync_state.last_heartbeat.lock();
                     *last_heartbeat = Some(now);
                 }
                 if was_disconnected {
-                    *self.shared_state(cx).sync_server_connection_status.lock() =
+                    *self.shared_state(cx).sync_state.connection_status.lock() =
                         SynchronizationStatus::Connected;
                     log::info!("Connection restored - heartbeat received after timeout");
                 }
@@ -447,7 +449,7 @@ impl Fulgur {
                     safe_filename
                 );
                 {
-                    let mut files = self.shared_state(cx).pending_shared_files.lock();
+                    let mut files = self.shared_state(cx).sync_state.pending_shared_files.lock();
                     let shared_file = fulgur_common::api::shares::SharedFileResponse {
                         id: notification.share_id,
                         source_device_id: notification.source_device_id.clone(),

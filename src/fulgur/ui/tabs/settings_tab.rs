@@ -507,7 +507,7 @@ impl Fulgur {
                                             log::info!("Device API key saved successfully");
                                             {
                                                 let mut token_state =
-                                                    this.shared_state(cx).token_state.lock();
+                                                    this.shared_state(cx).sync_state.token_state.lock();
                                                 token_state.access_token = None;
                                                 token_state.token_expires_at = None;
                                                 log::debug!(
@@ -542,7 +542,7 @@ impl Fulgur {
                                             move |_, _window, cx| {
                                                 let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
                                                 {
-                                                    let mut token_state = shared.token_state.lock();
+                                                    let mut token_state = shared.sync_state.token_state.lock();
                                                     token_state.access_token = None;
                                                     token_state.token_expires_at = None;
                                                     log::debug!("Cleared cached token before manual synchronization");

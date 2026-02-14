@@ -9,6 +9,44 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 
+/// Sync-related state that is shared across all windows
+pub struct SyncState {
+    /// Sync server connection status
+    pub connection_status: Arc<Mutex<SynchronizationStatus>>,
+    /// Device name from server
+    pub device_name: Arc<Mutex<Option<String>>>,
+    /// Pending shared files from sync server
+    pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
+    /// JWT token state
+    pub token_state: Arc<Mutex<crate::fulgur::sync::access_token::TokenState>>,
+    /// Last heartbeat time for sync connection
+    pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
+    /// Flag to track if sync has been initialized (to prevent multiple initializations)
+    pub initialized: Arc<AtomicBool>,
+}
+
+impl SyncState {
+    /// Create a new sync state with the given connection status
+    ///
+    /// ### Arguments
+    /// - `connection_status`: The initial sync server connection status
+    ///
+    /// ### Returns
+    /// - `Self`: The new sync state
+    pub fn new(connection_status: SynchronizationStatus) -> Self {
+        Self {
+            connection_status: Arc::new(Mutex::new(connection_status)),
+            device_name: Arc::new(Mutex::new(None)),
+            pending_shared_files: Arc::new(Mutex::new(Vec::new())),
+            token_state: Arc::new(Mutex::new(
+                crate::fulgur::sync::access_token::TokenState::new(),
+            )),
+            last_heartbeat: Arc::new(Mutex::new(None)),
+            initialized: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
 /// State that is shared across all windows. This includes settings, themes, and sync-related state.
 pub struct SharedAppState {
     /// Settings (shared across all windows)
@@ -17,22 +55,12 @@ pub struct SharedAppState {
     pub settings_version: Arc<AtomicU64>,
     /// Available themes
     pub themes: Arc<Mutex<Option<Themes>>>,
-    /// Sync server connection status (already Arc<Mutex>)
-    pub sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
-    /// Device name from server (already Arc<Mutex>)
-    pub device_name: Arc<Mutex<Option<String>>>,
-    /// Pending shared files from sync server (already Arc<Mutex>)
-    pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
-    /// JWT token state (already Arc<Mutex>)
-    pub token_state: Arc<Mutex<crate::fulgur::sync::access_token::TokenState>>,
-    /// Last heartbeat time for sync connection (already Arc<Mutex>)
-    pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
+    /// Sync-related state (connection status, device name, pending files, token state, heartbeat, initialization flag)
+    pub sync_state: SyncState,
     /// Update info if available
     pub update_info: Arc<Mutex<Option<UpdateInfo>>>,
     /// Files from macOS "Open with" events (already Arc<Mutex>)
     pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
-    /// Flag to track if sync has been initialized (to prevent multiple initializations)
-    pub sync_initialized: Arc<AtomicBool>,
     /// Shared HTTP agent for connection pooling across all requests
     pub http_agent: Arc<ureq::Agent>,
 }
@@ -85,16 +113,9 @@ impl SharedAppState {
             settings: Arc::new(Mutex::new(settings)),
             settings_version: Arc::new(AtomicU64::new(0)),
             themes: Arc::new(Mutex::new(themes)),
-            sync_server_connection_status: Arc::new(Mutex::new(synchronization_status)),
-            device_name: Arc::new(Mutex::new(None)),
-            pending_shared_files: Arc::new(Mutex::new(Vec::new())),
-            token_state: Arc::new(Mutex::new(
-                crate::fulgur::sync::access_token::TokenState::new(),
-            )),
-            last_heartbeat: Arc::new(Mutex::new(None)),
+            sync_state: SyncState::new(synchronization_status),
             update_info: Arc::new(Mutex::new(None)),
             pending_files_from_macos,
-            sync_initialized: Arc::new(AtomicBool::new(false)),
             http_agent: Arc::new(ureq::Agent::new_with_defaults()),
         }
     }

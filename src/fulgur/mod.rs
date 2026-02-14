@@ -613,20 +613,24 @@ impl Fulgur {
     /// - `window`: The window to create new tabs in
     /// - `cx`: The application context
     fn process_shared_files_from_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let shared_files_to_open =
-            if let Some(mut pending) = self.shared_state(cx).pending_shared_files.try_lock() {
-                if pending.is_empty() {
-                    Vec::new()
-                } else {
-                    log::info!(
-                        "Processing {} shared file(s) from sync server",
-                        pending.len()
-                    );
-                    pending.drain(..).collect()
-                }
-            } else {
+        let shared_files_to_open = if let Some(mut pending) = self
+            .shared_state(cx)
+            .sync_state
+            .pending_shared_files
+            .try_lock()
+        {
+            if pending.is_empty() {
                 Vec::new()
-            };
+            } else {
+                log::info!(
+                    "Processing {} shared file(s) from sync server",
+                    pending.len()
+                );
+                pending.drain(..).collect()
+            }
+        } else {
+            Vec::new()
+        };
         if !shared_files_to_open.is_empty() {
             let encryption_key_opt = match load_private_key_from_keychain() {
                 Ok(key) => key,

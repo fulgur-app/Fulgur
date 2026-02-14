@@ -175,7 +175,7 @@ fn handle_share_file(
                 file_path,
             },
             &devices,
-            Arc::clone(&this.shared_state(cx).token_state),
+            Arc::clone(&this.shared_state(cx).sync_state.token_state),
             &this.shared_state(cx).http_agent,
         )
     });
@@ -241,7 +241,7 @@ impl Fulgur {
             );
             let synchronization_settings =
                 self.settings.app_settings.synchronization_settings.clone();
-            let token_state = Arc::clone(&self.shared_state(cx).token_state);
+            let token_state = Arc::clone(&self.shared_state(cx).sync_state.token_state);
             let http_agent = &self.shared_state(cx).http_agent;
             let result = crate::fulgur::sync::synchronization::initial_synchronization(
                 &synchronization_settings,
@@ -251,20 +251,21 @@ impl Fulgur {
             match result {
                 Ok(begin_response) => {
                     {
-                        let mut device_name = self.shared_state(cx).device_name.lock();
+                        let mut device_name = self.shared_state(cx).sync_state.device_name.lock();
                         *device_name = Some(begin_response.device_name.clone());
                     }
                     {
-                        let mut files = self.shared_state(cx).pending_shared_files.lock();
+                        let mut files =
+                            self.shared_state(cx).sync_state.pending_shared_files.lock();
                         *files = begin_response.shares;
                     }
-                    *self.shared_state(cx).sync_server_connection_status.lock() =
+                    *self.shared_state(cx).sync_state.connection_status.lock() =
                         SynchronizationStatus::Connected;
                     self.restart_sse_connection(cx);
                 }
                 Err(e) => {
                     let connection_status = SynchronizationStatus::from_error(&e);
-                    *self.shared_state(cx).sync_server_connection_status.lock() = connection_status;
+                    *self.shared_state(cx).sync_state.connection_status.lock() = connection_status;
                     let dialog_message = match connection_status {
                         SynchronizationStatus::AuthenticationFailed => {
                             "Authentication failed. Check your e-mail and device API key in the synchronization settings."
@@ -292,7 +293,7 @@ impl Fulgur {
         let synchronization_settings = self.settings.app_settings.synchronization_settings.clone();
         let devices = get_devices(
             &synchronization_settings,
-            Arc::clone(&self.shared_state(cx).token_state),
+            Arc::clone(&self.shared_state(cx).sync_state.token_state),
             &self.shared_state(cx).http_agent,
         );
         let devices = match devices {
