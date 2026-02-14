@@ -531,15 +531,8 @@ impl Fulgur {
                                             log::error!("Failed to save device API key: {}", e);
                                         } else {
                                             log::info!("Device API key saved successfully");
-                                            {
-                                                let mut token_state =
-                                                    this.shared_state(cx).sync_state.token_state.lock();
-                                                token_state.access_token = None;
-                                                token_state.token_expires_at = None;
-                                                log::debug!(
-                                                    "Cleared cached access token for new device"
-                                                );
-                                            }
+                                            // Clear cached token to force re-authentication with new device key
+                                            this.shared_state(cx).sync_state.token_state.clear_token();
                                         }
                                         this.restart_sse_connection(cx);
                                     });
@@ -567,12 +560,8 @@ impl Fulgur {
                                             let entity = entity.clone();
                                             move |_, _window, cx| {
                                                 let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-                                                {
-                                                    let mut token_state = shared.sync_state.token_state.lock();
-                                                    token_state.access_token = None;
-                                                    token_state.token_expires_at = None;
-                                                    log::debug!("Cleared cached token before manual synchronization");
-                                                }
+                                                // Clear cached token to force fresh authentication
+                                                shared.sync_state.token_state.clear_token();
                                                 perform_initial_synchronization(entity.clone(), cx);
                                             }
                                         }),

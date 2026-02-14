@@ -1,12 +1,11 @@
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::sync::synchronization::{SynchronizationError, handle_ureq_error};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use fulgur_common::api::sync::AccessTokenResponse;
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 use time::OffsetDateTime;
 
 /// JWT access token state for thread-safe token management
@@ -19,6 +18,49 @@ pub struct TokenState {
     pub access_token: Option<String>,
     pub token_expires_at: Option<OffsetDateTime>,
     pub is_refreshing_token: bool,
+}
+
+/// Thread-safe token manager with proper wait/notify synchronization
+///
+/// Bundles the token state with a condition variable to efficiently coordinate
+/// concurrent token refresh requests. When multiple threads need a token simultaneously,
+/// only one performs the refresh while others wait efficiently (no busy-wait polling).
+///
+/// ### Fields
+/// - `state`: The mutex-protected token state
+/// - `refresh_notify`: Condition variable to signal when token refresh completes
+pub struct TokenStateManager {
+    state: Mutex<TokenState>,
+    refresh_notify: Condvar,
+}
+
+impl TokenStateManager {
+    /// Create a new token state manager with empty state
+    pub fn new() -> Self {
+        Self {
+            state: Mutex::new(TokenState::new()),
+            refresh_notify: Condvar::new(),
+        }
+    }
+
+    /// Clear the cached token, forcing a refresh on next access
+    ///
+    /// This is useful when:
+    /// - The device API key has changed
+    /// - You want to force re-authentication
+    /// - Switching to a different server/account
+    pub fn clear_token(&self) {
+        let mut state = self.state.lock();
+        state.access_token = None;
+        state.token_expires_at = None;
+        log::debug!("Cleared cached access token");
+    }
+}
+
+impl Default for TokenStateManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Create a new empty TokenState
@@ -112,49 +154,71 @@ fn is_token_valid(expires_at: &OffsetDateTime) -> bool {
 
 /// Get a valid JWT access token, refreshing if necessary
 ///
+/// Uses proper condition variable synchronization to avoid busy-waiting.
+/// When multiple threads need a token simultaneously, only one performs
+/// the refresh while others wait efficiently on the condition variable.
+///
 /// ### Arguments
 /// - `synchronization_settings`: The synchronization settings
-/// - `token_state`: Arc to the token state (thread-safe)
+/// - `token_manager`: Arc to the token state manager (thread-safe)
+/// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(String)`: A valid JWT access token
 /// - `Err(SynchronizationError)`: If token refresh failed
 pub fn get_valid_token(
     synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<Mutex<TokenState>>,
+    token_manager: Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<String, SynchronizationError> {
+    // Fast path: check if current token is valid without acquiring write lock
     {
-        let state = token_state.lock();
+        let state = token_manager.state.lock();
         if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
             && is_token_valid(exp_time)
         {
             return Ok(token_str.clone());
         }
     }
+
+    // Slow path: token needs refresh
+    let mut state = token_manager.state.lock();
+
+    // Double-check after acquiring lock (another thread might have refreshed)
+    if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
+        && is_token_valid(exp_time)
     {
-        let mut state = token_state.lock();
-        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
-            && is_token_valid(exp_time)
-            && !state.is_refreshing_token
-        {
-            return Ok(token_str.clone());
+        return Ok(token_str.clone());
+    }
+
+    // If another thread is already refreshing, wait for it to complete
+    while state.is_refreshing_token {
+        // Wait for up to 30 seconds for the refresh to complete
+        // Using wait_for() instead of wait() provides a safety timeout
+        // in case the refreshing thread fails to notify
+        let wait_result = token_manager
+            .refresh_notify
+            .wait_for(&mut state, Duration::from_secs(30));
+
+        if wait_result.timed_out() {
+            log::warn!("Timed out waiting for token refresh, proceeding anyway");
+            break;
         }
 
-        if state.is_refreshing_token {
-            drop(state);
-            thread::sleep(Duration::from_millis(100));
-            let state = token_state.lock();
-            if let (Some(token_str), Some(exp_time)) =
-                (&state.access_token, &state.token_expires_at)
-                && is_token_valid(exp_time)
-            {
-                return Ok(token_str.clone());
-            }
-        } else {
-            state.is_refreshing_token = true;
+        // Check if token is now valid after being notified
+        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
+            && is_token_valid(exp_time)
+        {
+            return Ok(token_str.clone());
         }
     }
+
+    // We're the thread responsible for refreshing the token
+    state.is_refreshing_token = true;
+
+    // Release lock while performing the network request
+    drop(state);
+
     log::debug!("Access token expired or missing, requesting new token");
     let token_response = request_access_token(synchronization_settings, http_agent)?;
     let expires_at = OffsetDateTime::parse(
@@ -165,10 +229,16 @@ pub fn get_valid_token(
         log::error!("Failed to parse token expiration time: {}", e);
         SynchronizationError::Other(e.to_string())
     })?;
-    let mut state = token_state.lock();
+
+    // Update state and notify waiting threads
+    let mut state = token_manager.state.lock();
     state.access_token = Some(token_response.access_token.clone());
     state.token_expires_at = Some(expires_at);
     state.is_refreshing_token = false;
+
+    // Notify all threads waiting for token refresh
+    token_manager.refresh_notify.notify_all();
+
     log::debug!("Access token refreshed successfully");
     Ok(token_response.access_token)
 }

@@ -8,12 +8,11 @@ use flate2::{
 };
 use fulgur_common::api::{devices::DeviceResponse, shares::ShareFilePayload};
 use gpui_component::Icon;
-use parking_lot::Mutex;
 
 use crate::fulgur::{
     settings::SynchronizationSettings,
     sync::{
-        access_token::{TokenState, get_valid_token},
+        access_token::{TokenStateManager, get_valid_token},
         synchronization::{SynchronizationError, handle_ureq_error},
     },
     ui::icons::CustomIcon,
@@ -89,7 +88,7 @@ pub fn get_icon(device: &Device) -> Icon {
 ///
 /// ### Arguments
 /// - `synchronization_settings`: The synchronization settings
-/// - `token_state`: Arc to the token state (thread-safe)
+/// - `token_state`: Arc to the token state manager (thread-safe with condition variable)
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
@@ -97,7 +96,7 @@ pub fn get_icon(device: &Device) -> Icon {
 /// - `Err(SynchronizationError)`: If the devices could not be retrieved
 pub fn get_devices(
     synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<Mutex<TokenState>>,
+    token_state: Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<Vec<Device>, SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {
@@ -257,7 +256,7 @@ impl ShareResult {
 /// - `file_name`: The name of the file
 /// - `device_ids`: The ids of the devices to sent the file to
 /// - `devices`: The list of all devices (with their public keys)
-/// - `token_state`: Thread-safe token state
+/// - `token_state`: Thread-safe token state manager (with condition variable)
 /// - `file_path`: Optional file path (used for deduplication hash)
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
@@ -268,7 +267,7 @@ pub fn share_file(
     synchronization_settings: &SynchronizationSettings,
     request: ShareFileRequest,
     devices: &[Device],
-    token_state: Arc<Mutex<TokenState>>,
+    token_state: Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<ShareResult, SynchronizationError> {
     let server_url = synchronization_settings

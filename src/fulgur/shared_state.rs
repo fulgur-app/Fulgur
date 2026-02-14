@@ -17,8 +17,8 @@ pub struct SyncState {
     pub device_name: Arc<Mutex<Option<String>>>,
     /// Pending shared files from sync server
     pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
-    /// JWT token state
-    pub token_state: Arc<Mutex<crate::fulgur::sync::access_token::TokenState>>,
+    /// JWT token state manager with condition variable for efficient token refresh coordination
+    pub token_state: Arc<crate::fulgur::sync::access_token::TokenStateManager>,
     /// Last heartbeat time for sync connection
     pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
     /// Flag to track if sync has been initialized (to prevent multiple initializations)
@@ -38,9 +38,7 @@ impl SyncState {
             connection_status: Arc::new(Mutex::new(connection_status)),
             device_name: Arc::new(Mutex::new(None)),
             pending_shared_files: Arc::new(Mutex::new(Vec::new())),
-            token_state: Arc::new(Mutex::new(
-                crate::fulgur::sync::access_token::TokenState::new(),
-            )),
+            token_state: Arc::new(crate::fulgur::sync::access_token::TokenStateManager::new()),
             last_heartbeat: Arc::new(Mutex::new(None)),
             initialized: Arc::new(AtomicBool::new(false)),
         }

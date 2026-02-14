@@ -19,7 +19,7 @@ use crate::fulgur::{
     Fulgur,
     settings::SynchronizationSettings,
     sync::{
-        access_token::{TokenState, get_valid_token},
+        access_token::{TokenStateManager, get_valid_token},
         synchronization::{
             SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
         },
@@ -117,7 +117,7 @@ pub fn connect_sse(
     event_tx: Sender<SseEvent>,
     shutdown_flag: Arc<AtomicBool>,
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
-    token_state: Arc<Mutex<TokenState>>,
+    token_state: Arc<TokenStateManager>,
     http_agent: Arc<ureq::Agent>,
 ) -> Result<(), SynchronizationError> {
     let server_url = synchronization_settings
