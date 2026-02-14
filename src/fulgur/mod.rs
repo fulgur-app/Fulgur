@@ -451,6 +451,11 @@ impl Fulgur {
             this.sse_state.sse_events = Some(sse_rx);
             this.sse_state.sse_event_tx = Some(sse_tx);
             this.sse_state.sse_shutdown_flag = Some(sse_shutdown_flag);
+            let shared = cx.global::<shared_state::SharedAppState>();
+            if let Some(error_msg) = shared.sync_error.lock().as_ref() {
+                this.pending_notification =
+                    Some((NotificationType::Error, error_msg.clone().into()));
+            }
             if window_index == usize::MAX {
                 let initial_tab = Tab::Editor(EditorTab::new(
                     0,

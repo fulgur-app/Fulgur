@@ -57,6 +57,8 @@ pub struct SharedAppState {
     pub themes: Arc<Mutex<Option<Themes>>>,
     /// Sync-related state (connection status, device name, pending files, token state, heartbeat, initialization flag)
     pub sync_state: SyncState,
+    /// Synchronization initialization error (if key generation failed)
+    pub sync_error: Arc<Mutex<Option<String>>>,
     /// Update info if available
     pub update_info: Arc<Mutex<Option<UpdateInfo>>>,
     /// Files from macOS "Open with" events (already Arc<Mutex>)
@@ -77,7 +79,7 @@ impl SharedAppState {
     /// ### Returns
     /// - `Self`: The new shared app state
     pub fn new(pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>) -> Self {
-        let settings = Self::load_and_validate_settings();
+        let (settings, sync_error) = Self::load_and_validate_settings();
         let themes = Self::load_themes();
         let synchronization_status = Self::determine_initial_sync_status(&settings);
 
@@ -86,6 +88,7 @@ impl SharedAppState {
             settings_version: Arc::new(AtomicU64::new(0)),
             themes: Arc::new(Mutex::new(themes)),
             sync_state: SyncState::new(synchronization_status),
+            sync_error: Arc::new(Mutex::new(sync_error)),
             update_info: Arc::new(Mutex::new(None)),
             pending_files_from_macos,
             http_agent: Arc::new(ureq::Agent::new_with_defaults()),
@@ -96,11 +99,12 @@ impl SharedAppState {
     ///
     /// If settings cannot be loaded, returns default settings with an error log.
     /// If synchronization is activated but keys cannot be validated, disables
-    /// synchronization and logs an error.
+    /// synchronization and returns the error message for user notification.
     ///
     /// ### Returns
-    /// - `Settings`: The loaded and validated settings (or defaults on error)
-    fn load_and_validate_settings() -> Settings {
+    /// - `(Settings, Option<String>)`: The loaded and validated settings (or defaults on error),
+    ///   and an optional error message if key validation failed
+    fn load_and_validate_settings() -> (Settings, Option<String>) {
         let mut settings = Settings::load().unwrap_or_else(|e| {
             log::error!(
                 "Failed to load settings in shared state, using defaults: {}",
@@ -108,23 +112,30 @@ impl SharedAppState {
             );
             Settings::new()
         });
-        if settings
+        let sync_error = if settings
             .app_settings
             .synchronization_settings
             .is_synchronization_activated
-            && let Err(e) = check_private_public_keys(&mut settings)
         {
-            log::error!(
-                "Cannot create public/private keys pair, sync deactivated: {}",
-                e
-            );
-            settings
-                .app_settings
-                .synchronization_settings
-                .is_synchronization_activated = false;
-        }
-
-        settings
+            match check_private_public_keys(&mut settings) {
+                Ok(_) => None,
+                Err(e) => {
+                    let error_msg = format!(
+                        "Failed to initialize encryption keys. Synchronization has been disabled. Error: {}",
+                        e
+                    );
+                    log::error!("{}", error_msg);
+                    settings
+                        .app_settings
+                        .synchronization_settings
+                        .is_synchronization_activated = false;
+                    Some(error_msg)
+                }
+            }
+        } else {
+            None
+        };
+        (settings, sync_error)
     }
 
     /// Load themes from disk

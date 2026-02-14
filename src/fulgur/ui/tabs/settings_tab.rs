@@ -317,8 +317,34 @@ impl Fulgur {
                     )
                     .description("Show confirmation dialog before exiting the application."),
                 ]),
-                SettingGroup::new().title("Synchronization").items(vec![
-                    SettingItem::new(
+                SettingGroup::new().title("Synchronization").items({
+                    let mut sync_items = vec![];
+                    sync_items.push(SettingItem::render({
+                        move |_options, _window, cx| {
+                            let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+                            if let Some(error_msg) = shared.sync_error.lock().as_ref() {
+                                v_flex()
+                                    .w_full()
+                                    .p_3()
+                                    .mb_2()
+                                    .bg(cx.theme().muted)
+                                    .border_1()
+                                    .border_color(cx.theme().border)
+                                    .rounded(gpui::px(4.0))
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().foreground)
+                                            .text_size(gpui::px(13.0))
+                                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                                            .child(error_msg.clone()),
+                                    )
+                                    .into_any_element()
+                            } else {
+                                div().into_any_element()
+                            }
+                        }
+                    }));
+                    sync_items.push(SettingItem::new(
                         "Activate Synchronization",
                         SettingField::switch(
                             {
@@ -357,8 +383,8 @@ impl Fulgur {
                         )
                         .default_value(default_app_settings.synchronization_settings.is_synchronization_activated),
                     )
-                    .description("Activate synchronization with the server and saves the relevant keys in the system's keychain."),
-                    SettingItem::new(
+                    .description("Activate synchronization with the server and saves the relevant keys in the system's keychain."));
+                    sync_items.push(SettingItem::new(
                         "Deduplication",
                         SettingField::switch(
                             {
@@ -389,8 +415,8 @@ impl Fulgur {
                         )
                         .default_value(default_app_settings.synchronization_settings.is_deduplication),
                     )
-                    .description("Avoid duplicate shares of the same file on the server."),
-                    SettingItem::new(
+                    .description("Avoid duplicate shares of the same file on the server."));
+                    sync_items.push(SettingItem::new(
                         "Server URL",
                         SettingField::input(
                             {
@@ -437,8 +463,8 @@ impl Fulgur {
                                 .unwrap_or_default(),
                         ),
                     )
-                    .description("URL of the synchronization server."),
-                    SettingItem::new(
+                    .description("URL of the synchronization server."));
+                    sync_items.push(SettingItem::new(
                         "Email",
                         SettingField::input(
                             {
@@ -483,8 +509,8 @@ impl Fulgur {
                                 .unwrap_or_default(),
                         ),
                     )
-                    .description("Email for synchronization."),
-                    SettingItem::new(
+                    .description("Email for synchronization."));
+                    sync_items.push(SettingItem::new(
                         "Device Key",
                         SettingField::input(
                             move |_cx: &App| SharedString::from(DEVICE_KEY_PLACEHOLDER),
@@ -523,8 +549,8 @@ impl Fulgur {
                     )
                     .description(
                         "Device Key for synchronization (stored in keychain).",
-                    ),
-                    SettingItem::render({
+                    ));
+                    sync_items.push(SettingItem::render({
                         let entity = entity.clone();
                         move |_options, _window, _cx| {
                             h_flex()
@@ -553,8 +579,9 @@ impl Fulgur {
                                 )
                                 .into_any_element()
                         }
-                    }),
-                ]),
+                    }));
+                    sync_items
+                }),
             ])
     }
 
