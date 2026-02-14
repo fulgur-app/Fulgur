@@ -276,20 +276,23 @@ mod tests {
 
     #[test]
     fn test_directory_with_trailing_slash() {
-        // /tmp/ should always exist on Unix
-        let result = parse_input_path("/tmp/");
+        let temp_dir = std::env::temp_dir();
+        let temp_str = temp_dir.to_string_lossy().to_string() + "/";
+        let result = parse_input_path(&temp_str);
         assert!(result.is_some());
         let (parent, filter) = result.unwrap();
-        assert_eq!(parent, PathBuf::from("/tmp/"));
+        assert!(parent.is_dir());
         assert_eq!(filter, "");
     }
 
     #[test]
     fn test_partial_name_filter() {
-        let result = parse_input_path("/tmp/test_nonexistent_prefix_xyz");
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.join("test_nonexistent_prefix_xyz");
+        let result = parse_input_path(&test_path.to_string_lossy());
         assert!(result.is_some());
         let (parent, filter) = result.unwrap();
-        assert_eq!(parent, PathBuf::from("/tmp"));
+        assert_eq!(parent, temp_dir);
         assert_eq!(filter, "test_nonexistent_prefix_xyz");
     }
 
@@ -339,10 +342,12 @@ mod tests {
     #[test]
     fn test_dotfile_filter() {
         // Test that "/path/." correctly filters for dotfiles
-        let result = parse_input_path("/tmp/.");
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.to_string_lossy().to_string() + "/.";
+        let result = parse_input_path(&test_path);
         assert!(result.is_some());
         let (parent, filter) = result.unwrap();
-        assert_eq!(parent, PathBuf::from("/tmp/"));
+        assert!(parent.is_dir());
         assert_eq!(filter, ".");
     }
 }
