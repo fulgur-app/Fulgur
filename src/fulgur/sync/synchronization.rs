@@ -24,7 +24,7 @@ use crate::fulgur::utils::sanitize::sanitize_filename;
 ///
 /// ### Returns
 /// - `SynchronizationError`: The mapped synchronization error
-pub(super) fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationError {
+pub fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationError {
     match error {
         ureq::Error::StatusCode(code) => {
             log::error!("{}: HTTP status {}", context, code);
@@ -307,6 +307,7 @@ pub fn perform_initial_synchronization(
     sync_server_connection_status
 }
 
+#[derive(Debug)]
 pub enum SynchronizationError {
     AuthenticationFailed,
     BadRequest,
