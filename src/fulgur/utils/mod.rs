@@ -4,3 +4,4 @@ pub mod paths;
 pub mod retry;
 pub mod sanitize;
 pub mod updater;
+pub mod utilities;

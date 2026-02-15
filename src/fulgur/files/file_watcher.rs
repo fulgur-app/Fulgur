@@ -8,6 +8,42 @@ use notify::{Error as NotifyError, Event, EventKind, RecommendedWatcher, Recursi
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::tab::Tab;
+use crate::fulgur::utils::utilities::collect_events;
+
+/// File watching state for external file change detection
+pub struct FileWatchState {
+    pub file_watcher: Option<FileWatcher>,
+    pub file_watch_events: Option<Receiver<FileWatchEvent>>,
+    pub last_file_events: HashMap<PathBuf, Instant>,
+    pub last_file_saves: HashMap<PathBuf, Instant>,
+    pub pending_conflicts: HashMap<PathBuf, usize>,
+}
+
+impl Default for FileWatchState {
+    /// Create a new FileWatchState with all fields initialized to default/empty values
+    ///
+    /// ### Returns
+    /// `Self`: A new FileWatchState
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FileWatchState {
+    /// Create a new FileWatchState with all fields initialized to default/empty values
+    ///
+    /// ### Returns
+    /// `Self: a new FileWatchState
+    pub fn new() -> Self {
+        Self {
+            file_watcher: None,
+            file_watch_events: None,
+            last_file_events: HashMap::new(),
+            last_file_saves: HashMap::new(),
+            pending_conflicts: HashMap::new(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum FileWatchEvent {
@@ -295,6 +331,21 @@ impl Fulgur {
     pub fn unwatch_file(&mut self, path: &PathBuf) {
         if let Some(watcher) = &mut self.file_watch_state.file_watcher {
             watcher.unwatch_file(path);
+        }
+    }
+
+    /// Collect and process file watch events:
+    /// - Modified: File content changed externally (may trigger auto-reload or conflict dialog)
+    /// - Deleted: File was deleted externally (shows notification)
+    /// - Renamed: File was moved/renamed (updates tab path and continues watching)
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the tabs with watched files
+    /// - `cx`: The application context
+    pub fn process_file_watch_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let events = collect_events(&self.file_watch_state.file_watch_events);
+        for event in events {
+            self.handle_file_watch_event(event, window, cx);
         }
     }
 }

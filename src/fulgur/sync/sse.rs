@@ -4,7 +4,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::Sender,
+        mpsc::{Receiver, Sender},
     },
     thread,
     time::{Duration, Instant},
@@ -24,9 +24,41 @@ use crate::fulgur::{
             SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
         },
     },
-    utils::retry::BackoffCalculator,
-    utils::sanitize::sanitize_filename,
+    utils::{retry::BackoffCalculator, sanitize::sanitize_filename, utilities::collect_events},
 };
+
+/// Server-Sent Events state for sync functionality
+pub struct SseState {
+    pub sse_events: Option<Receiver<SseEvent>>,
+    pub sse_event_tx: Option<std::sync::mpsc::Sender<SseEvent>>,
+    pub sse_shutdown_flag: Option<Arc<AtomicBool>>,
+    pub last_sse_event: Option<Instant>,
+}
+
+impl Default for SseState {
+    /// Create a new SseState with all fields initialized to default/empty values
+    ///
+    /// ### Returns
+    /// `Self`: A new SseState
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SseState {
+    /// Create a new SseState with all fields initialized to None
+    ///
+    /// ### Returns
+    /// `Self`: a new SseState
+    pub fn new() -> Self {
+        Self {
+            sse_events: None,
+            sse_event_tx: None,
+            sse_shutdown_flag: None,
+            last_sse_event: None,
+        }
+    }
+}
 
 /// Error type for line reading with shutdown support
 enum ReadError {
@@ -467,6 +499,21 @@ impl Fulgur {
             SseEvent::Error(err) => {
                 log::error!("SSE error: {}", err);
             }
+        }
+    }
+
+    /// Collect and process Server-Sent Events from the sync server:
+    /// - Heartbeat: Periodic keepalive messages to detect connection timeouts
+    /// - ShareAvailable: Another device has shared a file (triggers file download and decryption)
+    /// - Error: Connection or server errors (updates connection status in UI)
+    ///
+    /// ### Arguments
+    /// - `window`: The window to handle events in
+    /// - `cx`: The application context
+    pub fn process_sse_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let sse_events = collect_events(&self.sse_state.sse_events);
+        for event in sse_events {
+            self.handle_sse_event(event, window, cx);
         }
     }
 }

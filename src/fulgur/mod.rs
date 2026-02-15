@@ -7,15 +7,18 @@ pub mod sync;
 mod ui;
 pub mod utils;
 pub mod window_manager;
+use crate::register_action;
+
 use crate::fulgur::{
     editor_tab::EditorTab,
+    files::file_watcher::FileWatchState,
+    sync::sse::SseState,
     ui::{
         dialogs::about::about, languages::SupportedLanguage,
         notifications::update_notification::make_update_notification,
     },
-    utils::crypto_helper::{self, load_private_key_from_keychain},
+    utils::crypto_helper,
 };
-use files::file_watcher::{FileWatchEvent, FileWatcher};
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Root, WindowExt,
@@ -27,87 +30,12 @@ use gpui_component::{
     v_flex,
 };
 use settings::Settings;
-use std::sync::mpsc::Receiver;
-use std::{
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-    sync::Arc,
-    sync::atomic::AtomicBool,
-    time::Instant,
-};
+use std::{collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
 use tab::Tab;
 use ui::{
     bars::search_bar_actions::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*,
     themes,
 };
-
-/// File watching state for external file change detection
-pub struct FileWatchState {
-    pub file_watcher: Option<FileWatcher>,
-    pub file_watch_events: Option<Receiver<FileWatchEvent>>,
-    pub last_file_events: HashMap<PathBuf, Instant>,
-    pub last_file_saves: HashMap<PathBuf, Instant>,
-    pub pending_conflicts: HashMap<PathBuf, usize>,
-}
-
-impl Default for FileWatchState {
-    /// Create a new FileWatchState with all fields initialized to default/empty values
-    ///
-    /// ### Returns
-    /// `Self`: A new FileWatchState
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl FileWatchState {
-    /// Create a new FileWatchState with all fields initialized to default/empty values
-    ///
-    /// ### Returns
-    /// `Self: a new FileWatchState
-    pub fn new() -> Self {
-        Self {
-            file_watcher: None,
-            file_watch_events: None,
-            last_file_events: HashMap::new(),
-            last_file_saves: HashMap::new(),
-            pending_conflicts: HashMap::new(),
-        }
-    }
-}
-
-/// Server-Sent Events state for sync functionality
-pub struct SseState {
-    pub sse_events: Option<Receiver<sync::sse::SseEvent>>,
-    pub sse_event_tx: Option<std::sync::mpsc::Sender<sync::sse::SseEvent>>,
-    pub sse_shutdown_flag: Option<Arc<AtomicBool>>,
-    pub last_sse_event: Option<Instant>,
-}
-
-impl Default for SseState {
-    /// Create a new SseState with all fields initialized to default/empty values
-    ///
-    /// ### Returns
-    /// `Self`: A new SseState
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SseState {
-    /// Create a new SseState with all fields initialized to None
-    ///
-    /// ### Returns
-    /// `Self`: a new SseState
-    pub fn new() -> Self {
-        Self {
-            sse_events: None,
-            sse_event_tx: None,
-            sse_shutdown_flag: None,
-            last_sse_event: None,
-        }
-    }
-}
 
 /// Search and replace functionality state
 ///
@@ -155,70 +83,6 @@ impl SearchState {
     }
 }
 
-/// Macro to simplify action handler registration
-///
-/// This macro reduces boilerplate for simple action handlers that just call a method.
-/// Instead of writing:
-/// ```ignore
-/// .on_action(cx.listener(|this, _action: &ActionType, window, cx| {
-///     this.method(window, cx);
-/// }))
-/// ```
-/// You can write:
-/// ```ignore
-/// register_action!(div, cx, ActionType => method)
-/// ```
-macro_rules! register_action {
-    // Simple action → method call (uses window, cx)
-    ($div:expr, $cx:expr, $action:ty => $method:ident) => {
-        $div = $div.on_action($cx.listener(|this, _: &$action, window, cx| {
-            this.$method(window, cx);
-        }));
-    };
-    // Simple action → method call (uses only cx, no window)
-    ($div:expr, $cx:expr, $action:ty => $method:ident(cx_only)) => {
-        $div = $div.on_action($cx.listener(|this, _: &$action, _window, cx| {
-            this.$method(cx);
-        }));
-    };
-    // Action with parameter → method call with extracted param
-    ($div:expr, $cx:expr, $action:ty => $method:ident($param:ident)) => {
-        $div = $div.on_action($cx.listener(|this, action: &$action, window, cx| {
-            this.$method(window, cx, action.$param.clone());
-        }));
-    };
-    // Action with tuple struct .0 → method call with extracted param (window, cx, param)
-    ($div:expr, $cx:expr, $action:ty => $method:ident(.0)) => {
-        $div = $div.on_action($cx.listener(|this, action: &$action, window, cx| {
-            this.$method(window, cx, action.0.clone());
-        }));
-    };
-    // Action with tuple struct .0 → method call with extracted param (param, cx) - no window
-    ($div:expr, $cx:expr, $action:ty => $method:ident(.0, no_window)) => {
-        $div = $div.on_action($cx.listener(|this, action: &$action, _window, cx| {
-            this.$method(action.0.clone(), cx);
-        }));
-    };
-    // Action with action reference passed to method (action, window, cx)
-    ($div:expr, $cx:expr, $action:ty => $method:ident(&action)) => {
-        $div = $div.on_action($cx.listener(|this, action: &$action, window, cx| {
-            this.$method(action, window, cx);
-        }));
-    };
-    // Static function call with no parameters
-    ($div:expr, $cx:expr, $action:ty => call_no_args $func:path) => {
-        $div = $div.on_action($cx.listener(|_, _: &$action, _window, _cx| {
-            $func();
-        }));
-    };
-    // Static function call with (window, cx) parameters
-    ($div:expr, $cx:expr, $action:ty => call $func:path) => {
-        $div = $div.on_action($cx.listener(|_, _: &$action, window, cx| {
-            $func(window, cx);
-        }));
-    };
-}
-
 pub struct Fulgur {
     pub window_id: WindowId,                    // The ID of this window
     focus_handle: FocusHandle,                  // The focus handle for the application
@@ -241,28 +105,6 @@ pub struct Fulgur {
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
 }
 
-/// Collect all available events from an optional receiver
-///
-/// This helper drains all pending events from a channel using `try_recv()`.
-/// It's used for both file watch events and SSE events to avoid code duplication.
-///
-/// ### Arguments
-/// - `receiver`: Optional reference to a receiver channel
-///
-/// ### Returns
-/// - `Vec<T>`: Vector containing all available events, or empty vec if receiver is None
-fn collect_events<T>(receiver: &Option<Receiver<T>>) -> Vec<T> {
-    if let Some(rx) = receiver {
-        let mut events = Vec::new();
-        while let Ok(event) = rx.try_recv() {
-            events.push(event);
-        }
-        events
-    } else {
-        Vec::new()
-    }
-}
-
 impl Fulgur {
     /// Get shared application state
     ///
@@ -273,177 +115,6 @@ impl Fulgur {
     /// - `&'a shared_state::SharedAppState`: The shared application state
     fn shared_state<'a>(&self, cx: &'a App) -> &'a shared_state::SharedAppState {
         cx.global::<shared_state::SharedAppState>()
-    }
-
-    /// Update settings and propagate to all windows
-    ///
-    /// This method should be called whenever settings are changed. It will:
-    /// 1. Save settings to disk
-    /// 2. Update shared settings in SharedAppState
-    /// 3. Increment the shared settings version (so other windows detect the change)
-    /// 4. Set settings_changed flag for this window
-    /// 5. Force all windows to re-render immediately
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    ///
-    /// ### Returns
-    /// - `anyhow::Result<()>`: Result of the operation
-    fn update_and_propagate_settings(&mut self, cx: &mut Context<Self>) -> anyhow::Result<()> {
-        // Save settings to disk
-        if let Err(e) = self.settings.save() {
-            log::error!("Failed to save settings: {}", e);
-            self.pending_notification = Some((
-                NotificationType::Error,
-                format!("Failed to save settings: {}", e).into(),
-            ));
-            return Err(e);
-        }
-
-        // Update shared settings
-        let shared = self.shared_state(cx);
-        *shared.settings.lock() = self.settings.clone();
-
-        // Increment the version counter so other windows detect the change
-        let new_version = shared
-            .settings_version
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-            + 1;
-        self.local_settings_version = new_version;
-
-        // Mark settings as changed for this window
-        self.settings_changed = true;
-
-        log::debug!(
-            "Window {:?} updated settings to version {}, notifying other windows",
-            self.window_id,
-            new_version
-        );
-
-        // Force other windows to re-render immediately
-        // (Skip the current window to avoid reentrancy issues - it will re-render naturally)
-        let current_window_id = self.window_id;
-        let window_manager = cx.global::<window_manager::WindowManager>();
-        let all_windows = window_manager.get_all_windows();
-
-        // Defer notifications to avoid reentrancy issues
-        cx.defer(move |cx| {
-            for weak_window in all_windows.iter() {
-                if let Some(window_entity) = weak_window.upgrade() {
-                    // Skip the current window (already updating)
-                    let should_notify = window_entity.read(cx).window_id != current_window_id;
-                    if should_notify {
-                        window_entity.update(cx, |_, cx| {
-                            cx.notify();
-                        });
-                    }
-                }
-            }
-        });
-
-        Ok(())
-    }
-
-    /// Handle window close request
-    ///
-    /// ### Behavior
-    /// - If this is the last window: treat as quit (show confirm dialog if enabled)
-    /// - If multiple windows exist: just close this window (after saving state)
-    ///
-    /// ### Arguments
-    /// - `window`: The window being closed
-    /// - `cx`: The application context
-    ///
-    /// ### Returns
-    /// - `true`: Allow window to close
-    /// - `false`: Prevent window from closing (e.g., waiting for user confirmation)
-    pub fn on_window_close_requested(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let window_count = cx.global::<window_manager::WindowManager>().window_count();
-        if window_count == 1 {
-            if self.settings.app_settings.confirm_exit {
-                self.quit(window, cx);
-                false
-            } else {
-                if let Err(e) = self.save_state(cx, window) {
-                    log::error!("Failed to save app state on window close: {}", e);
-                    self.pending_notification = Some((
-                        NotificationType::Error,
-                        format!("Failed to save application state: {}. Close anyway?", e).into(),
-                    ));
-                    cx.notify();
-                    return false; // Prevent close, let user try again or force close
-                }
-                cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
-                    manager.unregister(self.window_id);
-                });
-                true
-            }
-        } else {
-            log::debug!(
-                "Closing window {:?} ({} windows remaining)",
-                self.window_id,
-                window_count - 1
-            );
-            if let Err(e) = self.save_state(cx, window) {
-                log::error!("Failed to save app state on window close: {}", e);
-                self.pending_notification = Some((
-                    NotificationType::Error,
-                    format!("Failed to save application state: {}. Close anyway?", e).into(),
-                ));
-                cx.notify();
-                return false; // Prevent close, let user try again or force close
-            }
-            cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
-                manager.unregister(self.window_id);
-            });
-            true
-        }
-    }
-
-    /// Open a new Fulgur window (completely empty)
-    ///
-    /// ### Arguments
-    /// - `cx` - The context for the application
-    pub fn open_new_window(&self, cx: &mut Context<Self>) {
-        let async_cx = cx.to_async();
-        async_cx
-            .spawn(async move |cx| {
-                let window_options = WindowOptions {
-                    titlebar: Some(gpui_component::TitleBar::title_bar_options()),
-                    #[cfg(target_os = "linux")]
-                    window_decorations: Some(gpui::WindowDecorations::Client),
-                    ..Default::default()
-                };
-                let window = cx.open_window(window_options, |window, cx| {
-                    window.set_window_title("Fulgur");
-                    let view = Fulgur::new(window, cx, usize::MAX); // usize::MAX = new empty window
-                    let window_handle = window.window_handle();
-                    let window_id = window_handle.window_id();
-                    view.update(cx, |fulgur, _cx| {
-                        fulgur.window_id = window_id;
-                    });
-                    cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
-                        manager.register(window_id, view.downgrade());
-                    });
-                    let view_clone = view.clone();
-                    window.on_window_should_close(cx, move |window, cx| {
-                        view_clone.update(cx, |fulgur, cx| {
-                            fulgur.on_window_close_requested(window, cx)
-                        })
-                    });
-                    view.read(cx).focus_active_tab(window, cx);
-                    cx.new(|cx| gpui_component::Root::new(view, window, cx))
-                })?;
-                window.update(cx, |_, window, _| {
-                    window.activate_window();
-                })?;
-                Ok::<_, anyhow::Error>(())
-            })
-            .detach();
     }
 
     /// Create a new Fulgur instance
@@ -597,29 +268,6 @@ impl Fulgur {
         });
     }
 
-    /// Process window state updates during the render cycle:
-    /// 1. Cache the current window bounds and display ID for state persistence
-    /// 2. Update the global WindowManager to track this window as focused
-    /// 3. Display any pending notifications that were queued during event processing
-    ///
-    /// ### Arguments
-    /// - `window`: The window being rendered
-    /// - `cx`: The application context
-    fn process_window_state_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let display_id = window.display(cx).map(|d| d.id().into());
-        self.cached_window_bounds =
-            Some(state_persistence::SerializedWindowBounds::from_gpui_bounds(
-                window.window_bounds(),
-                display_id,
-            ));
-        cx.update_global::<window_manager::WindowManager, _>(|manager, _| {
-            manager.set_focused(self.window_id);
-        });
-        if let Some((notification_type, message)) = self.pending_notification.take() {
-            window.push_notification((notification_type, message), cx);
-        }
-    }
-
     /// Process update notifications from the background update checker
     ///
     /// ### Arguments
@@ -633,234 +281,6 @@ impl Fulgur {
         if let Some(update_info) = update_info {
             let notification = make_update_notification(&update_info);
             window.push_notification(notification, cx);
-        }
-    }
-
-    /// Synchronize settings from other windows
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    fn synchronize_settings_from_other_windows(&mut self, cx: &mut Context<Self>) {
-        let shared = self.shared_state(cx);
-        let shared_version = shared
-            .settings_version
-            .load(std::sync::atomic::Ordering::Relaxed);
-        if shared_version > self.local_settings_version {
-            // Settings have been updated in another window - reload them
-            let shared_settings = shared.settings.lock().clone();
-            self.settings = shared_settings;
-            self.local_settings_version = shared_version;
-            self.settings_changed = true;
-            log::debug!(
-                "Window {:?} detected settings change from another window (version {} -> {})",
-                self.window_id,
-                self.local_settings_version,
-                shared_version
-            );
-        }
-    }
-
-    /// Process pending files from macOS "Open With" events
-    ///
-    /// ### Arguments
-    /// - `window`: The window to open files in
-    /// - `cx`: The application context
-    fn process_pending_files_from_macos(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let shared = self.shared_state(cx);
-        let should_process_files = cx
-            .global::<window_manager::WindowManager>()
-            .get_last_focused()
-            .map(|id| id == self.window_id)
-            .unwrap_or(true); // If no last focused window, allow this one to process
-        let files_to_open = if should_process_files {
-            if let Some(mut pending) = shared.pending_files_from_macos.try_lock() {
-                if pending.is_empty() {
-                    Vec::new()
-                } else {
-                    log::info!(
-                        "Processing {} pending file(s) from macOS open event in window {:?}",
-                        pending.len(),
-                        self.window_id
-                    );
-                    pending.drain(..).collect()
-                }
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
-        for file_path in files_to_open {
-            self.handle_open_file_from_cli(window, cx, file_path);
-        }
-    }
-
-    /// Process shared files from the sync server
-    ///
-    /// ### Arguments
-    /// - `window`: The window to create new tabs in
-    /// - `cx`: The application context
-    fn process_shared_files_from_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let shared_files_to_open = if let Some(mut pending) = self
-            .shared_state(cx)
-            .sync_state
-            .pending_shared_files
-            .try_lock()
-        {
-            if pending.is_empty() {
-                Vec::new()
-            } else {
-                log::info!(
-                    "Processing {} shared file(s) from sync server",
-                    pending.len()
-                );
-                pending.drain(..).collect()
-            }
-        } else {
-            Vec::new()
-        };
-        if !shared_files_to_open.is_empty() {
-            let encryption_key_opt = match load_private_key_from_keychain() {
-                Ok(key) => key,
-                Err(_) => {
-                    log::error!("Cannot decrypt shared files: encryption key not available");
-                    None
-                }
-            };
-            if let Some(encryption_key) = encryption_key_opt {
-                for shared_file in shared_files_to_open {
-                    let decrypted_result =
-                        crypto_helper::decrypt_bytes(&shared_file.content, &encryption_key)
-                            .and_then(|compressed_bytes| {
-                                sync::share::decompress_content(&compressed_bytes)
-                            });
-                    match decrypted_result {
-                        Ok(decrypted_content) => {
-                            let tab_id = self.next_tab_id;
-                            self.next_tab_id += 1;
-                            let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
-                                tab_id,
-                                decrypted_content,
-                                shared_file.file_name.clone(),
-                                window,
-                                cx,
-                                &self.settings.editor_settings,
-                            ));
-                            self.tabs.push(new_tab);
-                            self.active_tab_index = Some(self.tabs.len() - 1);
-                            log::info!("Opened shared file: {}", shared_file.file_name);
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "Failed to decrypt shared file {}: {}",
-                                shared_file.file_name,
-                                e
-                            );
-                        }
-                    }
-                }
-            } else {
-                log::error!("Cannot decrypt shared files: encryption key not available");
-            }
-        }
-    }
-
-    /// Collect and process file watch events:
-    /// - Modified: File content changed externally (may trigger auto-reload or conflict dialog)
-    /// - Deleted: File was deleted externally (shows notification)
-    /// - Renamed: File was moved/renamed (updates tab path and continues watching)
-    ///
-    /// ### Arguments
-    /// - `window`: The window containing the tabs with watched files
-    /// - `cx`: The application context
-    fn process_file_watch_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let events = collect_events(&self.file_watch_state.file_watch_events);
-        for event in events {
-            self.handle_file_watch_event(event, window, cx);
-        }
-    }
-
-    /// Collect and process Server-Sent Events from the sync server:
-    /// - Heartbeat: Periodic keepalive messages to detect connection timeouts
-    /// - ShareAvailable: Another device has shared a file (triggers file download and decryption)
-    /// - Error: Connection or server errors (updates connection status in UI)
-    ///
-    /// ### Arguments
-    /// - `window`: The window to handle events in
-    /// - `cx`: The application context
-    fn process_sse_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let sse_events = collect_events(&self.sse_state.sse_events);
-        for event in sse_events {
-            self.handle_sse_event(event, window, cx);
-        }
-    }
-
-    /// Update search results if the search query has changed
-    ///
-    /// ### Arguments
-    /// - `window`: The window containing the search bar and editor
-    /// - `cx`: The application context
-    fn update_search_if_needed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.search_state.show_search {
-            let current_query = self.search_state.search_input.read(cx).text().to_string();
-            if current_query != self.search_state.last_search_query {
-                self.search_state.last_search_query = current_query;
-                self.perform_search(window, cx);
-            }
-        }
-    }
-
-    /// Propagate settings changes to tabs
-    ///
-    /// ### Arguments
-    /// - `window`: The window containing the tabs
-    /// - `cx`: The application context
-    fn propagate_settings_to_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.tabs_pending_update.is_empty() {
-            let settings = self.settings.editor_settings.clone();
-            for tab_index in self.tabs_pending_update.drain() {
-                if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
-                    editor_tab.update_settings(window, cx, &settings);
-                }
-            }
-        }
-        if self.settings_changed {
-            let settings = self.settings.editor_settings.clone();
-            for tab_index in self.rendered_tabs.iter().copied().collect::<Vec<_>>() {
-                if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
-                    editor_tab.update_settings(window, cx, &settings);
-                }
-            }
-            self.settings_changed = false;
-        }
-    }
-
-    /// Track newly rendered tabs and mark them for settings update
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    fn track_newly_rendered_tabs(&mut self, cx: &mut Context<Self>) {
-        if let Some(index) = self.active_tab_index {
-            let is_newly_rendered = !self.rendered_tabs.contains(&index);
-            self.rendered_tabs.insert(index);
-            if is_newly_rendered {
-                self.tabs_pending_update.insert(index);
-                cx.notify();
-            }
-        }
-    }
-
-    /// Handle pending jump-to-line action
-    ///
-    /// ### Arguments
-    /// - `window`: The window containing the editor
-    /// - `cx`: The application context
-    fn handle_pending_jump_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(jump) = self.pending_jump.take()
-            && let Some(index) = self.active_tab_index
-            && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
-        {
-            editor_tab.jump_to_line(window, cx, jump);
         }
     }
 

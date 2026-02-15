@@ -1,14 +1,20 @@
 use std::{fmt, sync::Arc, thread, time::Duration};
 
 use fulgur_common::api::sync::{BeginResponse, InitialSynchronizationPayload};
-use gpui::{App, Entity, SharedString};
+use gpui::{App, Context, Entity, SharedString, Window};
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
 
 use super::access_token::{TokenStateManager, get_valid_token};
 use super::sse::connect_sse;
+use crate::fulgur::Fulgur;
 use crate::fulgur::settings::SynchronizationSettings;
-use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
+use crate::fulgur::sync::share;
+use crate::fulgur::ui::tabs::editor_tab;
+use crate::fulgur::ui::tabs::tab::Tab;
+use crate::fulgur::utils::crypto_helper::{
+    self, load_device_api_key_from_keychain, load_private_key_from_keychain,
+};
 use crate::fulgur::utils::sanitize::sanitize_filename;
 
 /// Handle ureq errors and convert them to SynchronizationError with appropriate logging
@@ -402,6 +408,78 @@ impl SynchronizationStatus {
             SynchronizationStatus::ConnectionFailed => false,
             SynchronizationStatus::Other => false,
             SynchronizationStatus::NotActivated => false,
+        }
+    }
+}
+
+impl Fulgur {
+    /// Process shared files from the sync server
+    ///
+    /// ### Arguments
+    /// - `window`: The window to create new tabs in
+    /// - `cx`: The application context
+    pub fn process_shared_files_from_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let shared_files_to_open = if let Some(mut pending) = self
+            .shared_state(cx)
+            .sync_state
+            .pending_shared_files
+            .try_lock()
+        {
+            if pending.is_empty() {
+                Vec::new()
+            } else {
+                log::info!(
+                    "Processing {} shared file(s) from sync server",
+                    pending.len()
+                );
+                pending.drain(..).collect()
+            }
+        } else {
+            Vec::new()
+        };
+        if !shared_files_to_open.is_empty() {
+            let encryption_key_opt = match load_private_key_from_keychain() {
+                Ok(key) => key,
+                Err(_) => {
+                    log::error!("Cannot decrypt shared files: encryption key not available");
+                    None
+                }
+            };
+            if let Some(encryption_key) = encryption_key_opt {
+                for shared_file in shared_files_to_open {
+                    let decrypted_result =
+                        crypto_helper::decrypt_bytes(&shared_file.content, &encryption_key)
+                            .and_then(|compressed_bytes| {
+                                share::decompress_content(&compressed_bytes)
+                            });
+                    match decrypted_result {
+                        Ok(decrypted_content) => {
+                            let tab_id = self.next_tab_id;
+                            self.next_tab_id += 1;
+                            let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
+                                tab_id,
+                                decrypted_content,
+                                shared_file.file_name.clone(),
+                                window,
+                                cx,
+                                &self.settings.editor_settings,
+                            ));
+                            self.tabs.push(new_tab);
+                            self.active_tab_index = Some(self.tabs.len() - 1);
+                            log::info!("Opened shared file: {}", shared_file.file_name);
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "Failed to decrypt shared file {}: {}",
+                                shared_file.file_name,
+                                e
+                            );
+                        }
+                    }
+                }
+            } else {
+                log::error!("Cannot decrypt shared files: encryption key not available");
+            }
         }
     }
 }

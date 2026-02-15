@@ -1,5 +1,7 @@
-use crate::fulgur::Fulgur;
+use crate::fulgur::{Fulgur, state_persistence};
 use gpui::*;
+use gpui_component::WindowExt;
+use gpui_component::notification::NotificationType;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -143,5 +145,132 @@ impl Default for WindowManager {
     /// - `WindowManager`: A new window manager instance
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Fulgur {
+    /// Handle window close request
+    ///
+    /// ### Behavior
+    /// - If this is the last window: treat as quit (show confirm dialog if enabled)
+    /// - If multiple windows exist: just close this window (after saving state)
+    ///
+    /// ### Arguments
+    /// - `window`: The window being closed
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: Allow window to close
+    /// - `false`: Prevent window from closing (e.g., waiting for user confirmation)
+    pub fn on_window_close_requested(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let window_count = cx.global::<WindowManager>().window_count();
+        if window_count == 1 {
+            if self.settings.app_settings.confirm_exit {
+                self.quit(window, cx);
+                false
+            } else {
+                if let Err(e) = self.save_state(cx, window) {
+                    log::error!("Failed to save app state on window close: {}", e);
+                    self.pending_notification = Some((
+                        NotificationType::Error,
+                        format!("Failed to save application state: {}. Close anyway?", e).into(),
+                    ));
+                    cx.notify();
+                    return false; // Prevent close, let user try again or force close
+                }
+                cx.update_global::<WindowManager, _>(|manager, _| {
+                    manager.unregister(self.window_id);
+                });
+                true
+            }
+        } else {
+            log::debug!(
+                "Closing window {:?} ({} windows remaining)",
+                self.window_id,
+                window_count - 1
+            );
+            if let Err(e) = self.save_state(cx, window) {
+                log::error!("Failed to save app state on window close: {}", e);
+                self.pending_notification = Some((
+                    NotificationType::Error,
+                    format!("Failed to save application state: {}. Close anyway?", e).into(),
+                ));
+                cx.notify();
+                return false; // Prevent close, let user try again or force close
+            }
+            cx.update_global::<WindowManager, _>(|manager, _| {
+                manager.unregister(self.window_id);
+            });
+            true
+        }
+    }
+
+    /// Open a new Fulgur window (completely empty)
+    ///
+    /// ### Arguments
+    /// - `cx` - The context for the application
+    pub fn open_new_window(&self, cx: &mut Context<Self>) {
+        let async_cx = cx.to_async();
+        async_cx
+            .spawn(async move |cx| {
+                let window_options = WindowOptions {
+                    titlebar: Some(gpui_component::TitleBar::title_bar_options()),
+                    #[cfg(target_os = "linux")]
+                    window_decorations: Some(gpui::WindowDecorations::Client),
+                    ..Default::default()
+                };
+                let window = cx.open_window(window_options, |window, cx| {
+                    window.set_window_title("Fulgur");
+                    let view = Fulgur::new(window, cx, usize::MAX); // usize::MAX = new empty window
+                    let window_handle = window.window_handle();
+                    let window_id = window_handle.window_id();
+                    view.update(cx, |fulgur, _cx| {
+                        fulgur.window_id = window_id;
+                    });
+                    cx.update_global::<WindowManager, _>(|manager, _| {
+                        manager.register(window_id, view.downgrade());
+                    });
+                    let view_clone = view.clone();
+                    window.on_window_should_close(cx, move |window, cx| {
+                        view_clone.update(cx, |fulgur, cx| {
+                            fulgur.on_window_close_requested(window, cx)
+                        })
+                    });
+                    view.read(cx).focus_active_tab(window, cx);
+                    cx.new(|cx| gpui_component::Root::new(view, window, cx))
+                })?;
+                window.update(cx, |_, window, _| {
+                    window.activate_window();
+                })?;
+                Ok::<_, anyhow::Error>(())
+            })
+            .detach();
+    }
+
+    /// Process window state updates during the render cycle:
+    /// 1. Cache the current window bounds and display ID for state persistence
+    /// 2. Update the global WindowManager to track this window as focused
+    /// 3. Display any pending notifications that were queued during event processing
+    ///
+    /// ### Arguments
+    /// - `window`: The window being rendered
+    /// - `cx`: The application context
+    pub fn process_window_state_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let display_id = window.display(cx).map(|d| d.id().into());
+        self.cached_window_bounds =
+            Some(state_persistence::SerializedWindowBounds::from_gpui_bounds(
+                window.window_bounds(),
+                display_id,
+            ));
+        cx.update_global::<WindowManager, _>(|manager, _| {
+            manager.set_focused(self.window_id);
+        });
+        if let Some((notification_type, message)) = self.pending_notification.take() {
+            window.push_notification((notification_type, message), cx);
+        }
     }
 }

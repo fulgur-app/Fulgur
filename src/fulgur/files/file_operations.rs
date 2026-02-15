@@ -4,8 +4,11 @@ use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams},
     tab::Tab,
-    ui::components_utils::{UNTITLED, UTF_8},
-    ui::menus,
+    ui::{
+        components_utils::{UNTITLED, UTF_8},
+        menus,
+    },
+    window_manager,
 };
 use chardetng::EncodingDetector;
 use gpui::*;
@@ -481,5 +484,73 @@ impl Fulgur {
         let new_name = to.file_name().and_then(|n| n.to_str()).unwrap_or("file");
         let message = SharedString::from(format!("File renamed: {} → {}", old_name, new_name));
         window.push_notification((NotificationType::Info, message), cx);
+    }
+
+    /// Process pending files from macOS "Open With" events
+    ///
+    /// ### Arguments
+    /// - `window`: The window to open files in
+    /// - `cx`: The application context
+    pub fn process_pending_files_from_macos(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let shared = self.shared_state(cx);
+        let should_process_files = cx
+            .global::<window_manager::WindowManager>()
+            .get_last_focused()
+            .map(|id| id == self.window_id)
+            .unwrap_or(true); // If no last focused window, allow this one to process
+        let files_to_open = if should_process_files {
+            if let Some(mut pending) = shared.pending_files_from_macos.try_lock() {
+                if pending.is_empty() {
+                    Vec::new()
+                } else {
+                    log::info!(
+                        "Processing {} pending file(s) from macOS open event in window {:?}",
+                        pending.len(),
+                        self.window_id
+                    );
+                    pending.drain(..).collect()
+                }
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+        for file_path in files_to_open {
+            self.handle_open_file_from_cli(window, cx, file_path);
+        }
+    }
+
+    /// Update search results if the search query has changed
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the search bar and editor
+    /// - `cx`: The application context
+    pub fn update_search_if_needed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_state.show_search {
+            let current_query = self.search_state.search_input.read(cx).text().to_string();
+            if current_query != self.search_state.last_search_query {
+                self.search_state.last_search_query = current_query;
+                self.perform_search(window, cx);
+            }
+        }
+    }
+
+    /// Handle pending jump-to-line action
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the editor
+    /// - `cx`: The application context
+    pub fn handle_pending_jump_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(jump) = self.pending_jump.take()
+            && let Some(index) = self.active_tab_index
+            && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
+        {
+            editor_tab.jump_to_line(window, cx, jump);
+        }
     }
 }
