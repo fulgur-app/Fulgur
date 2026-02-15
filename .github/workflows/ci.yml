@@ -62,49 +62,63 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo fmt --all -- --check
 
-      - name: Discord notification - Success
+      - name: Telegram notification - Success
         if: success() && matrix.os == 'ubuntu-latest'
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -X POST "$DISCORD_WEBHOOK" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "✅ Fulgur CI - Build Passed",
-                "description": "All tests and checks passed successfully on all platforms",
-                "color": 3066993,
-                "fields": [
-                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
-                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
-                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
-                ],
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "timestamp": "${{ github.event.head_commit.timestamp }}"
-              }]
-            }'
+          MESSAGE="✅ *Fulgur CI - Build Passed*
 
-      - name: Discord notification - Failure
+          All tests and checks passed successfully on all platforms
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA}\`
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+              \"text\": \"${MESSAGE}\",
+              \"parse_mode\": \"Markdown\",
+              \"disable_web_page_preview\": false
+            }"
+
+      - name: Telegram notification - Failure
         if: failure() && matrix.os == 'ubuntu-latest'
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -X POST "$DISCORD_WEBHOOK" \
+          MESSAGE="❌ *Fulgur CI - Build Failed*
+
+          Build or tests failed
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA}\`
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "❌ Fulgur CI - Build Failed",
-                "description": "Build or tests failed",
-                "color": 15158332,
-                "fields": [
-                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
-                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
-                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
-                ],
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "timestamp": "${{ github.event.head_commit.timestamp }}"
-              }]
-            }'
+            -d "{
+              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+              \"text\": \"${MESSAGE}\",
+              \"parse_mode\": \"Markdown\",
+              \"disable_web_page_preview\": false
+            }"
 
   msrv:
     name: Minimum Rust Version (1.90.0)
@@ -191,42 +205,44 @@ jobs:
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
           echo "Coverage: $COVERAGE%"
 
-      - name: Discord notification - Coverage
+      - name: Telegram notification - Coverage
         if: always()
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           COVERAGE: ${{ steps.coverage.outputs.percentage }}
           BRANCH: ${{ github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
           ACTOR: ${{ github.actor }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          TIMESTAMP: ${{ github.event.head_commit.timestamp }}
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            COLOR=3066993
-            TITLE="📊 Fulgur Code Coverage"
-            DESCRIPTION="Coverage: **${COVERAGE}%**"
+            ICON="✅"
+            TITLE="Fulgur Code Coverage"
+            DESCRIPTION="Coverage: *${COVERAGE}%*"
           else
-            COLOR=15105570
-            TITLE="❌ Fulgur Code Coverage - Failed"
+            ICON="❌"
+            TITLE="Fulgur Code Coverage - Failed"
             DESCRIPTION="Failed to generate coverage report"
           fi
 
-          curl -X POST "$DISCORD_WEBHOOK" \
+          MESSAGE="${ICON} *${TITLE}*
+
+          ${DESCRIPTION}
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA}\`
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "{
-              \"embeds\": [{
-                \"title\": \"$TITLE\",
-                \"description\": \"$DESCRIPTION\",
-                \"color\": $COLOR,
-                \"fields\": [
-                  {\"name\": \"Branch\", \"value\": \"$BRANCH\", \"inline\": true},
-                  {\"name\": \"Commit\", \"value\": \"\`$COMMIT_SHA\`\", \"inline\": true},
-                  {\"name\": \"Author\", \"value\": \"$ACTOR\", \"inline\": true}
-                ],
-                \"url\": \"$RUN_URL\",
-                \"timestamp\": \"$TIMESTAMP\"
-              }]
+              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+              \"text\": \"${MESSAGE}\",
+              \"parse_mode\": \"Markdown\",
+              \"disable_web_page_preview\": false
             }"
 
   security:
@@ -251,49 +267,63 @@ jobs:
       - name: Cargo deny
         uses: EmbarkStudios/cargo-deny-action@v2
 
-      - name: Discord notification - Security Success
+      - name: Telegram notification - Security Success
         if: success()
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -X POST "$DISCORD_WEBHOOK" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "✅ Fulgur Security Audit - Passed",
-                "description": "No security vulnerabilities or license issues found",
-                "color": 3066993,
-                "fields": [
-                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
-                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
-                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
-                ],
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "timestamp": "${{ github.event.head_commit.timestamp }}"
-              }]
-            }'
+          MESSAGE="✅ *Fulgur Security Audit - Passed*
 
-      - name: Discord notification - Security Failure
+          No security vulnerabilities or license issues found
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA}\`
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+              \"text\": \"${MESSAGE}\",
+              \"parse_mode\": \"Markdown\",
+              \"disable_web_page_preview\": false
+            }"
+
+      - name: Telegram notification - Security Failure
         if: failure()
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -X POST "$DISCORD_WEBHOOK" \
+          MESSAGE="❌ *Fulgur Security Audit - Failed*
+
+          Security vulnerabilities or license issues detected
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA}\`
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "❌ Fulgur Security Audit - Failed",
-                "description": "Security vulnerabilities or license issues detected",
-                "color": 15105570,
-                "fields": [
-                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
-                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
-                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
-                ],
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "timestamp": "${{ github.event.head_commit.timestamp }}"
-              }]
-            }'
+            -d "{
+              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+              \"text\": \"${MESSAGE}\",
+              \"parse_mode\": \"Markdown\",
+              \"disable_web_page_preview\": false
+            }"
 
   unused-deps:
     name: Unused Dependencies Check
@@ -330,49 +360,63 @@ jobs:
       - name: Check for unused dependencies
         run: cargo +nightly udeps --all-targets
 
-      - name: Discord notification - Success
+      - name: Telegram notification - Success
         if: success()
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -X POST "$DISCORD_WEBHOOK" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "✅ Fulgur Dependency Check - Passed",
-                "description": "No unused dependencies detected",
-                "color": 3066993,
-                "fields": [
-                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
-                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
-                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
-                ],
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "timestamp": "${{ github.event.head_commit.timestamp }}"
-              }]
-            }'
+          MESSAGE="✅ *Fulgur Dependency Check - Passed*
 
-      - name: Discord notification - Failure
+          No unused dependencies detected
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA}\`
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+              \"text\": \"${MESSAGE}\",
+              \"parse_mode\": \"Markdown\",
+              \"disable_web_page_preview\": false
+            }"
+
+      - name: Telegram notification - Failure
         if: failure()
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -X POST "$DISCORD_WEBHOOK" \
+          MESSAGE="⚠️ *Fulgur Dependency Check - Unused Dependencies Found*
+
+          Unused dependencies detected in Cargo.toml
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA}\`
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "⚠️ Fulgur Dependency Check - Unused Dependencies Found",
-                "description": "Unused dependencies detected in Cargo.toml",
-                "color": 15105570,
-                "fields": [
-                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
-                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
-                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
-                ],
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "timestamp": "${{ github.event.head_commit.timestamp }}"
-              }]
-            }'
+            -d "{
+              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+              \"text\": \"${MESSAGE}\",
+              \"parse_mode\": \"Markdown\",
+              \"disable_web_page_preview\": false
+            }"
 
   docs:
     name: Documentation Build
@@ -406,51 +450,65 @@ jobs:
       - name: Build documentation
         run: cargo doc --no-deps --all-features
         env:
-          RUSTDOCFLAGS: "-D warnings"
+          RUSTDOCFLAGS: '-D warnings'
 
-      - name: Discord notification - Success
+      - name: Telegram notification - Success
         if: success()
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -X POST "$DISCORD_WEBHOOK" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "✅ Fulgur Documentation - Built Successfully",
-                "description": "Documentation built without errors or warnings",
-                "color": 3066993,
-                "fields": [
-                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
-                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
-                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
-                ],
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "timestamp": "${{ github.event.head_commit.timestamp }}"
-              }]
-            }'
+          MESSAGE="✅ *Fulgur Documentation - Built Successfully*
 
-      - name: Discord notification - Failure
+          Documentation built without errors or warnings
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA}\`
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+              \"text\": \"${MESSAGE}\",
+              \"parse_mode\": \"Markdown\",
+              \"disable_web_page_preview\": false
+            }"
+
+      - name: Telegram notification - Failure
         if: failure()
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -X POST "$DISCORD_WEBHOOK" \
+          MESSAGE="❌ *Fulgur Documentation - Build Failed*
+
+          Documentation build errors or warnings detected
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA}\`
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
-            -d '{
-              "embeds": [{
-                "title": "❌ Fulgur Documentation - Build Failed",
-                "description": "Documentation build errors or warnings detected",
-                "color": 15105570,
-                "fields": [
-                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
-                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
-                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
-                ],
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "timestamp": "${{ github.event.head_commit.timestamp }}"
-              }]
-            }'
+            -d "{
+              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+              \"text\": \"${MESSAGE}\",
+              \"parse_mode\": \"Markdown\",
+              \"disable_web_page_preview\": false
+            }"
 
   unsafe-audit:
     name: Unsafe Code Audit
@@ -495,34 +553,42 @@ jobs:
           UNSAFE_COUNT=$(echo "$OUTPUT" | grep "^| fulgur " | awk -F'|' '{print $6}' | tr -d ' ' || echo "0")
           echo "unsafe_count=$UNSAFE_COUNT" >> $GITHUB_OUTPUT
 
-      - name: Discord notification - Report
+      - name: Telegram notification - Report
         if: always()
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           UNSAFE_COUNT: ${{ steps.geiger.outputs.unsafe_count }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ "${{ job.status }}" = "success" ]; then
-            COLOR=3066993
-            TITLE="🔒 Fulgur Unsafe Code Audit"
-            DESCRIPTION="Unsafe expressions in first-party code: **${UNSAFE_COUNT}**"
+            ICON="✅"
+            TITLE="Fulgur Unsafe Code Audit"
+            DESCRIPTION="Unsafe expressions in first-party code: *${UNSAFE_COUNT}*"
           else
-            COLOR=15105570
-            TITLE="❌ Fulgur Unsafe Code Audit - Failed"
+            ICON="❌"
+            TITLE="Fulgur Unsafe Code Audit - Failed"
             DESCRIPTION="Failed to generate unsafe code report"
           fi
 
-          curl -X POST "$DISCORD_WEBHOOK" \
+          MESSAGE="${ICON} *${TITLE}*
+
+          ${DESCRIPTION}
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA}\`
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "{
-              \"embeds\": [{
-                \"title\": \"$TITLE\",
-                \"description\": \"$DESCRIPTION\",
-                \"color\": $COLOR,
-                \"fields\": [
-                  {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\", \"inline\": true},
-                  {\"name\": \"Commit\", \"value\": \"\`${{ github.sha }}\`\", \"inline\": true},
-                  {\"name\": \"Author\", \"value\": \"${{ github.actor }}\", \"inline\": true}
-                ],
-                \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
-              }]
+              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+              \"text\": \"${MESSAGE}\",
+              \"parse_mode\": \"Markdown\",
+              \"disable_web_page_preview\": false
             }"
