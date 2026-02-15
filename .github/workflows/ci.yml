@@ -540,7 +540,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-geiger
-        uses: taiki-e/install-action@cargo-geiger
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-geiger
 
       - name: Run cargo-geiger
         id: geiger
