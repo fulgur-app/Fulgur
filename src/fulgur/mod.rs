@@ -176,13 +176,43 @@ macro_rules! register_action {
             this.$method(window, cx);
         }));
     };
+    // Simple action → method call (uses only cx, no window)
+    ($div:expr, $cx:expr, $action:ty => $method:ident(cx_only)) => {
+        $div = $div.on_action($cx.listener(|this, _: &$action, _window, cx| {
+            this.$method(cx);
+        }));
+    };
     // Action with parameter → method call with extracted param
     ($div:expr, $cx:expr, $action:ty => $method:ident($param:ident)) => {
         $div = $div.on_action($cx.listener(|this, action: &$action, window, cx| {
             this.$method(window, cx, action.$param.clone());
         }));
     };
-    // Static function call (no 'this' needed)
+    // Action with tuple struct .0 → method call with extracted param (window, cx, param)
+    ($div:expr, $cx:expr, $action:ty => $method:ident(.0)) => {
+        $div = $div.on_action($cx.listener(|this, action: &$action, window, cx| {
+            this.$method(window, cx, action.0.clone());
+        }));
+    };
+    // Action with tuple struct .0 → method call with extracted param (param, cx) - no window
+    ($div:expr, $cx:expr, $action:ty => $method:ident(.0, no_window)) => {
+        $div = $div.on_action($cx.listener(|this, action: &$action, _window, cx| {
+            this.$method(action.0.clone(), cx);
+        }));
+    };
+    // Action with action reference passed to method (action, window, cx)
+    ($div:expr, $cx:expr, $action:ty => $method:ident(&action)) => {
+        $div = $div.on_action($cx.listener(|this, action: &$action, window, cx| {
+            this.$method(action, window, cx);
+        }));
+    };
+    // Static function call with no parameters
+    ($div:expr, $cx:expr, $action:ty => call_no_args $func:path) => {
+        $div = $div.on_action($cx.listener(|_, _: &$action, _window, _cx| {
+            $func();
+        }));
+    };
+    // Static function call with (window, cx) parameters
     ($div:expr, $cx:expr, $action:ty => call $func:path) => {
         $div = $div.on_action($cx.listener(|_, _: &$action, window, cx| {
             $func(window, cx);
@@ -871,57 +901,18 @@ impl Fulgur {
         register_action!(app_content, cx, JumpToLine => show_jump_to_line_dialog);
         register_action!(app_content, cx, SelectTheme => select_theme_sheet);
         register_action!(app_content, cx, About => call about);
-        app_content = app_content
-            .on_action(cx.listener(|this, _action: &NewWindow, _window, cx| {
-                this.open_new_window(cx);
-            }))
-            .on_action(cx.listener(|this, _action: &CloseFile, window, cx| {
-                if let Some(index) = this.active_tab_index {
-                    this.close_tab(index, window, cx);
-                }
-            }))
-            .on_action(cx.listener(|this, action: &SwitchTheme, _window, cx| {
-                this.switch_to_theme(action.0.clone(), cx);
-            }))
-            .on_action(
-                cx.listener(|this, action: &tab_bar::CloseTabAction, window, cx| {
-                    this.on_close_tab_action(action, window, cx);
-                }),
-            )
-            .on_action(
-                cx.listener(|this, action: &tab_bar::CloseTabsToLeft, window, cx| {
-                    this.on_close_tabs_to_left(action, window, cx);
-                }),
-            )
-            .on_action(
-                cx.listener(|this, action: &tab_bar::CloseTabsToRight, window, cx| {
-                    this.on_close_tabs_to_right(action, window, cx);
-                }),
-            )
-            .on_action(
-                cx.listener(|this, action: &tab_bar::CloseAllTabsAction, window, cx| {
-                    this.on_close_all_tabs_action(action, window, cx);
-                }),
-            )
-            .on_action(
-                cx.listener(|this, action: &tab_bar::CloseAllOtherTabs, window, cx| {
-                    this.on_close_all_other_tabs_action(action, window, cx);
-                }),
-            )
-            .on_action(cx.listener(|this, action: &OpenRecentFile, window, cx| {
-                this.do_open_file(window, cx, action.0.clone());
-            }))
-            .on_action(
-                cx.listener(|this, _action: &ClearRecentFiles, _window, cx| {
-                    this.clear_recent_files(cx);
-                }),
-            )
-            .on_action(cx.listener(|_, _action: &GetTheme, _window, _cx| {
-                tab_bar::open_theme_repository();
-            }))
-            .on_action(cx.listener(|this, _action: &CheckForUpdates, window, cx| {
-                this.check_for_updates(window, cx);
-            }));
+        register_action!(app_content, cx, SwitchTheme => switch_to_theme(.0, no_window));
+        register_action!(app_content, cx, tab_bar::CloseTabAction => on_close_tab_action(&action));
+        register_action!(app_content, cx, tab_bar::CloseTabsToLeft => on_close_tabs_to_left(&action));
+        register_action!(app_content, cx, tab_bar::CloseTabsToRight => on_close_tabs_to_right(&action));
+        register_action!(app_content, cx, tab_bar::CloseAllTabsAction => on_close_all_tabs_action(&action));
+        register_action!(app_content, cx, tab_bar::CloseAllOtherTabs => on_close_all_other_tabs_action(&action));
+        register_action!(app_content, cx, OpenRecentFile => do_open_file(.0));
+        register_action!(app_content, cx, CheckForUpdates => check_for_updates);
+        register_action!(app_content, cx, GetTheme => call_no_args tab_bar::open_theme_repository);
+        register_action!(app_content, cx, NewWindow => open_new_window(cx_only));
+        register_action!(app_content, cx, ClearRecentFiles => clear_recent_files(cx_only));
+        register_action!(app_content, cx, CloseFile => close_active_tab);
         app_content = app_content
             .child(self.render_tab_bar(cx))
             .child(self.render_content_area(active_tab, window, cx))

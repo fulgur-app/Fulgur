@@ -97,6 +97,20 @@ impl Fulgur {
         }
     }
 
+    /// Close the currently active tab
+    ///
+    /// This is a convenience method for the CloseFile action that closes
+    /// whichever tab is currently active.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn close_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(index) = self.active_tab_index {
+            self.close_tab(index, window, cx);
+        }
+    }
+
     /// Close a tab and manage the focus
     ///
     /// ### Arguments
