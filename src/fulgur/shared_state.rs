@@ -59,7 +59,7 @@ pub struct SharedAppState {
     pub sync_error: Arc<Mutex<Option<String>>>,
     /// Update info if available
     pub update_info: Arc<Mutex<Option<UpdateInfo>>>,
-    /// Files from macOS "Open with" events (already Arc<Mutex>)
+    /// Files from macOS "Open with" events (already `Arc<Mutex>`)
     pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
     /// Shared HTTP agent for connection pooling across all requests
     pub http_agent: Arc<ureq::Agent>,
