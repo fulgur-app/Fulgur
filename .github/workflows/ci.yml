@@ -358,7 +358,13 @@ jobs:
         uses: taiki-e/install-action@cargo-udeps
 
       - name: Check for unused dependencies
-        run: cargo +nightly udeps --all-targets
+        run: |
+          echo "Checking Linux target..."
+          cargo +nightly udeps --all-targets --target x86_64-unknown-linux-gnu
+          echo "Checking Windows target..."
+          cargo +nightly udeps --all-targets --target x86_64-pc-windows-msvc
+          echo "Checking macOS target..."
+          cargo +nightly udeps --all-targets --target x86_64-apple-darwin
 
       - name: Telegram notification - Success
         if: success()
