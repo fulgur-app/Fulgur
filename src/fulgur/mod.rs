@@ -10,7 +10,7 @@ pub mod window_manager;
 use crate::fulgur::{
     editor_tab::EditorTab,
     ui::{
-        icons::CustomIcon, languages::SupportedLanguage,
+        dialogs::about::about, languages::SupportedLanguage,
         notifications::update_notification::make_update_notification,
     },
     utils::crypto_helper::{self, load_private_key_from_keychain},
@@ -18,9 +18,8 @@ use crate::fulgur::{
 use files::file_watcher::{FileWatchEvent, FileWatcher};
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Icon, Root, WindowExt, h_flex,
+    ActiveTheme, Root, WindowExt,
     input::{Input, InputEvent, InputState},
-    link::Link,
     notification::NotificationType,
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
@@ -1004,60 +1003,6 @@ impl Render for Fulgur {
         let app_content = self.build_app_content_with_actions(active_tab.clone(), window, cx);
         self.assemble_ui_tree(app_content, window, cx)
     }
-}
-
-/// Show the about dialog
-///
-/// ### Arguments
-/// - `window`: The window context
-/// - `cx`: The application context
-fn about(window: &mut Window, cx: &mut App) {
-    window.open_dialog(cx, |modal, _window, _cx| {
-        modal
-            .alert()
-            .keyboard(true)
-            .title(div().text_center().child("Fulgur"))
-            .child(
-                gpui_component::v_flex()
-                    .gap_4()
-                    .items_center()
-                    .child(img("assets/icon_square.png").w(px(200.0)).h(px(200.0)))
-                    .child(format!("Version {}", env!("CARGO_PKG_VERSION")))
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(Icon::new(CustomIcon::Globe))
-                            .child(
-                                Link::new("website-link")
-                                    .href("https://fulgur.app")
-                                    .child("https://fulgur.app"),
-                            ),
-                    )
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(Icon::new(CustomIcon::GitHub))
-                            .child(
-                                Link::new("github-link")
-                                    .href("https://github.com/fulgur-app/Fulgur")
-                                    .child("https://github.com/fulgur-app/Fulgur"),
-                            ),
-                    )
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(Icon::new(CustomIcon::File))
-                            .child(
-                                Link::new("license-link")
-                                    .href("http://www.apache.org/licenses/LICENSE-2.0")
-                                    .child("http://www.apache.org/licenses/LICENSE-2.0"),
-                            ),
-                    ),
-            )
-    });
 }
 
 impl Fulgur {
