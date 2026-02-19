@@ -4,6 +4,7 @@ use gpui_component::highlighter::Language;
 use gpui_component::input::{InputState, Position, TabSize};
 use regex::Regex;
 use std::sync::LazyLock;
+use std::time::SystemTime;
 
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
@@ -24,6 +25,8 @@ pub struct EditorTab {
     pub language: SupportedLanguage,
     pub show_markdown_toolbar: bool,
     pub show_markdown_preview: bool,
+    pub file_size_bytes: Option<u64>,
+    pub file_last_modified: Option<SystemTime>,
 }
 
 /// Parameters for creating an editor tab from a file
@@ -98,6 +101,8 @@ impl EditorTab {
             language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: None,
+            file_last_modified: None,
         }
     }
 
@@ -147,6 +152,8 @@ impl EditorTab {
             language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: None,
+            file_last_modified: None,
         }
     }
 
@@ -166,6 +173,7 @@ impl EditorTab {
         cx: &mut App,
         settings: &EditorSettings,
     ) -> Self {
+        let content_len = params.contents.len();
         let file_name = params
             .path
             .file_name()
@@ -204,7 +212,18 @@ impl EditorTab {
             language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: Some(content_len as u64),
+            file_last_modified: Some(SystemTime::now()),
         }
+    }
+
+    /// Update cached metadata used by tab tooltip rendering.
+    ///
+    /// ### Arguments
+    /// - `content_len`: File size in bytes
+    pub fn update_file_tooltip_cache(&mut self, content_len: usize) {
+        self.file_size_bytes = Some(content_len as u64);
+        self.file_last_modified = Some(SystemTime::now());
     }
 
     /// Update the editor's display settings. Tab size cannot be changed after InputState creation.

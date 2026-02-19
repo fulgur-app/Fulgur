@@ -83,3 +83,20 @@ pub fn format_system_time(time: SystemTime) -> Option<String> {
         time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]").ok()?;
     datetime.format(&format).ok()
 }
+
+/// Format file size in a human-readable format.
+///
+/// ### Arguments
+/// - `bytes`: File size in bytes
+///
+/// ### Returns
+/// - `String`: Human-readable file size
+pub fn format_file_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
+}

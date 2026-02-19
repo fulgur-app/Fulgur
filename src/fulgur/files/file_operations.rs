@@ -101,6 +101,7 @@ impl Fulgur {
                         editor_tab.original_content = contents;
                         editor_tab.encoding = encoding;
                         editor_tab.modified = false;
+                        editor_tab.update_file_tooltip_cache(bytes.len());
                         editor_tab.update_language(window, cx, &self.settings.editor_settings);
                         log::debug!("Tab reloaded successfully from disk: {:?}", path);
                     }
@@ -343,7 +344,7 @@ impl Fulgur {
         };
         let contents = content_entity.read(cx).text().to_string();
         log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
-        if let Err(e) = std::fs::write(&path, contents) {
+        if let Err(e) = std::fs::write(&path, &contents) {
             log::debug!("Failed to save file {:?}: {}", path, e);
             return;
         }
@@ -353,6 +354,7 @@ impl Fulgur {
             .insert(path.clone(), std::time::Instant::now());
         if let Tab::Editor(editor_tab) = &mut self.tabs[active_tab_index] {
             editor_tab.mark_as_saved(cx);
+            editor_tab.update_file_tooltip_cache(contents.len());
         }
         cx.notify();
     }
@@ -420,6 +422,7 @@ impl Fulgur {
                                 .to_string()
                                 .into();
                             editor_tab.mark_as_saved(cx);
+                            editor_tab.update_file_tooltip_cache(contents.len());
                             editor_tab.update_language(window, cx, &this.settings.editor_settings);
                             cx.notify();
                         }

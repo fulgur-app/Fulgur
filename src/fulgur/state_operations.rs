@@ -286,6 +286,8 @@ impl Fulgur {
                     .editor_settings
                     .markdown_settings
                     .show_markdown_preview,
+                file_size_bytes: None,
+                file_last_modified: None,
             }
         };
 

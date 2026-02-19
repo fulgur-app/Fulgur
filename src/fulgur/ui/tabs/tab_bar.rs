@@ -315,6 +315,14 @@ impl Fulgur {
                 .as_ref()
                 .and_then(|path| path.to_str().map(|s| s.to_string()))
         });
+        let cached_file_size = tab
+            .as_editor()
+            .and_then(|editor_tab| editor_tab.file_size_bytes)
+            .map(components_utils::format_file_size);
+        let cached_last_modified = tab
+            .as_editor()
+            .and_then(|editor_tab| editor_tab.file_last_modified)
+            .and_then(components_utils::format_system_time);
         let mut tab_div = div()
             .id(("tab", tab_id))
             .flex()
@@ -345,23 +353,8 @@ impl Fulgur {
         if let Some(path) = file_path {
             tab_div = tab_div.tooltip(move |window, cx| {
                 let path_clone = path.clone();
-                let file_info = std::fs::metadata(&path).ok();
-                let file_size = file_info.as_ref().map(|meta| {
-                    let size = meta.len();
-                    if size < 1024 {
-                        format!("{} B", size)
-                    } else if size < 1024 * 1024 {
-                        format!("{:.1} KB", size as f64 / 1024.0)
-                    } else {
-                        format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
-                    }
-                });
-                let last_modified = file_info.as_ref().and_then(|meta| {
-                    meta.modified()
-                        .ok()
-                        .map(components_utils::format_system_time)
-                });
-                let last_modified = last_modified.unwrap_or_default();
+                let file_size = cached_file_size.clone();
+                let last_modified = cached_last_modified.clone();
                 Tooltip::element(move |_, cx| {
                     let mut tooltip = v_flex().gap_1().py_2().px_1().child(
                         h_flex()
