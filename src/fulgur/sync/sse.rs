@@ -20,6 +20,7 @@ use crate::fulgur::{
     settings::SynchronizationSettings,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
+        share::MAX_SYNC_SHARE_PAYLOAD_BYTES,
         synchronization::{
             SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
         },
@@ -473,6 +474,15 @@ impl Fulgur {
                 }
             }
             SseEvent::ShareAvailable(notification) => {
+                if notification.content.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
+                    log::warn!(
+                        "Dropping shared file '{}' from device {}: encrypted payload exceeds {} bytes",
+                        notification.file_name,
+                        notification.source_device_id,
+                        MAX_SYNC_SHARE_PAYLOAD_BYTES
+                    );
+                    return;
+                }
                 let safe_filename = sanitize_filename(&notification.file_name);
                 log::info!(
                     "File shared from device {}: {} (sanitized: {})",

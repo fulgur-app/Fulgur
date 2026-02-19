@@ -447,9 +447,24 @@ impl Fulgur {
             };
             if let Some(encryption_key) = encryption_key_opt {
                 for shared_file in shared_files_to_open {
+                    if shared_file.content.len() > share::MAX_SYNC_SHARE_PAYLOAD_BYTES {
+                        log::warn!(
+                            "Skipping shared file '{}' from device {}: encrypted payload exceeds {} bytes",
+                            shared_file.file_name,
+                            shared_file.source_device_id,
+                            share::MAX_SYNC_SHARE_PAYLOAD_BYTES
+                        );
+                        continue;
+                    }
                     let decrypted_result =
                         crypto_helper::decrypt_bytes(&shared_file.content, &encryption_key)
                             .and_then(|compressed_bytes| {
+                                if compressed_bytes.len() > share::MAX_SYNC_SHARE_PAYLOAD_BYTES {
+                                    return Err(anyhow::anyhow!(
+                                        "Compressed payload exceeds {} bytes limit",
+                                        share::MAX_SYNC_SHARE_PAYLOAD_BYTES
+                                    ));
+                                }
                                 share::decompress_content(&compressed_bytes)
                             });
                     match decrypted_result {

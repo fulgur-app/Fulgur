@@ -20,6 +20,7 @@ use crate::fulgur::{
 };
 
 pub type Device = DeviceResponse;
+pub const MAX_SYNC_SHARE_PAYLOAD_BYTES: usize = 1024 * 1024;
 
 /// Parameters for sharing a file
 pub struct ShareFileRequest {
@@ -62,9 +63,25 @@ fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
 /// - `Ok(String)`: The decompressed content as string
 /// - `Err(anyhow::Error)`: If the content could not be decompressed
 pub fn decompress_content(compressed: &[u8]) -> anyhow::Result<String> {
-    let mut decoder = GzDecoder::new(compressed);
-    let mut decompressed = String::new();
-    decoder.read_to_string(&mut decompressed)?;
+    if compressed.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
+        return Err(anyhow::anyhow!(
+            "Compressed payload exceeds {} bytes limit",
+            MAX_SYNC_SHARE_PAYLOAD_BYTES
+        ));
+    }
+    let decoder = GzDecoder::new(compressed);
+    let mut limited_reader = decoder.take((MAX_SYNC_SHARE_PAYLOAD_BYTES + 1) as u64);
+    let mut decompressed_bytes = Vec::new();
+    limited_reader.read_to_end(&mut decompressed_bytes)?;
+    if decompressed_bytes.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
+        return Err(anyhow::anyhow!(
+            "Decompressed payload exceeds {} bytes limit",
+            MAX_SYNC_SHARE_PAYLOAD_BYTES
+        ));
+    }
+    let decompressed = String::from_utf8(decompressed_bytes).map_err(|e| {
+        anyhow::anyhow!("Failed to decode decompressed content as UTF-8: {}", e)
+    })?;
     Ok(decompressed)
 }
 
@@ -277,7 +294,7 @@ pub fn share_file(
     if request.content.is_empty() {
         return Err(SynchronizationError::ContentMissing);
     }
-    if request.content.len() > 1024 * 1024 {
+    if request.content.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
         return Err(SynchronizationError::ContentTooLarge);
     }
     if request.file_name.is_empty() {
@@ -406,6 +423,11 @@ pub fn share_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fulgur::settings::SynchronizationSettings;
+    use crate::fulgur::sync::{
+        access_token::TokenStateManager, synchronization::SynchronizationError,
+    };
+    use std::sync::Arc;
 
     // ========== Compression Tests ==========
 
@@ -503,6 +525,73 @@ fn main() {
         let compressed = compress_content(&original).unwrap();
         let decompressed = decompress_content(&compressed).unwrap();
         assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_decompress_rejects_oversized_compressed_payload() {
+        let oversized_payload = vec![0_u8; MAX_SYNC_SHARE_PAYLOAD_BYTES + 1];
+        let result = decompress_content(&oversized_payload);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decompress_rejects_oversized_decompressed_payload() {
+        let original = "A".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES + 1);
+        let compressed = compress_content(&original).unwrap();
+        let result = decompress_content(&compressed);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_share_file_rejects_content_larger_than_limit() {
+        let mut settings = SynchronizationSettings::new();
+        settings.server_url = Some("https://example.com".to_string());
+
+        let request = ShareFileRequest {
+            content: "A".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES + 1),
+            file_name: "large.txt".to_string(),
+            device_ids: vec!["device-1".to_string()],
+            file_path: None,
+        };
+
+        let result = share_file(
+            &settings,
+            request,
+            &[],
+            Arc::new(TokenStateManager::new()),
+            &ureq::Agent::new_with_config(ureq::config::Config::default()),
+        );
+
+        assert!(matches!(result, Err(SynchronizationError::ContentTooLarge)));
+    }
+
+    #[test]
+    fn test_share_file_accepts_content_at_exact_limit() {
+        let mut settings = SynchronizationSettings::new();
+        settings.server_url = Some("https://example.com".to_string());
+        // Keep email unset so the flow fails deterministically at validation/network setup,
+        // after content-size checks have already passed.
+        settings.email = None;
+
+        let request = ShareFileRequest {
+            content: "A".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES),
+            file_name: "max-size.txt".to_string(),
+            device_ids: vec!["device-1".to_string()],
+            file_path: None,
+        };
+
+        let result = share_file(
+            &settings,
+            request,
+            &[],
+            Arc::new(TokenStateManager::new()),
+            &ureq::Agent::new_with_config(ureq::config::Config::default()),
+        );
+
+        assert!(
+            !matches!(result, Err(SynchronizationError::ContentTooLarge)),
+            "Payload at exact limit should not be rejected as too large"
+        );
     }
 
     // ========== ShareResult Tests ==========
