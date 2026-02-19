@@ -58,12 +58,20 @@ pub fn save_device_api_key_to_keychain(device_api_key: Option<String>) -> anyhow
 /// - `Err(anyhow::Error)`: If the value could not be saved
 fn save_or_remove_to_keychain(user: &str, value: Option<String>) -> anyhow::Result<()> {
     let entry = Entry::new(SERVICE_NAME, user)?;
-    if let Some(value) = value {
+    if let Some(value) = value
+        && !value.is_empty()
+    {
         entry.set_password(value.as_str())?;
-    } else {
-        entry.set_password("")?;
+        return Ok(());
     }
-    Ok(())
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(anyhow::anyhow!(
+            "Failed to remove '{}' from keychain: {}",
+            user,
+            e
+        )),
+    }
 }
 
 /// Loads the private key from the keychain
@@ -95,6 +103,22 @@ pub fn load_device_api_key_from_keychain() -> anyhow::Result<Option<String>> {
 fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
     let entry = Entry::new(SERVICE_NAME, user)?;
     match entry.get_password() {
+        Ok(value) if value.is_empty() => {
+            // Legacy behavior stored empty strings instead of deleting credentials.
+            // TODO: remove this in further version.
+            log::warn!(
+                "Keychain entry '{}' is empty; treating as missing and removing stale credential",
+                user
+            );
+            match entry.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => Ok(None),
+                Err(e) => Err(anyhow::anyhow!(
+                    "Failed to clean up empty '{}' keychain entry: {}",
+                    user,
+                    e
+                )),
+            }
+        }
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(anyhow::anyhow!(
