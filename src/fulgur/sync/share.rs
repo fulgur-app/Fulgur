@@ -79,9 +79,8 @@ pub fn decompress_content(compressed: &[u8]) -> anyhow::Result<String> {
             MAX_SYNC_SHARE_PAYLOAD_BYTES
         ));
     }
-    let decompressed = String::from_utf8(decompressed_bytes).map_err(|e| {
-        anyhow::anyhow!("Failed to decode decompressed content as UTF-8: {}", e)
-    })?;
+    let decompressed = String::from_utf8(decompressed_bytes)
+        .map_err(|e| anyhow::anyhow!("Failed to decode decompressed content as UTF-8: {}", e))?;
     Ok(decompressed)
 }
 
