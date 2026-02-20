@@ -244,7 +244,7 @@ pub fn connect_sse(
                             current_data.push_str(line.trim_start_matches("data:").trim());
                         } else if line.is_empty() && !current_data.is_empty() {
                             log::info!("SSE event type: {}", current_event_type);
-                            log::info!("SSE data: {}", current_data);
+                            log::debug!("SSE event received ({} bytes)", current_data.len());
                             let event = SseEvent::parse(&current_event_type, &current_data);
                             if let Err(e) = event_tx.send(event) {
                                 log::error!("Failed to send SSE event: {}", e);
@@ -353,8 +353,8 @@ impl SseEvent {
                 }
             },
             "" => {
-                // No event type means generic message event
-                SseEvent::Error(format!("Unknown event (no event type): {}", data))
+                log::error!("Unknown event with no event type");
+                SseEvent::Error("Unknown event with no event type".to_string())
             }
             _ => {
                 log::warn!("Unknown SSE event type: {}", event_type);

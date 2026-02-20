@@ -71,16 +71,14 @@ impl AssetSource for Assets {
 /// - `Some(PathBuf)`: The PathBuf if successful
 /// - `None`: If the URL could not be converted to a path
 fn url_to_path(url_string: &str) -> Option<PathBuf> {
-    log::debug!("Converting URL to path: {}", url_string);
     let path_str = url_string.strip_prefix("file://").unwrap_or(url_string);
     match urlencoding::decode(path_str) {
         Ok(decoded) => {
             let path = PathBuf::from(decoded.into_owned());
             if path.exists() && path.is_file() {
-                log::debug!("Converted URL to valid file path: {:?}", path);
                 Some(path)
             } else {
-                log::warn!("URL converted to path but file doesn't exist: {:?}", path);
+                log::warn!("URL converted to path, but target is not a valid file");
                 None
             }
         }
@@ -102,7 +100,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     log::info!("Command-line arguments: {:?}", args);
     if args.len() > 1 {
-        log::info!("File to open from command-line: {}", args[1]);
+        log::debug!("File to open from command-line: {}", args[1]);
     }
     let cli_file_paths: Vec<PathBuf> = args
         .iter()
@@ -110,11 +108,10 @@ fn main() {
         .filter_map(|arg| {
             let path = PathBuf::from(arg);
             if path.exists() && path.is_file() {
-                log::debug!("Valid file argument found: {:?}", path);
                 Some(path)
             } else {
                 if !arg.is_empty() {
-                    log::warn!("Invalid or non-existent file argument: {:?}", arg);
+                    log::warn!("Invalid or non-existent file argument");
                 }
                 None
             }
@@ -126,9 +123,6 @@ fn main() {
     let pending_files_clone = pending_files.clone();
     app.on_open_urls(move |urls| {
         log::debug!("Received {} file URL(s) from macOS open event", urls.len());
-        for url in &urls {
-            log::debug!("macOS open URL: {}", url);
-        }
         let file_paths: Vec<PathBuf> = urls.iter().filter_map(|url| url_to_path(url)).collect();
 
         if file_paths.is_empty() {
