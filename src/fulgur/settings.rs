@@ -339,6 +339,7 @@ impl Settings {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(path)
             .map_err(|e| anyhow::anyhow!("Failed to open settings file: {}", e))?;
         file.lock_exclusive()
