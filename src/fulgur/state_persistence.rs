@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
+use crate::fulgur::utils::atomic_write::atomic_write_file;
 use fs2::FileExt;
 
 /// Persisted state of a single editor tab
@@ -169,24 +169,16 @@ impl WindowsState {
         // Serialize state to JSON first (fast, no I/O)
         let json = serde_json::to_string_pretty(self)?;
 
-        #[allow(clippy::suspicious_open_options)]
         let file = fs::OpenOptions::new()
+            .read(true)
             .write(true)
             .create(true)
             .open(path)
             .map_err(|e| anyhow::anyhow!("Failed to open state file: {}", e))?;
         file.lock_exclusive()
             .map_err(|e| anyhow::anyhow!("Failed to acquire lock on state file: {}", e))?;
-        file.set_len(0)
-            .map_err(|e| anyhow::anyhow!("Failed to truncate state file: {}", e))?;
-        let mut writer = BufWriter::new(&file);
-        writer
-            .write_all(json.as_bytes())
-            .map_err(|e| anyhow::anyhow!("Failed to write state: {}", e))?;
-        writer
-            .flush()
-            .map_err(|e| anyhow::anyhow!("Failed to flush state: {}", e))?;
-        Ok(())
+
+        atomic_write_file(path, json.as_bytes())
     }
 
     /// Load the windows state from a specific path

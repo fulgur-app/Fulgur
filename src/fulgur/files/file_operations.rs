@@ -8,6 +8,7 @@ use crate::fulgur::{
         components_utils::{UNTITLED, UTF_8},
         menus,
     },
+    utils::atomic_write::atomic_write_file,
     window_manager,
 };
 use chardetng::EncodingDetector;
@@ -344,7 +345,7 @@ impl Fulgur {
         };
         let contents = content_entity.read(cx).text().to_string();
         log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
-        if let Err(e) = std::fs::write(&path, &contents) {
+        if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
             log::debug!("Failed to save file {:?}: {}", path, e);
             return;
         }
@@ -392,7 +393,7 @@ impl Fulgur {
                 .update(|_, cx| content_entity.read(cx).text().to_string())
                 .ok()?;
             log::debug!("Saving file as: {:?} ({} bytes)", path, contents.len());
-            if let Err(e) = std::fs::write(&path, &contents) {
+            if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
                 log::error!("Failed to save file {:?}: {}", path, e);
                 return None;
             }

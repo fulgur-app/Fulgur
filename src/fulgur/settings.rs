@@ -1,4 +1,4 @@
-use std::{fs, io::Write, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 use fs2::FileExt;
 use gpui::{Context, SharedString, Window};
@@ -9,6 +9,7 @@ use crate::fulgur::{
     Fulgur,
     themes::{BundledThemes, themes_directory_path},
     ui::tabs::tab::Tab,
+    utils::atomic_write::atomic_write_file,
     window_manager,
 };
 
@@ -334,24 +335,16 @@ impl Settings {
         // Serialize settings to JSON first (fast, no I/O)
         let json = serde_json::to_string_pretty(&self)?;
 
-        #[allow(clippy::suspicious_open_options)]
         let file = fs::OpenOptions::new()
+            .read(true)
             .write(true)
             .create(true)
             .open(path)
             .map_err(|e| anyhow::anyhow!("Failed to open settings file: {}", e))?;
         file.lock_exclusive()
             .map_err(|e| anyhow::anyhow!("Failed to acquire lock on settings file: {}", e))?;
-        file.set_len(0)
-            .map_err(|e| anyhow::anyhow!("Failed to truncate settings file: {}", e))?;
-        let mut writer = std::io::BufWriter::new(&file);
-        writer
-            .write_all(json.as_bytes())
-            .map_err(|e| anyhow::anyhow!("Failed to write settings: {}", e))?;
-        writer
-            .flush()
-            .map_err(|e| anyhow::anyhow!("Failed to flush settings: {}", e))?;
-        Ok(())
+
+        atomic_write_file(path, json.as_bytes())
     }
 
     /// Load the settings from a specific path
