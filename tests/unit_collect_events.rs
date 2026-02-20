@@ -2,21 +2,8 @@
 ///
 /// The collect_events function is a generic utility that drains all pending events
 /// from an mpsc::Receiver without blocking, returning them as a Vec.
+use fulgur::fulgur::utils::utilities::collect_events;
 use std::sync::mpsc;
-
-/// Re-export the collect_events function from the main module
-/// Since it's a private function, we need to expose it for testing
-fn collect_events<T>(receiver: &Option<mpsc::Receiver<T>>) -> Vec<T> {
-    if let Some(rx) = receiver {
-        let mut events = Vec::new();
-        while let Ok(event) = rx.try_recv() {
-            events.push(event);
-        }
-        events
-    } else {
-        Vec::new()
-    }
-}
 
 #[test]
 fn test_collect_events_none_receiver() {
