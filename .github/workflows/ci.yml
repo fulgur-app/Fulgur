@@ -8,6 +8,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  BRANCH: ${{ github.ref_name }}
+  COMMIT_SHA: ${{ github.sha }}
+  ACTOR: ${{ github.actor }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
   test:
@@ -29,7 +35,7 @@ jobs:
 
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'
-        run: |
+        run: &linux_deps_install_cmd |
           sudo apt-get update
           sudo apt-get install -y \
             libdbus-1-dev \
@@ -64,13 +70,6 @@ jobs:
 
       - name: Telegram notification - Success
         if: success() && matrix.os == 'ubuntu-latest'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           MESSAGE="✅ *Fulgur CI - Build Passed*
 
@@ -93,13 +92,6 @@ jobs:
 
       - name: Telegram notification - Failure
         if: failure() && matrix.os == 'ubuntu-latest'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           MESSAGE="❌ *Fulgur CI - Build Failed*
 
@@ -133,20 +125,7 @@ jobs:
           toolchain: 1.90.0
 
       - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libdbus-1-dev \
-            pkg-config \
-            libssl-dev \
-            libxcb1-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev
+        run: *linux_deps_install_cmd
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -167,20 +146,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libdbus-1-dev \
-            pkg-config \
-            libssl-dev \
-            libxcb1-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev
+        run: *linux_deps_install_cmd
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -208,13 +174,7 @@ jobs:
       - name: Telegram notification - Coverage
         if: always()
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           COVERAGE: ${{ steps.coverage.outputs.percentage }}
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ "${{ job.status }}" = "success" ]; then
             ICON="✅"
@@ -269,13 +229,6 @@ jobs:
 
       - name: Telegram notification - Security Success
         if: success()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           MESSAGE="✅ *Fulgur Security Audit - Passed*
 
@@ -298,13 +251,6 @@ jobs:
 
       - name: Telegram notification - Security Failure
         if: failure()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           MESSAGE="❌ *Fulgur Security Audit - Failed*
 
@@ -336,20 +282,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libdbus-1-dev \
-            pkg-config \
-            libssl-dev \
-            libxcb1-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev
+        run: *linux_deps_install_cmd
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -362,13 +295,6 @@ jobs:
 
       - name: Telegram notification - Success
         if: success()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           MESSAGE="✅ *Fulgur Dependency Check - Passed*
 
@@ -391,13 +317,6 @@ jobs:
 
       - name: Telegram notification - Failure
         if: failure()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           MESSAGE="⚠️ *Fulgur Dependency Check - Unused Dependencies Found*
 
@@ -429,20 +348,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libdbus-1-dev \
-            pkg-config \
-            libssl-dev \
-            libxcb1-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev
+        run: *linux_deps_install_cmd
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -454,13 +360,6 @@ jobs:
 
       - name: Telegram notification - Success
         if: success()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           MESSAGE="✅ *Fulgur Documentation - Built Successfully*
 
@@ -483,13 +382,6 @@ jobs:
 
       - name: Telegram notification - Failure
         if: failure()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           MESSAGE="❌ *Fulgur Documentation - Build Failed*
 
@@ -521,20 +413,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libdbus-1-dev \
-            pkg-config \
-            libssl-dev \
-            libxcb1-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev
+        run: *linux_deps_install_cmd
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -558,13 +437,7 @@ jobs:
       - name: Telegram notification - Report
         if: always()
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           UNSAFE_COUNT: ${{ steps.geiger.outputs.unsafe_count }}
-          BRANCH: ${{ github.ref_name }}
-          COMMIT_SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ "${{ job.status }}" = "success" ]; then
             ICON="✅"
