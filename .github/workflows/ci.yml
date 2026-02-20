@@ -87,7 +87,7 @@ jobs:
               \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
               \"text\": \"${MESSAGE}\",
               \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": false
+              \"disable_web_page_preview\": true
             }"
 
       - name: Telegram notification - Failure
@@ -109,7 +109,7 @@ jobs:
               \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
               \"text\": \"${MESSAGE}\",
               \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": false
+              \"disable_web_page_preview\": true
             }"
 
   msrv:
@@ -202,7 +202,7 @@ jobs:
               \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
               \"text\": \"${MESSAGE}\",
               \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": false
+              \"disable_web_page_preview\": true
             }"
 
   security:
@@ -246,7 +246,7 @@ jobs:
               \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
               \"text\": \"${MESSAGE}\",
               \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": false
+              \"disable_web_page_preview\": true
             }"
 
       - name: Telegram notification - Security Failure
@@ -268,7 +268,7 @@ jobs:
               \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
               \"text\": \"${MESSAGE}\",
               \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": false
+              \"disable_web_page_preview\": true
             }"
 
   unused-deps:
@@ -312,7 +312,7 @@ jobs:
               \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
               \"text\": \"${MESSAGE}\",
               \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": false
+              \"disable_web_page_preview\": true
             }"
 
       - name: Telegram notification - Failure
@@ -334,7 +334,7 @@ jobs:
               \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
               \"text\": \"${MESSAGE}\",
               \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": false
+              \"disable_web_page_preview\": true
             }"
 
   docs:
@@ -377,7 +377,7 @@ jobs:
               \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
               \"text\": \"${MESSAGE}\",
               \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": false
+              \"disable_web_page_preview\": true
             }"
 
       - name: Telegram notification - Failure
@@ -399,7 +399,7 @@ jobs:
               \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
               \"text\": \"${MESSAGE}\",
               \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": false
+              \"disable_web_page_preview\": true
             }"
 
   unsafe-audit:
@@ -465,5 +465,5 @@ jobs:
               \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
               \"text\": \"${MESSAGE}\",
               \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": false
+              \"disable_web_page_preview\": true
             }"
