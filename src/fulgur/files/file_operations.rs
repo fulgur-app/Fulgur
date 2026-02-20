@@ -346,7 +346,15 @@ impl Fulgur {
         let contents = content_entity.read(cx).text().to_string();
         log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
         if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
-            log::debug!("Failed to save file {:?}: {}", path, e);
+            log::error!("Failed to save file {:?}: {}", path, e);
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+            window.push_notification(
+                (
+                    NotificationType::Error,
+                    SharedString::from(format!("Failed to save '{}': {}", file_name, e)),
+                ),
+                cx,
+            );
             return;
         }
         log::debug!("File saved successfully: {:?}", path);
@@ -395,6 +403,16 @@ impl Fulgur {
             log::debug!("Saving file as: {:?} ({} bytes)", path, contents.len());
             if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
                 log::error!("Failed to save file {:?}: {}", path, e);
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+                let message = SharedString::from(format!("Failed to save '{}': {}", file_name, e));
+                window
+                    .update(|_, cx| {
+                        _ = view.update(cx, |this, cx| {
+                            this.pending_notification = Some((NotificationType::Error, message));
+                            cx.notify();
+                        });
+                    })
+                    .ok()?;
                 return None;
             }
             log::debug!("File saved successfully as: {:?}", path);
