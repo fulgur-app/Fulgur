@@ -79,25 +79,7 @@ fn extract_bundled_themes(themes_dir: &PathBuf) -> anyhow::Result<()> {
 /// - `Ok(PathBuf)`: The path to the themes directory
 /// - `Err(anyhow::Error)`: If the themes directory path could not be determined
 pub fn themes_directory_path() -> anyhow::Result<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        let app_data = std::env::var("APPDATA")?;
-        let mut path = PathBuf::from(app_data);
-        path.push("Fulgur");
-        fs::create_dir_all(&path)?;
-        path.push("themes");
-        Ok(path)
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let home = std::env::var("HOME")?;
-        let mut path = PathBuf::from(home);
-        path.push(".fulgur");
-        fs::create_dir_all(&path)?;
-        path.push("themes");
-        Ok(path)
-    }
+    crate::fulgur::utils::paths::config_subdir("themes")
 }
 
 /// Reload themes and update the Fulgur instance: this function initializes the theme registry, reloads themes from disk, updates the Fulgur entity's themes field, and refreshes the window.
