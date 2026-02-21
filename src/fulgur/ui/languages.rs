@@ -1,4 +1,4 @@
-use gpui_component::highlighter::Language;
+use gpui_component::highlighter::{Language, LanguageConfig, LanguageRegistry};
 
 use crate::fulgur::Fulgur;
 
@@ -26,6 +26,7 @@ pub enum SupportedLanguage {
     Make,
     Markdown,
     MarkdownInline,
+    Perl,
     Php,
     Plain,
     Proto,
@@ -137,6 +138,7 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::Vue => Language::TypeScript,
         SupportedLanguage::Yaml => Language::Yaml,
         SupportedLanguage::Zig => Language::Zig,
+        _ => Language::Plain,
     }
 }
 
@@ -170,6 +172,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Make => "Make".to_string(),
         SupportedLanguage::Markdown => "Markdown".to_string(),
         SupportedLanguage::MarkdownInline => "Markdown Inline".to_string(),
+        SupportedLanguage::Perl => "Perl".to_string(),
         SupportedLanguage::Php => "PHP".to_string(),
         SupportedLanguage::Plain => "Plain Text".to_string(),
         SupportedLanguage::Proto => "Protocol Buffers".to_string(),
@@ -190,6 +193,22 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
     }
 }
 
+/// Get the language registry name for a SupportedLanguage.
+/// For languages built into gpui-component, this delegates to `to_language().name()`.
+/// For custom-registered languages (e.g. Perl), this returns the registered name directly.
+///
+/// ### Arguments
+/// - `supported_language`: The supported language to convert
+///
+/// ### Returns
+/// The language name as registered in the LanguageRegistry
+pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'static str {
+    match supported_language {
+        SupportedLanguage::Perl => "perl",
+        other => to_language(other).name(),
+    }
+}
+
 /// Get the Language enum from a file extension. Checks if the extension is a known language, if not, it returns Plain.
 ///
 /// ### Arguments
@@ -207,6 +226,7 @@ pub fn language_from_extension(extension: &str) -> SupportedLanguage {
             "astro" => SupportedLanguage::Html,
             "lock" => SupportedLanguage::Toml,
             "mjs" => SupportedLanguage::JavaScript,
+            "perl" | "pl" | "pm" | "plx" => SupportedLanguage::Perl,
             "php" | "php3" | "php4" | "php5" | "phhtml" => SupportedLanguage::Html,
             "svelte" => SupportedLanguage::Svelte,
             "svg" => SupportedLanguage::Html,
@@ -245,6 +265,7 @@ impl SupportedLanguage {
             SupportedLanguage::Make,
             SupportedLanguage::Markdown,
             SupportedLanguage::MarkdownInline,
+            SupportedLanguage::Perl,
             SupportedLanguage::Php,
             SupportedLanguage::Plain,
             SupportedLanguage::Proto,
@@ -293,4 +314,24 @@ impl Fulgur {
         current_language == SupportedLanguage::Markdown
             || current_language == SupportedLanguage::MarkdownInline
     }
+}
+
+/// Register external languages that are not supported by default by the editor
+pub fn register_external_languages() {
+    add_perl_support();
+}
+
+/// Add Perl support to th editor
+fn add_perl_support() {
+    LanguageRegistry::singleton().register(
+        "perl",
+        &LanguageConfig::new(
+            "perl",
+            tree_sitter_perl_next::LANGUAGE.into(),
+            vec![],
+            tree_sitter_perl_next::HIGHLIGHTS_QUERY,
+            tree_sitter_perl_next::INJECTIONS_QUERY,
+            "",
+        ),
+    );
 }

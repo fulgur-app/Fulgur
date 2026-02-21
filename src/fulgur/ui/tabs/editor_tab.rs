@@ -1,6 +1,5 @@
 // Represents a single editor tab with its content
 use gpui::*;
-use gpui_component::highlighter::Language;
 use gpui_component::input::{InputState, Position, TabSize};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -8,7 +7,9 @@ use std::time::SystemTime;
 
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
-use crate::fulgur::ui::languages::{SupportedLanguage, language_from_extension, to_language};
+use crate::fulgur::ui::languages::{
+    SupportedLanguage, language_from_extension, language_registry_name,
+};
 
 /// Regex for matching line numbers and line:column positions
 static LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+|\d+:\d+)$").unwrap());
@@ -43,7 +44,7 @@ pub struct FromFileParams {
 /// ### Arguments
 /// - `window`: The window to create the input state in
 /// - `cx`: The application context
-/// - `language`: The language of the input state
+/// - `language_name`: The language registry name for syntax highlighting
 /// - `content`: The content of the input state
 /// - `settings`: The settings for the input state
 ///
@@ -52,12 +53,12 @@ pub struct FromFileParams {
 fn make_input_state(
     window: &mut Window,
     cx: &mut Context<InputState>,
-    language: Language,
+    language_name: &str,
     content: Option<String>,
     settings: &EditorSettings,
 ) -> InputState {
     InputState::new(window, cx)
-        .code_editor(language.name().to_string())
+        .code_editor(language_name.to_string())
         .line_number(settings.show_line_numbers)
         .indent_guides(settings.show_indent_guides)
         .tab_size(TabSize {
@@ -88,8 +89,15 @@ impl EditorTab {
         settings: &EditorSettings,
     ) -> Self {
         let language = SupportedLanguage::Plain;
-        let content =
-            cx.new(|cx| make_input_state(window, cx, to_language(&language), None, settings));
+        let content = cx.new(|cx| {
+            make_input_state(
+                window,
+                cx,
+                language_registry_name(&language),
+                None,
+                settings,
+            )
+        });
         Self {
             id,
             title: title.into(),
@@ -136,7 +144,7 @@ impl EditorTab {
             make_input_state(
                 window,
                 cx,
-                to_language(&language),
+                language_registry_name(&language),
                 Some(contents.clone()),
                 settings,
             )
@@ -191,7 +199,7 @@ impl EditorTab {
             make_input_state(
                 window,
                 cx,
-                to_language(&language),
+                language_registry_name(&language),
                 Some(params.contents.clone()),
                 settings,
             )
@@ -320,7 +328,7 @@ impl EditorTab {
             make_input_state(
                 window,
                 cx,
-                to_language(&language),
+                language_registry_name(&language),
                 Some(current_content),
                 settings,
             )

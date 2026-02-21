@@ -209,6 +209,7 @@ impl Fulgur {
             Settings::new()
         });
         let recent_files = settings.get_recent_files();
+        ui::languages::register_external_languages();
         themes::init(&settings, cx, move |cx| {
             cx.bind_keys([
                 #[cfg(target_os = "macos")]
