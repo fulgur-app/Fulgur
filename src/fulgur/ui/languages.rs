@@ -1,10 +1,6 @@
-use gpui::*;
 use gpui_component::highlighter::Language;
 
 use crate::fulgur::Fulgur;
-
-/// Initialize the language registry with all supported languages
-pub fn init_languages() {}
 
 /// Lists all supported languages, including some that are not supported by the language registry but are close enough.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -38,11 +34,13 @@ pub enum SupportedLanguage {
     Rust,
     Scala,
     Sql,
+    Svelte,
     Svg,
     Swift,
     Toml,
     Tsx,
     TypeScript,
+    Vue,
     Yaml,
     Zig,
 }
@@ -130,11 +128,13 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::Rust => Language::Rust,
         SupportedLanguage::Scala => Language::Scala,
         SupportedLanguage::Sql => Language::Sql,
+        SupportedLanguage::Svelte => Language::TypeScript,
         SupportedLanguage::Svg => Language::Html,
         SupportedLanguage::Swift => Language::Swift,
         SupportedLanguage::Toml => Language::Toml,
-        SupportedLanguage::Tsx => Language::Tsx,
+        SupportedLanguage::Tsx => Language::TypeScript,
         SupportedLanguage::TypeScript => Language::TypeScript,
+        SupportedLanguage::Vue => Language::TypeScript,
         SupportedLanguage::Yaml => Language::Yaml,
         SupportedLanguage::Zig => Language::Zig,
     }
@@ -179,10 +179,12 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Scala => "Scala".to_string(),
         SupportedLanguage::Sql => "SQL".to_string(),
         SupportedLanguage::Svg => "SVG".to_string(),
+        SupportedLanguage::Svelte => "Svelte".to_string(),
         SupportedLanguage::Swift => "Swift".to_string(),
         SupportedLanguage::Toml => "TOML".to_string(),
         SupportedLanguage::Tsx => "TSX".to_string(),
         SupportedLanguage::TypeScript => "TypeScript".to_string(),
+        SupportedLanguage::Vue => "Vue".to_string(),
         SupportedLanguage::Yaml => "YAML".to_string(),
         SupportedLanguage::Zig => "Zig".to_string(),
     }
@@ -206,7 +208,9 @@ pub fn language_from_extension(extension: &str) -> SupportedLanguage {
             "lock" => SupportedLanguage::Toml,
             "mjs" => SupportedLanguage::JavaScript,
             "php" | "php3" | "php4" | "php5" | "phhtml" => SupportedLanguage::Html,
+            "svelte" => SupportedLanguage::Svelte,
             "svg" => SupportedLanguage::Html,
+            "vue" => SupportedLanguage::Vue,
             _ => SupportedLanguage::Plain,
         };
     }
@@ -249,29 +253,17 @@ impl SupportedLanguage {
             SupportedLanguage::Rust,
             SupportedLanguage::Scala,
             SupportedLanguage::Sql,
+            SupportedLanguage::Svelte,
             SupportedLanguage::Svg,
             SupportedLanguage::Swift,
             SupportedLanguage::Toml,
             SupportedLanguage::Tsx,
             SupportedLanguage::TypeScript,
+            SupportedLanguage::Vue,
             SupportedLanguage::Yaml,
             SupportedLanguage::Zig,
         ]
     }
-}
-
-/// Get all languages as a vector of SharedString
-///
-/// ### Returns
-/// - `Vec<SharedString>`: The list of all languages as SharedString
-#[allow(dead_code)]
-pub fn all_languages() -> Vec<SharedString> {
-    let mut languages = SupportedLanguage::all()
-        .iter()
-        .map(|language| SharedString::new(pretty_name(language).as_str()))
-        .collect::<Vec<SharedString>>();
-    languages.sort();
-    languages
 }
 
 impl Fulgur {
@@ -280,7 +272,7 @@ impl Fulgur {
     /// ### Returns
     /// - `SupportedLanguage`: The active tab's language
     pub fn get_current_language(&self) -> SupportedLanguage {
-        let current_tab_language = match self.active_tab_index {
+        match self.active_tab_index {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
                     editor_tab.language
@@ -289,8 +281,7 @@ impl Fulgur {
                 }
             }
             None => SupportedLanguage::Plain,
-        };
-        current_tab_language
+        }
     }
 
     /// Check if the current active tab's language is a Markdown language

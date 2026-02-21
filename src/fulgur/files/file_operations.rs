@@ -2,10 +2,14 @@ use std::path::PathBuf;
 
 use crate::fulgur::{
     Fulgur,
-    editor_tab::EditorTab,
+    editor_tab::{EditorTab, FromFileParams},
     tab::Tab,
-    ui::components_utils::{UNTITLED, UTF_8},
-    ui::menus,
+    ui::{
+        components_utils::{UNTITLED, UTF_8},
+        menus,
+    },
+    utils::atomic_write::atomic_write_file,
+    window_manager,
 };
 use chardetng::EncodingDetector;
 use gpui::*;
@@ -98,6 +102,7 @@ impl Fulgur {
                         editor_tab.original_content = contents;
                         editor_tab.encoding = encoding;
                         editor_tab.modified = false;
+                        editor_tab.update_file_tooltip_cache(bytes.len());
                         editor_tab.update_language(window, cx, &self.settings.editor_settings);
                         log::debug!("Tab reloaded successfully from disk: {:?}", path);
                     }
@@ -140,14 +145,16 @@ impl Fulgur {
             .update(|window, cx| {
                 _ = view.update(cx, |this, cx| {
                     let editor_tab = EditorTab::from_file(
-                        this.next_tab_id,
-                        path.clone(),
-                        contents,
-                        encoding,
+                        FromFileParams {
+                            id: this.next_tab_id,
+                            path: path.clone(),
+                            contents,
+                            encoding,
+                            is_modified: false,
+                        },
                         window,
                         cx,
                         &this.settings.editor_settings,
-                        false,
                     );
                     this.tabs.push(Tab::Editor(editor_tab));
                     this.active_tab_index = Some(this.tabs.len() - 1);
@@ -158,16 +165,26 @@ impl Fulgur {
                         log::error!("Failed to add file to recent files: {}", e);
                     }
                     let shared = this.shared_state(cx);
-                    let update_link = shared.update_link.lock().clone();
+                    let update_info = shared.update_info.lock().clone();
+                    let update_link = if let Some(info) = update_info {
+                        Some(info.download_url.clone())
+                    } else {
+                        None
+                    };
                     let menus = menus::build_menus(&this.settings.get_recent_files(), update_link);
                     cx.set_menus(menus);
-                    let title = match path.file_name() {
-                        Some(file_name) => Some(file_name.to_string_lossy().to_string()),
-                        None => None,
-                    };
+                    let title = path
+                        .file_name()
+                        .map(|file_name| file_name.to_string_lossy().to_string());
                     this.set_title(title, cx);
                     log::debug!("File opened successfully in new tab: {:?}", path);
-                    let _ = this.save_state(cx, window);
+                    if let Err(e) = this.save_state(cx, window) {
+                        log::error!("Failed to save app state after opening file: {}", e);
+                        this.pending_notification = Some((
+                            NotificationType::Warning,
+                            format!("File opened but failed to save state: {}", e).into(),
+                        ));
+                    }
                     cx.notify();
                 });
             })
@@ -309,34 +326,44 @@ impl Fulgur {
     /// - `window`: The window to save the file in
     /// - `cx`: The application context
     pub fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.is_empty() || self.active_tab_index.is_none() {
+        if self.tabs.is_empty() {
             return;
         }
-        let active_tab = &self.tabs[self.active_tab_index.unwrap()];
+        let Some(active_tab_index) = self.active_tab_index else {
+            return;
+        };
+        let active_tab = &self.tabs[active_tab_index];
         let (path, content_entity) = match active_tab {
             Tab::Editor(editor_tab) => {
-                if editor_tab.file_path.is_none() {
+                let Some(file_path) = editor_tab.file_path.clone() else {
                     self.save_file_as(window, cx);
                     return;
-                }
-                (
-                    editor_tab.file_path.clone().unwrap(),
-                    editor_tab.content.clone(),
-                )
+                };
+                (file_path, editor_tab.content.clone())
             }
             Tab::Settings(_) => return,
         };
         let contents = content_entity.read(cx).text().to_string();
         log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
-        if let Err(e) = std::fs::write(&path, contents) {
-            log::debug!("Failed to save file {:?}: {}", path, e);
+        if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
+            log::error!("Failed to save file {:?}: {}", path, e);
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+            window.push_notification(
+                (
+                    NotificationType::Error,
+                    SharedString::from(format!("Failed to save '{}': {}", file_name, e)),
+                ),
+                cx,
+            );
             return;
         }
         log::debug!("File saved successfully: {:?}", path);
-        self.last_file_saves
+        self.file_watch_state
+            .last_file_saves
             .insert(path.clone(), std::time::Instant::now());
-        if let Tab::Editor(editor_tab) = &mut self.tabs[self.active_tab_index.unwrap()] {
+        if let Tab::Editor(editor_tab) = &mut self.tabs[active_tab_index] {
             editor_tab.mark_as_saved(cx);
+            editor_tab.update_file_tooltip_cache(contents.len());
         }
         cx.notify();
     }
@@ -347,25 +374,26 @@ impl Fulgur {
     /// - `window`: The window to save the file as in
     /// - `cx`: The application context
     pub fn save_file_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.is_empty() || self.active_tab_index.is_none() {
+        if self.tabs.is_empty() {
             return;
         }
-        let active_tab_index = self.active_tab_index;
-        let (content_entity, directory, suggested_filename) =
-            match &self.tabs[active_tab_index.unwrap()] {
-                Tab::Editor(editor_tab) => {
-                    let dir = if let Some(ref path) = editor_tab.file_path {
-                        path.parent()
-                            .unwrap_or(std::path::Path::new("."))
-                            .to_path_buf()
-                    } else {
-                        std::env::current_dir().unwrap_or_default()
-                    };
-                    let suggested = editor_tab.get_suggested_filename();
-                    (editor_tab.content.clone(), dir, suggested)
-                }
-                Tab::Settings(_) => return,
-            };
+        let Some(active_tab_index) = self.active_tab_index else {
+            return;
+        };
+        let (content_entity, directory, suggested_filename) = match &self.tabs[active_tab_index] {
+            Tab::Editor(editor_tab) => {
+                let dir = if let Some(ref path) = editor_tab.file_path {
+                    path.parent()
+                        .unwrap_or(std::path::Path::new("."))
+                        .to_path_buf()
+                } else {
+                    std::env::current_dir().unwrap_or_default()
+                };
+                let suggested = editor_tab.get_suggested_filename();
+                (editor_tab.content.clone(), dir, suggested)
+            }
+            Tab::Settings(_) => return,
+        };
         let path_future = cx.prompt_for_new_path(&directory, suggested_filename.as_deref());
         cx.spawn_in(window, async move |view, window| {
             let path = path_future.await.ok()?.ok()??;
@@ -373,8 +401,18 @@ impl Fulgur {
                 .update(|_, cx| content_entity.read(cx).text().to_string())
                 .ok()?;
             log::debug!("Saving file as: {:?} ({} bytes)", path, contents.len());
-            if let Err(e) = std::fs::write(&path, &contents) {
+            if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
                 log::error!("Failed to save file {:?}: {}", path, e);
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+                let message = SharedString::from(format!("Failed to save '{}': {}", file_name, e));
+                window
+                    .update(|_, cx| {
+                        _ = view.update(cx, |this, cx| {
+                            this.pending_notification = Some((NotificationType::Error, message));
+                            cx.notify();
+                        });
+                    })
+                    .ok()?;
                 return None;
             }
             log::debug!("File saved successfully as: {:?}", path);
@@ -382,7 +420,7 @@ impl Fulgur {
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
                         let old_path = if let Some(Tab::Editor(editor_tab)) =
-                            this.tabs.get(active_tab_index.unwrap())
+                            this.tabs.get(active_tab_index)
                         {
                             editor_tab.file_path.clone()
                         } else {
@@ -391,11 +429,10 @@ impl Fulgur {
                         if let Some(old_path) = old_path {
                             this.unwatch_file(&old_path);
                         }
-                        this.last_file_saves
+                        this.file_watch_state
+                            .last_file_saves
                             .insert(path.clone(), std::time::Instant::now());
-                        if let Some(Tab::Editor(editor_tab)) =
-                            this.tabs.get_mut(active_tab_index.unwrap())
-                        {
+                        if let Some(Tab::Editor(editor_tab)) = this.tabs.get_mut(active_tab_index) {
                             editor_tab.file_path = Some(path.clone());
                             editor_tab.title = path
                                 .file_name()
@@ -404,6 +441,7 @@ impl Fulgur {
                                 .to_string()
                                 .into();
                             editor_tab.mark_as_saved(cx);
+                            editor_tab.update_file_tooltip_cache(contents.len());
                             editor_tab.update_language(window, cx, &this.settings.editor_settings);
                             cx.notify();
                         }
@@ -424,7 +462,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn show_notification_file_reloaded(
         &self,
-        path: &PathBuf,
+        path: &std::path::Path,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -441,7 +479,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn show_notification_file_deleted(
         &self,
-        path: &PathBuf,
+        path: &std::path::Path,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -459,8 +497,8 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn show_notification_file_renamed(
         &self,
-        from: &PathBuf,
-        to: &PathBuf,
+        from: &std::path::Path,
+        to: &std::path::Path,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -468,5 +506,73 @@ impl Fulgur {
         let new_name = to.file_name().and_then(|n| n.to_str()).unwrap_or("file");
         let message = SharedString::from(format!("File renamed: {} → {}", old_name, new_name));
         window.push_notification((NotificationType::Info, message), cx);
+    }
+
+    /// Process pending files from macOS "Open With" events
+    ///
+    /// ### Arguments
+    /// - `window`: The window to open files in
+    /// - `cx`: The application context
+    pub fn process_pending_files_from_macos(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let shared = self.shared_state(cx);
+        let should_process_files = cx
+            .global::<window_manager::WindowManager>()
+            .get_last_focused()
+            .map(|id| id == self.window_id)
+            .unwrap_or(true); // If no last focused window, allow this one to process
+        let files_to_open = if should_process_files {
+            if let Some(mut pending) = shared.pending_files_from_macos.try_lock() {
+                if pending.is_empty() {
+                    Vec::new()
+                } else {
+                    log::info!(
+                        "Processing {} pending file(s) from macOS open event in window {:?}",
+                        pending.len(),
+                        self.window_id
+                    );
+                    pending.drain(..).collect()
+                }
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+        for file_path in files_to_open {
+            self.handle_open_file_from_cli(window, cx, file_path);
+        }
+    }
+
+    /// Update search results if the search query has changed
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the search bar and editor
+    /// - `cx`: The application context
+    pub fn update_search_if_needed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_state.show_search {
+            let current_query = self.search_state.search_input.read(cx).text().to_string();
+            if current_query != self.search_state.last_search_query {
+                self.search_state.last_search_query = current_query;
+                self.perform_search(window, cx);
+            }
+        }
+    }
+
+    /// Handle pending jump-to-line action
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the editor
+    /// - `cx`: The application context
+    pub fn handle_pending_jump_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(jump) = self.pending_jump.take()
+            && let Some(index) = self.active_tab_index
+            && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
+        {
+            editor_tab.jump_to_line(window, cx, jump);
+        }
     }
 }

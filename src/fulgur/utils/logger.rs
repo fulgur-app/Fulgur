@@ -1,7 +1,9 @@
 use log::LevelFilter;
 use simplelog::*;
-use std::fs::{self, File};
+use std::fs::File;
 use std::path::PathBuf;
+
+use crate::fulgur::utils::paths;
 
 /// Get the path to the log file, create the log file directory if it doesn't exist
 ///
@@ -9,25 +11,7 @@ use std::path::PathBuf;
 /// - `Ok(PathBuf)`: The path to the log file
 /// - `Err(anyhow::Error)`: If the log file path could not be determined or created
 fn log_file_path() -> anyhow::Result<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        let app_data = std::env::var("APPDATA")?;
-        let mut path = PathBuf::from(app_data);
-        path.push("Fulgur");
-        fs::create_dir_all(&path)?;
-        path.push("fulgur.log");
-        Ok(path)
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let home = std::env::var("HOME")?;
-        let mut path = PathBuf::from(home);
-        path.push(".fulgur");
-        fs::create_dir_all(&path)?;
-        path.push("fulgur.log");
-        Ok(path)
-    }
+    paths::config_file("fulgur.log")
 }
 
 /// Initialize the file logger
@@ -50,16 +34,4 @@ pub fn init() -> anyhow::Result<()> {
     WriteLogger::init(log_level, config, log_file)?;
     log::info!("Logger initialized at: {:?}", log_path);
     Ok(())
-}
-
-/// Get the log file path for display purposes
-///
-/// ### Returns
-/// - `Some(String)`: The path to the log file as a string
-/// - `None`: If the log file path could not be determined
-#[allow(dead_code)]
-pub fn get_log_path() -> Option<String> {
-    log_file_path()
-        .ok()
-        .map(|p| p.to_string_lossy().to_string())
 }

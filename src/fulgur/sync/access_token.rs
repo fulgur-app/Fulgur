@@ -1,12 +1,11 @@
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use crate::fulgur::settings::SynchronizationSettings;
-use crate::fulgur::sync::sync::SynchronizationError;
+use crate::fulgur::sync::synchronization::{SynchronizationError, handle_ureq_error};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use fulgur_common::api::sync::AccessTokenResponse;
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 use time::OffsetDateTime;
 
 /// JWT access token state for thread-safe token management
@@ -19,6 +18,59 @@ pub struct TokenState {
     pub access_token: Option<String>,
     pub token_expires_at: Option<OffsetDateTime>,
     pub is_refreshing_token: bool,
+}
+
+/// Thread-safe token manager with proper wait/notify synchronization
+///
+/// Bundles the token state with a condition variable to efficiently coordinate
+/// concurrent token refresh requests. When multiple threads need a token simultaneously,
+/// only one performs the refresh while others wait efficiently (no busy-wait polling).
+///
+/// ### Fields
+/// - `state`: The mutex-protected token state
+/// - `refresh_notify`: Condition variable to signal when token refresh completes
+pub struct TokenStateManager {
+    state: Mutex<TokenState>,
+    refresh_notify: Condvar,
+}
+
+impl TokenStateManager {
+    /// Create a new token state manager with empty state
+    pub fn new() -> Self {
+        Self {
+            state: Mutex::new(TokenState::new()),
+            refresh_notify: Condvar::new(),
+        }
+    }
+
+    /// Clear the cached token, forcing a refresh on next access
+    ///
+    /// This is useful when:
+    /// - The device API key has changed
+    /// - You want to force re-authentication
+    /// - Switching to a different server/account
+    pub fn clear_token(&self) {
+        let mut state = self.state.lock();
+        state.access_token = None;
+        state.token_expires_at = None;
+        log::debug!("Cleared cached access token");
+    }
+}
+
+impl Default for TokenStateManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Create a new empty TokenState
+///
+/// ### Returns
+/// - `TokenState`: A new TokenState with all fields initialized to default/empty values
+impl Default for TokenState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TokenState {
@@ -36,71 +88,35 @@ impl TokenState {
 ///
 /// ### Arguments
 /// - `synchronization_settings`: The synchronization settings containing device key
+/// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(AccessTokenResponse)`: The JWT access token and expiration info
 /// - `Err(SynchronizationError)`: If the token request failed
 fn request_access_token(
     synchronization_settings: &SynchronizationSettings,
+    http_agent: &ureq::Agent,
 ) -> Result<AccessTokenResponse, SynchronizationError> {
-    let server_url = synchronization_settings.server_url.clone();
-    let email = synchronization_settings.email.clone();
-    let device_api_key = match load_device_api_key_from_keychain() {
+    let Some(server_url) = synchronization_settings.server_url.clone() else {
+        return Err(SynchronizationError::ServerUrlMissing);
+    };
+    let Some(email) = synchronization_settings.email.clone() else {
+        return Err(SynchronizationError::EmailMissing);
+    };
+    let Some(device_api_key) = (match load_device_api_key_from_keychain() {
         Ok(value) => value,
         Err(_) => return Err(SynchronizationError::DeviceKeyMissing),
-    };
-    if server_url.is_none() {
-        return Err(SynchronizationError::ServerUrlMissing);
-    }
-    if email.is_none() {
-        return Err(SynchronizationError::EmailMissing);
-    }
-    if device_api_key.is_none() {
+    }) else {
         return Err(SynchronizationError::DeviceKeyMissing);
-    }
-    let token_url = format!("{}/api/token", server_url.unwrap());
-    log::debug!("Requesting JWT access token from server");
-    let mut response = match ureq::post(&token_url)
-        .header("Authorization", &format!("Bearer {}", device_api_key.unwrap()))
-        .header("X-User-Email", email.unwrap())
-        .send("")
-    {
-        Ok(response) => response,
-        Err(ureq::Error::StatusCode(code)) => {
-            log::error!("Failed to obtain access token: HTTP status {}", code);
-            if code == 401 || code == 403 {
-                return Err(SynchronizationError::AuthenticationFailed);
-            } else {
-                return Err(SynchronizationError::ServerError(code));
-            }
-        }
-        Err(ureq::Error::Io(io_error)) => {
-            log::error!("Failed to obtain access token (IO): {}", io_error);
-            return match io_error.kind() {
-                std::io::ErrorKind::ConnectionRefused => {
-                    Err(SynchronizationError::ConnectionFailed)
-                }
-                std::io::ErrorKind::TimedOut => Err(SynchronizationError::ConnectionFailed),
-                _ => Err(SynchronizationError::Other(io_error.to_string())),
-            };
-        }
-        Err(ureq::Error::ConnectionFailed) => {
-            log::error!("Failed to obtain access token: Connection failed");
-            return Err(SynchronizationError::ConnectionFailed);
-        }
-        Err(ureq::Error::HostNotFound) => {
-            log::error!("Failed to obtain access token: Host not found");
-            return Err(SynchronizationError::HostNotFound);
-        }
-        Err(ureq::Error::Timeout(timeout)) => {
-            log::error!("Failed to obtain access token: Timeout ({})", timeout);
-            return Err(SynchronizationError::ConnectionFailed);
-        }
-        Err(e) => {
-            log::error!("Failed to obtain access token: {}", e);
-            return Err(SynchronizationError::Other(e.to_string()));
-        }
     };
+    let token_url = format!("{}/api/token", server_url);
+    log::debug!("Requesting JWT access token from server");
+    let mut response = http_agent
+        .post(&token_url)
+        .header("Authorization", &format!("Bearer {}", device_api_key))
+        .header("X-User-Email", email)
+        .send("")
+        .map_err(|e| handle_ureq_error(e, "Failed to obtain access token"))?;
     let body = match response.body_mut().read_to_string() {
         Ok(body) => body,
         Err(e) => {
@@ -138,49 +154,73 @@ fn is_token_valid(expires_at: &OffsetDateTime) -> bool {
 
 /// Get a valid JWT access token, refreshing if necessary
 ///
+/// Uses proper condition variable synchronization to avoid busy-waiting.
+/// When multiple threads need a token simultaneously, only one performs
+/// the refresh while others wait efficiently on the condition variable.
+///
 /// ### Arguments
 /// - `synchronization_settings`: The synchronization settings
-/// - `token_state`: Arc to the token state (thread-safe)
+/// - `token_manager`: Arc to the token state manager (thread-safe)
+/// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(String)`: A valid JWT access token
 /// - `Err(SynchronizationError)`: If token refresh failed
 pub fn get_valid_token(
     synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<Mutex<TokenState>>,
+    token_manager: Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
 ) -> Result<String, SynchronizationError> {
+    // Fast path: check if current token is valid without acquiring write lock
     {
-        let state = token_state.lock();
-        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at) {
-            if is_token_valid(exp_time) {
-                return Ok(token_str.clone());
-            }
+        let state = token_manager.state.lock();
+        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
+            && is_token_valid(exp_time)
+        {
+            return Ok(token_str.clone());
         }
     }
+
+    // Slow path: token needs refresh
+    let mut state = token_manager.state.lock();
+
+    // Double-check after acquiring lock (another thread might have refreshed)
+    if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
+        && is_token_valid(exp_time)
     {
-        let mut state = token_state.lock();
-        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at) {
-            if is_token_valid(exp_time) && !state.is_refreshing_token {
-                return Ok(token_str.clone());
-            }
+        return Ok(token_str.clone());
+    }
+
+    // If another thread is already refreshing, wait for it to complete
+    while state.is_refreshing_token {
+        // Wait for up to 30 seconds for the refresh to complete
+        // Using wait_for() instead of wait() provides a safety timeout
+        // in case the refreshing thread fails to notify
+        let wait_result = token_manager
+            .refresh_notify
+            .wait_for(&mut state, Duration::from_secs(30));
+
+        if wait_result.timed_out() {
+            log::warn!("Timed out waiting for token refresh, proceeding anyway");
+            break;
         }
-        if state.is_refreshing_token {
-            drop(state);
-            thread::sleep(Duration::from_millis(100));
-            let state = token_state.lock();
-            if let (Some(token_str), Some(exp_time)) =
-                (&state.access_token, &state.token_expires_at)
-            {
-                if is_token_valid(exp_time) {
-                    return Ok(token_str.clone());
-                }
-            }
-        } else {
-            state.is_refreshing_token = true;
+
+        // Check if token is now valid after being notified
+        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
+            && is_token_valid(exp_time)
+        {
+            return Ok(token_str.clone());
         }
     }
+
+    // We're the thread responsible for refreshing the token
+    state.is_refreshing_token = true;
+
+    // Release lock while performing the network request
+    drop(state);
+
     log::debug!("Access token expired or missing, requesting new token");
-    let token_response = request_access_token(synchronization_settings)?;
+    let token_response = request_access_token(synchronization_settings, http_agent)?;
     let expires_at = OffsetDateTime::parse(
         &token_response.expires_at,
         &time::format_description::well_known::Rfc3339,
@@ -189,10 +229,145 @@ pub fn get_valid_token(
         log::error!("Failed to parse token expiration time: {}", e);
         SynchronizationError::Other(e.to_string())
     })?;
-    let mut state = token_state.lock();
+
+    // Update state and notify waiting threads
+    let mut state = token_manager.state.lock();
     state.access_token = Some(token_response.access_token.clone());
     state.token_expires_at = Some(expires_at);
     state.is_refreshing_token = false;
+
+    // Notify all threads waiting for token refresh
+    token_manager.refresh_notify.notify_all();
+
     log::debug!("Access token refreshed successfully");
     Ok(token_response.access_token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::OffsetDateTime;
+
+    #[test]
+    fn test_is_token_valid_with_future_expiration() {
+        // Token expires 10 minutes from now (well beyond the 5-minute buffer)
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(10);
+        assert!(
+            is_token_valid(&expires_at),
+            "Token expiring in 10 minutes should be valid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_past_expiration() {
+        // Token expired 5 minutes ago
+        let expires_at = OffsetDateTime::now_utc() - time::Duration::minutes(5);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expired 5 minutes ago should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_expiring_in_less_than_buffer() {
+        // Token expires in 3 minutes (less than 5-minute buffer)
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(3);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expiring in 3 minutes should be invalid (within buffer)"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_expiring_in_exactly_buffer_time() {
+        // Token expires in exactly 5 minutes
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(5);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expiring in exactly 5 minutes should be invalid (at buffer boundary)"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_one_second_past_expiration() {
+        // Token expired 1 second ago
+        let expires_at = OffsetDateTime::now_utc() - time::Duration::seconds(1);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expired 1 second ago should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_one_hour_remaining() {
+        // Token expires in 1 hour (well beyond the 5-minute buffer)
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::hours(1);
+        assert!(
+            is_token_valid(&expires_at),
+            "Token expiring in 1 hour should be valid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_expiring_in_six_minutes() {
+        // Token expires in 6 minutes (just beyond the 5-minute buffer)
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(6);
+        assert!(
+            is_token_valid(&expires_at),
+            "Token expiring in 6 minutes should be valid (beyond buffer)"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_expiring_in_four_minutes_59_seconds() {
+        // Token expires in 4 minutes 59 seconds (just under the 5-minute buffer)
+        let expires_at =
+            OffsetDateTime::now_utc() + time::Duration::minutes(4) + time::Duration::seconds(59);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expiring in 4:59 should be invalid (within buffer)"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_far_future_expiration() {
+        // Token expires in 1 day
+        let expires_at = OffsetDateTime::now_utc() + time::Duration::days(1);
+        assert!(
+            is_token_valid(&expires_at),
+            "Token expiring in 1 day should be valid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_far_past_expiration() {
+        // Token expired 1 day ago
+        let expires_at = OffsetDateTime::now_utc() - time::Duration::days(1);
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expired 1 day ago should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_boundary_case_five_minutes_one_second() {
+        // Token expires in 5 minutes 1 second (just beyond the buffer)
+        let expires_at =
+            OffsetDateTime::now_utc() + time::Duration::minutes(5) + time::Duration::seconds(1);
+        assert!(
+            is_token_valid(&expires_at),
+            "Token expiring in 5:01 should be valid (just beyond buffer)"
+        );
+    }
+
+    #[test]
+    fn test_is_token_valid_with_current_time() {
+        // Token expires right now (edge case)
+        let expires_at = OffsetDateTime::now_utc();
+
+        assert!(
+            !is_token_valid(&expires_at),
+            "Token expiring right now should be invalid"
+        );
+    }
 }

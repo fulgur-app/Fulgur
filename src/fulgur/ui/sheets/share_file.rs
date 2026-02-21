@@ -13,8 +13,8 @@ use gpui_component::{
 use crate::fulgur::{
     Fulgur,
     sync::{
-        share::{Device, get_devices, get_icon, share_file},
-        sync::SynchronizationStatus,
+        share::{Device, ShareFileRequest, get_devices, get_icon, share_file},
+        synchronization::SynchronizationStatus,
     },
     ui::icons::CustomIcon,
 };
@@ -69,7 +69,7 @@ fn make_device_item(
                         .items_center()
                         .justify_start()
                         .gap_2()
-                        .child(get_icon(&device_for_icon))
+                        .child(get_icon(device_for_icon))
                         .child(div().child(device_name))
                         .child(
                             div()
@@ -154,24 +154,29 @@ fn handle_share_file(
         return;
     }
     let result = entity.update(cx, |this, cx| {
-        let content = this
-            .get_active_editor_tab()
+        let active_tab = this.get_active_editor_tab();
+        let content = active_tab
+            .as_ref()
             .map(|tab| tab.content.read(cx).value().to_string())
             .unwrap_or_default();
-        let file_name = this
-            .get_active_editor_tab()
-            .and_then(|tab| tab.file_path.as_ref())
+        let file_path = active_tab.as_ref().and_then(|tab| tab.file_path.clone());
+        let file_name = file_path
+            .as_ref()
             .and_then(|path| path.file_name())
             .and_then(|name| name.to_str())
             .unwrap_or("Untitled")
             .to_string();
         share_file(
             &this.settings.app_settings.synchronization_settings,
-            content,
-            file_name,
-            ids,
+            ShareFileRequest {
+                content,
+                file_name,
+                device_ids: ids,
+                file_path,
+            },
             &devices,
-            Arc::clone(&this.shared_state(cx).token_state),
+            Arc::clone(&this.shared_state(cx).sync_state.token_state),
+            &this.shared_state(cx).http_agent,
         )
     });
     match result {
@@ -199,10 +204,10 @@ fn handle_share_file(
             }
         }
         Err(e) => {
-            log::error!("Failed to share file: {}", e.to_string());
+            log::error!("Failed to share file: {}", e);
             let notification = (
                 NotificationType::Error,
-                SharedString::from(format!("Failed to share file: {}", e.to_string())),
+                SharedString::from(format!("Failed to share file: {}", e)),
             );
             window.push_notification(notification, cx);
         }
@@ -236,28 +241,31 @@ impl Fulgur {
             );
             let synchronization_settings =
                 self.settings.app_settings.synchronization_settings.clone();
-            let token_state = Arc::clone(&self.shared_state(cx).token_state);
-            let result = crate::fulgur::sync::sync::initial_synchronization(
+            let token_state = Arc::clone(&self.shared_state(cx).sync_state.token_state);
+            let http_agent = &self.shared_state(cx).http_agent;
+            let result = crate::fulgur::sync::synchronization::initial_synchronization(
                 &synchronization_settings,
                 token_state,
+                http_agent,
             );
             match result {
                 Ok(begin_response) => {
                     {
-                        let mut device_name = self.shared_state(cx).device_name.lock();
+                        let mut device_name = self.shared_state(cx).sync_state.device_name.lock();
                         *device_name = Some(begin_response.device_name.clone());
                     }
                     {
-                        let mut files = self.shared_state(cx).pending_shared_files.lock();
+                        let mut files =
+                            self.shared_state(cx).sync_state.pending_shared_files.lock();
                         *files = begin_response.shares;
                     }
-                    *self.shared_state(cx).sync_server_connection_status.lock() =
+                    *self.shared_state(cx).sync_state.connection_status.lock() =
                         SynchronizationStatus::Connected;
                     self.restart_sse_connection(cx);
                 }
                 Err(e) => {
                     let connection_status = SynchronizationStatus::from_error(&e);
-                    *self.shared_state(cx).sync_server_connection_status.lock() = connection_status;
+                    *self.shared_state(cx).sync_state.connection_status.lock() = connection_status;
                     let dialog_message = match connection_status {
                         SynchronizationStatus::AuthenticationFailed => {
                             "Authentication failed. Check your e-mail and device API key in the synchronization settings."
@@ -285,16 +293,17 @@ impl Fulgur {
         let synchronization_settings = self.settings.app_settings.synchronization_settings.clone();
         let devices = get_devices(
             &synchronization_settings,
-            Arc::clone(&self.shared_state(cx).token_state),
+            Arc::clone(&self.shared_state(cx).sync_state.token_state),
+            &self.shared_state(cx).http_agent,
         );
         let devices = match devices {
             Ok(devices) => devices,
             Err(e) => {
-                log::error!("Failed to get devices: {}", e.to_string());
+                log::error!("Failed to get devices: {}", e);
                 window.push_notification(
                     (
                         NotificationType::Error,
-                        SharedString::from(format!("Failed to get devices: {}", e.to_string())),
+                        SharedString::from(format!("Failed to get devices: {}", e)),
                     ),
                     cx,
                 );

@@ -1,9 +1,10 @@
 use gpui::App;
 use std::{
+    io::{BufReader, Read},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::Sender,
+        mpsc::{Receiver, Sender},
     },
     thread,
     time::{Duration, Instant},
@@ -18,10 +19,112 @@ use crate::fulgur::{
     Fulgur,
     settings::SynchronizationSettings,
     sync::{
-        access_token::{TokenState, get_valid_token},
-        sync::{SynchronizationError, SynchronizationStatus, set_sync_server_connection_status},
+        access_token::{TokenStateManager, get_valid_token},
+        share::MAX_SYNC_SHARE_PAYLOAD_BYTES,
+        synchronization::{
+            SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
+        },
     },
+    utils::{retry::BackoffCalculator, sanitize::sanitize_filename, utilities::collect_events},
 };
+
+/// Server-Sent Events state for sync functionality
+pub struct SseState {
+    pub sse_events: Option<Receiver<SseEvent>>,
+    pub sse_event_tx: Option<std::sync::mpsc::Sender<SseEvent>>,
+    pub sse_shutdown_flag: Option<Arc<AtomicBool>>,
+    pub last_sse_event: Option<Instant>,
+}
+
+impl Default for SseState {
+    /// Create a new SseState with all fields initialized to default/empty values
+    ///
+    /// ### Returns
+    /// `Self`: A new SseState
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SseState {
+    /// Create a new SseState with all fields initialized to None
+    ///
+    /// ### Returns
+    /// `Self`: a new SseState
+    pub fn new() -> Self {
+        Self {
+            sse_events: None,
+            sse_event_tx: None,
+            sse_shutdown_flag: None,
+            last_sse_event: None,
+        }
+    }
+}
+
+/// Error type for line reading with shutdown support
+enum ReadError {
+    /// I/O error during reading
+    Io(std::io::Error),
+    /// Shutdown was requested
+    Shutdown,
+}
+
+/// Read a line from a buffered reader with periodic shutdown checks
+///
+/// ### Arguments
+/// - `reader`: The buffered reader to read from
+/// - `shutdown_flag`: Atomic flag to check for shutdown requests
+///
+/// ### Returns
+/// - `Ok(Some(String))`: A line was read successfully
+/// - `Ok(None)`: End of stream reached
+/// - `Err(ReadError::Shutdown)`: Shutdown was requested
+/// - `Err(ReadError::Io)`: I/O error occurred
+fn read_line_with_timeout<R: Read>(
+    reader: &mut BufReader<R>,
+    shutdown_flag: &Arc<AtomicBool>,
+) -> Result<Option<String>, ReadError> {
+    let mut line = String::new();
+    let mut byte = [0u8; 1];
+
+    loop {
+        if shutdown_flag.load(Ordering::Relaxed) {
+            return Err(ReadError::Shutdown);
+        }
+        match reader.read(&mut byte) {
+            Ok(0) => {
+                // End of stream
+                if line.is_empty() {
+                    return Ok(None);
+                } else {
+                    return Ok(Some(line));
+                }
+            }
+            Ok(_) => {
+                if byte[0] == b'\n' {
+                    // End of line (handle both \n and \r\n)
+                    if line.ends_with('\r') {
+                        line.pop();
+                    }
+                    return Ok(Some(line));
+                } else {
+                    line.push(byte[0] as char);
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // Non-blocking read would block, sleep briefly and retry
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                continue;
+            }
+            Err(e) => {
+                return Err(ReadError::Io(e));
+            }
+        }
+    }
+}
 
 /// Connect to SSE (Server-Sent Events) endpoint on the sync serverfor real-time notifications
 ///
@@ -29,6 +132,7 @@ use crate::fulgur::{
 /// Establishes a persistent connection to the server's SSE endpoint to receive:
 /// - Heartbeat events to keep connection alive
 /// - Share notifications when files are shared from other devices
+///
 /// The connection runs in a background thread and automatically reconnects on failure.
 ///
 /// ### Arguments
@@ -36,6 +140,7 @@ use crate::fulgur::{
 /// - `event_tx`: Channel sender for sending SSE events to the main thread
 /// - `shutdown_flag`: Atomic boolean flag to signal the SSE thread to shutdown
 /// - `sync_server_connection_status`: Arc-wrapped connection status to update on connection/disconnection
+/// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(())`: If the SSE connection thread was spawned successfully
@@ -45,7 +150,8 @@ pub fn connect_sse(
     event_tx: Sender<SseEvent>,
     shutdown_flag: Arc<AtomicBool>,
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
-    token_state: Arc<Mutex<TokenState>>,
+    token_state: Arc<TokenStateManager>,
+    http_agent: Arc<ureq::Agent>,
 ) -> Result<(), SynchronizationError> {
     let server_url = synchronization_settings
         .server_url
@@ -54,26 +160,37 @@ pub fn connect_sse(
     let sse_url = format!("{}/api/sse", server_url);
     let settings_clone = synchronization_settings.clone();
     let token_state_clone = Arc::clone(&token_state);
+    let http_agent_clone = Arc::clone(&http_agent);
     thread::spawn(move || {
+        // Exponential backoff for reconnection attempts (1s, 2s, 4s, 8s... up to 5 minutes)
+        let mut backoff = BackoffCalculator::default_settings();
+
         loop {
             if shutdown_flag.load(Ordering::Relaxed) {
                 log::info!("SSE connection shutdown requested, stopping...");
                 break;
             }
-            let token = match get_valid_token(&settings_clone, Arc::clone(&token_state_clone)) {
+            let token = match get_valid_token(
+                &settings_clone,
+                Arc::clone(&token_state_clone),
+                &http_agent_clone,
+            ) {
                 Ok(t) => t,
                 Err(e) => {
-                    log::error!("Failed to get valid token for SSE: {}", e.to_string());
+                    log::error!("Failed to get valid token for SSE: {}", e);
                     set_sync_server_connection_status(
                         sync_server_connection_status.clone(),
                         SynchronizationStatus::AuthenticationFailed,
                     );
-                    thread::sleep(Duration::from_secs(5));
+                    let delay = backoff.record_failure();
+                    log::info!("Retrying SSE connection after {:?}", delay);
+                    thread::sleep(delay);
                     continue;
                 }
             };
             log::info!("Connecting to SSE endpoint: {}", sse_url);
-            let response = match ureq::get(&sse_url)
+            let response = match http_agent_clone
+                .get(&sse_url)
                 .header("Authorization", &format!("Bearer {}", token))
                 .header("Accept", "text/event-stream")
                 .call()
@@ -84,6 +201,7 @@ pub fn connect_sse(
                         SynchronizationStatus::Connected,
                     );
                     log::info!("SSE connection established");
+                    backoff.record_success(); // Reset backoff on successful connection
                     resp
                 }
                 Err(e) => {
@@ -97,24 +215,28 @@ pub fn connect_sse(
                         log::info!("SSE connection shutdown requested, stopping...");
                         break;
                     }
-                    thread::sleep(Duration::from_secs(5));
+                    let delay = backoff.record_failure();
+                    log::info!("Retrying SSE connection after {:?}", delay);
+                    thread::sleep(delay);
                     continue;
                 }
             };
             let mut response = response;
-            let reader = std::io::BufReader::new(response.body_mut().as_reader());
+            let mut reader = std::io::BufReader::new(response.body_mut().as_reader());
             let mut current_event_type = String::new();
             let mut current_data = String::new();
-            use std::io::BufRead;
-            for line in reader.lines() {
+
+            loop {
                 if shutdown_flag.load(Ordering::Relaxed) {
                     log::info!(
                         "SSE connection shutdown requested during event reading, stopping..."
                     );
                     break;
                 }
-                match line {
-                    Ok(line) => {
+
+                let line_result = read_line_with_timeout(&mut reader, &shutdown_flag);
+                match line_result {
+                    Ok(Some(line)) => {
                         if line.starts_with("event:") {
                             current_event_type =
                                 line.trim_start_matches("event:").trim().to_string();
@@ -122,7 +244,7 @@ pub fn connect_sse(
                             current_data.push_str(line.trim_start_matches("data:").trim());
                         } else if line.is_empty() && !current_data.is_empty() {
                             log::info!("SSE event type: {}", current_event_type);
-                            log::info!("SSE data: {}", current_data);
+                            log::debug!("SSE event received ({} bytes)", current_data.len());
                             let event = SseEvent::parse(&current_event_type, &current_data);
                             if let Err(e) = event_tx.send(event) {
                                 log::error!("Failed to send SSE event: {}", e);
@@ -132,7 +254,16 @@ pub fn connect_sse(
                             current_data.clear();
                         }
                     }
-                    Err(e) => {
+                    Ok(None) => {
+                        // End of stream
+                        log::info!("SSE stream ended");
+                        break;
+                    }
+                    Err(ReadError::Shutdown) => {
+                        log::info!("SSE connection shutdown requested");
+                        break;
+                    }
+                    Err(ReadError::Io(e)) => {
                         log::error!("SSE stream error: {}", e);
                         set_sync_server_connection_status(
                             sync_server_connection_status.clone(),
@@ -148,12 +279,13 @@ pub fn connect_sse(
                 break;
             }
             // When the connection is lost
-            log::warn!("SSE connection closed, reconnecting in 5s...");
+            let delay = backoff.record_failure();
+            log::warn!("SSE connection closed, reconnecting after {:?}", delay);
             set_sync_server_connection_status(
                 sync_server_connection_status.clone(),
                 SynchronizationStatus::Disconnected,
             );
-            thread::sleep(Duration::from_secs(5));
+            thread::sleep(delay);
         }
     });
 
@@ -200,7 +332,7 @@ impl SseEvent {
     ///
     /// ### Returns
     /// - `SseEvent`: The parsed event
-    fn parse(event_type: &str, data: &str) -> Self {
+    pub fn parse(event_type: &str, data: &str) -> Self {
         match event_type {
             "heartbeat" => match serde_json::from_str::<HeartbeatData>(data) {
                 Ok(hb) => SseEvent::Heartbeat {
@@ -221,8 +353,8 @@ impl SseEvent {
                 }
             },
             "" => {
-                // No event type means generic message event
-                SseEvent::Error(format!("Unknown event (no event type): {}", data))
+                log::error!("Unknown event with no event type");
+                SseEvent::Error("Unknown event with no event type".to_string())
             }
             _ => {
                 log::warn!("Unknown SSE event type: {}", event_type);
@@ -239,7 +371,8 @@ impl Fulgur {
     /// - `true` if Fulgur is connected to the sync server, `false` otherwise
     pub fn is_connected(&self, cx: &App) -> bool {
         self.shared_state(cx)
-            .sync_server_connection_status
+            .sync_state
+            .connection_status
             .lock()
             .is_connected()
     }
@@ -250,16 +383,16 @@ impl Fulgur {
     /// Stops the current SSE connection and starts a new one with the updated settings.
     /// Should be called when synchronization settings (server URL, email, or key) change.
     pub fn restart_sse_connection(&mut self, cx: &mut Context<Self>) {
-        if let Some(ref shutdown_flag) = self.sse_shutdown_flag {
+        if let Some(ref shutdown_flag) = self.sse_state.sse_shutdown_flag {
             log::info!("Signaling SSE connection to shutdown...");
             shutdown_flag.store(true, Ordering::Relaxed);
         }
         thread::sleep(Duration::from_millis(100));
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
         let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
-        self.sse_events = Some(sse_rx);
-        self.sse_event_tx = Some(sse_tx.clone());
-        self.sse_shutdown_flag = Some(sse_shutdown_flag.clone());
+        self.sse_state.sse_events = Some(sse_rx);
+        self.sse_state.sse_event_tx = Some(sse_tx.clone());
+        self.sse_state.sse_shutdown_flag = Some(sse_shutdown_flag.clone());
         if self
             .settings
             .app_settings
@@ -267,14 +400,16 @@ impl Fulgur {
             .is_synchronization_activated
         {
             let settings = self.settings.clone();
-            let sync_status = self.shared_state(cx).sync_server_connection_status.clone();
-            let token_state = Arc::clone(&self.shared_state(cx).token_state);
+            let sync_status = self.shared_state(cx).sync_state.connection_status.clone();
+            let token_state = Arc::clone(&self.shared_state(cx).sync_state.token_state);
+            let http_agent = Arc::clone(&self.shared_state(cx).http_agent);
             thread::spawn(move || {
                 // Small delay to ensure old connection is fully stopped
                 thread::sleep(Duration::from_millis(200));
-                match super::sync::initial_synchronization(
+                match super::synchronization::initial_synchronization(
                     &settings.app_settings.synchronization_settings,
                     Arc::clone(&token_state),
+                    &http_agent,
                 ) {
                     Ok(_) => {
                         log::info!("Initial sync succeeded, starting new SSE connection");
@@ -284,12 +419,13 @@ impl Fulgur {
                             sse_shutdown_flag,
                             sync_status,
                             token_state,
+                            http_agent,
                         ) {
-                            log::error!("Failed to start new SSE connection: {}", e.to_string());
+                            log::error!("Failed to start new SSE connection: {}", e);
                         }
                     }
                     Err(e) => {
-                        log::error!("Initial sync failed, not starting SSE: {}", e.to_string());
+                        log::error!("Initial sync failed, not starting SSE: {}", e);
                     }
                 }
             });
@@ -312,42 +448,54 @@ impl Fulgur {
     ) {
         // Debounce: ignore events within 500ms of last event
         let now = Instant::now();
-        if let Some(last_time) = self.last_sse_event {
-            if now.duration_since(last_time) < Duration::from_millis(500) {
-                return;
-            }
+        if let Some(last_time) = self.sse_state.last_sse_event
+            && now.duration_since(last_time) < Duration::from_millis(500)
+        {
+            return;
         }
-        self.last_sse_event = Some(now);
+        self.sse_state.last_sse_event = Some(now);
         match event {
             SseEvent::Heartbeat { timestamp } => {
                 log::debug!("SSE heartbeat received: {}", timestamp);
                 let was_disconnected = !self
                     .shared_state(cx)
-                    .sync_server_connection_status
+                    .sync_state
+                    .connection_status
                     .lock()
                     .is_connected();
                 {
-                    let mut last_heartbeat = self.shared_state(cx).last_heartbeat.lock();
+                    let mut last_heartbeat = self.shared_state(cx).sync_state.last_heartbeat.lock();
                     *last_heartbeat = Some(now);
                 }
                 if was_disconnected {
-                    *self.shared_state(cx).sync_server_connection_status.lock() =
+                    *self.shared_state(cx).sync_state.connection_status.lock() =
                         SynchronizationStatus::Connected;
                     log::info!("Connection restored - heartbeat received after timeout");
                 }
             }
             SseEvent::ShareAvailable(notification) => {
+                if notification.content.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
+                    log::warn!(
+                        "Dropping shared file '{}' from device {}: encrypted payload exceeds {} bytes",
+                        notification.file_name,
+                        notification.source_device_id,
+                        MAX_SYNC_SHARE_PAYLOAD_BYTES
+                    );
+                    return;
+                }
+                let safe_filename = sanitize_filename(&notification.file_name);
                 log::info!(
-                    "File shared from device {}: {}",
+                    "File shared from device {}: {} (sanitized: {})",
                     notification.source_device_id,
-                    notification.file_name
+                    notification.file_name,
+                    safe_filename
                 );
                 {
-                    let mut files = self.shared_state(cx).pending_shared_files.lock();
+                    let mut files = self.shared_state(cx).sync_state.pending_shared_files.lock();
                     let shared_file = fulgur_common::api::shares::SharedFileResponse {
                         id: notification.share_id,
                         source_device_id: notification.source_device_id.clone(),
-                        file_name: notification.file_name.clone(),
+                        file_name: safe_filename.clone(),
                         file_size: notification.file_size as i32,
                         content: notification.content,
                         created_at: notification.created_at,
@@ -355,13 +503,27 @@ impl Fulgur {
                     };
                     files.push(shared_file);
                 }
-                let message =
-                    SharedString::from(format!("New file received: {}", notification.file_name));
+                let message = SharedString::from(format!("New file received: {}", safe_filename));
                 window.push_notification((NotificationType::Info, message), cx);
             }
             SseEvent::Error(err) => {
                 log::error!("SSE error: {}", err);
             }
+        }
+    }
+
+    /// Collect and process Server-Sent Events from the sync server:
+    /// - Heartbeat: Periodic keepalive messages to detect connection timeouts
+    /// - ShareAvailable: Another device has shared a file (triggers file download and decryption)
+    /// - Error: Connection or server errors (updates connection status in UI)
+    ///
+    /// ### Arguments
+    /// - `window`: The window to handle events in
+    /// - `cx`: The application context
+    pub fn process_sse_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let sse_events = collect_events(&self.sse_state.sse_events);
+        for event in sse_events {
+            self.handle_sse_event(event, window, cx);
         }
     }
 }

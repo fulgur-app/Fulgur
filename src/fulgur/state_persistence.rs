@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::fulgur::utils::atomic_write::atomic_write_file;
+use fs2::FileExt;
+
 /// Persisted state of a single editor tab
 ///
 /// Tab IDs are not persisted as they are assigned at runtime based on position.
@@ -36,6 +39,10 @@ pub struct SerializedWindowBounds {
 }
 
 impl Default for SerializedWindowBounds {
+    /// Default values for serialized window bounds
+    ///
+    /// ### Returns
+    /// - `SerializedWindowBounds`: The default serialized window bounds
     fn default() -> Self {
         Self {
             state: "Windowed".to_string(),
@@ -141,51 +148,86 @@ impl WindowsState {
     /// - `Ok(PathBuf)`: The path to the state file
     /// - `Err(anyhow::Error)`: If the state file path could not be determined
     fn state_file_path() -> anyhow::Result<PathBuf> {
-        #[cfg(target_os = "windows")]
-        {
-            let app_data = std::env::var("APPDATA")?;
-            let mut path = PathBuf::from(app_data);
-            path.push("Fulgur");
-            fs::create_dir_all(&path)?;
-            path.push("state.json");
-            Ok(path)
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            let home = std::env::var("HOME")?;
-            let mut path = PathBuf::from(home);
-            path.push(".fulgur");
-            fs::create_dir_all(&path)?;
-            path.push("state.json");
-            Ok(path)
-        }
+        let mut path = crate::fulgur::utils::paths::config_dir()?;
+        path.push("state.json");
+        Ok(path)
     }
 
-    /// Save the app state to disk
+    /// Save the app state to a specific path
+    ///
+    /// ### Description
+    /// Core implementation for saving window state. Uses file locking to prevent
+    /// corruption when multiple windows write simultaneously.
+    ///
+    /// ### Arguments
+    /// - `path`: The path to save the state to
+    ///
+    /// ### Returns
+    /// - `Ok(())`: If the app state was saved successfully
+    /// - `Err(anyhow::Error)`: If the app state could not be saved
+    pub fn save_to_path(&self, path: &PathBuf) -> anyhow::Result<()> {
+        // Serialize state to JSON first (fast, no I/O)
+        let json = serde_json::to_string_pretty(self)?;
+
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)
+            .map_err(|e| anyhow::anyhow!("Failed to open state file: {}", e))?;
+        file.lock_exclusive()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire lock on state file: {}", e))?;
+
+        atomic_write_file(path, json.as_bytes())
+    }
+
+    /// Load the windows state from a specific path
+    ///
+    /// ### Description
+    /// Core implementation for loading window state. Uses shared file locking to
+    /// allow concurrent reads while preventing reads during writes.
+    ///
+    /// ### Arguments
+    /// - `path`: The path to load the state from
+    ///
+    /// ### Returns
+    /// - `Ok(WindowsState)`: The loaded windows state
+    /// - `Err(anyhow::Error)`: If the windows state could not be loaded
+    pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .open(path)
+            .map_err(|e| anyhow::anyhow!("Failed to open state file for reading: {}", e))?;
+        file.lock_shared()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire shared lock on state file: {}", e))?;
+        let mut reader = std::io::BufReader::new(&file);
+        let mut json = String::new();
+        std::io::Read::read_to_string(&mut reader, &mut json)
+            .map_err(|e| anyhow::anyhow!("Failed to read state: {}", e))?;
+        let state = serde_json::from_str::<WindowsState>(&json)
+            .map_err(|e| anyhow::anyhow!("Failed to parse state: {}", e))?;
+        Ok(state)
+    }
+
+    /// Save the app state to the default state file location
     ///
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved
     pub fn save(&self) -> anyhow::Result<()> {
         let path = Self::state_file_path()?;
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        self.save_to_path(&path)
     }
 
-    /// Load the windows state from disk
+    /// Load the windows state from the default state file location
     ///
     /// ### Returns
     /// - `Ok(WindowsState)`: The loaded windows state
     /// - `Err(anyhow::Error)`: If the windows state could not be loaded
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::state_file_path()?;
-        let json = fs::read_to_string(path)?;
-        if let Ok(state) = serde_json::from_str::<WindowsState>(&json) {
-            return Ok(state);
-        }
-        Err(anyhow::anyhow!("Failed to parse state file"))
+        Self::load_from_path(&path)
     }
 }
 

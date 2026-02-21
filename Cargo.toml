@@ -8,22 +8,27 @@ keywords = ["rust", "text", "editor", "fulgur", "sync", "desktop", "multiplatfor
 categories = ["text", "editor", "desktop", "multiplatform"]
 homepage = "https://fulgur.app"
 
+[lib]
+name = "fulgur"
+path = "src/lib.rs"
+
 [dependencies]
 # Types
-fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git" }
+fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.3.0"}
+lsp-types = "0.97"
 
 # Serialization
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 
 # Cryptography & security
-aes-gcm = "0.10.3"
 base64 = "0.22.1"
 age = "0.11.2"
+sha2 = "0.10.9"
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "linux-native"] }
 
 # Networking
-ureq = { version = "3.1.4", features = ["json"] }
+ureq = { version = "3.2.0", features = ["json"] }
 
 # Encoding
 chardetng = "0.1.17"
@@ -35,33 +40,46 @@ log = "0.4.29"
 simplelog = "0.12.2"
 
 # Time
-time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
+time = { version = "0.3.47", features = ["serde", "macros", "formatting", "parsing"] }
 
 # Error handling
-anyhow = "1.0.100"
+anyhow = "1.0.101"
 
 # GUI
 gpui = "0.2.2"
-gpui-component = { version = "0.5.0", features = ["tree-sitter-languages"] }
+gpui-component = { version = "0.5.1", features = ["tree-sitter-languages"] }
 
 # Filesystem
 notify = "8.2.0"
 open = "5.3.3"
+flate2 = "1.1.9"
+fs2 = "0.4.3"
+
+# Security - forcing minimum versions for transitive dependencies
+# Fix RUSTSEC-2026-0007: Integer overflow in BytesMut::reserve
+bytes = "1.11.1"
 
 # Others
-lsp-types = "0.97"
 rust-embed = "8.11.0"
-regex = "1.12.2"
+regex = "1.12.3"
 semver = "1.0.27"
-machine-uid = "0.5"
-flate2 = "1.1.8"
 parking_lot = "0.12.5"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6.1"
 
+[dev-dependencies]
+tempfile = "3.25.0"
+
 [build-dependencies]
 embed-resource = "3.0.6"
+
+# ============================================================================
+# cargo-udeps ignore list
+# ============================================================================
+
+[package.metadata.cargo-udeps.ignore]
+build = ["embed-resource"]  # Windows-only build dependency
 
 # ============================================================================
 # cargo-packager configuration

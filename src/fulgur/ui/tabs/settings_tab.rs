@@ -16,7 +16,7 @@ use gpui_component::{
 use crate::fulgur::{
     Fulgur, crypto_helper,
     settings::{AppSettings, EditorSettings, Themes},
-    sync::sync::perform_initial_synchronization,
+    sync::synchronization::perform_initial_synchronization,
     themes,
     ui::{icons::CustomIcon, menus::build_menus},
 };
@@ -66,7 +66,6 @@ impl Fulgur {
                             min: 8.0,
                             max: 24.0,
                             step: 2.0,
-                            ..Default::default()
                         },
                         {
                             let entity = entity.clone();
@@ -79,9 +78,7 @@ impl Fulgur {
                             move |val: f64, cx: &mut App| {
                                 entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.font_size = val as f32;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -98,7 +95,6 @@ impl Fulgur {
                             min: 2.0,
                             max: 12.0,
                             step: 2.0,
-                            ..Default::default()
                         },
                         {
                             let entity = entity.clone();
@@ -109,9 +105,7 @@ impl Fulgur {
                             move |val: f64, cx: &mut App| {
                                 entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.tab_size = val as usize;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -133,9 +127,7 @@ impl Fulgur {
                             move |val: bool, cx: &mut App| {
                                 entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.show_indent_guides = val;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -159,9 +151,7 @@ impl Fulgur {
                             move |val: bool, cx: &mut App| {
                                 entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.show_line_numbers = val;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -181,9 +171,7 @@ impl Fulgur {
                             move |val: bool, cx: &mut App| {
                                 entity.update(cx, |this, cx| {
                                     this.settings.editor_settings.soft_wrap = val;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -215,9 +203,7 @@ impl Fulgur {
                                         .editor_settings
                                         .markdown_settings
                                         .show_markdown_preview = val;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -251,9 +237,7 @@ impl Fulgur {
                                         .editor_settings
                                         .markdown_settings
                                         .show_markdown_toolbar = val;
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -284,9 +268,7 @@ impl Fulgur {
                                     } else {
                                         this.stop_file_watcher();
                                     }
-                                    if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
-                                    }
+                                    let _ = this.update_and_propagate_settings(cx);
                                 });
                             }
                         },
@@ -335,8 +317,34 @@ impl Fulgur {
                     )
                     .description("Show confirmation dialog before exiting the application."),
                 ]),
-                SettingGroup::new().title("Synchronization").items(vec![
-                    SettingItem::new(
+                SettingGroup::new().title("Synchronization").items({
+                    let mut sync_items = vec![];
+                    sync_items.push(SettingItem::render({
+                        move |_options, _window, cx| {
+                            let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+                            if let Some(error_msg) = shared.sync_error.lock().as_ref() {
+                                v_flex()
+                                    .w_full()
+                                    .p_3()
+                                    .mb_2()
+                                    .bg(cx.theme().muted)
+                                    .border_1()
+                                    .border_color(cx.theme().border)
+                                    .rounded(gpui::px(4.0))
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().foreground)
+                                            .text_size(gpui::px(13.0))
+                                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                                            .child(error_msg.clone()),
+                                    )
+                                    .into_any_element()
+                            } else {
+                                div().into_any_element()
+                            }
+                        }
+                    }));
+                    sync_items.push(SettingItem::new(
                         "Activate Synchronization",
                         SettingField::switch(
                             {
@@ -358,12 +366,10 @@ impl Fulgur {
                                                 .app_settings
                                                 .synchronization_settings
                                                 .is_synchronization_activated = val;
-                                            if val {
-                                                if let Err(e) =
+                                            if val && let Err(e) =
                                                     crypto_helper::check_private_public_keys(&mut this.settings)
-                                                {
+                                            {
                                                     log::error!("Failed to check private/public keys: {}", e);
-                                                }
                                             }
                                             if let Err(e) = this.update_and_propagate_settings(cx) {
                                                 log::error!("Failed to save settings: {}", e);
@@ -377,8 +383,40 @@ impl Fulgur {
                         )
                         .default_value(default_app_settings.synchronization_settings.is_synchronization_activated),
                     )
-                    .description("Activate synchronization with the server and saves the relevant keys in the system's keychain."),
-                    SettingItem::new(
+                    .description("Activate synchronization with the server and saves the relevant keys in the system's keychain."));
+                    sync_items.push(SettingItem::new(
+                        "Deduplication",
+                        SettingField::switch(
+                            {
+                                let entity = entity.clone();
+                                move |cx: &App| {
+                                    entity
+                                        .read(cx)
+                                        .settings
+                                        .app_settings
+                                        .synchronization_settings
+                                        .is_deduplication
+                                }
+                            },
+                            {
+                                let entity = entity.clone();
+                                move |val: bool, cx: &mut App| {
+                                    entity.update(cx, |this, cx| {
+                                        this.settings
+                                            .app_settings
+                                            .synchronization_settings
+                                            .is_deduplication = val;
+                                        if let Err(e) = this.update_and_propagate_settings(cx) {
+                                            log::error!("Failed to save settings: {}", e);
+                                        }
+                                    });
+                                }
+                            },
+                        )
+                        .default_value(default_app_settings.synchronization_settings.is_deduplication),
+                    )
+                    .description("Avoid duplicate shares of the same file on the server."));
+                    sync_items.push(SettingItem::new(
                         "Server URL",
                         SettingField::input(
                             {
@@ -421,12 +459,12 @@ impl Fulgur {
                                 .synchronization_settings
                                 .server_url
                                 .clone()
-                                .map(|s| SharedString::from(s))
+                                .map(SharedString::from)
                                 .unwrap_or_default(),
                         ),
                     )
-                    .description("URL of the synchronization server."),
-                    SettingItem::new(
+                    .description("URL of the synchronization server."));
+                    sync_items.push(SettingItem::new(
                         "Email",
                         SettingField::input(
                             {
@@ -467,12 +505,12 @@ impl Fulgur {
                                 .synchronization_settings
                                 .email
                                 .clone()
-                                .map(|s| SharedString::from(s))
+                                .map(SharedString::from)
                                 .unwrap_or_default(),
                         ),
                     )
-                    .description("Email for synchronization."),
-                    SettingItem::new(
+                    .description("Email for synchronization."));
+                    sync_items.push(SettingItem::new(
                         "Device Key",
                         SettingField::input(
                             move |_cx: &App| SharedString::from(DEVICE_KEY_PLACEHOLDER),
@@ -482,7 +520,7 @@ impl Fulgur {
                                     entity.update(cx, |this, cx| {
                                         let key = if val.is_empty() {
                                             None
-                                        } else if val.to_string() == DEVICE_KEY_PLACEHOLDER {
+                                        } else if val == DEVICE_KEY_PLACEHOLDER {
                                             return;
                                         } else {
                                             Some(val.to_string())
@@ -493,15 +531,8 @@ impl Fulgur {
                                             log::error!("Failed to save device API key: {}", e);
                                         } else {
                                             log::info!("Device API key saved successfully");
-                                            {
-                                                let mut token_state =
-                                                    this.shared_state(cx).token_state.lock();
-                                                token_state.access_token = None;
-                                                token_state.token_expires_at = None;
-                                                log::debug!(
-                                                    "Cleared cached access token for new device"
-                                                );
-                                            }
+                                            // Clear cached token to force re-authentication with new device key
+                                            this.shared_state(cx).sync_state.token_state.clear_token();
                                         }
                                         this.restart_sse_connection(cx);
                                     });
@@ -511,8 +542,8 @@ impl Fulgur {
                     )
                     .description(
                         "Device Key for synchronization (stored in keychain).",
-                    ),
-                    SettingItem::render({
+                    ));
+                    sync_items.push(SettingItem::render({
                         let entity = entity.clone();
                         move |_options, _window, _cx| {
                             h_flex()
@@ -529,20 +560,17 @@ impl Fulgur {
                                             let entity = entity.clone();
                                             move |_, _window, cx| {
                                                 let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-                                                {
-                                                    let mut token_state = shared.token_state.lock();
-                                                    token_state.access_token = None;
-                                                    token_state.token_expires_at = None;
-                                                    log::debug!("Cleared cached token before manual synchronization");
-                                                }
+                                                // Clear cached token to force fresh authentication
+                                                shared.sync_state.token_state.clear_token();
                                                 perform_initial_synchronization(entity.clone(), cx);
                                             }
                                         }),
                                 )
                                 .into_any_element()
                         }
-                    }),
-                ]),
+                    }));
+                    sync_items
+                }),
             ])
     }
 
@@ -567,8 +595,7 @@ impl Fulgur {
                 .map(|t| format!("{} ({})", t.name, t.mode))
                 .collect::<Vec<String>>()
                 .join(", ");
-            let button_id = format!("delete-theme-{}", theme_name);
-            let button_id_static: &'static str = Box::leak(button_id.into_boxed_str());
+            let button_id = SharedString::from(format!("delete-theme-{}", theme_name));
             user_theme_items.push(SettingItem::render({
                 let entity = entity.clone();
                 move |_options, _window, cx| {
@@ -594,7 +621,7 @@ impl Fulgur {
                                 ),
                         )
                         .child(
-                            Button::new(button_id_static)
+                            Button::new(button_id.clone())
                                 .icon(CustomIcon::Close)
                                 .small()
                                 .cursor_pointer()
@@ -733,8 +760,12 @@ impl Fulgur {
             log::error!("Failed to save settings: {}", e);
         }
         let menus = build_menus(
-            &self.settings.recent_files.get_files(),
-            self.shared_state(cx).update_link.lock().clone(),
+            self.settings.recent_files.get_files(),
+            if let Some(info) = self.shared_state(cx).update_info.lock().clone() {
+                Some(info.download_url)
+            } else {
+                None
+            },
         );
         cx.set_menus(menus);
     }

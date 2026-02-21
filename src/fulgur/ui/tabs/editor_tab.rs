@@ -3,10 +3,15 @@ use gpui::*;
 use gpui_component::highlighter::Language;
 use gpui_component::input::{InputState, Position, TabSize};
 use regex::Regex;
+use std::sync::LazyLock;
+use std::time::SystemTime;
 
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
 use crate::fulgur::ui::languages::{SupportedLanguage, language_from_extension, to_language};
+
+/// Regex for matching line numbers and line:column positions
+static LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+|\d+:\d+)$").unwrap());
 
 #[derive(Clone)]
 pub struct EditorTab {
@@ -20,6 +25,17 @@ pub struct EditorTab {
     pub language: SupportedLanguage,
     pub show_markdown_toolbar: bool,
     pub show_markdown_preview: bool,
+    pub file_size_bytes: Option<u64>,
+    pub file_last_modified: Option<SystemTime>,
+}
+
+/// Parameters for creating an editor tab from a file
+pub struct FromFileParams {
+    pub id: usize,
+    pub path: std::path::PathBuf,
+    pub contents: String,
+    pub encoding: String,
+    pub is_modified: bool,
 }
 
 /// Create a new input state with syntax highlighting
@@ -41,7 +57,7 @@ fn make_input_state(
     settings: &EditorSettings,
 ) -> InputState {
     InputState::new(window, cx)
-        .code_editor(&language.name().to_string())
+        .code_editor(language.name().to_string())
         .line_number(settings.show_line_numbers)
         .indent_guides(settings.show_indent_guides)
         .tab_size(TabSize {
@@ -85,6 +101,8 @@ impl EditorTab {
             language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: None,
+            file_last_modified: None,
         }
     }
 
@@ -134,63 +152,78 @@ impl EditorTab {
             language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: None,
+            file_last_modified: None,
         }
     }
 
     /// Create a new tab from a file
     ///
     /// ### Arguments
-    /// - `id`: The ID of the tab
-    /// - `path`: The path of the file
-    /// - `contents`: The contents of the file
-    /// - `encoding`: The encoding of the file
+    /// - `params`: The parameters for creating the tab
     /// - `window`: The window to create the tab in
     /// - `cx`: The application context
     /// - `settings`: The settings for the input state
-    /// - `is_modified`: Whether the file is modified
     ///
     /// ### Returns
     /// - `EditorTab`: The new tab
     pub fn from_file(
-        id: usize,
-        path: std::path::PathBuf,
-        contents: String,
-        encoding: String,
+        params: FromFileParams,
         window: &mut Window,
         cx: &mut App,
         settings: &EditorSettings,
-        is_modified: bool,
     ) -> Self {
-        let file_name = path
+        let content_len = params.contents.len();
+        let file_name = params
+            .path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(UNTITLED)
             .to_string();
 
-        let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+        let extension = params
+            .path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
         let language = language_from_extension(extension);
         let content = cx.new(|cx| {
             make_input_state(
                 window,
                 cx,
                 to_language(&language),
-                Some(contents.clone()),
+                Some(params.contents.clone()),
                 settings,
             )
         });
-        let title = format!("{}{}", file_name, if is_modified { " •" } else { "" });
+        let title = format!(
+            "{}{}",
+            file_name,
+            if params.is_modified { " •" } else { "" }
+        );
         Self {
-            id,
+            id: params.id,
             title: title.into(),
             content,
-            file_path: Some(path),
-            modified: is_modified,
-            original_content: contents,
-            encoding,
+            file_path: Some(params.path),
+            modified: params.is_modified,
+            original_content: params.contents,
+            encoding: params.encoding,
             language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: Some(content_len as u64),
+            file_last_modified: Some(SystemTime::now()),
         }
+    }
+
+    /// Update cached metadata used by tab tooltip rendering.
+    ///
+    /// ### Arguments
+    /// - `content_len`: File size in bytes
+    pub fn update_file_tooltip_cache(&mut self, content_len: usize) {
+        self.file_size_bytes = Some(content_len as u64);
+        self.file_last_modified = Some(SystemTime::now());
     }
 
     /// Update the editor's display settings. Tab size cannot be changed after InputState creation.
@@ -334,17 +367,19 @@ pub fn extract_line_number(destination: SharedString) -> anyhow::Result<Jump> {
         line: 0,
         character: None,
     };
-    let re = Regex::new(r"^(\d+|\d+:\d+)$").unwrap();
+    let re = LINE_REGEX.clone();
     re.is_match(destination.as_str())
         .then(|| {
             if destination.contains(":") {
                 let parts = destination.split(":").collect::<Vec<&str>>();
                 if parts.len() == 2 {
-                    jump.line = string_to_u32(parts[0]) - 1;
+                    let line = string_to_u32(parts[0]);
+                    jump.line = if line > 0 { line - 1 } else { 0 };
                     jump.character = Some(string_to_u32(parts[1]));
                 }
             } else {
-                jump.line = string_to_u32(destination.as_str()) - 1;
+                let line = string_to_u32(destination.as_str());
+                jump.line = if line > 0 { line - 1 } else { 0 };
             }
         })
         .ok_or(anyhow::anyhow!("Invalid destination"))?;
@@ -359,17 +394,21 @@ pub fn extract_line_number(destination: SharedString) -> anyhow::Result<Jump> {
 /// ### Returns
 /// - `u32`: The u32 value of the string, or 0 if the string is not a valid u32
 fn string_to_u32(string: &str) -> u32 {
-    if let Ok(line) = string.parse::<u32>() {
-        line
-    } else {
-        0
+    match string.parse::<u32>() {
+        Ok(line) => line,
+        Err(e) => match e.kind() {
+            std::num::IntErrorKind::PosOverflow => u32::MAX,
+            _ => 0,
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::extract_line_number;
+    use super::{extract_line_number, string_to_u32};
     use gpui::SharedString;
+
+    // ========== extract_line_number() tests ==========
 
     #[test]
     fn test_extract_line_number_simple() {
@@ -392,5 +431,191 @@ mod tests {
         let destination = SharedString::from("azerty");
         let result = extract_line_number(destination);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_line_number_line_1() {
+        // Line 1 should convert to index 0
+        let destination = SharedString::from("1");
+        let result = extract_line_number(destination).unwrap();
+        assert_eq!(result.line, 0);
+        assert_eq!(result.character, None);
+    }
+
+    #[test]
+    fn test_extract_line_number_line_0() {
+        // Line 0 should lead to the first line
+        let destination = SharedString::from("0");
+        let result = extract_line_number(destination).unwrap();
+        assert_eq!(result.line, 0);
+        assert_eq!(result.character, None);
+    }
+
+    #[test]
+    fn test_extract_line_number_negative() {
+        // Negative numbers should fail regex validation
+        let destination = SharedString::from("-5");
+        let result = extract_line_number(destination);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_line_number_very_large() {
+        // Very large valid number
+        let destination = SharedString::from("999999999");
+        let result = extract_line_number(destination).unwrap();
+        assert_eq!(result.line, 999999998);
+        assert_eq!(result.character, None);
+    }
+
+    #[test]
+    fn test_extract_line_number_overflow() {
+        // Number larger than u32::MAX should cause parse to fail, returning 0
+        let destination = SharedString::from("99999999999999999999");
+        let result = extract_line_number(destination).unwrap();
+        assert_eq!(result.line, u32::MAX - 1);
+        assert_eq!(result.character, None);
+    }
+
+    #[test]
+    fn test_extract_line_number_non_numeric() {
+        // Non-numeric input should fail regex validation
+        let destination = SharedString::from("abc");
+        let result = extract_line_number(destination);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_line_number_partial_numeric() {
+        // Partially numeric input should fail regex validation
+        let destination = SharedString::from("123abc");
+        let result = extract_line_number(destination);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_line_number_malformed_colon() {
+        // Malformed input with double colon should fail regex validation
+        let destination = SharedString::from("file.txt::");
+        let result = extract_line_number(destination);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_line_number_missing_number_after_colon() {
+        // "line:" without number should fail regex validation
+        let destination = SharedString::from("23:");
+        let result = extract_line_number(destination);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_line_number_missing_number_before_colon() {
+        // ":23" without line number should fail regex validation
+        let destination = SharedString::from(":23");
+        let result = extract_line_number(destination);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_line_number_empty_string() {
+        // Empty string should fail regex validation
+        let destination = SharedString::from("");
+        let result = extract_line_number(destination);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_line_number_with_whitespace() {
+        // Whitespace should fail regex validation
+        let destination = SharedString::from(" 23 ");
+        let result = extract_line_number(destination);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_line_number_zero_character() {
+        // Line with character 0
+        let destination = SharedString::from("10:0");
+        let result = extract_line_number(destination).unwrap();
+        assert_eq!(result.line, 9);
+        assert_eq!(result.character, Some(0));
+    }
+
+    #[test]
+    fn test_extract_line_number_three_parts() {
+        // Three parts separated by colons should fail regex validation
+        let destination = SharedString::from("10:5:2");
+        let result = extract_line_number(destination);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_line_number_with_character_overflow() {
+        // Very large character position
+        let destination = SharedString::from("10:99999999999999999999");
+        let result = extract_line_number(destination).unwrap();
+        assert_eq!(result.line, 9);
+        // Overflow causes parse to fail, string_to_u32 returns 0
+        assert_eq!(result.character, Some(u32::MAX));
+    }
+
+    // ========== string_to_u32() tests ==========
+
+    #[test]
+    fn test_string_to_u32_valid() {
+        assert_eq!(string_to_u32("123"), 123);
+        assert_eq!(string_to_u32("0"), 0);
+        assert_eq!(string_to_u32("1"), 1);
+    }
+
+    #[test]
+    fn test_string_to_u32_invalid_non_numeric() {
+        // Invalid strings return 0
+        assert_eq!(string_to_u32("abc"), 0);
+        assert_eq!(string_to_u32("xyz123"), 0);
+        assert_eq!(string_to_u32("123abc"), 0);
+    }
+
+    #[test]
+    fn test_string_to_u32_negative() {
+        // Negative numbers return 0
+        assert_eq!(string_to_u32("-5"), 0);
+        assert_eq!(string_to_u32("-123"), 0);
+    }
+
+    #[test]
+    fn test_string_to_u32_overflow() {
+        // Numbers larger than u32::MAX return 0
+        assert_eq!(string_to_u32("99999999999999999999"), u32::MAX);
+        assert_eq!(string_to_u32("4294967296"), u32::MAX);
+    }
+
+    #[test]
+    fn test_string_to_u32_max_value() {
+        // u32::MAX should parse correctly
+        assert_eq!(string_to_u32("4294967295"), u32::MAX);
+    }
+
+    #[test]
+    fn test_string_to_u32_empty_string() {
+        // Empty string returns 0
+        assert_eq!(string_to_u32(""), 0);
+    }
+
+    #[test]
+    fn test_string_to_u32_whitespace() {
+        // Whitespace returns 0 (parse fails)
+        assert_eq!(string_to_u32(" "), 0);
+        assert_eq!(string_to_u32("  123  "), 0);
+        assert_eq!(string_to_u32("\t123\n"), 0);
+    }
+
+    #[test]
+    fn test_string_to_u32_special_characters() {
+        // Special characters return 0
+        assert_eq!(string_to_u32("!@#$"), 0);
+        assert_eq!(string_to_u32("12.34"), 0); // Decimal point
+        assert_eq!(string_to_u32("12,345"), 0); // Comma
     }
 }

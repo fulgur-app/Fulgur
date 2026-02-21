@@ -71,7 +71,7 @@ impl Fulgur {
     /// - `Some(Div)`: The rendered search bar element
     /// - `None`: If the search bar is not shown
     pub fn render_search_bar(&self, cx: &mut Context<Self>) -> Option<Div> {
-        if !self.show_search {
+        if !self.search_state.show_search {
             return None;
         }
         Some(
@@ -111,7 +111,7 @@ impl Fulgur {
             .bg(cx.theme().background)
             .text_color(cx.theme().muted_foreground)
             .child(
-                Input::new(&self.search_input)
+                Input::new(&self.search_state.search_input)
                     .flex_1()
                     .text_size(TEXT_SIZE)
                     .line_height(LINE_HEIGHT)
@@ -145,11 +145,11 @@ impl Fulgur {
                             cx.theme().border,
                             cx.theme().tab_bar,
                             cx.theme().accent,
-                            self.match_case,
+                            self.search_state.match_case,
                         )
                         .line_height(LINE_HEIGHT)
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.match_case = !this.match_case;
+                            this.search_state.match_case = !this.search_state.match_case;
                             this.perform_search(window, cx);
                         })),
                     )
@@ -161,11 +161,12 @@ impl Fulgur {
                             cx.theme().border,
                             cx.theme().tab_bar,
                             cx.theme().accent,
-                            self.match_whole_word,
+                            self.search_state.match_whole_word,
                         )
                         .line_height(LINE_HEIGHT)
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.match_whole_word = !this.match_whole_word;
+                            this.search_state.match_whole_word =
+                                !this.search_state.match_whole_word;
                             this.perform_search(window, cx);
                         })),
                     ),
@@ -190,12 +191,16 @@ impl Fulgur {
                     .text_xs()
                     .px_2()
                     .text_color(cx.theme().muted_foreground)
-                    .child(if self.search_matches.is_empty() {
+                    .child(if self.search_state.search_matches.is_empty() {
                         "No matches".to_string()
-                    } else if let Some(current) = self.current_match_index {
-                        format!("{} of {}", current + 1, self.search_matches.len())
+                    } else if let Some(current) = self.search_state.current_match_index {
+                        format!(
+                            "{} of {}",
+                            current + 1,
+                            self.search_state.search_matches.len()
+                        )
                     } else {
-                        format!("{} matches", self.search_matches.len())
+                        format!("{} matches", self.search_state.search_matches.len())
                     }),
             )
             .child(
@@ -242,7 +247,7 @@ impl Fulgur {
             .border_l_1()
             .border_color(cx.theme().border)
             .child(
-                Input::new(&self.replace_input)
+                Input::new(&self.search_state.replace_input)
                     .flex_1()
                     .text_size(TEXT_SIZE)
                     .line_height(LINE_HEIGHT)

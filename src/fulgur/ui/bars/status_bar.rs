@@ -1,7 +1,5 @@
-use std::ops::DerefMut;
-
 use crate::fulgur::{
-    Fulgur, editor_tab,
+    Fulgur,
     ui::{
         components_utils::{EMPTY, UTF_8},
         icons::CustomIcon,
@@ -9,10 +7,7 @@ use crate::fulgur::{
     },
 };
 use gpui::{prelude::FluentBuilder, *};
-use gpui_component::{
-    ActiveTheme, Icon, WindowExt, h_flex,
-    input::{Input, InputState, Position},
-};
+use gpui_component::{ActiveTheme, Icon, h_flex, input::Position};
 
 /// Create a status bar item
 ///
@@ -85,34 +80,28 @@ pub fn status_bar_toggle_button_factory(
     button
 }
 
+/// Parameters for the sync button styling
+pub struct SyncButtonStyle {
+    pub connected_icon: Icon,
+    pub disconnected_icon: Icon,
+    pub border_color: Hsla,
+    pub connected_color: Hsla,
+    pub connected_foreground_color: Hsla,
+    pub connected_hover_color: Hsla,
+    pub disconnected_color: Hsla,
+    pub disconnected_foreground_color: Hsla,
+    pub disconnected_hover_color: Hsla,
+}
+
 /// Create a status bar sync button
 ///
 /// ### Arguments
-/// - `connected_icon`: The icon to display when connected
-/// - `disconnected_icon`: The icon to display when disconnected
-/// - `border_color`: The color of the border
-/// - `connected_color`: The color of the connected button
-/// - `connected_foreground_color`: The foreground color of the connected button
-/// - `connected_hover_color`: The hover color of the connected button
-/// - `disconnected_color`: The color of the disconnected button
-/// - `disconnected_foreground_color`: The foreground color of the disconnected button
-/// - `disconnected_hover_color`: The hover color of the disconnected button
+/// - `style`: The styling parameters for the sync button
 /// - `is_connected`: Whether the device is connected
 ///
 /// ### Returns
 /// - `Div`: A status bar sync button
-pub fn status_bar_sync_button(
-    connected_icon: Icon,
-    disconnected_icon: Icon,
-    border_color: Hsla,
-    connected_color: Hsla,
-    connected_foreground_color: Hsla,
-    connected_hover_color: Hsla,
-    disconnected_color: Hsla,
-    disconnected_foreground_color: Hsla,
-    disconnected_hover_color: Hsla,
-    is_connected: bool,
-) -> Div {
+pub fn status_bar_sync_button(style: SyncButtonStyle, is_connected: bool) -> Div {
     let mut button = div()
         .text_sm()
         .flex()
@@ -120,104 +109,25 @@ pub fn status_bar_sync_button(
         .justify_center()
         .px_4()
         .py_1()
-        .border_color(border_color)
+        .border_color(style.border_color)
         .cursor_pointer();
     if is_connected {
         button = button
-            .child(connected_icon)
-            .bg(connected_color)
-            .text_color(connected_foreground_color)
-            .hover(|this| this.bg(connected_hover_color));
+            .child(style.connected_icon)
+            .bg(style.connected_color)
+            .text_color(style.connected_foreground_color)
+            .hover(|this| this.bg(style.connected_hover_color));
     } else {
         button = button
-            .child(disconnected_icon)
-            .bg(disconnected_color)
-            .text_color(disconnected_foreground_color)
-            .hover(|this| this.bg(disconnected_hover_color));
+            .child(style.disconnected_icon)
+            .bg(style.disconnected_color)
+            .text_color(style.disconnected_foreground_color)
+            .hover(|this| this.bg(style.disconnected_hover_color));
     }
     button
 }
 
-/// Create a status bar left item
-///
-/// ### Arguments
-/// - `content`: The content of the status bar left item
-/// - `border_color`: The color of the border
-///
-/// ### Returns
-/// - `impl IntoElement`: A status bar left item
-#[allow(dead_code)]
-pub fn status_bar_left_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
-    status_bar_item_factory(content, border_color) //.border_r_1()
-}
-
-/// Handle the click on OK button in the jump to line dialog
-///
-/// ### Arguments
-/// - `jump_to_line_input`: The input state entity
-/// - `entity`: The Fulgur entity
-/// - `cx`: The application context
-///
-/// ### Returns
-/// - `true` if the jump to line is successful, `false` otherwise
-fn handle_jump_to_line_ok(
-    jump_to_line_input: Entity<InputState>,
-    entity: Entity<Fulgur>,
-    cx: &mut App,
-) -> bool {
-    let text = jump_to_line_input.read(cx).value();
-    let text_shared = SharedString::from(text);
-    let jump = editor_tab::extract_line_number(text_shared);
-    entity.update(cx, |this, cx| {
-        if let Ok(jump) = jump {
-            this.pending_jump = Some(jump);
-            this.jump_to_line_dialog_open = false;
-            cx.notify();
-            true
-        } else {
-            this.pending_jump = None;
-            false
-        }
-    });
-    false
-}
-
-/// Jump to line
-///
-/// ### Arguments
-/// - `instance`: The Fulgur instance
-/// - `window`: The window context
-/// - `cx`: The application context
-pub fn jump_to_line(instance: &mut Fulgur, window: &mut Window, cx: &mut Context<Fulgur>) {
-    let jump_to_line_input = instance.jump_to_line_input.clone();
-    jump_to_line_input.update(cx, |input_state, cx| {
-        input_state.set_value("", window, cx);
-        cx.notify();
-    });
-    let entity = cx.entity().clone();
-    instance.jump_to_line_dialog_open = true;
-    window.open_dialog(cx.deref_mut(), move |modal, window, cx| {
-        let focus_handle = jump_to_line_input.read(cx).focus_handle(cx);
-        window.focus(&focus_handle);
-        let jump_to_line_input_clone = jump_to_line_input.clone();
-        let entity_clone = entity.clone();
-        modal
-            .confirm()
-            .keyboard(true)
-            .child(Input::new(&jump_to_line_input))
-            .overlay_closable(true)
-            .close_button(false)
-            .on_ok(move |_event: &ClickEvent, _window, cx| {
-                handle_jump_to_line_ok(jump_to_line_input_clone.clone(), entity_clone.clone(), cx)
-            })
-    });
-}
-
 impl Fulgur {
-    pub fn jump_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        jump_to_line(self, window, cx);
-    }
-
     /// Render the status bar
     ///
     /// ### Arguments
@@ -266,7 +176,7 @@ impl Fulgur {
         let jump_to_line_button = jump_to_line_button.on_mouse_down(
             MouseButton::Left,
             cx.listener(|this, _event: &MouseDownEvent, window, cx| {
-                jump_to_line(this, window, cx);
+                this.show_jump_to_line_dialog(window, cx);
             }),
         );
         let language_button =
@@ -277,55 +187,61 @@ impl Fulgur {
                     this.render_select_language_sheet(window, cx);
                 }),
             );
-        let active_editor_tab = self.get_active_editor_tab();
-        let show_markdown_preview = active_editor_tab.unwrap().show_markdown_preview; //TODO: Handle the case where there is no active editor tab even if it shouldn't happen
-        let preview_button = status_bar_toggle_button_factory(
-            "Preview".to_string(),
-            cx.theme().border,
-            cx.theme().muted,
-            show_markdown_preview,
-        )
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
-                let active_editor_tab = this.get_active_editor_tab_mut();
-                if let Some(active_editor_tab) = active_editor_tab {
-                    active_editor_tab.show_markdown_preview =
-                        !active_editor_tab.show_markdown_preview;
-                }
-                cx.notify();
-            }),
-        );
-        let show_markdown_toolbar = active_editor_tab.unwrap().show_markdown_toolbar; //TODO: Handle the case where there is no active editor tab even if it shouldn't happen
-        let toolbar_button = status_bar_toggle_button_factory(
-            "Toolbar".to_string(),
-            cx.theme().border,
-            cx.theme().muted,
-            show_markdown_toolbar,
-        )
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
-                let active_editor_tab = this.get_active_editor_tab_mut();
-                if let Some(active_editor_tab) = active_editor_tab {
-                    active_editor_tab.show_markdown_toolbar =
-                        !active_editor_tab.show_markdown_toolbar;
-                }
-                cx.notify();
-            }),
-        );
+        let (preview_button, toolbar_button) = match self.get_active_editor_tab() {
+            None => (div(), div()),
+            Some(active_editor_tab) => {
+                let show_markdown_preview = active_editor_tab.show_markdown_preview;
+                let preview_button = status_bar_toggle_button_factory(
+                    "Preview".to_string(),
+                    cx.theme().border,
+                    cx.theme().muted,
+                    show_markdown_preview,
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                        if let Some(active_editor_tab) = this.get_active_editor_tab_mut() {
+                            active_editor_tab.show_markdown_preview =
+                                !active_editor_tab.show_markdown_preview;
+                        }
+                        cx.notify();
+                    }),
+                );
+                let show_markdown_toolbar = active_editor_tab.show_markdown_toolbar;
+                let toolbar_button = status_bar_toggle_button_factory(
+                    "Toolbar".to_string(),
+                    cx.theme().border,
+                    cx.theme().muted,
+                    show_markdown_toolbar,
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                        let active_editor_tab = this.get_active_editor_tab_mut();
+                        if let Some(active_editor_tab) = active_editor_tab {
+                            active_editor_tab.show_markdown_toolbar =
+                                !active_editor_tab.show_markdown_toolbar;
+                        }
+                        cx.notify();
+                    }),
+                );
+                (preview_button, toolbar_button)
+            }
+        };
         let is_markdown = self.is_markdown();
         let is_connected = self.is_connected(cx);
         let sync_button = status_bar_sync_button(
-            Icon::new(CustomIcon::Zap),
-            Icon::new(CustomIcon::ZapOff),
-            cx.theme().border,
-            cx.theme().primary,
-            cx.theme().primary_foreground,
-            cx.theme().primary_hover,
-            cx.theme().danger,
-            cx.theme().danger_foreground,
-            cx.theme().danger_hover,
+            SyncButtonStyle {
+                connected_icon: Icon::new(CustomIcon::Zap),
+                disconnected_icon: Icon::new(CustomIcon::ZapOff),
+                border_color: cx.theme().border,
+                connected_color: cx.theme().primary,
+                connected_foreground_color: cx.theme().primary_foreground,
+                connected_hover_color: cx.theme().primary_hover,
+                disconnected_color: cx.theme().danger,
+                disconnected_foreground_color: cx.theme().danger_foreground,
+                disconnected_hover_color: cx.theme().danger_hover,
+            },
             is_connected,
         )
         .on_mouse_down(

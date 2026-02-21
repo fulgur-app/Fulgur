@@ -3,9 +3,8 @@ use time::OffsetDateTime;
 
 use gpui::*;
 use gpui_component::{
-    IndexPath, Sizable, StyledExt,
+    Sizable, StyledExt,
     button::{Button, ButtonVariants},
-    select::SelectState,
 };
 
 use crate::fulgur::ui::icons::CustomIcon;
@@ -70,34 +69,6 @@ pub fn button_factory(
         .corner_radii(CORNERS_SIZE)
 }
 
-/// Create the a select state
-///
-/// ### Arguments
-/// - `window`: The window
-/// - `current_value`: The current value
-/// - `options`: The options
-/// - `cx`: The application context
-///
-/// ### Returns
-/// - `Entity<SelectState<Vec<SharedString>>>`: The select state entity
-#[allow(dead_code)]
-pub fn create_select_state(
-    window: &mut Window,
-    current_value: String,
-    options: Vec<SharedString>,
-    cx: &mut App,
-) -> Entity<SelectState<Vec<SharedString>>> {
-    let selected_index = options.iter().position(|s| s.as_ref() == current_value);
-    cx.new(|cx| {
-        SelectState::new(
-            options,
-            selected_index.map(|i| IndexPath::default().row(i)),
-            window,
-            cx,
-        )
-    })
-}
-
 /// Format a date as ISO 8601 string
 ///
 /// ### Arguments
@@ -111,4 +82,21 @@ pub fn format_system_time(time: SystemTime) -> Option<String> {
     let format =
         time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]").ok()?;
     datetime.format(&format).ok()
+}
+
+/// Format file size in a human-readable format.
+///
+/// ### Arguments
+/// - `bytes`: File size in bytes
+///
+/// ### Returns
+/// - `String`: Human-readable file size
+pub fn format_file_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
 }

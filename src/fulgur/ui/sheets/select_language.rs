@@ -38,19 +38,12 @@ fn make_select_language_item(
         .when(is_current_language, |this| this.bg(cx.theme().muted))
         .hover(|this| this.bg(cx.theme().muted))
         .on_click(move |_event, window, cx| {
-            let language = language.clone();
             entity.update(cx, |this, cx| {
-                if let Some(index) = this.active_tab_index {
-                    if let Some(tab) = this.tabs.get_mut(index) {
-                        if let Some(editor_tab) = tab.as_editor_mut() {
-                            editor_tab.force_language(
-                                window,
-                                cx,
-                                language,
-                                &this.settings.editor_settings,
-                            );
-                        }
-                    }
+                if let Some(index) = this.active_tab_index
+                    && let Some(tab) = this.tabs.get_mut(index)
+                    && let Some(editor_tab) = tab.as_editor_mut()
+                {
+                    editor_tab.force_language(window, cx, language, &this.settings.editor_settings);
                 }
                 window.close_sheet(cx);
             });
@@ -96,7 +89,7 @@ fn make_select_language_list(
             .map(move |language| {
                 make_select_language_item(
                     entity.clone(),
-                    language.clone(),
+                    language,
                     is_current_language(&language, current_language),
                     cx,
                 )
@@ -116,7 +109,7 @@ impl Fulgur {
         let current_language = match self.active_tab_index {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
-                    Some(editor_tab.language.clone())
+                    Some(editor_tab.language)
                 } else {
                     Some(SupportedLanguage::Plain)
                 }

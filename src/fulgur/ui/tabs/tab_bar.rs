@@ -6,7 +6,7 @@ use crate::fulgur::{
 };
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Sizable, StyledExt,
+    ActiveTheme, Sizable, StyledExt, Theme, ThemeRegistry,
     button::{Button, ButtonVariants},
     h_flex,
     menu::ContextMenuExt,
@@ -66,38 +66,36 @@ impl Fulgur {
     /// - `(String, Option<String>)`: A tuple of (filename, optional parent folder)
     fn get_tab_display_title(&self, index: usize, tab: &Tab) -> (String, Option<String>) {
         let base_title = tab.title();
-        if let Some(editor_tab) = tab.as_editor() {
-            if let Some(ref path) = editor_tab.file_path {
-                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                let duplicate_count = self
-                    .tabs
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, t)| {
-                        if *i == index {
-                            return false;
-                        }
-                        if let Some(editor) = t.as_editor() {
-                            if let Some(ref other_path) = editor.file_path {
-                                if let Some(other_filename) =
-                                    other_path.file_name().and_then(|n| n.to_str())
-                                {
-                                    return other_filename == filename;
-                                }
-                            }
-                        }
-                        false
-                    })
-                    .count();
-                if duplicate_count > 0 {
-                    if let Some(parent) = path.parent() {
-                        if let Some(parent_name) = parent.file_name().and_then(|n| n.to_str()) {
-                            return (filename.to_string(), Some(format!("../{}", parent_name)));
-                        }
+        if let Some(editor_tab) = tab.as_editor()
+            && let Some(ref path) = editor_tab.file_path
+        {
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let duplicate_count = self
+                .tabs
+                .iter()
+                .enumerate()
+                .filter(|(i, t)| {
+                    if *i == index {
+                        return false;
                     }
-                }
-                return (filename.to_string(), None);
+                    if let Some(editor) = t.as_editor()
+                        && let Some(ref other_path) = editor.file_path
+                        && let Some(other_filename) =
+                            other_path.file_name().and_then(|n| n.to_str())
+                    {
+                        return other_filename == filename;
+                    }
+                    false
+                })
+                .count();
+            if duplicate_count > 0
+                && let Some(parent) = path.parent()
+                && let Some(parent_name) = parent.file_name().and_then(|n| n.to_str())
+            {
+                return (filename.to_string(), Some(format!("../{}", parent_name)));
             }
+
+            return (filename.to_string(), None);
         }
         (base_title.to_string(), None)
     }
@@ -135,7 +133,7 @@ impl Fulgur {
     /// Handle close tabs to right action from context menu
     ///
     /// ### Arguments
-    /// - `action`: The action to handle    
+    /// - `action`: The action to handle
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn on_close_tabs_to_right(
@@ -199,6 +197,30 @@ impl Fulgur {
             let previous_index = (active_index + self.tabs.len() - 1) % self.tabs.len();
             self.set_active_tab(previous_index, window, cx);
         }
+    }
+
+    /// Handle theme switching action
+    ///
+    /// Applies the selected theme, updates settings, refreshes windows, and rebuilds menus.
+    ///
+    /// ### Arguments
+    /// - `theme_name`: The name of the theme to switch to (as SharedString from action)
+    /// - `cx`: The application context
+    pub fn switch_to_theme(&mut self, theme_name: gpui::SharedString, cx: &mut Context<Self>) {
+        if let Some(theme_config) = ThemeRegistry::global(cx)
+            .themes()
+            .get(theme_name.as_ref())
+            .cloned()
+        {
+            Theme::global_mut(cx).apply_config(&theme_config);
+            self.settings.app_settings.theme = theme_name;
+            self.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_show);
+            let _ = self.update_and_propagate_settings(cx);
+        }
+        cx.refresh_windows();
+        let menus =
+            crate::fulgur::ui::menus::build_menus(self.settings.recent_files.get_files(), None);
+        cx.set_menus(menus);
     }
 
     /// Render the tab bar
@@ -293,6 +315,14 @@ impl Fulgur {
                 .as_ref()
                 .and_then(|path| path.to_str().map(|s| s.to_string()))
         });
+        let cached_file_size = tab
+            .as_editor()
+            .and_then(|editor_tab| editor_tab.file_size_bytes)
+            .map(components_utils::format_file_size);
+        let cached_last_modified = tab
+            .as_editor()
+            .and_then(|editor_tab| editor_tab.file_last_modified)
+            .and_then(components_utils::format_system_time);
         let mut tab_div = div()
             .id(("tab", tab_id))
             .flex()
@@ -323,23 +353,8 @@ impl Fulgur {
         if let Some(path) = file_path {
             tab_div = tab_div.tooltip(move |window, cx| {
                 let path_clone = path.clone();
-                let file_info = std::fs::metadata(&path).ok();
-                let file_size = file_info.as_ref().and_then(|meta| {
-                    let size = meta.len();
-                    if size < 1024 {
-                        Some(format!("{} B", size))
-                    } else if size < 1024 * 1024 {
-                        Some(format!("{:.1} KB", size as f64 / 1024.0))
-                    } else {
-                        Some(format!("{:.1} MB", size as f64 / (1024.0 * 1024.0)))
-                    }
-                });
-                let last_modified = file_info.as_ref().and_then(|meta| {
-                    meta.modified()
-                        .ok()
-                        .map(|modified| components_utils::format_system_time(modified))
-                });
-                let last_modified = last_modified.unwrap_or_default();
+                let file_size = cached_file_size.clone();
+                let last_modified = cached_last_modified.clone();
                 Tooltip::element(move |_, cx| {
                     let mut tooltip = v_flex().gap_1().py_2().px_1().child(
                         h_flex()
@@ -442,5 +457,14 @@ impl Fulgur {
             });
 
         tab_with_content.into_any_element()
+    }
+}
+
+/// Opens the theme repository in the default browser
+///
+/// This is a standalone helper function for the GetTheme action.
+pub fn open_theme_repository() {
+    if let Err(e) = open::that("https://github.com/longbridge/gpui-component/tree/main/themes") {
+        log::error!("Failed to open browser: {}", e);
     }
 }

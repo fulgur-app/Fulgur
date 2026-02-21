@@ -42,24 +42,24 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(index) = self.active_tab_index {
-            if let Some(crate::fulgur::tab::Tab::Editor(editor_tab)) = self.tabs.get_mut(index) {
-                editor_tab.content.update(cx, |input_state, cx| {
-                    let selection = input_state.selected_text_range(true, window, cx);
-                    if let Some(selection) = selection {
-                        let selected_text = input_state
-                            .text()
-                            .slice(selection.range.start..selection.range.end)
-                            .to_string();
-                        let bold_text = format!("{}{}{}", prefix, selected_text, suffix);
-                        input_state.replace(bold_text, window, cx);
-                    } else {
-                        let bold_text = format!("{}{}{}", prefix, " ", suffix);
-                        input_state.insert(bold_text, window, cx);
-                    }
-                    cx.notify();
-                });
-            }
+        if let Some(index) = self.active_tab_index
+            && let Some(crate::fulgur::tab::Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
+        {
+            editor_tab.content.update(cx, |input_state, cx| {
+                let selection = input_state.selected_text_range(true, window, cx);
+                if let Some(selection) = selection {
+                    let selected_text = input_state
+                        .text()
+                        .slice(selection.range.start..selection.range.end)
+                        .to_string();
+                    let bold_text = format!("{}{}{}", prefix, selected_text, suffix);
+                    input_state.replace(bold_text, window, cx);
+                } else {
+                    let bold_text = format!("{}{}{}", prefix, " ", suffix);
+                    input_state.insert(bold_text, window, cx);
+                }
+                cx.notify();
+            });
         }
     }
 
@@ -74,10 +74,7 @@ impl Fulgur {
         if !self.is_markdown() {
             return None;
         }
-        let current_tab = match self.get_active_editor_tab() {
-            Some(tab) => tab,
-            None => return None,
-        };
+        let current_tab = self.get_active_editor_tab()?;
         if !current_tab.show_markdown_toolbar {
             return None;
         }

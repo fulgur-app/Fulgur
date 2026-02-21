@@ -8,6 +8,42 @@ use notify::{Error as NotifyError, Event, EventKind, RecommendedWatcher, Recursi
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::tab::Tab;
+use crate::fulgur::utils::utilities::collect_events;
+
+/// File watching state for external file change detection
+pub struct FileWatchState {
+    pub file_watcher: Option<FileWatcher>,
+    pub file_watch_events: Option<Receiver<FileWatchEvent>>,
+    pub last_file_events: HashMap<PathBuf, Instant>,
+    pub last_file_saves: HashMap<PathBuf, Instant>,
+    pub pending_conflicts: HashMap<PathBuf, usize>,
+}
+
+impl Default for FileWatchState {
+    /// Create a new FileWatchState with all fields initialized to default/empty values
+    ///
+    /// ### Returns
+    /// `Self`: A new FileWatchState
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FileWatchState {
+    /// Create a new FileWatchState with all fields initialized to default/empty values
+    ///
+    /// ### Returns
+    /// `Self: a new FileWatchState
+    pub fn new() -> Self {
+        Self {
+            file_watcher: None,
+            file_watch_events: None,
+            last_file_events: HashMap::new(),
+            last_file_saves: HashMap::new(),
+            pending_conflicts: HashMap::new(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum FileWatchEvent {
@@ -106,7 +142,7 @@ impl FileWatcher {
     }
 
     /// Starts watching a file
-    /// 
+    ///
     /// ### Arguments
     /// - `path`: The path to the file to watch
     ///
@@ -141,11 +177,12 @@ impl FileWatcher {
         if !self.watched_paths.contains_key(path) {
             return;
         }
-        if let Some(watcher) = &mut self.watcher {
-            if let Err(e) = watcher.unwatch(path) {
-                log::warn!("Failed to unwatch file {}: {}", path.display(), e);
-            }
+        if let Some(watcher) = &mut self.watcher
+            && let Err(e) = watcher.unwatch(path)
+        {
+            log::warn!("Failed to unwatch file {}: {}", path.display(), e);
         }
+
         self.watched_paths.remove(path);
         log::debug!("Stopped watching file: {}", path.display());
     }
@@ -191,31 +228,35 @@ impl Fulgur {
         match event {
             FileWatchEvent::Modified(path) => {
                 let now = Instant::now();
-                if let Some(&last_time) = self.last_file_events.get(&path) {
-                    if now.duration_since(last_time) < Duration::from_millis(500) {
-                        return;
-                    }
+                if let Some(&last_time) = self.file_watch_state.last_file_events.get(&path)
+                    && now.duration_since(last_time) < Duration::from_millis(500)
+                {
+                    return;
                 }
-                if let Some(&save_time) = self.last_file_saves.get(&path) {
-                    if now.duration_since(save_time) < Duration::from_millis(500) {
-                        return;
-                    }
+                if let Some(&save_time) = self.file_watch_state.last_file_saves.get(&path)
+                    && now.duration_since(save_time) < Duration::from_millis(500)
+                {
+                    return;
                 }
-                self.last_file_events.insert(path.clone(), now);
-                if let Some(tab_index) = self.find_tab_by_path(&path) {
-                    if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
-                        if editor_tab.modified {
-                            let is_active = self.active_tab_index == Some(tab_index);
+                self.file_watch_state
+                    .last_file_events
+                    .insert(path.clone(), now);
+                if let Some(tab_index) = self.find_tab_by_path(&path)
+                    && let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index)
+                {
+                    if editor_tab.modified {
+                        let is_active = self.active_tab_index == Some(tab_index);
 
-                            if is_active {
-                                self.show_file_conflict_dialog(path, tab_index, window, cx);
-                            } else {
-                                self.pending_conflicts.insert(path, tab_index);
-                            }
+                        if is_active {
+                            self.show_file_conflict_dialog(path, tab_index, window, cx);
                         } else {
-                            self.reload_tab_from_disk(tab_index, window, cx);
-                            self.show_notification_file_reloaded(&path, window, cx);
+                            self.file_watch_state
+                                .pending_conflicts
+                                .insert(path, tab_index);
                         }
+                    } else {
+                        self.reload_tab_from_disk(tab_index, window, cx);
+                        self.show_notification_file_reloaded(&path, window, cx);
                     }
                 }
             }
@@ -252,35 +293,34 @@ impl Fulgur {
             return;
         }
         for tab in &self.tabs {
-            if let Tab::Editor(editor_tab) = tab {
-                if let Some(path) = &editor_tab.file_path {
-                    if let Err(e) = watcher.watch_file(path.clone()) {
-                        log::warn!("Failed to watch file {}: {}", path.display(), e);
-                    }
-                }
+            if let Tab::Editor(editor_tab) = tab
+                && let Some(path) = &editor_tab.file_path
+                && let Err(e) = watcher.watch_file(path.clone())
+            {
+                log::warn!("Failed to watch file {}: {}", path.display(), e);
             }
         }
-        self.file_watcher = Some(watcher);
-        self.file_watch_events = Some(receiver);
+        self.file_watch_state.file_watcher = Some(watcher);
+        self.file_watch_state.file_watch_events = Some(receiver);
     }
 
     /// Stop the file watcher
     pub fn stop_file_watcher(&mut self) {
-        if let Some(mut watcher) = self.file_watcher.take() {
+        if let Some(mut watcher) = self.file_watch_state.file_watcher.take() {
             watcher.stop();
         }
-        self.file_watch_events = None;
+        self.file_watch_state.file_watch_events = None;
     }
 
     /// Add a file to the watcher
     ///
     /// ### Arguments
     /// - `path`: The path to the file to watch
-    pub fn watch_file(&mut self, path: &PathBuf) {
-        if let Some(watcher) = &mut self.file_watcher {
-            if let Err(e) = watcher.watch_file(path.clone()) {
-                log::warn!("Failed to watch file {}: {}", path.display(), e);
-            }
+    pub fn watch_file(&mut self, path: &std::path::Path) {
+        if let Some(watcher) = &mut self.file_watch_state.file_watcher
+            && let Err(e) = watcher.watch_file(path.to_path_buf())
+        {
+            log::warn!("Failed to watch file {}: {}", path.display(), e);
         }
     }
 
@@ -289,8 +329,23 @@ impl Fulgur {
     /// ### Arguments
     /// - `path`: The path to the file to unwatch
     pub fn unwatch_file(&mut self, path: &PathBuf) {
-        if let Some(watcher) = &mut self.file_watcher {
+        if let Some(watcher) = &mut self.file_watch_state.file_watcher {
             watcher.unwatch_file(path);
+        }
+    }
+
+    /// Collect and process file watch events:
+    /// - Modified: File content changed externally (may trigger auto-reload or conflict dialog)
+    /// - Deleted: File was deleted externally (shows notification)
+    /// - Renamed: File was moved/renamed (updates tab path and continues watching)
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the tabs with watched files
+    /// - `cx`: The application context
+    pub fn process_file_watch_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let events = collect_events(&self.file_watch_state.file_watch_events);
+        for event in events {
+            self.handle_file_watch_event(event, window, cx);
         }
     }
 }

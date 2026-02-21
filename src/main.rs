@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
-mod fulgur;
+use fulgur::fulgur;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -40,10 +40,10 @@ impl AssetSource for Assets {
             return Ok(Some(data.data));
         }
         let path_without_prefix = path.strip_prefix("assets/").unwrap_or(path);
-        if path_without_prefix != path {
-            if let Some(data) = Self::get(path_without_prefix) {
-                return Ok(Some(data.data));
-            }
+        if path_without_prefix != path
+            && let Some(data) = Self::get(path_without_prefix)
+        {
+            return Ok(Some(data.data));
         }
         Ok(None)
     }
@@ -71,16 +71,14 @@ impl AssetSource for Assets {
 /// - `Some(PathBuf)`: The PathBuf if successful
 /// - `None`: If the URL could not be converted to a path
 fn url_to_path(url_string: &str) -> Option<PathBuf> {
-    log::debug!("Converting URL to path: {}", url_string);
     let path_str = url_string.strip_prefix("file://").unwrap_or(url_string);
     match urlencoding::decode(path_str) {
         Ok(decoded) => {
             let path = PathBuf::from(decoded.into_owned());
             if path.exists() && path.is_file() {
-                log::debug!("Converted URL to valid file path: {:?}", path);
                 Some(path)
             } else {
-                log::warn!("URL converted to path but file doesn't exist: {:?}", path);
+                log::warn!("URL converted to path, but target is not a valid file");
                 None
             }
         }
@@ -93,7 +91,7 @@ fn url_to_path(url_string: &str) -> Option<PathBuf> {
 
 fn main() {
     if let Err(e) = fulgur::utils::logger::init() {
-        log::error!("Failed to initialize logger: {}", e);
+        eprintln!("Failed to initialize logger: {}", e);
     }
     let current_version = env!("CARGO_PKG_VERSION");
     log::info!("=== Fulgur v{} Starting ===", current_version);
@@ -102,7 +100,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     log::info!("Command-line arguments: {:?}", args);
     if args.len() > 1 {
-        log::info!("File to open from command-line: {}", args[1]);
+        log::debug!("File to open from command-line: {}", args[1]);
     }
     let cli_file_paths: Vec<PathBuf> = args
         .iter()
@@ -110,11 +108,10 @@ fn main() {
         .filter_map(|arg| {
             let path = PathBuf::from(arg);
             if path.exists() && path.is_file() {
-                log::debug!("Valid file argument found: {:?}", path);
                 Some(path)
             } else {
                 if !arg.is_empty() {
-                    log::warn!("Invalid or non-existent file argument: {:?}", arg);
+                    log::warn!("Invalid or non-existent file argument");
                 }
                 None
             }
@@ -126,9 +123,6 @@ fn main() {
     let pending_files_clone = pending_files.clone();
     app.on_open_urls(move |urls| {
         log::debug!("Received {} file URL(s) from macOS open event", urls.len());
-        for url in &urls {
-            log::debug!("macOS open URL: {}", url);
-        }
         let file_paths: Vec<PathBuf> = urls.iter().filter_map(|url| url_to_path(url)).collect();
 
         if file_paths.is_empty() {
@@ -264,5 +258,29 @@ async fn create_window(
     window.update(cx, |_, window, _| {
         window.activate_window();
     })?;
+
+    // Check for updates on first window only
+    if window_index == 0 {
+        let update_info = cx.update(|cx| {
+            cx.global::<fulgur::shared_state::SharedAppState>()
+                .update_info
+                .clone()
+        })?;
+        let current_version = env!("CARGO_PKG_VERSION").to_string();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            log::info!("Checking for updates...");
+            match fulgur::utils::updater::check_for_updates(current_version) {
+                Ok(Some(new_update_info)) => {
+                    *update_info.lock() = Some(new_update_info);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log::warn!("Failed to check for updates: {}", e);
+                }
+            }
+        });
+    }
+
     Ok(())
 }
