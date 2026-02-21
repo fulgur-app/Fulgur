@@ -60,6 +60,7 @@ fs2 = "0.4.3"
 bytes = "1.11.1"
 
 # Tree-sitter languages
+tree-sitter-ocaml = "0.24.2"
 tree-sitter-perl-next = "0.1.0"
 
 # Others

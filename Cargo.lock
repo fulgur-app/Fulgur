@@ -34,6 +34,7 @@ dependencies = [
  "tempfile",
  "tikv-jemallocator",
  "time",
+ "tree-sitter-ocaml",
  "tree-sitter-perl-next",
  "ureq",
  "urlencoding",
@@ -6801,6 +6802,16 @@ name = "tree-sitter-md"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b55ea8733e098490746a07d6f629d1f7820e8953a4aab1341ae39123bcdf93d"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-ocaml"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d19db582b3855f56b5f9ec484170fbfb9ee60b938ec7720d76d2ee788e8b640"
 dependencies = [
  "cc",
  "tree-sitter-language",
