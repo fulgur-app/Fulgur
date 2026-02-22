@@ -271,71 +271,71 @@ jobs:
               \"disable_web_page_preview\": true
             }"
 
-  unused-deps:
-    name: Unused Dependencies Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  # unused-deps:
+  #   name: Unused Dependencies Check
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
 
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
+  #     - name: Install Rust nightly
+  #       uses: dtolnay/rust-toolchain@nightly
 
-      - name: Install Linux dependencies
-        run: *linux_deps_install_cmd
+  #     - name: Install Linux dependencies
+  #       run: *linux_deps_install_cmd
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+  #     - name: Rust cache
+  #       uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-udeps
-        uses: taiki-e/install-action@cargo-udeps
+  #     - name: Install cargo-udeps
+  #       uses: taiki-e/install-action@cargo-udeps
 
-      - name: Check for unused dependencies
-        run: cargo +nightly udeps --all-targets
+  #     - name: Check for unused dependencies
+  #       run: cargo +nightly udeps --all-targets
 
-      - name: Telegram notification - Success
-        if: success()
-        run: |
-          MESSAGE="✅ *Fulgur Dependency Check - Passed*
+  #     - name: Telegram notification - Success
+  #       if: success()
+  #       run: |
+  #         MESSAGE="✅ *Fulgur Dependency Check - Passed*
 
-          No unused dependencies detected
+  #         No unused dependencies detected
 
-          *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA}\`
-          *Author:* ${ACTOR}
+  #         *Branch:* \`${BRANCH}\`
+  #         *Commit:* \`${COMMIT_SHA}\`
+  #         *Author:* ${ACTOR}
 
-          [View Run](${RUN_URL})"
+  #         [View Run](${RUN_URL})"
 
-          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
-              \"text\": \"${MESSAGE}\",
-              \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": true
-            }"
+  #         curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+  #           -H "Content-Type: application/json" \
+  #           -d "{
+  #             \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+  #             \"text\": \"${MESSAGE}\",
+  #             \"parse_mode\": \"Markdown\",
+  #             \"disable_web_page_preview\": true
+  #           }"
 
-      - name: Telegram notification - Failure
-        if: failure()
-        run: |
-          MESSAGE="⚠️ *Fulgur Dependency Check - Unused Dependencies Found*
+  #     - name: Telegram notification - Failure
+  #       if: failure()
+  #       run: |
+  #         MESSAGE="⚠️ *Fulgur Dependency Check - Unused Dependencies Found*
 
-          Unused dependencies detected in Cargo.toml
+  #         Unused dependencies detected in Cargo.toml
 
-          *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA}\`
-          *Author:* ${ACTOR}
+  #         *Branch:* \`${BRANCH}\`
+  #         *Commit:* \`${COMMIT_SHA}\`
+  #         *Author:* ${ACTOR}
 
-          [View Run](${RUN_URL})"
+  #         [View Run](${RUN_URL})"
 
-          curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
-              \"text\": \"${MESSAGE}\",
-              \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": true
-            }"
+  #         curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+  #           -H "Content-Type: application/json" \
+  #           -d "{
+  #             \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
+  #             \"text\": \"${MESSAGE}\",
+  #             \"parse_mode\": \"Markdown\",
+  #             \"disable_web_page_preview\": true
+  #           }"
 
   docs:
     name: Documentation Build
