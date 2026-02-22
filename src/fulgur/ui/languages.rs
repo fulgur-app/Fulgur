@@ -1,3 +1,4 @@
+use gpui::SharedString;
 use gpui_component::highlighter::{Language, LanguageConfig, LanguageRegistry};
 
 use crate::fulgur::Fulgur;
@@ -137,7 +138,6 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::Toml => Language::Toml,
         SupportedLanguage::Tsx => Language::TypeScript,
         SupportedLanguage::TypeScript => Language::TypeScript,
-        SupportedLanguage::Vue => Language::TypeScript,
         SupportedLanguage::Yaml => Language::Yaml,
         SupportedLanguage::Zig => Language::Zig,
         _ => Language::Plain,
@@ -211,6 +211,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Dockerfile => "dockerfile",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Perl => "perl",
+        SupportedLanguage::Vue => "vue",
         other => to_language(other).name(),
     }
 }
@@ -349,6 +350,7 @@ pub fn register_external_languages() {
     add_dockerfile_support();
     add_ocaml_support();
     add_perl_support();
+    add_vue_support();
 }
 
 /// Add Perl support to the editor
@@ -380,6 +382,7 @@ fn add_dockerfile_support() {
     );
 }
 
+/// Add OCaml language support.
 fn add_ocaml_support() {
     LanguageRegistry::singleton().register(
         "ocaml",
@@ -390,6 +393,25 @@ fn add_ocaml_support() {
             tree_sitter_ocaml::HIGHLIGHTS_QUERY,
             "",
             tree_sitter_ocaml::LOCALS_QUERY,
+        ),
+    );
+}
+
+/// Add Vue language support.
+fn add_vue_support() {
+    LanguageRegistry::singleton().register(
+        "vue",
+        &LanguageConfig::new(
+            "vue",
+            arborium_vue::language().into(),
+            vec![
+                SharedString::new("typescript"),
+                SharedString::new("javascript"),
+                SharedString::new("css"),
+            ],
+            arborium_vue::HIGHLIGHTS_QUERY.as_str(),
+            arborium_vue::INJECTIONS_QUERY,
+            arborium_vue::LOCALS_QUERY,
         ),
     );
 }
