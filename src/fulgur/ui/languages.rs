@@ -13,6 +13,7 @@ pub enum SupportedLanguage {
     CSharp,
     Cpp,
     Css,
+    Dart,
     Diff,
     Dockerfile,
     Ejs,
@@ -160,6 +161,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::CSharp => "C#".to_string(),
         SupportedLanguage::Cpp => "C++".to_string(),
         SupportedLanguage::Css => "CSS".to_string(),
+        SupportedLanguage::Dart => "Dart".to_string(),
         SupportedLanguage::Diff => "Diff".to_string(),
         SupportedLanguage::Dockerfile => "Dockerfile".to_string(),
         SupportedLanguage::Ejs => "EJS".to_string(),
@@ -208,6 +210,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
 /// - `&'static str`: The language name as registered in the LanguageRegistry
 pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'static str {
     match supported_language {
+        SupportedLanguage::Dart => "dart",
         SupportedLanguage::Dockerfile => "dockerfile",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Perl => "perl",
@@ -249,6 +252,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
     if language == SupportedLanguage::Plain {
         language = match extension {
             "astro" => SupportedLanguage::Html,
+            "dart" => SupportedLanguage::Dart,
             "dockerfile" => SupportedLanguage::Dockerfile,
             "lock" => SupportedLanguage::Toml,
             "mjs" => SupportedLanguage::JavaScript,
@@ -278,6 +282,7 @@ impl SupportedLanguage {
             SupportedLanguage::CMake,
             SupportedLanguage::CSharp,
             SupportedLanguage::Css,
+            SupportedLanguage::Dart,
             SupportedLanguage::Diff,
             SupportedLanguage::Dockerfile,
             SupportedLanguage::Ejs,
@@ -347,6 +352,7 @@ impl Fulgur {
 
 /// Register external languages that are not supported by default by the editor
 pub fn register_external_languages() {
+    add_dart_support();
     add_dockerfile_support();
     add_ocaml_support();
     add_perl_support();
@@ -412,6 +418,21 @@ fn add_vue_support() {
             arborium_vue::HIGHLIGHTS_QUERY.as_str(),
             arborium_vue::INJECTIONS_QUERY,
             arborium_vue::LOCALS_QUERY,
+        ),
+    );
+}
+
+/// Add Dart language support.
+fn add_dart_support() {
+    LanguageRegistry::singleton().register(
+        "dart",
+        &LanguageConfig::new(
+            "dart",
+            arborium_dart::language().into(),
+            vec![],
+            arborium_dart::HIGHLIGHTS_QUERY,
+            arborium_dart::INJECTIONS_QUERY,
+            arborium_dart::LOCALS_QUERY,
         ),
     );
 }
