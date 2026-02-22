@@ -26,6 +26,7 @@ pub enum SupportedLanguage {
     Make,
     Markdown,
     MarkdownInline,
+    Ocaml,
     Perl,
     Php,
     Plain,
@@ -172,6 +173,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Make => "Make".to_string(),
         SupportedLanguage::Markdown => "Markdown".to_string(),
         SupportedLanguage::MarkdownInline => "Markdown Inline".to_string(),
+        SupportedLanguage::Ocaml => "OCaml".to_string(),
         SupportedLanguage::Perl => "Perl".to_string(),
         SupportedLanguage::Php => "PHP".to_string(),
         SupportedLanguage::Plain => "Plain Text".to_string(),
@@ -201,9 +203,10 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
 /// - `supported_language`: The supported language to convert
 ///
 /// ### Returns
-/// The language name as registered in the LanguageRegistry
+/// - `&'static str`: The language name as registered in the LanguageRegistry
 pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'static str {
     match supported_language {
+        SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Perl => "perl",
         other => to_language(other).name(),
     }
@@ -228,6 +231,7 @@ pub fn language_from_extension(extension: &str) -> SupportedLanguage {
             "mjs" => SupportedLanguage::JavaScript,
             "perl" | "pl" | "pm" | "plx" => SupportedLanguage::Perl,
             "php" | "php3" | "php4" | "php5" | "phhtml" => SupportedLanguage::Html,
+            "ml" | "mli" => SupportedLanguage::Ocaml,
             "svelte" => SupportedLanguage::Svelte,
             "svg" => SupportedLanguage::Html,
             "vue" => SupportedLanguage::Vue,
@@ -265,6 +269,7 @@ impl SupportedLanguage {
             SupportedLanguage::Make,
             SupportedLanguage::Markdown,
             SupportedLanguage::MarkdownInline,
+            SupportedLanguage::Ocaml,
             SupportedLanguage::Perl,
             SupportedLanguage::Php,
             SupportedLanguage::Plain,
@@ -318,10 +323,11 @@ impl Fulgur {
 
 /// Register external languages that are not supported by default by the editor
 pub fn register_external_languages() {
+    add_ocaml_support();
     add_perl_support();
 }
 
-/// Add Perl support to th editor
+/// Add Perl support to the editor
 fn add_perl_support() {
     LanguageRegistry::singleton().register(
         "perl",
@@ -332,6 +338,20 @@ fn add_perl_support() {
             tree_sitter_perl_next::HIGHLIGHTS_QUERY,
             tree_sitter_perl_next::INJECTIONS_QUERY,
             "",
+        ),
+    );
+}
+
+fn add_ocaml_support() {
+    LanguageRegistry::singleton().register(
+        "ocaml",
+        &LanguageConfig::new(
+            "ocaml",
+            tree_sitter_ocaml::LANGUAGE_OCAML.into(),
+            vec![],
+            tree_sitter_ocaml::HIGHLIGHTS_QUERY,
+            "",
+            tree_sitter_ocaml::LOCALS_QUERY,
         ),
     );
 }
