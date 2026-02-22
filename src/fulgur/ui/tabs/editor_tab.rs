@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
 use crate::fulgur::ui::languages::{
-    SupportedLanguage, language_from_extension, language_registry_name,
+    SupportedLanguage, language_from_filename, language_registry_name,
 };
 
 /// Regex for matching line numbers and line:column positions
@@ -135,11 +135,7 @@ impl EditorTab {
         cx: &mut App,
         settings: &EditorSettings,
     ) -> Self {
-        let extension = std::path::Path::new(&file_name)
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("");
-        let language = language_from_extension(extension);
+        let language = language_from_filename(&file_name);
         let content = cx.new(|cx| {
             make_input_state(
                 window,
@@ -189,12 +185,7 @@ impl EditorTab {
             .unwrap_or(UNTITLED)
             .to_string();
 
-        let extension = params
-            .path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("");
-        let language = language_from_extension(extension);
+        let language = language_from_filename(&file_name);
         let content = cx.new(|cx| {
             make_input_state(
                 window,
@@ -302,8 +293,8 @@ impl EditorTab {
         settings: &EditorSettings,
     ) {
         if let Some(ref path) = self.file_path {
-            let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-            let language = language_from_extension(extension);
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let language = language_from_filename(file_name);
             self.force_language(window, cx, language, settings);
         }
     }

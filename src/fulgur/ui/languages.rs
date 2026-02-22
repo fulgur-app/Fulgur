@@ -13,6 +13,7 @@ pub enum SupportedLanguage {
     Cpp,
     Css,
     Diff,
+    Dockerfile,
     Ejs,
     Elixir,
     Erb,
@@ -160,6 +161,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Cpp => "C++".to_string(),
         SupportedLanguage::Css => "CSS".to_string(),
         SupportedLanguage::Diff => "Diff".to_string(),
+        SupportedLanguage::Dockerfile => "Dockerfile".to_string(),
         SupportedLanguage::Ejs => "EJS".to_string(),
         SupportedLanguage::Elixir => "Elixir".to_string(),
         SupportedLanguage::Erb => "ERB".to_string(),
@@ -206,20 +208,39 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
 /// - `&'static str`: The language name as registered in the LanguageRegistry
 pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'static str {
     match supported_language {
+        SupportedLanguage::Dockerfile => "dockerfile",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Perl => "perl",
         other => to_language(other).name(),
     }
 }
 
-/// Get the Language enum from a file extension. Checks if the extension is a known language, if not, it returns Plain.
+/// Get the Language enum from a filename or file extension.
+/// Exact filename matches (e.g. `Dockerfile`, `Makefile`) are checked first,
+/// then falls back to the file extension.
 ///
 /// ### Arguments
-/// - `extension`: The file extension
+/// - `filename`: The file name
 ///
 /// ### Returns
-/// - `Language`: The detected language
-pub fn language_from_extension(extension: &str) -> SupportedLanguage {
+/// - `SupportedLanguage`: The detected language
+pub fn language_from_filename(filename: &str) -> SupportedLanguage {
+    let lower = filename.to_lowercase();
+    let exact = match lower.as_str() {
+        "dockerfile" => Some(SupportedLanguage::Dockerfile),
+        "makefile" | "gnumakefile" => Some(SupportedLanguage::Make),
+        "gemfile" | "rakefile" | "guardfile" | "podfile" => Some(SupportedLanguage::Ruby),
+        _ => None,
+    };
+    if let Some(lang) = exact {
+        return lang;
+    }
+
+    let extension = std::path::Path::new(filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("");
+
     if extension == "txt" {
         return SupportedLanguage::Plain;
     }
@@ -227,6 +248,7 @@ pub fn language_from_extension(extension: &str) -> SupportedLanguage {
     if language == SupportedLanguage::Plain {
         language = match extension {
             "astro" => SupportedLanguage::Html,
+            "dockerfile" => SupportedLanguage::Dockerfile,
             "lock" => SupportedLanguage::Toml,
             "mjs" => SupportedLanguage::JavaScript,
             "perl" | "pl" | "pm" | "plx" => SupportedLanguage::Perl,
@@ -256,6 +278,7 @@ impl SupportedLanguage {
             SupportedLanguage::CSharp,
             SupportedLanguage::Css,
             SupportedLanguage::Diff,
+            SupportedLanguage::Dockerfile,
             SupportedLanguage::Ejs,
             SupportedLanguage::Elixir,
             SupportedLanguage::Erb,
@@ -323,6 +346,7 @@ impl Fulgur {
 
 /// Register external languages that are not supported by default by the editor
 pub fn register_external_languages() {
+    add_dockerfile_support();
     add_ocaml_support();
     add_perl_support();
 }
@@ -338,6 +362,20 @@ fn add_perl_support() {
             tree_sitter_perl_next::HIGHLIGHTS_QUERY,
             tree_sitter_perl_next::INJECTIONS_QUERY,
             "",
+        ),
+    );
+}
+
+fn add_dockerfile_support() {
+    LanguageRegistry::singleton().register(
+        "dockerfile",
+        &LanguageConfig::new(
+            "dockerfile",
+            arborium_dockerfile::language().into(),
+            vec![],
+            arborium_dockerfile::HIGHLIGHTS_QUERY,
+            arborium_dockerfile::INJECTIONS_QUERY,
+            arborium_dockerfile::LOCALS_QUERY,
         ),
     );
 }
