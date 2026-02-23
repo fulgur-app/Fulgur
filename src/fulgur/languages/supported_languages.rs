@@ -46,6 +46,7 @@ pub enum SupportedLanguage {
     Toml,
     TypeScript,
     Vue,
+    Xml,
     Yaml,
     Zig,
 }
@@ -194,6 +195,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Toml => "TOML".to_string(),
         SupportedLanguage::TypeScript => "TypeScript".to_string(),
         SupportedLanguage::Vue => "Vue".to_string(),
+        SupportedLanguage::Xml => "XML".to_string(),
         SupportedLanguage::Yaml => "YAML".to_string(),
         SupportedLanguage::Zig => "Zig".to_string(),
     }
@@ -217,6 +219,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Perl => "perl",
         SupportedLanguage::React => "react",
         SupportedLanguage::Vue => "vue",
+        SupportedLanguage::Xml => "html",
         other => to_language(other).name(),
     }
 }
@@ -266,6 +269,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "svg" => SupportedLanguage::Html,
             "tsx" | "jsx" => SupportedLanguage::React,
             "vue" => SupportedLanguage::Vue,
+            "xml" => SupportedLanguage::Xml,
             _ => SupportedLanguage::Plain,
         };
     }
@@ -320,6 +324,7 @@ impl SupportedLanguage {
             SupportedLanguage::Toml,
             SupportedLanguage::TypeScript,
             SupportedLanguage::Vue,
+            SupportedLanguage::Xml,
             SupportedLanguage::Yaml,
             SupportedLanguage::Zig,
         ]
