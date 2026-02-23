@@ -21,6 +21,7 @@ pub enum SupportedLanguage {
     Erb,
     Go,
     GraphQl,
+    Groovy,
     Haskell,
     Html,
     Java,
@@ -172,6 +173,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Erb => "ERB".to_string(),
         SupportedLanguage::Go => "Go".to_string(),
         SupportedLanguage::GraphQl => "GraphQL".to_string(),
+        SupportedLanguage::Groovy => "Groovy".to_string(),
         SupportedLanguage::Haskell => "Haskell".to_string(),
         SupportedLanguage::Html => "HTML".to_string(),
         SupportedLanguage::Java => "Java".to_string(),
@@ -219,6 +221,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Ada => "ada",
         SupportedLanguage::Dart => "dart",
         SupportedLanguage::Dockerfile => "dockerfile",
+        SupportedLanguage::Groovy => "groovy",
         SupportedLanguage::Haskell => "haskell",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Perl => "perl",
@@ -268,6 +271,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "dockerfile" => SupportedLanguage::Dockerfile,
             "hs" | "lhs" => SupportedLanguage::Haskell,
             "lock" => SupportedLanguage::Toml,
+            "groovy" | "gvy" | "gy" | "gsh" => SupportedLanguage::Groovy,
             "mjs" => SupportedLanguage::JavaScript,
             "perl" | "pl" | "pm" | "plx" => SupportedLanguage::Perl,
             "php" | "php3" | "php4" | "php5" | "phhtml" => SupportedLanguage::Html,
@@ -307,6 +311,7 @@ impl SupportedLanguage {
             SupportedLanguage::Erb,
             SupportedLanguage::Go,
             SupportedLanguage::GraphQl,
+            SupportedLanguage::Groovy,
             SupportedLanguage::Haskell,
             SupportedLanguage::Html,
             SupportedLanguage::Java,
@@ -375,6 +380,7 @@ pub fn register_external_languages() {
     super::syntax_highlighting::ada::add_ada_support();
     super::syntax_highlighting::dart::add_dart_support();
     super::syntax_highlighting::dockerfile::add_dockerfile_support();
+    super::syntax_highlighting::groovy::add_groovy_support();
     super::syntax_highlighting::haskell::add_haskell_support();
     super::syntax_highlighting::ocaml::add_ocaml_support();
     super::syntax_highlighting::perl::add_perl_support();
