@@ -62,6 +62,7 @@ bytes = "1.11.1"
 # Tree-sitter languages
 arborium-ada = "2.13.0"
 arborium-dart = "2.13.0"
+arborium-tsx= "2.13.0"
 arborium-vue = "2.13.0"
 arborium-dockerfile = "2.13.0"
 tree-sitter-ocaml = "0.24.2"

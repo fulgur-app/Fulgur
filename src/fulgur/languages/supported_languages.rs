@@ -35,6 +35,7 @@ pub enum SupportedLanguage {
     Plain,
     Proto,
     Python,
+    React,
     Ruby,
     Rust,
     Scala,
@@ -43,7 +44,6 @@ pub enum SupportedLanguage {
     Svg,
     Swift,
     Toml,
-    Tsx,
     TypeScript,
     Vue,
     Yaml,
@@ -88,7 +88,7 @@ pub fn from_language(language: Language) -> SupportedLanguage {
         Language::Sql => SupportedLanguage::Sql,
         Language::Swift => SupportedLanguage::Swift,
         Language::Toml => SupportedLanguage::Toml,
-        Language::Tsx => SupportedLanguage::Tsx,
+        Language::Tsx => SupportedLanguage::React,
         Language::TypeScript => SupportedLanguage::TypeScript,
         Language::Yaml => SupportedLanguage::Yaml,
         Language::Zig => SupportedLanguage::Zig,
@@ -137,7 +137,6 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::Svg => Language::Html,
         SupportedLanguage::Swift => Language::Swift,
         SupportedLanguage::Toml => Language::Toml,
-        SupportedLanguage::Tsx => Language::TypeScript,
         SupportedLanguage::TypeScript => Language::TypeScript,
         SupportedLanguage::Yaml => Language::Yaml,
         SupportedLanguage::Zig => Language::Zig,
@@ -184,6 +183,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Plain => "Plain Text".to_string(),
         SupportedLanguage::Proto => "Protocol Buffers".to_string(),
         SupportedLanguage::Python => "Python".to_string(),
+        SupportedLanguage::React => "React".to_string(),
         SupportedLanguage::Ruby => "Ruby".to_string(),
         SupportedLanguage::Rust => "Rust".to_string(),
         SupportedLanguage::Scala => "Scala".to_string(),
@@ -192,7 +192,6 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Svelte => "Svelte".to_string(),
         SupportedLanguage::Swift => "Swift".to_string(),
         SupportedLanguage::Toml => "TOML".to_string(),
-        SupportedLanguage::Tsx => "TSX".to_string(),
         SupportedLanguage::TypeScript => "TypeScript".to_string(),
         SupportedLanguage::Vue => "Vue".to_string(),
         SupportedLanguage::Yaml => "YAML".to_string(),
@@ -216,6 +215,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Dockerfile => "dockerfile",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Perl => "perl",
+        SupportedLanguage::React => "react",
         SupportedLanguage::Vue => "vue",
         other => to_language(other).name(),
     }
@@ -264,6 +264,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "ml" | "mli" => SupportedLanguage::Ocaml,
             "svelte" => SupportedLanguage::Svelte,
             "svg" => SupportedLanguage::Html,
+            "tsx" | "jsx" => SupportedLanguage::React,
             "vue" => SupportedLanguage::Vue,
             _ => SupportedLanguage::Plain,
         };
@@ -308,6 +309,7 @@ impl SupportedLanguage {
             SupportedLanguage::Plain,
             SupportedLanguage::Proto,
             SupportedLanguage::Python,
+            SupportedLanguage::React,
             SupportedLanguage::Ruby,
             SupportedLanguage::Rust,
             SupportedLanguage::Scala,
@@ -316,7 +318,6 @@ impl SupportedLanguage {
             SupportedLanguage::Svg,
             SupportedLanguage::Swift,
             SupportedLanguage::Toml,
-            SupportedLanguage::Tsx,
             SupportedLanguage::TypeScript,
             SupportedLanguage::Vue,
             SupportedLanguage::Yaml,
@@ -361,5 +362,6 @@ pub fn register_external_languages() {
     super::syntax_highlighting::dockerfile::add_dockerfile_support();
     super::syntax_highlighting::ocaml::add_ocaml_support();
     super::syntax_highlighting::perl::add_perl_support();
+    super::syntax_highlighting::react::add_react_support();
     super::syntax_highlighting::vue::add_vue_support();
 }
