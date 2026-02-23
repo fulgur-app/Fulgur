@@ -8,6 +8,7 @@ version = "0.3.0"
 dependencies = [
  "age",
  "anyhow",
+ "arborium-ada",
  "arborium-dart",
  "arborium-dockerfile",
  "arborium-vue",
@@ -183,6 +184,17 @@ name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
+
+[[package]]
+name = "arborium-ada"
+version = "2.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0557990264e98afea61226d32f7f9e535294c7c00a619adb402f9694c409ca53"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
 
 [[package]]
 name = "arborium-css"
