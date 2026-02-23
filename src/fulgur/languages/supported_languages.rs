@@ -35,6 +35,7 @@ pub enum SupportedLanguage {
     Plain,
     Proto,
     Python,
+    R,
     React,
     Ruby,
     Rust,
@@ -184,6 +185,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Plain => "Plain Text".to_string(),
         SupportedLanguage::Proto => "Protocol Buffers".to_string(),
         SupportedLanguage::Python => "Python".to_string(),
+        SupportedLanguage::R => "R".to_string(),
         SupportedLanguage::React => "React".to_string(),
         SupportedLanguage::Ruby => "Ruby".to_string(),
         SupportedLanguage::Rust => "Rust".to_string(),
@@ -217,6 +219,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Dockerfile => "dockerfile",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Perl => "perl",
+        SupportedLanguage::R => "r",
         SupportedLanguage::React => "react",
         SupportedLanguage::Vue => "vue",
         SupportedLanguage::Xml => "html",
@@ -265,6 +268,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "perl" | "pl" | "pm" | "plx" => SupportedLanguage::Perl,
             "php" | "php3" | "php4" | "php5" | "phhtml" => SupportedLanguage::Html,
             "ml" | "mli" => SupportedLanguage::Ocaml,
+            "r" | "rmd" => SupportedLanguage::R,
             "svelte" => SupportedLanguage::Svelte,
             "svg" => SupportedLanguage::Html,
             "tsx" | "jsx" => SupportedLanguage::React,
@@ -313,6 +317,7 @@ impl SupportedLanguage {
             SupportedLanguage::Plain,
             SupportedLanguage::Proto,
             SupportedLanguage::Python,
+            SupportedLanguage::R,
             SupportedLanguage::React,
             SupportedLanguage::Ruby,
             SupportedLanguage::Rust,
@@ -367,6 +372,7 @@ pub fn register_external_languages() {
     super::syntax_highlighting::dockerfile::add_dockerfile_support();
     super::syntax_highlighting::ocaml::add_ocaml_support();
     super::syntax_highlighting::perl::add_perl_support();
+    super::syntax_highlighting::r::add_r_support();
     super::syntax_highlighting::react::add_react_support();
     super::syntax_highlighting::vue::add_vue_support();
 }
