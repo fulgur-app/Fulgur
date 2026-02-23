@@ -1,7 +1,24 @@
+use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+
+/// Add Ada language support.
+pub fn add_ada_support() {
+    LanguageRegistry::singleton().register(
+        "ada",
+        &LanguageConfig::new(
+            "ada",
+            arborium_ada::language().into(),
+            vec![],
+            ADA_HIGHLIGHTS_QUERY,
+            arborium_ada::INJECTIONS_QUERY,
+            "",
+        ),
+    );
+}
+
 /// Highlights query for Ada, remapped from the arborium_ada nvim-treesitter naming conventions
 /// (`@include`, `@repeat`, `@conditional`, `@exception`, `@storageclass`) to the gpui-component
 /// recognized names (`keyword`, `type`, `operator`, etc.).
-pub const ADA_HIGHLIGHTS_QUERY: &str = r#"
+const ADA_HIGHLIGHTS_QUERY: &str = r#"
 [
   "abort" "abs" "abstract" "accept" "access" "all" "array" "at"
   "begin" "declare" "delay" "delta" "digits" "do" "end" "entry"

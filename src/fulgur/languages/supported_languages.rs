@@ -1,5 +1,4 @@
-use gpui::SharedString;
-use gpui_component::highlighter::{Language, LanguageConfig, LanguageRegistry};
+use gpui_component::highlighter::Language;
 
 use crate::fulgur::Fulgur;
 
@@ -357,103 +356,10 @@ impl Fulgur {
 
 /// Register external languages that are not supported by default by the editor
 pub fn register_external_languages() {
-    add_ada_support();
-    add_dart_support();
-    add_dockerfile_support();
-    add_ocaml_support();
-    add_perl_support();
-    add_vue_support();
-}
-
-/// Add Perl support to the editor
-fn add_perl_support() {
-    LanguageRegistry::singleton().register(
-        "perl",
-        &LanguageConfig::new(
-            "perl",
-            tree_sitter_perl_next::LANGUAGE.into(),
-            vec![],
-            tree_sitter_perl_next::HIGHLIGHTS_QUERY,
-            tree_sitter_perl_next::INJECTIONS_QUERY,
-            "",
-        ),
-    );
-}
-
-fn add_dockerfile_support() {
-    LanguageRegistry::singleton().register(
-        "dockerfile",
-        &LanguageConfig::new(
-            "dockerfile",
-            arborium_dockerfile::language().into(),
-            vec![],
-            arborium_dockerfile::HIGHLIGHTS_QUERY,
-            arborium_dockerfile::INJECTIONS_QUERY,
-            arborium_dockerfile::LOCALS_QUERY,
-        ),
-    );
-}
-
-/// Add OCaml language support.
-fn add_ocaml_support() {
-    LanguageRegistry::singleton().register(
-        "ocaml",
-        &LanguageConfig::new(
-            "ocaml",
-            tree_sitter_ocaml::LANGUAGE_OCAML.into(),
-            vec![],
-            tree_sitter_ocaml::HIGHLIGHTS_QUERY,
-            "",
-            tree_sitter_ocaml::LOCALS_QUERY,
-        ),
-    );
-}
-
-/// Add Vue language support.
-fn add_vue_support() {
-    LanguageRegistry::singleton().register(
-        "vue",
-        &LanguageConfig::new(
-            "vue",
-            arborium_vue::language().into(),
-            vec![
-                SharedString::new("typescript"),
-                SharedString::new("javascript"),
-                SharedString::new("css"),
-            ],
-            arborium_vue::HIGHLIGHTS_QUERY.as_str(),
-            arborium_vue::INJECTIONS_QUERY,
-            arborium_vue::LOCALS_QUERY,
-        ),
-    );
-}
-
-/// Add Dart language support.
-fn add_dart_support() {
-    LanguageRegistry::singleton().register(
-        "dart",
-        &LanguageConfig::new(
-            "dart",
-            arborium_dart::language().into(),
-            vec![],
-            arborium_dart::HIGHLIGHTS_QUERY,
-            arborium_dart::INJECTIONS_QUERY,
-            arborium_dart::LOCALS_QUERY,
-        ),
-    );
-}
-
-/// Add Ada language support.
-fn add_ada_support() {
-    LanguageRegistry::singleton().register(
-        "ada",
-        &LanguageConfig::new(
-            "ada",
-            arborium_ada::language().into(),
-            vec![],
-            crate::fulgur::languages::ada_syntax_highlighting::ADA_HIGHLIGHTS_QUERY,
-            arborium_ada::INJECTIONS_QUERY,
-            "",
-        ),
-    );
+    super::syntax_highlighting::ada::add_ada_support();
+    super::syntax_highlighting::dart::add_dart_support();
+    super::syntax_highlighting::dockerfile::add_dockerfile_support();
+    super::syntax_highlighting::ocaml::add_ocaml_support();
+    super::syntax_highlighting::perl::add_perl_support();
+    super::syntax_highlighting::vue::add_vue_support();
 }
