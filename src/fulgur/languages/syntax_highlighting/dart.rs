@@ -15,3 +15,16 @@ pub fn add_dart_support() {
         ),
     );
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_add_dart_support_registers_language() {
+        super::add_dart_support();
+        assert!(
+            gpui_component::highlighter::LanguageRegistry::singleton()
+                .language("dart")
+                .is_some()
+        );
+    }
+}

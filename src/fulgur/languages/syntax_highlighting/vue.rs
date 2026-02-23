@@ -20,3 +20,16 @@ pub fn add_vue_support() {
         ),
     );
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_add_vue_support_registers_language() {
+        super::add_vue_support();
+        assert!(
+            gpui_component::highlighter::LanguageRegistry::singleton()
+                .language("vue")
+                .is_some()
+        );
+    }
+}

@@ -15,3 +15,16 @@ pub fn add_perl_support() {
         ),
     );
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_add_perl_support_registers_language() {
+        super::add_perl_support();
+        assert!(
+            gpui_component::highlighter::LanguageRegistry::singleton()
+                .language("perl")
+                .is_some()
+        );
+    }
+}

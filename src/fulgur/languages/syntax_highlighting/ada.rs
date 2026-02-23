@@ -127,3 +127,16 @@ const ADA_HIGHLIGHTS_QUERY: &str = r#"
 (component_list (component_declaration) . (comment) @comment.doc)
 (enumeration_type_definition (identifier) . (comment) @comment.doc)
 "#;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_add_ada_support_registers_language() {
+        super::add_ada_support();
+        assert!(
+            gpui_component::highlighter::LanguageRegistry::singleton()
+                .language("ada")
+                .is_some()
+        );
+    }
+}

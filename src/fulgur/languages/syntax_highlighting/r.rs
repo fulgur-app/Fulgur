@@ -15,3 +15,16 @@ pub fn add_r_support() {
         ),
     );
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_add_r_support_registers_language() {
+        super::add_r_support();
+        assert!(
+            gpui_component::highlighter::LanguageRegistry::singleton()
+                .language("r")
+                .is_some()
+        );
+    }
+}

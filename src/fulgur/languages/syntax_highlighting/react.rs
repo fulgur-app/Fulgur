@@ -20,3 +20,16 @@ pub fn add_react_support() {
         ),
     );
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_add_react_support_registers_language() {
+        super::add_react_support();
+        assert!(
+            gpui_component::highlighter::LanguageRegistry::singleton()
+                .language("react")
+                .is_some()
+        );
+    }
+}

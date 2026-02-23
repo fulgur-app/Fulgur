@@ -15,3 +15,16 @@ pub fn add_dockerfile_support() {
         ),
     );
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_add_dockerfile_support_registers_language() {
+        super::add_dockerfile_support();
+        assert!(
+            gpui_component::highlighter::LanguageRegistry::singleton()
+                .language("dockerfile")
+                .is_some()
+        );
+    }
+}

@@ -172,3 +172,16 @@ pub fn add_groovy_support() {
         ),
     );
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_add_groovy_support_registers_language() {
+        super::add_groovy_support();
+        assert!(
+            gpui_component::highlighter::LanguageRegistry::singleton()
+                .language("groovy")
+                .is_some()
+        );
+    }
+}

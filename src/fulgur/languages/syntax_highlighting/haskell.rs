@@ -15,3 +15,16 @@ pub fn add_haskell_support() {
         ),
     );
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_add_haskell_support_registers_language() {
+        super::add_haskell_support();
+        assert!(
+            gpui_component::highlighter::LanguageRegistry::singleton()
+                .language("haskell")
+                .is_some()
+        );
+    }
+}
