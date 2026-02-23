@@ -1,6 +1,7 @@
 pub mod ada;
 pub mod dart;
 pub mod dockerfile;
+pub mod groovy;
 pub mod haskell;
 pub mod ocaml;
 pub mod perl;

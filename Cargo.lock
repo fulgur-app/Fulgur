@@ -11,6 +11,7 @@ dependencies = [
  "arborium-ada",
  "arborium-dart",
  "arborium-dockerfile",
+ "arborium-groovy",
  "arborium-tsx",
  "arborium-vue",
  "base64 0.22.1",
@@ -226,6 +227,17 @@ name = "arborium-dockerfile"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52ddfdd2c91c570d5fa7b16beb5c0513bb1a079c0be1a6ca68ac85c77c4ef8ea"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "arborium-groovy"
+version = "2.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67a7cbb0e7e7b4c01df1126f959654583cf4125aba36a03f15fda49e42ebcdf8"
 dependencies = [
  "arborium-sysroot",
  "cc",
