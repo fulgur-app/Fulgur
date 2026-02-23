@@ -2,12 +2,10 @@ use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams},
     files::file_operations::detect_encoding_and_decode,
+    languages::supported_languages::SupportedLanguage,
     state_persistence::*,
     tab::Tab,
-    ui::{
-        components_utils::{UNTITLED, UTF_8},
-        languages::SupportedLanguage,
-    },
+    ui::components_utils::{UNTITLED, UTF_8},
 };
 use gpui::*;
 use gpui_component::{highlighter::Language, input::TabSize};

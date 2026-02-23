@@ -5,7 +5,7 @@ use gpui_component::{
 
 use crate::fulgur::{
     Fulgur,
-    ui::languages::{SupportedLanguage, pretty_name},
+    languages::supported_languages::{SupportedLanguage, pretty_name},
 };
 
 /// Create a select language item
