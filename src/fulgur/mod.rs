@@ -1,4 +1,5 @@
 pub mod files;
+pub mod languages;
 pub mod settings;
 pub mod shared_state;
 pub mod state_operations;
@@ -12,11 +13,9 @@ use crate::register_action;
 use crate::fulgur::{
     editor_tab::EditorTab,
     files::file_watcher::FileWatchState,
+    languages::supported_languages::SupportedLanguage,
     sync::sse::SseState,
-    ui::{
-        dialogs::about::about, languages::SupportedLanguage,
-        notifications::update_notification::make_update_notification,
-    },
+    ui::{dialogs::about::about, notifications::update_notification::make_update_notification},
     utils::crypto_helper,
 };
 use gpui::*;
@@ -209,7 +208,7 @@ impl Fulgur {
             Settings::new()
         });
         let recent_files = settings.get_recent_files();
-        ui::languages::register_external_languages();
+        languages::supported_languages::register_external_languages();
         themes::init(&settings, cx, move |cx| {
             cx.bind_keys([
                 #[cfg(target_os = "macos")]

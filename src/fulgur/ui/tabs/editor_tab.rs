@@ -5,11 +5,11 @@ use regex::Regex;
 use std::sync::LazyLock;
 use std::time::SystemTime;
 
-use crate::fulgur::settings::EditorSettings;
-use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
-use crate::fulgur::ui::languages::{
+use crate::fulgur::languages::supported_languages::{
     SupportedLanguage, language_from_filename, language_registry_name,
 };
+use crate::fulgur::settings::EditorSettings;
+use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
 
 /// Regex for matching line numbers and line:column positions
 static LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+|\d+:\d+)$").unwrap());

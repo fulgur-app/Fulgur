@@ -1,9 +1,9 @@
 use crate::fulgur::{
     Fulgur,
+    languages::supported_languages::{SupportedLanguage, pretty_name},
     ui::{
         components_utils::{EMPTY, UTF_8},
         icons::CustomIcon,
-        languages::{self, SupportedLanguage},
     },
 };
 use gpui::{prelude::FluentBuilder, *};
@@ -150,7 +150,7 @@ impl Fulgur {
             None => (Position::default(), None),
         };
         let language = match language {
-            Some(language) => languages::pretty_name(&language),
+            Some(language) => pretty_name(&language),
             None => EMPTY.to_string(),
         };
         let encoding = match self.active_tab_index {
