@@ -38,6 +38,7 @@ $palette: (
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+  animation: fade-in 250ms ease forwards;
 }
 
 // ── Functions ─────────────────────────────────────────────────────────────────
@@ -79,7 +80,10 @@ $palette: (
 // ── Component: Button ─────────────────────────────────────────────────────────
 
 .btn {
-  @extend %flex-center;
+  // Keep equivalent layout styles inline: @extend with %placeholder currently
+  // breaks downstream highlighting in tree-sitter-scss (arborium-scss 2.13.0).
+  align-items: center;
+  justify-content: center;
   display: inline-flex;
   padding: rem(10) rem(20);
   border-radius: $border-radius;
@@ -122,4 +126,5 @@ $scale: (sm: 0.75, md: 1, lg: 1.25);
 /* Apply fade-in to any element marked as entering */
 .is-entering {
   animation: fade-in 250ms ease forwards;
+  color: #223344;
 }
