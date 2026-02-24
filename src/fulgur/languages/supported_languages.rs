@@ -43,6 +43,7 @@ pub enum SupportedLanguage {
     Ruby,
     Rust,
     Scala,
+    Scss,
     Sql,
     Svelte,
     Svg,
@@ -196,6 +197,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Ruby => "Ruby".to_string(),
         SupportedLanguage::Rust => "Rust".to_string(),
         SupportedLanguage::Scala => "Scala".to_string(),
+        SupportedLanguage::Scss => "SCSS".to_string(),
         SupportedLanguage::Sql => "SQL".to_string(),
         SupportedLanguage::Svg => "SVG".to_string(),
         SupportedLanguage::Svelte => "Svelte".to_string(),
@@ -230,6 +232,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Perl => "perl",
         SupportedLanguage::R => "r",
         SupportedLanguage::React => "react",
+        SupportedLanguage::Scss => "scss",
         SupportedLanguage::Vue => "vue",
         SupportedLanguage::Xml => "html",
         other => to_language(other).name(),
@@ -265,6 +268,15 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
     if extension == "txt" {
         return SupportedLanguage::Plain;
     }
+
+    // Overriding gpui-component's default language mapping.
+    if let Some(lang) = match extension {
+        "scss" => Some(SupportedLanguage::Scss),
+        _ => None,
+    } {
+        return lang;
+    }
+
     let mut language = from_language(Language::from_str(extension));
     if language == SupportedLanguage::Plain {
         language = match extension {
@@ -337,6 +349,7 @@ impl SupportedLanguage {
             SupportedLanguage::Ruby,
             SupportedLanguage::Rust,
             SupportedLanguage::Scala,
+            SupportedLanguage::Scss,
             SupportedLanguage::Sql,
             SupportedLanguage::Svelte,
             SupportedLanguage::Svg,
@@ -392,5 +405,6 @@ pub fn register_external_languages() {
     super::syntax_highlighting::perl::add_perl_support();
     super::syntax_highlighting::r::add_r_support();
     super::syntax_highlighting::react::add_react_support();
+    super::syntax_highlighting::scss::add_scss_support();
     super::syntax_highlighting::vue::add_vue_support();
 }

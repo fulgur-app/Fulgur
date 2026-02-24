@@ -13,6 +13,7 @@ dependencies = [
  "arborium-dart",
  "arborium-dockerfile",
  "arborium-groovy",
+ "arborium-scss",
  "arborium-tsx",
  "arborium-vue",
  "base64 0.22.1",
