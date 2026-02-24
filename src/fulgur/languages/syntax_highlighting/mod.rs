@@ -8,4 +8,5 @@ pub mod ocaml;
 pub mod perl;
 pub mod r;
 pub mod react;
+pub mod scss;
 pub mod vue;
