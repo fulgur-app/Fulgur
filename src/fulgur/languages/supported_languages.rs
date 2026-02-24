@@ -9,6 +9,7 @@ pub enum SupportedLanguage {
     Astro,
     Bash,
     C,
+    Clojure,
     CMake,
     CSharp,
     Cpp,
@@ -161,6 +162,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Astro => "Astro".to_string(),
         SupportedLanguage::Bash => "Bash".to_string(),
         SupportedLanguage::C => "C".to_string(),
+        SupportedLanguage::Clojure => "Clojure".to_string(),
         SupportedLanguage::CMake => "CMake".to_string(),
         SupportedLanguage::CSharp => "C#".to_string(),
         SupportedLanguage::Cpp => "C++".to_string(),
@@ -219,6 +221,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
 pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'static str {
     match supported_language {
         SupportedLanguage::Ada => "ada",
+        SupportedLanguage::Clojure => "clojure",
         SupportedLanguage::Dart => "dart",
         SupportedLanguage::Dockerfile => "dockerfile",
         SupportedLanguage::Groovy => "groovy",
@@ -267,6 +270,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
         language = match extension {
             "ada" | "ads" | "adb" => SupportedLanguage::Ada,
             "astro" => SupportedLanguage::Html,
+            "clojure" | "clj" | "cljs" => SupportedLanguage::Clojure,
             "dart" => SupportedLanguage::Dart,
             "dockerfile" => SupportedLanguage::Dockerfile,
             "hs" | "lhs" => SupportedLanguage::Haskell,
@@ -299,6 +303,7 @@ impl SupportedLanguage {
             SupportedLanguage::Astro,
             SupportedLanguage::Bash,
             SupportedLanguage::C,
+            SupportedLanguage::Clojure,
             SupportedLanguage::Cpp,
             SupportedLanguage::CMake,
             SupportedLanguage::CSharp,
@@ -378,6 +383,7 @@ impl Fulgur {
 /// Register external languages that are not supported by default by the editor
 pub fn register_external_languages() {
     super::syntax_highlighting::ada::add_ada_support();
+    super::syntax_highlighting::clojure::add_clojure_support();
     super::syntax_highlighting::dart::add_dart_support();
     super::syntax_highlighting::dockerfile::add_dockerfile_support();
     super::syntax_highlighting::groovy::add_groovy_support();
