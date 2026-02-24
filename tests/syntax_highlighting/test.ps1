@@ -5,24 +5,21 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-using namespace System.Collections.Generic
-using namespace System.IO
+# ── Variables and hashtables ─────────────────────────────────────────────────
 
-# ── Variables and types ──────────────────────────────────────────────────────
-
-[string]$AppName      = 'Fulgur'
-[int]$MaxRetries      = 3
-[double]$Threshold    = 0.85
-[bool]$DryRun         = $false
-[datetime]$StartTime  = Get-Date
-[hashtable]$Config    = @{
+$AppName      = 'Fulgur'
+$MaxRetries   = 3
+$Threshold    = 0.85
+$DryRun       = $false
+$StartTime    = Get-Date
+$Config       = @{
     LogLevel   = 'Info'
     OutputPath = Join-Path $env:USERPROFILE '.fulgur'
     Tags       = @('syntax', 'highlight', 'powershell')
     Nested     = @{ Enabled = $true; Depth = 5 }
 }
 
-# ── Enums and classes ────────────────────────────────────────────────────────
+# ── Enums ────────────────────────────────────────────────────────────────────
 
 enum Severity {
     Debug
@@ -31,35 +28,17 @@ enum Severity {
     Error
 }
 
-class LogEntry {
-    [datetime]$Timestamp
-    [Severity]$Level
-    [string]$Message
-
-    LogEntry([Severity]$level, [string]$message) {
-        $this.Timestamp = Get-Date
-        $this.Level     = $level
-        $this.Message   = $message
-    }
-
-    [string] ToString() {
-        return "[$($this.Level)] $($this.Timestamp.ToString('HH:mm:ss')) - $($this.Message)"
-    }
-}
-
 # ── Functions ────────────────────────────────────────────────────────────────
 
 function Invoke-WithRetry {
-    [CmdletBinding()]
-    [OutputType([object])]
     param(
         [Parameter(Mandatory)]
-        [scriptblock]$ScriptBlock,
+        $ScriptBlock,
 
         [ValidateRange(1, 10)]
-        [int]$RetryCount = $MaxRetries,
+        $RetryCount = $MaxRetries,
 
-        [int]$DelayMilliseconds = 200
+        $DelayMilliseconds = 200
     )
 
     for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
@@ -76,6 +55,18 @@ function Invoke-WithRetry {
 
 filter ConvertTo-Slug {
     $_.ToLower().Trim() -replace '[^a-z0-9]+', '-' -replace '^-|-$'
+}
+
+function Get-FormattedSize {
+    param($Bytes)
+    $units = @('B', 'KB', 'MB', 'GB', 'TB')
+    $index = 0
+    $size  = $Bytes
+    while ($size -ge 1024 -and $index -lt $units.Count - 1) {
+        $size  = $size / 1024
+        $index++
+    }
+    return '{0:N2} {1}' -f $size, $units[$index]
 }
 
 # ── Pipeline and operators ───────────────────────────────────────────────────
@@ -105,7 +96,8 @@ No $variables expanded here.
 Backslashes \ and quotes " are kept as-is.
 '@
 
-$Escaped = "Line one`nLine two`tTabbed"
+$Escaped  = "Line one`nLine two`tTabbed"
+$Composed = "App: $AppName | Retries: $MaxRetries | Dry: $DryRun"
 
 # ── Control flow ─────────────────────────────────────────────────────────────
 
@@ -128,28 +120,25 @@ foreach ($tag in $Config.Tags) {
     Write-Output "Tag: $tag -> $slug"
 }
 
+$Label = if ($DryRun) { 'SIMULATION' } else { 'LIVE' }
+
 # ── Error handling and scopes ────────────────────────────────────────────────
 
 try {
     $result = Invoke-WithRetry -ScriptBlock {
         $response = Invoke-RestMethod -Uri 'https://api.example.com/health' -TimeoutSec 5
         if ($response.status -ne 'ok') {
-            throw [InvalidOperationException]::new("Unexpected status: $($response.status)")
+            throw "Unexpected status: $($response.status)"
         }
         $response
     } -RetryCount 2
-}
-catch [System.Net.Http.HttpRequestException] {
-    Write-Error "Network error: $_"
 }
 catch {
     Write-Error "Unhandled error: $($_.Exception.GetType().Name) - $_"
 }
 finally {
     $elapsed = (Get-Date) - $StartTime
-    [LogEntry]::new([Severity]::Info, "Completed in $($elapsed.TotalSeconds)s") |
-        ForEach-Object { $_.ToString() } |
-        Write-Output
+    Write-Output "Completed in $($elapsed.TotalSeconds)s"
 }
 
 # ── Splatting and advanced calls ─────────────────────────────────────────────
@@ -165,9 +154,25 @@ if (-not $DryRun) {
     Copy-Item @CopyParams
 }
 
-# ── Ternary, null-coalescing, and pipeline chain ─────────────────────────────
+# ── Comparison and logical operators ─────────────────────────────────────────
 
-$Label    = $DryRun ? 'SIMULATION' : 'LIVE'
-$FallBack = $Config['MissingKey'] ?? 'default-value'
+$IsValid   = ($AppName -like 'Ful*') -and ($MaxRetries -ge 1)
+$HasMatch  = 'hello-world' -match '^[a-z]+(-[a-z]+)*$'
+$Replaced  = 'foo_bar_baz' -replace '_', '-'
+$InList    = 'powershell' -in $Config.Tags
+$Joined    = $Config.Tags -join ' | '
+
+# ── Pipeline chains and cmdlet calls ─────────────────────────────────────────
 
 Test-Connection -ComputerName 'localhost' -Count 1 -Quiet && Write-Output 'Reachable' || Write-Warning 'Unreachable'
+
+Get-ChildItem -Path '.' -Filter '*.ps1' -Recurse |
+    ForEach-Object { Get-FormattedSize $_.Length }
+
+$Report = @(
+    "Name:      $AppName"
+    "Threshold: $Threshold"
+    "Rating:    $Rating"
+    "Valid:     $IsValid"
+)
+$Report | ForEach-Object { Write-Output $_ }
