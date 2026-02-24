@@ -36,6 +36,7 @@ pub enum SupportedLanguage {
     Perl,
     Php,
     Plain,
+    Powershell,
     Proto,
     Python,
     R,
@@ -190,6 +191,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Perl => "Perl".to_string(),
         SupportedLanguage::Php => "PHP".to_string(),
         SupportedLanguage::Plain => "Plain Text".to_string(),
+        SupportedLanguage::Powershell => "PowerShell".to_string(),
         SupportedLanguage::Proto => "Protocol Buffers".to_string(),
         SupportedLanguage::Python => "Python".to_string(),
         SupportedLanguage::R => "R".to_string(),
@@ -230,6 +232,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Haskell => "haskell",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Perl => "perl",
+        SupportedLanguage::Powershell => "powershell",
         SupportedLanguage::R => "r",
         SupportedLanguage::React => "react",
         SupportedLanguage::Scss => "scss",
@@ -290,6 +293,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "groovy" | "gvy" | "gy" | "gsh" => SupportedLanguage::Groovy,
             "mjs" => SupportedLanguage::JavaScript,
             "perl" | "pl" | "pm" | "plx" => SupportedLanguage::Perl,
+            "powershell" | "ps1" | "psm1" | "psd1" => SupportedLanguage::Powershell,
             "php" | "php3" | "php4" | "php5" | "phhtml" => SupportedLanguage::Html,
             "ml" | "mli" => SupportedLanguage::Ocaml,
             "r" | "rmd" => SupportedLanguage::R,
@@ -342,6 +346,7 @@ impl SupportedLanguage {
             SupportedLanguage::Perl,
             SupportedLanguage::Php,
             SupportedLanguage::Plain,
+            SupportedLanguage::Powershell,
             SupportedLanguage::Proto,
             SupportedLanguage::Python,
             SupportedLanguage::R,
@@ -403,6 +408,7 @@ pub fn register_external_languages() {
     super::syntax_highlighting::haskell::add_haskell_support();
     super::syntax_highlighting::ocaml::add_ocaml_support();
     super::syntax_highlighting::perl::add_perl_support();
+    super::syntax_highlighting::powershell::add_powershell_support();
     super::syntax_highlighting::r::add_r_support();
     super::syntax_highlighting::react::add_react_support();
     super::syntax_highlighting::scss::add_scss_support();
