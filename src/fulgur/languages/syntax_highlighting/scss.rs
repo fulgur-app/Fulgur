@@ -1,5 +1,4 @@
 use arborium_scss;
-use gpui::SharedString;
 use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
 
 // arboretum_scss has a parsing issue with `@extend`, leading to partially parsed content
