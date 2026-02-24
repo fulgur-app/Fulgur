@@ -45,6 +45,7 @@ dependencies = [
  "tree-sitter-haskell",
  "tree-sitter-ocaml",
  "tree-sitter-perl-next",
+ "tree-sitter-powershell",
  "tree-sitter-r",
  "ureq",
  "urlencoding",
@@ -7005,6 +7006,16 @@ name = "tree-sitter-perl-next"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97b02c571f4d63663ade506b1f81dd9f78e37a0014268c521b6e75df0603d911"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-powershell"
+version = "0.26.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ff5d1c86d8b1625585fd18e05fff47e38c36564e45ec4f38fd0de4ecbf08e2c"
 dependencies = [
  "cc",
  "tree-sitter-language",

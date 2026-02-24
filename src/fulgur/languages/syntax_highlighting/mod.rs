@@ -6,6 +6,7 @@ pub mod groovy;
 pub mod haskell;
 pub mod ocaml;
 pub mod perl;
+pub mod powershell;
 pub mod r;
 pub mod react;
 pub mod scss;

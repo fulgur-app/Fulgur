@@ -71,6 +71,7 @@ arborium-dockerfile = "2.13.0"
 tree-sitter-haskell = "0.23.1"
 tree-sitter-ocaml = "0.24.2"
 tree-sitter-perl-next = "0.1.0"
+tree-sitter-powershell = "0.26.3"
 tree-sitter-r = "1.2.0"
 
 # Others
