@@ -4,6 +4,7 @@ pub mod dart;
 pub mod dockerfile;
 pub mod groovy;
 pub mod haskell;
+pub mod objective_c;
 pub mod ocaml;
 pub mod perl;
 pub mod powershell;

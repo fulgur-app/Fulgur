@@ -32,6 +32,7 @@ pub enum SupportedLanguage {
     Make,
     Markdown,
     MarkdownInline,
+    ObjectiveC,
     Ocaml,
     Perl,
     Php,
@@ -187,6 +188,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Make => "Make".to_string(),
         SupportedLanguage::Markdown => "Markdown".to_string(),
         SupportedLanguage::MarkdownInline => "Markdown Inline".to_string(),
+        SupportedLanguage::ObjectiveC => "Objective-C".to_string(),
         SupportedLanguage::Ocaml => "OCaml".to_string(),
         SupportedLanguage::Perl => "Perl".to_string(),
         SupportedLanguage::Php => "PHP".to_string(),
@@ -230,6 +232,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Dockerfile => "dockerfile",
         SupportedLanguage::Groovy => "groovy",
         SupportedLanguage::Haskell => "haskell",
+        SupportedLanguage::ObjectiveC => "objective-c",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Perl => "perl",
         SupportedLanguage::Powershell => "powershell",
@@ -295,6 +298,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "perl" | "pl" | "pm" | "plx" => SupportedLanguage::Perl,
             "powershell" | "ps1" | "psm1" | "psd1" => SupportedLanguage::Powershell,
             "php" | "php3" | "php4" | "php5" | "phhtml" => SupportedLanguage::Html,
+            "m" | "M" | "mm" => SupportedLanguage::ObjectiveC,
             "ml" | "mli" => SupportedLanguage::Ocaml,
             "r" | "rmd" => SupportedLanguage::R,
             "svelte" => SupportedLanguage::Svelte,
@@ -342,6 +346,7 @@ impl SupportedLanguage {
             SupportedLanguage::Make,
             SupportedLanguage::Markdown,
             SupportedLanguage::MarkdownInline,
+            SupportedLanguage::ObjectiveC,
             SupportedLanguage::Ocaml,
             SupportedLanguage::Perl,
             SupportedLanguage::Php,
@@ -406,6 +411,7 @@ pub fn register_external_languages() {
     super::syntax_highlighting::dockerfile::add_dockerfile_support();
     super::syntax_highlighting::groovy::add_groovy_support();
     super::syntax_highlighting::haskell::add_haskell_support();
+    super::syntax_highlighting::objective_c::add_objective_c_support();
     super::syntax_highlighting::ocaml::add_ocaml_support();
     super::syntax_highlighting::perl::add_perl_support();
     super::syntax_highlighting::powershell::add_powershell_support();
