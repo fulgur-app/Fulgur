@@ -9,10 +9,12 @@ dependencies = [
  "age",
  "anyhow",
  "arborium-ada",
+ "arborium-c",
  "arborium-clojure",
  "arborium-dart",
  "arborium-dockerfile",
  "arborium-groovy",
+ "arborium-objc",
  "arborium-scss",
  "arborium-tsx",
  "arborium-vue",
@@ -204,6 +206,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "arborium-c"
+version = "2.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ccda810d178c6a605849627487d8e43817c61290831dd1879d7c77e69524269"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "arborium-clojure"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -277,6 +290,18 @@ version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3b04390f79e704f411fec9f11acd1ee7e6bc3c4e1941ca6af41d31efad78582"
 dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "arborium-objc"
+version = "2.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e2889b5a0cc3fa2accded8bf40bfab575d1ad6d8d3dbedd6b3264d79546f22e"
+dependencies = [
+ "arborium-c",
  "arborium-sysroot",
  "cc",
  "tree-sitter-language",
