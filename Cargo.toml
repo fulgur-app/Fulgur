@@ -43,7 +43,7 @@ simplelog = "0.12.2"
 time = { version = "0.3.47", features = ["serde", "macros", "formatting", "parsing"] }
 
 # Error handling
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 
 # GUI
 gpui = "0.2.2"
@@ -86,10 +86,14 @@ parking_lot = "0.12.5"
 tikv-jemallocator = "0.6.1"
 
 [dev-dependencies]
-tempfile = "3.25.0"
+tempfile = "3.26.0"
 
 [build-dependencies]
 embed-resource = "3.0.6"
+
+# Builds the dependencies with optimisations even during debug builds
+[profile.dev.package."*"]
+opt-level = 3
 
 # ============================================================================
 # cargo-udeps ignore list
