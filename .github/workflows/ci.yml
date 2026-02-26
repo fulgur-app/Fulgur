@@ -56,8 +56,46 @@ jobs:
         with:
           shared-key: ${{ matrix.os }}-cargo
 
+      # -- Coverage setup (Linux + main/PRs only) --
+
+      - name: Install coverage tools
+        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+        run: rustup component add llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      # -- Test phase --
+
+      - name: Run tests with coverage
+        id: coverage
+        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
       - name: Run tests
+        if: steps.coverage.outcome == 'skipped'
         run: cargo test --all-features
+
+      # -- Coverage upload --
+
+      - name: Upload coverage to Codecov
+        if: steps.coverage.outcome == 'success'
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Generate coverage summary
+        id: cov_summary
+        if: steps.coverage.outcome == 'success'
+        run: |
+          COVERAGE=$(awk -F: '/^LF:/{lf+=$2} /^LH:/{lh+=$2} END{if(lf>0) printf "%.2f", (lh/lf)*100; else print "0.00"}' lcov.info)
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+
+      # -- Lint phase --
 
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -66,14 +104,25 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo fmt --all -- --check
 
+      # -- Notifications --
+
       - name: Telegram notification - Success
         if: success() && runner.os == 'Linux'
+        env:
+          COVERAGE: ${{ steps.cov_summary.outputs.percentage }}
         run: |
           COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
 
+          if [ -n "$COVERAGE" ]; then
+            DESCRIPTION="All tests and checks passed successfully on all platforms
+          Coverage: *${COVERAGE}%*"
+          else
+            DESCRIPTION="All tests and checks passed successfully on all platforms"
+          fi
+
           MESSAGE="✅ *Fulgur CI - Build Passed*
 
-          All tests and checks passed successfully on all platforms
+          ${DESCRIPTION}
 
           *Branch:* \`${BRANCH}\`
           *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
@@ -128,79 +177,6 @@ jobs:
 
       - name: Check with minimum Rust version
         run: cargo check --all-features --quiet
-
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-
-      - name: Install Linux dependencies
-        run: *linux_deps_install_cmd
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ubuntu-latest-cargo
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Generate code coverage
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: lcov.info
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-      - name: Generate coverage summary
-        id: coverage
-        run: |
-          COVERAGE=$(awk -F: '/^LF:/{lf+=$2} /^LH:/{lh+=$2} END{if(lf>0) printf "%.2f", (lh/lf)*100; else print "0.00"}' lcov.info)
-          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
-          echo "Coverage: $COVERAGE%"
-
-      - name: Telegram notification - Coverage
-        if: always()
-        env:
-          COVERAGE: ${{ steps.coverage.outputs.percentage }}
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
-
-          if [ "$JOB_STATUS" = "success" ]; then
-            ICON="✅"
-            TITLE="Fulgur Code Coverage"
-            DESCRIPTION="Coverage: *${COVERAGE}%*"
-          else
-            ICON="❌"
-            TITLE="Fulgur Code Coverage - Failed"
-            DESCRIPTION="Failed to generate coverage report"
-          fi
-
-          MESSAGE="${ICON} *${TITLE}*
-
-          ${DESCRIPTION}
-
-          *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
-          *Author:* ${ACTOR}
-
-          [View Run](${RUN_URL})"
-
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
 
   security:
     name: Security Audit
@@ -264,74 +240,10 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" -d @-
 
-  # unused-deps:
-  #   name: Unused Dependencies Check
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-
-  #     - name: Install Rust nightly
-  #       uses: dtolnay/rust-toolchain@nightly
-
-  #     - name: Install Linux dependencies
-  #       run: *linux_deps_install_cmd
-
-  #     - name: Rust cache
-  #       uses: Swatinem/rust-cache@v2
-
-  #     - name: Install cargo-udeps
-  #       uses: taiki-e/install-action@cargo-udeps
-
-  #     - name: Check for unused dependencies
-  #       run: cargo +nightly udeps --all-targets
-
-  #     - name: Telegram notification - Success
-  #       if: success()
-  #       run: |
-  #         MESSAGE="✅ *Fulgur Dependency Check - Passed*
-
-  #         No unused dependencies detected
-
-  #         *Branch:* \`${BRANCH}\`
-  #         *Commit:* \`${COMMIT_SHA}\`
-  #         *Author:* ${ACTOR}
-
-  #         [View Run](${RUN_URL})"
-
-  #         curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-  #           -H "Content-Type: application/json" \
-  #           -d "{
-  #             \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
-  #             \"text\": \"${MESSAGE}\",
-  #             \"parse_mode\": \"Markdown\",
-  #             \"disable_web_page_preview\": true
-  #           }"
-
-  #     - name: Telegram notification - Failure
-  #       if: failure()
-  #       run: |
-  #         MESSAGE="⚠️ *Fulgur Dependency Check - Unused Dependencies Found*
-
-  #         Unused dependencies detected in Cargo.toml
-
-  #         *Branch:* \`${BRANCH}\`
-  #         *Commit:* \`${COMMIT_SHA}\`
-  #         *Author:* ${ACTOR}
-
-  #         [View Run](${RUN_URL})"
-
-  #         curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-  #           -H "Content-Type: application/json" \
-  #           -d "{
-  #             \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
-  #             \"text\": \"${MESSAGE}\",
-  #             \"parse_mode\": \"Markdown\",
-  #             \"disable_web_page_preview\": true
-  #           }"
-
-  docs-and-audit:
-    name: Docs & Safety
+  docs:
+    name: Documentation
+    needs: [test]
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -349,62 +261,38 @@ jobs:
           shared-key: ubuntu-latest-cargo
 
       - name: Build documentation
-        id: docs
         run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: '-D warnings'
 
-      - name: Install cargo-geiger
-        if: '!cancelled()'
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-geiger
-
-      - name: Run cargo-geiger
-        id: geiger
-        if: '!cancelled()'
-        run: |
-          OUTPUT=$(cargo geiger --output-format GitHubMarkdown || true)
-          echo "$OUTPUT"
-          echo "$OUTPUT" > geiger-report.md
-
-          # Extract unsafe statistics from first-party code (fulgur crate)
-          UNSAFE_COUNT=$(echo "$OUTPUT" | grep "^| fulgur " | awk -F'|' '{print $6}' | tr -d ' ' || echo "0")
-          echo "unsafe_count=$UNSAFE_COUNT" >> $GITHUB_OUTPUT
-
-      - name: Telegram notification
-        if: '!cancelled()'
-        env:
-          JOB_STATUS: ${{ job.status }}
-          DOCS_OUTCOME: ${{ steps.docs.outcome }}
-          UNSAFE_COUNT: ${{ steps.geiger.outputs.unsafe_count }}
+      - name: Telegram notification - Success
+        if: success()
         run: |
           COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
 
-          if [ "$DOCS_OUTCOME" = "success" ]; then
-            DOCS_LINE="Documentation built successfully"
-          else
-            DOCS_LINE="Documentation build failed"
-          fi
+          MESSAGE="✅ *Fulgur Documentation - Built Successfully*
 
-          if [ -n "$UNSAFE_COUNT" ]; then
-            SAFETY_LINE="Unsafe expressions in first-party code: *${UNSAFE_COUNT}*"
-          else
-            SAFETY_LINE="Unsafe code audit failed"
-          fi
+          Documentation built with no warnings
 
-          if [ "$JOB_STATUS" = "success" ]; then
-            ICON="✅"
-            TITLE="Fulgur Docs & Safety - Passed"
-          else
-            ICON="❌"
-            TITLE="Fulgur Docs & Safety - Issues Found"
-          fi
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
 
-          MESSAGE="${ICON} *${TITLE}*
+          [View Run](${RUN_URL})"
 
-          ${DOCS_LINE}
-          ${SAFETY_LINE}
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
+
+      - name: Telegram notification - Failure
+        if: failure()
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          MESSAGE="❌ *Fulgur Documentation - Build Failed*
+
+          Documentation build produced warnings or errors
 
           *Branch:* \`${BRANCH}\`
           *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}

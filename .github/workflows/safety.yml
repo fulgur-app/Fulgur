@@ -1,0 +1,88 @@
+name: Safety Audit
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Every Monday at 8:00 UTC
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  geiger:
+    name: Unsafe Code Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            pkg-config \
+            libssl-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-geiger
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-geiger
+
+      - name: Run cargo-geiger
+        id: geiger
+        run: |
+          OUTPUT=$(cargo geiger --output-format GitHubMarkdown || true)
+          echo "$OUTPUT"
+
+          # Extract unsafe statistics from first-party code (fulgur crate)
+          UNSAFE_COUNT=$(echo "$OUTPUT" | grep "^| fulgur " | awk -F'|' '{print $6}' | tr -d ' ' || echo "0")
+          echo "unsafe_count=$UNSAFE_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Telegram notification
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          UNSAFE_COUNT: ${{ steps.geiger.outputs.unsafe_count }}
+        run: |
+          if [ -n "$UNSAFE_COUNT" ]; then
+            SAFETY_LINE="Unsafe expressions in first-party code: *${UNSAFE_COUNT}*"
+          else
+            SAFETY_LINE="Unsafe code audit failed"
+          fi
+
+          if [ "$JOB_STATUS" = "success" ]; then
+            ICON="✅"
+            TITLE="Fulgur Safety Audit - Passed"
+          else
+            ICON="❌"
+            TITLE="Fulgur Safety Audit - Failed"
+          fi
+
+          MESSAGE="${ICON} *${TITLE}*
+
+          ${SAFETY_LINE}
+
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
