@@ -17,6 +17,7 @@ accepted = [
     "CDLA-Permissive-2.0",
     "Unicode-DFS-2016",
     "Unicode-3.0",
+    "Unlicense"
 ]
 
 # Filter out certain crates (e.g., your own workspace crates)

@@ -35,14 +35,35 @@ jobs:
           fi
           echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
 
-  test:
-    name: Test - ${{ matrix.os }}
+  build:
+    name: Build - ${{ matrix.name }}
     needs: validate
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - name: macOS Apple Silicon
+            runner: macos-latest
+            platform: macos
+            arch: aarch64
+            formats: dmg
+          - name: Windows x86_64
+            runner: windows-latest
+            platform: windows
+            arch: x86_64
+            formats: nsis
+          - name: Linux x86_64
+            runner: ubuntu-22.04
+            platform: linux
+            arch: x86_64
+            formats: deb,appimage
+            check_fmt: true
+          - name: Linux ARM64
+            runner: ubuntu-24.04-arm
+            platform: linux
+            arch: aarch64
+            formats: deb,appimage
 
     steps:
       - name: Checkout code
@@ -55,7 +76,7 @@ jobs:
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: &linux_deps |
+        run: |
           sudo apt-get update
           sudo apt-get install -y \
             libdbus-1-dev \
@@ -73,7 +94,9 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ${{ matrix.os }}-cargo
+          shared-key: release-${{ matrix.runner }}
+
+      # -- Test phase --
 
       - name: Check build
         run: cargo check --all-features --quiet
@@ -85,70 +108,27 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Check formatting
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.check_fmt == true
         run: cargo fmt --all -- --check
 
-  build:
-    name: Build - ${{ matrix.name }}
-    needs: [validate, test]
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macOS Intel
-            runner: macos-13
-            platform: macos
-            arch: x86_64
-            formats: dmg
-          - name: macOS Apple Silicon
-            runner: macos-latest
-            platform: macos
-            arch: aarch64
-            formats: dmg
-          - name: Windows x86_64
-            runner: windows-latest
-            platform: windows
-            arch: x86_64
-            formats: nsis
-          - name: Linux x86_64
-            runner: ubuntu-22.04
-            platform: linux
-            arch: x86_64
-            formats: deb,appimage
-          - name: Linux ARM64
-            runner: ubuntu-24.04-arm
-            platform: linux
-            arch: aarch64
-            formats: deb,appimage
+      # -- Package phase --
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: *linux_deps
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: release-${{ matrix.runner }}
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
 
       - name: Install cargo-packager
-        run: cargo install cargo-packager --locked
+        run: cargo binstall cargo-packager --locked --no-confirm
 
       - name: Install cargo-about
-        run: cargo install cargo-about --locked
+        run: cargo binstall cargo-about --locked --no-confirm
 
       - name: Generate third-party licenses
         run: cargo about generate licenses/about.hbs -c licenses/about.toml --workspace -o THIRD-PARTY-LICENSES
 
       - name: Build and package
-        run: cargo packager --release --formats ${{ matrix.formats }}
+        env:
+          FORMATS: ${{ matrix.formats }}
+        run: cargo packager --release --formats $FORMATS
 
       - name: Rename artifacts and compute checksums (Unix)
         if: runner.os != 'Windows'
@@ -159,26 +139,29 @@ jobs:
         run: |
           mkdir -p artifacts
 
+          # Use sha256sum on Linux, shasum on macOS
+          checksum_cmd() { if command -v sha256sum &>/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi; }
+
           if [ "$PLATFORM" = "macos" ]; then
             DMG=$(find . -maxdepth 3 -name "*.dmg" -not -path "./artifacts/*" | head -1)
             if [ -n "$DMG" ]; then
               DEST="artifacts/Fulgur-v${VERSION}-macos-${ARCH}.dmg"
               mv "$DMG" "$DEST"
-              shasum -a 256 "$DEST" > "${DEST}.sha256"
+              checksum_cmd "$DEST" > "${DEST}.sha256"
             fi
           elif [ "$PLATFORM" = "linux" ]; then
             DEB=$(find . -maxdepth 3 -name "*.deb" -not -path "./artifacts/*" | head -1)
             if [ -n "$DEB" ]; then
               DEST="artifacts/Fulgur-v${VERSION}-linux-${ARCH}.deb"
               mv "$DEB" "$DEST"
-              shasum -a 256 "$DEST" > "${DEST}.sha256"
+              checksum_cmd "$DEST" > "${DEST}.sha256"
             fi
 
             APPIMAGE=$(find . -maxdepth 3 -name "*.AppImage" -not -path "./artifacts/*" | head -1)
             if [ -n "$APPIMAGE" ]; then
               DEST="artifacts/Fulgur-v${VERSION}-linux-${ARCH}.AppImage"
               mv "$APPIMAGE" "$DEST"
-              shasum -a 256 "$DEST" > "${DEST}.sha256"
+              checksum_cmd "$DEST" > "${DEST}.sha256"
             fi
           fi
 
