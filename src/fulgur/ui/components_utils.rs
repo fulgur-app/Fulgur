@@ -31,7 +31,7 @@ pub const CORNERS_SIZE: Corners<Pixels> = Corners {
 /// The size of the text
 pub const TEXT_SIZE: Pixels = px(14.0);
 /// The line height of the text inputs
-pub const LINE_HEIGHT: DefiniteLength = relative(1.0);
+pub const LINE_HEIGHT: DefiniteLength = relative(1.1);
 /// The UTF-8 encoding
 pub const UTF_8: &str = "UTF-8";
 /// The untitled string
