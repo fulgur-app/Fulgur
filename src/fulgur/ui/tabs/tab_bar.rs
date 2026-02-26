@@ -246,29 +246,39 @@ impl Fulgur {
             .child(
                 tab_bar_button_factory(
                     "open-file",
-                    "Open File",
+                    "Open File (+Shift - Open Path)",
                     CustomIcon::FolderOpen,
                     cx.theme().border,
                 )
-                .on_click(cx.listener(|this, _, window, cx| {
-                    this.open_file(window, cx);
+                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                    if event.modifiers().shift {
+                        this.show_open_from_path_dialog(window, cx);
+                    } else {
+                        this.open_file(window, cx);
+                    }
                 })),
             )
             .child(
                 tab_bar_button_factory(
                     "save-file",
-                    "Save File",
+                    "Save File (+Shift - Save As)",
                     CustomIcon::Save,
                     cx.theme().border,
                 )
-                .on_click(cx.listener(|this, _, window, cx| {
-                    this.save_file(window, cx);
+                .border_r_1()
+                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                    if event.modifiers().shift {
+                        this.save_file_as(window, cx);
+                    } else {
+                        this.save_file(window, cx);
+                    }
                 })),
             )
             .child(
                 div()
                     .id("tab-scroll-container")
                     .overflow_x_scroll()
+                    .track_scroll(&self.tab_scroll_handle)
                     .flex()
                     .flex_1()
                     .items_center()
@@ -283,7 +293,6 @@ impl Fulgur {
                             .flex_1()
                             .min_w(px(0.))
                             .border_b_1()
-                            .border_l_1()
                             .border_color(cx.theme().border)
                             .h(TAB_BAR_HEIGHT),
                     ),
@@ -330,7 +339,7 @@ impl Fulgur {
             .h(TAB_BAR_HEIGHT)
             .px_2()
             .gap_2()
-            .border_l_1()
+            .border_r_1()
             .border_b_1()
             .border_color(cx.theme().border)
             .on_mouse_down(
