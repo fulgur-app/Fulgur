@@ -261,6 +261,7 @@ impl Fulgur {
                     CustomIcon::Save,
                     cx.theme().border,
                 )
+                .border_r_1()
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.save_file(window, cx);
                 })),
@@ -283,7 +284,6 @@ impl Fulgur {
                             .flex_1()
                             .min_w(px(0.))
                             .border_b_1()
-                            .border_l_1()
                             .border_color(cx.theme().border)
                             .h(TAB_BAR_HEIGHT),
                     ),
@@ -330,7 +330,7 @@ impl Fulgur {
             .h(TAB_BAR_HEIGHT)
             .px_2()
             .gap_2()
-            .border_l_1()
+            .border_r_1()
             .border_b_1()
             .border_color(cx.theme().border)
             .on_mouse_down(
