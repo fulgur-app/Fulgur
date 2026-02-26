@@ -148,9 +148,7 @@ jobs:
         run: cargo about generate licenses/about.hbs -c licenses/about.toml --workspace -o THIRD-PARTY-LICENSES
 
       - name: Build and package
-        env:
-          FORMATS: ${{ matrix.formats }}
-        run: cargo packager --release --formats $FORMATS
+        run: cargo packager --release --formats ${{ matrix.formats }}
 
       - name: Rename artifacts and compute checksums (Unix)
         if: runner.os != 'Windows'
@@ -161,29 +159,26 @@ jobs:
         run: |
           mkdir -p artifacts
 
-          # Use sha256sum on Linux, shasum on macOS
-          checksum_cmd() { if command -v sha256sum &>/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi; }
-
           if [ "$PLATFORM" = "macos" ]; then
             DMG=$(find . -maxdepth 3 -name "*.dmg" -not -path "./artifacts/*" | head -1)
             if [ -n "$DMG" ]; then
               DEST="artifacts/Fulgur-v${VERSION}-macos-${ARCH}.dmg"
               mv "$DMG" "$DEST"
-              checksum_cmd "$DEST" > "${DEST}.sha256"
+              shasum -a 256 "$DEST" > "${DEST}.sha256"
             fi
           elif [ "$PLATFORM" = "linux" ]; then
             DEB=$(find . -maxdepth 3 -name "*.deb" -not -path "./artifacts/*" | head -1)
             if [ -n "$DEB" ]; then
               DEST="artifacts/Fulgur-v${VERSION}-linux-${ARCH}.deb"
               mv "$DEB" "$DEST"
-              checksum_cmd "$DEST" > "${DEST}.sha256"
+              shasum -a 256 "$DEST" > "${DEST}.sha256"
             fi
 
             APPIMAGE=$(find . -maxdepth 3 -name "*.AppImage" -not -path "./artifacts/*" | head -1)
             if [ -n "$APPIMAGE" ]; then
               DEST="artifacts/Fulgur-v${VERSION}-linux-${ARCH}.AppImage"
               mv "$APPIMAGE" "$DEST"
-              checksum_cmd "$DEST" > "${DEST}.sha256"
+              shasum -a 256 "$DEST" > "${DEST}.sha256"
             fi
           fi
 
