@@ -278,6 +278,7 @@ impl Fulgur {
                 div()
                     .id("tab-scroll-container")
                     .overflow_x_scroll()
+                    .track_scroll(&self.tab_scroll_handle)
                     .flex()
                     .flex_1()
                     .items_center()

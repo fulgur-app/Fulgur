@@ -98,8 +98,10 @@ pub struct Fulgur {
     local_settings_version: u64, // Track the version of settings this window has loaded
     rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
+    tab_scroll_handle: ScrollHandle, // Scroll handle for the tab bar to scroll active tab into view
+    pending_tab_scroll: Option<usize>, // Deferred scroll-to-tab request (needs one render cycle for layout)
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
-    pub sse_state: SseState, // Server-Sent Events state for sync functionality
+    pub sse_state: SseState,           // Server-Sent Events state for sync functionality
     pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
 }
@@ -159,6 +161,8 @@ impl Fulgur {
                 local_settings_version: 0,
                 rendered_tabs: HashSet::new(),
                 tabs_pending_update: HashSet::new(),
+                tab_scroll_handle: ScrollHandle::new(),
+                pending_tab_scroll: None,
                 file_watch_state: FileWatchState::new(),
                 sse_state: SseState::new(),
                 pending_notification: None,
@@ -189,6 +193,7 @@ impl Fulgur {
                 this.next_tab_id = 1;
             } else {
                 this.load_state(window, cx, window_index);
+                this.pending_tab_scroll = this.active_tab_index;
             }
             if this.settings.editor_settings.watch_files {
                 this.start_file_watcher();
@@ -417,6 +422,7 @@ impl Render for Fulgur {
             self.jump_to_line_dialog_open = true;
         }
         self.update_modified_status(cx);
+        self.process_pending_tab_scroll(cx);
         let active_tab = self
             .active_tab_index
             .and_then(|index| self.tabs.get(index).cloned());
@@ -426,6 +432,26 @@ impl Render for Fulgur {
 }
 
 impl Fulgur {
+    /// Process a deferred scroll-to-tab request
+    ///
+    /// GPUI's ScrollHandle needs one render cycle to populate child bounds and overflow
+    /// state before `scroll_to_item` can work. On the first frame, layout hasn't happened
+    /// yet so the scroll is silently dropped. This method waits until child bounds are
+    /// available (meaning layout has completed at least once), then issues the scroll.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    fn process_pending_tab_scroll(&mut self, cx: &mut Context<Self>) {
+        if let Some(index) = self.pending_tab_scroll {
+            if self.tab_scroll_handle.bounds_for_item(0).is_some() {
+                self.tab_scroll_handle.scroll_to_item(index);
+                self.pending_tab_scroll = None;
+            } else {
+                cx.notify();
+            }
+        }
+    }
+
     /// Render the content area (editor or settings)
     ///
     /// ### Arguments

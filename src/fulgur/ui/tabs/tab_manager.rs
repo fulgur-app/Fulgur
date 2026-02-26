@@ -145,6 +145,7 @@ impl Fulgur {
     pub fn set_active_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
             self.active_tab_index = Some(index);
+            self.tab_scroll_handle.scroll_to_item(index);
             let pending_path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) {
                 if let Some(path) = &editor_tab.file_path {
                     if self
