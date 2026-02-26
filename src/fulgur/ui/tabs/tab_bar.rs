@@ -246,24 +246,32 @@ impl Fulgur {
             .child(
                 tab_bar_button_factory(
                     "open-file",
-                    "Open File",
+                    "Open File (+Shift - Open Path)",
                     CustomIcon::FolderOpen,
                     cx.theme().border,
                 )
-                .on_click(cx.listener(|this, _, window, cx| {
-                    this.open_file(window, cx);
+                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                    if event.modifiers().shift {
+                        this.show_open_from_path_dialog(window, cx);
+                    } else {
+                        this.open_file(window, cx);
+                    }
                 })),
             )
             .child(
                 tab_bar_button_factory(
                     "save-file",
-                    "Save File",
+                    "Save File (+Shift - Save As)",
                     CustomIcon::Save,
                     cx.theme().border,
                 )
                 .border_r_1()
-                .on_click(cx.listener(|this, _, window, cx| {
-                    this.save_file(window, cx);
+                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                    if event.modifiers().shift {
+                        this.save_file_as(window, cx);
+                    } else {
+                        this.save_file(window, cx);
+                    }
                 })),
             )
             .child(
