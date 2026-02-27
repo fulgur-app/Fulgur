@@ -253,6 +253,7 @@ jobs:
         if: success()
         run: |
           ARTIFACT_COUNT=$(ls release-artifacts/ | wc -l)
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
 
           MESSAGE="📦 *Fulgur Release v${VERSION} - Draft Created*
 
@@ -260,37 +261,33 @@ jobs:
           Artifacts: ${ARTIFACT_COUNT} files (macOS, Windows, Linux)
 
           *Tag:* \`v${VERSION}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
           *Author:* ${ACTOR}
 
           [View Release](https://github.com/${REPOSITORY}/releases/tag/v${VERSION})
           [View Run](${RUN_URL})"
 
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
-              \"text\": \"${MESSAGE}\",
-              \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": true
-            }"
+            -H "Content-Type: application/json" -d @-
 
       - name: Telegram notification - Failure
         if: failure()
         run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
           MESSAGE="❌ *Fulgur Release v${VERSION} - Failed*
 
           Release workflow failed
 
           *Tag:* \`v${VERSION}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
           *Author:* ${ACTOR}
 
           [View Run](${RUN_URL})"
 
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
-              \"text\": \"${MESSAGE}\",
-              \"parse_mode\": \"Markdown\",
-              \"disable_web_page_preview\": true
-            }"
+            -H "Content-Type: application/json" -d @-
