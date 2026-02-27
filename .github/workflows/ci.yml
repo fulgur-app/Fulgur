@@ -179,8 +179,10 @@ jobs:
       - name: Check with minimum Rust version
         run: cargo check --all-features --quiet
 
-  security:
-    name: Security Audit
+  docs:
+    name: Documentation
+    needs: [test]
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
