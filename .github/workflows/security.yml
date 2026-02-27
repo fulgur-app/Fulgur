@@ -1,0 +1,84 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [main, dev-*]
+    paths: ['Cargo.lock', 'deny.toml']
+  pull_request:
+    branches: [main]
+    paths: ['Cargo.lock', 'deny.toml']
+  schedule:
+    - cron: '0 8 * * 3' # Every Wednesday at 8:00 UTC
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  BRANCH: ${{ github.ref_name }}
+  COMMIT_SHA: ${{ github.sha }}
+  ACTOR: ${{ github.actor }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo audit
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          deny-warnings: false
+
+      - name: Cargo deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+
+      - name: Telegram notification - Success
+        if: success()
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          MESSAGE="✅ *Fulgur Security Audit - Passed*
+
+          No security vulnerabilities or license issues found
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
+
+      - name: Telegram notification - Failure
+        if: failure()
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          MESSAGE="❌ *Fulgur Security Audit - Failed*
+
+          Security vulnerabilities or license issues detected
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
