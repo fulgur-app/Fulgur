@@ -206,14 +206,35 @@ jobs:
         env:
           RUSTDOCFLAGS: '-D warnings'
 
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        env:
+          PAGES_DEPLOY_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
+        run: |
+          git clone https://x-access-token:${PAGES_DEPLOY_TOKEN}@github.com/fulgur-app/fulgur-app.github.io.git pages-repo
+          rm -rf pages-repo/fulgur
+          cp -r target/doc pages-repo/fulgur
+          cd pages-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add fulgur/
+          git diff --cached --quiet || git commit -m "docs(fulgur): update from ${COMMIT_SHA:0:7}"
+          git push
+
       - name: Telegram notification - Success
         if: success()
         run: |
           COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
 
+          if [ "$BRANCH" = "main" ]; then
+            DEPLOY_INFO="Deployed to https://fulgur-app.github.io/fulgur/"
+          else
+            DEPLOY_INFO="Validated (not deployed on branch ${BRANCH})"
+          fi
+
           MESSAGE="✅ *Fulgur Documentation - Built Successfully*
 
-          Documentation built with no warnings
+          ${DEPLOY_INFO}
 
           *Branch:* \`${BRANCH}\`
           *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
