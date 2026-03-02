@@ -26,6 +26,7 @@ impl Fulgur {
         ));
         self.tabs.push(tab);
         self.active_tab_index = Some(self.tabs.len() - 1);
+        self.pending_tab_scroll = Some(self.tabs.len() - 1);
         self.next_tab_id += 1;
         self.focus_active_tab(window, cx);
         if let Err(e) = self.save_state(cx, window) {
@@ -50,6 +51,7 @@ impl Fulgur {
             let settings_tab = Tab::Settings(SettingsTab::new(self.next_tab_id, window, cx));
             self.tabs.push(settings_tab);
             self.active_tab_index = Some(self.tabs.len() - 1);
+            self.pending_tab_scroll = Some(self.tabs.len() - 1);
             self.next_tab_id += 1;
             if let Err(e) = self.save_state(cx, window) {
                 log::error!("Failed to save app state after opening settings: {}", e);

@@ -158,6 +158,7 @@ impl Fulgur {
                     );
                     this.tabs.push(Tab::Editor(editor_tab));
                     this.active_tab_index = Some(this.tabs.len() - 1);
+                    this.pending_tab_scroll = Some(this.tabs.len() - 1);
                     this.next_tab_id += 1;
                     this.watch_file(&path);
                     this.focus_active_tab(window, cx);
