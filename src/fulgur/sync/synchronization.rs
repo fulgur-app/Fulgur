@@ -481,6 +481,7 @@ impl Fulgur {
                             ));
                             self.tabs.push(new_tab);
                             self.active_tab_index = Some(self.tabs.len() - 1);
+                            self.pending_tab_scroll = Some(self.tabs.len() - 1);
                             log::info!("Opened shared file: {}", shared_file.file_name);
                         }
                         Err(e) => {
