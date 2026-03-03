@@ -4,6 +4,9 @@
 
 Your lightning fast, multiplatform, themable text editor, with synchronization between instances!
 
+## Running Fulgur on MacOS
+Fulgur is not signed yet. If Fulgur is tagged as damaged by MacOS, just run `xattr -dr com.apple.quarantine /Applications/Fulgur.app` and enjoy Fulgur!
+
 ## About Fulgur
 
 ### What is Fulgur?
