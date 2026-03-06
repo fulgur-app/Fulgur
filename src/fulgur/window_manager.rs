@@ -272,5 +272,15 @@ impl Fulgur {
         if let Some((notification_type, message)) = self.pending_notification.take() {
             window.push_notification((notification_type, message), cx);
         }
+        // Check for notifications from background sync operations
+        let sync_notification = self
+            .shared_state(cx)
+            .sync_state
+            .pending_notification
+            .lock()
+            .take();
+        if let Some((notification_type, message)) = sync_notification {
+            window.push_notification((notification_type, message), cx);
+        }
     }
 }

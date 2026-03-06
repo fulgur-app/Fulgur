@@ -129,6 +129,9 @@ fn make_device_list(
 
 /// Handle the share file action when OK is clicked
 ///
+/// Extracts file content on the UI thread, then spawns a background thread
+/// for compression, encryption, and upload.
+///
 /// ### Arguments
 /// - `selected_ids`: The selected device IDs
 /// - `devices`: The list of all devices (with their public keys)
@@ -153,74 +156,88 @@ fn handle_share_file(
         );
         return;
     }
-    let result = entity.update(cx, |this, cx| {
-        let active_tab = this.get_active_editor_tab();
-        let content = active_tab
-            .as_ref()
-            .map(|tab| tab.content.read(cx).value().to_string())
-            .unwrap_or_default();
-        let file_path = active_tab.as_ref().and_then(|tab| tab.file_path.clone());
-        let file_name = file_path
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .unwrap_or("Untitled")
-            .to_string();
-        share_file(
-            &this.settings.app_settings.synchronization_settings,
-            ShareFileRequest {
-                content,
-                file_name,
-                device_ids: ids,
-                file_path,
-            },
-            &devices,
-            Arc::clone(&this.shared_state(cx).sync_state.token_state),
-            &this.shared_state(cx).http_agent,
-        )
-    });
-    match result {
-        Ok(share_result) => {
-            if share_result.is_complete_success() {
-                let notification = (
-                    NotificationType::Success,
-                    SharedString::from(share_result.summary_message()),
-                );
-                window.push_notification(notification, cx);
-                window.close_sheet(cx);
-            } else if share_result.successes.is_empty() {
-                let notification = (
-                    NotificationType::Error,
-                    SharedString::from(share_result.summary_message()),
-                );
-                window.push_notification(notification, cx);
-            } else {
-                let notification = (
-                    NotificationType::Warning,
-                    SharedString::from(share_result.summary_message()),
-                );
-                window.push_notification(notification, cx);
-                window.close_sheet(cx);
+    let (sync_settings, request, token_state, http_agent, pending_notification) =
+        entity.update(cx, |this, cx| {
+            let active_tab = this.get_active_editor_tab();
+            let content = active_tab
+                .as_ref()
+                .map(|tab| tab.content.read(cx).value().to_string())
+                .unwrap_or_default();
+            let file_path = active_tab.as_ref().and_then(|tab| tab.file_path.clone());
+            let file_name = file_path
+                .as_ref()
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or("Untitled")
+                .to_string();
+            (
+                this.settings.app_settings.synchronization_settings.clone(),
+                ShareFileRequest {
+                    content,
+                    file_name,
+                    device_ids: ids,
+                    file_path,
+                },
+                Arc::clone(&this.shared_state(cx).sync_state.token_state),
+                Arc::clone(&this.shared_state(cx).http_agent),
+                this.shared_state(cx)
+                    .sync_state
+                    .pending_notification
+                    .clone(),
+            )
+        });
+    window.close_sheet(cx);
+    window.push_notification(
+        (
+            NotificationType::Info,
+            SharedString::from("Sharing file..."),
+        ),
+        cx,
+    );
+    std::thread::spawn(move || {
+        let result = share_file(&sync_settings, request, &devices, token_state, &http_agent);
+        let notification = match result {
+            Ok(share_result) => {
+                if share_result.is_complete_success() {
+                    (
+                        NotificationType::Success,
+                        SharedString::from(share_result.summary_message()),
+                    )
+                } else if share_result.successes.is_empty() {
+                    (
+                        NotificationType::Error,
+                        SharedString::from(share_result.summary_message()),
+                    )
+                } else {
+                    (
+                        NotificationType::Warning,
+                        SharedString::from(share_result.summary_message()),
+                    )
+                }
             }
-        }
-        Err(e) => {
-            log::error!("Failed to share file: {}", e);
-            let notification = (
-                NotificationType::Error,
-                SharedString::from(format!("Failed to share file: {}", e)),
-            );
-            window.push_notification(notification, cx);
-        }
-    }
+            Err(e) => {
+                log::error!("Failed to share file: {}", e);
+                (
+                    NotificationType::Error,
+                    SharedString::from(format!("Failed to share file: {}", e)),
+                )
+            }
+        };
+        *pending_notification.lock() = Some(notification);
+    });
 }
 
 impl Fulgur {
     /// Open the share file sheet
     ///
+    /// Initiates a background fetch for devices (and reconnection if needed).
+    /// The sheet opens once the device list is available, processed in the render loop
+    /// via `process_pending_share_sheet`.
+    ///
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub fn open_share_file_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_share_file_sheet(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if !self
             .settings
             .app_settings
@@ -230,86 +247,145 @@ impl Fulgur {
             log::warn!("Synchronization is not activated");
             return;
         }
-        if !self.is_connected(cx) {
+        let shared = self.shared_state(cx);
+        if shared.sync_state.connection_status.lock().is_connecting() {
+            log::debug!("Already connecting, ignoring share button click");
+            return;
+        }
+        let needs_reconnect = !self.is_connected(cx);
+        if needs_reconnect {
             log::info!("Not connected to sync server, attempting reconnection...");
+        }
+        let shared = self.shared_state(cx);
+        crate::fulgur::sync::synchronization::set_sync_server_connection_status(
+            shared.sync_state.connection_status.clone(),
+            SynchronizationStatus::Connecting,
+        );
+        *shared.sync_state.connecting_since.lock() = Some(std::time::Instant::now());
+        let synchronization_settings = self.settings.app_settings.synchronization_settings.clone();
+        let token_state = Arc::clone(&shared.sync_state.token_state);
+        let http_agent = Arc::clone(&shared.http_agent);
+        let connection_status = shared.sync_state.connection_status.clone();
+        let connecting_since = shared.sync_state.connecting_since.clone();
+        let device_name_shared = shared.sync_state.device_name.clone();
+        let pending_shared_files = shared.sync_state.pending_shared_files.clone();
+        let pending_devices = shared.sync_state.pending_devices.clone();
+        self.pending_share_sheet = true;
+        std::thread::spawn(move || {
+            if needs_reconnect {
+                match crate::fulgur::sync::synchronization::initial_synchronization(
+                    &synchronization_settings,
+                    Arc::clone(&token_state),
+                    &http_agent,
+                ) {
+                    Ok(begin_response) => {
+                        *device_name_shared.lock() = Some(begin_response.device_name.clone());
+                        *pending_shared_files.lock() = begin_response.shares;
+                        crate::fulgur::sync::synchronization::set_sync_server_connection_status(
+                            connection_status.clone(),
+                            SynchronizationStatus::Connected,
+                        );
+                    }
+                    Err(e) => {
+                        let status = SynchronizationStatus::from_error(&e);
+                        crate::fulgur::sync::synchronization::set_sync_server_connection_status(
+                            connection_status,
+                            status,
+                        );
+                        *connecting_since.lock() = None;
+                        *pending_devices.lock() = Some((Err(format!("{}", e)), false));
+                        return;
+                    }
+                }
+            }
+            let result = get_devices(&synchronization_settings, token_state, &http_agent);
+            *connecting_since.lock() = None;
+            match result {
+                Ok(devices) => {
+                    crate::fulgur::sync::synchronization::set_sync_server_connection_status(
+                        connection_status,
+                        SynchronizationStatus::Connected,
+                    );
+                    *pending_devices.lock() = Some((Ok(devices), needs_reconnect));
+                }
+                Err(e) => {
+                    *pending_devices.lock() = Some((Err(format!("{}", e)), false));
+                }
+            }
+        });
+    }
+
+    /// Process pending share sheet data from background device fetch
+    ///
+    /// Called in the render loop to check if the background device fetch has completed,
+    /// and opens the share sheet if devices are available.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn process_pending_share_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.pending_share_sheet {
+            return;
+        }
+        let pending = self
+            .shared_state(cx)
+            .sync_state
+            .pending_devices
+            .lock()
+            .take();
+        let (result, needs_sse_restart) = match pending {
+            Some(pending) => pending,
+            None => return,
+        };
+        self.pending_share_sheet = false;
+        if needs_sse_restart {
+            self.restart_sse_connection(cx);
+        }
+        match result {
+            Ok(devices) => {
+                self.show_share_sheet(devices, window, cx);
+            }
+            Err(e) => {
+                log::error!("Failed to prepare share: {}", e);
+                let status = *self.shared_state(cx).sync_state.connection_status.lock();
+                let dialog_message = match status {
+                    SynchronizationStatus::AuthenticationFailed => {
+                        "Authentication failed. Check your e-mail and device API key in the synchronization settings."
+                    }
+                    SynchronizationStatus::ConnectionFailed => {
+                        "Connection failed. Check the server URL in the synchronization settings."
+                    }
+                    _ => {
+                        "An error occurred while connecting to the sync server. Check your synchronization settings."
+                    }
+                };
+                window.open_dialog(cx, move |dialog, _, _| dialog.alert().child(dialog_message));
+            }
+        }
+    }
+
+    /// Show the share file sheet with the given devices
+    ///
+    /// ### Arguments
+    /// - `devices`: The list of devices to display
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn show_share_sheet(
+        &mut self,
+        devices: Vec<Device>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if devices.is_empty() {
             window.push_notification(
                 (
-                    NotificationType::Info,
-                    SharedString::from("Attempting to connect to sync server..."),
+                    NotificationType::Warning,
+                    SharedString::from("No devices available for sharing."),
                 ),
                 cx,
             );
-            let synchronization_settings =
-                self.settings.app_settings.synchronization_settings.clone();
-            let token_state = Arc::clone(&self.shared_state(cx).sync_state.token_state);
-            let http_agent = &self.shared_state(cx).http_agent;
-            let result = crate::fulgur::sync::synchronization::initial_synchronization(
-                &synchronization_settings,
-                token_state,
-                http_agent,
-            );
-            match result {
-                Ok(begin_response) => {
-                    {
-                        let mut device_name = self.shared_state(cx).sync_state.device_name.lock();
-                        *device_name = Some(begin_response.device_name.clone());
-                    }
-                    {
-                        let mut files =
-                            self.shared_state(cx).sync_state.pending_shared_files.lock();
-                        *files = begin_response.shares;
-                    }
-                    *self.shared_state(cx).sync_state.connection_status.lock() =
-                        SynchronizationStatus::Connected;
-                    self.restart_sse_connection(cx);
-                }
-                Err(e) => {
-                    let connection_status = SynchronizationStatus::from_error(&e);
-                    *self.shared_state(cx).sync_state.connection_status.lock() = connection_status;
-                    let dialog_message = match connection_status {
-                        SynchronizationStatus::AuthenticationFailed => {
-                            "Authentication failed. Check your e-mail and device API key in the synchronization settings."
-                        }
-                        SynchronizationStatus::ConnectionFailed => {
-                            "Connection failed. Check the server URL in the synchronization settings."
-                        }
-                        SynchronizationStatus::Other => {
-                            "An error occurred while connecting to the sync server. Check your synchronization settings."
-                        }
-                        SynchronizationStatus::NotActivated => {
-                            "Synchronization is not activated. You can activate synchronization in the settings."
-                        }
-                        SynchronizationStatus::Disconnected => {
-                            "Could not connect to the sync server. Check your synchronization settings."
-                        }
-                        SynchronizationStatus::Connected => "Unknown error occurred.",
-                    };
-                    window
-                        .open_dialog(cx, move |dialog, _, _| dialog.alert().child(dialog_message));
-                    return;
-                }
-            }
+            return;
         }
-        let synchronization_settings = self.settings.app_settings.synchronization_settings.clone();
-        let devices = get_devices(
-            &synchronization_settings,
-            Arc::clone(&self.shared_state(cx).sync_state.token_state),
-            &self.shared_state(cx).http_agent,
-        );
-        let devices = match devices {
-            Ok(devices) => devices,
-            Err(e) => {
-                log::error!("Failed to get devices: {}", e);
-                window.push_notification(
-                    (
-                        NotificationType::Error,
-                        SharedString::from(format!("Failed to get devices: {}", e)),
-                    ),
-                    cx,
-                );
-                return;
-            }
-        };
         let entity = cx.entity();
         let selected_ids: Arc<parking_lot::Mutex<Vec<String>>> =
             Arc::new(parking_lot::Mutex::new(Vec::new()));

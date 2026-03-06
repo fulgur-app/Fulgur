@@ -4,15 +4,26 @@ use crate::fulgur::{
     settings::Settings, settings::Themes, sync::synchronization::SynchronizationStatus,
 };
 use fulgur_common::api::shares::SharedFileResponse;
+use gpui::SharedString;
+use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 
+/// Result of a background device fetch: either a list of devices or an error message,
+/// paired with a boolean indicating whether SSE reconnection is needed.
+pub type PendingDevicesResult = (
+    Result<Vec<fulgur_common::api::devices::DeviceResponse>, String>,
+    bool,
+);
+
 /// Sync-related state that is shared across all windows
 pub struct SyncState {
     /// Sync server connection status
     pub connection_status: Arc<Mutex<SynchronizationStatus>>,
+    /// Timestamp when the connection attempt started (for delayed spinner display)
+    pub connecting_since: Arc<Mutex<Option<std::time::Instant>>>,
     /// Device name from server
     pub device_name: Arc<Mutex<Option<String>>>,
     /// Pending shared files from sync server
@@ -23,6 +34,10 @@ pub struct SyncState {
     pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
     /// Flag to track if sync has been initialized (to prevent multiple initializations)
     pub initialized: Arc<AtomicBool>,
+    /// Pending notification from background sync operations (checked in render loop)
+    pub pending_notification: Arc<Mutex<Option<(NotificationType, SharedString)>>>,
+    /// Pending devices list from background fetch (checked in render loop to open share sheet)
+    pub pending_devices: Arc<Mutex<Option<PendingDevicesResult>>>,
 }
 
 impl SyncState {
@@ -36,11 +51,14 @@ impl SyncState {
     pub fn new(connection_status: SynchronizationStatus) -> Self {
         Self {
             connection_status: Arc::new(Mutex::new(connection_status)),
+            connecting_since: Arc::new(Mutex::new(None)),
             device_name: Arc::new(Mutex::new(None)),
             pending_shared_files: Arc::new(Mutex::new(Vec::new())),
             token_state: Arc::new(crate::fulgur::sync::access_token::TokenStateManager::new()),
             last_heartbeat: Arc::new(Mutex::new(None)),
             initialized: Arc::new(AtomicBool::new(false)),
+            pending_notification: Arc::new(Mutex::new(None)),
+            pending_devices: Arc::new(Mutex::new(None)),
         }
     }
 }

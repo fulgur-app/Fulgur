@@ -1,4 +1,4 @@
-use std::{fmt, sync::Arc, thread, time::Duration};
+use std::{fmt, sync::Arc, thread, time::Duration, time::Instant};
 
 use fulgur_common::api::sync::{BeginResponse, InitialSynchronizationPayload};
 use gpui::{App, Context, Entity, SharedString, Window};
@@ -249,18 +249,16 @@ pub fn set_sync_server_connection_status(
     *sync_server_connection_status.lock() = new_status;
 }
 
-/// Perform initial synchronization with the server
+/// Perform initial synchronization with the server in a background thread
+///
+/// Sets the connection status to `Connecting` immediately, then spawns a background
+/// thread to perform the actual network call. The UI remains responsive while the
+/// connection is in progress.
 ///
 /// ### Arguments
 /// - `entity`: The Fulgur entity
 /// - `cx`: The context
-///
-/// ### Returns
-/// - `SynchronizationStatus`: The status of the connection to the sync server
-pub fn perform_initial_synchronization(
-    entity: Entity<crate::fulgur::Fulgur>,
-    cx: &mut App,
-) -> SynchronizationStatus {
+pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx: &mut App) {
     let synchronization_settings = entity
         .read(cx)
         .settings
@@ -268,49 +266,53 @@ pub fn perform_initial_synchronization(
         .synchronization_settings
         .clone();
     let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+    set_sync_server_connection_status(
+        shared.sync_state.connection_status.clone(),
+        SynchronizationStatus::Connecting,
+    );
+    *shared.sync_state.connecting_since.lock() = Some(Instant::now());
     let token_state = Arc::clone(&shared.sync_state.token_state);
-    let http_agent = &shared.http_agent;
-    let result = initial_synchronization(&synchronization_settings, token_state, http_agent);
-    let (notification, sync_server_connection_status) = match result {
-        Ok(begin_response) => {
-            let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-            {
-                let mut name = shared.sync_state.device_name.lock();
-                *name = Some(begin_response.device_name.clone());
-            }
-            {
-                let mut files = shared.sync_state.pending_shared_files.lock();
-                *files = begin_response.shares;
-            }
-            (
+    let http_agent = Arc::clone(&shared.http_agent);
+    let connection_status = shared.sync_state.connection_status.clone();
+    let connecting_since = shared.sync_state.connecting_since.clone();
+    let device_name = shared.sync_state.device_name.clone();
+    let pending_shared_files = shared.sync_state.pending_shared_files.clone();
+    let pending_notification = shared.sync_state.pending_notification.clone();
+    thread::spawn(move || {
+        let result = initial_synchronization(&synchronization_settings, token_state, &http_agent);
+        let (notification, status) = match result {
+            Ok(begin_response) => {
+                {
+                    let mut name = device_name.lock();
+                    *name = Some(begin_response.device_name.clone());
+                }
+                {
+                    let mut files = pending_shared_files.lock();
+                    *files = begin_response.shares;
+                }
                 (
-                    NotificationType::Success,
-                    SharedString::from(format!(
-                        "Connection successful as {}",
-                        begin_response.device_name
-                    )),
+                    (
+                        NotificationType::Success,
+                        SharedString::from(format!(
+                            "Connection successful as {}",
+                            begin_response.device_name
+                        )),
+                    ),
+                    SynchronizationStatus::Connected,
+                )
+            }
+            Err(e) => (
+                (
+                    NotificationType::Error,
+                    SharedString::from(format!("Connection failed: {}", e)),
                 ),
-                SynchronizationStatus::Connected,
-            )
-        }
-        Err(e) => (
-            (
-                NotificationType::Error,
-                SharedString::from(format!("Connection failed: {}", e)),
+                SynchronizationStatus::from_error(&e),
             ),
-            SynchronizationStatus::from_error(&e),
-        ),
-    };
-    entity.update(cx, |this, cx| {
-        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-        set_sync_server_connection_status(
-            shared.sync_state.connection_status.clone(),
-            sync_server_connection_status,
-        );
-        // Store notification to be displayed on next render
-        this.pending_notification = Some(notification);
+        };
+        set_sync_server_connection_status(connection_status, status);
+        *connecting_since.lock() = None;
+        *pending_notification.lock() = Some(notification);
     });
-    sync_server_connection_status
 }
 
 #[derive(Debug)]
@@ -369,6 +371,7 @@ impl fmt::Display for SynchronizationError {
 #[derive(Clone, Copy)]
 pub enum SynchronizationStatus {
     Connected,
+    Connecting,
     Disconnected,
     AuthenticationFailed,
     ConnectionFailed,
@@ -403,12 +406,21 @@ impl SynchronizationStatus {
     pub fn is_connected(&self) -> bool {
         match self {
             SynchronizationStatus::Connected => true,
+            SynchronizationStatus::Connecting => false,
             SynchronizationStatus::Disconnected => false,
             SynchronizationStatus::AuthenticationFailed => false,
             SynchronizationStatus::ConnectionFailed => false,
             SynchronizationStatus::Other => false,
             SynchronizationStatus::NotActivated => false,
         }
+    }
+
+    /// Check if the synchronization status is connecting
+    ///
+    /// ### Returns
+    /// - `true` if the synchronization status is connecting, `false` otherwise
+    pub fn is_connecting(&self) -> bool {
+        matches!(self, SynchronizationStatus::Connecting)
     }
 }
 

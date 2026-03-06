@@ -1,6 +1,7 @@
 use crate::fulgur::{
     Fulgur,
     languages::supported_languages::{SupportedLanguage, pretty_name},
+    sync::synchronization::SynchronizationStatus,
     ui::{
         components_utils::{EMPTY, UTF_8},
         icons::CustomIcon,
@@ -8,6 +9,8 @@ use crate::fulgur::{
 };
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{ActiveTheme, Icon, h_flex, input::Position};
+use std::f32::consts::PI;
+use std::time::Duration;
 
 /// Create a status bar item
 ///
@@ -91,17 +94,34 @@ pub struct SyncButtonStyle {
     pub disconnected_color: Hsla,
     pub disconnected_foreground_color: Hsla,
     pub disconnected_hover_color: Hsla,
+    pub connecting_color: Hsla,
+    pub connecting_foreground_color: Hsla,
 }
+
+/// The visual state of the sync button
+pub enum SyncButtonState {
+    Connected,
+    Connecting,
+    Disconnected,
+}
+
+/// Delay before showing the connecting spinner (to avoid flickering on fast connections)
+const CONNECTING_SPINNER_DELAY: Duration = Duration::from_millis(500);
 
 /// Create a status bar sync button
 ///
 /// ### Arguments
 /// - `style`: The styling parameters for the sync button
-/// - `is_connected`: Whether the device is connected
+/// - `state`: The current sync button state
+/// - `show_spinner`: Whether to show the spinning animation (only after delay)
 ///
 /// ### Returns
 /// - `Div`: A status bar sync button
-pub fn status_bar_sync_button(style: SyncButtonStyle, is_connected: bool) -> Div {
+pub fn status_bar_sync_button(
+    style: SyncButtonStyle,
+    state: SyncButtonState,
+    show_spinner: bool,
+) -> Div {
     let mut button = div()
         .text_sm()
         .flex()
@@ -109,20 +129,42 @@ pub fn status_bar_sync_button(style: SyncButtonStyle, is_connected: bool) -> Div
         .justify_center()
         .px_4()
         .py_1()
-        .border_color(style.border_color)
-        .cursor_pointer();
-    if is_connected {
-        button = button
-            .child(style.connected_icon)
-            .bg(style.connected_color)
-            .text_color(style.connected_foreground_color)
-            .hover(|this| this.bg(style.connected_hover_color));
-    } else {
-        button = button
-            .child(style.disconnected_icon)
-            .bg(style.disconnected_color)
-            .text_color(style.disconnected_foreground_color)
-            .hover(|this| this.bg(style.disconnected_hover_color));
+        .border_color(style.border_color);
+    match state {
+        SyncButtonState::Connected => {
+            button = button
+                .child(style.connected_icon)
+                .bg(style.connected_color)
+                .text_color(style.connected_foreground_color)
+                .hover(|this| this.bg(style.connected_hover_color))
+                .cursor_pointer();
+        }
+        SyncButtonState::Connecting => {
+            if show_spinner {
+                let spinning_icon = Icon::new(CustomIcon::Zap).with_animation(
+                    "sync-spinner",
+                    Animation::new(Duration::from_secs(1)).repeat(),
+                    |icon, delta| icon.rotate(radians(delta * 2.0 * PI)),
+                );
+                button = button
+                    .child(spinning_icon)
+                    .bg(style.connecting_color)
+                    .text_color(style.connecting_foreground_color);
+            } else {
+                button = button
+                    .child(style.connected_icon)
+                    .bg(style.connecting_color)
+                    .text_color(style.connecting_foreground_color);
+            }
+        }
+        SyncButtonState::Disconnected => {
+            button = button
+                .child(style.disconnected_icon)
+                .bg(style.disconnected_color)
+                .text_color(style.disconnected_foreground_color)
+                .hover(|this| this.bg(style.disconnected_hover_color))
+                .cursor_pointer();
+        }
     }
     button
 }
@@ -229,7 +271,21 @@ impl Fulgur {
             }
         };
         let is_markdown = self.is_markdown();
-        let is_connected = self.is_connected(cx);
+        let sync_status = *self.shared_state(cx).sync_state.connection_status.lock();
+        let (sync_button_state, show_spinner) = match sync_status {
+            SynchronizationStatus::Connected => (SyncButtonState::Connected, false),
+            SynchronizationStatus::Connecting => {
+                let show = self
+                    .shared_state(cx)
+                    .sync_state
+                    .connecting_since
+                    .lock()
+                    .map(|since| since.elapsed() >= CONNECTING_SPINNER_DELAY)
+                    .unwrap_or(false);
+                (SyncButtonState::Connecting, show)
+            }
+            _ => (SyncButtonState::Disconnected, false),
+        };
         let sync_button = status_bar_sync_button(
             SyncButtonStyle {
                 connected_icon: Icon::new(CustomIcon::Zap),
@@ -241,8 +297,11 @@ impl Fulgur {
                 disconnected_color: cx.theme().danger,
                 disconnected_foreground_color: cx.theme().danger_foreground,
                 disconnected_hover_color: cx.theme().danger_hover,
+                connecting_color: cx.theme().warning,
+                connecting_foreground_color: cx.theme().warning_foreground,
             },
-            is_connected,
+            sync_button_state,
+            show_spinner,
         )
         .on_mouse_down(
             MouseButton::Left,

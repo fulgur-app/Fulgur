@@ -103,6 +103,7 @@ pub struct Fulgur {
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
     pub sse_state: SseState,           // Server-Sent Events state for sync functionality
     pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
+    pending_share_sheet: bool, // Flag to open share sheet when pending devices are ready
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
 }
 
@@ -166,6 +167,7 @@ impl Fulgur {
                 file_watch_state: FileWatchState::new(),
                 sse_state: SseState::new(),
                 pending_notification: None,
+                pending_share_sheet: false,
                 cached_window_bounds: None,
             }
         });
@@ -410,6 +412,7 @@ impl Render for Fulgur {
         self.process_shared_files_from_sync(window, cx);
         self.process_file_watch_events(window, cx);
         self.process_sse_events(window, cx);
+        self.process_pending_share_sheet(window, cx);
         if self.tabs.is_empty() {
             self.active_tab_index = None;
         }
