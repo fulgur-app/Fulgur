@@ -545,27 +545,43 @@ impl Fulgur {
                     ));
                     sync_items.push(SettingItem::render({
                         let entity = entity.clone();
-                        move |_options, _window, _cx| {
+                        move |_options, _window, cx| {
+                            let is_connecting = cx
+                                .global::<crate::fulgur::shared_state::SharedAppState>()
+                                .sync_state
+                                .connection_status
+                                .lock()
+                                .is_connecting();
+                            let label = if is_connecting {
+                                "Connecting..."
+                            } else {
+                                "Begin Synchronization"
+                            };
                             h_flex()
                                 .w_full()
                                 .justify_end()
                                 .mt_2()
-                                .child(
-                                    Button::new("begin-synchronization-button")
-                                        .label("Begin Synchronization")
+                                .child({
+                                    let mut btn = Button::new("begin-synchronization-button")
+                                        .label(label)
                                         .primary()
                                         .small()
-                                        .cursor_pointer()
-                                        .on_click({
+                                        .loading(is_connecting);
+                                    if !is_connecting {
+                                        btn = btn.cursor_pointer().on_click({
                                             let entity = entity.clone();
                                             move |_, _window, cx| {
                                                 let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-                                                // Clear cached token to force fresh authentication
                                                 shared.sync_state.token_state.clear_token();
-                                                perform_initial_synchronization(entity.clone(), cx);
+                                                perform_initial_synchronization(
+                                                    entity.clone(),
+                                                    cx,
+                                                );
                                             }
-                                        }),
-                                )
+                                        });
+                                    }
+                                    btn
+                                })
                                 .into_any_element()
                         }
                     }));
