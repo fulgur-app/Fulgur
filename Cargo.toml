@@ -1,6 +1,6 @@
 [package]
 name = "Fulgur"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
@@ -115,7 +115,7 @@ authors = ["PRRPCHT"]
 publisher = "PRRPCHT"
 description = "Lightning fast, multiplatform, themable text editor"
 long-description = """
-Fulgur is a modern text editor designed for developers and power users.
+Fulgur is a modern, GPU-accelerated text editor designed for developers and power users.
 """
 homepage = "https://github.com/PRRPCHT/fulgur"
 copyright = "Copyright (c) 2025 PRRPCHT"
