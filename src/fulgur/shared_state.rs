@@ -107,7 +107,12 @@ impl SharedAppState {
             sync_error: Arc::new(Mutex::new(sync_error)),
             update_info: Arc::new(Mutex::new(None)),
             pending_files_from_macos,
-            http_agent: Arc::new(ureq::Agent::new_with_defaults()),
+            http_agent: Arc::new(ureq::Agent::new_with_config(
+                ureq::config::Config::builder()
+                    .timeout_connect(Some(std::time::Duration::from_secs(5)))
+                    .timeout_global(Some(std::time::Duration::from_secs(10)))
+                    .build(),
+            )),
         }
     }
 
