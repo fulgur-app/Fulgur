@@ -316,7 +316,11 @@ impl Fulgur {
         let devices: Arc<Vec<Device>> = Arc::new(devices);
         let viewport_height = window.viewport_size().height;
         window.open_sheet(cx, move |sheet, _window, cx| {
-            let max_height = px((viewport_height - px(150.0)).into());
+            #[cfg(target_os = "linux")]
+            let sheet_overhead = px(200.0);
+            #[cfg(not(target_os = "linux"))]
+            let sheet_overhead = px(150.0);
+            let max_height = px((viewport_height - sheet_overhead).into());
             let selected_ids_for_list = selected_ids.clone();
             let selected_ids_for_ok = selected_ids.clone();
             let entity_for_ok = entity.clone();
