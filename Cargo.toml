@@ -83,6 +83,7 @@ regex = "1.12.3"
 semver = "1.0.27"
 parking_lot = "0.12.5"
 arborium-prolog = "2.15.0"
+arborium-ini = "2.15.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6.1"
