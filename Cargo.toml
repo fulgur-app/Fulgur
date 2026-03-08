@@ -72,6 +72,7 @@ arborium-vue = "2.13.0"
 arborium-dockerfile = "2.13.0"
 tree-sitter-haskell = "0.23.1"
 tree-sitter-ocaml = "0.24.2"
+tree-sitter-pascal = "0.10.2"
 tree-sitter-perl-next = "0.1.0"
 tree-sitter-powershell = "0.26.3"
 tree-sitter-r = "1.2.0"
@@ -362,6 +363,14 @@ name = "Lua Source"
 description = "Lua source code"
 role = "editor"
 mimeType = "text/x-lua"
+
+# Pascal / Delphi / FreePascal
+[[package.metadata.packager.file-associations]]
+extensions = ["pas", "pp", "dpr", "dpk", "lpr"]
+name = "Pascal Source"
+description = "Pascal / Delphi / FreePascal source code"
+role = "editor"
+mimeType = "text/x-pascal"
 
 # Perl
 [[package.metadata.packager.file-associations]]
