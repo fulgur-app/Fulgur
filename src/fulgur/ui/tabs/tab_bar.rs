@@ -181,8 +181,12 @@ impl Fulgur {
 
     /// Handle show in file manager action from context menu
     ///
-    /// Opens the folder containing the file associated with the given tab in the
-    /// platform's native file manager (Finder on macOS, Explorer on Windows, etc.).
+    /// Opens the file manager and selects the file associated with the given tab.
+    ///
+    /// On macOS, uses `open -R` to reveal and select the file in Finder.
+    /// On Windows, uses `explorer /select,` to select the file in Explorer.
+    /// On Linux, falls back to opening the parent directory, as there is no
+    /// universal "reveal file" command across desktop environments.
     ///
     /// ### Arguments
     /// - `action`: The action carrying the tab index
@@ -194,12 +198,18 @@ impl Fulgur {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) {
-        if let Some(tab) = self.tabs.get(action.0)
-            && let Some(editor_tab) = tab.as_editor()
-            && let Some(ref file_path) = editor_tab.file_path
-            && let Some(parent) = file_path.parent()
-            && let Err(e) = open::that(parent)
-        {
+        let Some(tab) = self.tabs.get(action.0) else {
+            return;
+        };
+        let Some(editor_tab) = tab.as_editor() else {
+            return;
+        };
+        let Some(ref file_path) = editor_tab.file_path else {
+            return;
+        };
+
+        let result = reveal_file_in_file_manager(file_path);
+        if let Err(e) = result {
             log::error!("Failed to open file manager: {}", e);
         }
     }
@@ -502,6 +512,47 @@ impl Fulgur {
             });
 
         tab_with_content.into_any_element()
+    }
+}
+
+/// Reveals a file in the platform's native file manager with the file selected.
+///
+/// - **macOS**: `open -R <path>` — reveals and selects the file in Finder
+/// - **Windows**: `explorer /select,<path>` — selects the file in Explorer
+/// - **Linux**: falls back to opening the parent directory via the `open` crate,
+///   as there is no universal "reveal" command across desktop environments
+///
+/// ### Arguments
+/// - `file_path`: The path of the file to reveal
+///
+/// ### Returns
+/// - `Ok(())` on success, `Err` with an error message on failure
+fn reveal_file_in_file_manager(file_path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(file_path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", file_path.display()))
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let parent = file_path
+            .parent()
+            .ok_or_else(|| "File has no parent directory".to_string())?;
+        open::that(parent).map_err(|e| e.to_string())
     }
 }
 
