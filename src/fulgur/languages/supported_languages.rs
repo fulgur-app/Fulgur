@@ -25,6 +25,7 @@ pub enum SupportedLanguage {
     Groovy,
     Haskell,
     Html,
+    Ini,
     Java,
     JavaScript,
     JsDoc,
@@ -128,6 +129,7 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::Go => Language::Go,
         SupportedLanguage::GraphQl => Language::GraphQL,
         SupportedLanguage::Html => Language::Html,
+        SupportedLanguage::Ini => Language::Plain,
         SupportedLanguage::Java => Language::Java,
         SupportedLanguage::JavaScript => Language::JavaScript,
         SupportedLanguage::JsDoc => Language::JsDoc,
@@ -183,6 +185,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Groovy => "Groovy".to_string(),
         SupportedLanguage::Haskell => "Haskell".to_string(),
         SupportedLanguage::Html => "HTML".to_string(),
+        SupportedLanguage::Ini => "INI".to_string(),
         SupportedLanguage::Java => "Java".to_string(),
         SupportedLanguage::JavaScript => "JavaScript".to_string(),
         SupportedLanguage::JsDoc => "JSDoc".to_string(),
@@ -236,6 +239,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Dockerfile => "dockerfile",
         SupportedLanguage::Groovy => "groovy",
         SupportedLanguage::Haskell => "haskell",
+        SupportedLanguage::Ini => "ini",
         SupportedLanguage::ObjectiveC => "objective-c",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Pascal => "pascal",
@@ -298,6 +302,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "dart" => SupportedLanguage::Dart,
             "dockerfile" => SupportedLanguage::Dockerfile,
             "hs" | "lhs" => SupportedLanguage::Haskell,
+            "ini" | "cfg" | "conf" | "config" => SupportedLanguage::Ini,
             "lock" => SupportedLanguage::Toml,
             "groovy" | "gvy" | "gy" | "gsh" => SupportedLanguage::Groovy,
             "mjs" => SupportedLanguage::JavaScript,
@@ -347,6 +352,7 @@ impl SupportedLanguage {
             SupportedLanguage::Groovy,
             SupportedLanguage::Haskell,
             SupportedLanguage::Html,
+            SupportedLanguage::Ini,
             SupportedLanguage::Java,
             SupportedLanguage::JavaScript,
             SupportedLanguage::JsDoc,
@@ -421,6 +427,7 @@ pub fn register_external_languages() {
     super::syntax_highlighting::dockerfile::add_dockerfile_support();
     super::syntax_highlighting::groovy::add_groovy_support();
     super::syntax_highlighting::haskell::add_haskell_support();
+    super::syntax_highlighting::ini::add_ini_support();
     super::syntax_highlighting::objective_c::add_objective_c_support();
     super::syntax_highlighting::ocaml::add_ocaml_support();
     super::syntax_highlighting::pascal::add_pascal_support();

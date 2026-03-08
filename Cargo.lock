@@ -14,6 +14,7 @@ dependencies = [
  "arborium-dart",
  "arborium-dockerfile",
  "arborium-groovy",
+ "arborium-ini",
  "arborium-objc",
  "arborium-prolog",
  "arborium-scss",
@@ -281,6 +282,17 @@ checksum = "fdcc798603a9ebd4d0c0f91165d6610b2e4d239c1e41f427c2a0727891f85367"
 dependencies = [
  "arborium-css",
  "arborium-javascript",
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "arborium-ini"
+version = "2.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3265f3c72434161db86d7135e439a24189a91f22d31edf362473a7e93a1501e0"
+dependencies = [
  "arborium-sysroot",
  "cc",
  "tree-sitter-language",
