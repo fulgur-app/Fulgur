@@ -93,6 +93,10 @@ fn main() {
     if let Err(e) = fulgur::utils::logger::init() {
         eprintln!("Failed to initialize logger: {}", e);
     }
+    let debug_mode = fulgur::settings::Settings::load()
+        .map(|s| s.app_settings.debug_mode)
+        .unwrap_or(false);
+    fulgur::utils::logger::set_debug_mode(debug_mode);
     let current_version = env!("CARGO_PKG_VERSION");
     log::info!("=== Fulgur v{} Starting ===", current_version);
     log::info!("Platform: {}", std::env::consts::OS);
