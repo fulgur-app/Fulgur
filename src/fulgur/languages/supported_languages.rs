@@ -34,6 +34,7 @@ pub enum SupportedLanguage {
     MarkdownInline,
     ObjectiveC,
     Ocaml,
+    Pascal,
     Perl,
     Php,
     Plain,
@@ -190,6 +191,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::MarkdownInline => "Markdown Inline".to_string(),
         SupportedLanguage::ObjectiveC => "Objective-C".to_string(),
         SupportedLanguage::Ocaml => "OCaml".to_string(),
+        SupportedLanguage::Pascal => "Pascal".to_string(),
         SupportedLanguage::Perl => "Perl".to_string(),
         SupportedLanguage::Php => "PHP".to_string(),
         SupportedLanguage::Plain => "Plain Text".to_string(),
@@ -234,6 +236,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Haskell => "haskell",
         SupportedLanguage::ObjectiveC => "objective-c",
         SupportedLanguage::Ocaml => "ocaml",
+        SupportedLanguage::Pascal => "pascal",
         SupportedLanguage::Perl => "perl",
         SupportedLanguage::Powershell => "powershell",
         SupportedLanguage::R => "r",
@@ -295,6 +298,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "lock" => SupportedLanguage::Toml,
             "groovy" | "gvy" | "gy" | "gsh" => SupportedLanguage::Groovy,
             "mjs" => SupportedLanguage::JavaScript,
+            "pas" | "pp" | "dpr" | "dpk" | "lpr" => SupportedLanguage::Pascal,
             "perl" | "pl" | "pm" | "plx" => SupportedLanguage::Perl,
             "powershell" | "ps1" | "psm1" | "psd1" => SupportedLanguage::Powershell,
             "php" | "php3" | "php4" | "php5" | "phhtml" => SupportedLanguage::Html,
@@ -348,6 +352,7 @@ impl SupportedLanguage {
             SupportedLanguage::MarkdownInline,
             SupportedLanguage::ObjectiveC,
             SupportedLanguage::Ocaml,
+            SupportedLanguage::Pascal,
             SupportedLanguage::Perl,
             SupportedLanguage::Php,
             SupportedLanguage::Plain,
@@ -413,6 +418,7 @@ pub fn register_external_languages() {
     super::syntax_highlighting::haskell::add_haskell_support();
     super::syntax_highlighting::objective_c::add_objective_c_support();
     super::syntax_highlighting::ocaml::add_ocaml_support();
+    super::syntax_highlighting::pascal::add_pascal_support();
     super::syntax_highlighting::perl::add_perl_support();
     super::syntax_highlighting::powershell::add_powershell_support();
     super::syntax_highlighting::r::add_r_support();

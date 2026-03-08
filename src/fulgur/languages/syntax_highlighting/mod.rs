@@ -6,6 +6,7 @@ pub mod groovy;
 pub mod haskell;
 pub mod objective_c;
 pub mod ocaml;
+pub mod pascal;
 pub mod perl;
 pub mod powershell;
 pub mod r;

@@ -46,6 +46,7 @@ dependencies = [
  "time",
  "tree-sitter-haskell",
  "tree-sitter-ocaml",
+ "tree-sitter-pascal",
  "tree-sitter-perl-next",
  "tree-sitter-powershell",
  "tree-sitter-r",
@@ -7021,6 +7022,16 @@ name = "tree-sitter-ocaml"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d19db582b3855f56b5f9ec484170fbfb9ee60b938ec7720d76d2ee788e8b640"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-pascal"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adb51e9a57493fd237e4517566749f7f7453349261a72a427e5f11d3b34b72a8"
 dependencies = [
  "cc",
  "tree-sitter-language",
