@@ -11,6 +11,7 @@ dependencies = [
  "arborium-ada",
  "arborium-c",
  "arborium-clojure",
+ "arborium-d",
  "arborium-dart",
  "arborium-dockerfile",
  "arborium-erlang",
@@ -236,6 +237,17 @@ name = "arborium-css"
 version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8c27a5717ffdd7993c8d89dae9e4ce9ad1ff9b458e9038e1c70a79504a28575"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "arborium-d"
+version = "2.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49ba4caa6a1e3e4bfaa68b373df1057890f52045d2d1498c6cb2b8338d080a3b"
 dependencies = [
  "arborium-sysroot",
  "cc",

@@ -1,5 +1,6 @@
 pub mod ada;
 pub mod clojure;
+pub mod d;
 pub mod dart;
 pub mod dockerfile;
 pub mod erlang;
