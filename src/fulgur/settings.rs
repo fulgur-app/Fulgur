@@ -90,10 +90,20 @@ pub struct EditorSettings {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub confirm_exit: bool,
+    #[serde(default = "default_debug_mode")]
+    pub debug_mode: bool,
     pub theme: SharedString,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scrollbar_show: Option<ScrollbarShow>,
     pub synchronization_settings: SynchronizationSettings,
+}
+
+/// Default value for debug_mode setting
+///
+/// ### Returns
+/// - `false`: disable debug mode  by default
+fn default_debug_mode() -> bool {
+    false
 }
 
 /// Default value for watch_files setting
@@ -153,6 +163,7 @@ impl AppSettings {
             theme: "Default Light".into(),
             scrollbar_show: None,
             synchronization_settings: SynchronizationSettings::new(),
+            debug_mode: false,
         }
     }
 }
@@ -441,6 +452,9 @@ impl Fulgur {
     /// ### Returns
     /// - `anyhow::Result<()>`: Result of the operation
     pub fn update_and_propagate_settings(&mut self, cx: &mut Context<Self>) -> anyhow::Result<()> {
+        // Apply log level immediately so the change takes effect in this session.
+        crate::fulgur::utils::logger::set_debug_mode(self.settings.app_settings.debug_mode);
+
         // Save settings to disk
         if let Err(e) = self.settings.save() {
             log::error!("Failed to save settings: {}", e);

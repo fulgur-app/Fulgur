@@ -316,6 +316,28 @@ impl Fulgur {
                         .default_value(default_app_settings.confirm_exit),
                     )
                     .description("Show confirmation dialog before exiting the application."),
+                    SettingItem::new(
+                        "Debug mode",
+                        SettingField::switch(
+                            {
+                                let entity = entity.clone();
+                                move |cx: &App| entity.read(cx).settings.app_settings.debug_mode
+                            },
+                            {
+                                let entity = entity.clone();
+                                move |val: bool, cx: &mut App| {
+                                    entity.update(cx, |this, cx| {
+                                        this.settings.app_settings.debug_mode = val;
+                                        if let Err(e) = this.update_and_propagate_settings(cx) {
+                                            log::error!("Failed to save settings: {}", e);
+                                        }
+                                    });
+                                }
+                            },
+                        )
+                        .default_value(default_app_settings.debug_mode),
+                    )
+                    .description("Enables debug mode, showing more info in the logs."),
                 ]),
                 SettingGroup::new().title("Synchronization").items({
                     let mut sync_items = vec![];
