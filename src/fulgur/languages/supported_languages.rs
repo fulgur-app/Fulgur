@@ -14,6 +14,7 @@ pub enum SupportedLanguage {
     CSharp,
     Cpp,
     Css,
+    D,
     Dart,
     Diff,
     Dockerfile,
@@ -176,6 +177,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::CSharp => "C#".to_string(),
         SupportedLanguage::Cpp => "C++".to_string(),
         SupportedLanguage::Css => "CSS".to_string(),
+        SupportedLanguage::D => "D".to_string(),
         SupportedLanguage::Dart => "Dart".to_string(),
         SupportedLanguage::Diff => "Diff".to_string(),
         SupportedLanguage::Dockerfile => "Dockerfile".to_string(),
@@ -239,6 +241,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Ada => "ada",
         SupportedLanguage::Clojure => "clojure",
         SupportedLanguage::Erlang => "erlang",
+        SupportedLanguage::D => "d",
         SupportedLanguage::Dart => "dart",
         SupportedLanguage::Dockerfile => "dockerfile",
         SupportedLanguage::Groovy => "groovy",
@@ -303,6 +306,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "ada" | "ads" | "adb" => SupportedLanguage::Ada,
             "astro" => SupportedLanguage::Html,
             "clojure" | "clj" | "cljs" => SupportedLanguage::Clojure,
+            "d" | "di" => SupportedLanguage::D,
             "dart" => SupportedLanguage::Dart,
             "dockerfile" => SupportedLanguage::Dockerfile,
             "erl" | "hrl" | "escript" => SupportedLanguage::Erlang,
@@ -346,6 +350,7 @@ impl SupportedLanguage {
             SupportedLanguage::CMake,
             SupportedLanguage::CSharp,
             SupportedLanguage::Css,
+            SupportedLanguage::D,
             SupportedLanguage::Dart,
             SupportedLanguage::Diff,
             SupportedLanguage::Dockerfile,
@@ -429,6 +434,7 @@ impl Fulgur {
 pub fn register_external_languages() {
     super::syntax_highlighting::ada::add_ada_support();
     super::syntax_highlighting::clojure::add_clojure_support();
+    super::syntax_highlighting::d::add_d_support();
     super::syntax_highlighting::dart::add_dart_support();
     super::syntax_highlighting::dockerfile::add_dockerfile_support();
     super::syntax_highlighting::erlang::add_erlang_support();
