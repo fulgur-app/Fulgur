@@ -64,6 +64,7 @@ arborium-ada = "2.13.0"
 arborium-c = "2.13.0"
 arborium-clojure = "2.13.0"
 arborium-dart = "2.13.0"
+arborium-erlang = "2.15.0"
 arborium-groovy = "2.13.0"
 arborium-objc = "2.13.0"
 arborium-scss = "2.13.0"
@@ -309,6 +310,14 @@ name = "C# Source"
 description = "C# source code"
 role = "editor"
 mimeType = "text/x-csharp"
+
+# Erlang
+[[package.metadata.packager.file-associations]]
+extensions = ["erl", "hrl", "escript"]
+name = "Erlang Source"
+description = "Erlang source code"
+role = "editor"
+mimeType = "text/x-erlang"
 
 # Go
 [[package.metadata.packager.file-associations]]

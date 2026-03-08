@@ -2,6 +2,7 @@ pub mod ada;
 pub mod clojure;
 pub mod dart;
 pub mod dockerfile;
+pub mod erlang;
 pub mod groovy;
 pub mod haskell;
 pub mod ini;
