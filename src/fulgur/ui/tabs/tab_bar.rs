@@ -31,6 +31,10 @@ pub struct CloseTabsToRight(pub usize);
 #[action(namespace = fulgur, no_json)]
 pub struct CloseAllOtherTabs(pub usize);
 
+#[derive(Action, Clone, PartialEq, Deserialize)]
+#[action(namespace = fulgur, no_json)]
+pub struct ShowInFileManager(pub usize);
+
 actions!(fulgur, [CloseAllTabsAction]);
 
 /// Create a tab bar button
@@ -173,6 +177,31 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         self.close_other_tabs(window, cx);
+    }
+
+    /// Handle show in file manager action from context menu
+    ///
+    /// Opens the folder containing the file associated with the given tab in the
+    /// platform's native file manager (Finder on macOS, Explorer on Windows, etc.).
+    ///
+    /// ### Arguments
+    /// - `action`: The action carrying the tab index
+    /// - `_window`: The window context
+    /// - `_cx`: The application context
+    pub fn on_show_in_file_manager(
+        &mut self,
+        action: &ShowInFileManager,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        if let Some(tab) = self.tabs.get(action.0)
+            && let Some(editor_tab) = tab.as_editor()
+            && let Some(ref file_path) = editor_tab.file_path
+            && let Some(parent) = file_path.parent()
+            && let Err(e) = open::that(parent)
+        {
+            log::error!("Failed to open file manager: {}", e);
+        }
     }
 
     /// Handle next tab action
@@ -324,6 +353,7 @@ impl Fulgur {
                 .as_ref()
                 .and_then(|path| path.to_str().map(|s| s.to_string()))
         });
+        let has_file_path = file_path.is_some();
         let cached_file_size = tab
             .as_editor()
             .and_then(|editor_tab| editor_tab.file_size_bytes)
@@ -441,28 +471,34 @@ impl Fulgur {
                 }),
             )
             .context_menu(move |this, _window, _cx| {
-                this.menu("Close Tab", Box::new(CloseTabAction(tab_id)))
-                    .menu_with_disabled(
-                        "Close Tabs to the Left",
-                        Box::new(CloseTabsToLeft(index)),
-                        !has_tabs_on_left,
-                    )
-                    .menu_with_disabled(
-                        "Close Tabs to the Right",
-                        Box::new(CloseTabsToRight(index)),
-                        !has_tabs_on_right,
-                    )
-                    .separator()
-                    .menu_with_disabled(
-                        "Close All Tabs",
-                        Box::new(CloseAllTabsAction),
-                        total_tabs == 0,
-                    )
-                    .menu_with_disabled(
-                        "Close All Other Tabs",
-                        Box::new(CloseAllOtherTabs(index)),
-                        total_tabs == 0,
-                    )
+                this.menu_with_disabled(
+                    "See file on drive",
+                    Box::new(ShowInFileManager(index)),
+                    !has_file_path,
+                )
+                .separator()
+                .menu("Close Tab", Box::new(CloseTabAction(tab_id)))
+                .menu_with_disabled(
+                    "Close Tabs to the Left",
+                    Box::new(CloseTabsToLeft(index)),
+                    !has_tabs_on_left,
+                )
+                .menu_with_disabled(
+                    "Close Tabs to the Right",
+                    Box::new(CloseTabsToRight(index)),
+                    !has_tabs_on_right,
+                )
+                .separator()
+                .menu_with_disabled(
+                    "Close All Tabs",
+                    Box::new(CloseAllTabsAction),
+                    total_tabs == 0,
+                )
+                .menu_with_disabled(
+                    "Close All Other Tabs",
+                    Box::new(CloseAllOtherTabs(index)),
+                    total_tabs == 0,
+                )
             });
 
         tab_with_content.into_any_element()

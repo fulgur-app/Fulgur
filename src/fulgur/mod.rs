@@ -333,6 +333,7 @@ impl Fulgur {
         register_action!(app_content, cx, tab_bar::CloseTabsToRight => on_close_tabs_to_right(&action));
         register_action!(app_content, cx, tab_bar::CloseAllTabsAction => on_close_all_tabs_action(&action));
         register_action!(app_content, cx, tab_bar::CloseAllOtherTabs => on_close_all_other_tabs_action(&action));
+        register_action!(app_content, cx, tab_bar::ShowInFileManager => on_show_in_file_manager(&action));
         register_action!(app_content, cx, OpenRecentFile => do_open_file(.0));
         register_action!(app_content, cx, CheckForUpdates => check_for_updates);
         register_action!(app_content, cx, GetTheme => call_no_args tab_bar::open_theme_repository);
