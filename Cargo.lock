@@ -15,6 +15,7 @@ dependencies = [
  "arborium-dockerfile",
  "arborium-groovy",
  "arborium-objc",
+ "arborium-prolog",
  "arborium-scss",
  "arborium-tsx",
  "arborium-vue",
@@ -309,6 +310,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "arborium-prolog"
+version = "2.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26932f729641c05edb127974670d54a132e26a4a609c73d93e63204753b28f75"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "arborium-scss"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -322,9 +334,9 @@ dependencies = [
 
 [[package]]
 name = "arborium-sysroot"
-version = "2.13.0"
+version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ce9624bea89e41ab45de48c1e94d4a8587f9ed429801314c91255149a852cc9"
+checksum = "1bb27a846884f88824c480ac2cf1d445659ee4980ceb9a84e295aad3db37590d"
 dependencies = [
  "cc",
  "dlmalloc",

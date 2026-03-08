@@ -9,6 +9,7 @@ pub mod ocaml;
 pub mod pascal;
 pub mod perl;
 pub mod powershell;
+pub mod prolog;
 pub mod r;
 pub mod react;
 pub mod scss;

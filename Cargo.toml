@@ -82,6 +82,7 @@ rust-embed = "8.11.0"
 regex = "1.12.3"
 semver = "1.0.27"
 parking_lot = "0.12.5"
+arborium-prolog = "2.15.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6.1"
@@ -379,6 +380,14 @@ name = "Perl Source"
 description = "Perl source code"
 role = "editor"
 mimeType = "text/x-perl"
+
+# Prolog
+[[package.metadata.packager.file-associations]]
+extensions = ["pro", "prolog"]
+name = "Prolog Source"
+description = "Prolog source code"
+role = "editor"
+mimeType = "text/x-prolog"
 
 # R
 [[package.metadata.packager.file-associations]]
