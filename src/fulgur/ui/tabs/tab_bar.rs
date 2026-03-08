@@ -31,6 +31,10 @@ pub struct CloseTabsToRight(pub usize);
 #[action(namespace = fulgur, no_json)]
 pub struct CloseAllOtherTabs(pub usize);
 
+#[derive(Action, Clone, PartialEq, Deserialize)]
+#[action(namespace = fulgur, no_json)]
+pub struct ShowInFileManager(pub usize);
+
 actions!(fulgur, [CloseAllTabsAction]);
 
 /// Create a tab bar button
@@ -173,6 +177,41 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         self.close_other_tabs(window, cx);
+    }
+
+    /// Handle show in file manager action from context menu
+    ///
+    /// Opens the file manager and selects the file associated with the given tab.
+    ///
+    /// On macOS, uses `open -R` to reveal and select the file in Finder.
+    /// On Windows, uses `explorer /select,` to select the file in Explorer.
+    /// On Linux, falls back to opening the parent directory, as there is no
+    /// universal "reveal file" command across desktop environments.
+    ///
+    /// ### Arguments
+    /// - `action`: The action carrying the tab index
+    /// - `_window`: The window context
+    /// - `_cx`: The application context
+    pub fn on_show_in_file_manager(
+        &mut self,
+        action: &ShowInFileManager,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tabs.get(action.0) else {
+            return;
+        };
+        let Some(editor_tab) = tab.as_editor() else {
+            return;
+        };
+        let Some(ref file_path) = editor_tab.file_path else {
+            return;
+        };
+
+        let result = reveal_file_in_file_manager(file_path);
+        if let Err(e) = result {
+            log::error!("Failed to open file manager: {}", e);
+        }
     }
 
     /// Handle next tab action
@@ -324,6 +363,7 @@ impl Fulgur {
                 .as_ref()
                 .and_then(|path| path.to_str().map(|s| s.to_string()))
         });
+        let has_file_path = file_path.is_some();
         let cached_file_size = tab
             .as_editor()
             .and_then(|editor_tab| editor_tab.file_size_bytes)
@@ -441,31 +481,78 @@ impl Fulgur {
                 }),
             )
             .context_menu(move |this, _window, _cx| {
-                this.menu("Close Tab", Box::new(CloseTabAction(tab_id)))
-                    .menu_with_disabled(
-                        "Close Tabs to the Left",
-                        Box::new(CloseTabsToLeft(index)),
-                        !has_tabs_on_left,
-                    )
-                    .menu_with_disabled(
-                        "Close Tabs to the Right",
-                        Box::new(CloseTabsToRight(index)),
-                        !has_tabs_on_right,
-                    )
-                    .separator()
-                    .menu_with_disabled(
-                        "Close All Tabs",
-                        Box::new(CloseAllTabsAction),
-                        total_tabs == 0,
-                    )
-                    .menu_with_disabled(
-                        "Close All Other Tabs",
-                        Box::new(CloseAllOtherTabs(index)),
-                        total_tabs == 0,
-                    )
+                this.menu_with_disabled(
+                    "See file on drive",
+                    Box::new(ShowInFileManager(index)),
+                    !has_file_path,
+                )
+                .separator()
+                .menu("Close Tab", Box::new(CloseTabAction(tab_id)))
+                .menu_with_disabled(
+                    "Close Tabs to the Left",
+                    Box::new(CloseTabsToLeft(index)),
+                    !has_tabs_on_left,
+                )
+                .menu_with_disabled(
+                    "Close Tabs to the Right",
+                    Box::new(CloseTabsToRight(index)),
+                    !has_tabs_on_right,
+                )
+                .separator()
+                .menu_with_disabled(
+                    "Close All Tabs",
+                    Box::new(CloseAllTabsAction),
+                    total_tabs == 0,
+                )
+                .menu_with_disabled(
+                    "Close All Other Tabs",
+                    Box::new(CloseAllOtherTabs(index)),
+                    total_tabs == 0,
+                )
             });
 
         tab_with_content.into_any_element()
+    }
+}
+
+/// Reveals a file in the platform's native file manager with the file selected.
+///
+/// - **macOS**: `open -R <path>` — reveals and selects the file in Finder
+/// - **Windows**: `explorer /select,<path>` — selects the file in Explorer
+/// - **Linux**: falls back to opening the parent directory via the `open` crate,
+///   as there is no universal "reveal" command across desktop environments
+///
+/// ### Arguments
+/// - `file_path`: The path of the file to reveal
+///
+/// ### Returns
+/// - `Ok(())` on success, `Err` with an error message on failure
+fn reveal_file_in_file_manager(file_path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(file_path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", file_path.display()))
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let parent = file_path
+            .parent()
+            .ok_or_else(|| "File has no parent directory".to_string())?;
+        open::that(parent).map_err(|e| e.to_string())
     }
 }
 
