@@ -69,6 +69,26 @@ pub fn button_factory(
         .corner_radii(CORNERS_SIZE)
 }
 
+/// Returns the platform-appropriate label for the "reveal in file manager" action.
+///
+/// - **macOS**: "Reveal in Finder"
+/// - **Windows**: "Reveal in Explorer"
+/// - **Linux / other**: "Reveal in File Manager"
+pub fn reveal_in_file_manager_label() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "Reveal in Finder"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "Reveal in Explorer"
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        "Reveal in File Manager"
+    }
+}
+
 /// Format a date as ISO 8601 string
 ///
 /// ### Arguments

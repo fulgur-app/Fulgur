@@ -520,7 +520,7 @@ impl Fulgur {
                 if has_file {
                     menu = menu
                         .menu(
-                            "Show in File Manager",
+                            crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
                             Box::new(tab_bar::ShowInFileManager(active_index)),
                         )
                         .separator();
