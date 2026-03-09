@@ -17,7 +17,8 @@ accepted = [
     "CDLA-Permissive-2.0",
     "Unicode-DFS-2016",
     "Unicode-3.0",
-    "Unlicense"
+    "Unlicense",
+    "GPL-3.0-or-later" #temporary until GPUI is cleaned
 ]
 
 # Filter out certain crates (e.g., your own workspace crates)
