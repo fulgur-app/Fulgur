@@ -240,7 +240,7 @@ impl Fulgur {
                             fulgur.on_window_close_requested(window, cx)
                         })
                     });
-                    view.read(cx).focus_active_tab(window, cx);
+                    view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
                     cx.new(|cx| gpui_component::Root::new(view, window, cx))
                 })?;
                 window.update(cx, |_, window, _| {

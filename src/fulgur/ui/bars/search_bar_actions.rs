@@ -132,7 +132,7 @@ impl Fulgur {
         self.search_state.show_search = !self.search_state.show_search;
         if self.search_state.show_search {
             let search_focus = self.search_state.search_input.read(cx).focus_handle(cx);
-            window.focus(&search_focus);
+            window.focus(&search_focus, cx);
             self.perform_search(window, cx);
         } else {
             self.close_search(window, cx);

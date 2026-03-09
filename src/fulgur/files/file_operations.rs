@@ -561,7 +561,7 @@ impl Fulgur {
                 self.perform_search(window, cx);
                 // Restore focus to the search input after perform_search
                 let search_focus = self.search_state.search_input.read(cx).focus_handle(cx);
-                window.focus(&search_focus);
+                window.focus(&search_focus, cx);
             }
         }
     }

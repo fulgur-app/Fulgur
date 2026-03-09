@@ -32,6 +32,8 @@ pub enum SupportedLanguage {
     JavaScript,
     JsDoc,
     Json,
+    Kotlin,
+    Lua,
     Make,
     Markdown,
     MarkdownInline,
@@ -105,6 +107,11 @@ pub fn from_language(language: Language) -> SupportedLanguage {
         Language::TypeScript => SupportedLanguage::TypeScript,
         Language::Yaml => SupportedLanguage::Yaml,
         Language::Zig => SupportedLanguage::Zig,
+        Language::Astro => SupportedLanguage::Astro,
+        Language::Kotlin => SupportedLanguage::Kotlin,
+        Language::Lua => SupportedLanguage::Lua,
+        Language::Php => SupportedLanguage::Php,
+        Language::Svelte => SupportedLanguage::Svelte,
     }
 }
 
@@ -117,7 +124,7 @@ pub fn from_language(language: Language) -> SupportedLanguage {
 /// The corresponding language
 pub fn to_language(supported_language: &SupportedLanguage) -> Language {
     match supported_language {
-        SupportedLanguage::Astro => Language::Html,
+        SupportedLanguage::Astro => Language::Astro,
         SupportedLanguage::Bash => Language::Bash,
         SupportedLanguage::C => Language::C,
         SupportedLanguage::CMake => Language::CMake,
@@ -137,10 +144,12 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::JavaScript => Language::JavaScript,
         SupportedLanguage::JsDoc => Language::JsDoc,
         SupportedLanguage::Json => Language::Json,
+        SupportedLanguage::Kotlin => Language::Kotlin,
+        SupportedLanguage::Lua => Language::Lua,
         SupportedLanguage::Make => Language::Make,
         SupportedLanguage::Markdown => Language::Markdown,
         SupportedLanguage::MarkdownInline => Language::MarkdownInline,
-        SupportedLanguage::Php => Language::Html,
+        SupportedLanguage::Php => Language::Php,
         SupportedLanguage::Plain => Language::Plain,
         SupportedLanguage::Proto => Language::Proto,
         SupportedLanguage::Python => Language::Python,
@@ -148,7 +157,7 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::Rust => Language::Rust,
         SupportedLanguage::Scala => Language::Scala,
         SupportedLanguage::Sql => Language::Sql,
-        SupportedLanguage::Svelte => Language::TypeScript,
+        SupportedLanguage::Svelte => Language::Svelte,
         SupportedLanguage::Svg => Language::Html,
         SupportedLanguage::Swift => Language::Swift,
         SupportedLanguage::Toml => Language::Toml,
@@ -195,6 +204,8 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::JavaScript => "JavaScript".to_string(),
         SupportedLanguage::JsDoc => "JSDoc".to_string(),
         SupportedLanguage::Json => "JSON".to_string(),
+        SupportedLanguage::Kotlin => "Kotlin".to_string(),
+        SupportedLanguage::Lua => "Lua".to_string(),
         SupportedLanguage::Make => "Make".to_string(),
         SupportedLanguage::Markdown => "Markdown".to_string(),
         SupportedLanguage::MarkdownInline => "Markdown Inline".to_string(),

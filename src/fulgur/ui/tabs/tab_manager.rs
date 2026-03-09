@@ -7,7 +7,7 @@ use crate::fulgur::{
     },
 };
 use gpui::*;
-use gpui_component::WindowExt;
+use gpui_component::{WindowExt, dialog::DialogButtonProps};
 use std::{ops::DerefMut, path::PathBuf};
 
 impl Fulgur {
@@ -182,14 +182,14 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to focus the tab in
     /// - `cx`: The application context
-    pub fn focus_active_tab(&self, window: &mut Window, cx: &App) {
+    pub fn focus_active_tab(&self, window: &mut Window, cx: &mut App) {
         if let Some(active_tab_index) = self.active_tab_index
             && let Some(active_tab) = self.tabs.get(active_tab_index)
         {
             match active_tab {
                 Tab::Editor(editor_tab) => {
                     let focus_handle = editor_tab.content.read(cx).focus_handle(cx);
-                    window.focus(&focus_handle);
+                    window.focus(&focus_handle, cx);
                 }
                 Tab::Settings(_) => {
                     // Settings don't have focusable content, just keep window focus
@@ -492,7 +492,7 @@ impl Fulgur {
             modal
                 .title(div().text_size(px(16.)).child("Unsaved changed"))
                 .keyboard(true)
-                .confirm()
+                .button_props(DialogButtonProps::default().show_cancel(true))
                 .on_ok(move |_, window, cx| {
                     let entity_ok_footer = entity_ok.clone();
                     let on_confirm_inner = on_confirm_clone.clone();
@@ -530,8 +530,8 @@ impl Fulgur {
                 modal
                     .title(div().text_size(px(16.)).child("Quit Fulgur"))
                     .keyboard(true)
-                    .confirm()
-                    .on_ok(move |_, window, cx| {
+                    .button_props(DialogButtonProps::default().show_cancel(true))
+                    .on_ok(move |_, window: &mut Window, cx: &mut App| {
                         let entity_ok_footer = entity_ok.clone();
                         let save_result =
                             entity_ok_footer.update(cx, |this, cx| this.save_state(cx, window));

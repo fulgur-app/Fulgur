@@ -122,10 +122,10 @@ fn main() {
         })
         .collect();
 
-    let app = Application::new().with_assets(Assets);
+    let app = gpui_platform::application().with_assets(Assets);
     let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
     let pending_files_clone = pending_files.clone();
-    app.on_open_urls(move |urls| {
+    app.on_open_urls(move |urls: Vec<String>| {
         log::debug!("Received {} file URL(s) from macOS open event", urls.len());
         let file_paths: Vec<PathBuf> = urls.iter().filter_map(|url| url_to_path(url)).collect();
 
@@ -215,7 +215,7 @@ async fn create_window(
                     display_id_u32 == saved_id
                 })
                 .map(|display| display.id())
-        })?
+        })
     } else {
         None
     };
@@ -255,7 +255,7 @@ async fn create_window(
                 });
             }
         } else {
-            view.read(cx).focus_active_tab(window, cx);
+            view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
         }
         cx.new(|cx| gpui_component::Root::new(view, window, cx))
     })?;
@@ -269,7 +269,7 @@ async fn create_window(
             cx.global::<fulgur::shared_state::SharedAppState>()
                 .update_info
                 .clone()
-        })?;
+        });
         let current_version = env!("CARGO_PKG_VERSION").to_string();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(5));
