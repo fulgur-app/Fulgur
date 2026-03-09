@@ -156,10 +156,12 @@ impl Fulgur {
                         cx,
                         &this.settings.editor_settings,
                     );
+                    let editor_tab_index = this.tabs.len();
                     this.tabs.push(Tab::Editor(editor_tab));
-                    this.active_tab_index = Some(this.tabs.len() - 1);
-                    this.pending_tab_scroll = Some(this.tabs.len() - 1);
+                    this.active_tab_index = Some(editor_tab_index);
+                    this.pending_tab_scroll = Some(editor_tab_index);
                     this.next_tab_id += 1;
+                    this.maybe_open_markdown_preview_for_editor(editor_tab_index);
                     this.watch_file(&path);
                     this.focus_active_tab(window, cx);
                     if let Err(e) = this.settings.add_file(path.clone()) {
@@ -342,7 +344,7 @@ impl Fulgur {
                 };
                 (file_path, editor_tab.content.clone())
             }
-            Tab::Settings(_) => return,
+            Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
         };
         let contents = content_entity.read(cx).text().to_string();
         log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
@@ -393,7 +395,7 @@ impl Fulgur {
                 let suggested = editor_tab.get_suggested_filename();
                 (editor_tab.content.clone(), dir, suggested)
             }
-            Tab::Settings(_) => return,
+            Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
         };
         let path_future = cx.prompt_for_new_path(&directory, suggested_filename.as_deref());
         cx.spawn_in(window, async move |view, window| {

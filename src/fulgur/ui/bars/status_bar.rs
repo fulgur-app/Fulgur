@@ -1,7 +1,9 @@
 use crate::fulgur::{
     Fulgur,
     languages::supported_languages::{SupportedLanguage, pretty_name},
+    settings::MarkdownPreviewMode,
     sync::synchronization::SynchronizationStatus,
+    tab::Tab,
     ui::{
         components_utils::{EMPTY, UTF_8},
         icons::CustomIcon,
@@ -232,21 +234,38 @@ impl Fulgur {
         let (preview_button, toolbar_button) = match self.get_active_editor_tab() {
             None => (div(), div()),
             Some(active_editor_tab) => {
-                let show_markdown_preview = active_editor_tab.show_markdown_preview;
+                let editor_id = active_editor_tab.id;
+                let preview_active = match self
+                    .settings
+                    .editor_settings
+                    .markdown_settings
+                    .preview_mode
+                {
+                    MarkdownPreviewMode::DedicatedTab => self.tabs.iter().any(
+                        |t| matches!(t, Tab::MarkdownPreview(p) if p.source_tab_id == editor_id),
+                    ),
+                    MarkdownPreviewMode::Panel => active_editor_tab.show_markdown_preview,
+                };
                 let preview_button = status_bar_toggle_button_factory(
                     "Preview".to_string(),
                     cx.theme().border,
                     cx.theme().muted,
-                    show_markdown_preview,
+                    preview_active,
                 )
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
-                        if let Some(active_editor_tab) = this.get_active_editor_tab_mut() {
-                            active_editor_tab.show_markdown_preview =
-                                !active_editor_tab.show_markdown_preview;
+                    cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
+                        if this.settings.editor_settings.markdown_settings.preview_mode
+                            == MarkdownPreviewMode::DedicatedTab
+                        {
+                            this.open_markdown_preview_tab(window, cx);
+                        } else {
+                            if let Some(active_editor_tab) = this.get_active_editor_tab_mut() {
+                                active_editor_tab.show_markdown_preview =
+                                    !active_editor_tab.show_markdown_preview;
+                            }
+                            cx.notify();
                         }
-                        cx.notify();
                     }),
                 );
                 let show_markdown_toolbar = active_editor_tab.show_markdown_toolbar;

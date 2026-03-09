@@ -579,6 +579,8 @@ impl Fulgur {
                         });
                     if editor_tab.language == SupportedLanguage::Markdown
                         && editor_tab.show_markdown_preview
+                        && self.settings.editor_settings.markdown_settings.preview_mode
+                            == crate::fulgur::settings::MarkdownPreviewMode::Panel
                     {
                         return v_flex()
                             .w_full()
@@ -625,6 +627,22 @@ impl Fulgur {
                         .flex_1()
                         .overflow_y_scrollbar()
                         .child(self.render_settings(window, cx))
+                        .into_any_element();
+                }
+                Tab::MarkdownPreview(preview_tab) => {
+                    return v_flex()
+                        .w_full()
+                        .flex_1()
+                        .child(
+                            TextView::markdown(
+                                "markdown-preview-tab",
+                                preview_tab.content.read(cx).value().clone(),
+                            )
+                            .py_2()
+                            .px_4()
+                            .scrollable(true)
+                            .selectable(true),
+                        )
                         .into_any_element();
                 }
             }
