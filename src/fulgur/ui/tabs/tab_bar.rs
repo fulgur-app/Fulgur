@@ -482,7 +482,7 @@ impl Fulgur {
             )
             .context_menu(move |this, _window, _cx| {
                 this.menu_with_disabled(
-                    "See file on drive",
+                    crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
                     Box::new(ShowInFileManager(index)),
                     !has_file_path,
                 )
