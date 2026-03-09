@@ -61,7 +61,7 @@ Fulgur themes use the `gpui-component` format, configured with JSON files and he
 
 #### All platforms
 
-[Rust](https://rust-lang.org/) 1.90.0 is the minimum supported version.
+[Rust](https://rust-lang.org/) 1.94.0 is the minimum supported version.
 
 Install [cargo-packager](https://github.com/crabnebula-dev/cargo-packager) with `cargo install cargo-packager --locked`. It will bundle the app with a nice icon for each platform.
 
