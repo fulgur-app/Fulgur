@@ -22,6 +22,7 @@ use gpui::*;
 use gpui_component::{
     ActiveTheme, Root, WindowExt,
     input::{Input, InputEvent, InputState},
+    menu::PopupMenu,
     notification::NotificationType,
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
@@ -105,6 +106,8 @@ pub struct Fulgur {
     pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
     pending_share_sheet: bool, // Flag to open share sheet when pending devices are ready
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
+    editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
+    _editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
 }
 
 impl Fulgur {
@@ -169,6 +172,8 @@ impl Fulgur {
                 pending_notification: None,
                 pending_share_sheet: false,
                 cached_window_bounds: None,
+                editor_context_menu: None,
+                _editor_context_menu_subscription: None,
             }
         });
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
@@ -374,12 +379,34 @@ impl Fulgur {
             .size_full()
             .child(self.title_bar.clone())
             .child(app_content);
-        div()
+        let mut root = div()
             .size_full()
             .child(root_content)
             .children(Root::render_sheet_layer(window, cx))
             .children(Root::render_notification_layer(window, cx))
-            .children(Root::render_dialog_layer(window, cx))
+            .children(Root::render_dialog_layer(window, cx));
+        if let Some((position, menu)) = self
+            .editor_context_menu
+            .as_ref()
+            .map(|(pos, menu)| (*pos, menu.clone()))
+        {
+            root = root.child(
+                deferred(
+                    anchored()
+                        .position(position)
+                        .snap_to_window_with_margin(px(8.))
+                        .anchor(Corner::TopLeft)
+                        .child(
+                            div()
+                                .font_family(cx.theme().font_family.clone())
+                                .cursor_default()
+                                .child(menu),
+                        ),
+                )
+                .with_priority(1),
+            );
+        }
+        root
     }
 }
 
@@ -456,6 +483,71 @@ impl Fulgur {
         }
     }
 
+    /// Handle a right-click in the editor area to show a custom context menu.
+    ///
+    /// Called during the capture phase so propagation can be stopped before
+    /// the editor's built-in context menu fires.
+    ///
+    /// ### Arguments
+    /// - `event`: The mouse-down event
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn on_editor_right_click(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.button != MouseButton::Right {
+            return;
+        }
+        cx.stop_propagation();
+
+        let Some(active_index) = self.active_tab_index else {
+            return;
+        };
+        let Some(Tab::Editor(editor_tab)) = self.tabs.get(active_index) else {
+            return;
+        };
+        let editor_focus = editor_tab.content.focus_handle(cx);
+        let has_file = editor_tab.file_path.is_some();
+        let position = event.position;
+
+        let menu = PopupMenu::build(window, cx, {
+            let editor_focus = editor_focus.clone();
+            move |mut menu, _window, _cx| {
+                menu = menu.action_context(editor_focus);
+                if has_file {
+                    menu = menu
+                        .menu(
+                            crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
+                            Box::new(tab_bar::ShowInFileManager(active_index)),
+                        )
+                        .separator();
+                }
+                menu.menu("Cut", Box::new(gpui_component::input::Cut))
+                    .menu("Copy", Box::new(gpui_component::input::Copy))
+                    .menu("Paste", Box::new(gpui_component::input::Paste))
+                    .separator()
+                    .menu("Select All", Box::new(gpui_component::input::SelectAll))
+            }
+        });
+
+        let subscription = cx.subscribe_in(
+            &menu,
+            window,
+            |this: &mut Self, _, _: &DismissEvent, _, cx| {
+                this.editor_context_menu = None;
+                this._editor_context_menu_subscription = None;
+                cx.notify();
+            },
+        );
+
+        self.editor_context_menu = Some((position, menu));
+        self._editor_context_menu_subscription = Some(subscription);
+        cx.notify();
+    }
+
     /// Render the content area (editor or settings)
     ///
     /// ### Arguments
@@ -481,6 +573,10 @@ impl Fulgur {
                         .font_family("Monaco")
                         .text_size(px(self.settings.editor_settings.font_size))
                         .focus_bordered(false);
+                    let capture_right_click =
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            this.on_editor_right_click(event, window, cx);
+                        });
                     if editor_tab.language == SupportedLanguage::Markdown
                         && editor_tab.show_markdown_preview
                     {
@@ -489,9 +585,15 @@ impl Fulgur {
                             .flex_1()
                             .child(
                                 h_resizable("markdown-preview-container")
-                                    .child(resizable_panel().child(
-                                        div().id("markdown-editor").size_full().child(editor_input),
-                                    ))
+                                    .child(
+                                        resizable_panel().child(
+                                            div()
+                                                .id("markdown-editor")
+                                                .size_full()
+                                                .capture_any_mouse_down(capture_right_click)
+                                                .child(editor_input),
+                                        ),
+                                    )
                                     .child(
                                         resizable_panel().child(
                                             TextView::markdown(
@@ -514,6 +616,7 @@ impl Fulgur {
                     return v_flex()
                         .w_full()
                         .flex_1()
+                        .capture_any_mouse_down(capture_right_click)
                         .child(editor_input)
                         .into_any_element();
                 }
