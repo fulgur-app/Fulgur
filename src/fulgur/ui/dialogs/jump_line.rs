@@ -21,25 +21,26 @@ impl Fulgur {
         self.jump_to_line_dialog_open = true;
         window.open_dialog(cx.deref_mut(), move |modal, window, cx| {
             let focus_handle = jump_to_line_input.read(cx).focus_handle(cx);
-            window.focus(&focus_handle);
+            window.focus(&focus_handle, cx);
             let jump_to_line_input_clone = jump_to_line_input.clone();
             let entity_for_ok = entity.clone();
             let entity_for_cancel = entity.clone();
             modal
                 .title(div().text_size(px(16.)).child("Jump to line..."))
                 .keyboard(true)
-                .confirm()
+                .button_props(DialogButtonProps::default().show_cancel(true))
                 .overlay_closable(true)
                 .close_button(false)
                 .button_props(
                     DialogButtonProps::default()
+                        .show_cancel(true)
                         .cancel_text("Cancel")
                         .cancel_variant(ButtonVariant::Secondary)
                         .ok_text("Jump")
                         .ok_variant(ButtonVariant::Primary),
                 )
                 .child(Input::new(&jump_to_line_input))
-                .on_ok(move |_, _, cx| {
+                .on_ok(move |_, _window, cx| {
                     let text = jump_to_line_input_clone.read(cx).value();
                     let jump_result = editor_tab::extract_line_number(text);
                     let is_ok = jump_result.is_ok();

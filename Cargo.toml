@@ -46,8 +46,10 @@ time = { version = "0.3.47", features = ["serde", "macros", "formatting", "parsi
 anyhow = "1.0.102"
 
 # GUI
-gpui = "0.2.2"
-gpui-component = { version = "0.5.1", features = ["tree-sitter-languages"] }
+gpui = { git = "https://github.com/zed-industries/zed" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["runtime_shaders", "font-kit"] }
+gpui-macros = "0.2.2"
+gpui-component = { git = "https://github.com/longbridge/gpui-component", features = ["tree-sitter-languages"] }
 
 # Filesystem
 notify = "8.2.0"
@@ -95,6 +97,7 @@ tempfile = "3.26.0"
 
 [build-dependencies]
 embed-resource = "3.0.6"
+
 
 # Builds the dependencies with optimisations even during debug builds, commented by default
 # [profile.dev.package."*"]

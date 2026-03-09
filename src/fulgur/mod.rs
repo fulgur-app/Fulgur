@@ -599,8 +599,6 @@ impl Fulgur {
                                             TextView::markdown(
                                                 "markdown-preview",
                                                 editor_tab.content.read(cx).value().clone(),
-                                                window,
-                                                cx,
                                             )
                                             .flex_none()
                                             .py_0()

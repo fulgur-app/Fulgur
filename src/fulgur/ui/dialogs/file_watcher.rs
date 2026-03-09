@@ -32,7 +32,7 @@ impl Fulgur {
             modal
                 .title(div().text_size(px(16.)).child("File Modified Externally"))
                 .keyboard(true)
-                .confirm()
+                .button_props(DialogButtonProps::default().show_cancel(true))
                 .overlay_closable(false)
                 .close_button(false)
                 .button_props(

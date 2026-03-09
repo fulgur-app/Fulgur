@@ -17,25 +17,25 @@ impl Fulgur {
         let input_clone = input.clone();
         window.open_dialog(cx.deref_mut(), move |modal, window, cx| {
             let focus_handle = input.read(cx).focus_handle(cx);
-            window.focus(&focus_handle);
+            window.focus(&focus_handle, cx);
             let entity_ok = entity.clone();
             let input_ok = input_clone.clone();
             let path_browser = path_browser.clone();
             modal
                 .title(div().text_size(px(16.)).child("Open file from path..."))
                 .keyboard(true)
-                .confirm()
-                .overlay_closable(false)
-                .close_button(false)
                 .button_props(
                     DialogButtonProps::default()
+                        .show_cancel(true)
                         .cancel_text("Cancel")
                         .cancel_variant(ButtonVariant::Secondary)
                         .ok_text("Open")
                         .ok_variant(ButtonVariant::Primary),
                 )
+                .overlay_closable(false)
+                .close_button(false)
                 .child(path_browser)
-                .on_ok(move |_, window, cx| {
+                .on_ok(move |_, window: &mut Window, cx| {
                     let path_str = input_ok.read(cx).value().trim().to_string();
                     if path_str.is_empty() {
                         window.push_notification(
