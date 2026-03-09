@@ -74,6 +74,7 @@ pub enum SupportedLanguage {
 /// - `SupportedLanguage`: The corresponding SupportedLanguage
 pub fn from_language(language: Language) -> SupportedLanguage {
     match language {
+        Language::Astro => SupportedLanguage::Astro,
         Language::Bash => SupportedLanguage::Bash,
         Language::C => SupportedLanguage::C,
         Language::CMake => SupportedLanguage::CMake,
@@ -91,9 +92,12 @@ pub fn from_language(language: Language) -> SupportedLanguage {
         Language::JavaScript => SupportedLanguage::JavaScript,
         Language::JsDoc => SupportedLanguage::JsDoc,
         Language::Json => SupportedLanguage::Json,
+        Language::Kotlin => SupportedLanguage::Kotlin,
+        Language::Lua => SupportedLanguage::Lua,
         Language::Make => SupportedLanguage::Make,
         Language::Markdown => SupportedLanguage::Markdown,
         Language::MarkdownInline => SupportedLanguage::MarkdownInline,
+        Language::Php => SupportedLanguage::Php,
         Language::Plain => SupportedLanguage::Plain,
         Language::Proto => SupportedLanguage::Proto,
         Language::Python => SupportedLanguage::Python,
@@ -101,17 +105,13 @@ pub fn from_language(language: Language) -> SupportedLanguage {
         Language::Rust => SupportedLanguage::Rust,
         Language::Scala => SupportedLanguage::Scala,
         Language::Sql => SupportedLanguage::Sql,
+        Language::Svelte => SupportedLanguage::Svelte,
         Language::Swift => SupportedLanguage::Swift,
         Language::Toml => SupportedLanguage::Toml,
         Language::Tsx => SupportedLanguage::React,
         Language::TypeScript => SupportedLanguage::TypeScript,
         Language::Yaml => SupportedLanguage::Yaml,
         Language::Zig => SupportedLanguage::Zig,
-        Language::Astro => SupportedLanguage::Astro,
-        Language::Kotlin => SupportedLanguage::Kotlin,
-        Language::Lua => SupportedLanguage::Lua,
-        Language::Php => SupportedLanguage::Php,
-        Language::Svelte => SupportedLanguage::Svelte,
     }
 }
 
@@ -315,7 +315,6 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
     if language == SupportedLanguage::Plain {
         language = match extension {
             "ada" | "ads" | "adb" => SupportedLanguage::Ada,
-            "astro" => SupportedLanguage::Html,
             "clojure" | "clj" | "cljs" => SupportedLanguage::Clojure,
             "d" | "di" => SupportedLanguage::D,
             "dart" => SupportedLanguage::Dart,
@@ -330,11 +329,9 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "perl" | "pl" | "pm" | "plx" => SupportedLanguage::Perl,
             "powershell" | "ps1" | "psm1" | "psd1" => SupportedLanguage::Powershell,
             "pro" | "prolog" => SupportedLanguage::Prolog,
-            "php" | "php3" | "php4" | "php5" | "phhtml" => SupportedLanguage::Html,
             "m" | "M" | "mm" => SupportedLanguage::ObjectiveC,
             "ml" | "mli" => SupportedLanguage::Ocaml,
             "r" | "rmd" => SupportedLanguage::R,
-            "svelte" => SupportedLanguage::Svelte,
             "svg" => SupportedLanguage::Html,
             "tsx" | "jsx" => SupportedLanguage::React,
             "vue" => SupportedLanguage::Vue,
@@ -379,6 +376,8 @@ impl SupportedLanguage {
             SupportedLanguage::JavaScript,
             SupportedLanguage::JsDoc,
             SupportedLanguage::Json,
+            SupportedLanguage::Kotlin,
+            SupportedLanguage::Lua,
             SupportedLanguage::Make,
             SupportedLanguage::Markdown,
             SupportedLanguage::MarkdownInline,
