@@ -6,7 +6,8 @@ use crate::fulgur::{
     ui::{
         components_utils::UNTITLED,
         tabs::{
-            editor_tab::{EditorTab, FromDuplicateParams}, markdown_preview_tab::MarkdownPreviewTab,
+            editor_tab::{EditorTab, FromDuplicateParams},
+            markdown_preview_tab::MarkdownPreviewTab,
             settings_tab::SettingsTab,
         },
     },
