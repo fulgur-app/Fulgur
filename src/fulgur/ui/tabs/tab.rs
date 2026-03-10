@@ -2,7 +2,9 @@ use gpui::*;
 
 use crate::fulgur::{
     Fulgur,
-    ui::tabs::{editor_tab::EditorTab, settings_tab::SettingsTab},
+    ui::tabs::{
+        editor_tab::EditorTab, markdown_preview_tab::MarkdownPreviewTab, settings_tab::SettingsTab,
+    },
 };
 
 /// Enum representing different types of tabs
@@ -10,6 +12,7 @@ use crate::fulgur::{
 pub enum Tab {
     Editor(EditorTab),
     Settings(SettingsTab),
+    MarkdownPreview(MarkdownPreviewTab),
 }
 
 impl Tab {
@@ -21,6 +24,7 @@ impl Tab {
         match self {
             Tab::Editor(tab) => tab.id,
             Tab::Settings(tab) => tab.id,
+            Tab::MarkdownPreview(tab) => tab.id,
         }
     }
 
@@ -32,6 +36,7 @@ impl Tab {
         match self {
             Tab::Editor(tab) => tab.title.clone(),
             Tab::Settings(tab) => tab.title.clone(),
+            Tab::MarkdownPreview(tab) => tab.title.clone(),
         }
     }
 
@@ -42,7 +47,8 @@ impl Tab {
     pub fn is_modified(&self) -> bool {
         match self {
             Tab::Editor(tab) => tab.modified,
-            Tab::Settings(_) => false, // Settings tabs are never modified
+            Tab::Settings(_) => false,
+            Tab::MarkdownPreview(_) => false,
         }
     }
 
@@ -54,6 +60,18 @@ impl Tab {
     pub fn as_editor(&self) -> Option<&EditorTab> {
         match self {
             Tab::Editor(tab) => Some(tab),
+            _ => None,
+        }
+    }
+
+    /// Get the Markdown preview tab if this is a preview tab
+    ///
+    /// ### Returns
+    /// - `Some(&MarkdownPreviewTab)`: The preview tab if this is a preview tab
+    /// - `None`: If this is not a preview tab
+    pub fn as_markdown_preview(&self) -> Option<&MarkdownPreviewTab> {
+        match self {
+            Tab::MarkdownPreview(tab) => Some(tab),
             _ => None,
         }
     }

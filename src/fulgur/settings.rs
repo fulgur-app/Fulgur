@@ -50,8 +50,18 @@ impl SynchronizationSettings {
     }
 }
 
+/// Determines how the Markdown preview is displayed
+#[derive(Clone, Serialize, Deserialize, PartialEq, Default)]
+pub enum MarkdownPreviewMode {
+    #[default]
+    DedicatedTab,
+    Panel,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MarkdownSettings {
+    #[serde(default)]
+    pub preview_mode: MarkdownPreviewMode,
     pub show_markdown_preview: bool,
     pub show_markdown_toolbar: bool,
 }
@@ -69,6 +79,7 @@ impl MarkdownSettings {
     /// - `MarkdownSettings`: The new markdown settings instance
     pub fn new() -> Self {
         Self {
+            preview_mode: MarkdownPreviewMode::DedicatedTab,
             show_markdown_preview: true,
             show_markdown_toolbar: false,
         }

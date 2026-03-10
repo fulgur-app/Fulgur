@@ -15,7 +15,7 @@ use gpui_component::{
 
 use crate::fulgur::{
     Fulgur, crypto_helper,
-    settings::{AppSettings, EditorSettings, Themes},
+    settings::{AppSettings, EditorSettings, MarkdownPreviewMode, Themes},
     sync::synchronization::perform_initial_synchronization,
     themes,
     ui::{icons::CustomIcon, menus::build_menus},
@@ -182,7 +182,44 @@ impl Fulgur {
             ]),
             SettingGroup::new().title("Markdown").items(vec![
                 SettingItem::new(
-                    "Default Show Preview",
+                    "Preview Mode",
+                    SettingField::dropdown(
+                        vec![
+                            ("dedicated_tab".into(), "Preview Tab".into()),
+                            ("panel".into(), "Preview Panel".into()),
+                        ],
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| match entity
+                                .read(cx)
+                                .settings
+                                .editor_settings
+                                .markdown_settings
+                                .preview_mode
+                            {
+                                MarkdownPreviewMode::DedicatedTab => "dedicated_tab".into(),
+                                MarkdownPreviewMode::Panel => "panel".into(),
+                            }
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: SharedString, cx: &mut App| {
+                                entity.update(cx, |this, cx| {
+                                    this.settings.editor_settings.markdown_settings.preview_mode =
+                                        match val.as_ref() {
+                                            "panel" => MarkdownPreviewMode::Panel,
+                                            _ => MarkdownPreviewMode::DedicatedTab,
+                                        };
+                                    let _ = this.update_and_propagate_settings(cx);
+                                });
+                            }
+                        },
+                    )
+                    .default_value(SharedString::from("dedicated_tab")),
+                )
+                .description("How the Markdown preview is displayed."),
+                SettingItem::new(
+                    "Show Preview by default",
                     SettingField::switch(
                         {
                             let entity = entity.clone();

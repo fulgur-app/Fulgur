@@ -144,16 +144,24 @@ impl Fulgur {
                         tab_id += 1;
                     }
                 }
-                if let Some(index) = window_state.active_tab_index {
-                    if index < self.tabs.len() {
-                        self.active_tab_index = Some(index);
-                    } else if !self.tabs.is_empty() {
-                        self.active_tab_index = Some(0);
-                    } else {
-                        self.active_tab_index = None;
-                    }
-                }
+                let saved_active_editor_id: Option<usize> = window_state
+                    .active_tab_index
+                    .and_then(|idx| self.tabs.get(idx))
+                    .and_then(|t| t.as_editor())
+                    .map(|et| et.id);
                 self.next_tab_id = tab_id;
+                self.insert_preview_tabs_for_markdown();
+                self.active_tab_index = if let Some(target_id) = saved_active_editor_id {
+                    self.tabs
+                        .iter()
+                        .position(|t| t.id() == target_id)
+                        .or(if !self.tabs.is_empty() { Some(0) } else { None })
+                } else if !self.tabs.is_empty() {
+                    Some(0)
+                } else {
+                    None
+                };
+
                 cx.notify();
             }
         } else {
@@ -338,6 +346,33 @@ impl Fulgur {
         tab_states
     }
 
+    /// Compute the active tab index relative to the editor-only tab list for state persistence.
+    ///
+    /// Preview tabs are not saved, so the persisted active index must refer to an editor tab.
+    /// If the active tab is a preview tab, the index of its source editor tab is returned.
+    /// ### Returns
+    /// - `Some(usize)`: the active editor tab index
+    /// - `None`: if the active tab is a Settings tab (not persisted).
+    fn active_editor_index_for_state(&self) -> Option<usize> {
+        let active = self.active_tab_index?;
+        let active_tab = self.tabs.get(active)?;
+        let editor_tab_id = match active_tab {
+            Tab::Editor(et) => et.id,
+            Tab::MarkdownPreview(pt) => pt.source_tab_id,
+            Tab::Settings(_) => return None,
+        };
+        let mut editor_index = 0;
+        for tab in &self.tabs {
+            if let Tab::Editor(et) = tab {
+                if et.id == editor_tab_id {
+                    return Some(editor_index);
+                }
+                editor_index += 1;
+            }
+        }
+        None
+    }
+
     /// Build WindowState for this window without window bounds (for cross-window saves)
     ///
     /// ### Arguments
@@ -349,7 +384,7 @@ impl Fulgur {
         let window_bounds = self.cached_window_bounds.clone().unwrap_or_default();
         WindowState {
             tabs: self.build_tab_states(cx),
-            active_tab_index: self.active_tab_index,
+            active_tab_index: self.active_editor_index_for_state(),
             window_bounds,
         }
     }
@@ -368,7 +403,7 @@ impl Fulgur {
             SerializedWindowBounds::from_gpui_bounds(window.window_bounds(), display_id);
         WindowState {
             tabs: self.build_tab_states(cx),
-            active_tab_index: self.active_tab_index,
+            active_tab_index: self.active_editor_index_for_state(),
             window_bounds,
         }
     }
