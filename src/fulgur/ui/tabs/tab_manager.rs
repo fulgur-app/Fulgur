@@ -3,7 +3,10 @@ use crate::fulgur::{
     tab::Tab,
     ui::{
         components_utils::UNTITLED,
-        tabs::{editor_tab::EditorTab, settings_tab::SettingsTab},
+        tabs::{
+            editor_tab::{EditorTab, FromDuplicateParams},
+            settings_tab::SettingsTab,
+        },
     },
 };
 use gpui::*;
@@ -415,6 +418,54 @@ impl Fulgur {
             self.pending_notification = Some((
                 gpui_component::notification::NotificationType::Warning,
                 format!("Tabs closed but failed to save state: {}", e).into(),
+            ));
+        }
+        cx.notify();
+    }
+
+    /// Duplicate a tab and insert it immediately to the right of the original
+    ///
+    /// The duplicate is an editor tab with the same content, language, and encoding, but no
+    /// file path (it is treated as unsaved). Only editor tabs can be duplicated; calling this
+    /// with the index of a non-editor tab is a no-op.
+    ///
+    /// ### Arguments
+    /// - `index`: The index of the tab to duplicate
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn duplicate_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) else {
+            return;
+        };
+        let current_content = editor_tab.content.read(cx).text().to_string();
+        let language = editor_tab.language;
+        let raw_title = editor_tab.title.to_string();
+        let encoding = editor_tab.encoding.clone();
+        let settings = self.settings.editor_settings.clone();
+        let clean_title: SharedString = raw_title.trim_end_matches(" •").trim().to_string().into();
+        let new_tab = Tab::Editor(EditorTab::from_duplicate(
+            FromDuplicateParams {
+                id: self.next_tab_id,
+                title: clean_title,
+                current_content,
+                encoding,
+                language,
+            },
+            window,
+            cx,
+            &settings,
+        ));
+        let insert_pos = index + 1;
+        self.tabs.insert(insert_pos, new_tab);
+        self.active_tab_index = Some(insert_pos);
+        self.pending_tab_scroll = Some(insert_pos);
+        self.next_tab_id += 1;
+        self.focus_active_tab(window, cx);
+        if let Err(e) = self.save_state(cx, window) {
+            log::error!("Failed to save app state after duplicating tab: {}", e);
+            self.pending_notification = Some((
+                gpui_component::notification::NotificationType::Warning,
+                format!("Tab duplicated but failed to save state: {}", e).into(),
             ));
         }
         cx.notify();
