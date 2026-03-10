@@ -30,6 +30,15 @@ pub struct EditorTab {
     pub file_last_modified: Option<SystemTime>,
 }
 
+/// Parameters for creating an editor tab as a duplicate of another
+pub struct FromDuplicateParams {
+    pub id: usize,
+    pub title: SharedString,
+    pub current_content: String,
+    pub encoding: String,
+    pub language: SupportedLanguage,
+}
+
 /// Parameters for creating an editor tab from a file
 pub struct FromFileParams {
     pub id: usize,
@@ -213,6 +222,50 @@ impl EditorTab {
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: Some(content_len as u64),
             file_last_modified: Some(SystemTime::now()),
+        }
+    }
+
+    /// Create a new tab as a duplicate of an existing editor tab
+    ///
+    /// The new tab has no file path (forcing "Save As..." on first save), is marked as modified,
+    /// and inherits the language and encoding from the source tab.
+    ///
+    /// ### Arguments
+    /// - `params`: The parameters collected from the source tab
+    /// - `window`: The window to create the tab in
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
+    ///
+    /// ### Returns
+    /// - `EditorTab`: The new duplicated tab
+    pub fn from_duplicate(
+        params: FromDuplicateParams,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) -> Self {
+        let content = cx.new(|cx| {
+            make_input_state(
+                window,
+                cx,
+                language_registry_name(&params.language),
+                Some(params.current_content),
+                settings,
+            )
+        });
+        Self {
+            id: params.id,
+            title: params.title,
+            content,
+            file_path: None,
+            modified: true,
+            original_content: String::new(),
+            encoding: params.encoding,
+            language: params.language,
+            show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
+            show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: None,
+            file_last_modified: None,
         }
     }
 

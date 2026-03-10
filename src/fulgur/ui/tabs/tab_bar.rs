@@ -35,6 +35,10 @@ pub struct CloseAllOtherTabs(pub usize);
 #[action(namespace = fulgur, no_json)]
 pub struct ShowInFileManager(pub usize);
 
+#[derive(Action, Clone, PartialEq, Deserialize)]
+#[action(namespace = fulgur, no_json)]
+pub struct DuplicateTab(pub usize);
+
 actions!(fulgur, [CloseAllTabsAction]);
 
 /// Create a tab bar button
@@ -214,6 +218,21 @@ impl Fulgur {
         }
     }
 
+    /// Handle duplicate tab action from context menu
+    ///
+    /// ### Arguments
+    /// - `action`: The action carrying the tab index
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn on_duplicate_tab(
+        &mut self,
+        action: &DuplicateTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.duplicate_tab(action.0, window, cx);
+    }
+
     /// Handle next tab action
     ///
     /// ### Arguments
@@ -364,6 +383,7 @@ impl Fulgur {
                 .and_then(|path| path.to_str().map(|s| s.to_string()))
         });
         let has_file_path = file_path.is_some();
+        let is_editor_tab = tab.as_editor().is_some();
         let cached_file_size = tab
             .as_editor()
             .and_then(|editor_tab| editor_tab.file_size_bytes)
@@ -485,6 +505,11 @@ impl Fulgur {
                     crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
                     Box::new(ShowInFileManager(index)),
                     !has_file_path,
+                )
+                .menu_with_disabled(
+                    "Duplicate Tab",
+                    Box::new(DuplicateTab(index)),
+                    !is_editor_tab,
                 )
                 .separator()
                 .menu("Close Tab", Box::new(CloseTabAction(tab_id)))
