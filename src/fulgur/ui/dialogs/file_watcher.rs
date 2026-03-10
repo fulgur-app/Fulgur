@@ -27,21 +27,21 @@ impl Fulgur {
             .unwrap_or("file")
             .to_string();
 
-        window.open_dialog(cx.deref_mut(), move |modal, _, _| {
+        window.open_alert_dialog(cx.deref_mut(), move |modal, _, _| {
             let entity_for_ok = entity.clone();
             modal
                 .title(div().text_size(px(16.)).child("File Modified Externally"))
                 .keyboard(true)
-                .button_props(DialogButtonProps::default().show_cancel(true))
-                .overlay_closable(false)
-                .close_button(false)
                 .button_props(
                     DialogButtonProps::default()
+                        .show_cancel(true)
                         .cancel_text("Keep local changes")
                         .cancel_variant(ButtonVariant::Secondary)
                         .ok_text("Load from file")
                         .ok_variant(ButtonVariant::Primary),
                 )
+                .overlay_closable(false)
+                .close_button(false)
                 .child(
                     v_flex()
                         .gap_2()

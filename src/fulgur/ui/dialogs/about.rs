@@ -9,7 +9,7 @@ use crate::fulgur::ui::icons::CustomIcon;
 /// - `window`: The window context
 /// - `cx`: The application context
 pub fn about(window: &mut Window, cx: &mut App) {
-    window.open_dialog(cx, |modal, _window, _cx| {
+    window.open_alert_dialog(cx, |modal, _window, _cx| {
         modal
             .keyboard(true)
             .title(div().text_center().child("Fulgur"))

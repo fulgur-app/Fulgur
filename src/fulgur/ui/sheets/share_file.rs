@@ -359,7 +359,7 @@ impl Fulgur {
                         "An error occurred while connecting to the sync server. Check your synchronization settings."
                     }
                 };
-                window.open_dialog(cx, move |dialog, _, _| dialog.child(dialog_message));
+                window.open_alert_dialog(cx, move |dialog, _, _| dialog.child(dialog_message));
             }
         }
     }

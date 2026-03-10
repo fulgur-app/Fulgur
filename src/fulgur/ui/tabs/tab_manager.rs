@@ -13,7 +13,7 @@ use crate::fulgur::{
     },
 };
 use gpui::*;
-use gpui_component::{WindowExt, dialog::DialogButtonProps};
+use gpui_component::WindowExt;
 use std::{ops::DerefMut, path::PathBuf};
 
 impl Fulgur {
@@ -570,13 +570,13 @@ impl Fulgur {
         F: Fn(&mut Fulgur, &mut Window, &mut Context<Fulgur>) + 'static + Clone,
     {
         let entity = cx.entity().clone();
-        window.open_dialog(cx.deref_mut(), move |modal, _, _| {
+        window.open_alert_dialog(cx.deref_mut(), move |modal, _, _| {
             let entity_ok = entity.clone();
             let on_confirm_clone = on_confirm.clone();
             modal
-                .title(div().text_size(px(16.)).child("Unsaved changed"))
+                .title(div().text_size(px(16.)).child("Unsaved changes"))
                 .keyboard(true)
-                .button_props(DialogButtonProps::default().show_cancel(true))
+                .show_cancel(true)
                 .on_ok(move |_, window, cx| {
                     let entity_ok_footer = entity_ok.clone();
                     let on_confirm_inner = on_confirm_clone.clone();
@@ -609,12 +609,12 @@ impl Fulgur {
     pub fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.app_settings.confirm_exit {
             let entity = cx.entity().clone();
-            window.open_dialog(cx.deref_mut(), move |modal, _, _| {
+            window.open_alert_dialog(cx.deref_mut(), move |modal, _, _| {
                 let entity_ok = entity.clone();
                 modal
                     .title(div().text_size(px(16.)).child("Quit Fulgur"))
                     .keyboard(true)
-                    .button_props(DialogButtonProps::default().show_cancel(true))
+                    .show_cancel(true)
                     .on_ok(move |_, window: &mut Window, cx: &mut App| {
                         let entity_ok_footer = entity_ok.clone();
                         let save_result =
