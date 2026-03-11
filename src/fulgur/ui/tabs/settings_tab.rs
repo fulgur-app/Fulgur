@@ -842,6 +842,6 @@ impl Fulgur {
                 None
             },
         );
-        cx.set_menus(menus);
+        self.update_menus(menus, cx);
     }
 }

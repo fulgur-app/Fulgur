@@ -278,7 +278,7 @@ impl Fulgur {
         cx.refresh_windows();
         let menus =
             crate::fulgur::ui::menus::build_menus(self.settings.recent_files.get_files(), None);
-        cx.set_menus(menus);
+        self.update_menus(menus, cx);
     }
 
     /// Render the tab bar
