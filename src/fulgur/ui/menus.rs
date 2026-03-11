@@ -142,7 +142,8 @@ impl Fulgur {
             if let Some(owned_menus) = cx.get_menus() {
                 GlobalState::global_mut(cx).set_app_menus(owned_menus);
             }
-            self.title_bar.update(cx, |tb, cx| tb.reload_app_menu_bar(cx));
+            self.title_bar
+                .update(cx, |tb, cx| tb.reload_app_menu_bar(cx));
         }
     }
 
