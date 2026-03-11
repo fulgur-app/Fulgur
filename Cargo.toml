@@ -47,7 +47,7 @@ anyhow = "1.0.102"
 
 # GUI
 gpui = { git = "https://github.com/zed-industries/zed" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["runtime_shaders", "font-kit"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["runtime_shaders", "font-kit", "wayland", "x11"] }
 gpui-macros = "0.2.2"
 gpui-component = { git = "https://github.com/longbridge/gpui-component", features = ["tree-sitter-languages"] }
 
