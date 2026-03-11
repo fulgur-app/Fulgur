@@ -32,6 +32,12 @@ impl CustomTitleBar {
         })
     }
 
+    /// Reload the app menu bar from the current GlobalState menus (non-macOS only)
+    #[cfg(not(target_os = "macos"))]
+    pub fn reload_app_menu_bar(&mut self, cx: &mut Context<Self>) {
+        self.app_menu_bar.update(cx, |bar, cx| bar.reload(cx));
+    }
+
     /// Set the title of the title bar
     ///
     /// ### Arguments

@@ -277,6 +277,10 @@ impl Fulgur {
             ]);
             let menus = build_menus(&recent_files, None);
             cx.set_menus(menus);
+            #[cfg(not(target_os = "macos"))]
+            if let Some(owned_menus) = cx.get_menus() {
+                gpui_component::GlobalState::global_mut(cx).set_app_menus(owned_menus);
+            }
         });
     }
 

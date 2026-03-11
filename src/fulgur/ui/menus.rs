@@ -2,6 +2,8 @@ use gpui::*;
 use std::path::PathBuf;
 
 use crate::fulgur::{Fulgur, utils::updater::check_for_updates};
+#[cfg(not(target_os = "macos"))]
+use gpui_component::GlobalState;
 use gpui_component::{WindowExt, notification::NotificationType};
 
 actions!(
@@ -128,6 +130,22 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
 }
 
 impl Fulgur {
+    /// Set the application menus and sync them to the AppMenuBar on non-macOS platforms.
+    ///
+    /// ### Arguments
+    /// - `menus`: The menus to set
+    /// - `cx`: The application context
+    pub fn update_menus(&mut self, menus: Vec<Menu>, cx: &mut Context<Self>) {
+        cx.set_menus(menus);
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Some(owned_menus) = cx.get_menus() {
+                GlobalState::global_mut(cx).set_app_menus(owned_menus);
+            }
+            self.title_bar.update(cx, |tb, cx| tb.reload_app_menu_bar(cx));
+        }
+    }
+
     /// Check for updates, open the download page in the browser if an update is available, update the menus to show the update available action and trigger notifications
     ///
     /// ### Arguments
@@ -172,7 +190,7 @@ impl Fulgur {
                                 this.settings.recent_files.get_files(),
                                 Some(download_url),
                             );
-                            cx.set_menus(menus);
+                            this.update_menus(menus, cx);
                             cx.notify();
                         });
                         log::info!("Update available: {} -> {}", current_ver, latest_ver);

@@ -175,7 +175,7 @@ impl Fulgur {
                         None
                     };
                     let menus = menus::build_menus(&this.settings.get_recent_files(), update_link);
-                    cx.set_menus(menus);
+                    this.update_menus(menus, cx);
                     let title = path
                         .file_name()
                         .map(|file_name| file_name.to_string_lossy().to_string());
