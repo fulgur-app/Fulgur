@@ -82,6 +82,7 @@ tree-sitter-pascal = "0.10.2"
 tree-sitter-perl-next = "0.1.0"
 tree-sitter-powershell = "0.26.3"
 tree-sitter-fortran = "0.5.1"
+tree-sitter-fsharp = "0.1.0"
 tree-sitter-r = "1.2.0"
 
 # Others
@@ -667,6 +668,14 @@ name = "Fortran Source File"
 description = "Fortran source code"
 role = "editor"
 mimeType = "text/x-fortran"
+
+# F#
+[[package.metadata.packager.file-associations]]
+extensions = ["fs", "fsi", "fsx", "fsscript"]
+name = "F# Source File"
+description = "F# source code"
+role = "editor"
+mimeType = "text/x-fsharp"
 
 [package.metadata.packager.macos]
 minimum-system-version = "10.15"

@@ -23,6 +23,7 @@ pub enum SupportedLanguage {
     Erb,
     Erlang,
     Fortran,
+    FSharp,
     Go,
     GraphQl,
     Groovy,
@@ -138,6 +139,7 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::Erb => Language::Erb,
         SupportedLanguage::Erlang => Language::Plain,
         SupportedLanguage::Fortran => Language::Plain,
+        SupportedLanguage::FSharp => Language::Plain,
         SupportedLanguage::Go => Language::Go,
         SupportedLanguage::GraphQl => Language::GraphQL,
         SupportedLanguage::Html => Language::Html,
@@ -197,6 +199,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Erb => "ERB".to_string(),
         SupportedLanguage::Erlang => "Erlang".to_string(),
         SupportedLanguage::Fortran => "Fortran".to_string(),
+        SupportedLanguage::FSharp => "F#".to_string(),
         SupportedLanguage::Go => "Go".to_string(),
         SupportedLanguage::GraphQl => "GraphQL".to_string(),
         SupportedLanguage::Groovy => "Groovy".to_string(),
@@ -256,6 +259,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Clojure => "clojure",
         SupportedLanguage::Erlang => "erlang",
         SupportedLanguage::Fortran => "fortran",
+        SupportedLanguage::FSharp => "fsharp",
         SupportedLanguage::D => "d",
         SupportedLanguage::Dart => "dart",
         SupportedLanguage::Dockerfile => "dockerfile",
@@ -327,6 +331,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "f" | "f77" | "f90" | "f95" | "f03" | "f08" | "for" | "ftn" | "pf" => {
                 SupportedLanguage::Fortran
             }
+            "fs" | "fsi" | "fsx" | "fsscript" => SupportedLanguage::FSharp,
             "hs" | "lhs" => SupportedLanguage::Haskell,
             "ini" | "cfg" | "conf" | "config" => SupportedLanguage::Ini,
             "lock" => SupportedLanguage::Toml,
@@ -374,6 +379,7 @@ impl SupportedLanguage {
             SupportedLanguage::Erb,
             SupportedLanguage::Erlang,
             SupportedLanguage::Fortran,
+            SupportedLanguage::FSharp,
             SupportedLanguage::Go,
             SupportedLanguage::GraphQl,
             SupportedLanguage::Groovy,
@@ -457,6 +463,7 @@ pub fn register_external_languages() {
     super::syntax_highlighting::dockerfile::add_dockerfile_support();
     super::syntax_highlighting::erlang::add_erlang_support();
     super::syntax_highlighting::fortran::add_fortran_support();
+    super::syntax_highlighting::fsharp::add_fsharp_support();
     super::syntax_highlighting::groovy::add_groovy_support();
     super::syntax_highlighting::haskell::add_haskell_support();
     super::syntax_highlighting::ini::add_ini_support();
