@@ -4,6 +4,7 @@ pub mod d;
 pub mod dart;
 pub mod dockerfile;
 pub mod erlang;
+pub mod fortran;
 pub mod groovy;
 pub mod haskell;
 pub mod ini;
