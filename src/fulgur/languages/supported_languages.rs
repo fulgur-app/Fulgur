@@ -39,6 +39,7 @@ pub enum SupportedLanguage {
     Lua,
     Make,
     Markdown,
+    Matlab,
     MarkdownInline,
     ObjectiveC,
     Ocaml,
@@ -146,6 +147,7 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::Html => Language::Html,
         SupportedLanguage::Ini => Language::Plain,
         SupportedLanguage::Julia => Language::Plain,
+        SupportedLanguage::Matlab => Language::Plain,
         SupportedLanguage::Java => Language::Java,
         SupportedLanguage::JavaScript => Language::JavaScript,
         SupportedLanguage::JsDoc => Language::JsDoc,
@@ -217,6 +219,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Lua => "Lua".to_string(),
         SupportedLanguage::Make => "Make".to_string(),
         SupportedLanguage::Markdown => "Markdown".to_string(),
+        SupportedLanguage::Matlab => "MATLAB".to_string(),
         SupportedLanguage::MarkdownInline => "Markdown Inline".to_string(),
         SupportedLanguage::ObjectiveC => "Objective-C".to_string(),
         SupportedLanguage::Ocaml => "OCaml".to_string(),
@@ -270,6 +273,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Haskell => "haskell",
         SupportedLanguage::Ini => "ini",
         SupportedLanguage::Julia => "julia",
+        SupportedLanguage::Matlab => "matlab",
         SupportedLanguage::ObjectiveC => "objective-c",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Pascal => "pascal",
@@ -359,6 +363,64 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
     language
 }
 
+/// Detect whether a `.m` file contains Objective-C or MATLAB source by scanning
+/// the first 50 lines for distinctive markers.
+///
+/// Returns `ObjectiveC` if any Objective-C marker is encountered first, `Matlab` if any
+/// MATLAB marker is encountered first, and `ObjectiveC` as the default when no signal is found.
+fn detect_m_file_language(content: &str) -> SupportedLanguage {
+    for line in content.lines().take(50) {
+        let trimmed = line.trim();
+        // Objective-C markers
+        if trimmed.starts_with("#import")
+            || trimmed.starts_with("#include")
+            || trimmed.starts_with("@interface")
+            || trimmed.starts_with("@implementation")
+            || trimmed.starts_with("@protocol")
+            || trimmed.starts_with("@property")
+            || trimmed.starts_with("- (")
+            || trimmed.starts_with("+ (")
+        {
+            return SupportedLanguage::ObjectiveC;
+        }
+        // MATLAB markers
+        if trimmed.starts_with('%')
+            || trimmed.starts_with("function ")
+            || trimmed == "function"
+            || trimmed.starts_with("classdef ")
+        {
+            return SupportedLanguage::Matlab;
+        }
+    }
+    SupportedLanguage::ObjectiveC
+}
+
+/// Get the language from a filename and file content.
+///
+/// Behaves like [`language_from_filename`] but additionally uses content-based heuristics
+/// for extensions that are shared between multiple languages. Currently handles:
+/// - `.m`: disambiguates between Objective-C and MATLAB by scanning the first 50 lines.
+///
+/// ### Arguments
+/// - `filename`: The file name
+/// - `content`: The file content
+///
+/// ### Returns
+/// - `SupportedLanguage`: The detected language
+pub fn language_from_content(filename: &str, content: &str) -> SupportedLanguage {
+    let base = language_from_filename(filename);
+    if base == SupportedLanguage::ObjectiveC {
+        let ext = std::path::Path::new(filename)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if ext == "m" {
+            return detect_m_file_language(content);
+        }
+    }
+    base
+}
+
 impl SupportedLanguage {
     /// Lists all supported languages in alphabetical order, including some that are not supported by the language registry.
     ///
@@ -401,6 +463,7 @@ impl SupportedLanguage {
             SupportedLanguage::Make,
             SupportedLanguage::Markdown,
             SupportedLanguage::MarkdownInline,
+            SupportedLanguage::Matlab,
             SupportedLanguage::ObjectiveC,
             SupportedLanguage::Ocaml,
             SupportedLanguage::Pascal,
@@ -474,6 +537,7 @@ pub fn register_external_languages() {
     super::syntax_highlighting::haskell::add_haskell_support();
     super::syntax_highlighting::ini::add_ini_support();
     super::syntax_highlighting::julia::add_julia_support();
+    super::syntax_highlighting::matlab::add_matlab_support();
     super::syntax_highlighting::objective_c::add_objective_c_support();
     super::syntax_highlighting::ocaml::add_ocaml_support();
     super::syntax_highlighting::pascal::add_pascal_support();
@@ -484,4 +548,89 @@ pub fn register_external_languages() {
     super::syntax_highlighting::react::add_react_support();
     super::syntax_highlighting::scss::add_scss_support();
     super::syntax_highlighting::vue::add_vue_support();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_m_file_objc_by_import() {
+        let content = "#import <Foundation/Foundation.h>\n@interface Foo : NSObject\n@end\n";
+        assert_eq!(
+            language_from_content("foo.m", content),
+            SupportedLanguage::ObjectiveC
+        );
+    }
+
+    #[test]
+    fn test_m_file_objc_by_interface() {
+        let content = "@interface MyClass : NSObject\n- (void)doSomething;\n@end\n";
+        assert_eq!(
+            language_from_content("foo.m", content),
+            SupportedLanguage::ObjectiveC
+        );
+    }
+
+    #[test]
+    fn test_m_file_objc_by_method() {
+        let content = "- (void)viewDidLoad {\n    [super viewDidLoad];\n}\n";
+        assert_eq!(
+            language_from_content("foo.m", content),
+            SupportedLanguage::ObjectiveC
+        );
+    }
+
+    #[test]
+    fn test_m_file_matlab_by_percent_comment() {
+        let content = "% This is a MATLAB script\nx = 1 + 2;\n";
+        assert_eq!(
+            language_from_content("foo.m", content),
+            SupportedLanguage::Matlab
+        );
+    }
+
+    #[test]
+    fn test_m_file_matlab_by_function_keyword() {
+        let content = "function result = add(a, b)\n    result = a + b;\nend\n";
+        assert_eq!(
+            language_from_content("foo.m", content),
+            SupportedLanguage::Matlab
+        );
+    }
+
+    #[test]
+    fn test_m_file_matlab_by_classdef() {
+        let content = "classdef Animal\n    properties\n        Name\n    end\nend\n";
+        assert_eq!(
+            language_from_content("foo.m", content),
+            SupportedLanguage::Matlab
+        );
+    }
+
+    #[test]
+    fn test_m_file_defaults_to_objc_when_ambiguous() {
+        let content = "x = 1;\ny = 2;\n";
+        assert_eq!(
+            language_from_content("foo.m", content),
+            SupportedLanguage::ObjectiveC
+        );
+    }
+
+    #[test]
+    fn test_mm_file_always_objc() {
+        let content = "% looks like matlab but is .mm\n";
+        assert_eq!(
+            language_from_content("foo.mm", content),
+            SupportedLanguage::ObjectiveC
+        );
+    }
+
+    #[test]
+    fn test_non_m_file_unaffected() {
+        assert_eq!(
+            language_from_content("foo.rs", "fn main() {}"),
+            SupportedLanguage::Rust
+        );
+    }
 }
