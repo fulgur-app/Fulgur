@@ -355,6 +355,7 @@ impl Fulgur {
         register_action!(app_content, cx, ClearRecentFiles => clear_recent_files(cx_only));
         register_action!(app_content, cx, CloseFile => close_active_tab);
         register_action!(app_content, cx, DockActivateTab => handle_dock_activate_tab(&action));
+        register_action!(app_content, cx, DockActivateTabByTitle => handle_dock_activate_tab_by_title(&action));
         app_content = app_content
             .child(self.render_tab_bar(cx))
             .child(self.render_content_area(active_tab, window, cx))

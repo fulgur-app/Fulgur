@@ -45,6 +45,22 @@ pub struct OpenRecentFile(pub PathBuf);
 #[action(namespace = fulgur, no_json)]
 pub struct DockActivateTab(pub PathBuf);
 
+#[derive(Action, Clone, PartialEq)]
+#[action(namespace = fulgur, no_json)]
+pub struct DockActivateTabByTitle(pub SharedString);
+
+/// A single tab entry for the dock menu, carrying the display name and the action to fire
+#[cfg(target_os = "macos")]
+pub enum DockMenuTab {
+    /// File-backed editor tab — use path for reliable cross-window lookup
+    File { name: SharedString, path: PathBuf },
+    /// Non-file tab (settings, untitled editor, markdown preview) — use title for lookup
+    Titled {
+        name: SharedString,
+        title: SharedString,
+    },
+}
+
 /// Build the menus for the Fulgur instance
 ///
 /// ### Arguments
@@ -135,17 +151,17 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
 
 /// Build the macOS dock menu (right-click on dock icon)
 ///
+/// Shows recent files in a submenu, then open tabs grouped by window (separated by dividers),
+/// then new tab/window actions.
+///
 /// ### Arguments
-/// - `open_tabs`: List of (display_name, file_path) for open editor tabs across all windows
+/// - `windows`: Open tabs grouped by window; each inner slice represents one window's tabs
 /// - `recent_files`: List of recent file paths (most recent first)
 ///
 /// ### Returns
 /// - `Vec<MenuItem>`: The dock menu items
 #[cfg(target_os = "macos")]
-pub fn build_dock_menu(
-    open_tabs: &[(SharedString, PathBuf)],
-    recent_files: &[PathBuf],
-) -> Vec<MenuItem> {
+pub fn build_dock_menu(windows: &[Vec<DockMenuTab>], recent_files: &[PathBuf]) -> Vec<MenuItem> {
     let mut items = Vec::new();
     if !recent_files.is_empty() {
         let recent_items: Vec<MenuItem> = recent_files
@@ -163,13 +179,24 @@ pub fn build_dock_menu(
         }));
         items.push(MenuItem::Separator);
     }
-    if !open_tabs.is_empty() {
-        items.push(MenuItem::action("Current Files", NoneAction));
-        for (name, path) in open_tabs {
-            items.push(MenuItem::action(
-                name.clone(),
-                DockActivateTab(path.clone()),
-            ));
+    let non_empty_windows: Vec<&Vec<DockMenuTab>> =
+        windows.iter().filter(|w| !w.is_empty()).collect();
+    if !non_empty_windows.is_empty() {
+        for (i, window_tabs) in non_empty_windows.iter().enumerate() {
+            if i > 0 {
+                items.push(MenuItem::Separator);
+            }
+            for tab in *window_tabs {
+                let menu_item = match tab {
+                    DockMenuTab::File { name, path } => {
+                        MenuItem::action(name.clone(), DockActivateTab(path.clone()))
+                    }
+                    DockMenuTab::Titled { name, title } => {
+                        MenuItem::action(name.clone(), DockActivateTabByTitle(title.clone()))
+                    }
+                };
+                items.push(menu_item);
+            }
         }
         items.push(MenuItem::Separator);
     }

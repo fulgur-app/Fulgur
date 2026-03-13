@@ -290,30 +290,40 @@ impl Fulgur {
 
     /// Update the macOS dock menu if the open tabs or recent files have changed.
     ///
-    /// Computes a hash of the current state (open tab paths across all windows
-    /// and recent files) and only rebuilds the dock menu when the hash differs
-    /// from the last known state.
+    /// Computes a hash of the current state (all tabs across all windows and recent files)
+    /// and only rebuilds the dock menu when the hash differs from the last known state.
     ///
     /// ### Arguments
     /// - `cx`: The application context
     #[cfg(target_os = "macos")]
     fn update_dock_menu_if_changed(&mut self, cx: &mut Context<Self>) {
-        use crate::fulgur::tab::Tab;
-        use crate::fulgur::ui::menus::build_dock_menu;
+        use crate::fulgur::ui::menus::{DockMenuTab, build_dock_menu};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        let mut open_tabs: Vec<(SharedString, PathBuf)> = Vec::new();
-        for tab in &self.tabs {
-            if let Tab::Editor(editor_tab) = tab
-                && let Some(ref path) = editor_tab.file_path
-            {
-                path.hash(&mut hasher);
-                let name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("Untitled");
-                open_tabs.push((SharedString::from(name.to_string()), path.clone()));
-            }
+
+        // Collect raw tab data from all windows: (file_path_or_none, title, window_group_index)
+        // We need all file paths upfront to compute cross-window duplicate filenames.
+        struct RawTab {
+            path: Option<PathBuf>,
+            title: SharedString,
         }
+
+        let mut all_windows_raw: Vec<Vec<RawTab>> = Vec::new();
+        let current_window_raw: Vec<RawTab> = self
+            .tabs
+            .iter()
+            .map(|tab| {
+                let path = tab.as_editor().and_then(|e| e.file_path.clone());
+                if let Some(ref p) = path {
+                    p.hash(&mut hasher);
+                }
+                tab.title().hash(&mut hasher);
+                RawTab {
+                    path,
+                    title: tab.title(),
+                }
+            })
+            .collect();
+        all_windows_raw.push(current_window_raw);
         let manager = cx.global::<WindowManager>();
         let other_windows: Vec<WeakEntity<Fulgur>> = manager
             .get_all_window_ids()
@@ -324,18 +334,22 @@ impl Fulgur {
         for weak in other_windows {
             if let Some(entity) = weak.upgrade() {
                 let other = entity.read(cx);
-                for tab in &other.tabs {
-                    if let Tab::Editor(editor_tab) = tab
-                        && let Some(ref path) = editor_tab.file_path
-                    {
-                        path.hash(&mut hasher);
-                        let name = path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("Untitled");
-                        open_tabs.push((SharedString::from(name.to_string()), path.clone()));
-                    }
-                }
+                let window_raw: Vec<RawTab> = other
+                    .tabs
+                    .iter()
+                    .map(|tab| {
+                        let path = tab.as_editor().and_then(|e| e.file_path.clone());
+                        if let Some(ref p) = path {
+                            p.hash(&mut hasher);
+                        }
+                        tab.title().hash(&mut hasher);
+                        RawTab {
+                            path,
+                            title: tab.title(),
+                        }
+                    })
+                    .collect();
+                all_windows_raw.push(window_raw);
             }
         }
         let recent_files = self.settings.get_recent_files();
@@ -347,7 +361,49 @@ impl Fulgur {
             return;
         }
         self.last_dock_menu_hash = hash;
-        let dock_items = build_dock_menu(&open_tabs, &recent_files);
+        let all_file_paths: Vec<PathBuf> = all_windows_raw
+            .iter()
+            .flat_map(|w| w.iter())
+            .filter_map(|t| t.path.clone())
+            .collect();
+        let display_name_for_path = |path: &PathBuf| -> SharedString {
+            let filename = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Untitled");
+            let has_duplicate = all_file_paths.iter().any(|other_path| {
+                other_path != path
+                    && (other_path.file_name().and_then(|n| n.to_str()) == Some(filename))
+            });
+            if has_duplicate
+                && let Some(parent_name) = path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+            {
+                return SharedString::from(format!("{} (../{})", filename, parent_name));
+            }
+            SharedString::from(filename.to_string())
+        };
+        let windows: Vec<Vec<DockMenuTab>> = all_windows_raw
+            .into_iter()
+            .map(|window_raw| {
+                window_raw
+                    .into_iter()
+                    .map(|raw| match raw.path {
+                        Some(path) => DockMenuTab::File {
+                            name: display_name_for_path(&path),
+                            path,
+                        },
+                        None => DockMenuTab::Titled {
+                            name: raw.title.clone(),
+                            title: raw.title,
+                        },
+                    })
+                    .collect()
+            })
+            .collect();
+        let dock_items = build_dock_menu(&windows, &recent_files);
         cx.set_dock_menu(dock_items);
     }
 
@@ -396,6 +452,75 @@ impl Fulgur {
                         .update(|_window, cx| {
                             target_entity.update(cx, |fulgur, cx| {
                                 if let Some(tab_index) = fulgur.find_tab_by_path(&path) {
+                                    fulgur.tab_scroll_handle.scroll_to_item(tab_index);
+                                    fulgur.active_tab_index = Some(tab_index);
+                                    cx.notify();
+                                }
+                            });
+                            for handle in cx.windows() {
+                                if handle.window_id() == target_wid {
+                                    handle
+                                        .update(cx, |_, target_window, _| {
+                                            target_window.activate_window();
+                                        })
+                                        .ok();
+                                    break;
+                                }
+                            }
+                        })
+                        .ok();
+                }
+            })
+            .detach();
+        }
+    }
+
+    /// Handle the DockActivateTabByTitle action: focus the tab with the given title,
+    /// switching to the correct window if necessary.
+    ///
+    /// ### Arguments
+    /// - `action`: The DockActivateTabByTitle action containing the tab title
+    /// - `window`: The current window
+    /// - `cx`: The application context
+    pub fn handle_dock_activate_tab_by_title(
+        &mut self,
+        action: &crate::fulgur::ui::menus::DockActivateTabByTitle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let title = action.0.clone();
+        if let Some(tab_index) = self.tabs.iter().position(|t| t.title() == title) {
+            self.set_active_tab(tab_index, window, cx);
+            self.focus_active_tab(window, cx);
+            cx.notify();
+            return;
+        }
+        let manager = cx.global::<WindowManager>();
+        let other_windows: Vec<WeakEntity<Fulgur>> = manager
+            .get_all_window_ids()
+            .into_iter()
+            .filter(|id| *id != self.window_id)
+            .filter_map(|id| manager.get_window(id))
+            .collect();
+        let mut target: Option<(WindowId, Entity<Fulgur>)> = None;
+        for weak in other_windows {
+            if let Some(entity) = weak.upgrade() {
+                let other = entity.read(cx);
+                if other.tabs.iter().any(|t| t.title() == title) {
+                    target = Some((other.window_id, entity.clone()));
+                    break;
+                }
+            }
+        }
+        if let Some((target_wid, target_entity)) = target {
+            cx.spawn_in(window, {
+                async move |_this, async_window| {
+                    async_window
+                        .update(|_window, cx| {
+                            target_entity.update(cx, |fulgur, cx| {
+                                if let Some(tab_index) =
+                                    fulgur.tabs.iter().position(|t| t.title() == title)
+                                {
                                     fulgur.tab_scroll_handle.scroll_to_item(tab_index);
                                     fulgur.active_tab_index = Some(tab_index);
                                     cx.notify();
