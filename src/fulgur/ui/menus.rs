@@ -148,17 +148,19 @@ pub fn build_dock_menu(
 ) -> Vec<MenuItem> {
     let mut items = Vec::new();
     if !recent_files.is_empty() {
-        items.push(MenuItem::action("Recent Files", NoneAction));
-        for file in recent_files.iter().take(8) {
-            let name = file
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("Unknown");
-            items.push(MenuItem::action(
-                name.to_string(),
-                OpenRecentFile(file.to_path_buf()),
-            ));
-        }
+        let recent_items: Vec<MenuItem> = recent_files
+            .iter()
+            .map(|file| {
+                MenuItem::action(
+                    file.display().to_string(),
+                    OpenRecentFile(file.to_path_buf()),
+                )
+            })
+            .collect();
+        items.push(MenuItem::Submenu(Menu {
+            name: "Recent Files".into(),
+            items: recent_items,
+        }));
         items.push(MenuItem::Separator);
     }
     if !open_tabs.is_empty() {
