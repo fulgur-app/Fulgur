@@ -9,6 +9,7 @@ dependencies = [
  "age",
  "anyhow",
  "arborium-ada",
+ "arborium-asm",
  "arborium-c",
  "arborium-clojure",
  "arborium-d",
@@ -226,6 +227,17 @@ name = "arborium-ada"
 version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b77b481a3304909915982eba1a790e919256a1dd24317224d446e4b3d50ebea3"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "arborium-asm"
+version = "2.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edea866e8e57cdbf94f1832cc5c619308f3133036e00d41f1c1b60dc17a0dcfb"
 dependencies = [
  "arborium-sysroot",
  "cc",
