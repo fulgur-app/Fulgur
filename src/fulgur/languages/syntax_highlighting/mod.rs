@@ -10,6 +10,7 @@ pub mod groovy;
 pub mod haskell;
 pub mod ini;
 pub mod julia;
+pub mod matlab;
 pub mod objective_c;
 pub mod ocaml;
 pub mod pascal;

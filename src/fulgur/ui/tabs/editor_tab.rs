@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use std::time::SystemTime;
 
 use crate::fulgur::languages::supported_languages::{
-    SupportedLanguage, language_from_filename, language_registry_name,
+    SupportedLanguage, language_from_content, language_registry_name,
 };
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
@@ -144,7 +144,7 @@ impl EditorTab {
         cx: &mut App,
         settings: &EditorSettings,
     ) -> Self {
-        let language = language_from_filename(&file_name);
+        let language = language_from_content(&file_name, &contents);
         let content = cx.new(|cx| {
             make_input_state(
                 window,
@@ -194,7 +194,7 @@ impl EditorTab {
             .unwrap_or(UNTITLED)
             .to_string();
 
-        let language = language_from_filename(&file_name);
+        let language = language_from_content(&file_name, &params.contents);
         let content = cx.new(|cx| {
             make_input_state(
                 window,
@@ -347,7 +347,8 @@ impl EditorTab {
     ) {
         if let Some(ref path) = self.file_path {
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let language = language_from_filename(file_name);
+            let current_content = self.content.read(cx).text().to_string();
+            let language = language_from_content(file_name, &current_content);
             self.force_language(window, cx, language, settings);
         }
     }

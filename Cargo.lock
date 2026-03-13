@@ -18,6 +18,7 @@ dependencies = [
  "arborium-groovy",
  "arborium-ini",
  "arborium-julia",
+ "arborium-matlab",
  "arborium-objc",
  "arborium-prolog",
  "arborium-scss",
@@ -358,6 +359,17 @@ name = "arborium-julia"
 version = "2.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edc2f129dee42a876cb4722b34c99c2ef44a4aaa07c67d73fc0fd90c06ded729"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "arborium-matlab"
+version = "2.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbd53d61b518e0dc0f5ad0e4a2bcd940b30718dea1da5d43cfed0689063da6dd"
 dependencies = [
  "arborium-sysroot",
  "cc",
