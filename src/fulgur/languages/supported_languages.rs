@@ -30,6 +30,7 @@ pub enum SupportedLanguage {
     Haskell,
     Html,
     Ini,
+    Jinja2,
     Java,
     JavaScript,
     JsDoc,
@@ -146,6 +147,7 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::GraphQl => Language::GraphQL,
         SupportedLanguage::Html => Language::Html,
         SupportedLanguage::Ini => Language::Plain,
+        SupportedLanguage::Jinja2 => Language::Plain,
         SupportedLanguage::Julia => Language::Plain,
         SupportedLanguage::Matlab => Language::Plain,
         SupportedLanguage::Java => Language::Java,
@@ -210,6 +212,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::Haskell => "Haskell".to_string(),
         SupportedLanguage::Html => "HTML".to_string(),
         SupportedLanguage::Ini => "INI".to_string(),
+        SupportedLanguage::Jinja2 => "Jinja2".to_string(),
         SupportedLanguage::Java => "Java".to_string(),
         SupportedLanguage::JavaScript => "JavaScript".to_string(),
         SupportedLanguage::JsDoc => "JSDoc".to_string(),
@@ -272,6 +275,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Groovy => "groovy",
         SupportedLanguage::Haskell => "haskell",
         SupportedLanguage::Ini => "ini",
+        SupportedLanguage::Jinja2 => "jinja2",
         SupportedLanguage::Julia => "julia",
         SupportedLanguage::Matlab => "matlab",
         SupportedLanguage::ObjectiveC => "objective-c",
@@ -342,6 +346,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "fs" | "fsi" | "fsx" | "fsscript" => SupportedLanguage::FSharp,
             "hs" | "lhs" => SupportedLanguage::Haskell,
             "ini" | "cfg" | "conf" | "config" => SupportedLanguage::Ini,
+            "jinja" | "jinja2" | "j2" => SupportedLanguage::Jinja2,
             "jl" => SupportedLanguage::Julia,
             "lock" => SupportedLanguage::Toml,
             "groovy" | "gvy" | "gy" | "gsh" => SupportedLanguage::Groovy,
@@ -453,6 +458,7 @@ impl SupportedLanguage {
             SupportedLanguage::Haskell,
             SupportedLanguage::Html,
             SupportedLanguage::Ini,
+            SupportedLanguage::Jinja2,
             SupportedLanguage::Java,
             SupportedLanguage::JavaScript,
             SupportedLanguage::JsDoc,
@@ -536,6 +542,7 @@ pub fn register_external_languages() {
     super::syntax_highlighting::groovy::add_groovy_support();
     super::syntax_highlighting::haskell::add_haskell_support();
     super::syntax_highlighting::ini::add_ini_support();
+    super::syntax_highlighting::jinja2::add_jinja2_support();
     super::syntax_highlighting::julia::add_julia_support();
     super::syntax_highlighting::matlab::add_matlab_support();
     super::syntax_highlighting::objective_c::add_objective_c_support();
