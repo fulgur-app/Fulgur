@@ -41,6 +41,10 @@ pub struct SwitchTheme(pub SharedString);
 #[action(namespace = fulgur, no_json)]
 pub struct OpenRecentFile(pub PathBuf);
 
+#[derive(Action, Clone, PartialEq)]
+#[action(namespace = fulgur, no_json)]
+pub struct DockActivateTab(pub PathBuf);
+
 /// Build the menus for the Fulgur instance
 ///
 /// ### Arguments
@@ -127,6 +131,49 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
             ],
         },
     ]
+}
+
+/// Build the macOS dock menu (right-click on dock icon)
+///
+/// ### Arguments
+/// - `open_tabs`: List of (display_name, file_path) for open editor tabs across all windows
+/// - `recent_files`: List of recent file paths (most recent first)
+///
+/// ### Returns
+/// - `Vec<MenuItem>`: The dock menu items
+#[cfg(target_os = "macos")]
+pub fn build_dock_menu(
+    open_tabs: &[(SharedString, PathBuf)],
+    recent_files: &[PathBuf],
+) -> Vec<MenuItem> {
+    let mut items = Vec::new();
+    if !recent_files.is_empty() {
+        items.push(MenuItem::action("Recent Files", NoneAction));
+        for file in recent_files.iter().take(8) {
+            let name = file
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Unknown");
+            items.push(MenuItem::action(
+                name.to_string(),
+                OpenRecentFile(file.to_path_buf()),
+            ));
+        }
+        items.push(MenuItem::Separator);
+    }
+    if !open_tabs.is_empty() {
+        items.push(MenuItem::action("Current Files", NoneAction));
+        for (name, path) in open_tabs {
+            items.push(MenuItem::action(
+                name.clone(),
+                DockActivateTab(path.clone()),
+            ));
+        }
+        items.push(MenuItem::Separator);
+    }
+    items.push(MenuItem::action("New Tab", NewFile));
+    items.push(MenuItem::action("New Window", NewWindow));
+    items
 }
 
 impl Fulgur {

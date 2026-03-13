@@ -3,6 +3,8 @@ use gpui::*;
 use gpui_component::WindowExt;
 use gpui_component::notification::NotificationType;
 use std::collections::HashMap;
+#[cfg(target_os = "macos")]
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 /// Window manager tracks all open Fulgur windows and provides cross-window operations
@@ -281,6 +283,135 @@ impl Fulgur {
             .take();
         if let Some((notification_type, message)) = sync_notification {
             window.push_notification((notification_type, message), cx);
+        }
+        #[cfg(target_os = "macos")]
+        self.update_dock_menu_if_changed(cx);
+    }
+
+    /// Update the macOS dock menu if the open tabs or recent files have changed.
+    ///
+    /// Computes a hash of the current state (open tab paths across all windows
+    /// and recent files) and only rebuilds the dock menu when the hash differs
+    /// from the last known state.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    #[cfg(target_os = "macos")]
+    fn update_dock_menu_if_changed(&mut self, cx: &mut Context<Self>) {
+        use crate::fulgur::tab::Tab;
+        use crate::fulgur::ui::menus::build_dock_menu;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut open_tabs: Vec<(SharedString, PathBuf)> = Vec::new();
+        for tab in &self.tabs {
+            if let Tab::Editor(editor_tab) = tab
+                && let Some(ref path) = editor_tab.file_path
+            {
+                path.hash(&mut hasher);
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Untitled");
+                open_tabs.push((SharedString::from(name.to_string()), path.clone()));
+            }
+        }
+        let manager = cx.global::<WindowManager>();
+        let other_windows: Vec<WeakEntity<Fulgur>> = manager
+            .get_all_window_ids()
+            .into_iter()
+            .filter(|id| *id != self.window_id)
+            .filter_map(|id| manager.get_window(id))
+            .collect();
+        for weak in other_windows {
+            if let Some(entity) = weak.upgrade() {
+                let other = entity.read(cx);
+                for tab in &other.tabs {
+                    if let Tab::Editor(editor_tab) = tab
+                        && let Some(ref path) = editor_tab.file_path
+                    {
+                        path.hash(&mut hasher);
+                        let name = path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("Untitled");
+                        open_tabs.push((SharedString::from(name.to_string()), path.clone()));
+                    }
+                }
+            }
+        }
+        let recent_files = self.settings.get_recent_files();
+        for file in &recent_files {
+            file.hash(&mut hasher);
+        }
+        let hash = hasher.finish();
+        if hash == self.last_dock_menu_hash {
+            return;
+        }
+        self.last_dock_menu_hash = hash;
+        let dock_items = build_dock_menu(&open_tabs, &recent_files);
+        cx.set_dock_menu(dock_items);
+    }
+
+    /// Handle the DockActivateTab action: focus the tab with the given file path,
+    /// switching to the correct window if necessary.
+    ///
+    /// ### Arguments
+    /// - `action`: The DockActivateTab action containing the file path
+    /// - `window`: The current window
+    /// - `cx`: The application context
+    pub fn handle_dock_activate_tab(
+        &mut self,
+        action: &crate::fulgur::ui::menus::DockActivateTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let path = action.0.clone();
+        if let Some(tab_index) = self.find_tab_by_path(&path) {
+            self.active_tab_index = Some(tab_index);
+            self.focus_active_tab(window, cx);
+            cx.notify();
+            return;
+        }
+        let manager = cx.global::<WindowManager>();
+        let mut target: Option<(WindowId, Entity<Fulgur>)> = None;
+        for weak in manager.get_all_windows() {
+            if let Some(entity) = weak.upgrade() {
+                let other = entity.read(cx);
+                if other.window_id == self.window_id {
+                    continue;
+                }
+                if other.find_tab_by_path(&path).is_some() {
+                    target = Some((other.window_id, entity.clone()));
+                    break;
+                }
+            }
+        }
+        if let Some((target_wid, target_entity)) = target {
+            cx.spawn_in(window, {
+                let path = path.clone();
+                async move |_this, async_window| {
+                    async_window
+                        .update(|_window, cx| {
+                            target_entity.update(cx, |fulgur, cx| {
+                                if let Some(tab_index) = fulgur.find_tab_by_path(&path) {
+                                    fulgur.active_tab_index = Some(tab_index);
+                                    cx.notify();
+                                }
+                            });
+                            for handle in cx.windows() {
+                                if handle.window_id() == target_wid {
+                                    handle
+                                        .update(cx, |_, target_window, _| {
+                                            target_window.activate_window();
+                                        })
+                                        .ok();
+                                    break;
+                                }
+                            }
+                        })
+                        .ok();
+                }
+            })
+            .detach();
         }
     }
 }

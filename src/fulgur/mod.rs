@@ -108,6 +108,8 @@ pub struct Fulgur {
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
     _editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
+    #[cfg(target_os = "macos")]
+    last_dock_menu_hash: u64, // Hash of the last dock menu state to avoid unnecessary rebuilds
 }
 
 impl Fulgur {
@@ -174,6 +176,8 @@ impl Fulgur {
                 cached_window_bounds: None,
                 editor_context_menu: None,
                 _editor_context_menu_subscription: None,
+                #[cfg(target_os = "macos")]
+                last_dock_menu_hash: 0,
             }
         });
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
@@ -350,6 +354,7 @@ impl Fulgur {
         register_action!(app_content, cx, NewWindow => open_new_window(cx_only));
         register_action!(app_content, cx, ClearRecentFiles => clear_recent_files(cx_only));
         register_action!(app_content, cx, CloseFile => close_active_tab);
+        register_action!(app_content, cx, DockActivateTab => handle_dock_activate_tab(&action));
         app_content = app_content
             .child(self.render_tab_bar(cx))
             .child(self.render_content_area(active_tab, window, cx))
