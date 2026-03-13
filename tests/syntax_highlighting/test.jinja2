@@ -1,0 +1,126 @@
+{# Jinja2 syntax highlighting test file #}
+
+{# Template inheritance #}
+{% extends "base.html" %}
+
+{# Block definitions #}
+{% block title %}My Page{% endblock %}
+
+{% block content %}
+
+{# Variable output #}
+<h1>{{ page_title }}</h1>
+<p>{{ user.name }}</p>
+<p>{{ user.profile.bio }}</p>
+
+{# String literals #}
+{{ "hello world" }}
+{{ 'single quoted string' }}
+
+{# Filters #}
+{{ name | upper }}
+{{ description | truncate(100) }}
+{{ items | join(", ") }}
+{{ value | default("fallback") | capitalize }}
+
+{# Conditionals #}
+{% if user.is_authenticated %}
+    <p>Welcome, {{ user.username }}!</p>
+{% elif user.is_guest %}
+    <p>Hello, guest!</p>
+{% else %}
+    <p>Please log in.</p>
+{% endif %}
+
+{# For loops #}
+{% for item in items %}
+    <li>{{ item.name }} - {{ item.price }}</li>
+{% endfor %}
+
+{% for key, value in config.items() %}
+    <dt>{{ key }}</dt>
+    <dd>{{ value }}</dd>
+{% endfor %}
+
+{% for user in users if user.active %}
+    {{ user.name }}
+{% else %}
+    No active users.
+{% endfor %}
+
+{# Whitespace control #}
+{%- if show_header -%}
+    <header>{{ header_text }}</header>
+{%- endif -%}
+
+{# Set variables #}
+{% set greeting = "Hello" %}
+{% set count = items | length %}
+{% set full_name = first_name ~ " " ~ last_name %}
+
+{# Macros #}
+{% macro render_field(name, value, required=false) %}
+    <div class="field">
+        <label>{{ name }}</label>
+        <span>{{ value }}</span>
+        {% if required %}<span class="required">*</span>{% endif %}
+    </div>
+{% endmacro %}
+
+{{ render_field("Username", user.name, required=true) }}
+{{ render_field("Email", user.email) }}
+
+{# Import and from-import #}
+{% import "forms.html" as forms %}
+{% from "utils.html" import render_button, render_input %}
+
+{{ forms.input("username") }}
+{{ render_button("Submit", type="submit") }}
+
+{# Include #}
+{% include "partials/navbar.html" %}
+{% include ["partials/sidebar.html", "partials/default_sidebar.html"] ignore missing %}
+
+{# Raw block (not processed) #}
+{% raw %}
+    {{ this_is_not_a_variable }}
+    {% this_is_not_a_tag %}
+{%- endraw %}
+
+{# Block with scoped modifier #}
+{% block sidebar scoped %}
+    {{ super() }}
+    <p>Extra content for {{ page_title }}</p>
+{% endblock %}
+
+{# Operators #}
+{% if x > 0 and y < 10 %}
+{% if name == "admin" or role == "superuser" %}
+{% if not user.banned %}
+{% if value is defined %}
+{% if item is not none %}
+{% if number is divisibleby(3) %}
+
+{# Tests #}
+{% if items is iterable %}
+{% if variable is string %}
+{% if value is number %}
+
+{# Arithmetic and string operators #}
+{{ count + 1 }}
+{{ price * quantity }}
+{{ first ~ " " ~ last }}
+{{ items | length - 1 }}
+
+{# Comments in various positions #}
+<div>
+    {# This comment is inside HTML #}
+    {{ content }}
+</div>
+
+{# Autoescape block #}
+{% autoescape true %}
+    {{ user_input }}
+{% endautoescape %}
+
+{% endblock %}

@@ -69,6 +69,7 @@ arborium-d = "2.15.0"
 arborium-dart = "2.15.0"
 arborium-erlang = "2.15.0"
 arborium-groovy = "2.15.0"
+arborium-jinja2 = "2.16.0"
 arborium-julia = "2.16.0"
 arborium-matlab = "2.16.0"
 arborium-ini = "2.15.0"
@@ -278,6 +279,14 @@ name = "Java Source"
 description = "Java source code"
 role = "editor"
 mimeType = "text/x-java"
+
+# Jinja2
+[[package.metadata.packager.file-associations]]
+extensions = ["jinja", "jinja2", "j2"]
+name = "Jinja2 Template"
+description = "Jinja2 template file"
+role = "editor"
+mimeType = "text/x-jinja2"
 
 # Julia
 [[package.metadata.packager.file-associations]]

@@ -17,6 +17,7 @@ dependencies = [
  "arborium-erlang",
  "arborium-groovy",
  "arborium-ini",
+ "arborium-jinja2",
  "arborium-julia",
  "arborium-matlab",
  "arborium-objc",
@@ -348,6 +349,17 @@ name = "arborium-javascript"
 version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "225400ee42324bd37d91ee1198b955af458e3ee6c1b33b5cb5d8be51fb3e2657"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "arborium-jinja2"
+version = "2.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92e48811161ee5bd7c70f1724f02e3664e0bfbb5cc3c1f94759988530c6571a6"
 dependencies = [
  "arborium-sysroot",
  "cc",
