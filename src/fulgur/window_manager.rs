@@ -366,19 +366,22 @@ impl Fulgur {
     ) {
         let path = action.0.clone();
         if let Some(tab_index) = self.find_tab_by_path(&path) {
-            self.active_tab_index = Some(tab_index);
+            self.set_active_tab(tab_index, window, cx);
             self.focus_active_tab(window, cx);
             cx.notify();
             return;
         }
         let manager = cx.global::<WindowManager>();
+        let other_windows: Vec<WeakEntity<Fulgur>> = manager
+            .get_all_window_ids()
+            .into_iter()
+            .filter(|id| *id != self.window_id)
+            .filter_map(|id| manager.get_window(id))
+            .collect();
         let mut target: Option<(WindowId, Entity<Fulgur>)> = None;
-        for weak in manager.get_all_windows() {
+        for weak in other_windows {
             if let Some(entity) = weak.upgrade() {
                 let other = entity.read(cx);
-                if other.window_id == self.window_id {
-                    continue;
-                }
                 if other.find_tab_by_path(&path).is_some() {
                     target = Some((other.window_id, entity.clone()));
                     break;
@@ -393,6 +396,7 @@ impl Fulgur {
                         .update(|_window, cx| {
                             target_entity.update(cx, |fulgur, cx| {
                                 if let Some(tab_index) = fulgur.find_tab_by_path(&path) {
+                                    fulgur.tab_scroll_handle.scroll_to_item(tab_index);
                                     fulgur.active_tab_index = Some(tab_index);
                                     cx.notify();
                                 }
