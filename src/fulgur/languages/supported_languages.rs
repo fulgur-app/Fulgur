@@ -34,6 +34,7 @@ pub enum SupportedLanguage {
     JavaScript,
     JsDoc,
     Json,
+    Julia,
     Kotlin,
     Lua,
     Make,
@@ -144,6 +145,7 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::GraphQl => Language::GraphQL,
         SupportedLanguage::Html => Language::Html,
         SupportedLanguage::Ini => Language::Plain,
+        SupportedLanguage::Julia => Language::Plain,
         SupportedLanguage::Java => Language::Java,
         SupportedLanguage::JavaScript => Language::JavaScript,
         SupportedLanguage::JsDoc => Language::JsDoc,
@@ -210,6 +212,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::JavaScript => "JavaScript".to_string(),
         SupportedLanguage::JsDoc => "JSDoc".to_string(),
         SupportedLanguage::Json => "JSON".to_string(),
+        SupportedLanguage::Julia => "Julia".to_string(),
         SupportedLanguage::Kotlin => "Kotlin".to_string(),
         SupportedLanguage::Lua => "Lua".to_string(),
         SupportedLanguage::Make => "Make".to_string(),
@@ -266,6 +269,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
         SupportedLanguage::Groovy => "groovy",
         SupportedLanguage::Haskell => "haskell",
         SupportedLanguage::Ini => "ini",
+        SupportedLanguage::Julia => "julia",
         SupportedLanguage::ObjectiveC => "objective-c",
         SupportedLanguage::Ocaml => "ocaml",
         SupportedLanguage::Pascal => "pascal",
@@ -334,6 +338,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "fs" | "fsi" | "fsx" | "fsscript" => SupportedLanguage::FSharp,
             "hs" | "lhs" => SupportedLanguage::Haskell,
             "ini" | "cfg" | "conf" | "config" => SupportedLanguage::Ini,
+            "jl" => SupportedLanguage::Julia,
             "lock" => SupportedLanguage::Toml,
             "groovy" | "gvy" | "gy" | "gsh" => SupportedLanguage::Groovy,
             "mjs" => SupportedLanguage::JavaScript,
@@ -390,6 +395,7 @@ impl SupportedLanguage {
             SupportedLanguage::JavaScript,
             SupportedLanguage::JsDoc,
             SupportedLanguage::Json,
+            SupportedLanguage::Julia,
             SupportedLanguage::Kotlin,
             SupportedLanguage::Lua,
             SupportedLanguage::Make,
@@ -467,6 +473,7 @@ pub fn register_external_languages() {
     super::syntax_highlighting::groovy::add_groovy_support();
     super::syntax_highlighting::haskell::add_haskell_support();
     super::syntax_highlighting::ini::add_ini_support();
+    super::syntax_highlighting::julia::add_julia_support();
     super::syntax_highlighting::objective_c::add_objective_c_support();
     super::syntax_highlighting::ocaml::add_ocaml_support();
     super::syntax_highlighting::pascal::add_pascal_support();

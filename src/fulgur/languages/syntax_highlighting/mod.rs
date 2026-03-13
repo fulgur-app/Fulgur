@@ -9,6 +9,7 @@ pub mod fsharp;
 pub mod groovy;
 pub mod haskell;
 pub mod ini;
+pub mod julia;
 pub mod objective_c;
 pub mod ocaml;
 pub mod pascal;
