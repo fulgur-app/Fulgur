@@ -63,6 +63,7 @@ bytes = "1.11.1"
 
 # Tree-sitter languages
 arborium-ada = "2.15.0"
+arborium-asm = "2.16.0"
 arborium-c = "2.15.0"
 arborium-clojure = "2.15.0"
 arborium-d = "2.15.0"
@@ -695,6 +696,14 @@ name = "F# Source File"
 description = "F# source code"
 role = "editor"
 mimeType = "text/x-fsharp"
+
+# Assembly
+[[package.metadata.packager.file-associations]]
+extensions = ["asm", "nasm", "masm"]
+name = "Assembly Source File"
+description = "Assembly language source code"
+role = "editor"
+mimeType = "text/x-asm"
 
 [package.metadata.packager.macos]
 minimum-system-version = "10.15"

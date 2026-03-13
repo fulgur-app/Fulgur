@@ -1,4 +1,5 @@
 pub mod ada;
+pub mod asm;
 pub mod clojure;
 pub mod d;
 pub mod dart;

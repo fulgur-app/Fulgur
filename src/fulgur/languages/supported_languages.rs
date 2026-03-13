@@ -6,6 +6,7 @@ use crate::fulgur::Fulgur;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SupportedLanguage {
     Ada,
+    Asm,
     Astro,
     Bash,
     C,
@@ -129,6 +130,7 @@ pub fn from_language(language: Language) -> SupportedLanguage {
 /// The corresponding language
 pub fn to_language(supported_language: &SupportedLanguage) -> Language {
     match supported_language {
+        SupportedLanguage::Asm => Language::Plain,
         SupportedLanguage::Astro => Language::Astro,
         SupportedLanguage::Bash => Language::Bash,
         SupportedLanguage::C => Language::C,
@@ -188,6 +190,7 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
 pub fn pretty_name(language: &SupportedLanguage) -> String {
     match language {
         SupportedLanguage::Ada => "Ada".to_string(),
+        SupportedLanguage::Asm => "Assembly".to_string(),
         SupportedLanguage::Astro => "Astro".to_string(),
         SupportedLanguage::Bash => "Bash".to_string(),
         SupportedLanguage::C => "C".to_string(),
@@ -265,6 +268,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
 pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'static str {
     match supported_language {
         SupportedLanguage::Ada => "ada",
+        SupportedLanguage::Asm => "asm",
         SupportedLanguage::Clojure => "clojure",
         SupportedLanguage::Erlang => "erlang",
         SupportedLanguage::Fortran => "fortran",
@@ -335,6 +339,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
     if language == SupportedLanguage::Plain {
         language = match extension {
             "ada" | "ads" | "adb" => SupportedLanguage::Ada,
+            "asm" | "s" | "S" | "nasm" | "masm" => SupportedLanguage::Asm,
             "clojure" | "clj" | "cljs" => SupportedLanguage::Clojure,
             "d" | "di" => SupportedLanguage::D,
             "dart" => SupportedLanguage::Dart,
@@ -434,6 +439,7 @@ impl SupportedLanguage {
     pub fn all() -> Vec<SupportedLanguage> {
         vec![
             SupportedLanguage::Ada,
+            SupportedLanguage::Asm,
             SupportedLanguage::Astro,
             SupportedLanguage::Bash,
             SupportedLanguage::C,
@@ -532,6 +538,7 @@ impl Fulgur {
 /// Register external languages that are not supported by default by the editor
 pub fn register_external_languages() {
     super::syntax_highlighting::ada::add_ada_support();
+    super::syntax_highlighting::asm::add_asm_support();
     super::syntax_highlighting::clojure::add_clojure_support();
     super::syntax_highlighting::d::add_d_support();
     super::syntax_highlighting::dart::add_dart_support();
