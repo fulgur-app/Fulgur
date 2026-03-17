@@ -11,13 +11,19 @@ Fulgur is not signed yet. If Fulgur is tagged as damaged by MacOS, just run `xat
 
 ### What is Fulgur?
 
-Fulgur is a **straightforward text editor** built for speed and reliability across multiple platforms. It's not designed to replace full-featured IDEs like VS Code, IntelliJ, or Zed, nor does it aim to match the extensive capabilities of editors like Emacs or Vim. Instead, Fulgur focuses on being fast, dependable, and **built with modern technologies**.
+Fulgur is a **straightforward text editor** built for speed and reliability across multiple platforms. It's not designed to replace full-featured IDEs like VS Code, IntelliJ, or Zed, nor does it aim to match the extensive capabilities of editors like Emacs or Vim. 
+
+Fulgur focuses on being fast, dependable, and **built with modern technologies**. Fulgur is built with **Rust** and **GPUI**, a modern, GPU-accelerated UI framework for Rust developed for Zed. No embedded webviews, no Javascript, just pure, native performance.
 
 Themes are a core part of the Fulgur experience, with several included by default.
 
-Version 0.2.0 also introduces Sync mode, allowing you to **securely send files between Fulgur instances** similar to how you share tabs between browsers. The best part: [Fulgurant](https://github.com/fulgur-app/fulgurant), **the open source sync server, is self-hostable**, keeping your data private.
+### What's new in Fulgur?
+
+Version 0.2.0 introduces Sync mode, allowing you to **securely send files between Fulgur instances** similar to how you share tabs between browsers. The best part: [Fulgurant](https://github.com/fulgur-app/fulgurant), **the open source sync server, is self-hostable**, keeping your data private.
 
 Version 0.3.0 introduces **multi-window support**, allowing you to open multiple Fulgur windows simultaneously, as well as a much more **robust and secure end-to-end encryption system** using the system's keychain. As a result it limits compatibility issues on some desktop environments on Linux.
+
+Version 0.4.0 is more of a maintenance release, with a strong **focus on performance, security and code quality**. It also adds the  support of the **syntax highlighting for 15 new languages**.
 
 ### Screenshots
 
@@ -44,10 +50,9 @@ Fulgur is currently in alpha development. While it has been stable in testing, s
 * Drag and drop support
 * Profiles support
 * DONE in 0.3.0 ~~Multi-windows support~~
-* Syntax highlighting for additional languages
+* STARTED in 0.4.0 Syntax highlighting for additional languages
 * DONE in 0.2.0 ~~Sync mode functionality~~
 * Various edge cases
-* Compatibility issues on some desktop environments on Linux
 
 **Note that breaking changes may occur in future releases until v1.0.0.**
 
@@ -80,7 +85,6 @@ Install the [Windows SDK](https://developer.microsoft.com/en-us/windows/download
 Once all the prerequisites installed and set up:
 
 * Run `cargo build --release` to build an optimized version of Fulgur. May take some time on older systems.
-* Run `cd license && ./generate_license_file.sh` to update the 3rd party licences list if you plan to distribute Fulgur.
 * Run `cargo packager --release` to build an optimized version of Fulgur and make a pretty executable with an icon.
 
 ## License
