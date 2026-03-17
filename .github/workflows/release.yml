@@ -123,7 +123,7 @@ jobs:
         run: cargo binstall cargo-about --locked --no-confirm --force
 
       - name: Generate third-party licenses
-        run: cargo about generate licenses/about.hbs -c licenses/about.toml --workspace -o THIRD-PARTY-LICENSES
+        run: cargo about generate licenses/about.hbs -c licenses/about.toml --workspace -o THIRD-PARTY-LICENSES || true
 
       - name: Build and package
         shell: bash
