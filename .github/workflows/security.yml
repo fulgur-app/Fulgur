@@ -38,7 +38,6 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          deny-warnings: false
 
       - name: Cargo deny
         uses: EmbarkStudios/cargo-deny-action@v2
