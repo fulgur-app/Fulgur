@@ -1,6 +1,6 @@
 use std::fs;
 
-use gpui::*;
+use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
     ActiveTheme, Sizable, Size, StyledExt,
     button::{Button, ButtonVariants},
@@ -803,19 +803,24 @@ impl Fulgur {
     /// ### Returns
     /// - `impl IntoElement`: The settings UI
     pub fn render_settings(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        const MAX_WIDTH: f32 = 1400.0;
+        let show_side_borders = window.viewport_size().width >= px(MAX_WIDTH);
         div()
             .id("settings-scroll-container")
             .size_full()
             .overflow_x_scroll()
             .child(
                 v_flex()
-                    .w(px(980.0))
+                    //.w(px(980.0))
                     .h_full()
                     .mx_auto()
+                    .max_w(px(MAX_WIDTH))
+                    .min_w(px(980.0))
                     .text_color(cx.theme().foreground)
                     .text_size(px(12.0))
-                    .border_r_1()
-                    .border_color(cx.theme().border)
+                    .when(show_side_borders, |el: gpui::Div| {
+                        el.border_l_1().border_r_1().border_color(cx.theme().border)
+                    })
                     .child(
                         SettingsComponent::new("fulgur-settings")
                             .with_size(Size::Medium)
