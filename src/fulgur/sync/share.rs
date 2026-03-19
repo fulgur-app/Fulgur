@@ -396,7 +396,18 @@ pub fn share_file(
                     })
                 })
                 .collect();
-            handles.into_iter().map(|h| h.join().unwrap()).collect()
+            handles
+                .into_iter()
+                .map(|h| {
+                    h.join().unwrap_or_else(|e| {
+                        log::error!("Share thread panicked: {:?}", e);
+                        (
+                            String::new(),
+                            Err(SynchronizationError::Other("Internal issue".to_string())),
+                        )
+                    })
+                })
+                .collect()
         });
     let mut successes = Vec::new();
     let mut failures = Vec::new();
