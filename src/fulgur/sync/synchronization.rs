@@ -168,7 +168,8 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         let email = settings.app_settings.synchronization_settings.email.clone();
         let key = match load_device_api_key_from_keychain() {
             Ok(value) => value,
-            Err(_) => {
+            Err(e) => {
+                log::error!("Failed to load device API key from keychain: {}", e);
                 set_sync_server_connection_status(
                     sync_server_connection_status.clone(),
                     SynchronizationStatus::Disconnected,
