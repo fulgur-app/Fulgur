@@ -22,6 +22,9 @@ use crate::fulgur::{
 pub type Device = DeviceResponse;
 pub const MAX_SYNC_SHARE_PAYLOAD_BYTES: usize = 1024 * 1024;
 
+/// Maximum allowed size for decompressed content (2x the compressed payload limit).
+const MAX_DECOMPRESSED_BYTES: usize = 2 * MAX_SYNC_SHARE_PAYLOAD_BYTES;
+
 /// Parameters for sharing a file
 pub struct ShareFileRequest {
     pub content: String,
@@ -70,13 +73,13 @@ pub fn decompress_content(compressed: &[u8]) -> anyhow::Result<String> {
         ));
     }
     let decoder = GzDecoder::new(compressed);
-    let mut limited_reader = decoder.take((MAX_SYNC_SHARE_PAYLOAD_BYTES + 1) as u64);
-    let mut decompressed_bytes = Vec::new();
+    let mut limited_reader = decoder.take((MAX_DECOMPRESSED_BYTES + 1) as u64);
+    let mut decompressed_bytes = Vec::with_capacity(MAX_SYNC_SHARE_PAYLOAD_BYTES);
     limited_reader.read_to_end(&mut decompressed_bytes)?;
-    if decompressed_bytes.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
+    if decompressed_bytes.len() > MAX_DECOMPRESSED_BYTES {
         return Err(anyhow::anyhow!(
             "Decompressed payload exceeds {} bytes limit",
-            MAX_SYNC_SHARE_PAYLOAD_BYTES
+            MAX_DECOMPRESSED_BYTES
         ));
     }
     let decompressed = String::from_utf8(decompressed_bytes)
@@ -535,7 +538,7 @@ fn main() {
 
     #[test]
     fn test_decompress_rejects_oversized_decompressed_payload() {
-        let original = "A".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES + 1);
+        let original = "A".repeat(MAX_DECOMPRESSED_BYTES + 1);
         let compressed = compress_content(&original).unwrap();
         let result = decompress_content(&compressed);
         assert!(result.is_err());
