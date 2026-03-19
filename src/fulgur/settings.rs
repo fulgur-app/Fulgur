@@ -1,6 +1,8 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use fs2::FileExt;
 use gpui::{Context, SharedString, Window};
 use gpui_component::{notification::NotificationType, scroll::ScrollbarShow};
 use serde::{Deserialize, Serialize};
@@ -344,8 +346,8 @@ impl Settings {
     ///
     /// ### Description
     /// Core implementation for saving settings. Can be used with custom paths
-    /// for testing or alternative storage locations. Uses file locking to prevent
-    /// corruption when multiple windows write simultaneously.
+    /// for testing or alternative storage locations. Uses atomic file writes to
+    /// prevent corruption when multiple windows write simultaneously.
     ///
     /// ### Arguments
     /// - `path`: The path to save the settings to
@@ -353,20 +355,8 @@ impl Settings {
     /// ### Returns
     /// - `Ok(())`: The result of the operation
     /// - `Err(anyhow::Error)`: If there was an error saving the settings
-    pub fn save_to_path(&mut self, path: &PathBuf) -> anyhow::Result<()> {
-        // Serialize settings to JSON first (fast, no I/O)
+    pub fn save_to_path(&mut self, path: &Path) -> anyhow::Result<()> {
         let json = serde_json::to_string_pretty(&self)?;
-
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)
-            .map_err(|e| anyhow::anyhow!("Failed to open settings file: {}", e))?;
-        file.lock_exclusive()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire lock on settings file: {}", e))?;
-
         atomic_write_file(path, json.as_bytes())
     }
 
@@ -374,8 +364,7 @@ impl Settings {
     ///
     /// ### Description
     /// Core implementation for loading settings. Can be used with custom paths
-    /// for testing or alternative storage locations. Uses shared file locking to
-    /// allow concurrent reads while preventing reads during writes.
+    /// for testing or alternative storage locations.
     ///
     /// ### Arguments
     /// - `path`: The path to load the settings from
@@ -384,17 +373,8 @@ impl Settings {
     /// - `Ok(Settings)`: The loaded settings
     /// - `Err(anyhow::Error)`: If there was an error loading the settings
     pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .open(path)
-            .map_err(|e| anyhow::anyhow!("Failed to open settings file for reading: {}", e))?;
-        file.lock_shared().map_err(|e| {
-            anyhow::anyhow!("Failed to acquire shared lock on settings file: {}", e)
-        })?;
-        let mut reader = std::io::BufReader::new(&file);
-        let mut json = String::new();
-        std::io::Read::read_to_string(&mut reader, &mut json)
-            .map_err(|e| anyhow::anyhow!("Failed to read settings: {}", e))?;
+        let json = fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("Failed to read settings file: {}", e))?;
         let settings: Settings = serde_json::from_str(&json)
             .map_err(|e| anyhow::anyhow!("Failed to parse settings: {}", e))?;
         Ok(settings)

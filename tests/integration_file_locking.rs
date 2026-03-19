@@ -1,7 +1,7 @@
-/// Integration tests for file locking mechanism
+/// Integration tests for concurrent file access
 ///
 /// These tests verify that settings and state files can be safely written
-/// by multiple threads concurrently without corruption, using the fs2 file locking.
+/// by multiple threads concurrently without corruption, using atomic file writes.
 use fulgur::fulgur::settings::Settings;
 use fulgur::fulgur::state_persistence::{
     SerializedWindowBounds, TabState, WindowState, WindowsState,
@@ -14,7 +14,7 @@ use tempfile::TempDir;
 /// Test concurrent writes to settings file don't corrupt data
 ///
 /// Simulates multiple windows trying to save settings simultaneously.
-/// Without file locking, this could result in corrupted JSON.
+/// Atomic file writes prevent corrupted JSON.
 #[test]
 fn test_settings_concurrent_writes_no_corruption() {
     let temp_dir = TempDir::new().unwrap();
@@ -114,7 +114,7 @@ fn test_settings_concurrent_read_write() {
     assert!(final_settings.editor_settings.font_size >= 14.0);
 }
 
-/// Test that file locking doesn't deadlock
+/// Test sequential writes from the same thread
 ///
 /// Verifies that multiple sequential writes from the same thread work correctly.
 #[test]
@@ -130,10 +130,9 @@ fn test_settings_sequential_writes_same_thread() {
     assert_eq!(final_settings.editor_settings.font_size, 19.0);
 }
 
-/// Test that lock is released on error
+/// Test sequential writes succeed
 ///
-/// Verifies that if serialization fails, the lock is still released
-/// so subsequent writes can succeed.
+/// Verifies that consecutive writes produce valid data.
 #[test]
 fn test_settings_lock_released_after_write() {
     let temp_dir = TempDir::new().unwrap();
@@ -150,7 +149,7 @@ fn test_settings_lock_released_after_write() {
 
 /// Test concurrent writes with larger data
 ///
-/// Verifies that locking works correctly with more realistic data sizes.
+/// Verifies that atomic writes work correctly with more realistic data sizes.
 #[test]
 fn test_state_concurrent_writes_large_data() {
     let temp_dir = TempDir::new().unwrap();
