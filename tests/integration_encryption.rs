@@ -106,7 +106,7 @@ fn test_keychain_save_and_load_private_key() {
     let loaded = load_from_test_keychain(entry_name)
         .expect("Failed to load from keychain")
         .expect("Value should exist");
-    assert_eq!(loaded, private_str, "Loaded key should match saved key");
+    assert_eq!(loaded, *private_str, "Loaded key should match saved key");
     cleanup_keychain_entry(entry_name);
 }
 

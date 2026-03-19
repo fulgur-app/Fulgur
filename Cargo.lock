@@ -64,6 +64,7 @@ dependencies = [
  "tree-sitter-r",
  "ureq",
  "urlencoding",
+ "zeroize",
 ]
 
 [[package]]
