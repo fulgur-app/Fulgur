@@ -28,6 +28,10 @@ use crate::fulgur::{
     utils::{retry::BackoffCalculator, sanitize::sanitize_filename, utilities::collect_events},
 };
 
+/// Maximum size for SSE event data accumulation (10x payload limit to account for
+/// base64 encoding overhead and JSON wrapper)
+const MAX_SSE_EVENT_DATA_BYTES: usize = MAX_SYNC_SHARE_PAYLOAD_BYTES * 10;
+
 /// Server-Sent Events state for sync functionality
 pub struct SseState {
     pub sse_events: Option<Receiver<SseEvent>>,
@@ -241,7 +245,17 @@ pub fn connect_sse(
                             current_event_type =
                                 line.trim_start_matches("event:").trim().to_string();
                         } else if line.starts_with("data:") {
-                            current_data.push_str(line.trim_start_matches("data:").trim());
+                            let fragment = line.trim_start_matches("data:").trim();
+                            if current_data.len() + fragment.len() > MAX_SSE_EVENT_DATA_BYTES {
+                                log::warn!(
+                                    "SSE event data exceeds size limit ({} bytes), discarding",
+                                    MAX_SSE_EVENT_DATA_BYTES
+                                );
+                                current_data.clear();
+                                current_event_type.clear();
+                                continue;
+                            }
+                            current_data.push_str(fragment);
                         } else if line.is_empty() && !current_data.is_empty() {
                             log::info!("SSE event type: {}", current_event_type);
                             log::debug!("SSE event received ({} bytes)", current_data.len());
