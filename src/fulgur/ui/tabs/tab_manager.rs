@@ -114,8 +114,10 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn close_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(index) = self.active_tab_index {
-            self.close_tab(index, window, cx);
+        if let Some(index) = self.active_tab_index
+            && let Some(tab) = self.tabs.get(index)
+        {
+            self.close_tab(tab.id(), window, cx);
         }
     }
 
