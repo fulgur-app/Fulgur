@@ -19,20 +19,12 @@ pub struct SearchMatch {
 ///
 /// ### Returns
 /// - `(usize, usize)`: A tuple of (line, column)
-pub(super) fn get_line_col(text: &str, pos: usize) -> (usize, usize) {
-    let mut line = 0;
-    let mut col = 0;
-    for (i, ch) in text.chars().enumerate() {
-        if i >= pos {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            col = 0;
-        } else {
-            col += 1;
-        }
-    }
+pub(super) fn get_line_col(text: &str, byte_pos: usize) -> (usize, usize) {
+    let slice = &text[..byte_pos.min(text.len())];
+    let line = slice.bytes().filter(|&b| b == b'\n').count();
+    let col = slice
+        .rfind('\n')
+        .map_or(slice.chars().count(), |nl| slice[nl + 1..].chars().count());
     (line, col)
 }
 
@@ -72,14 +64,14 @@ pub(super) fn find_matches(
         let end_pos = absolute_pos + query.len();
         if match_whole_word {
             let is_word_start = absolute_pos == 0
-                || !text
+                || !text[..absolute_pos]
                     .chars()
-                    .nth(absolute_pos - 1)
+                    .next_back()
                     .is_some_and(|c| c.is_alphanumeric() || c == '_');
             let is_word_end = end_pos >= text.len()
-                || !text
+                || !text[end_pos..]
                     .chars()
-                    .nth(end_pos)
+                    .next()
                     .is_some_and(|c| c.is_alphanumeric() || c == '_');
 
             if !is_word_start || !is_word_end {
@@ -749,9 +741,11 @@ mod tests {
 
     #[test]
     fn test_get_line_col_unicode_characters() {
+        // "hello 世界\nworld" — '世' starts at byte 6, '界' at byte 9, '\n' at byte 12, 'w' at byte 13
         let text = "hello 世界\nworld";
-        assert_eq!(get_line_col(text, 6), (0, 6)); // '世'
-        assert_eq!(get_line_col(text, 9), (1, 0)); // 'w' in "world"
+        assert_eq!(get_line_col(text, 6), (0, 6)); // '世' at byte 6: line 0, col 6
+        assert_eq!(get_line_col(text, 9), (0, 7)); // '界' at byte 9: line 0, col 7
+        assert_eq!(get_line_col(text, 13), (1, 0)); // 'w' at byte 13: line 1, col 0
     }
 
     #[test]
