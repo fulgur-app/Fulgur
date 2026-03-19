@@ -532,7 +532,7 @@ impl Fulgur {
                 .menu_with_disabled(
                     "Close All Other Tabs",
                     Box::new(CloseAllOtherTabs(index)),
-                    total_tabs == 0,
+                    total_tabs <= 1,
                 )
             });
 
