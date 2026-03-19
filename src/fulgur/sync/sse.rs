@@ -32,12 +32,17 @@ use crate::fulgur::{
 /// base64 encoding overhead and JSON wrapper)
 const MAX_SSE_EVENT_DATA_BYTES: usize = MAX_SYNC_SHARE_PAYLOAD_BYTES * 10;
 
+/// Maximum time to wait for the previous SSE thread to exit before starting a new one
+const SSE_THREAD_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Server-Sent Events state for sync functionality
 pub struct SseState {
     pub sse_events: Option<Receiver<SseEvent>>,
     pub sse_event_tx: Option<std::sync::mpsc::Sender<SseEvent>>,
     pub sse_shutdown_flag: Option<Arc<AtomicBool>>,
     pub last_sse_event: Option<Instant>,
+    /// Handle to the current SSE background thread for lifecycle tracking.
+    pub sse_thread_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
 impl Default for SseState {
@@ -61,6 +66,7 @@ impl SseState {
             sse_event_tx: None,
             sse_shutdown_flag: None,
             last_sse_event: None,
+            sse_thread_handle: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -115,8 +121,10 @@ fn read_line_with_timeout<R: Read>(
                     line.push(byte[0] as char);
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                // Non-blocking read would block, sleep briefly and retry
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
                 thread::sleep(Duration::from_millis(10));
                 continue;
             }
@@ -156,7 +164,7 @@ pub fn connect_sse(
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
     token_state: Arc<TokenStateManager>,
     http_agent: Arc<ureq::Agent>,
-) -> Result<(), SynchronizationError> {
+) -> Result<thread::JoinHandle<()>, SynchronizationError> {
     let server_url = synchronization_settings
         .server_url
         .clone()
@@ -165,7 +173,7 @@ pub fn connect_sse(
     let settings_clone = synchronization_settings.clone();
     let token_state_clone = Arc::clone(&token_state);
     let http_agent_clone = Arc::clone(&http_agent);
-    thread::spawn(move || {
+    let handle = thread::spawn(move || {
         // Exponential backoff for reconnection attempts (1s, 2s, 4s, 8s... up to 5 minutes)
         let mut backoff = BackoffCalculator::default_settings();
 
@@ -302,8 +310,7 @@ pub fn connect_sse(
             thread::sleep(delay);
         }
     });
-
-    Ok(())
+    Ok(handle)
 }
 
 /// Heartbeat event data sent by SSE to keep connection alive
@@ -395,12 +402,15 @@ impl Fulgur {
     ///
     /// ### Description
     /// Stops the current SSE connection and starts a new one with the updated settings.
+    /// Waits for the previous SSE thread to exit (bounded by `SSE_THREAD_SHUTDOWN_TIMEOUT`)
+    /// in a background thread to avoid blocking the UI.
     /// Should be called when synchronization settings (server URL, email, or key) change.
     pub fn restart_sse_connection(&mut self, cx: &mut Context<Self>) {
         if let Some(ref shutdown_flag) = self.sse_state.sse_shutdown_flag {
             log::info!("Signaling SSE connection to shutdown...");
             shutdown_flag.store(true, Ordering::Relaxed);
         }
+        let old_handle = self.sse_state.sse_thread_handle.lock().take();
         thread::sleep(Duration::from_millis(100));
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
         let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
@@ -417,7 +427,24 @@ impl Fulgur {
             let sync_status = self.shared_state(cx).sync_state.connection_status.clone();
             let token_state = Arc::clone(&self.shared_state(cx).sync_state.token_state);
             let http_agent = Arc::clone(&self.shared_state(cx).http_agent);
+            let handle_storage = Arc::clone(&self.sse_state.sse_thread_handle);
             thread::spawn(move || {
+                // Wait for previous SSE thread to exit before starting new connection
+                if let Some(handle) = old_handle {
+                    let deadline = Instant::now() + SSE_THREAD_SHUTDOWN_TIMEOUT;
+                    while !handle.is_finished() && Instant::now() < deadline {
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                    if handle.is_finished() {
+                        let _ = handle.join();
+                        log::info!("Previous SSE thread exited");
+                    } else {
+                        log::warn!(
+                            "Previous SSE thread still running after {:?}, proceeding with new connection",
+                            SSE_THREAD_SHUTDOWN_TIMEOUT
+                        );
+                    }
+                }
                 // Small delay to ensure old connection is fully stopped
                 thread::sleep(Duration::from_millis(200));
                 match super::synchronization::initial_synchronization(
@@ -427,7 +454,7 @@ impl Fulgur {
                 ) {
                     Ok(_) => {
                         log::info!("Initial sync succeeded, starting new SSE connection");
-                        if let Err(e) = connect_sse(
+                        match connect_sse(
                             &settings.app_settings.synchronization_settings,
                             sse_tx,
                             sse_shutdown_flag,
@@ -435,7 +462,12 @@ impl Fulgur {
                             token_state,
                             http_agent,
                         ) {
-                            log::error!("Failed to start new SSE connection: {}", e);
+                            Ok(new_handle) => {
+                                *handle_storage.lock() = Some(new_handle);
+                            }
+                            Err(e) => {
+                                log::error!("Failed to start new SSE connection: {}", e);
+                            }
                         }
                     }
                     Err(e) => {

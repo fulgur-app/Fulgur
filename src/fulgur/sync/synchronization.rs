@@ -154,6 +154,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     let device_name = shared.sync_state.device_name.clone();
     let sse_tx = entity.read(cx).sse_state.sse_event_tx.clone();
     let sse_shutdown_flag = entity.read(cx).sse_state.sse_shutdown_flag.clone();
+    let sse_thread_handle = entity.read(cx).sse_state.sse_thread_handle.clone();
     let token_state = shared.sync_state.token_state.clone();
     let http_agent = Arc::clone(&shared.http_agent);
     thread::spawn(move || {
@@ -210,7 +211,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                 }
                 if let (Some(tx), Some(shutdown)) = (sse_tx, sse_shutdown_flag) {
                     log::info!("Starting SSE connection for real-time updates");
-                    if let Err(e) = connect_sse(
+                    match connect_sse(
                         &settings.app_settings.synchronization_settings,
                         tx,
                         shutdown,
@@ -218,7 +219,12 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                         Arc::clone(&token_state),
                         Arc::clone(&http_agent),
                     ) {
-                        log::error!("Failed to start SSE connection: {}", e);
+                        Ok(handle) => {
+                            *sse_thread_handle.lock() = Some(handle);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to start SSE connection: {}", e);
+                        }
                     }
                 } else {
                     log::warn!(
