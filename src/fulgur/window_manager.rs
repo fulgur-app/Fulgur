@@ -227,12 +227,8 @@ impl Fulgur {
                 };
                 let window = cx.open_window(window_options, |window, cx| {
                     window.set_window_title("Fulgur");
-                    let view = Fulgur::new(window, cx, usize::MAX); // usize::MAX = new empty window
-                    let window_handle = window.window_handle();
-                    let window_id = window_handle.window_id();
-                    view.update(cx, |fulgur, _cx| {
-                        fulgur.window_id = window_id;
-                    });
+                    let window_id = window.window_handle().window_id();
+                    let view = Fulgur::new(window, cx, window_id, usize::MAX); // usize::MAX = new empty window
                     cx.update_global::<WindowManager, _>(|manager, _| {
                         manager.register(window_id, view.downgrade());
                     });

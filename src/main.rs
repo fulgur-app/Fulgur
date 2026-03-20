@@ -232,12 +232,8 @@ async fn create_window(
     };
     let window = cx.open_window(window_options, |window, cx| {
         window.set_window_title("Fulgur");
-        let view = fulgur::Fulgur::new(window, cx, window_index);
-        let window_handle = window.window_handle();
-        let window_id = window_handle.window_id();
-        view.update(cx, |fulgur, _cx| {
-            fulgur.window_id = window_id;
-        });
+        let window_id = window.window_handle().window_id();
+        let view = fulgur::Fulgur::new(window, cx, window_id, window_index);
         cx.update_global::<fulgur::window_manager::WindowManager, _>(|manager, _| {
             manager.register(window_id, view.downgrade());
         });

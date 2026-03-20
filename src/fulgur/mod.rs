@@ -133,15 +133,20 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to create the Fulgur instance in
     /// - `cx`: The application context
+    /// - `window_id`: The window ID for this instance, obtained from `window.window_handle().window_id()`
     /// - `window_index`: Index of this window in saved state (0 = first window, etc.). Use usize::MAX for new empty windows.
     ///
     /// ### Returns
     /// - `Entity<Self>`: The new Fulgur instance
-    pub fn new(window: &mut Window, cx: &mut App, window_index: usize) -> Entity<Self> {
+    pub fn new(
+        window: &mut Window,
+        cx: &mut App,
+        window_id: WindowId,
+        window_index: usize,
+    ) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
         let shared = cx.global::<shared_state::SharedAppState>();
         let settings = shared.settings.lock().clone();
-        let window_id = WindowId::default();
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
         let jump_to_line_input =
