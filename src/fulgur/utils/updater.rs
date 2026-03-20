@@ -2,6 +2,7 @@ use semver::Version;
 use serde::Deserialize;
 
 const GITHUB_API_URL: &str = "https://api.github.com/repos/fulgur-app/Fulgur/releases/latest";
+const VALID_DOWNLOAD_URL_PREFIX: &str = "https://github.com/fulgur-app/Fulgur/";
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -56,7 +57,14 @@ fn parse_version(version_str: &str) -> anyhow::Result<Version> {
 /// - `Ok(None)`: If no update is available
 /// - `Err(anyhow::Error)`: If the update check could not be performed
 pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<UpdateInfo>> {
-    let mut response = ureq::get(GITHUB_API_URL)
+    let agent = ureq::Agent::new_with_config(
+        ureq::config::Config::builder()
+            .timeout_connect(Some(std::time::Duration::from_secs(5)))
+            .timeout_global(Some(std::time::Duration::from_secs(10)))
+            .build(),
+    );
+    let mut response = agent
+        .get(GITHUB_API_URL)
         .header("User-Agent", "Fulgur")
         .call()?;
     if response.status() != 200 {
@@ -111,7 +119,16 @@ fn get_platform_download_url(release: &GitHubRelease) -> anyhow::Result<String> 
     };
     for asset in &release.assets {
         if asset.name.contains(pattern) {
-            return Ok(asset.browser_download_url.clone());
+            if asset
+                .browser_download_url
+                .starts_with(VALID_DOWNLOAD_URL_PREFIX)
+            {
+                return Ok(asset.browser_download_url.clone());
+            }
+            log::warn!(
+                "Skipping asset with unexpected download URL: {}",
+                asset.browser_download_url
+            );
         }
     }
     Ok(release.html_url.clone())
