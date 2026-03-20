@@ -13,23 +13,6 @@ pub struct SearchMatch {
     pub col: usize,
 }
 
-/// Get line and column from byte position
-///
-/// ### Arguments
-/// - `text`: The text
-/// - `pos`: The byte position
-///
-/// ### Returns
-/// - `(usize, usize)`: A tuple of (line, column)
-pub(super) fn get_line_col(text: &str, byte_pos: usize) -> (usize, usize) {
-    let slice = &text[..byte_pos.min(text.len())];
-    let line = slice.bytes().filter(|&b| b == b'\n').count();
-    let col = slice
-        .rfind('\n')
-        .map_or(slice.chars().count(), |nl| slice[nl + 1..].chars().count());
-    (line, col)
-}
-
 /// Find all matches in the text
 ///
 /// ### Arguments
@@ -60,6 +43,12 @@ pub(super) fn find_matches(
     } else {
         Cow::Owned(query.to_lowercase())
     };
+    let newline_offsets: Vec<usize> = text
+        .bytes()
+        .enumerate()
+        .filter_map(|(i, b)| if b == b'\n' { Some(i) } else { None })
+        .collect();
+
     let mut start_pos = 0;
     while let Some(pos) = search_text[start_pos..].find(&*search_query) {
         let absolute_pos = start_pos + pos;
@@ -81,7 +70,7 @@ pub(super) fn find_matches(
                 continue;
             }
         }
-        let (line, col) = get_line_col(text, absolute_pos);
+        let (line, col) = get_line_col_fast(text, absolute_pos, &newline_offsets);
         matches.push(SearchMatch {
             start: absolute_pos,
             end: end_pos,
@@ -91,6 +80,30 @@ pub(super) fn find_matches(
         start_pos = absolute_pos + 1;
     }
     matches
+}
+
+/// Get line and column from byte position using precomputed newline offsets
+///
+/// Uses binary search over newline positions for O(log n) lookup instead of
+/// scanning from the start of the text each time.
+///
+/// ### Arguments
+/// - `text`: The text
+/// - `byte_pos`: The byte position
+/// - `newline_offsets`: Precomputed byte offsets of all newline characters
+///
+/// ### Returns
+/// - `(usize, usize)`: A tuple of (line, column)
+fn get_line_col_fast(text: &str, byte_pos: usize, newline_offsets: &[usize]) -> (usize, usize) {
+    let pos = byte_pos.min(text.len());
+    let line = newline_offsets.partition_point(|&nl| nl < pos);
+    let line_start = if line == 0 {
+        0
+    } else {
+        newline_offsets[line - 1] + 1
+    };
+    let col = text[line_start..pos].chars().count();
+    (line, col)
 }
 
 impl Fulgur {
@@ -460,9 +473,23 @@ fn replace_whole_words_case_insensitive(
 #[cfg(test)]
 mod tests {
     use super::{
-        SearchMatch, find_matches, get_line_col, replace_case_insensitive, replace_whole_words,
-        replace_whole_words_case_insensitive,
+        SearchMatch, find_matches, get_line_col_fast, replace_case_insensitive,
+        replace_whole_words, replace_whole_words_case_insensitive,
     };
+
+    /// Helper to build newline offsets for a text (mirrors production logic)
+    fn newline_offsets(text: &str) -> Vec<usize> {
+        text.bytes()
+            .enumerate()
+            .filter_map(|(i, b)| if b == b'\n' { Some(i) } else { None })
+            .collect()
+    }
+
+    /// Helper to call get_line_col_fast with auto-computed offsets
+    fn get_line_col(text: &str, byte_pos: usize) -> (usize, usize) {
+        let offsets = newline_offsets(text);
+        get_line_col_fast(text, byte_pos, &offsets)
+    }
 
     fn create_match(start: usize, end: usize, line: usize, col: usize) -> SearchMatch {
         SearchMatch {
@@ -761,6 +788,23 @@ mod tests {
         assert_eq!(get_line_col(text, 6), (0, 6)); // '世' at byte 6: line 0, col 6
         assert_eq!(get_line_col(text, 9), (0, 7)); // '界' at byte 9: line 0, col 7
         assert_eq!(get_line_col(text, 13), (1, 0)); // 'w' at byte 13: line 1, col 0
+    }
+
+    #[test]
+    fn test_get_line_col_fast_multiline() {
+        let text = "line1\nline2\nline3";
+        let offsets = newline_offsets(text);
+        assert_eq!(get_line_col_fast(text, 0, &offsets), (0, 0));
+        assert_eq!(get_line_col_fast(text, 6, &offsets), (1, 0));
+        assert_eq!(get_line_col_fast(text, 12, &offsets), (2, 0));
+        assert_eq!(get_line_col_fast(text, 17, &offsets), (2, 5));
+    }
+
+    #[test]
+    fn test_get_line_col_fast_empty_text() {
+        let text = "";
+        let offsets = newline_offsets(text);
+        assert_eq!(get_line_col_fast(text, 0, &offsets), (0, 0));
     }
 
     #[test]
