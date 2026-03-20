@@ -404,14 +404,17 @@ impl Fulgur {
     /// Stops the current SSE connection and starts a new one with the updated settings.
     /// Waits for the previous SSE thread to exit (bounded by `SSE_THREAD_SHUTDOWN_TIMEOUT`)
     /// in a background thread to avoid blocking the UI.
+    ///
     /// Should be called when synchronization settings (server URL, email, or key) change.
+    ///
+    /// ### Arguments
+    /// - `cx`: The context of the application.
     pub fn restart_sse_connection(&mut self, cx: &mut Context<Self>) {
         if let Some(ref shutdown_flag) = self.sse_state.sse_shutdown_flag {
             log::info!("Signaling SSE connection to shutdown...");
             shutdown_flag.store(true, Ordering::Relaxed);
         }
         let old_handle = self.sse_state.sse_thread_handle.lock().take();
-        thread::sleep(Duration::from_millis(100));
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
         let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
         self.sse_state.sse_events = Some(sse_rx);
