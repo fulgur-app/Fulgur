@@ -93,9 +93,11 @@ fn main() {
     if let Err(e) = fulgur::utils::logger::init() {
         eprintln!("Failed to initialize logger: {}", e);
     }
-    let debug_mode = fulgur::settings::Settings::load()
-        .map(|s| s.app_settings.debug_mode)
-        .unwrap_or(false);
+    let settings = fulgur::settings::Settings::load().unwrap_or_else(|e| {
+        eprintln!("Failed to load settings, using defaults: {}", e);
+        fulgur::settings::Settings::new()
+    });
+    let debug_mode = settings.app_settings.debug_mode;
     fulgur::utils::logger::set_debug_mode(debug_mode);
     let current_version = env!("CARGO_PKG_VERSION");
     log::info!("=== Fulgur v{} Starting ===", current_version);
@@ -150,7 +152,8 @@ fn main() {
         // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
         fulgur::Fulgur::init(cx);
-        let shared_state = fulgur::shared_state::SharedAppState::new(pending_files.clone());
+        let shared_state =
+            fulgur::shared_state::SharedAppState::new(settings, pending_files.clone());
         cx.set_global(shared_state);
         cx.set_global(fulgur::window_manager::WindowManager::new());
         let windows_state = fulgur::state_persistence::WindowsState::load().ok();
