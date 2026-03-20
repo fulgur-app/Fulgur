@@ -167,19 +167,18 @@ fn main() {
             log::info!("No saved state, creating initial window");
         }
         if let Some(ws) = windows_state {
-            for (index, _window_state) in ws.windows.iter().enumerate() {
+            for (index, window_state) in ws.windows.into_iter().enumerate() {
                 let cli_files = if index == 0 {
                     cli_file_paths.clone()
                 } else {
                     vec![]
                 };
-                let window_index = index;
-
-                cx.spawn(async move |cx| create_window(cx, window_index, cli_files).await)
+                let saved_bounds = Some(window_state.window_bounds);
+                cx.spawn(async move |cx| create_window(cx, index, saved_bounds, cli_files).await)
                     .detach();
             }
         } else {
-            cx.spawn(async move |cx| create_window(cx, 0, cli_file_paths).await)
+            cx.spawn(async move |cx| create_window(cx, 0, None, cli_file_paths).await)
                 .detach();
         }
     });
@@ -190,25 +189,18 @@ fn main() {
 /// ### Arguments
 /// * `cx` - The application context
 /// * `window_index` - The index of the window to create
+/// * `saved_bounds` - Previously loaded window bounds for this window, if any
 /// * `cli_file_paths` - The paths of the files to open in the window
 async fn create_window(
     cx: &mut gpui::AsyncApp,
     window_index: usize,
+    saved_bounds: Option<fulgur::state_persistence::SerializedWindowBounds>,
     cli_file_paths: Vec<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
-    let (window_bounds, saved_display_id) =
-        if let Ok(windows_state) = fulgur::state_persistence::WindowsState::load() {
-            if let Some(window_state) = windows_state.windows.get(window_index) {
-                (
-                    Some(window_state.window_bounds.to_gpui_bounds()),
-                    window_state.window_bounds.display_id,
-                )
-            } else {
-                (None, None)
-            }
-        } else {
-            (None, None)
-        };
+    let (window_bounds, saved_display_id) = match saved_bounds {
+        Some(ref b) => (Some(b.to_gpui_bounds()), b.display_id),
+        None => (None, None),
+    };
     let display_id = if let Some(saved_id) = saved_display_id {
         cx.update(|cx| {
             cx.displays()
