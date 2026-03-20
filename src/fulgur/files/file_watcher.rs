@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use gpui::{Context, Window};
@@ -57,6 +58,9 @@ pub struct FileWatcher {
     watcher: Option<RecommendedWatcher>,
     watched_paths: HashMap<PathBuf, SystemTime>,
     event_tx: Sender<FileWatchEvent>,
+    /// Pending rename source path for Linux inotify, which splits rename events
+    /// into separate From and To notifications rather than a single two-path event.
+    pending_rename_from: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl FileWatcher {
@@ -72,6 +76,7 @@ impl FileWatcher {
             watcher: None,
             watched_paths: HashMap::new(),
             event_tx,
+            pending_rename_from: Arc::new(Mutex::new(None)),
         };
         (watcher, event_rx)
     }
@@ -86,10 +91,11 @@ impl FileWatcher {
             return Ok(());
         }
         let event_tx = self.event_tx.clone();
+        let pending_rename_from = Arc::clone(&self.pending_rename_from);
         let watcher =
             notify::recommended_watcher(move |res: Result<Event, NotifyError>| match res {
                 Ok(event) => {
-                    Self::handle_notify_event(event, &event_tx);
+                    Self::handle_notify_event(event, &event_tx, &pending_rename_from);
                 }
                 Err(e) => {
                     let _ = event_tx.send(FileWatchEvent::Error(e.to_string()));
@@ -108,18 +114,63 @@ impl FileWatcher {
     /// - If the event is other, it ignores it
     /// - Ignore other event types (access, etc.)
     ///
+    /// Rename events come in two shapes depending on the OS backend:
+    /// - **macOS/Windows**: A single event with two paths (`RenameMode::Both`)
+    /// - **Linux inotify**: Two consecutive single-path events (`RenameMode::From` then
+    ///   `RenameMode::To`). The `pending_rename_from` accumulator pairs them up.
+    ///
     /// ### Arguments
     /// - `event`: The notify event to handle
     /// - `event_tx`: The event sender to send the events to
-    fn handle_notify_event(event: Event, event_tx: &Sender<FileWatchEvent>) {
-        use notify::event::ModifyKind;
+    /// - `pending_rename_from`: Accumulator for the Linux split-rename `From` path
+    fn handle_notify_event(
+        event: Event,
+        event_tx: &Sender<FileWatchEvent>,
+        pending_rename_from: &Mutex<Option<PathBuf>>,
+    ) {
+        use notify::event::{ModifyKind, RenameMode};
 
         match event.kind {
-            EventKind::Modify(ModifyKind::Name(_)) => {
+            EventKind::Modify(ModifyKind::Name(rename_mode)) => {
                 if event.paths.len() == 2 {
+                    // macOS / Windows: both paths arrive in one event
                     let from = event.paths[0].clone();
                     let to = event.paths[1].clone();
                     let _ = event_tx.send(FileWatchEvent::Renamed { from, to });
+                } else if event.paths.len() == 1 {
+                    match rename_mode {
+                        RenameMode::From => {
+                            // Linux inotify: first half — store and wait for the To event
+                            if let Ok(mut pending) = pending_rename_from.lock() {
+                                *pending = Some(event.paths[0].clone());
+                            }
+                        }
+                        RenameMode::To => {
+                            // Linux inotify: second half — pair with the stored From path
+                            let from = pending_rename_from.lock().ok().and_then(|mut p| p.take());
+                            match from {
+                                Some(from) => {
+                                    let _ = event_tx.send(FileWatchEvent::Renamed {
+                                        from,
+                                        to: event.paths[0].clone(),
+                                    });
+                                }
+                                None => {
+                                    // No matching From; treat as a new file appearing
+                                    let _ = event_tx
+                                        .send(FileWatchEvent::Modified(event.paths[0].clone()));
+                                }
+                            }
+                        }
+                        _ => {
+                            // Orphaned or unrecognised single-path rename; flush any pending From
+                            if let Ok(mut pending) = pending_rename_from.lock()
+                                && let Some(stale) = pending.take()
+                            {
+                                let _ = event_tx.send(FileWatchEvent::Deleted(stale));
+                            }
+                        }
+                    }
                 }
             }
             EventKind::Modify(_) => {
