@@ -177,12 +177,21 @@ impl Fulgur {
             } else {
                 if let Err(e) = self.save_state(cx, window) {
                     log::error!("Failed to save app state on window close: {}", e);
-                    self.pending_notification = Some((
-                        NotificationType::Error,
-                        format!("Failed to save application state: {}. Close anyway?", e).into(),
-                    ));
-                    cx.notify();
-                    return false; // Prevent close, let user try again or force close
+                    if self.save_failed_once {
+                        log::warn!("Save failed again — allowing force-close");
+                    } else {
+                        self.save_failed_once = true;
+                        self.pending_notification = Some((
+                            NotificationType::Error,
+                            format!(
+                                "Failed to save application state: {}. Close again to force-close.",
+                                e
+                            )
+                            .into(),
+                        ));
+                        cx.notify();
+                        return false;
+                    }
                 }
                 cx.update_global::<WindowManager, _>(|manager, _| {
                     manager.unregister(self.window_id);
@@ -197,12 +206,21 @@ impl Fulgur {
             );
             if let Err(e) = self.save_state(cx, window) {
                 log::error!("Failed to save app state on window close: {}", e);
-                self.pending_notification = Some((
-                    NotificationType::Error,
-                    format!("Failed to save application state: {}. Close anyway?", e).into(),
-                ));
-                cx.notify();
-                return false; // Prevent close, let user try again or force close
+                if self.save_failed_once {
+                    log::warn!("Save failed again — allowing force-close");
+                } else {
+                    self.save_failed_once = true;
+                    self.pending_notification = Some((
+                        NotificationType::Error,
+                        format!(
+                            "Failed to save application state: {}. Close again to force-close.",
+                            e
+                        )
+                        .into(),
+                    ));
+                    cx.notify();
+                    return false;
+                }
             }
             cx.update_global::<WindowManager, _>(|manager, _| {
                 manager.unregister(self.window_id);

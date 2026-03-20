@@ -108,6 +108,7 @@ pub struct Fulgur {
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
     pub sse_state: SseState,           // Server-Sent Events state for sync functionality
     pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
+    save_failed_once: bool, // Flag: save already failed once — allow force-close on next attempt
     pending_share_sheet: bool, // Flag to open share sheet when pending devices are ready
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
@@ -181,6 +182,7 @@ impl Fulgur {
                 file_watch_state: FileWatchState::new(),
                 sse_state: SseState::new(),
                 pending_notification: None,
+                save_failed_once: false,
                 pending_share_sheet: false,
                 cached_window_bounds: None,
                 editor_context_menu: None,
