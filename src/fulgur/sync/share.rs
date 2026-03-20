@@ -197,29 +197,23 @@ fn send_share_request(
         .map_err(|e| {
             handle_ureq_error(e, &format!("Failed to share file to device {}", device_id))
         })?;
-    if response.status() == 200 {
-        let body = response.body_mut().read_to_string().map_err(|e| {
-            log::error!("Failed to read response body: {}", e);
-            SynchronizationError::InvalidResponse(e.to_string())
-        })?;
-        let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
-            log::error!("Failed to parse response body: {}", e);
-            SynchronizationError::InvalidResponse(e.to_string())
-        })?;
-        let expiration_date = json["expiration_date"]
-            .as_str()
-            .ok_or(SynchronizationError::MissingExpirationDate)?;
-        log::info!(
-            "File shared successfully to device {} until {}",
-            device_id,
-            expiration_date
-        );
-        Ok(expiration_date.to_string())
-    } else {
-        Err(SynchronizationError::ServerError(
-            response.status().as_u16(),
-        ))
-    }
+    let body = response.body_mut().read_to_string().map_err(|e| {
+        log::error!("Failed to read response body: {}", e);
+        SynchronizationError::InvalidResponse(e.to_string())
+    })?;
+    let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
+        log::error!("Failed to parse response body: {}", e);
+        SynchronizationError::InvalidResponse(e.to_string())
+    })?;
+    let expiration_date = json["expiration_date"]
+        .as_str()
+        .ok_or(SynchronizationError::MissingExpirationDate)?;
+    log::info!(
+        "File shared successfully to device {} until {}",
+        device_id,
+        expiration_date
+    );
+    Ok(expiration_date.to_string())
 }
 
 /// Result of sharing a file with devices
