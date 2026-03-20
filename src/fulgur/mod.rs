@@ -51,6 +51,8 @@ pub struct SearchState {
     pub search_matches: Vec<SearchMatch>,
     pub current_match_index: Option<usize>,
     pub last_search_query: String,
+    pub last_search_match_case: bool,
+    pub last_search_match_whole_word: bool,
     pub search_subscription: gpui::Subscription,
 }
 
@@ -78,6 +80,8 @@ impl SearchState {
             search_matches: Vec::new(),
             current_match_index: None,
             last_search_query: String::new(),
+            last_search_match_case: false,
+            last_search_match_whole_word: false,
             search_subscription,
         }
     }

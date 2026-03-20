@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::fulgur::Fulgur;
 use gpui::*;
 use gpui_component::input::Position;
@@ -48,18 +50,18 @@ pub(super) fn find_matches(
     if query.is_empty() {
         return matches;
     }
-    let search_text = if match_case {
-        text.to_string()
+    let search_text: Cow<str> = if match_case {
+        Cow::Borrowed(text)
     } else {
-        text.to_lowercase()
+        Cow::Owned(text.to_lowercase())
     };
-    let search_query = if match_case {
-        query.to_string()
+    let search_query: Cow<str> = if match_case {
+        Cow::Borrowed(query)
     } else {
-        query.to_lowercase()
+        Cow::Owned(query.to_lowercase())
     };
     let mut start_pos = 0;
-    while let Some(pos) = search_text[start_pos..].find(&search_query) {
+    while let Some(pos) = search_text[start_pos..].find(&*search_query) {
         let absolute_pos = start_pos + pos;
         let end_pos = absolute_pos + query.len();
         if match_whole_word {
@@ -138,9 +140,21 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let query = self.search_state.search_input.read(cx).text().to_string();
+        let match_case = self.search_state.match_case;
+        let match_whole_word = self.search_state.match_whole_word;
+        if query == self.search_state.last_search_query
+            && match_case == self.search_state.last_search_match_case
+            && match_whole_word == self.search_state.last_search_match_whole_word
+            && !self.search_state.search_matches.is_empty()
+        {
+            return;
+        }
+        self.search_state.last_search_query = query.clone();
+        self.search_state.last_search_match_case = match_case;
+        self.search_state.last_search_match_whole_word = match_whole_word;
         self.search_state.search_matches.clear();
         self.search_state.current_match_index = None;
-        let query = self.search_state.search_input.read(cx).text().to_string();
         if let Some(active_index) = self.active_tab_index
             && let Some(tab) = self.tabs.get(active_index)
             && let Some(editor_tab) = tab.as_editor()
@@ -310,6 +324,7 @@ impl Fulgur {
             editor_tab.content.update(cx, |content, cx| {
                 content.set_value(&new_text, window, cx);
             });
+            self.search_state.search_matches.clear();
             self.perform_search(window, cx);
             if !self.search_state.search_matches.is_empty() {
                 if match_index < self.search_state.search_matches.len() {

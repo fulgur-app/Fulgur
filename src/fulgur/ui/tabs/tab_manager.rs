@@ -179,6 +179,7 @@ impl Fulgur {
             }
             self.focus_active_tab(window, cx);
             if self.search_state.show_search {
+                self.search_state.search_matches.clear();
                 self.perform_search(window, cx);
             }
             cx.notify();
