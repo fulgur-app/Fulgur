@@ -60,6 +60,8 @@ flate2 = "1.1.9"
 # Security - forcing minimum versions for transitive dependencies
 # Fix RUSTSEC-2026-0007: Integer overflow in BytesMut::reserve
 bytes = "1.11.1"
+# Fix RUSTSEC-2026-0049: CRLs not considered authoritative due to faulty matching logic
+rustls-webpki = "0.103.10"
 
 # Tree-sitter languages
 arborium-ada = "2.15.0"
