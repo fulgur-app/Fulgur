@@ -220,15 +220,28 @@ pub fn get_valid_token(
     drop(state);
 
     log::debug!("Access token expired or missing, requesting new token");
-    let token_response = request_access_token(synchronization_settings, http_agent)?;
-    let expires_at = OffsetDateTime::parse(
+    let token_response = match request_access_token(synchronization_settings, http_agent) {
+        Ok(r) => r,
+        Err(e) => {
+            let mut state = token_manager.state.lock();
+            state.is_refreshing_token = false;
+            token_manager.refresh_notify.notify_all();
+            return Err(e);
+        }
+    };
+    let expires_at = match OffsetDateTime::parse(
         &token_response.expires_at,
         &time::format_description::well_known::Rfc3339,
-    )
-    .map_err(|e| {
-        log::error!("Failed to parse token expiration time: {}", e);
-        SynchronizationError::Other(e.to_string())
-    })?;
+    ) {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("Failed to parse token expiration time: {}", e);
+            let mut state = token_manager.state.lock();
+            state.is_refreshing_token = false;
+            token_manager.refresh_notify.notify_all();
+            return Err(SynchronizationError::Other(e.to_string()));
+        }
+    };
 
     // Update state and notify waiting threads
     let mut state = token_manager.state.lock();

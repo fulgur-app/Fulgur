@@ -93,9 +93,11 @@ fn main() {
     if let Err(e) = fulgur::utils::logger::init() {
         eprintln!("Failed to initialize logger: {}", e);
     }
-    let debug_mode = fulgur::settings::Settings::load()
-        .map(|s| s.app_settings.debug_mode)
-        .unwrap_or(false);
+    let settings = fulgur::settings::Settings::load().unwrap_or_else(|e| {
+        eprintln!("Failed to load settings, using defaults: {}", e);
+        fulgur::settings::Settings::new()
+    });
+    let debug_mode = settings.app_settings.debug_mode;
     fulgur::utils::logger::set_debug_mode(debug_mode);
     let current_version = env!("CARGO_PKG_VERSION");
     log::info!("=== Fulgur v{} Starting ===", current_version);
@@ -150,7 +152,8 @@ fn main() {
         // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
         fulgur::Fulgur::init(cx);
-        let shared_state = fulgur::shared_state::SharedAppState::new(pending_files.clone());
+        let shared_state =
+            fulgur::shared_state::SharedAppState::new(settings, pending_files.clone());
         cx.set_global(shared_state);
         cx.set_global(fulgur::window_manager::WindowManager::new());
         let windows_state = fulgur::state_persistence::WindowsState::load().ok();
@@ -164,19 +167,18 @@ fn main() {
             log::info!("No saved state, creating initial window");
         }
         if let Some(ws) = windows_state {
-            for (index, _window_state) in ws.windows.iter().enumerate() {
+            for (index, window_state) in ws.windows.into_iter().enumerate() {
                 let cli_files = if index == 0 {
                     cli_file_paths.clone()
                 } else {
                     vec![]
                 };
-                let window_index = index;
-
-                cx.spawn(async move |cx| create_window(cx, window_index, cli_files).await)
+                let saved_bounds = Some(window_state.window_bounds);
+                cx.spawn(async move |cx| create_window(cx, index, saved_bounds, cli_files).await)
                     .detach();
             }
         } else {
-            cx.spawn(async move |cx| create_window(cx, 0, cli_file_paths).await)
+            cx.spawn(async move |cx| create_window(cx, 0, None, cli_file_paths).await)
                 .detach();
         }
     });
@@ -187,25 +189,18 @@ fn main() {
 /// ### Arguments
 /// * `cx` - The application context
 /// * `window_index` - The index of the window to create
+/// * `saved_bounds` - Previously loaded window bounds for this window, if any
 /// * `cli_file_paths` - The paths of the files to open in the window
 async fn create_window(
     cx: &mut gpui::AsyncApp,
     window_index: usize,
+    saved_bounds: Option<fulgur::state_persistence::SerializedWindowBounds>,
     cli_file_paths: Vec<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
-    let (window_bounds, saved_display_id) =
-        if let Ok(windows_state) = fulgur::state_persistence::WindowsState::load() {
-            if let Some(window_state) = windows_state.windows.get(window_index) {
-                (
-                    Some(window_state.window_bounds.to_gpui_bounds()),
-                    window_state.window_bounds.display_id,
-                )
-            } else {
-                (None, None)
-            }
-        } else {
-            (None, None)
-        };
+    let (window_bounds, saved_display_id) = match saved_bounds {
+        Some(ref b) => (Some(b.to_gpui_bounds()), b.display_id),
+        None => (None, None),
+    };
     let display_id = if let Some(saved_id) = saved_display_id {
         cx.update(|cx| {
             cx.displays()
@@ -229,12 +224,8 @@ async fn create_window(
     };
     let window = cx.open_window(window_options, |window, cx| {
         window.set_window_title("Fulgur");
-        let view = fulgur::Fulgur::new(window, cx, window_index);
-        let window_handle = window.window_handle();
-        let window_id = window_handle.window_id();
-        view.update(cx, |fulgur, _cx| {
-            fulgur.window_id = window_id;
-        });
+        let window_id = window.window_handle().window_id();
+        let view = fulgur::Fulgur::new(window, cx, window_id, window_index);
         cx.update_global::<fulgur::window_manager::WindowManager, _>(|manager, _| {
             manager.register(window_id, view.downgrade());
         });

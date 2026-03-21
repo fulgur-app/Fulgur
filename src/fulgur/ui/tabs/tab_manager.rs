@@ -114,8 +114,10 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn close_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(index) = self.active_tab_index {
-            self.close_tab(index, window, cx);
+        if let Some(index) = self.active_tab_index
+            && let Some(tab) = self.tabs.get(index)
+        {
+            self.close_tab(tab.id(), window, cx);
         }
     }
 
@@ -177,6 +179,7 @@ impl Fulgur {
             }
             self.focus_active_tab(window, cx);
             if self.search_state.show_search {
+                self.search_state.search_matches.clear();
                 self.perform_search(window, cx);
             }
             cx.notify();
@@ -232,6 +235,13 @@ impl Fulgur {
                     } else {
                         this.active_tab_index = None;
                         this.next_tab_id = 1;
+                        if let Err(e) = this.save_state(cx, window) {
+                            log::error!("Failed to save state after closing all tabs: {}", e);
+                            this.pending_notification = Some((
+                                gpui_component::notification::NotificationType::Warning,
+                                format!("Tabs closed but failed to save state: {}", e).into(),
+                            ));
+                        }
                         cx.notify();
                     }
                 });
@@ -284,8 +294,17 @@ impl Fulgur {
                         let new_index = this.tabs.len().min(index - 1);
                         if new_index > 0 {
                             this.close_tabs_to_left(new_index, window, cx);
+                            return;
                         }
                     }
+                    if let Err(e) = this.save_state(cx, window) {
+                        log::error!("Failed to save state after closing tabs to left: {}", e);
+                        this.pending_notification = Some((
+                            gpui_component::notification::NotificationType::Warning,
+                            format!("Tabs closed but failed to save state: {}", e).into(),
+                        ));
+                    }
+                    cx.notify();
                 });
                 return;
             } else {
@@ -296,6 +315,13 @@ impl Fulgur {
             && active_idx >= self.tabs.len()
         {
             self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
+        }
+        if let Err(e) = self.save_state(cx, window) {
+            log::error!("Failed to save app state after closing tabs to left: {}", e);
+            self.pending_notification = Some((
+                gpui_component::notification::NotificationType::Warning,
+                format!("Tabs closed but failed to save state: {}", e).into(),
+            ));
         }
         self.focus_active_tab(window, cx);
         cx.notify();
@@ -334,8 +360,17 @@ impl Fulgur {
                         let current_index = index.min(this.tabs.len() - 1);
                         if current_index < this.tabs.len() - 1 {
                             this.close_tabs_to_right(current_index, window, cx);
+                            return;
                         }
                     }
+                    if let Err(e) = this.save_state(cx, window) {
+                        log::error!("Failed to save state after closing tabs to right: {}", e);
+                        this.pending_notification = Some((
+                            gpui_component::notification::NotificationType::Warning,
+                            format!("Tabs closed but failed to save state: {}", e).into(),
+                        ));
+                    }
+                    cx.notify();
                 });
                 return;
             } else {

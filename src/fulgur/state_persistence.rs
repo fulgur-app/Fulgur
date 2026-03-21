@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::fulgur::utils::atomic_write::atomic_write_file;
-use fs2::FileExt;
 
 /// Persisted state of a single editor tab
 ///
@@ -156,8 +155,8 @@ impl WindowsState {
     /// Save the app state to a specific path
     ///
     /// ### Description
-    /// Core implementation for saving window state. Uses file locking to prevent
-    /// corruption when multiple windows write simultaneously.
+    /// Core implementation for saving window state. Uses atomic file writes to
+    /// prevent corruption when multiple windows write simultaneously.
     ///
     /// ### Arguments
     /// - `path`: The path to save the state to
@@ -165,28 +164,15 @@ impl WindowsState {
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved
-    pub fn save_to_path(&self, path: &PathBuf) -> anyhow::Result<()> {
-        // Serialize state to JSON first (fast, no I/O)
+    pub fn save_to_path(&self, path: &Path) -> anyhow::Result<()> {
         let json = serde_json::to_string_pretty(self)?;
-
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)
-            .map_err(|e| anyhow::anyhow!("Failed to open state file: {}", e))?;
-        file.lock_exclusive()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire lock on state file: {}", e))?;
-
         atomic_write_file(path, json.as_bytes())
     }
 
     /// Load the windows state from a specific path
     ///
     /// ### Description
-    /// Core implementation for loading window state. Uses shared file locking to
-    /// allow concurrent reads while preventing reads during writes.
+    /// Core implementation for loading window state.
     ///
     /// ### Arguments
     /// - `path`: The path to load the state from
@@ -195,16 +181,8 @@ impl WindowsState {
     /// - `Ok(WindowsState)`: The loaded windows state
     /// - `Err(anyhow::Error)`: If the windows state could not be loaded
     pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .open(path)
-            .map_err(|e| anyhow::anyhow!("Failed to open state file for reading: {}", e))?;
-        file.lock_shared()
-            .map_err(|e| anyhow::anyhow!("Failed to acquire shared lock on state file: {}", e))?;
-        let mut reader = std::io::BufReader::new(&file);
-        let mut json = String::new();
-        std::io::Read::read_to_string(&mut reader, &mut json)
-            .map_err(|e| anyhow::anyhow!("Failed to read state: {}", e))?;
+        let json = fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("Failed to read state file: {}", e))?;
         let state = serde_json::from_str::<WindowsState>(&json)
             .map_err(|e| anyhow::anyhow!("Failed to parse state: {}", e))?;
         Ok(state)

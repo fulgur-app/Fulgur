@@ -51,6 +51,8 @@ pub struct SearchState {
     pub search_matches: Vec<SearchMatch>,
     pub current_match_index: Option<usize>,
     pub last_search_query: String,
+    pub last_search_match_case: bool,
+    pub last_search_match_whole_word: bool,
     pub search_subscription: gpui::Subscription,
 }
 
@@ -78,6 +80,8 @@ impl SearchState {
             search_matches: Vec::new(),
             current_match_index: None,
             last_search_query: String::new(),
+            last_search_match_case: false,
+            last_search_match_whole_word: false,
             search_subscription,
         }
     }
@@ -104,6 +108,7 @@ pub struct Fulgur {
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
     pub sse_state: SseState,           // Server-Sent Events state for sync functionality
     pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
+    save_failed_once: bool, // Flag: save already failed once — allow force-close on next attempt
     pending_share_sheet: bool, // Flag to open share sheet when pending devices are ready
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
@@ -129,15 +134,20 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to create the Fulgur instance in
     /// - `cx`: The application context
+    /// - `window_id`: The window ID for this instance, obtained from `window.window_handle().window_id()`
     /// - `window_index`: Index of this window in saved state (0 = first window, etc.). Use usize::MAX for new empty windows.
     ///
     /// ### Returns
     /// - `Entity<Self>`: The new Fulgur instance
-    pub fn new(window: &mut Window, cx: &mut App, window_index: usize) -> Entity<Self> {
+    pub fn new(
+        window: &mut Window,
+        cx: &mut App,
+        window_id: WindowId,
+        window_index: usize,
+    ) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
         let shared = cx.global::<shared_state::SharedAppState>();
         let settings = shared.settings.lock().clone();
-        let window_id = WindowId::default();
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
         let jump_to_line_input =
@@ -172,6 +182,7 @@ impl Fulgur {
                 file_watch_state: FileWatchState::new(),
                 sse_state: SseState::new(),
                 pending_notification: None,
+                save_failed_once: false,
                 pending_share_sheet: false,
                 cached_window_bounds: None,
                 editor_context_menu: None,

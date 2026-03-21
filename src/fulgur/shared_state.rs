@@ -87,15 +87,16 @@ impl gpui::Global for SharedAppState {}
 
 impl SharedAppState {
     /// Create a new shared app state by orchestrating the initialization of shared application state
-    /// by loading settings, themes, and determining the initial synchronization status.
+    /// by loading themes, and determining the initial synchronization status.
     ///
     /// ### Arguments
+    /// - `settings`: Already-loaded application settings
     /// - `pending_files_from_macos`: Arc to the pending files queue from macOS open events
     ///
     /// ### Returns
     /// - `Self`: The new shared app state
-    pub fn new(pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>) -> Self {
-        let (settings, sync_error) = Self::load_and_validate_settings();
+    pub fn new(settings: Settings, pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>) -> Self {
+        let (settings, sync_error) = Self::validate_settings(settings);
         let themes = Self::load_themes();
         let synchronization_status = Self::determine_initial_sync_status(&settings);
 
@@ -116,23 +117,18 @@ impl SharedAppState {
         }
     }
 
-    /// Load settings from disk and validate encryption keys
+    /// Validate encryption keys against pre-loaded settings.
     ///
-    /// If settings cannot be loaded, returns default settings with an error log.
     /// If synchronization is activated but keys cannot be validated, disables
     /// synchronization and returns the error message for user notification.
     ///
+    /// ### Arguments
+    /// - `settings`: Application settings to validate
+    ///
     /// ### Returns
-    /// - `(Settings, Option<String>)`: The loaded and validated settings (or defaults on error),
-    ///   and an optional error message if key validation failed
-    fn load_and_validate_settings() -> (Settings, Option<String>) {
-        let mut settings = Settings::load().unwrap_or_else(|e| {
-            log::error!(
-                "Failed to load settings in shared state, using defaults: {}",
-                e
-            );
-            Settings::new()
-        });
+    /// - `(Settings, Option<String>)`: The validated settings and an optional error message
+    ///   if key validation failed
+    fn validate_settings(mut settings: Settings) -> (Settings, Option<String>) {
         let sync_error = if settings
             .app_settings
             .synchronization_settings
@@ -174,14 +170,14 @@ impl SharedAppState {
     /// - `settings`: The application settings
     ///
     /// ### Returns
-    /// - `SynchronizationStatus`: Connected if sync is activated, NotActivated otherwise
+    /// - `SynchronizationStatus`: Connecting if sync is activated, NotActivated otherwise
     fn determine_initial_sync_status(settings: &Settings) -> SynchronizationStatus {
         if settings
             .app_settings
             .synchronization_settings
             .is_synchronization_activated
         {
-            SynchronizationStatus::Connected
+            SynchronizationStatus::Connecting
         } else {
             SynchronizationStatus::NotActivated
         }

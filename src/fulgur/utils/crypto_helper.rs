@@ -4,6 +4,7 @@ use age::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use keyring::Entry;
+use zeroize::Zeroizing;
 
 use crate::fulgur::settings::Settings;
 
@@ -23,16 +24,17 @@ pub fn generate_key_pair() -> (Identity, Recipient) {
     (private_key, public_key)
 }
 
-/// Saves the private key in the keychain
+/// Saves the private key in the keychain. Accepts `Zeroizing<String>` to ensure
+/// the key material is zeroed on drop.
 ///
 /// ### Arguments
-/// - `private_key`: the key to save
+/// - `private_key`: the key to save, wrapped in `Zeroizing` for secure memory handling
 ///
 /// ### Returns
 /// - `Ok()`: The private key has been succesfully saved in the keychain
 /// - `Err(anyhow::Error)`: If the private key could not be saved
-pub fn save_private_key_to_keychain(private_key: Option<String>) -> anyhow::Result<()> {
-    save_or_remove_to_keychain(PRIVATE_KEY_NAME, private_key)
+pub fn save_private_key_to_keychain(private_key: Option<Zeroizing<String>>) -> anyhow::Result<()> {
+    save_or_remove_to_keychain(PRIVATE_KEY_NAME, private_key.as_ref().map(|k| k.as_str()))
 }
 
 /// Saves the device API key in the keychain
@@ -44,24 +46,24 @@ pub fn save_private_key_to_keychain(private_key: Option<String>) -> anyhow::Resu
 /// - `Ok()`: The device API key has been succesfully saved in the keychain
 /// - `Err(anyhow::Error)`: If the device API key could not be saved
 pub fn save_device_api_key_to_keychain(device_api_key: Option<String>) -> anyhow::Result<()> {
-    save_or_remove_to_keychain(DEVICE_API_KEY, device_api_key)
+    save_or_remove_to_keychain(DEVICE_API_KEY, device_api_key.as_deref())
 }
 
 /// Saves or removes a value from the keychain. If the value is `None`, the entry is removed from the keychain.
 ///
 /// ### Arguments
 /// - `user`: the user name (the entry to look for in the keychain)
-/// - `value`: the value to save
+/// - `value`: the value to save (borrowed to avoid taking ownership of sensitive data)
 ///
 /// ### Returns
 /// - `Ok()`: The value has been succesfully saved in the keychain
 /// - `Err(anyhow::Error)`: If the value could not be saved
-fn save_or_remove_to_keychain(user: &str, value: Option<String>) -> anyhow::Result<()> {
+fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> anyhow::Result<()> {
     let entry = Entry::new(SERVICE_NAME, user)?;
     if let Some(value) = value
         && !value.is_empty()
     {
-        entry.set_password(value.as_str())?;
+        entry.set_password(value)?;
         return Ok(());
     }
     match entry.delete_credential() {
@@ -74,13 +76,14 @@ fn save_or_remove_to_keychain(user: &str, value: Option<String>) -> anyhow::Resu
     }
 }
 
-/// Loads the private key from the keychain
+/// Loads the private key from the keychain, wrapped in `Zeroizing` to ensure
+/// the key material is zeroed when dropped.
 ///
 /// ### Returns
-/// - `Ok(Option<String>)`: The private key if it exists, otherwise `None`
+/// - `Ok(Option<Zeroizing<String>>)`: The private key if it exists, otherwise `None`
 /// - `Err(anyhow::Error)`: If the private key could not be loaded
-pub fn load_private_key_from_keychain() -> anyhow::Result<Option<String>> {
-    load_from_keychain(PRIVATE_KEY_NAME)
+pub fn load_private_key_from_keychain() -> anyhow::Result<Option<Zeroizing<String>>> {
+    load_from_keychain(PRIVATE_KEY_NAME).map(|opt| opt.map(Zeroizing::new))
 }
 
 /// Loads the device API key from the keychain
@@ -129,16 +132,17 @@ fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
     }
 }
 
-/// Serializes the private key to a string
+/// Serializes the private key to a zeroizing string. The returned `Zeroizing<String>`
+/// ensures the key material is overwritten with zeros when dropped.
 ///
 /// ### Arguments
 /// - `private_key`: the private key to serialize
 ///
 /// ### Returns
-/// - `String`: The serialized private key
-pub fn serialize(private_key: Identity) -> String {
+/// - `Zeroizing<String>`: The serialized private key, zeroed on drop
+pub fn serialize(private_key: Identity) -> Zeroizing<String> {
     let secret = private_key.to_string();
-    secret.expose_secret().to_string()
+    Zeroizing::new(secret.expose_secret().to_string())
 }
 
 /// Checks if the private/public keys exist in the keychain. If not, generates a new pair and saves them to the keychain.

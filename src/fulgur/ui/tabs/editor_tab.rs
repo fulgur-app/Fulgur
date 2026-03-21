@@ -338,7 +338,7 @@ impl EditorTab {
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
-    /// - `settings`: The settings for the input state
+    /// - `settings`: The editor settings for the new input state
     pub fn update_language(
         &mut self,
         window: &mut Window,
@@ -355,11 +355,14 @@ impl EditorTab {
 
     /// Force the language/syntax highlighting based on the file extension
     ///
+    /// Recreates the `InputState` with the new language and restores the cursor position.
+    /// Scroll state and undo history are not preserved.
+    ///
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
     /// - `language`: The language to force
-    /// - `settings`: The settings for the input state
+    /// - `settings`: The editor settings for the new input state
     pub fn force_language(
         &mut self,
         window: &mut Window,
@@ -367,6 +370,7 @@ impl EditorTab {
         language: SupportedLanguage,
         settings: &EditorSettings,
     ) {
+        let cursor = self.content.read(cx).cursor_position();
         let current_content = self.content.read(cx).text().to_string();
         self.language = language;
         self.content = cx.new(|cx| {
@@ -377,6 +381,9 @@ impl EditorTab {
                 Some(current_content),
                 settings,
             )
+        });
+        self.content.update(cx, |state, cx| {
+            state.set_cursor_position(cursor, window, cx);
         });
     }
 

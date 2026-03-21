@@ -559,7 +559,6 @@ impl Fulgur {
         if self.search_state.show_search {
             let current_query = self.search_state.search_input.read(cx).text().to_string();
             if current_query != self.search_state.last_search_query {
-                self.search_state.last_search_query = current_query;
                 self.perform_search(window, cx);
                 // Restore focus to the search input after perform_search
                 let search_focus = self.search_state.search_input.read(cx).focus_handle(cx);

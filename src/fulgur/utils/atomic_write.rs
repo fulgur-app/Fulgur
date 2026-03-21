@@ -1,7 +1,10 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static ATOMIC_WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Write file contents atomically by writing to a sibling temporary file,
 /// syncing it, then renaming it over the destination path.
@@ -30,11 +33,13 @@ pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
+    let counter = ATOMIC_WRITE_COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp_name = format!(
-        ".{}.{}.{}.tmp",
+        ".{}.{}.{}.{}.tmp",
         filename.to_string_lossy(),
         std::process::id(),
-        nonce
+        nonce,
+        counter
     );
     let tmp_path = parent.join(tmp_name);
     let write_result = (|| -> anyhow::Result<()> {

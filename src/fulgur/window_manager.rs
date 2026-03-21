@@ -177,12 +177,21 @@ impl Fulgur {
             } else {
                 if let Err(e) = self.save_state(cx, window) {
                     log::error!("Failed to save app state on window close: {}", e);
-                    self.pending_notification = Some((
-                        NotificationType::Error,
-                        format!("Failed to save application state: {}. Close anyway?", e).into(),
-                    ));
-                    cx.notify();
-                    return false; // Prevent close, let user try again or force close
+                    if self.save_failed_once {
+                        log::warn!("Save failed again — allowing force-close");
+                    } else {
+                        self.save_failed_once = true;
+                        self.pending_notification = Some((
+                            NotificationType::Error,
+                            format!(
+                                "Failed to save application state: {}. Close again to force-close.",
+                                e
+                            )
+                            .into(),
+                        ));
+                        cx.notify();
+                        return false;
+                    }
                 }
                 cx.update_global::<WindowManager, _>(|manager, _| {
                     manager.unregister(self.window_id);
@@ -197,12 +206,21 @@ impl Fulgur {
             );
             if let Err(e) = self.save_state(cx, window) {
                 log::error!("Failed to save app state on window close: {}", e);
-                self.pending_notification = Some((
-                    NotificationType::Error,
-                    format!("Failed to save application state: {}. Close anyway?", e).into(),
-                ));
-                cx.notify();
-                return false; // Prevent close, let user try again or force close
+                if self.save_failed_once {
+                    log::warn!("Save failed again — allowing force-close");
+                } else {
+                    self.save_failed_once = true;
+                    self.pending_notification = Some((
+                        NotificationType::Error,
+                        format!(
+                            "Failed to save application state: {}. Close again to force-close.",
+                            e
+                        )
+                        .into(),
+                    ));
+                    cx.notify();
+                    return false;
+                }
             }
             cx.update_global::<WindowManager, _>(|manager, _| {
                 manager.unregister(self.window_id);
@@ -227,12 +245,8 @@ impl Fulgur {
                 };
                 let window = cx.open_window(window_options, |window, cx| {
                     window.set_window_title("Fulgur");
-                    let view = Fulgur::new(window, cx, usize::MAX); // usize::MAX = new empty window
-                    let window_handle = window.window_handle();
-                    let window_id = window_handle.window_id();
-                    view.update(cx, |fulgur, _cx| {
-                        fulgur.window_id = window_id;
-                    });
+                    let window_id = window.window_handle().window_id();
+                    let view = Fulgur::new(window, cx, window_id, usize::MAX); // usize::MAX = new empty window
                     cx.update_global::<WindowManager, _>(|manager, _| {
                         manager.register(window_id, view.downgrade());
                     });

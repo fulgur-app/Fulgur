@@ -3,6 +3,7 @@
 /// This function:
 /// - Extracts just the filename from paths (e.g., "/path/to/file.txt" → "file.txt")
 /// - Preserves leading dots (hidden files like ".gitignore")
+/// - Rejects bare `..` and `.` directory references
 /// - Removes control characters and null bytes
 ///
 /// ### Arguments
@@ -32,6 +33,11 @@ pub fn sanitize_filename(filename: &str) -> String {
         .filter(|c| !c.is_control())
         .collect::<String>();
 
+    // Reject special directory references even if they survived path splitting
+    if sanitized == ".." || sanitized == "." {
+        return "untitled".to_string();
+    }
+
     // If the result is empty or only whitespace, return a default name
     if sanitized.trim().is_empty() {
         "untitled".to_string()
@@ -55,6 +61,9 @@ mod tests {
         assert_eq!(sanitize_filename("../../etc/passwd"), "passwd");
         assert_eq!(sanitize_filename("../config.json"), "config.json");
         assert_eq!(sanitize_filename("..\\windows\\system32"), "system32");
+        // Bare ".." and "." must also be rejected
+        assert_eq!(sanitize_filename(".."), "untitled");
+        assert_eq!(sanitize_filename("."), "untitled");
     }
 
     #[test]
