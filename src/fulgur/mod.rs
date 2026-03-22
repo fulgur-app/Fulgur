@@ -229,14 +229,11 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `cx`: The application context
-    pub fn init(cx: &mut App) {
-        let mut settings = Settings::load().unwrap_or_else(|e| {
-            log::error!("Failed to load settings, using defaults: {}", e);
-            Settings::new()
-        });
+    /// - `settings`: The application settings (already loaded and resolved, including first-run overrides)
+    pub fn init(cx: &mut App, settings: &mut Settings) {
         let recent_files = settings.get_recent_files();
         languages::supported_languages::register_external_languages();
-        themes::init(&settings, cx, move |cx| {
+        themes::init(settings, cx, move |cx| {
             cx.bind_keys([
                 #[cfg(target_os = "macos")]
                 KeyBinding::new("cmd-o", OpenFile, None),

@@ -93,7 +93,9 @@ fn main() {
     if let Err(e) = fulgur::utils::logger::init() {
         eprintln!("Failed to initialize logger: {}", e);
     }
-    let settings = fulgur::settings::Settings::load().unwrap_or_else(|e| {
+    let settings_load_result = fulgur::settings::Settings::load();
+    let is_first_run = settings_load_result.is_err();
+    let mut settings = settings_load_result.unwrap_or_else(|e| {
         eprintln!("Failed to load settings, using defaults: {}", e);
         fulgur::settings::Settings::new()
     });
@@ -151,7 +153,24 @@ fn main() {
     app.run(move |cx| {
         // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
-        fulgur::Fulgur::init(cx);
+        if is_first_run {
+            let appearance = cx.window_appearance();
+            let is_dark = matches!(
+                appearance,
+                gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
+            );
+            settings.app_settings.theme = if is_dark {
+                "Default Dark".into()
+            } else {
+                "Default Light".into()
+            };
+            log::info!(
+                "First run: OS appearance is {:?}, applying theme \"{}\"",
+                appearance,
+                settings.app_settings.theme
+            );
+        }
+        fulgur::Fulgur::init(cx, &mut settings);
         let shared_state =
             fulgur::shared_state::SharedAppState::new(settings, pending_files.clone());
         cx.set_global(shared_state);
