@@ -235,7 +235,7 @@ jobs:
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 30m 2>&1) || true
+            --wait 2>&1) || true
 
           echo "$SUBMIT_OUTPUT"
 
