@@ -157,13 +157,10 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos' && secrets.APPLE_SIGNING_IDENTITY || '' }}
         run: cargo packager --release --formats $FORMATS
 
-      - name: Sign and notarize macOS DMG
+      - name: Re-sign app with hardened runtime
         if: matrix.platform == 'macos'
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           DMG=$(find . -maxdepth 3 -name "*.dmg" | head -1)
           if [ -z "$DMG" ]; then
@@ -172,15 +169,101 @@ jobs:
           fi
           echo "Found DMG: $DMG"
 
-          # Sign the DMG envelope
-          codesign --force --sign "$APPLE_SIGNING_IDENTITY" "$DMG"
+          # Mount the DMG to access the .app
+          MOUNT_DIR=$(mktemp -d)
+          hdiutil attach "$DMG" -mountpoint "$MOUNT_DIR" -nobrowse
 
-          # Submit for notarization and wait (timeout: 30 minutes)
-          xcrun notarytool submit "$DMG" \
+          # Copy .app out (DMG is read-only)
+          APP=$(find "$MOUNT_DIR" -maxdepth 1 -name "*.app" | head -1)
+          if [ -z "$APP" ]; then
+            echo "::error::No .app found inside DMG"
+            hdiutil detach "$MOUNT_DIR"
+            exit 1
+          fi
+          APP_NAME=$(basename "$APP")
+          WORK_DIR=$(mktemp -d)
+          cp -R "$APP" "$WORK_DIR/$APP_NAME"
+          hdiutil detach "$MOUNT_DIR"
+
+          # Sign all nested binaries, dylibs, and frameworks first (deep signing)
+          find "$WORK_DIR/$APP_NAME" -type f \( -name "*.dylib" -o -name "*.so" -o -perm +111 \) | while read -r binary; do
+            # Skip non-Mach-O files
+            if file "$binary" | grep -q "Mach-O"; then
+              echo "Signing: $binary"
+              codesign --force --sign "$APPLE_SIGNING_IDENTITY" \
+                --options runtime \
+                --timestamp \
+                "$binary"
+            fi
+          done
+
+          # Sign the .app bundle itself with hardened runtime + entitlements
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" \
+            --options runtime \
+            --timestamp \
+            --entitlements entitlements.plist \
+            "$WORK_DIR/$APP_NAME"
+
+          # Verify the signature
+          echo "Verifying signature..."
+          codesign --verify --deep --strict --verbose=2 "$WORK_DIR/$APP_NAME"
+          spctl --assess --type execute --verbose=2 "$WORK_DIR/$APP_NAME" || echo "::warning::spctl assessment failed (expected before notarization)"
+
+          # Recreate the DMG with the re-signed app
+          rm "$DMG"
+          hdiutil create -volname "Fulgur" -srcfolder "$WORK_DIR" -ov -format UDZO "$DMG"
+
+          # Sign the DMG envelope
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp "$DMG"
+
+          # Clean up
+          rm -rf "$MOUNT_DIR" "$WORK_DIR"
+          echo "Re-signing complete"
+
+      - name: Notarize macOS DMG
+        if: matrix.platform == 'macos'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          DMG=$(find . -maxdepth 3 -name "*.dmg" | head -1)
+          echo "Submitting for notarization: $DMG"
+
+          # Submit for notarization, capture output for submission ID
+          SUBMIT_OUTPUT=$(xcrun notarytool submit "$DMG" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 30m
+            --wait --timeout 30m 2>&1) || true
+
+          echo "$SUBMIT_OUTPUT"
+
+          # Extract submission ID
+          SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | grep -m1 "id:" | awk '{print $2}')
+          echo "Submission ID: $SUBMISSION_ID"
+
+          # Check if notarization succeeded
+          if echo "$SUBMIT_OUTPUT" | grep -q "status: Accepted"; then
+            echo "Notarization accepted"
+          else
+            echo "::error::Notarization failed. Fetching detailed log..."
+
+            # Fetch the notarization log for diagnosis
+            if [ -n "$SUBMISSION_ID" ]; then
+              xcrun notarytool log "$SUBMISSION_ID" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_ID_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                notarization-log.json || true
+
+              echo "--- Notarization Log ---"
+              cat notarization-log.json 2>/dev/null || echo "Could not retrieve log"
+              echo "--- End Log ---"
+            fi
+
+            exit 1
+          fi
 
           # Staple the notarization ticket to the DMG
           xcrun stapler staple "$DMG"
