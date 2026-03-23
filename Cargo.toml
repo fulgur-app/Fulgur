@@ -709,6 +709,7 @@ mimeType = "text/x-asm"
 
 [package.metadata.packager.macos]
 minimum-system-version = "10.15"
+entitlements = "entitlements.plist"
 
 [package.metadata.packager.linux]
 generate-desktop-entry = true
