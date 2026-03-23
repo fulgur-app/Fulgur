@@ -1,6 +1,6 @@
 [package]
 name = "Fulgur"
-version = "0.4.99"
+version = "0.4.1"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
