@@ -209,6 +209,9 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$WORK_DIR/$APP_NAME"
           spctl --assess --type execute --verbose=2 "$WORK_DIR/$APP_NAME" || echo "::warning::spctl assessment failed (expected before notarization)"
 
+          # Add Applications symlink for drag-and-drop installation
+          ln -s /Applications "$WORK_DIR/Applications"
+
           # Recreate the DMG with the re-signed app
           rm "$DMG"
           hdiutil create -volname "Fulgur" -srcfolder "$WORK_DIR" -ov -format UDZO "$DMG"
@@ -235,7 +238,8 @@ jobs:
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait 2>&1) || true
+            --wait \
+            --timeout 300 2>&1) || true
 
           echo "$SUBMIT_OUTPUT"
 
