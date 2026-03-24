@@ -13,7 +13,10 @@ use crate::fulgur::{
     },
 };
 use gpui::*;
-use gpui_component::WindowExt;
+use gpui_component::{
+    WindowExt,
+    select::{SearchableVec, SelectEvent},
+};
 use std::{ops::DerefMut, path::PathBuf};
 
 impl Fulgur {
@@ -54,7 +57,26 @@ impl Fulgur {
         if let Some(index) = self.tabs.iter().position(|t| matches!(t, Tab::Settings(_))) {
             self.set_active_tab(index, window, cx);
         } else {
-            let settings_tab = Tab::Settings(SettingsTab::new(self.next_tab_id, window, cx));
+            let tab = SettingsTab::new(
+                self.next_tab_id,
+                &self.settings.editor_settings.font_family,
+                window,
+                cx,
+            );
+            let font_select_subscription = cx.subscribe(
+                &tab.font_family_select,
+                |this: &mut Self,
+                 _,
+                 ev: &SelectEvent<SearchableVec<SharedString>>,
+                 cx: &mut Context<Self>| {
+                    if let SelectEvent::Confirm(Some(value)) = ev {
+                        this.settings.editor_settings.font_family = value.to_string();
+                        let _ = this.update_and_propagate_settings(cx);
+                    }
+                },
+            );
+            self._font_select_subscription = Some(font_select_subscription);
+            let settings_tab = Tab::Settings(tab);
             self.tabs.push(settings_tab);
             self.active_tab_index = Some(self.tabs.len() - 1);
             self.pending_tab_scroll = Some(self.tabs.len() - 1);

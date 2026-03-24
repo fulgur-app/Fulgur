@@ -111,6 +111,7 @@ pub struct Fulgur {
     save_failed_once: bool, // Flag: save already failed once — allow force-close on next attempt
     pending_share_sheet: bool, // Flag to open share sheet when pending devices are ready
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
+    _font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
     _editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
     #[cfg(target_os = "macos")]
@@ -185,6 +186,7 @@ impl Fulgur {
                 save_failed_once: false,
                 pending_share_sheet: false,
                 cached_window_bounds: None,
+                _font_select_subscription: None,
                 editor_context_menu: None,
                 _editor_context_menu_subscription: None,
                 #[cfg(target_os = "macos")]
@@ -589,7 +591,7 @@ impl Fulgur {
                         .bordered(false)
                         .p_0()
                         .h_full()
-                        .font_family("Monaco")
+                        .font_family(self.settings.editor_settings.font_family.clone())
                         .text_size(px(self.settings.editor_settings.font_size))
                         .focus_bordered(false);
                     let capture_right_click =

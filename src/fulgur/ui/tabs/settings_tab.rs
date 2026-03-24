@@ -2,10 +2,11 @@ use std::fs;
 
 use gpui::{prelude::FluentBuilder, *};
 use gpui_component::{
-    ActiveTheme, Sizable, Size, StyledExt,
+    ActiveTheme, IndexPath, Sizable, Size, StyledExt,
     button::{Button, ButtonVariants},
     group_box::GroupBoxVariant,
     h_flex,
+    select::{SearchableVec, Select, SelectState},
     setting::{
         NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage,
         Settings as SettingsComponent,
@@ -17,6 +18,7 @@ use crate::fulgur::{
     Fulgur, crypto_helper,
     settings::{AppSettings, EditorSettings, MarkdownPreviewMode, Themes},
     sync::synchronization::perform_initial_synchronization,
+    tab::Tab,
     themes,
     ui::{icons::CustomIcon, menus::build_menus},
 };
@@ -27,6 +29,7 @@ const DEVICE_KEY_PLACEHOLDER: &str = "<Device Key>";
 pub struct SettingsTab {
     pub id: usize,
     pub title: SharedString,
+    pub font_family_select: Entity<SelectState<SearchableVec<SharedString>>>,
 }
 
 impl SettingsTab {
@@ -34,16 +37,51 @@ impl SettingsTab {
     ///
     /// ### Arguments
     /// - `id`: The ID of the settings tab
-    /// - `_window`: The window
-    /// - `_cx`: The context
+    /// - `current_font`: The currently selected font family
+    /// - `window`: The window
+    /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `Self`: The settings tab
-    pub fn new(id: usize, _window: &mut Window, _cx: &mut App) -> Self {
+    pub fn new(id: usize, current_font: &str, window: &mut Window, cx: &mut App) -> Self {
+        let font_family_select = Self::build_font_select(current_font, window, cx);
         Self {
             id,
             title: SharedString::from("Settings"),
+            font_family_select,
         }
+    }
+
+    /// Build the font family select entity populated with all system fonts.
+    ///
+    /// ### Arguments
+    /// - `current_font`: The currently selected font family used to set the initial selection
+    /// - `window`: The window
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Entity<SelectState<SearchableVec<SharedString>>>`: The font family select state
+    pub fn build_font_select(
+        current_font: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Entity<SelectState<SearchableVec<SharedString>>> {
+        let mut system_fonts: Vec<SharedString> = cx
+            .text_system()
+            .all_font_names()
+            .into_iter()
+            .map(SharedString::from)
+            .collect();
+        system_fonts.sort();
+        system_fonts.dedup();
+        let selected_index = system_fonts
+            .iter()
+            .position(|f| f.as_ref() == current_font)
+            .map(|ix| IndexPath::default().row(ix));
+        cx.new(|cx| {
+            SelectState::new(SearchableVec::new(system_fonts), selected_index, window, cx)
+                .searchable(true)
+        })
     }
 }
 
@@ -55,10 +93,20 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `SettingPage`: The Editor settings page
-    fn create_editor_page(entity: Entity<Self>) -> SettingPage {
+    fn create_editor_page(
+        entity: Entity<Self>,
+        font_family_select: Entity<SelectState<SearchableVec<SharedString>>>,
+    ) -> SettingPage {
         let default_editor_settings = EditorSettings::new();
         SettingPage::new("Editor").default_open(true).groups(vec![
             SettingGroup::new().title("Font").items(vec![
+                SettingItem::new(
+                    "Font Family",
+                    SettingField::render(move |_options, _window, _cx| {
+                        Select::new(&font_family_select).w(px(240.))
+                    }),
+                )
+                .description("Select the font family for the editor."),
                 SettingItem::new(
                     "Font Size",
                     SettingField::number_input(
@@ -783,8 +831,19 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) -> Vec<SettingPage> {
         let entity = cx.entity();
+        let font_family_select = self
+            .tabs
+            .iter()
+            .find_map(|t| {
+                if let Tab::Settings(s) = t {
+                    Some(s.font_family_select.clone())
+                } else {
+                    None
+                }
+            })
+            .expect("create_settings_pages called without a settings tab in self.tabs");
         let mut pages = vec![
-            Self::create_editor_page(entity.clone()),
+            Self::create_editor_page(entity.clone(), font_family_select),
             Self::create_application_page(entity.clone()),
         ];
         let themes = self.shared_state(cx).themes.lock().clone();
