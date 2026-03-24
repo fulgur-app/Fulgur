@@ -96,6 +96,8 @@ pub struct EditorSettings {
     pub font_size: f32,
     pub tab_size: usize,
     pub markdown_settings: MarkdownSettings,
+    #[serde(default)]
+    pub show_whitespaces: bool,
     #[serde(default = "default_watch_files")]
     pub watch_files: bool,
 }
@@ -153,6 +155,7 @@ impl EditorSettings {
             soft_wrap: false,
             font_size: 14.0,
             tab_size: 4,
+            show_whitespaces: false,
             markdown_settings: MarkdownSettings::new(),
             watch_files: default_watch_files(),
         }
