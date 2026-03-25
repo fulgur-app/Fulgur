@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use crate::fulgur::{
     Fulgur,
@@ -321,6 +321,69 @@ impl Fulgur {
     ) {
         log::debug!("Handling file open from CLI: {:?}", path);
         self.do_open_file(window, cx, path);
+    }
+
+    /// Handle dropping external file system paths into this window.
+    ///
+    /// ### Behavior
+    /// - Opens dropped files in new tabs (or focuses existing tabs via `do_open_file`)
+    /// - Ignores non-file entries (e.g. directories)
+    /// - Deduplicates duplicate paths within the same drop gesture
+    ///
+    /// ### Arguments
+    /// - `paths`: Paths provided by GPUI external file drop
+    /// - `window`: The target window
+    /// - `cx`: The application context
+    pub fn handle_external_paths_drop(
+        &mut self,
+        paths: &ExternalPaths,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut dropped_files = Vec::new();
+        let mut seen = HashSet::new();
+        let mut skipped_non_files = 0usize;
+        for path in paths.paths() {
+            if !path.is_file() {
+                skipped_non_files += 1;
+                continue;
+            }
+            if seen.insert(path.clone()) {
+                dropped_files.push(path.clone());
+            }
+        }
+        if dropped_files.is_empty() {
+            if skipped_non_files > 0 {
+                window.push_notification(
+                    (
+                        NotificationType::Info,
+                        SharedString::from("Dropped items contain no files to open"),
+                    ),
+                    cx,
+                );
+            }
+            return;
+        }
+        log::info!(
+            "Opening {} dropped file(s) in window {:?}",
+            dropped_files.len(),
+            self.window_id
+        );
+        for file_path in dropped_files {
+            self.do_open_file(window, cx, file_path);
+        }
+        if skipped_non_files > 0 {
+            window.push_notification(
+                (
+                    NotificationType::Info,
+                    SharedString::from(format!(
+                        "Ignored {} dropped item(s) that are not files",
+                        skipped_non_files
+                    )),
+                ),
+                cx,
+            );
+        }
     }
 
     /// Save a file
