@@ -1,0 +1,15 @@
+name: Trigger website deployment
+
+on:
+  release:
+    types: [published, edited]
+
+jobs:
+  deploy-website:
+    name: Trigger Cloudflare Pages deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger deployment
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.CLOUDFLARE_WEBSITE_DEPLOY_HOOK_URL }}
+        run: curl -X POST "$DEPLOY_HOOK_URL"
