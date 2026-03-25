@@ -4,9 +4,6 @@
 
 Your lightning fast, multiplatform, themable text editor, with synchronization between instances!
 
-## Running Fulgur on MacOS
-Fulgur is not signed yet. If Fulgur is tagged as damaged by MacOS, just run `xattr -dr com.apple.quarantine /Applications/Fulgur.app` and enjoy Fulgur!
-
 ## About Fulgur
 
 ### What is Fulgur?
@@ -23,7 +20,9 @@ Version 0.2.0 introduces Sync mode, allowing you to **securely send files betwee
 
 Version 0.3.0 introduces **multi-window support**, allowing you to open multiple Fulgur windows simultaneously, as well as a much more **robust and secure end-to-end encryption system** using the system's keychain. As a result it limits compatibility issues on some desktop environments on Linux.
 
-Version 0.4.0 is more of a maintenance release, with a strong **focus on performance, security and code quality**. It also adds the  support of the **syntax highlighting for 15 new languages**.
+Version 0.4.0 is more of a maintenance release, with a strong **focus on performance, security and code quality**. It also adds the support of the **syntax highlighting for 15 new languages**.
+
+Version 0.5.0 introduces the support of **syntax highlighting for 13 new languages** as well as a much better support of PHP, Astro and Svelte. The editor now supports **code folding** and has a new **Markdown preview tab**. We've started to implement comfort features that require platform specific code such as the **Dock menu on macOS**. Talking about macOS, Fulgur is now signed an notarized, no more gatekeeper warnings! Finally, we've added many performance and security improvements which make the experience with Fulgur even nicer.
 
 ### Screenshots
 
@@ -50,7 +49,7 @@ Fulgur is currently in alpha development. While it has been stable in testing, s
 * Drag and drop support
 * Profiles support
 * DONE in 0.3.0 ~~Multi-windows support~~
-* STARTED in 0.4.0 Syntax highlighting for additional languages
+* CONTINUED in 0.5.0 Syntax highlighting for additional languages
 * DONE in 0.2.0 ~~Sync mode functionality~~
 * Various edge cases
 
