@@ -93,6 +93,8 @@ pub struct EditorSettings {
     pub show_line_numbers: bool,
     pub show_indent_guides: bool,
     pub soft_wrap: bool,
+    #[serde(default = "default_font_family")]
+    pub font_family: String,
     pub font_size: f32,
     pub tab_size: usize,
     pub markdown_settings: MarkdownSettings,
@@ -127,6 +129,11 @@ fn default_watch_files() -> bool {
     true
 }
 
+/// Default value for font_family setting
+fn default_font_family() -> String {
+    "Monaco".to_string()
+}
+
 /// Default value for is_deduplication setting
 ///
 /// ### Returns
@@ -151,6 +158,7 @@ impl EditorSettings {
             show_line_numbers: true,
             show_indent_guides: true,
             soft_wrap: false,
+            font_family: default_font_family(),
             font_size: 14.0,
             tab_size: 4,
             markdown_settings: MarkdownSettings::new(),
