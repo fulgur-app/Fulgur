@@ -30,6 +30,7 @@ actions!(
         ClearRecentFiles,
         SelectTheme,
         CheckForUpdates,
+        PrintFile,
     ]
 );
 
@@ -119,6 +120,8 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
                 MenuItem::separator(),
                 MenuItem::action("Save", SaveFile),
                 MenuItem::action("Save as...", SaveFileAs),
+                MenuItem::separator(),
+                MenuItem::action("Print...", PrintFile),
                 MenuItem::separator(),
                 MenuItem::action("Close file", CloseFile),
                 MenuItem::action("Close all files", CloseAllFiles),
