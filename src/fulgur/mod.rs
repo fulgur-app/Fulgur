@@ -20,7 +20,7 @@ use crate::fulgur::{
 };
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Root, WindowExt,
+    ActiveTheme, Root, StyledExt, WindowExt,
     input::{Input, InputEvent, InputState},
     menu::PopupMenu,
     notification::NotificationType,
@@ -336,6 +336,8 @@ impl Fulgur {
         let mut app_content = div()
             .id("app-content")
             .size_full()
+            .relative()
+            .group("")
             .flex()
             .flex_col()
             .gap_0()
@@ -371,6 +373,10 @@ impl Fulgur {
         register_action!(app_content, cx, PrintFile => print_file);
         register_action!(app_content, cx, DockActivateTab => handle_dock_activate_tab(&action));
         register_action!(app_content, cx, DockActivateTabByTitle => handle_dock_activate_tab_by_title(&action));
+        app_content =
+            app_content.on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                this.handle_external_paths_drop(paths, window, cx);
+            }));
         app_content = app_content
             .child(self.render_tab_bar(cx))
             .child(self.render_content_area(active_tab, window, cx))
@@ -381,6 +387,7 @@ impl Fulgur {
         {
             app_content = app_content.child(self.render_status_bar(cx));
         }
+        app_content = app_content.child(self.render_external_file_drop_overlay(cx));
         app_content
     }
 
@@ -685,5 +692,41 @@ impl Fulgur {
         self.title_bar.update(cx, |this, _cx| {
             this.set_title(title);
         });
+    }
+
+    /// Render a visual overlay while external files are being dragged over the window.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `impl IntoElement`: The rendered overlay
+    fn render_external_file_drop_overlay(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .id("external-file-drop-overlay")
+            .invisible()
+            .absolute()
+            .top_0()
+            .right_0()
+            .bottom_0()
+            .left_0()
+            .flex()
+            .justify_center()
+            .items_center()
+            .border_2()
+            .border_dashed()
+            .border_color(cx.theme().primary.opacity(0.7))
+            .bg(cx.theme().muted.opacity(0.4))
+            .on_drag_move::<ExternalPaths>(|_, _, _| {})
+            .group_drag_over::<ExternalPaths>("", |style| style.visible())
+            .child(
+                div()
+                    .px_4()
+                    .py_2()
+                    .rounded_sm()
+                    .text_color(cx.theme().primary)
+                    .font_bold()
+                    .child("Drop files to open"),
+            )
     }
 }
