@@ -3,6 +3,7 @@ name: Trigger website deployment
 on:
   release:
     types: [published, edited]
+  workflow_dispatch:
 
 jobs:
   deploy-website:
