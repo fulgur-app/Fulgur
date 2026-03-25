@@ -227,6 +227,28 @@ impl Fulgur {
                     .default_value(default_editor_settings.soft_wrap),
                 )
                 .description("Wrap long lines to the next line instead of scrolling."),
+                SettingItem::new(
+                    "Show Whitespaces",
+                    SettingField::switch(
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| {
+                                entity.read(cx).settings.editor_settings.show_whitespaces
+                            }
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: bool, cx: &mut App| {
+                                entity.update(cx, |this, cx| {
+                                    this.settings.editor_settings.show_whitespaces = val;
+                                    let _ = this.update_and_propagate_settings(cx);
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_editor_settings.show_whitespaces),
+                )
+                .description("Show whitespace characters (spaces and tabs) in the editor."),
             ]),
             SettingGroup::new().title("Markdown").items(vec![
                 SettingItem::new(

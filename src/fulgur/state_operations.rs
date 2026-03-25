@@ -271,6 +271,7 @@ impl Fulgur {
                         hard_tabs: false,
                     })
                     .soft_wrap(self.settings.editor_settings.soft_wrap)
+                    .show_whitespaces(self.settings.editor_settings.show_whitespaces)
                     .default_value(content)
             });
             EditorTab {

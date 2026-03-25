@@ -75,6 +75,7 @@ fn make_input_state(
             hard_tabs: false,
         })
         .soft_wrap(settings.soft_wrap)
+        .show_whitespaces(settings.show_whitespaces)
         .default_value(content.unwrap_or_default())
 }
 
@@ -293,6 +294,7 @@ impl EditorTab {
             input_state.set_line_number(settings.show_line_numbers, window, cx);
             input_state.set_indent_guides(settings.show_indent_guides, window, cx);
             input_state.set_soft_wrap(settings.soft_wrap, window, cx);
+            input_state.set_show_whitespaces(settings.show_whitespaces, window, cx);
         });
     }
 
