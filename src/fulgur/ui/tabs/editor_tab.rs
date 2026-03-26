@@ -467,9 +467,9 @@ fn string_to_u32(string: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_line_number, string_to_u32};
     #[cfg(feature = "gpui-test-support")]
     use super::{EditorTab, FromDuplicateParams, FromFileParams};
+    use super::{extract_line_number, string_to_u32};
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::languages::supported_languages::SupportedLanguage;
     #[cfg(feature = "gpui-test-support")]
@@ -477,7 +477,7 @@ mod tests {
     use core::prelude::v1::test;
     use gpui::SharedString;
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Context, Render, TestAppContext, Window, div, prelude::*};
+    use gpui::{AppContext, Context, IntoElement, Render, TestAppContext, Window, div};
 
     #[cfg(feature = "gpui-test-support")]
     struct EmptyView;
@@ -703,7 +703,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
     fn test_editor_tab_new_construction(cx: &mut TestAppContext) {
-        cx.update(|cx| gpui_component::init(cx));
+        cx.update(gpui_component::init);
         let settings = EditorSettings::new();
 
         cx.update(|cx| {
@@ -736,7 +736,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
     fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
-        cx.update(|cx| gpui_component::init(cx));
+        cx.update(gpui_component::init);
         let mut settings = EditorSettings::new();
         settings.markdown_settings.show_markdown_toolbar = true;
         settings.markdown_settings.show_markdown_preview = false;
@@ -773,7 +773,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
     fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
-        cx.update(|cx| gpui_component::init(cx));
+        cx.update(gpui_component::init);
         let settings = EditorSettings::new();
         let path = std::path::PathBuf::from("/tmp/test_file.md");
         let contents = "# title\nbody".to_string();
@@ -807,7 +807,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
     fn test_editor_tab_from_duplicate_construction(cx: &mut TestAppContext) {
-        cx.update(|cx| gpui_component::init(cx));
+        cx.update(gpui_component::init);
         let settings = EditorSettings::new();
         let params = FromDuplicateParams {
             id: 22,

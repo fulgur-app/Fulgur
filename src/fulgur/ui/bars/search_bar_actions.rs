@@ -420,7 +420,8 @@ mod tests {
     use core::prelude::v1::test;
     #[cfg(feature = "gpui-test-support")]
     use gpui::{
-        Context, Entity, Render, TestAppContext, VisualTestContext, Window, div, prelude::*,
+        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
+        Window, div,
     };
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
@@ -848,6 +849,16 @@ mod tests {
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].line, 1);
         assert_eq!(matches[0].col, 6); // "hello" starts at column 6 of line 2
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    struct EmptyView;
+
+    #[cfg(feature = "gpui-test-support")]
+    impl Render for EmptyView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
     }
 
     #[cfg(feature = "gpui-test-support")]

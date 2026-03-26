@@ -362,7 +362,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
     fn test_gpui_input_change_updates_entries_list(cx: &mut TestAppContext) {
-        cx.update(|cx| gpui_component::init(cx));
+        cx.update(gpui_component::init);
 
         let temp_dir = tempdir().expect("failed to create temp dir");
         std::fs::create_dir(temp_dir.path().join("alpha_dir"))
@@ -401,7 +401,10 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
-        assert!(!entries.is_empty(), "entries should be populated after input change");
+        assert!(
+            !entries.is_empty(),
+            "entries should be populated after input change"
+        );
         assert!(
             entries
                 .iter()
@@ -430,7 +433,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
     fn test_gpui_input_change_to_invalid_path_clears_entries(cx: &mut TestAppContext) {
-        cx.update(|cx| gpui_component::init(cx));
+        cx.update(gpui_component::init);
 
         let temp_dir = tempdir().expect("failed to create temp dir");
         std::fs::write(temp_dir.path().join("alpha.txt"), "alpha")
