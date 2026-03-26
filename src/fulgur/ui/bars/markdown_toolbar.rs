@@ -355,3 +355,138 @@ impl Fulgur {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Fulgur;
+    use core::prelude::v1::test;
+
+    #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::{
+        settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
+    };
+    #[cfg(feature = "gpui-test-support")]
+    use gpui::{AppContext, Entity, Focusable, TestAppContext, VisualTestContext};
+    #[cfg(feature = "gpui-test-support")]
+    use gpui_component::{Root, input::Position, input::SelectAll};
+    #[cfg(feature = "gpui-test-support")]
+    use parking_lot::Mutex;
+    #[cfg(feature = "gpui-test-support")]
+    use std::{cell::RefCell, path::PathBuf, sync::Arc};
+
+    #[cfg(feature = "gpui-test-support")]
+    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            let mut settings = Settings::new();
+            settings.editor_settings.watch_files = false;
+            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(WindowManager::new());
+        });
+
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        let window = cx
+            .update(|cx| {
+                cx.open_window(Default::default(), |window, cx| {
+                    let window_id = window.window_handle().window_id();
+                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    *fulgur_slot.borrow_mut() = Some(fulgur.clone());
+                    cx.new(|cx| Root::new(fulgur, window, cx))
+                })
+            })
+            .expect("failed to open test window");
+
+        let visual_cx = VisualTestContext::from_window(window.into(), cx);
+        visual_cx.run_until_parked();
+        let fulgur = fulgur_slot
+            .into_inner()
+            .expect("failed to capture Fulgur entity");
+        (fulgur, visual_cx)
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_insert_or_surround_wraps_selected_text(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                {
+                    let editor = this
+                        .get_active_editor_tab_mut()
+                        .expect("expected active editor tab");
+                    editor.content.update(cx, |content, cx| {
+                        content.set_value("hello", window, cx);
+                    });
+                }
+
+                this.focus_active_tab(window, cx);
+                let focus = this
+                    .get_active_editor_tab()
+                    .expect("expected active editor tab")
+                    .content
+                    .read(cx)
+                    .focus_handle(cx);
+                focus.dispatch_action(&SelectAll, window, cx);
+                let selected = this
+                    .get_active_editor_tab()
+                    .expect("expected active editor tab")
+                    .content
+                    .read(cx)
+                    .selected_value()
+                    .to_string();
+                assert_eq!(selected, "hello");
+
+                this.insert_or_surround("**", "**", window, cx);
+
+                let text = this
+                    .get_active_editor_tab()
+                    .expect("expected active editor tab")
+                    .content
+                    .read(cx)
+                    .text()
+                    .to_string();
+                assert_eq!(text, "**hello**");
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_insert_or_surround_inserts_at_cursor_when_no_selection(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                {
+                    let editor = this
+                        .get_active_editor_tab_mut()
+                        .expect("expected active editor tab");
+                    editor.content.update(cx, |content, cx| {
+                        content.set_value("hello", window, cx);
+                        content.set_cursor_position(
+                            Position {
+                                line: 0,
+                                character: 5,
+                            },
+                            window,
+                            cx,
+                        );
+                    });
+                }
+
+                this.insert_or_surround("[", "](https://)", window, cx);
+
+                let text = this
+                    .get_active_editor_tab()
+                    .expect("expected active editor tab")
+                    .content
+                    .read(cx)
+                    .text()
+                    .to_string();
+                assert_eq!(text, "hello[](https://)");
+            });
+        });
+    }
+}
