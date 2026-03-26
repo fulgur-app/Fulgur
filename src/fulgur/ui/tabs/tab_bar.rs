@@ -3,6 +3,7 @@ use crate::fulgur::{
     tab::Tab,
     ui::components_utils::{self, TAB_BAR_BUTTON_SIZE, TAB_BAR_HEIGHT, button_factory},
     ui::icons::CustomIcon,
+    ui::tabs::tab_drag::DraggedTab,
 };
 use gpui::*;
 use gpui_component::{
@@ -340,22 +341,126 @@ impl Fulgur {
                     .flex()
                     .flex_1()
                     .items_center()
-                    .children(
-                        self.tabs
-                            .iter()
-                            .enumerate()
-                            .map(|(index, tab)| self.render_tab(index, tab, cx)),
-                    )
+                    .children(self.render_tabs_with_slots(cx))
                     .child(
                         div()
+                            .id("tab-bar-trailing")
                             .flex_1()
                             .min_w(px(0.))
                             .border_b_1()
                             .border_color(cx.theme().border)
-                            .h(TAB_BAR_HEIGHT),
+                            .h(TAB_BAR_HEIGHT)
+                            .on_drag_move::<DraggedTab>(cx.listener(
+                                |this, event: &DragMoveEvent<DraggedTab>, _window, cx| {
+                                    let cursor = event.event.position;
+                                    let bounds = event.bounds;
+                                    if cursor.x < bounds.origin.x
+                                        || cursor.x > bounds.origin.x + bounds.size.width
+                                        || cursor.y < bounds.origin.y
+                                        || cursor.y > bounds.origin.y + bounds.size.height
+                                    {
+                                        return;
+                                    }
+                                    let slot = this.tabs.len();
+                                    let dragged = event.drag(cx).clone();
+                                    this.drag_ghost = Some((slot, dragged));
+                                    cx.notify();
+                                },
+                            ))
+                            .on_drop(cx.listener(|this, dragged: &DraggedTab, window, cx| {
+                                if let Some((slot, _)) = this.drag_ghost.take() {
+                                    this.handle_tab_drop(dragged, slot, window, cx);
+                                }
+                            })),
                     ),
             );
         tab_bar
+    }
+
+    /// Render a ghost tab shown at the insertion point during a drag operation.
+    ///
+    /// The ghost tab previews where the dragged tab will land when dropped. It uses
+    /// a muted, semi-transparent style to distinguish it from real tabs.
+    ///
+    /// ### Arguments
+    /// - `dragged`: The dragged tab data (used for title and modified state)
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `AnyElement`: The rendered ghost tab element
+    fn render_ghost_tab(
+        &self,
+        slot: usize,
+        dragged: &DraggedTab,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let modified_indicator = if dragged.is_modified { " •" } else { "" };
+        div()
+            .id(("ghost-tab", slot))
+            .flex()
+            .items_center()
+            .h(TAB_BAR_HEIGHT)
+            .px_2()
+            .gap_2()
+            .border_r_1()
+            .border_b_0()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().tab_active)
+            .opacity(0.45)
+            .child(
+                div()
+                    .pl_1()
+                    .text_sm()
+                    .text_color(cx.theme().tab_active_foreground)
+                    .child(format!("{}{}", dragged.title, modified_indicator)),
+            )
+            .on_drop(cx.listener(|this, dragged: &DraggedTab, window, cx| {
+                if let Some((slot, _)) = this.drag_ghost.take() {
+                    this.handle_tab_drop(dragged, slot, window, cx);
+                }
+            }))
+            .into_any_element()
+    }
+
+    /// Render all tabs, inserting a ghost tab at the current drag insertion point.
+    ///
+    /// During a drag operation, a ghost tab is rendered at the slot determined by
+    /// the most recent `on_drag_move` event. The ghost is suppressed for no-op
+    /// positions (where the tab would not actually move).
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Vec<AnyElement>`: Tab elements, with a ghost tab inserted at the drag target
+    fn render_tabs_with_slots(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let ghost = if cx.has_active_drag() {
+            self.drag_ghost.as_ref().and_then(|(slot, dragged)| {
+                let from = dragged.tab_index;
+                let is_noop = *slot == from || *slot == from + 1;
+                if is_noop {
+                    None
+                } else {
+                    Some((*slot, dragged))
+                }
+            })
+        } else {
+            None
+        };
+        let capacity = self.tabs.len() + if ghost.is_some() { 1 } else { 0 };
+        let mut elements: Vec<AnyElement> = Vec::with_capacity(capacity);
+        if let Some((0, dragged)) = ghost {
+            elements.push(self.render_ghost_tab(0, dragged, cx));
+        }
+        for (index, tab) in self.tabs.iter().enumerate() {
+            elements.push(self.render_tab(index, tab, cx));
+            if let Some((slot, dragged)) = ghost
+                && slot == index + 1
+            {
+                elements.push(self.render_ghost_tab(slot, dragged, cx));
+            }
+        }
+        elements
     }
 
     /// Render a single tab
@@ -481,7 +586,10 @@ impl Fulgur {
                     .child(folder_path),
             );
         }
-        let tab_with_content = tab_div
+        let is_markdown_preview = tab.as_markdown_preview().is_some();
+        let title: SharedString = tab.title().to_string().into();
+        let is_modified = tab.is_modified();
+        let mut tab_with_content = tab_div
             .child(title_container)
             .child(
                 Button::new(("close-tab", tab_id))
@@ -499,43 +607,88 @@ impl Fulgur {
                 cx.listener(move |this, _, window, cx| {
                     this.close_tab(tab_id, window, cx);
                 }),
+            );
+        if !is_markdown_preview {
+            let is_source = cx.has_active_drag()
+                && self
+                    .drag_ghost
+                    .as_ref()
+                    .map(|(_, d)| d.tab_index == index)
+                    .unwrap_or(false);
+            if is_source {
+                tab_with_content = tab_with_content.opacity(0.45);
+            }
+            tab_with_content = tab_with_content
+                .on_drag(
+                    DraggedTab {
+                        tab_index: index,
+                        title,
+                        is_modified,
+                    },
+                    |dragged, _, _, cx| cx.new(|_| dragged.clone()),
+                )
+                .on_drag_move::<DraggedTab>(cx.listener(
+                    move |this, event: &DragMoveEvent<DraggedTab>, _window, cx| {
+                        let cursor = event.event.position;
+                        let bounds = event.bounds;
+                        if cursor.x < bounds.origin.x
+                            || cursor.x > bounds.origin.x + bounds.size.width
+                            || cursor.y < bounds.origin.y
+                            || cursor.y > bounds.origin.y + bounds.size.height
+                        {
+                            return;
+                        }
+                        let slot = if cursor.x < bounds.origin.x + bounds.size.width * 0.5 {
+                            index
+                        } else {
+                            index + 1
+                        };
+                        let dragged = event.drag(cx).clone();
+                        this.drag_ghost = Some((slot, dragged));
+                        cx.notify();
+                    },
+                ))
+                .on_drop(cx.listener(|this, dragged: &DraggedTab, window, cx| {
+                    if let Some((slot, _)) = this.drag_ghost.take() {
+                        this.handle_tab_drop(dragged, slot, window, cx);
+                    }
+                }));
+        }
+        let tab_with_content = tab_with_content.context_menu(move |this, _window, _cx| {
+            this.menu_with_disabled(
+                crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
+                Box::new(ShowInFileManager(index)),
+                !has_file_path,
             )
-            .context_menu(move |this, _window, _cx| {
-                this.menu_with_disabled(
-                    crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
-                    Box::new(ShowInFileManager(index)),
-                    !has_file_path,
-                )
-                .menu_with_disabled(
-                    "Duplicate Tab",
-                    Box::new(DuplicateTab(index)),
-                    !is_editor_tab,
-                )
-                .separator()
-                .menu("Close Tab", Box::new(CloseTabAction(tab_id)))
-                .menu_with_disabled(
-                    "Close Tabs to the Left",
-                    Box::new(CloseTabsToLeft(index)),
-                    !has_tabs_on_left,
-                )
-                .menu_with_disabled(
-                    "Close Tabs to the Right",
-                    Box::new(CloseTabsToRight(index)),
-                    !has_tabs_on_right,
-                )
-                .separator()
-                .menu_with_disabled(
-                    "Close All Tabs",
-                    Box::new(CloseAllTabsAction),
-                    total_tabs == 0,
-                )
-                .menu_with_disabled(
-                    "Close All Other Tabs",
-                    Box::new(CloseAllOtherTabs(index)),
-                    total_tabs <= 1,
-                )
-            });
-
+            .menu_with_disabled(
+                "Duplicate Tab",
+                Box::new(DuplicateTab(index)),
+                !is_editor_tab,
+            )
+            .separator()
+            .menu("Close Tab", Box::new(CloseTabAction(tab_id)))
+            .menu_with_disabled(
+                "Close Tabs to the Left",
+                Box::new(CloseTabsToLeft(index)),
+                !has_tabs_on_left,
+            )
+            .menu_with_disabled(
+                "Close Tabs to the Right",
+                Box::new(CloseTabsToRight(index)),
+                !has_tabs_on_right,
+            )
+            .separator()
+            .menu_with_disabled(
+                "Close All Tabs",
+                Box::new(CloseAllTabsAction),
+                total_tabs == 0,
+            )
+            .menu_with_disabled(
+                "Close All Other Tabs",
+                Box::new(CloseAllOtherTabs(index)),
+                total_tabs <= 1,
+            )
+        });
         tab_with_content.into_any_element()
     }
 }

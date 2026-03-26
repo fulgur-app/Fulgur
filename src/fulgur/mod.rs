@@ -114,8 +114,9 @@ pub struct Fulgur {
     _font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
     _editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
+    drag_ghost: Option<(usize, ui::tabs::tab_drag::DraggedTab)>, // Ghost tab shown at insertion point during tab drag
     #[cfg(target_os = "macos")]
-    last_dock_menu_hash: u64, // Hash of the last dock menu state to avoid unnecessary rebuilds
+    last_dock_menu_hash: u64,     // Hash of the last dock menu state to avoid unnecessary rebuilds
 }
 
 impl Fulgur {
@@ -189,6 +190,7 @@ impl Fulgur {
                 _font_select_subscription: None,
                 editor_context_menu: None,
                 _editor_context_menu_subscription: None,
+                drag_ghost: None,
                 #[cfg(target_os = "macos")]
                 last_dock_menu_hash: 0,
             }
