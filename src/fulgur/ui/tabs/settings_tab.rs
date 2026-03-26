@@ -160,7 +160,27 @@ impl Fulgur {
                     )
                     .default_value(default_editor_settings.tab_size as f64),
                 )
-                .description("Number of spaces for indentation. Requires restart."),
+                .description("Number of spaces for indentation. Takes effect on new tabs."),
+                SettingItem::new(
+                    "Use Spaces for Tabs",
+                    SettingField::switch(
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| entity.read(cx).settings.editor_settings.use_spaces
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: bool, cx: &mut App| {
+                                entity.update(cx, |this, cx| {
+                                    this.settings.editor_settings.use_spaces = val;
+                                    let _ = this.update_and_propagate_settings(cx);
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_editor_settings.use_spaces),
+                )
+                .description("Insert spaces when pressing Tab instead of a tab character. Takes effect on new tabs."),
                 SettingItem::new(
                     "Show Indent Guides",
                     SettingField::switch(

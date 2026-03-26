@@ -72,7 +72,7 @@ fn make_input_state(
         .indent_guides(settings.show_indent_guides)
         .tab_size(TabSize {
             tab_size: settings.tab_size,
-            hard_tabs: false,
+            hard_tabs: !settings.use_spaces,
         })
         .soft_wrap(settings.soft_wrap)
         .show_whitespaces(settings.show_whitespaces)
