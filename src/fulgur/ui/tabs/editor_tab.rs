@@ -295,14 +295,6 @@ impl EditorTab {
             input_state.set_indent_guides(settings.show_indent_guides, window, cx);
             input_state.set_soft_wrap(settings.soft_wrap, window, cx);
             input_state.set_show_whitespaces(settings.show_whitespaces, window, cx);
-            input_state.set_tab_size(
-                TabSize {
-                    tab_size: settings.tab_size,
-                    hard_tabs: !settings.use_spaces,
-                },
-                window,
-                cx,
-            );
         });
     }
 

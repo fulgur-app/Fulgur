@@ -160,7 +160,7 @@ impl Fulgur {
                     )
                     .default_value(default_editor_settings.tab_size as f64),
                 )
-                .description("Number of spaces for indentation."),
+                .description("Number of spaces for indentation. Takes effect on new tabs."),
                 SettingItem::new(
                     "Use Spaces for Tabs",
                     SettingField::switch(
@@ -180,7 +180,7 @@ impl Fulgur {
                     )
                     .default_value(default_editor_settings.use_spaces),
                 )
-                .description("Insert spaces when pressing Tab instead of a tab character."),
+                .description("Insert spaces when pressing Tab instead of a tab character. Takes effect on new tabs."),
                 SettingItem::new(
                     "Show Indent Guides",
                     SettingField::switch(
