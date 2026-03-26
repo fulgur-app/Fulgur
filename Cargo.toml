@@ -8,6 +8,10 @@ keywords = ["rust", "text", "editor", "fulgur", "sync", "desktop", "multiplatfor
 categories = ["text", "editor", "desktop", "multiplatform"]
 homepage = "https://fulgur.app"
 
+[features]
+default = []
+gpui-test-support = ["gpui/test-support"]
+
 [lib]
 name = "fulgur"
 path = "src/lib.rs"
@@ -102,6 +106,11 @@ tikv-jemallocator = "0.6.1"
 
 [dev-dependencies]
 tempfile = "3.26.0"
+
+[[test]]
+name = "integration_gpui_test_framework"
+path = "tests/integration_gpui_test_framework.rs"
+required-features = ["gpui-test-support"]
 
 [build-dependencies]
 embed-resource = "3.0.6"

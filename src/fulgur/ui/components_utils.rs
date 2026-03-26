@@ -120,3 +120,92 @@ pub fn format_file_size(bytes: u64) -> String {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::prelude::v1::test;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn test_constants_are_consistent() {
+        assert_eq!(TAB_BAR_HEIGHT, px(34.0));
+        assert_eq!(TAB_BAR_BUTTON_SIZE, TAB_BAR_HEIGHT);
+        assert_eq!(SEARCH_BAR_HEIGHT, px(40.0));
+        assert_eq!(SEARCH_BAR_BUTTON_SIZE, SEARCH_BAR_HEIGHT);
+        assert_eq!(MARKDOWN_BAR_HEIGHT, px(34.0));
+        assert_eq!(MARKDOWN_BAR_BUTTON_SIZE, MARKDOWN_BAR_HEIGHT);
+        assert_eq!(TEXT_SIZE, px(14.0));
+        assert_eq!(LINE_HEIGHT, relative(1.1));
+        assert_eq!(UTF_8, "UTF-8");
+        assert_eq!(UNTITLED, "Untitled");
+        assert_eq!(EMPTY, "");
+
+        assert_eq!(CORNERS_SIZE.top_left, px(0.0));
+        assert_eq!(CORNERS_SIZE.top_right, px(0.0));
+        assert_eq!(CORNERS_SIZE.bottom_left, px(0.0));
+        assert_eq!(CORNERS_SIZE.bottom_right, px(0.0));
+    }
+
+    #[test]
+    fn test_button_factory_builds_button() {
+        let button = button_factory("test-button", "Tooltip", CustomIcon::Search, red());
+
+        fn takes_button(_: Button) {}
+        takes_button(button);
+    }
+
+    #[test]
+    fn test_reveal_in_file_manager_label_for_current_platform() {
+        let label = reveal_in_file_manager_label();
+
+        #[cfg(target_os = "macos")]
+        assert_eq!(label, "Reveal in Finder");
+
+        #[cfg(target_os = "windows")]
+        assert_eq!(label, "Reveal in Explorer");
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        assert_eq!(label, "Reveal in File Manager");
+    }
+
+    #[test]
+    fn test_format_system_time_epoch() {
+        let formatted = format_system_time(UNIX_EPOCH);
+        assert_eq!(formatted.as_deref(), Some("1970-01-01 00:00:00"));
+    }
+
+    #[test]
+    fn test_format_system_time_with_offset() {
+        let ts = UNIX_EPOCH + Duration::from_secs(3661); // 01:01:01 UTC
+        let formatted = format_system_time(ts);
+        assert_eq!(formatted.as_deref(), Some("1970-01-01 01:01:01"));
+    }
+
+    #[test]
+    fn test_format_file_size_bytes_range() {
+        assert_eq!(format_file_size(0), "0 B");
+        assert_eq!(format_file_size(1), "1 B");
+        assert_eq!(format_file_size(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_file_size_kilobytes_range() {
+        assert_eq!(format_file_size(1024), "1.0 KB");
+        assert_eq!(format_file_size(1536), "1.5 KB");
+        assert_eq!(format_file_size(10 * 1024), "10.0 KB");
+    }
+
+    #[test]
+    fn test_format_file_size_megabytes_range() {
+        assert_eq!(format_file_size(1024 * 1024), "1.0 MB");
+        assert_eq!(format_file_size(1024 * 1024 + 512 * 1024), "1.5 MB");
+        assert_eq!(format_file_size(10 * 1024 * 1024), "10.0 MB");
+    }
+
+    #[test]
+    fn test_format_file_size_boundary_at_one_megabyte() {
+        assert_eq!(format_file_size(1024 * 1024 - 1), "1024.0 KB");
+        assert_eq!(format_file_size(1024 * 1024), "1.0 MB");
+    }
+}

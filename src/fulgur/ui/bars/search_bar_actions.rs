@@ -412,6 +412,7 @@ fn apply_replacements(search_matches: &[SearchMatch], text: &str, replace: &str)
 
 #[cfg(test)]
 mod tests {
+    use core::prelude::v1::test;
     use super::{SearchMatch, apply_replacements, find_matches, get_line_col_fast};
 
     /// Helper to build newline offsets for a text (mirrors production logic)

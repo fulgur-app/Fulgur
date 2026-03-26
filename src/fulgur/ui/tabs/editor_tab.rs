@@ -467,6 +467,7 @@ fn string_to_u32(string: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use core::prelude::v1::test;
     use super::{extract_line_number, string_to_u32};
     use gpui::SharedString;
 

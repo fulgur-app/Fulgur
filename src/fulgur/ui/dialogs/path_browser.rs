@@ -257,7 +257,15 @@ impl Render for PathBrowser {
 #[cfg(test)]
 mod tests {
     use super::{parse_input_path, read_and_filter_entries};
+    use core::prelude::v1::test;
     use std::path::{Path, PathBuf};
+    #[cfg(feature = "gpui-test-support")]
+    use tempfile::tempdir;
+
+    #[cfg(feature = "gpui-test-support")]
+    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
+    #[cfg(feature = "gpui-test-support")]
+    use gpui_component::input::InputState;
 
     #[test]
     fn test_empty_input() {
@@ -349,5 +357,122 @@ mod tests {
         let (parent, filter) = result.unwrap();
         assert!(parent.is_dir());
         assert_eq!(filter, ".");
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_gpui_input_change_updates_entries_list(cx: &mut TestAppContext) {
+        cx.update(|cx| gpui_component::init(cx));
+
+        let temp_dir = tempdir().expect("failed to create temp dir");
+        std::fs::create_dir(temp_dir.path().join("alpha_dir"))
+            .expect("failed to create alpha_dir fixture");
+        std::fs::write(temp_dir.path().join("alpha.txt"), "alpha")
+            .expect("failed to create alpha.txt fixture");
+        std::fs::write(temp_dir.path().join("beta.txt"), "beta")
+            .expect("failed to create beta.txt fixture");
+
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| super::PathBrowser::new(window, cx))
+            })
+            .expect("failed to open test window")
+        });
+        let mut visual_cx = VisualTestContext::from_window(window.into(), cx);
+        let browser = window
+            .root(&mut visual_cx)
+            .expect("failed to read root view from window");
+        let input_entity: Entity<InputState> =
+            browser.read_with(&visual_cx, |browser, _| browser.input.clone());
+
+        let filter_input = temp_dir.path().join("al").to_string_lossy().to_string();
+        visual_cx.update(|window, cx| {
+            input_entity.update(cx, |state, cx| {
+                state.set_value(&filter_input, window, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        let entries: Vec<(String, bool)> = browser.read_with(&visual_cx, |browser, _| {
+            browser
+                .entries
+                .iter()
+                .map(|entry| (entry.name.clone(), entry.is_dir))
+                .collect::<Vec<_>>()
+        });
+
+        assert!(!entries.is_empty(), "entries should be populated after input change");
+        assert!(
+            entries
+                .iter()
+                .all(|(name, _)| name.to_lowercase().starts_with("al")),
+            "every entry should match the typed prefix"
+        );
+        assert!(
+            entries.iter().any(|(name, _)| name == "alpha_dir"),
+            "directory match should be present"
+        );
+        assert!(
+            entries.iter().any(|(name, _)| name == "alpha.txt"),
+            "file match should be present"
+        );
+
+        let first_file_idx = entries.iter().position(|(_, is_dir)| !*is_dir);
+        let last_dir_idx = entries.iter().rposition(|(_, is_dir)| *is_dir);
+        if let (Some(first_file), Some(last_dir)) = (first_file_idx, last_dir_idx) {
+            assert!(
+                last_dir < first_file,
+                "directories should be listed before files"
+            );
+        }
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_gpui_input_change_to_invalid_path_clears_entries(cx: &mut TestAppContext) {
+        cx.update(|cx| gpui_component::init(cx));
+
+        let temp_dir = tempdir().expect("failed to create temp dir");
+        std::fs::write(temp_dir.path().join("alpha.txt"), "alpha")
+            .expect("failed to create alpha.txt fixture");
+
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                cx.new(|cx| super::PathBrowser::new(window, cx))
+            })
+            .expect("failed to open test window")
+        });
+        let mut visual_cx = VisualTestContext::from_window(window.into(), cx);
+        let browser = window
+            .root(&mut visual_cx)
+            .expect("failed to read root view from window");
+        let input_entity: Entity<InputState> =
+            browser.read_with(&visual_cx, |browser, _| browser.input.clone());
+
+        let valid_input = temp_dir.path().join("al").to_string_lossy().to_string();
+        visual_cx.update(|window, cx| {
+            input_entity.update(cx, |state, cx| {
+                state.set_value(&valid_input, window, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+        let has_entries = browser.read_with(&visual_cx, |browser, _| !browser.entries.is_empty());
+        assert!(has_entries, "valid input should populate entries");
+
+        let invalid_input = temp_dir
+            .path()
+            .join("missing_parent")
+            .join("x")
+            .to_string_lossy()
+            .to_string();
+        visual_cx.update(|window, cx| {
+            input_entity.update(cx, |state, cx| {
+                state.set_value(&invalid_input, window, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        let is_empty = browser.read_with(&visual_cx, |browser, _| browser.entries.is_empty());
+        assert!(is_empty, "invalid path should clear entries");
     }
 }
