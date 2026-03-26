@@ -102,6 +102,8 @@ pub struct EditorSettings {
     pub show_whitespaces: bool,
     #[serde(default = "default_watch_files")]
     pub watch_files: bool,
+    #[serde(default = "default_use_spaces")]
+    pub use_spaces: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -128,6 +130,14 @@ fn default_debug_mode() -> bool {
 /// ### Returns
 /// - `true`: enable file watcher by default
 fn default_watch_files() -> bool {
+    true
+}
+
+/// Default value for use_spaces setting
+///
+/// ### Returns
+/// - `true`: use spaces instead of hard tabs by default
+fn default_use_spaces() -> bool {
     true
 }
 
@@ -166,6 +176,7 @@ impl EditorSettings {
             show_whitespaces: false,
             markdown_settings: MarkdownSettings::new(),
             watch_files: default_watch_files(),
+            use_spaces: default_use_spaces(),
         }
     }
 }
