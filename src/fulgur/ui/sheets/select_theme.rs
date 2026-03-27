@@ -16,16 +16,17 @@ use crate::fulgur::{
     ui::themes::{reload_themes_and_update, themes_directory_path},
 };
 
-/// Make a select theme item
+/// Make a select theme item.
 ///
-/// ### Arguments
-/// - `entity`: The entity
-/// - `theme_name`: The name of the theme
-/// - `is_current_theme`: Whether the theme is the current theme
-/// - `current_theme_shared`: The shared state of the current theme
+/// ### Parameters:
+/// - `entity`: The Fulgur entity handle.
+/// - `theme_name`: The theme name represented by this item.
+/// - `is_current_theme`: Whether this item matches the currently selected theme.
+/// - `current_theme_shared`: Shared current-theme value for sheet highlighting.
+/// - `cx`: The application context.
 ///
-/// ### Returns
-/// - `Div`: The select theme item
+/// ### Returns:
+/// `Stateful<Div>`: Represents one clickable theme row.
 fn make_select_theme_item(
     entity: Entity<Fulgur>,
     theme_name: String,
@@ -44,35 +45,44 @@ fn make_select_theme_item(
         .child(div().p_2().text_sm().child(theme_name.clone()))
         .when(is_current_theme, |this| this.bg(cx.theme().muted))
         .on_click(move |_this, _window, cx| {
-            if let Some(theme_config) = ThemeRegistry::global(cx)
-                .themes()
-                .get(theme_name.as_str())
-                .cloned()
-            {
-                Theme::global_mut(cx).apply_config(&theme_config);
-                let theme_name_clone = theme_name.clone();
-                entity.update(cx, |fulgur, cx| {
-                    fulgur.settings.app_settings.theme = theme_name_clone.clone().into();
-                    let _ = fulgur.update_and_propagate_settings(cx);
-                    *current_theme_shared.lock() = theme_name_clone.clone();
-                    cx.notify();
-                });
+            let selected_theme_name = theme_name.clone();
+            let should_refresh = entity.update(cx, |fulgur, cx| {
+                fulgur.switch_active_theme_from_sheet(
+                    cx,
+                    selected_theme_name.as_str(),
+                    &current_theme_shared,
+                )
+            });
+            if should_refresh {
                 cx.refresh_windows();
             }
         })
         .hover(|this| this.bg(cx.theme().muted))
 }
 
-/// Make a select theme list
+/// Check whether a theme is the currently active theme.
 ///
-/// ### Arguments
-/// - `entity`: The entity
-/// - `themes`: The list of themes
-/// - `current_theme`: The name of the current theme
-/// - `current_theme_shared`: The shared state of the current theme
+/// ### Parameters:
+/// - `theme_name`: The theme name to evaluate.
+/// - `current_theme`: The currently active theme name.
 ///
-/// ### Returns
-/// - `Div`: The select theme list
+/// ### Returns:
+/// `true` when both theme names match, otherwise `false`.
+fn is_current_theme(theme_name: &str, current_theme: &str) -> bool {
+    theme_name == current_theme
+}
+
+/// Make the select-theme list.
+///
+/// ### Parameters:
+/// - `entity`: The Fulgur entity handle.
+/// - `themes`: The list of available theme names.
+/// - `current_theme`: The currently active theme.
+/// - `current_theme_shared`: Shared current-theme value for sheet highlighting.
+/// - `cx`: The application context.
+///
+/// ### Returns:
+/// `Div`: Represents the rendered theme list.
 fn make_select_theme_list(
     entity: Entity<Fulgur>,
     themes: Vec<String>,
@@ -89,7 +99,7 @@ fn make_select_theme_list(
                 make_select_theme_item(
                     entity.clone(),
                     theme.clone(),
-                    *theme == current_theme,
+                    is_current_theme(theme, &current_theme),
                     current_theme_shared.clone(),
                     cx,
                 )
@@ -99,6 +109,40 @@ fn make_select_theme_list(
 }
 
 impl Fulgur {
+    /// Apply a theme selected from the select-theme sheet.
+    ///
+    /// ### Parameters:
+    /// - `cx`: The Fulgur context.
+    /// - `theme_name`: The selected theme name.
+    /// - `current_theme_shared`: Shared current-theme value used by the sheet.
+    ///
+    /// ### Returns:
+    /// - `true`: The theme exists and was applied.
+    /// - `false`: The theme was not found in the registry.
+    fn switch_active_theme_from_sheet(
+        &mut self,
+        cx: &mut Context<Self>,
+        theme_name: &str,
+        current_theme_shared: &Arc<Mutex<String>>,
+    ) -> bool {
+        if let Some(theme_config) = ThemeRegistry::global(cx).themes().get(theme_name).cloned() {
+            Theme::global_mut(cx).apply_config(&theme_config);
+            self.settings.app_settings.theme = theme_name.to_string().into();
+            if let Err(error) = self.update_and_propagate_settings(cx) {
+                log::error!(
+                    "Failed to propagate settings after theme '{}' selection: {}",
+                    theme_name,
+                    error
+                );
+            }
+            *current_theme_shared.lock() = theme_name.to_string();
+            cx.notify();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Add a theme to the themes directory. Prompt the user for the path to the theme file.
     ///
     /// ### Arguments
@@ -274,5 +318,132 @@ impl Fulgur {
                         )
                 })
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "gpui-test-support")]
+    use super::Fulgur;
+    use super::is_current_theme;
+    #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::{
+        settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
+    };
+    use core::prelude::v1::test;
+    #[cfg(feature = "gpui-test-support")]
+    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
+    #[cfg(feature = "gpui-test-support")]
+    use gpui_component::ThemeRegistry;
+    #[cfg(feature = "gpui-test-support")]
+    use parking_lot::Mutex;
+    #[cfg(feature = "gpui-test-support")]
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
+
+    #[test]
+    fn test_is_current_theme_matches_expected_value() {
+        assert!(is_current_theme("Tokyo Night", "Tokyo Night"));
+        assert!(!is_current_theme("Tokyo Night", "Solarized"));
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+        cx.update(gpui_component::init);
+        cx.update(|cx| {
+            cx.set_global(SharedAppState::new(
+                Settings::new(),
+                Arc::new(Mutex::new(Vec::new())),
+            ));
+            cx.set_global(WindowManager::new());
+        });
+
+        let fulgur_slot: Rc<RefCell<Option<Entity<Fulgur>>>> = Rc::new(RefCell::new(None));
+        let slot = Rc::clone(&fulgur_slot);
+        let window = cx
+            .update(|cx| {
+                cx.open_window(Default::default(), |window, cx| {
+                    let window_id = window.window_handle().window_id();
+                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    *slot.borrow_mut() = Some(fulgur.clone());
+                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                })
+            })
+            .expect("failed to open test window");
+        let fulgur = fulgur_slot
+            .borrow_mut()
+            .take()
+            .expect("expected fulgur entity");
+        let visual_cx = VisualTestContext::from_window(window.into(), cx);
+        (fulgur, visual_cx)
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_switch_active_theme_from_sheet_updates_current_theme(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let current_theme = fulgur.read_with(&visual_cx, |this, _| {
+            this.settings.app_settings.theme.to_string()
+        });
+
+        let current_theme_for_lookup = current_theme.clone();
+        let target_theme = visual_cx.update(|_window, cx| {
+            let themes = ThemeRegistry::global(cx).sorted_themes();
+            themes
+                .iter()
+                .map(|theme| theme.name.to_string())
+                .find(|name| name != &current_theme_for_lookup)
+                .or_else(|| themes.first().map(|theme| theme.name.to_string()))
+                .expect("expected at least one registered theme")
+        });
+
+        let current_theme_shared = Arc::new(Mutex::new(current_theme.clone()));
+        let target_theme_for_apply = target_theme.clone();
+        let current_theme_shared_for_apply = current_theme_shared.clone();
+        let applied = visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.switch_active_theme_from_sheet(
+                    cx,
+                    target_theme_for_apply.as_str(),
+                    &current_theme_shared_for_apply,
+                )
+            })
+        });
+
+        assert!(applied);
+
+        let switched_theme = fulgur.read_with(&visual_cx, |this, _| {
+            this.settings.app_settings.theme.to_string()
+        });
+        assert_eq!(switched_theme, target_theme);
+        assert_eq!(*current_theme_shared.lock(), target_theme);
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_switch_active_theme_from_sheet_is_noop_for_unknown_theme(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let initial_theme = fulgur.read_with(&visual_cx, |this, _| {
+            this.settings.app_settings.theme.to_string()
+        });
+        let current_theme_shared = Arc::new(Mutex::new(initial_theme.clone()));
+        let current_theme_shared_for_apply = current_theme_shared.clone();
+
+        let applied = visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.switch_active_theme_from_sheet(
+                    cx,
+                    "__missing_theme_for_test__",
+                    &current_theme_shared_for_apply,
+                )
+            })
+        });
+
+        assert!(!applied);
+
+        let final_theme = fulgur.read_with(&visual_cx, |this, _| {
+            this.settings.app_settings.theme.to_string()
+        });
+        assert_eq!(final_theme, initial_theme);
+        assert_eq!(*current_theme_shared.lock(), initial_theme);
     }
 }
