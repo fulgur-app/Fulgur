@@ -327,13 +327,14 @@ impl Fulgur {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "gpui-test-support")]
     use super::Fulgur;
-    use core::prelude::v1::test;
-
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::{
         settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
+    #[cfg(feature = "gpui-test-support")]
+    use core::prelude::v1::test;
     #[cfg(feature = "gpui-test-support")]
     use gpui::{
         AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
