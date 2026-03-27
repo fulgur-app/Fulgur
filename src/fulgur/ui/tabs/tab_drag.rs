@@ -30,3 +30,43 @@ impl Render for DraggedTab {
             .child(format!("{}{}", self.title, modified_indicator))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::DraggedTab;
+
+    fn make_tab(index: usize, title: &'static str, modified: bool) -> DraggedTab {
+        DraggedTab {
+            tab_index: index,
+            title: title.into(),
+            is_modified: modified,
+        }
+    }
+
+    // ========== DraggedTab struct tests ==========
+
+    #[test]
+    fn test_dragged_tab_clone_preserves_all_fields() {
+        let original = make_tab(3, "main.rs", true);
+        let cloned = original.clone();
+        assert_eq!(cloned.tab_index, 3);
+        assert_eq!(cloned.title.as_ref(), "main.rs");
+        assert!(cloned.is_modified);
+    }
+
+    // ========== ghost tab title formatting tests ==========
+
+    #[test]
+    fn test_ghost_title_unmodified_has_no_bullet() {
+        let tab = make_tab(0, "readme.md", false);
+        let indicator = if tab.is_modified { " •" } else { "" };
+        assert_eq!(format!("{}{}", tab.title, indicator), "readme.md");
+    }
+
+    #[test]
+    fn test_ghost_title_modified_appends_bullet() {
+        let tab = make_tab(0, "readme.md", true);
+        let indicator = if tab.is_modified { " •" } else { "" };
+        assert_eq!(format!("{}{}", tab.title, indicator), "readme.md •");
+    }
+}

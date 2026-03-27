@@ -1438,4 +1438,183 @@ mod tests {
             });
         });
     }
+
+    // ========== reorder_tab tests ==========
+
+    #[gpui::test]
+    fn test_reorder_tab_moves_tab_backward(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                this.new_tab(window, cx);
+                // tabs: [0, 1, 2]; move tab at index 2 to slot 0
+                let id_2 = this.tabs[2].id();
+                this.reorder_tab(2, 0, window, cx);
+                assert_eq!(
+                    this.tabs[0].id(),
+                    id_2,
+                    "tab moved backward should be at position 0"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_reorder_tab_moves_tab_forward(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                this.new_tab(window, cx);
+                // tabs: [0, 1, 2]; move tab at index 0 to slot 3 (after last)
+                let id_0 = this.tabs[0].id();
+                this.reorder_tab(0, 3, window, cx);
+                assert_eq!(
+                    this.tabs[2].id(),
+                    id_0,
+                    "tab moved forward should be at last position"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_reorder_tab_noop_when_to_equals_from(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                let ids_before: Vec<usize> = this.tabs.iter().map(|t| t.id()).collect();
+                this.reorder_tab(1, 1, window, cx);
+                let ids_after: Vec<usize> = this.tabs.iter().map(|t| t.id()).collect();
+                assert_eq!(ids_before, ids_after, "to == from should be a no-op");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_reorder_tab_noop_when_to_equals_from_plus_one(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                let ids_before: Vec<usize> = this.tabs.iter().map(|t| t.id()).collect();
+                // to == from+1 means inserting immediately after the tab, which is its current position
+                this.reorder_tab(1, 2, window, cx);
+                let ids_after: Vec<usize> = this.tabs.iter().map(|t| t.id()).collect();
+                assert_eq!(ids_before, ids_after, "to == from+1 should be a no-op");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_reorder_tab_noop_when_from_out_of_bounds(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let count_before = this.tabs.len();
+                this.reorder_tab(usize::MAX, 0, window, cx);
+                assert_eq!(this.tabs.len(), count_before);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_reorder_tab_noop_when_to_out_of_bounds(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let count_before = this.tabs.len();
+                this.reorder_tab(0, usize::MAX, window, cx);
+                assert_eq!(this.tabs.len(), count_before);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_reorder_tab_active_index_follows_moved_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                this.new_tab(window, cx);
+                // tabs: [0*, 1, 2]; active = 0; move tab 0 to slot 3
+                this.set_active_tab(0, window, cx);
+                this.reorder_tab(0, 3, window, cx);
+                // After remove: [1, 2]; insert_at = 3-1 = 2 → [1, 2, 0*]; active should be 2
+                assert_eq!(
+                    this.active_tab_index,
+                    Some(2),
+                    "active index should follow the moved tab"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_reorder_tab_active_index_decrements_when_earlier_tab_moves_past(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                this.new_tab(window, cx);
+                // tabs: [0, 1*, 2]; active = 1; move tab 0 past active to slot 3
+                this.set_active_tab(1, window, cx);
+                this.reorder_tab(0, 3, window, cx);
+                // from(0) < active(1), insert_at(2) >= active(1) → active - 1 = 0
+                assert_eq!(
+                    this.active_tab_index,
+                    Some(0),
+                    "active index should decrement when a preceding tab moves past it"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_reorder_tab_active_index_increments_when_later_tab_moves_before(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                this.new_tab(window, cx);
+                // tabs: [0, 1*, 2]; active = 1; move tab 2 before active to slot 0
+                this.set_active_tab(1, window, cx);
+                this.reorder_tab(2, 0, window, cx);
+                // from(2) > active(1), insert_at(0) <= active(1) → active + 1 = 2
+                assert_eq!(
+                    this.active_tab_index,
+                    Some(2),
+                    "active index should increment when a following tab moves before it"
+                );
+            });
+        });
+    }
+
+    // ========== handle_tab_drop tests ==========
+
+    #[gpui::test]
+    fn test_handle_tab_drop_reorders_tab_to_target_slot(cx: &mut TestAppContext) {
+        use crate::fulgur::ui::tabs::tab_drag::DraggedTab;
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                this.new_tab(window, cx);
+                let id_2 = this.tabs[2].id();
+                let dragged = DraggedTab {
+                    tab_index: 2,
+                    title: "test.rs".into(),
+                    is_modified: false,
+                };
+                this.handle_tab_drop(&dragged, 0, window, cx);
+                assert_eq!(this.tabs[0].id(), id_2, "dropped tab should land at slot 0");
+            });
+        });
+    }
 }
