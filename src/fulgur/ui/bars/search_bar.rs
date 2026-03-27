@@ -324,3 +324,243 @@ impl Fulgur {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "gpui-test-support")]
+    use super::Fulgur;
+    #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::{
+        settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
+    };
+    #[cfg(feature = "gpui-test-support")]
+    use core::prelude::v1::test;
+    #[cfg(feature = "gpui-test-support")]
+    use gpui::{
+        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
+        Window, div,
+    };
+    #[cfg(feature = "gpui-test-support")]
+    use parking_lot::Mutex;
+    #[cfg(feature = "gpui-test-support")]
+    use std::{cell::RefCell, path::PathBuf, sync::Arc};
+
+    #[cfg(feature = "gpui-test-support")]
+    struct EmptyView;
+
+    #[cfg(feature = "gpui-test-support")]
+    impl Render for EmptyView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            let mut settings = Settings::new();
+            settings.editor_settings.watch_files = false;
+            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(WindowManager::new());
+        });
+
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        let window = cx
+            .update(|cx| {
+                cx.open_window(Default::default(), |window, cx| {
+                    let window_id = window.window_handle().window_id();
+                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    *fulgur_slot.borrow_mut() = Some(fulgur);
+                    cx.new(|_| EmptyView)
+                })
+            })
+            .expect("failed to open test window");
+
+        let visual_cx = VisualTestContext::from_window(window.into(), cx);
+        visual_cx.run_until_parked();
+        let fulgur = fulgur_slot
+            .into_inner()
+            .expect("failed to capture Fulgur entity");
+        (fulgur, visual_cx)
+    }
+
+    // ========== Visibility control ==========
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_render_search_bar_hidden_by_default(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                assert!(!this.search_state.show_search);
+                assert!(this.render_search_bar(cx).is_none());
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_render_search_bar_visible_when_open(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.find_in_file(window, cx);
+                assert!(this.search_state.show_search);
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_open_search_sets_show_search_and_close_clears_it(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                assert!(!this.search_state.show_search);
+
+                this.find_in_file(window, cx);
+                assert!(this.search_state.show_search);
+
+                this.close_search(window, cx);
+                assert!(!this.search_state.show_search);
+            });
+        });
+    }
+
+    // ========== Default toggle state ==========
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_search_toggle_defaults(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                assert!(!this.search_state.show_search);
+                assert!(!this.search_state.match_case);
+                assert!(!this.search_state.match_whole_word);
+                assert!(this.search_state.search_matches.is_empty());
+                assert!(this.search_state.current_match_index.is_none());
+            });
+        });
+    }
+
+    // ========== Toggle state reflected in search results ==========
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_match_case_toggle_filters_results(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.content.update(cx, |content, cx| {
+                    content.set_value("Hello hello HELLO", window, cx);
+                });
+                this.search_state.search_input.update(cx, |input, cx| {
+                    input.set_value("hello", window, cx);
+                });
+
+                this.search_state.match_case = false;
+                this.perform_search(window, cx);
+                assert_eq!(this.search_state.search_matches.len(), 3);
+
+                this.search_state.match_case = true;
+                this.perform_search(window, cx);
+                assert_eq!(this.search_state.search_matches.len(), 1);
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_match_whole_word_toggle_filters_results(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.content.update(cx, |content, cx| {
+                    content.set_value("test testing tested test", window, cx);
+                });
+                this.search_state.search_input.update(cx, |input, cx| {
+                    input.set_value("test", window, cx);
+                });
+
+                this.search_state.match_whole_word = false;
+                this.perform_search(window, cx);
+                assert_eq!(this.search_state.search_matches.len(), 4);
+
+                this.search_state.match_whole_word = true;
+                this.perform_search(window, cx);
+                assert_eq!(this.search_state.search_matches.len(), 2);
+            });
+        });
+    }
+
+    // ========== Match count state ==========
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_no_match_state_when_query_not_found(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.content.update(cx, |content, cx| {
+                    content.set_value("aaa bbb ccc", window, cx);
+                });
+                this.search_state.search_input.update(cx, |input, cx| {
+                    input.set_value("zzz", window, cx);
+                });
+                this.perform_search(window, cx);
+
+                assert!(this.search_state.search_matches.is_empty());
+                assert!(this.search_state.current_match_index.is_none());
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_close_search_clears_match_state(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.content.update(cx, |content, cx| {
+                    content.set_value("foo foo foo", window, cx);
+                });
+                this.search_state.show_search = true;
+                this.search_state.search_input.update(cx, |input, cx| {
+                    input.set_value("foo", window, cx);
+                });
+                this.perform_search(window, cx);
+                assert_eq!(this.search_state.search_matches.len(), 3);
+                assert!(this.search_state.current_match_index.is_some());
+
+                this.close_search(window, cx);
+
+                assert!(!this.search_state.show_search);
+                assert!(this.search_state.search_matches.is_empty());
+                assert!(this.search_state.current_match_index.is_none());
+            });
+        });
+    }
+}

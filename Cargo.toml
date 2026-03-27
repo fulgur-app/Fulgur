@@ -8,6 +8,10 @@ keywords = ["rust", "text", "editor", "fulgur", "sync", "desktop", "multiplatfor
 categories = ["text", "editor", "desktop", "multiplatform"]
 homepage = "https://fulgur.app"
 
+[features]
+default = []
+gpui-test-support = ["gpui/test-support"]
+
 [lib]
 name = "fulgur"
 path = "src/lib.rs"

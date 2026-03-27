@@ -467,8 +467,27 @@ fn string_to_u32(string: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "gpui-test-support")]
+    use super::{EditorTab, FromDuplicateParams, FromFileParams};
     use super::{extract_line_number, string_to_u32};
+    #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::languages::supported_languages::SupportedLanguage;
+    #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::settings::EditorSettings;
+    use core::prelude::v1::test;
     use gpui::SharedString;
+    #[cfg(feature = "gpui-test-support")]
+    use gpui::{AppContext, Context, IntoElement, Render, TestAppContext, Window, div};
+
+    #[cfg(feature = "gpui-test-support")]
+    struct EmptyView;
+
+    #[cfg(feature = "gpui-test-support")]
+    impl Render for EmptyView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
+    }
 
     // ========== extract_line_number() tests ==========
 
@@ -679,5 +698,241 @@ mod tests {
         assert_eq!(string_to_u32("!@#$"), 0);
         assert_eq!(string_to_u32("12.34"), 0); // Decimal point
         assert_eq!(string_to_u32("12,345"), 0); // Comma
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_editor_tab_new_construction(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::new(7, "Scratch", window, cx, &settings);
+                assert_eq!(tab.id, 7);
+                assert_eq!(tab.title, SharedString::from("Scratch"));
+                assert!(tab.file_path.is_none());
+                assert!(!tab.modified);
+                assert_eq!(tab.original_content, "");
+                assert_eq!(tab.encoding, "UTF-8");
+                assert_eq!(tab.language, SupportedLanguage::Plain);
+                assert_eq!(
+                    tab.show_markdown_toolbar,
+                    settings.markdown_settings.show_markdown_toolbar
+                );
+                assert_eq!(
+                    tab.show_markdown_preview,
+                    settings.markdown_settings.show_markdown_preview
+                );
+                assert_eq!(tab.file_size_bytes, None);
+                assert_eq!(tab.file_last_modified, None);
+                assert_eq!(tab.content.read(cx).text().to_string(), "");
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let mut settings = EditorSettings::new();
+        settings.markdown_settings.show_markdown_toolbar = true;
+        settings.markdown_settings.show_markdown_preview = false;
+
+        let contents = "fn main() {\n    println!(\"hi\");\n}".to_string();
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::from_content(
+                    9,
+                    contents.clone(),
+                    "shared.rs".to_string(),
+                    window,
+                    cx,
+                    &settings,
+                );
+                assert_eq!(tab.id, 9);
+                assert_eq!(tab.title, SharedString::from("shared.rs"));
+                assert!(tab.file_path.is_none());
+                assert!(tab.modified);
+                assert_eq!(tab.original_content, "");
+                assert_eq!(tab.encoding, "UTF-8");
+                assert_eq!(tab.language, SupportedLanguage::Rust);
+                assert!(tab.show_markdown_toolbar);
+                assert!(!tab.show_markdown_preview);
+                assert_eq!(tab.file_size_bytes, None);
+                assert_eq!(tab.file_last_modified, None);
+                assert_eq!(tab.content.read(cx).text().to_string(), contents);
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+        let path = std::path::PathBuf::from("/tmp/test_file.md");
+        let contents = "# title\nbody".to_string();
+        let params = FromFileParams {
+            id: 13,
+            path: path.clone(),
+            contents: contents.clone(),
+            encoding: "UTF-8".to_string(),
+            is_modified: true,
+        };
+
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::from_file(params, window, cx, &settings);
+                assert_eq!(tab.id, 13);
+                assert_eq!(tab.title, SharedString::from("test_file.md •"));
+                assert_eq!(tab.file_path, Some(path));
+                assert!(tab.modified);
+                assert_eq!(tab.original_content, contents);
+                assert_eq!(tab.encoding, "UTF-8");
+                assert_eq!(tab.language, SupportedLanguage::Markdown);
+                assert_eq!(tab.file_size_bytes, Some(12));
+                assert!(tab.file_last_modified.is_some());
+                assert_eq!(tab.content.read(cx).text().to_string(), "# title\nbody");
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_editor_tab_from_duplicate_construction(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+        let params = FromDuplicateParams {
+            id: 22,
+            title: SharedString::from("copy.rs"),
+            current_content: "let value = 42;".to_string(),
+            encoding: "UTF-8".to_string(),
+            language: SupportedLanguage::Rust,
+        };
+
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::from_duplicate(params, window, cx, &settings);
+                assert_eq!(tab.id, 22);
+                assert_eq!(tab.title, SharedString::from("copy.rs"));
+                assert!(tab.file_path.is_none());
+                assert!(tab.modified);
+                assert_eq!(tab.original_content, "");
+                assert_eq!(tab.encoding, "UTF-8");
+                assert_eq!(tab.language, SupportedLanguage::Rust);
+                assert_eq!(tab.file_size_bytes, None);
+                assert_eq!(tab.file_last_modified, None);
+                assert_eq!(tab.content.read(cx).text().to_string(), "let value = 42;");
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_editor_tab_check_modified_and_mark_as_saved(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+        let params = FromFileParams {
+            id: 31,
+            path: std::path::PathBuf::from("/tmp/modified_state.md"),
+            contents: "original".to_string(),
+            encoding: "UTF-8".to_string(),
+            is_modified: false,
+        };
+
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let mut tab = EditorTab::from_file(params, window, cx, &settings);
+                assert!(!tab.modified);
+                assert_eq!(tab.original_content, "original");
+
+                tab.content.update(cx, |content, cx| {
+                    content.set_value("changed", window, cx);
+                });
+
+                assert!(tab.check_modified(cx));
+                assert!(tab.modified);
+
+                tab.mark_as_saved(cx);
+                assert!(!tab.modified);
+                assert_eq!(tab.original_content, "changed");
+                assert!(!tab.check_modified(cx));
+
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_editor_tab_from_file_title_indicator_clean_and_dirty(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+
+        let clean = FromFileParams {
+            id: 41,
+            path: std::path::PathBuf::from("/tmp/clean.md"),
+            contents: "clean".to_string(),
+            encoding: "UTF-8".to_string(),
+            is_modified: false,
+        };
+        let dirty = FromFileParams {
+            id: 42,
+            path: std::path::PathBuf::from("/tmp/dirty.md"),
+            contents: "dirty".to_string(),
+            encoding: "UTF-8".to_string(),
+            is_modified: true,
+        };
+
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let clean_tab = EditorTab::from_file(clean, window, cx, &settings);
+                let dirty_tab = EditorTab::from_file(dirty, window, cx, &settings);
+
+                assert_eq!(clean_tab.title, SharedString::from("clean.md"));
+                assert_eq!(dirty_tab.title, SharedString::from("dirty.md •"));
+
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_editor_tab_get_suggested_filename_trims_modified_indicator(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+        let params = FromFileParams {
+            id: 51,
+            path: std::path::PathBuf::from("/tmp/suggested_name.md"),
+            contents: "content".to_string(),
+            encoding: "UTF-8".to_string(),
+            is_modified: true,
+        };
+
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::from_file(params, window, cx, &settings);
+                assert_eq!(tab.title, SharedString::from("suggested_name.md •"));
+                assert_eq!(
+                    tab.get_suggested_filename(),
+                    Some("suggested_name.md".to_string())
+                );
+
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
     }
 }

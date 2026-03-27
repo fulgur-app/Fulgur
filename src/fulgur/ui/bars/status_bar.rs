@@ -101,6 +101,7 @@ pub struct SyncButtonStyle {
 }
 
 /// The visual state of the sync button
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyncButtonState {
     Connected,
     Connecting,
@@ -172,14 +173,14 @@ pub fn status_bar_sync_button(
 }
 
 impl Fulgur {
-    /// Render the status bar
+    /// Resolve the state reflected by the status bar for cursor position, language and encoding.
     ///
-    /// ### Arguments
-    /// - `cx`: The application context
+    /// ### Parameters:
+    /// - `cx`: The application context.
     ///
-    /// ### Returns
-    /// - `impl IntoElement`: The rendered status bar element
-    pub fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// ### Returns:
+    /// - `(Position, String, String)`: Cursor position, display language label and encoding label.
+    fn status_bar_reflection_values(&self, cx: &Context<Self>) -> (Position, String, String) {
         let (cursor_pos, language) = match self.active_tab_index {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
@@ -207,6 +208,44 @@ impl Fulgur {
             }
             None => UTF_8.to_string(),
         };
+
+        (cursor_pos, language, encoding)
+    }
+
+    /// Resolve the sync indicator visual state reflected by the status bar.
+    ///
+    /// ### Parameters:
+    /// - `cx`: The application context.
+    ///
+    /// ### Returns:
+    /// - `(SyncButtonState, bool)`: The sync button state and whether the spinner should be shown.
+    fn status_bar_sync_button_state(&self, cx: &Context<Self>) -> (SyncButtonState, bool) {
+        let sync_status = *self.shared_state(cx).sync_state.connection_status.lock();
+        match sync_status {
+            SynchronizationStatus::Connected => (SyncButtonState::Connected, false),
+            SynchronizationStatus::Connecting => {
+                let show = self
+                    .shared_state(cx)
+                    .sync_state
+                    .connecting_since
+                    .lock()
+                    .map(|since| since.elapsed() >= CONNECTING_SPINNER_DELAY)
+                    .unwrap_or(false);
+                (SyncButtonState::Connecting, show)
+            }
+            _ => (SyncButtonState::Disconnected, false),
+        }
+    }
+
+    /// Render the status bar
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `impl IntoElement`: The rendered status bar element
+    pub fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (cursor_pos, language, encoding) = self.status_bar_reflection_values(cx);
         let jump_to_line_button_content = format!(
             "Ln {}, Col {}",
             cursor_pos.line + 1,
@@ -290,21 +329,7 @@ impl Fulgur {
             }
         };
         let is_markdown = self.is_markdown();
-        let sync_status = *self.shared_state(cx).sync_state.connection_status.lock();
-        let (sync_button_state, show_spinner) = match sync_status {
-            SynchronizationStatus::Connected => (SyncButtonState::Connected, false),
-            SynchronizationStatus::Connecting => {
-                let show = self
-                    .shared_state(cx)
-                    .sync_state
-                    .connecting_since
-                    .lock()
-                    .map(|since| since.elapsed() >= CONNECTING_SPINNER_DELAY)
-                    .unwrap_or(false);
-                (SyncButtonState::Connecting, show)
-            }
-            _ => (SyncButtonState::Disconnected, false),
-        };
+        let (sync_button_state, show_spinner) = self.status_bar_sync_button_state(cx);
         let sync_button = status_bar_sync_button(
             SyncButtonStyle {
                 connected_icon: Icon::new(CustomIcon::Zap),
@@ -358,5 +383,187 @@ impl Fulgur {
                     .child(jump_to_line_button)
                     .child(status_bar_right_item_factory(encoding, cx.theme().border)),
             )
+    }
+}
+
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod tests {
+    use super::{Fulgur, SyncButtonState};
+    use crate::fulgur::{
+        languages::supported_languages::SupportedLanguage, settings::Settings,
+        shared_state::SharedAppState, sync::synchronization::SynchronizationStatus,
+        ui::components_utils::UTF_8, window_manager::WindowManager,
+    };
+    use gpui::{
+        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
+        Window, div,
+    };
+    use gpui_component::input::Position;
+    use parking_lot::Mutex;
+    use std::{
+        cell::RefCell,
+        path::PathBuf,
+        sync::Arc,
+        time::{Duration, Instant},
+    };
+
+    struct EmptyView;
+
+    impl Render for EmptyView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
+    }
+
+    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            let mut settings = Settings::new();
+            settings.editor_settings.watch_files = false;
+            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(WindowManager::new());
+        });
+
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        let window = cx
+            .update(|cx| {
+                cx.open_window(Default::default(), |window, cx| {
+                    let window_id = window.window_handle().window_id();
+                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    *fulgur_slot.borrow_mut() = Some(fulgur);
+                    cx.new(|_| EmptyView)
+                })
+            })
+            .expect("failed to open test window");
+
+        let visual_cx = VisualTestContext::from_window(window.into(), cx);
+        visual_cx.run_until_parked();
+        let fulgur = fulgur_slot
+            .into_inner()
+            .expect("failed to capture Fulgur entity");
+        (fulgur, visual_cx)
+    }
+
+    #[gpui::test]
+    fn test_status_bar_reflects_active_editor_cursor_language_and_encoding(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.language = SupportedLanguage::Rust;
+                editor.encoding = "ISO-8859-1".to_string();
+                editor.content.update(cx, |content, cx| {
+                    content.set_value("first line\nsecond line", window, cx);
+                    content.set_cursor_position(
+                        Position {
+                            line: 1,
+                            character: 4,
+                        },
+                        window,
+                        cx,
+                    );
+                });
+
+                let (cursor, language, encoding) = this.status_bar_reflection_values(cx);
+                assert_eq!(cursor.line, 1);
+                assert_eq!(cursor.character, 4);
+                assert_eq!(language, "Rust");
+                assert_eq!(encoding, "ISO-8859-1");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_status_bar_reflection_uses_defaults_without_active_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.active_tab_index = None;
+
+                let (cursor, language, encoding) = this.status_bar_reflection_values(cx);
+                assert_eq!(cursor.line, 0);
+                assert_eq!(cursor.character, 0);
+                assert!(language.is_empty());
+                assert_eq!(encoding, UTF_8);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_status_bar_sync_indicator_connected(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                *this.shared_state(cx).sync_state.connection_status.lock() =
+                    SynchronizationStatus::Connected;
+                *this.shared_state(cx).sync_state.connecting_since.lock() = None;
+
+                let (state, show_spinner) = this.status_bar_sync_button_state(cx);
+                assert_eq!(state, SyncButtonState::Connected);
+                assert!(!show_spinner);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_status_bar_sync_indicator_connecting_with_elapsed_delay(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                *this.shared_state(cx).sync_state.connection_status.lock() =
+                    SynchronizationStatus::Connecting;
+                *this.shared_state(cx).sync_state.connecting_since.lock() =
+                    Some(Instant::now() - Duration::from_millis(600));
+
+                let (state, show_spinner) = this.status_bar_sync_button_state(cx);
+                assert_eq!(state, SyncButtonState::Connecting);
+                assert!(show_spinner);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_status_bar_sync_indicator_connecting_before_delay(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                *this.shared_state(cx).sync_state.connection_status.lock() =
+                    SynchronizationStatus::Connecting;
+                *this.shared_state(cx).sync_state.connecting_since.lock() =
+                    Some(Instant::now() - Duration::from_millis(100));
+
+                let (state, show_spinner) = this.status_bar_sync_button_state(cx);
+                assert_eq!(state, SyncButtonState::Connecting);
+                assert!(!show_spinner);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_status_bar_sync_indicator_non_connected_maps_to_disconnected(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                *this.shared_state(cx).sync_state.connection_status.lock() =
+                    SynchronizationStatus::AuthenticationFailed;
+                *this.shared_state(cx).sync_state.connecting_since.lock() =
+                    Some(Instant::now() - Duration::from_secs(2));
+
+                let (state, show_spinner) = this.status_bar_sync_button_state(cx);
+                assert_eq!(state, SyncButtonState::Disconnected);
+                assert!(!show_spinner);
+            });
+        });
     }
 }

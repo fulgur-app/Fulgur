@@ -413,6 +413,20 @@ fn apply_replacements(search_matches: &[SearchMatch], text: &str, replace: &str)
 #[cfg(test)]
 mod tests {
     use super::{SearchMatch, apply_replacements, find_matches, get_line_col_fast};
+    #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::{
+        Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
+    };
+    use core::prelude::v1::test;
+    #[cfg(feature = "gpui-test-support")]
+    use gpui::{
+        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
+        Window, div,
+    };
+    #[cfg(feature = "gpui-test-support")]
+    use parking_lot::Mutex;
+    #[cfg(feature = "gpui-test-support")]
+    use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
     /// Helper to build newline offsets for a text (mirrors production logic)
     fn newline_offsets(text: &str) -> Vec<usize> {
@@ -835,5 +849,229 @@ mod tests {
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].line, 1);
         assert_eq!(matches[0].col, 6); // "hello" starts at column 6 of line 2
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    struct EmptyView;
+
+    #[cfg(feature = "gpui-test-support")]
+    impl Render for EmptyView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    fn setup_fulgur_for_search_tests(
+        cx: &mut TestAppContext,
+    ) -> (Entity<Fulgur>, VisualTestContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            let mut settings = Settings::new();
+            settings.editor_settings.watch_files = false;
+            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(WindowManager::new());
+        });
+
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let window_id = window.window_handle().window_id();
+                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                *fulgur_slot.borrow_mut() = Some(fulgur);
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window")
+        });
+
+        let visual_cx = VisualTestContext::from_window(window.into(), cx);
+        visual_cx.run_until_parked();
+        let fulgur = fulgur_slot
+            .into_inner()
+            .expect("failed to capture Fulgur entity");
+        (fulgur, visual_cx)
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_gpui_search_next_previous_wrap_and_cursor(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_for_search_tests(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.content.update(cx, |content, cx| {
+                    content.set_value("aaa\nbbb\nccc", window, cx);
+                });
+
+                this.search_state.search_matches = vec![
+                    create_match(0, 1, 0, 0),
+                    create_match(4, 5, 1, 0),
+                    create_match(8, 9, 2, 0),
+                ];
+                this.search_state.current_match_index = Some(2);
+
+                this.search_next(window, cx);
+                assert_eq!(this.search_state.current_match_index, Some(0));
+                let cursor = this
+                    .get_active_editor_tab()
+                    .expect("expected active editor tab")
+                    .content
+                    .read(cx)
+                    .cursor_position();
+                assert_eq!(cursor.line, 0);
+                assert_eq!(cursor.character, 0);
+
+                this.search_previous(window, cx);
+                assert_eq!(this.search_state.current_match_index, Some(2));
+                let cursor = this
+                    .get_active_editor_tab()
+                    .expect("expected active editor tab")
+                    .content
+                    .read(cx)
+                    .cursor_position();
+                assert_eq!(cursor.line, 2);
+                assert_eq!(cursor.character, 0);
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_gpui_replace_current_updates_text_and_matches(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_for_search_tests(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.content.update(cx, |content, cx| {
+                    content.set_value("foo bar foo", window, cx);
+                });
+
+                this.search_state.match_case = false;
+                this.search_state.match_whole_word = false;
+                this.search_state.search_input.update(cx, |input, cx| {
+                    input.set_value("foo", window, cx);
+                });
+                this.search_state.replace_input.update(cx, |input, cx| {
+                    input.set_value("baz", window, cx);
+                });
+
+                this.perform_search(window, cx);
+                assert_eq!(this.search_state.search_matches.len(), 2);
+                assert_eq!(this.search_state.current_match_index, Some(0));
+
+                this.replace_current(window, cx);
+
+                let text = this
+                    .get_active_editor_tab()
+                    .expect("expected active editor tab")
+                    .content
+                    .read(cx)
+                    .text()
+                    .to_string();
+                assert_eq!(text, "baz bar foo");
+                assert_eq!(this.search_state.search_matches.len(), 1);
+                assert_eq!(this.search_state.current_match_index, Some(0));
+
+                let cursor = this
+                    .get_active_editor_tab()
+                    .expect("expected active editor tab")
+                    .content
+                    .read(cx)
+                    .cursor_position();
+                assert_eq!(cursor.line, 0);
+                assert_eq!(cursor.character, 8);
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_gpui_replace_all_whole_word_only(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_for_search_tests(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.content.update(cx, |content, cx| {
+                    content.set_value("test testing test", window, cx);
+                });
+
+                this.search_state.match_case = false;
+                this.search_state.match_whole_word = true;
+                this.search_state.search_input.update(cx, |input, cx| {
+                    input.set_value("test", window, cx);
+                });
+                this.search_state.replace_input.update(cx, |input, cx| {
+                    input.set_value("done", window, cx);
+                });
+
+                this.perform_search(window, cx);
+                assert_eq!(this.search_state.search_matches.len(), 2);
+
+                this.replace_all(window, cx);
+
+                let text = this
+                    .get_active_editor_tab()
+                    .expect("expected active editor tab")
+                    .content
+                    .read(cx)
+                    .text()
+                    .to_string();
+                assert_eq!(text, "done testing done");
+                assert!(this.search_state.search_matches.is_empty());
+                assert_eq!(this.search_state.current_match_index, None);
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_gpui_replace_all_case_sensitive_non_whole_word(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_for_search_tests(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.content.update(cx, |content, cx| {
+                    content.set_value("aaaa", window, cx);
+                });
+
+                this.search_state.match_case = true;
+                this.search_state.match_whole_word = false;
+                this.search_state.search_input.update(cx, |input, cx| {
+                    input.set_value("aa", window, cx);
+                });
+                this.search_state.replace_input.update(cx, |input, cx| {
+                    input.set_value("b", window, cx);
+                });
+
+                this.perform_search(window, cx);
+                assert_eq!(this.search_state.search_matches.len(), 3);
+
+                this.replace_all(window, cx);
+
+                let text = this
+                    .get_active_editor_tab()
+                    .expect("expected active editor tab")
+                    .content
+                    .read(cx)
+                    .text()
+                    .to_string();
+                assert_eq!(text, "bb");
+                assert!(this.search_state.search_matches.is_empty());
+                assert_eq!(this.search_state.current_match_index, None);
+            });
+        });
     }
 }
