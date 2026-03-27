@@ -238,63 +238,7 @@ impl Fulgur {
         let recent_files = settings.get_recent_files();
         languages::supported_languages::register_external_languages();
         themes::init(settings, cx, move |cx| {
-            cx.bind_keys([
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-o", OpenFile, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-o", OpenFile, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-n", NewFile, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-shift-o", OpenPath, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-shift-o", OpenPath, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-n", NewFile, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-shift-n", NewWindow, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-shift-n", NewWindow, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-w", CloseFile, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-w", CloseFile, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-shift-w", CloseAllFiles, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-shift-w", CloseAllFiles, None),
-                KeyBinding::new("cmd-q", Quit, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("alt-f4", Quit, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-s", SaveFile, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-s", SaveFile, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-shift-s", SaveFileAs, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-shift-s", SaveFileAs, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-f", FindInFile, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-f", FindInFile, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-shift-right", NextTab, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-shift-right", NextTab, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-shift-left", PreviousTab, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-shift-left", PreviousTab, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("ctrl-g", JumpToLine, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-g", JumpToLine, None),
-                #[cfg(target_os = "macos")]
-                KeyBinding::new("cmd-p", PrintFile, None),
-                #[cfg(not(target_os = "macos"))]
-                KeyBinding::new("ctrl-p", PrintFile, None),
-            ]);
+            cx.bind_keys(build_default_key_bindings());
             let menus = build_menus(&recent_files, None);
             cx.set_menus(menus);
             #[cfg(not(target_os = "macos"))]

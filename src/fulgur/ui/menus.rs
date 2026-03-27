@@ -50,6 +50,151 @@ pub struct DockActivateTab(pub PathBuf);
 #[action(namespace = fulgur, no_json)]
 pub struct DockActivateTabByTitle(pub SharedString);
 
+/// Keybinding action target used to map shortcuts to dispatchable Fulgur actions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum KeybindingDispatchAction {
+    OpenFile,
+    NewFile,
+    OpenPath,
+    NewWindow,
+    CloseFile,
+    CloseAllFiles,
+    Quit,
+    SaveFile,
+    SaveFileAs,
+    FindInFile,
+    NextTab,
+    PreviousTab,
+    JumpToLine,
+    PrintFile,
+}
+
+/// A platform keybinding dispatch specification used to build runtime keybindings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct KeybindingDispatchSpec {
+    keystroke: &'static str,
+    action: KeybindingDispatchAction,
+}
+
+impl KeybindingDispatchSpec {
+    /// Create a keybinding dispatch specification.
+    ///
+    /// ### Parameters:
+    /// - `keystroke`: The key combination string consumed by GPUI.
+    /// - `action`: The action to dispatch for this keybinding.
+    ///
+    /// ### Returns:
+    /// `Self`: The new keybinding dispatch specification.
+    const fn new(keystroke: &'static str, action: KeybindingDispatchAction) -> Self {
+        Self { keystroke, action }
+    }
+
+    /// Convert this dispatch specification into a GPUI keybinding instance.
+    ///
+    /// ### Returns:
+    /// `KeyBinding`: The runtime keybinding bound to the configured action.
+    fn into_key_binding(self) -> KeyBinding {
+        match self.action {
+            KeybindingDispatchAction::OpenFile => KeyBinding::new(self.keystroke, OpenFile, None),
+            KeybindingDispatchAction::NewFile => KeyBinding::new(self.keystroke, NewFile, None),
+            KeybindingDispatchAction::OpenPath => KeyBinding::new(self.keystroke, OpenPath, None),
+            KeybindingDispatchAction::NewWindow => KeyBinding::new(self.keystroke, NewWindow, None),
+            KeybindingDispatchAction::CloseFile => KeyBinding::new(self.keystroke, CloseFile, None),
+            KeybindingDispatchAction::CloseAllFiles => {
+                KeyBinding::new(self.keystroke, CloseAllFiles, None)
+            }
+            KeybindingDispatchAction::Quit => KeyBinding::new(self.keystroke, Quit, None),
+            KeybindingDispatchAction::SaveFile => KeyBinding::new(self.keystroke, SaveFile, None),
+            KeybindingDispatchAction::SaveFileAs => {
+                KeyBinding::new(self.keystroke, SaveFileAs, None)
+            }
+            KeybindingDispatchAction::FindInFile => {
+                KeyBinding::new(self.keystroke, FindInFile, None)
+            }
+            KeybindingDispatchAction::NextTab => KeyBinding::new(self.keystroke, NextTab, None),
+            KeybindingDispatchAction::PreviousTab => {
+                KeyBinding::new(self.keystroke, PreviousTab, None)
+            }
+            KeybindingDispatchAction::JumpToLine => {
+                KeyBinding::new(self.keystroke, JumpToLine, None)
+            }
+            KeybindingDispatchAction::PrintFile => KeyBinding::new(self.keystroke, PrintFile, None),
+        }
+    }
+}
+
+/// Build platform-specific keybinding dispatch specifications.
+///
+/// ### Returns:
+/// `Vec<KeybindingDispatchSpec>`: The complete keybinding-to-action mapping for this platform.
+fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
+    vec![
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-o", KeybindingDispatchAction::OpenFile),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-o", KeybindingDispatchAction::OpenFile),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-n", KeybindingDispatchAction::NewFile),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-n", KeybindingDispatchAction::NewFile),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-shift-o", KeybindingDispatchAction::OpenPath),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-shift-o", KeybindingDispatchAction::OpenPath),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-shift-n", KeybindingDispatchAction::NewWindow),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-shift-n", KeybindingDispatchAction::NewWindow),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-w", KeybindingDispatchAction::CloseFile),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-w", KeybindingDispatchAction::CloseFile),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-shift-w", KeybindingDispatchAction::CloseAllFiles),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-shift-w", KeybindingDispatchAction::CloseAllFiles),
+        KeybindingDispatchSpec::new("cmd-q", KeybindingDispatchAction::Quit),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("alt-f4", KeybindingDispatchAction::Quit),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-s", KeybindingDispatchAction::SaveFile),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-s", KeybindingDispatchAction::SaveFile),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-shift-s", KeybindingDispatchAction::SaveFileAs),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-shift-s", KeybindingDispatchAction::SaveFileAs),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-f", KeybindingDispatchAction::FindInFile),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-f", KeybindingDispatchAction::FindInFile),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-shift-right", KeybindingDispatchAction::NextTab),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-shift-right", KeybindingDispatchAction::NextTab),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-shift-left", KeybindingDispatchAction::PreviousTab),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-shift-left", KeybindingDispatchAction::PreviousTab),
+        KeybindingDispatchSpec::new("ctrl-g", KeybindingDispatchAction::JumpToLine),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-p", KeybindingDispatchAction::PrintFile),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-p", KeybindingDispatchAction::PrintFile),
+    ]
+}
+
+/// Build the default runtime keybindings for the application.
+///
+/// ### Returns:
+/// `Vec<KeyBinding>`: The platform-specific list of GPUI keybindings.
+pub fn build_default_key_bindings() -> Vec<KeyBinding> {
+    default_keybinding_dispatch_specs()
+        .into_iter()
+        .map(KeybindingDispatchSpec::into_key_binding)
+        .collect()
+}
+
 /// A single tab entry for the dock menu, carrying the display name and the action to fire
 #[cfg(target_os = "macos")]
 pub enum DockMenuTab {
@@ -282,5 +427,92 @@ impl Fulgur {
                 .ok();
         })
         .detach();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        KeybindingDispatchAction, build_default_key_bindings, default_keybinding_dispatch_specs,
+    };
+    use core::prelude::v1::test;
+    use std::collections::HashSet;
+
+    fn has_binding(
+        specs: &[super::KeybindingDispatchSpec],
+        keystroke: &str,
+        action: KeybindingDispatchAction,
+    ) -> bool {
+        specs
+            .iter()
+            .any(|spec| spec.keystroke == keystroke && spec.action == action)
+    }
+
+    #[test]
+    fn test_default_keybinding_dispatch_specs_include_core_editor_actions() {
+        let specs = default_keybinding_dispatch_specs();
+
+        #[cfg(target_os = "macos")]
+        assert!(has_binding(
+            &specs,
+            "cmd-o",
+            KeybindingDispatchAction::OpenFile
+        ));
+        #[cfg(not(target_os = "macos"))]
+        assert!(has_binding(
+            &specs,
+            "ctrl-o",
+            KeybindingDispatchAction::OpenFile
+        ));
+
+        #[cfg(target_os = "macos")]
+        assert!(has_binding(
+            &specs,
+            "cmd-s",
+            KeybindingDispatchAction::SaveFile
+        ));
+        #[cfg(not(target_os = "macos"))]
+        assert!(has_binding(
+            &specs,
+            "ctrl-s",
+            KeybindingDispatchAction::SaveFile
+        ));
+
+        assert!(has_binding(
+            &specs,
+            "ctrl-g",
+            KeybindingDispatchAction::JumpToLine
+        ));
+    }
+
+    #[test]
+    fn test_default_keybinding_dispatch_specs_include_platform_quit_shortcuts() {
+        let specs = default_keybinding_dispatch_specs();
+        assert!(has_binding(&specs, "cmd-q", KeybindingDispatchAction::Quit));
+
+        #[cfg(not(target_os = "macos"))]
+        assert!(has_binding(
+            &specs,
+            "alt-f4",
+            KeybindingDispatchAction::Quit
+        ));
+    }
+
+    #[test]
+    fn test_default_keybinding_dispatch_specs_do_not_duplicate_same_shortcut_action() {
+        let specs = default_keybinding_dispatch_specs();
+        let unique_pairs: HashSet<(&str, KeybindingDispatchAction)> = specs
+            .iter()
+            .map(|spec| (spec.keystroke, spec.action))
+            .collect();
+
+        assert_eq!(unique_pairs.len(), specs.len());
+    }
+
+    #[test]
+    fn test_build_default_key_bindings_matches_dispatch_spec_count() {
+        let specs = default_keybinding_dispatch_specs();
+        let keybindings = build_default_key_bindings();
+        assert_eq!(keybindings.len(), specs.len());
     }
 }
