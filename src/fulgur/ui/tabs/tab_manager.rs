@@ -1213,4 +1213,229 @@ mod tests {
             });
         });
     }
+
+    // ========== open_markdown_preview_tab tests ==========
+
+    #[gpui::test]
+    fn test_open_markdown_preview_tab_creates_preview_tab_for_markdown_editor(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(editor) = this.get_active_editor_tab_mut() {
+                    editor.language = SupportedLanguage::Markdown;
+                }
+                let count_before = this.tabs.len();
+                this.open_markdown_preview_tab(window, cx);
+                assert_eq!(this.tabs.len(), count_before + 1);
+                assert!(this.tabs.iter().any(|t| t.as_markdown_preview().is_some()));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_open_markdown_preview_tab_preview_is_inserted_after_editor(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(editor) = this.get_active_editor_tab_mut() {
+                    editor.language = SupportedLanguage::Markdown;
+                }
+                let editor_index = this.active_tab_index.expect("expected active tab");
+                this.open_markdown_preview_tab(window, cx);
+                assert!(matches!(
+                    this.tabs.get(editor_index + 1),
+                    Some(Tab::MarkdownPreview(_))
+                ));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_open_markdown_preview_tab_toggle_removes_preview_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(editor) = this.get_active_editor_tab_mut() {
+                    editor.language = SupportedLanguage::Markdown;
+                }
+                let count_before = this.tabs.len();
+                this.open_markdown_preview_tab(window, cx);
+                assert_eq!(this.tabs.len(), count_before + 1);
+                this.open_markdown_preview_tab(window, cx);
+                assert_eq!(this.tabs.len(), count_before);
+                assert!(!this.tabs.iter().any(|t| t.as_markdown_preview().is_some()));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_open_markdown_preview_tab_is_noop_in_panel_mode(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.settings.editor_settings.markdown_settings.preview_mode =
+                    crate::fulgur::settings::MarkdownPreviewMode::Panel;
+                if let Some(editor) = this.get_active_editor_tab_mut() {
+                    editor.language = SupportedLanguage::Markdown;
+                }
+                let count_before = this.tabs.len();
+                this.open_markdown_preview_tab(window, cx);
+                assert_eq!(this.tabs.len(), count_before);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_open_markdown_preview_tab_is_noop_without_active_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.active_tab_index = None;
+                let count_before = this.tabs.len();
+                this.open_markdown_preview_tab(window, cx);
+                assert_eq!(this.tabs.len(), count_before);
+            });
+        });
+    }
+
+    // ========== maybe_open_markdown_preview_for_editor tests ==========
+
+    #[gpui::test]
+    fn test_maybe_open_markdown_preview_for_editor_inserts_preview_for_markdown(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                if let Some(Tab::Editor(editor)) = this.tabs.first_mut() {
+                    editor.language = SupportedLanguage::Markdown;
+                }
+                let count_before = this.tabs.len();
+                this.maybe_open_markdown_preview_for_editor(0);
+                assert_eq!(this.tabs.len(), count_before + 1);
+                assert!(matches!(this.tabs.get(1), Some(Tab::MarkdownPreview(_))));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_maybe_open_markdown_preview_for_editor_skips_non_markdown(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                // Default language is Plain — no preview tab should be inserted
+                let count_before = this.tabs.len();
+                this.maybe_open_markdown_preview_for_editor(0);
+                assert_eq!(this.tabs.len(), count_before);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_maybe_open_markdown_preview_for_editor_is_noop_when_disabled(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                this.settings
+                    .editor_settings
+                    .markdown_settings
+                    .show_markdown_preview = false;
+                if let Some(Tab::Editor(editor)) = this.tabs.first_mut() {
+                    editor.language = SupportedLanguage::Markdown;
+                }
+                let count_before = this.tabs.len();
+                this.maybe_open_markdown_preview_for_editor(0);
+                assert_eq!(this.tabs.len(), count_before);
+            });
+        });
+    }
+
+    // ========== insert_preview_tabs_for_markdown tests ==========
+
+    #[gpui::test]
+    fn test_insert_preview_tabs_for_markdown_adds_preview_tabs_for_all_markdown_editors(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(Tab::Editor(editor)) = this.tabs.first_mut() {
+                    editor.language = SupportedLanguage::Markdown;
+                }
+                this.new_tab(window, cx);
+                if let Some(Tab::Editor(editor)) = this.tabs.last_mut() {
+                    editor.language = SupportedLanguage::Markdown;
+                }
+                assert_eq!(this.tabs.len(), 2);
+                this.insert_preview_tabs_for_markdown();
+                assert_eq!(this.tabs.len(), 4);
+                assert_eq!(
+                    this.tabs
+                        .iter()
+                        .filter(|t| t.as_markdown_preview().is_some())
+                        .count(),
+                    2
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_insert_preview_tabs_for_markdown_is_noop_when_disabled(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                this.settings
+                    .editor_settings
+                    .markdown_settings
+                    .show_markdown_preview = false;
+                if let Some(Tab::Editor(editor)) = this.tabs.first_mut() {
+                    editor.language = SupportedLanguage::Markdown;
+                }
+                let count_before = this.tabs.len();
+                this.insert_preview_tabs_for_markdown();
+                assert_eq!(this.tabs.len(), count_before);
+            });
+        });
+    }
+
+    // ========== panel mode show_markdown_preview flag tests ==========
+
+    #[gpui::test]
+    fn test_panel_preview_flag_is_true_by_default(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                assert!(
+                    this.get_active_editor_tab()
+                        .is_some_and(|e| e.show_markdown_preview),
+                    "show_markdown_preview should default to true"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_panel_preview_flag_can_be_toggled(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let initial = this
+                    .get_active_editor_tab()
+                    .map(|e| e.show_markdown_preview)
+                    .unwrap_or(false);
+                if let Some(editor) = this.get_active_editor_tab_mut() {
+                    editor.show_markdown_preview = !editor.show_markdown_preview;
+                }
+                cx.notify();
+                let after = this
+                    .get_active_editor_tab()
+                    .map(|e| e.show_markdown_preview)
+                    .unwrap_or(false);
+                assert_ne!(initial, after, "show_markdown_preview should toggle");
+            });
+        });
+    }
 }
