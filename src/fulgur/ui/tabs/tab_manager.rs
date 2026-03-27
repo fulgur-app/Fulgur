@@ -894,3 +894,323 @@ impl Fulgur {
         self.reorder_tab(dragged.tab_index, slot_index, window, cx);
     }
 }
+
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod tests {
+    use super::Fulgur;
+    use crate::fulgur::{
+        languages::supported_languages::SupportedLanguage, settings::Settings,
+        shared_state::SharedAppState, tab::Tab, window_manager::WindowManager,
+    };
+    use gpui::{
+        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
+        Window, div,
+    };
+    use parking_lot::Mutex;
+    use std::{cell::RefCell, path::PathBuf, sync::Arc};
+
+    struct EmptyView;
+
+    impl Render for EmptyView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
+    }
+
+    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            let mut settings = Settings::new();
+            settings.editor_settings.watch_files = false;
+            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(WindowManager::new());
+        });
+
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        let window = cx
+            .update(|cx| {
+                cx.open_window(Default::default(), |window, cx| {
+                    let window_id = window.window_handle().window_id();
+                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    *fulgur_slot.borrow_mut() = Some(fulgur);
+                    cx.new(|_| EmptyView)
+                })
+            })
+            .expect("failed to open test window");
+
+        let visual_cx = VisualTestContext::from_window(window.into(), cx);
+        visual_cx.run_until_parked();
+        let fulgur = fulgur_slot
+            .into_inner()
+            .expect("failed to capture Fulgur entity");
+        (fulgur, visual_cx)
+    }
+
+    // ========== new_tab tests ==========
+
+    #[gpui::test]
+    fn test_new_tab_adds_tab_and_sets_as_active(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let initial_count = this.tabs.len();
+                this.new_tab(window, cx);
+                assert_eq!(this.tabs.len(), initial_count + 1);
+                assert_eq!(this.active_tab_index, Some(this.tabs.len() - 1));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_new_tab_increments_next_tab_id(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let id_before = this.next_tab_id;
+                this.new_tab(window, cx);
+                assert_eq!(this.next_tab_id, id_before + 1);
+                this.new_tab(window, cx);
+                assert_eq!(this.next_tab_id, id_before + 2);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_new_tab_produces_untitled_editor_tab_without_file_path(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                let last = this.tabs.last().expect("expected at least one tab");
+                let editor = last.as_editor().expect("expected an editor tab");
+                assert!(editor.file_path.is_none());
+                assert!(!editor.modified);
+            });
+        });
+    }
+
+    // ========== open_settings tests ==========
+
+    #[gpui::test]
+    fn test_open_settings_adds_settings_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let initial_count = this.tabs.len();
+                this.open_settings(window, cx);
+                assert_eq!(this.tabs.len(), initial_count + 1);
+                assert!(matches!(this.tabs.last(), Some(Tab::Settings(_))));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_open_settings_switches_to_existing_settings_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.open_settings(window, cx);
+                let count_after_first = this.tabs.len();
+                this.open_settings(window, cx);
+                assert_eq!(this.tabs.len(), count_after_first);
+            });
+        });
+    }
+
+    // ========== close_tab tests ==========
+
+    #[gpui::test]
+    fn test_close_tab_removes_unmodified_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                let count_before = this.tabs.len();
+                let tab_id = this.tabs.last().expect("expected tab").id();
+                this.close_tab(tab_id, window, cx);
+                assert_eq!(this.tabs.len(), count_before - 1);
+                assert!(!this.tabs.iter().any(|t| t.id() == tab_id));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_close_tab_is_noop_for_unknown_id(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let count_before = this.tabs.len();
+                this.close_tab(usize::MAX, window, cx);
+                assert_eq!(this.tabs.len(), count_before);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_close_tab_keeps_active_index_valid_when_closing_before_active(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                // Start with one tab (index 0). Add a second tab (index 1) and switch to it.
+                this.new_tab(window, cx);
+                this.set_active_tab(1, window, cx);
+                assert_eq!(this.active_tab_index, Some(1));
+
+                // Close the tab at index 0 (before the active one).
+                let first_id = this.tabs[0].id();
+                this.close_tab(first_id, window, cx);
+
+                // Active index must have shifted left by one.
+                assert_eq!(this.active_tab_index, Some(0));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_close_last_tab_leaves_no_active_index(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                assert_eq!(this.tabs.len(), 1);
+                let tab_id = this.tabs[0].id();
+                this.close_tab(tab_id, window, cx);
+                assert!(this.tabs.is_empty());
+                assert_eq!(this.active_tab_index, None);
+            });
+        });
+    }
+
+    // ========== set_active_tab tests ==========
+
+    #[gpui::test]
+    fn test_set_active_tab_changes_active_index(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                this.set_active_tab(0, window, cx);
+                assert_eq!(this.active_tab_index, Some(0));
+                this.set_active_tab(1, window, cx);
+                assert_eq!(this.active_tab_index, Some(1));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_set_active_tab_is_noop_out_of_bounds(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let active_before = this.active_tab_index;
+                this.set_active_tab(usize::MAX, window, cx);
+                assert_eq!(this.active_tab_index, active_before);
+            });
+        });
+    }
+
+    // ========== close_other_tabs tests ==========
+
+    #[gpui::test]
+    fn test_close_other_tabs_leaves_only_active_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                this.new_tab(window, cx);
+                // Three tabs total; make the middle one (index 1) active.
+                this.set_active_tab(1, window, cx);
+                let active_id = this.tabs[1].id();
+
+                this.close_other_tabs(window, cx);
+
+                assert_eq!(this.tabs.len(), 1);
+                assert_eq!(this.tabs[0].id(), active_id);
+                assert_eq!(this.active_tab_index, Some(0));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_close_other_tabs_is_noop_with_single_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                assert_eq!(this.tabs.len(), 1);
+                let tab_id_before = this.tabs[0].id();
+                this.close_other_tabs(window, cx);
+                assert_eq!(this.tabs.len(), 1);
+                assert_eq!(this.tabs[0].id(), tab_id_before);
+            });
+        });
+    }
+
+    // ========== duplicate_tab tests ==========
+
+    #[gpui::test]
+    fn test_duplicate_tab_inserts_copy_after_original_and_becomes_active(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let original_id = this.tabs[0].id();
+                this.duplicate_tab(0, window, cx);
+
+                assert_eq!(this.tabs.len(), 2);
+                assert_eq!(this.tabs[0].id(), original_id);
+                assert_ne!(this.tabs[1].id(), original_id);
+                assert_eq!(this.active_tab_index, Some(1));
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_duplicate_tab_preserves_content_and_language(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(editor) = this.get_active_editor_tab_mut() {
+                    editor.language = SupportedLanguage::Rust;
+                }
+                this.duplicate_tab(0, window, cx);
+
+                let duplicate = this.tabs[1].as_editor().expect("expected editor tab");
+                assert_eq!(duplicate.language, SupportedLanguage::Rust);
+                assert!(duplicate.file_path.is_none());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_duplicate_tab_is_noop_for_settings_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.open_settings(window, cx);
+                let settings_index = this
+                    .tabs
+                    .iter()
+                    .position(|t| matches!(t, Tab::Settings(_)))
+                    .expect("expected settings tab");
+                let count_before = this.tabs.len();
+                this.duplicate_tab(settings_index, window, cx);
+                assert_eq!(this.tabs.len(), count_before);
+            });
+        });
+    }
+}
