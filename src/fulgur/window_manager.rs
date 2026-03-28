@@ -1,4 +1,4 @@
-use crate::fulgur::{Fulgur, state_persistence};
+use crate::fulgur::{Fulgur, state_persistence, ui::tabs::editor_tab::TabTransferData};
 use gpui::*;
 use gpui_component::WindowExt;
 use gpui_component::notification::NotificationType;
@@ -314,6 +314,58 @@ impl Fulgur {
                         view_clone.update(cx, |fulgur, cx| {
                             fulgur.on_window_close_requested(window, cx)
                         })
+                    });
+                    view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
+                    cx.new(|cx| gpui_component::Root::new(view, window, cx))
+                })?;
+                window.update(cx, |_, window, _| {
+                    window.activate_window();
+                })?;
+                Ok::<_, anyhow::Error>(())
+            })
+            .detach();
+    }
+
+    /// Open a new Fulgur window and transfer a tab into it on the first render.
+    ///
+    /// Behaves like `open_new_window` but sets `pending_tab_transfer` on the new
+    /// window entity before the first render cycle, so the tab lands in the new
+    /// window as if it had been sent via the normal cross-window transfer path.
+    ///
+    /// ### Arguments
+    /// - `data` - The serialized tab state to transfer
+    /// - `cx` - The context for the application
+    pub fn open_new_window_with_tab(&self, data: TabTransferData, cx: &mut Context<Self>) {
+        let async_cx = cx.to_async();
+        async_cx
+            .spawn(async move |cx| {
+                let window_options = WindowOptions {
+                    titlebar: Some(gpui_component::TitleBar::title_bar_options()),
+                    #[cfg(target_os = "linux")]
+                    window_decorations: Some(gpui::WindowDecorations::Client),
+                    ..Default::default()
+                };
+                let window = cx.open_window(window_options, move |window, cx| {
+                    window.set_window_title("Fulgur");
+                    let window_id = window.window_handle().window_id();
+                    let view = Fulgur::new(window, cx, window_id, usize::MAX - 1);
+                    cx.update_global::<WindowManager, _>(|manager, _| {
+                        manager.register(window_id, view.downgrade());
+                    });
+                    for weak in cx.global::<WindowManager>().get_all_windows() {
+                        if let Some(entity) = weak.upgrade() {
+                            entity.update(cx, |_, cx| cx.notify());
+                        }
+                    }
+                    let view_clone = view.clone();
+                    window.on_window_should_close(cx, move |window, cx| {
+                        view_clone.update(cx, |fulgur, cx| {
+                            fulgur.on_window_close_requested(window, cx)
+                        })
+                    });
+                    view.update(cx, |fulgur, cx| {
+                        fulgur.pending_tab_transfer = Some(data);
+                        cx.notify();
                     });
                     view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
                     cx.new(|cx| gpui_component::Root::new(view, window, cx))

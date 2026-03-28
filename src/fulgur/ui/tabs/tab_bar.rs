@@ -505,7 +505,6 @@ impl Fulgur {
                 })
                 .collect()
         };
-        let has_other_windows = !other_windows.is_empty();
         let source_entity = cx.entity().downgrade();
         let cached_file_size = tab
             .as_editor()
@@ -686,8 +685,8 @@ impl Fulgur {
                     Box::new(DuplicateTab(index)),
                     !is_editor_tab,
                 );
-            let this = if has_other_windows && is_editor_tab {
-                this.submenu("Send to Window", window, cx, move |sub, _window, _cx| {
+            let this = if is_editor_tab {
+                this.submenu("Send to...", window, cx, move |sub, _window, _cx| {
                     let mut sub = sub;
                     for (name, weak_tgt) in &other_windows_clone {
                         let label = format!("Window {}", name);
@@ -714,10 +713,30 @@ impl Fulgur {
                             });
                         }));
                     }
+                    if !other_windows_clone.is_empty() {
+                        sub = sub.separator();
+                    }
+                    let src = source_entity_clone.clone();
+                    sub = sub.item(PopupMenuItem::new("New Window").on_click(move |_, _, cx| {
+                        let Some(src_entity) = src.upgrade() else {
+                            return;
+                        };
+                        let data = src_entity.update(cx, |fulgur, cx| {
+                            fulgur.extract_tab_transfer_data(tab_id, cx)
+                        });
+                        let Some(data) = data else { return };
+                        src_entity.update(cx, |fulgur, cx| {
+                            fulgur.pending_tab_removal = Some(tab_id);
+                            cx.notify();
+                        });
+                        src_entity.update(cx, |fulgur, cx| {
+                            fulgur.open_new_window_with_tab(data, cx);
+                        });
+                    }));
                     sub
                 })
             } else {
-                this.menu_with_disabled("Send to Window", Box::new(SendTabToWindowNoOp), true)
+                this.menu_with_disabled("Send to...", Box::new(SendTabToWindowNoOp), true)
             };
             this.separator()
                 .menu("Close Tab", Box::new(CloseTabAction(tab_id)))

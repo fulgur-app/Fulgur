@@ -223,7 +223,8 @@ impl Fulgur {
                 this.tabs.push(initial_tab);
                 this.active_tab_index = Some(0);
                 this.next_tab_id = 1;
-            } else {
+            } else if window_index < usize::MAX - 1 {
+                // usize::MAX - 1 means new window receiving a tab transfer: skip initial tab
                 this.load_state(window, cx, window_index);
                 this.pending_tab_scroll = this.active_tab_index;
             }
