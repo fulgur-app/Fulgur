@@ -642,7 +642,8 @@ impl Fulgur {
     ///
     /// Called from the render loop when `pending_tab_removal` is set. Uses
     /// `remove_tab_by_id` so focus management, file-unwatching, and linked
-    /// markdown-preview cleanup all happen correctly.
+    /// markdown-preview cleanup all happen correctly. If the removed tab was
+    /// the last one in this window, the window itself is closed.
     ///
     /// ### Arguments
     /// - `window`: The source window context
@@ -650,6 +651,10 @@ impl Fulgur {
     pub fn handle_pending_tab_removal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(tab_id) = self.pending_tab_removal.take() {
             self.remove_tab_by_id(tab_id, window, cx);
+            if self.tabs.is_empty() {
+                window.remove_window();
+                return;
+            }
             if let Err(e) = self.save_state(cx, window) {
                 log::error!(
                     "Failed to save state after sending tab to another window: {}",
@@ -1932,6 +1937,29 @@ mod tests {
                 assert!(
                     this.pending_tab_removal.is_none(),
                     "pending field must be consumed after handling"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_tab_removal_closes_window_when_last_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                // Exactly one tab exists by default; mark it for removal
+                assert_eq!(this.tabs.len(), 1, "setup should start with one tab");
+                let only_tab_id = this.tabs[0].id();
+                this.pending_tab_removal = Some(only_tab_id);
+                // Should not panic and should empty the tab list before closing the window
+                this.handle_pending_tab_removal(window, cx);
+                assert!(
+                    this.tabs.is_empty(),
+                    "all tabs must be gone when the only tab is sent away"
+                );
+                assert!(
+                    this.pending_tab_removal.is_none(),
+                    "pending field must be consumed"
                 );
             });
         });
