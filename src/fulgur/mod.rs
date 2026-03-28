@@ -629,14 +629,22 @@ impl Fulgur {
         v_flex().w_full().flex_1().into_any_element()
     }
 
-    /// Set the title of the title bar
+    /// Set the title of the title bar.
+    ///
+    /// Looks up the current window name from the global `WindowManager` and passes it to
+    /// `CustomTitleBar::set_title` so the suffix is automatically included when multiple
+    /// windows are open.
     ///
     /// ### Arguments
     /// - `title`: The title to set (if None, the default title is used)
     /// - `cx`: The application context
     fn set_title(&self, title: Option<String>, cx: &mut Context<Self>) {
+        let window_name = cx
+            .global::<window_manager::WindowManager>()
+            .get_window_name(self.window_id)
+            .map(|s| s.to_string());
         self.title_bar.update(cx, |this, _cx| {
-            this.set_title(title);
+            this.set_title(title, window_name.as_deref());
         });
     }
 

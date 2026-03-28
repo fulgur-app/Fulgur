@@ -176,16 +176,8 @@ fn main() {
         cx.set_global(shared_state);
         cx.set_global(fulgur::window_manager::WindowManager::new());
         let windows_state = fulgur::state_persistence::WindowsState::load().ok();
-        let num_saved_windows = windows_state
-            .as_ref()
-            .map(|ws| ws.windows.len())
-            .unwrap_or(0);
-        if num_saved_windows > 0 {
-            log::info!("Restoring {} saved window(s)", num_saved_windows);
-        } else {
-            log::info!("No saved state, creating initial window");
-        }
-        if let Some(ws) = windows_state {
+        if let Some(ws) = windows_state.filter(|ws| !ws.windows.is_empty()) {
+            log::info!("Restoring {} saved window(s)", ws.windows.len());
             for (index, window_state) in ws.windows.into_iter().enumerate() {
                 let cli_files = if index == 0 {
                     cli_file_paths.clone()
@@ -197,6 +189,7 @@ fn main() {
                     .detach();
             }
         } else {
+            log::info!("No saved state, creating initial window");
             cx.spawn(async move |cx| create_window(cx, 0, None, cli_file_paths).await)
                 .detach();
         }
