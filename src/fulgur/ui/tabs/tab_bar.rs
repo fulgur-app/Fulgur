@@ -4,13 +4,14 @@ use crate::fulgur::{
     ui::components_utils::{self, TAB_BAR_BUTTON_SIZE, TAB_BAR_HEIGHT, button_factory},
     ui::icons::CustomIcon,
     ui::tabs::tab_drag::DraggedTab,
+    window_manager::WindowManager,
 };
 use gpui::*;
 use gpui_component::{
     ActiveTheme, Sizable, StyledExt, Theme, ThemeRegistry,
     button::{Button, ButtonVariants},
     h_flex,
-    menu::ContextMenuExt,
+    menu::{ContextMenuExt, PopupMenuItem},
     tooltip::Tooltip,
     v_flex,
 };
@@ -40,7 +41,7 @@ pub struct ShowInFileManager(pub usize);
 #[action(namespace = fulgur, no_json)]
 pub struct DuplicateTab(pub usize);
 
-actions!(fulgur, [CloseAllTabsAction]);
+actions!(fulgur, [CloseAllTabsAction, SendTabToWindowNoOp]);
 
 /// Create a tab bar button
 ///
@@ -489,6 +490,23 @@ impl Fulgur {
         });
         let has_file_path = file_path.is_some();
         let is_editor_tab = tab.as_editor().is_some();
+        let other_windows: Vec<(String, WeakEntity<Fulgur>)> = {
+            let manager = cx.global::<WindowManager>();
+            let current_window_id = self.window_id;
+            manager
+                .get_all_window_ids()
+                .into_iter()
+                .filter(|id| *id != current_window_id)
+                .filter_map(|id| {
+                    manager
+                        .get_window_name(id)
+                        .map(|name| name.to_string())
+                        .zip(manager.get_window(id))
+                })
+                .collect()
+        };
+        let has_other_windows = !other_windows.is_empty();
+        let source_entity = cx.entity().downgrade();
         let cached_file_size = tab
             .as_editor()
             .and_then(|editor_tab| editor_tab.file_size_bytes)
@@ -654,40 +672,76 @@ impl Fulgur {
                     }
                 }));
         }
-        let tab_with_content = tab_with_content.context_menu(move |this, _window, _cx| {
-            this.menu_with_disabled(
-                crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
-                Box::new(ShowInFileManager(index)),
-                !has_file_path,
-            )
-            .menu_with_disabled(
-                "Duplicate Tab",
-                Box::new(DuplicateTab(index)),
-                !is_editor_tab,
-            )
-            .separator()
-            .menu("Close Tab", Box::new(CloseTabAction(tab_id)))
-            .menu_with_disabled(
-                "Close Tabs to the Left",
-                Box::new(CloseTabsToLeft(index)),
-                !has_tabs_on_left,
-            )
-            .menu_with_disabled(
-                "Close Tabs to the Right",
-                Box::new(CloseTabsToRight(index)),
-                !has_tabs_on_right,
-            )
-            .separator()
-            .menu_with_disabled(
-                "Close All Tabs",
-                Box::new(CloseAllTabsAction),
-                total_tabs == 0,
-            )
-            .menu_with_disabled(
-                "Close All Other Tabs",
-                Box::new(CloseAllOtherTabs(index)),
-                total_tabs <= 1,
-            )
+        let tab_with_content = tab_with_content.context_menu(move |this, window, cx| {
+            let other_windows_clone = other_windows.clone();
+            let source_entity_clone = source_entity.clone();
+            let this = this
+                .menu_with_disabled(
+                    crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
+                    Box::new(ShowInFileManager(index)),
+                    !has_file_path,
+                )
+                .menu_with_disabled(
+                    "Duplicate Tab",
+                    Box::new(DuplicateTab(index)),
+                    !is_editor_tab,
+                );
+            let this = if has_other_windows && is_editor_tab {
+                this.submenu("Send to Window", window, cx, move |sub, _window, _cx| {
+                    let mut sub = sub;
+                    for (name, weak_tgt) in &other_windows_clone {
+                        let label = format!("Window {}", name);
+                        let src = source_entity_clone.clone();
+                        let tgt = weak_tgt.clone();
+                        sub = sub.item(PopupMenuItem::new(label).on_click(move |_, _, cx| {
+                            let Some(src_entity) = src.upgrade() else {
+                                return;
+                            };
+                            let Some(tgt_entity) = tgt.upgrade() else {
+                                return;
+                            };
+                            let data = src_entity.update(cx, |fulgur, cx| {
+                                fulgur.extract_tab_transfer_data(tab_id, cx)
+                            });
+                            let Some(data) = data else { return };
+                            tgt_entity.update(cx, |fulgur, cx| {
+                                fulgur.pending_tab_transfer = Some(data);
+                                cx.notify();
+                            });
+                            src_entity.update(cx, |fulgur, cx| {
+                                fulgur.pending_tab_removal = Some(tab_id);
+                                cx.notify();
+                            });
+                        }));
+                    }
+                    sub
+                })
+            } else {
+                this.menu_with_disabled("Send to Window", Box::new(SendTabToWindowNoOp), true)
+            };
+            this.separator()
+                .menu("Close Tab", Box::new(CloseTabAction(tab_id)))
+                .menu_with_disabled(
+                    "Close Tabs to the Left",
+                    Box::new(CloseTabsToLeft(index)),
+                    !has_tabs_on_left,
+                )
+                .menu_with_disabled(
+                    "Close Tabs to the Right",
+                    Box::new(CloseTabsToRight(index)),
+                    !has_tabs_on_right,
+                )
+                .separator()
+                .menu_with_disabled(
+                    "Close All Tabs",
+                    Box::new(CloseAllTabsAction),
+                    total_tabs == 0,
+                )
+                .menu_with_disabled(
+                    "Close All Other Tabs",
+                    Box::new(CloseAllOtherTabs(index)),
+                    total_tabs <= 1,
+                )
         });
         tab_with_content.into_any_element()
     }

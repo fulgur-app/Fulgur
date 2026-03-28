@@ -30,6 +30,22 @@ pub struct EditorTab {
     pub file_last_modified: Option<SystemTime>,
 }
 
+/// All state required to transfer an editor tab between windows
+pub struct TabTransferData {
+    pub title: SharedString,
+    pub content: String,
+    pub file_path: Option<std::path::PathBuf>,
+    pub modified: bool,
+    pub original_content: String,
+    pub encoding: String,
+    pub language: SupportedLanguage,
+    pub show_markdown_toolbar: bool,
+    pub show_markdown_preview: bool,
+    pub file_size_bytes: Option<u64>,
+    pub file_last_modified: Option<SystemTime>,
+    pub cursor_position: Position,
+}
+
 /// Parameters for creating an editor tab as a duplicate of another
 pub struct FromDuplicateParams {
     pub id: usize,
@@ -267,6 +283,57 @@ impl EditorTab {
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: None,
             file_last_modified: None,
+        }
+    }
+
+    /// Recreate a tab in a new window from transferred state.
+    ///
+    /// Preserves text content, file path, unsaved-change state, language, encoding,
+    /// markdown panel visibility, and cursor position. Called by the target window
+    /// when processing a deferred `pending_tab_transfer`.
+    ///
+    /// ### Arguments
+    /// - `id`: The new tab ID, allocated by the receiving window
+    /// - `data`: All state captured from the source tab
+    /// - `window`: The target window context
+    /// - `cx`: The application context
+    /// - `settings`: The receiving window's editor settings
+    ///
+    /// ### Returns
+    /// - `EditorTab`: The newly created tab, ready to be pushed onto the tab list
+    pub fn from_transfer(
+        id: usize,
+        data: TabTransferData,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) -> Self {
+        let cursor_position = data.cursor_position;
+        let content = cx.new(|cx| {
+            make_input_state(
+                window,
+                cx,
+                language_registry_name(&data.language),
+                Some(data.content),
+                settings,
+            )
+        });
+        content.update(cx, |state, cx| {
+            state.set_cursor_position(cursor_position, window, cx);
+        });
+        Self {
+            id,
+            title: data.title,
+            content,
+            file_path: data.file_path,
+            modified: data.modified,
+            original_content: data.original_content,
+            encoding: data.encoding,
+            language: data.language,
+            show_markdown_toolbar: data.show_markdown_toolbar,
+            show_markdown_preview: data.show_markdown_preview,
+            file_size_bytes: data.file_size_bytes,
+            file_last_modified: data.file_last_modified,
         }
     }
 

@@ -115,8 +115,11 @@ pub struct Fulgur {
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
     _editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
     drag_ghost: Option<(usize, ui::tabs::tab_drag::DraggedTab)>, // Ghost tab shown at insertion point during tab drag
+    pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
+    pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
+    pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
     #[cfg(target_os = "macos")]
-    last_dock_menu_hash: u64,     // Hash of the last dock menu state to avoid unnecessary rebuilds
+    last_dock_menu_hash: u64, // Hash of the last dock menu state to avoid unnecessary rebuilds
 }
 
 impl Fulgur {
@@ -191,6 +194,9 @@ impl Fulgur {
                 editor_context_menu: None,
                 _editor_context_menu_subscription: None,
                 drag_ghost: None,
+                pending_tab_transfer: None,
+                pending_tab_removal: None,
+                pending_transfer_scroll: None,
                 #[cfg(target_os = "macos")]
                 last_dock_menu_hash: 0,
             }
@@ -426,6 +432,9 @@ impl Render for Fulgur {
         self.update_search_if_needed(window, cx);
         self.propagate_settings_to_tabs(window, cx);
         self.track_newly_rendered_tabs(cx);
+        self.handle_pending_transfer_scroll(window, cx);
+        self.handle_pending_tab_transfer(window, cx);
+        self.handle_pending_tab_removal(window, cx);
         self.handle_pending_jump_to_line(window, cx);
         if !self.jump_to_line_dialog_open {
             window.close_dialog(cx);
