@@ -26,22 +26,26 @@ use std::path::PathBuf;
 /// - Returns error if directory creation fails (permissions, disk full, etc.)
 pub fn config_dir() -> Result<PathBuf> {
     #[cfg(target_os = "windows")]
-    {
+    let path = {
         let app_data = std::env::var("APPDATA")?;
-        let mut path = PathBuf::from(app_data);
-        path.push("Fulgur");
-        fs::create_dir_all(&path)?;
-        Ok(path)
-    }
+        let mut p = PathBuf::from(app_data);
+        p.push("Fulgur");
+        p
+    };
 
     #[cfg(not(target_os = "windows"))]
-    {
+    let path = {
         let home = std::env::var("HOME")?;
-        let mut path = PathBuf::from(home);
-        path.push(".fulgur");
-        fs::create_dir_all(&path)?;
-        Ok(path)
-    }
+        let mut p = PathBuf::from(home);
+        p.push(".fulgur");
+        p
+    };
+
+    #[cfg(test)]
+    let path = path.join("test");
+
+    fs::create_dir_all(&path)?;
+    Ok(path)
 }
 
 /// Get a path to a subdirectory inside the Fulgur configuration directory and
@@ -101,8 +105,8 @@ mod tests {
 
         #[cfg(not(target_os = "windows"))]
         {
-            // On Unix, should end with .fulgur
-            assert!(dir.to_string_lossy().ends_with(".fulgur"));
+            // On Unix, test dir is ~/.fulgur/test
+            assert!(dir.to_string_lossy().ends_with(".fulgur/test"));
         }
     }
 
