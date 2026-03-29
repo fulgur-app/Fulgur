@@ -7,8 +7,15 @@ use std::path::PathBuf;
 
 use fulgur::fulgur::state_operations::{TabRestoreDecision, determine_tab_restore_strategy};
 
+/// Build an OS-agnostic temporary test path.
+///
+/// ### Parameters
+/// - `file_name`: The file name to append to the platform temp directory.
+///
+/// ### Returns
+/// - `PathBuf`: A path under `std::env::temp_dir()` suitable for cross-platform tests.
 fn test_path() -> PathBuf {
-    PathBuf::from("/tmp/test.txt")
+    std::env::temp_dir().join("test.txt")
 }
 
 fn test_content() -> String {
@@ -283,7 +290,7 @@ fn test_restore_file_second_newer() {
 fn test_restore_multiple_paths() {
     // Test with different path values to ensure path is preserved correctly
     let paths = vec![
-        PathBuf::from("/home/user/file.txt"),
+        PathBuf::from("home/user/file.txt"),
         PathBuf::from("C:\\Users\\user\\file.txt"),
         PathBuf::from("relative/path/file.txt"),
     ];

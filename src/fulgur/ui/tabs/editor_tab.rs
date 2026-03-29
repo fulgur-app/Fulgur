@@ -478,6 +478,8 @@ mod tests {
     use gpui::SharedString;
     #[cfg(feature = "gpui-test-support")]
     use gpui::{AppContext, Context, IntoElement, Render, TestAppContext, Window, div};
+    #[cfg(feature = "gpui-test-support")]
+    use std::path::PathBuf;
 
     #[cfg(feature = "gpui-test-support")]
     struct EmptyView;
@@ -487,6 +489,18 @@ mod tests {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div()
         }
+    }
+
+    /// Build an OS-agnostic temporary test path.
+    ///
+    /// ### Parameters
+    /// - `file_name`: The file name to append to the platform temp directory.
+    ///
+    /// ### Returns
+    /// - `PathBuf`: A path under `std::env::temp_dir()` suitable for cross-platform tests.
+    #[cfg(feature = "gpui-test-support")]
+    fn temp_test_path(file_name: &str) -> PathBuf {
+        std::env::temp_dir().join(file_name)
     }
 
     // ========== extract_line_number() tests ==========
@@ -775,7 +789,7 @@ mod tests {
     fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
         let settings = EditorSettings::new();
-        let path = std::path::PathBuf::from("/tmp/test_file.md");
+        let path = temp_test_path("test_file.md");
         let contents = "# title\nbody".to_string();
         let params = FromFileParams {
             id: 13,
@@ -843,7 +857,7 @@ mod tests {
         let settings = EditorSettings::new();
         let params = FromFileParams {
             id: 31,
-            path: std::path::PathBuf::from("/tmp/modified_state.md"),
+            path: temp_test_path("modified_state.md"),
             contents: "original".to_string(),
             encoding: "UTF-8".to_string(),
             is_modified: false,
@@ -881,14 +895,14 @@ mod tests {
 
         let clean = FromFileParams {
             id: 41,
-            path: std::path::PathBuf::from("/tmp/clean.md"),
+            path: temp_test_path("clean.md"),
             contents: "clean".to_string(),
             encoding: "UTF-8".to_string(),
             is_modified: false,
         };
         let dirty = FromFileParams {
             id: 42,
-            path: std::path::PathBuf::from("/tmp/dirty.md"),
+            path: temp_test_path("dirty.md"),
             contents: "dirty".to_string(),
             encoding: "UTF-8".to_string(),
             is_modified: true,
@@ -915,7 +929,7 @@ mod tests {
         let settings = EditorSettings::new();
         let params = FromFileParams {
             id: 51,
-            path: std::path::PathBuf::from("/tmp/suggested_name.md"),
+            path: temp_test_path("suggested_name.md"),
             contents: "content".to_string(),
             encoding: "UTF-8".to_string(),
             is_modified: true,

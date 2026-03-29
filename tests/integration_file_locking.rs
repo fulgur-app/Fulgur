@@ -11,6 +11,17 @@ use std::sync::Arc;
 use std::thread;
 use tempfile::TempDir;
 
+/// Build an OS-agnostic temporary path used by test-only tab state values.
+///
+/// ### Parameters
+/// - `name`: The file name to append to the platform temp directory.
+///
+/// ### Returns
+/// - `PathBuf`: A path under `std::env::temp_dir()` suitable for cross-platform tests.
+fn temp_test_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(name)
+}
+
 /// Test concurrent writes to settings file don't corrupt data
 ///
 /// Simulates multiple windows trying to save settings simultaneously.
@@ -169,8 +180,8 @@ fn test_state_concurrent_writes_large_data() {
                     for t in 0..5 {
                         tabs.push(TabState {
                             title: format!("Thread {} Window {} Tab {}", i, w, t),
-                            file_path: Some(PathBuf::from(format!(
-                                "/tmp/thread_{}_file_{}.txt",
+                            file_path: Some(temp_test_path(&format!(
+                                "thread_{}_file_{}.txt",
                                 i, t
                             ))),
                             content: Some("x".repeat(1000)), // 1KB of content per tab

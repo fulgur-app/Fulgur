@@ -777,6 +777,18 @@ mod tests {
         }
     }
 
+    /// Build an OS-agnostic temporary test path.
+    ///
+    /// ### Parameters
+    /// - `file_name`: The file name to append to the platform temp directory.
+    ///
+    /// ### Returns
+    /// - `PathBuf`: A path under `std::env::temp_dir()` suitable for cross-platform tests.
+    #[cfg(feature = "gpui-test-support")]
+    fn temp_test_path(file_name: &str) -> PathBuf {
+        std::env::temp_dir().join(file_name)
+    }
+
     #[cfg(feature = "gpui-test-support")]
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
         cx.update(|cx| {
@@ -814,7 +826,7 @@ mod tests {
     #[gpui::test]
     fn test_find_tab_by_path_returns_index_for_existing_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        let path = PathBuf::from("/tmp/fulgur_find_tab_test.txt");
+        let path = temp_test_path("fulgur_find_tab_test.txt");
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
@@ -991,7 +1003,7 @@ mod tests {
     #[gpui::test]
     fn test_do_open_file_focuses_existing_tab_when_already_open(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        let path = PathBuf::from("/tmp/fulgur_already_open_test.txt");
+        let path = temp_test_path("fulgur_already_open_test.txt");
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
