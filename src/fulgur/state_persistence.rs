@@ -248,11 +248,65 @@ pub fn is_file_newer(file_time: &str, saved_time: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{get_file_modified_time, is_file_newer};
+    use super::{
+        SerializedWindowBounds, TabState, WindowState, WindowsState, get_file_modified_time,
+        is_file_newer,
+    };
     use std::fs;
     use std::io::Write;
-    use std::path::PathBuf;
     use std::time::Duration;
+    use tempfile::TempDir;
+
+    /// Assert the geometry values of a GPUI window bounds rectangle.
+    ///
+    /// ### Parameters
+    /// - `bounds`: The GPUI window bounds to inspect.
+    /// - `expected_x`: Expected x origin in pixels.
+    /// - `expected_y`: Expected y origin in pixels.
+    /// - `expected_width`: Expected width in pixels.
+    /// - `expected_height`: Expected height in pixels.
+    fn assert_gpui_bounds_geometry(
+        bounds: &gpui::WindowBounds,
+        expected_x: f32,
+        expected_y: f32,
+        expected_width: f32,
+        expected_height: f32,
+    ) {
+        use gpui::WindowBounds;
+        let rect = match bounds {
+            WindowBounds::Windowed(rect)
+            | WindowBounds::Maximized(rect)
+            | WindowBounds::Fullscreen(rect) => rect,
+        };
+        assert_eq!(f32::from(rect.origin.x), expected_x);
+        assert_eq!(f32::from(rect.origin.y), expected_y);
+        assert_eq!(f32::from(rect.size.width), expected_width);
+        assert_eq!(f32::from(rect.size.height), expected_height);
+    }
+
+    /// Build a simple file-backed tab state for persistence tests.
+    ///
+    /// ### Parameters
+    /// - `title`: The tab title.
+    /// - `file_name`: The file name used to build a path under the temp directory.
+    /// - `content`: Optional in-memory content to persist.
+    /// - `last_saved`: Optional ISO 8601 last-saved timestamp.
+    ///
+    /// ### Returns
+    /// - `TabState`: A tab state ready to be serialized.
+    fn file_tab_state(
+        title: &str,
+        file_name: &str,
+        content: Option<&str>,
+        last_saved: Option<&str>,
+    ) -> TabState {
+        TabState {
+            title: title.to_string(),
+            file_path: Some(std::env::temp_dir().join(file_name)),
+            content: content.map(std::string::ToString::to_string),
+            last_saved: last_saved.map(std::string::ToString::to_string),
+        }
+    }
 
     #[test]
     fn test_get_file_modified_time_existing_file() {
@@ -273,7 +327,8 @@ mod tests {
 
     #[test]
     fn test_get_file_modified_time_nonexistent_file() {
-        let file_path = PathBuf::from("/nonexistent/path/file.txt");
+        let file_path = std::env::temp_dir().join("fulgur_nonexistent_modified_time_test.txt");
+        fs::remove_file(&file_path).ok();
         let result = get_file_modified_time(&file_path);
         assert!(result.is_none());
     }
@@ -378,5 +433,209 @@ mod tests {
         assert!(!is_file_newer(&time1, &time2));
         fs::remove_file(&file1_path).ok();
         fs::remove_file(&file2_path).ok();
+    }
+
+    #[test]
+    fn test_serialized_window_bounds_from_gpui_windowed_preserves_geometry_and_display() {
+        use gpui::{Bounds, WindowBounds, point, px, size};
+        let gpui_bounds = WindowBounds::Windowed(Bounds {
+            origin: point(px(120.0), px(80.0)),
+            size: size(px(1440.0), px(900.0)),
+        });
+        let serialized = SerializedWindowBounds::from_gpui_bounds(gpui_bounds, Some(7));
+        assert_eq!(serialized.state, "Windowed");
+        assert_eq!(serialized.x, 120.0);
+        assert_eq!(serialized.y, 80.0);
+        assert_eq!(serialized.width, 1440.0);
+        assert_eq!(serialized.height, 900.0);
+        assert_eq!(serialized.display_id, Some(7));
+    }
+
+    #[test]
+    fn test_serialized_window_bounds_from_gpui_maximized_preserves_geometry_and_display() {
+        use gpui::{Bounds, WindowBounds, point, px, size};
+        let gpui_bounds = WindowBounds::Maximized(Bounds {
+            origin: point(px(0.0), px(0.0)),
+            size: size(px(1920.0), px(1080.0)),
+        });
+        let serialized = SerializedWindowBounds::from_gpui_bounds(gpui_bounds, Some(2));
+        assert_eq!(serialized.state, "Maximized");
+        assert_eq!(serialized.x, 0.0);
+        assert_eq!(serialized.y, 0.0);
+        assert_eq!(serialized.width, 1920.0);
+        assert_eq!(serialized.height, 1080.0);
+        assert_eq!(serialized.display_id, Some(2));
+    }
+
+    #[test]
+    fn test_serialized_window_bounds_from_gpui_fullscreen_preserves_geometry_and_display() {
+        use gpui::{Bounds, WindowBounds, point, px, size};
+        let gpui_bounds = WindowBounds::Fullscreen(Bounds {
+            origin: point(px(10.0), px(20.0)),
+            size: size(px(2560.0), px(1440.0)),
+        });
+        let serialized = SerializedWindowBounds::from_gpui_bounds(gpui_bounds, None);
+        assert_eq!(serialized.state, "Fullscreen");
+        assert_eq!(serialized.x, 10.0);
+        assert_eq!(serialized.y, 20.0);
+        assert_eq!(serialized.width, 2560.0);
+        assert_eq!(serialized.height, 1440.0);
+        assert_eq!(serialized.display_id, None);
+    }
+
+    #[test]
+    fn test_serialized_window_bounds_to_gpui_bounds_preserves_geometry_for_each_state() {
+        use gpui::WindowBounds;
+        let cases = [
+            (
+                SerializedWindowBounds {
+                    state: "Windowed".to_string(),
+                    x: 11.0,
+                    y: 22.0,
+                    width: 1280.0,
+                    height: 720.0,
+                    display_id: Some(1),
+                },
+                "Windowed",
+            ),
+            (
+                SerializedWindowBounds {
+                    state: "Maximized".to_string(),
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                    display_id: Some(2),
+                },
+                "Maximized",
+            ),
+            (
+                SerializedWindowBounds {
+                    state: "Fullscreen".to_string(),
+                    x: 0.0,
+                    y: 0.0,
+                    width: 2560.0,
+                    height: 1440.0,
+                    display_id: None,
+                },
+                "Fullscreen",
+            ),
+        ];
+        for (serialized, expected_state) in cases {
+            let gpui_bounds = serialized.to_gpui_bounds();
+            match (expected_state, &gpui_bounds) {
+                ("Windowed", WindowBounds::Windowed(_))
+                | ("Maximized", WindowBounds::Maximized(_))
+                | ("Fullscreen", WindowBounds::Fullscreen(_)) => {}
+                _ => panic!(
+                    "unexpected WindowBounds variant for state {}",
+                    expected_state
+                ),
+            }
+            assert_gpui_bounds_geometry(
+                &gpui_bounds,
+                serialized.x,
+                serialized.y,
+                serialized.width,
+                serialized.height,
+            );
+        }
+    }
+
+    #[test]
+    fn test_serialized_window_bounds_to_gpui_bounds_unknown_state_defaults_to_windowed() {
+        use gpui::WindowBounds;
+        let serialized = SerializedWindowBounds {
+            state: "UnknownState".to_string(),
+            x: 40.0,
+            y: 50.0,
+            width: 900.0,
+            height: 700.0,
+            display_id: None,
+        };
+        let gpui_bounds = serialized.to_gpui_bounds();
+        assert!(
+            matches!(gpui_bounds, WindowBounds::Windowed(_)),
+            "unknown window state should default to Windowed bounds"
+        );
+        assert_gpui_bounds_geometry(
+            &gpui_bounds,
+            serialized.x,
+            serialized.y,
+            serialized.width,
+            serialized.height,
+        );
+    }
+
+    #[test]
+    fn test_windows_state_save_load_roundtrip_multi_window_with_mixed_tabs_and_bounds() {
+        let temp_dir = TempDir::new().expect("failed to create temporary directory");
+        let state_path = temp_dir.path().join("state.json");
+        let original = WindowsState {
+            windows: vec![
+                WindowState {
+                    tabs: vec![
+                        file_tab_state("main.rs", "fulgur_state_main.rs", None, None),
+                        file_tab_state(
+                            "notes.md",
+                            "fulgur_state_notes.md",
+                            Some("# draft"),
+                            Some("2026-03-26T10:00:00Z"),
+                        ),
+                    ],
+                    active_tab_index: Some(1),
+                    window_bounds: SerializedWindowBounds {
+                        state: "Windowed".to_string(),
+                        x: 120.0,
+                        y: 90.0,
+                        width: 1300.0,
+                        height: 900.0,
+                        display_id: Some(1),
+                    },
+                },
+                WindowState {
+                    tabs: vec![TabState {
+                        title: "Untitled".to_string(),
+                        file_path: None,
+                        content: Some("scratch content".to_string()),
+                        last_saved: None,
+                    }],
+                    active_tab_index: Some(0),
+                    window_bounds: SerializedWindowBounds {
+                        state: "Maximized".to_string(),
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1920.0,
+                        height: 1080.0,
+                        display_id: Some(2),
+                    },
+                },
+            ],
+        };
+        original
+            .save_to_path(&state_path)
+            .expect("failed to save windows state");
+        let loaded = WindowsState::load_from_path(&state_path)
+            .expect("failed to load windows state after roundtrip");
+        assert_eq!(loaded.windows.len(), 2);
+        assert_eq!(loaded.windows[0].tabs.len(), 2);
+        assert_eq!(loaded.windows[1].tabs.len(), 1);
+        assert_eq!(loaded.windows[0].active_tab_index, Some(1));
+        assert_eq!(loaded.windows[1].active_tab_index, Some(0));
+        assert_eq!(loaded.windows[0].window_bounds.state, "Windowed");
+        assert_eq!(loaded.windows[1].window_bounds.state, "Maximized");
+        assert_eq!(loaded.windows[0].window_bounds.display_id, Some(1));
+        assert_eq!(loaded.windows[1].window_bounds.display_id, Some(2));
+        assert_eq!(loaded.windows[0].tabs[0].title, "main.rs");
+        assert_eq!(loaded.windows[0].tabs[1].title, "notes.md");
+        assert_eq!(loaded.windows[1].tabs[0].title, "Untitled");
+        assert_eq!(
+            loaded.windows[0].tabs[1].content,
+            Some("# draft".to_string())
+        );
+        assert_eq!(
+            loaded.windows[1].tabs[0].content,
+            Some("scratch content".to_string())
+        );
     }
 }
