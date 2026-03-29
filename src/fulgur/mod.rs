@@ -115,8 +115,11 @@ pub struct Fulgur {
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
     _editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
     drag_ghost: Option<(usize, ui::tabs::tab_drag::DraggedTab)>, // Ghost tab shown at insertion point during tab drag
+    pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
+    pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
+    pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
     #[cfg(target_os = "macos")]
-    last_dock_menu_hash: u64,     // Hash of the last dock menu state to avoid unnecessary rebuilds
+    last_dock_menu_hash: u64, // Hash of the last dock menu state to avoid unnecessary rebuilds
 }
 
 impl Fulgur {
@@ -191,6 +194,9 @@ impl Fulgur {
                 editor_context_menu: None,
                 _editor_context_menu_subscription: None,
                 drag_ghost: None,
+                pending_tab_transfer: None,
+                pending_tab_removal: None,
+                pending_transfer_scroll: None,
                 #[cfg(target_os = "macos")]
                 last_dock_menu_hash: 0,
             }
@@ -217,7 +223,8 @@ impl Fulgur {
                 this.tabs.push(initial_tab);
                 this.active_tab_index = Some(0);
                 this.next_tab_id = 1;
-            } else {
+            } else if window_index < usize::MAX - 1 {
+                // usize::MAX - 1 means new window receiving a tab transfer: skip initial tab
                 this.load_state(window, cx, window_index);
                 this.pending_tab_scroll = this.active_tab_index;
             }
@@ -426,6 +433,9 @@ impl Render for Fulgur {
         self.update_search_if_needed(window, cx);
         self.propagate_settings_to_tabs(window, cx);
         self.track_newly_rendered_tabs(cx);
+        self.handle_pending_transfer_scroll(window, cx);
+        self.handle_pending_tab_transfer(window, cx);
+        self.handle_pending_tab_removal(window, cx);
         self.handle_pending_jump_to_line(window, cx);
         if !self.jump_to_line_dialog_open {
             window.close_dialog(cx);
@@ -629,14 +639,22 @@ impl Fulgur {
         v_flex().w_full().flex_1().into_any_element()
     }
 
-    /// Set the title of the title bar
+    /// Set the title of the title bar.
+    ///
+    /// Looks up the current window name from the global `WindowManager` and passes it to
+    /// `CustomTitleBar::set_title` so the suffix is automatically included when multiple
+    /// windows are open.
     ///
     /// ### Arguments
     /// - `title`: The title to set (if None, the default title is used)
     /// - `cx`: The application context
     fn set_title(&self, title: Option<String>, cx: &mut Context<Self>) {
+        let window_name = cx
+            .global::<window_manager::WindowManager>()
+            .get_window_name(self.window_id)
+            .map(|s| s.to_string());
         self.title_bar.update(cx, |this, _cx| {
-            this.set_title(title);
+            this.set_title(title, window_name.as_deref());
         });
     }
 

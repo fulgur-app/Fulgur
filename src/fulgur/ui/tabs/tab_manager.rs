@@ -6,7 +6,7 @@ use crate::fulgur::{
     ui::{
         components_utils::UNTITLED,
         tabs::{
-            editor_tab::{EditorTab, FromDuplicateParams},
+            editor_tab::{EditorTab, FromDuplicateParams, TabTransferData},
             markdown_preview_tab::MarkdownPreviewTab,
             settings_tab::SettingsTab,
         },
@@ -552,6 +552,118 @@ impl Fulgur {
     /// - `tab_id`: The ID of the tab to check
     ///
     /// ### Returns
+    /// Extract all transferable state from an editor tab identified by `tab_id`.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: The unique ID of the tab to snapshot
+    /// - `cx`: The application context (read-only)
+    ///
+    /// ### Returns
+    /// - `Some(TabTransferData)`: Snapshot of all transferable tab state
+    /// - `None`: If `tab_id` does not refer to an existing editor tab
+    pub fn extract_tab_transfer_data(&self, tab_id: usize, cx: &App) -> Option<TabTransferData> {
+        let tab = self.tabs.iter().find(|t| t.id() == tab_id)?;
+        let editor = tab.as_editor()?;
+        let content_state = editor.content.read(cx);
+        Some(TabTransferData {
+            title: editor.title.clone(),
+            content: content_state.text().to_string(),
+            file_path: editor.file_path.clone(),
+            modified: editor.modified,
+            original_content: editor.original_content.clone(),
+            encoding: editor.encoding.clone(),
+            language: editor.language,
+            show_markdown_toolbar: editor.show_markdown_toolbar,
+            show_markdown_preview: editor.show_markdown_preview,
+            file_size_bytes: editor.file_size_bytes,
+            file_last_modified: editor.file_last_modified,
+            cursor_position: content_state.cursor_position(),
+        })
+    }
+
+    /// Create a tab in this window from a deferred transfer payload.
+    ///
+    /// Called from the render loop when `pending_tab_transfer` is set. Creates
+    /// the `EditorTab`, starts file-watching if applicable, scrolls to and
+    /// focuses the new tab, then persists state.
+    ///
+    /// ### Arguments
+    /// - `window`: The target window context
+    /// - `cx`: The application context
+    pub fn handle_pending_tab_transfer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(data) = self.pending_tab_transfer.take() {
+            let id = self.next_tab_id;
+            self.next_tab_id += 1;
+            let file_path = data.file_path.clone();
+            let cursor_position = data.cursor_position;
+            let tab =
+                EditorTab::from_transfer(id, data, window, cx, &self.settings.editor_settings);
+            self.tabs.push(Tab::Editor(tab));
+            let new_index = self.tabs.len() - 1;
+            self.active_tab_index = Some(new_index);
+            self.pending_tab_scroll = Some(new_index);
+            self.pending_transfer_scroll = Some(cursor_position);
+            if let Some(path) = file_path {
+                self.watch_file(&path);
+            }
+            self.focus_active_tab(window, cx);
+            if let Err(e) = self.save_state(cx, window) {
+                log::error!(
+                    "Failed to save state after receiving tab from another window: {}",
+                    e
+                );
+            }
+            cx.notify();
+        }
+    }
+
+    /// Scroll the active transferred tab to the saved cursor position.
+    ///
+    /// Called from the render loop one frame after `handle_pending_tab_transfer`,
+    /// ensuring the `InputState` has gone through layout so `scroll_to` can
+    /// compute pixel offsets. The field is set by `handle_pending_tab_transfer`
+    /// and consumed here on the following render cycle.
+    ///
+    /// ### Arguments
+    /// - `window`: The target window context
+    /// - `cx`: The application context
+    pub fn handle_pending_transfer_scroll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(position) = self.pending_transfer_scroll.take()
+            && let Some(index) = self.active_tab_index
+            && let Some(Tab::Editor(editor_tab)) = self.tabs.get(index)
+        {
+            editor_tab.content.clone().update(cx, |state, cx| {
+                state.set_cursor_position(position, window, cx);
+            });
+        }
+    }
+
+    /// Remove a tab that was sent to another window.
+    ///
+    /// Called from the render loop when `pending_tab_removal` is set. Uses
+    /// `remove_tab_by_id` so focus management, file-unwatching, and linked
+    /// markdown-preview cleanup all happen correctly. If the removed tab was
+    /// the last one in this window, the window itself is closed.
+    ///
+    /// ### Arguments
+    /// - `window`: The source window context
+    /// - `cx`: The application context
+    pub fn handle_pending_tab_removal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(tab_id) = self.pending_tab_removal.take() {
+            self.remove_tab_by_id(tab_id, window, cx);
+            if self.tabs.is_empty() {
+                window.remove_window();
+                return;
+            }
+            if let Err(e) = self.save_state(cx, window) {
+                log::error!(
+                    "Failed to save state after sending tab to another window: {}",
+                    e
+                );
+            }
+        }
+    }
+
     /// - `True`: If the tab has unsaved changes, `False` otherwise
     fn check_tab_modified(&self, tab_id: usize) -> bool {
         if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id)
@@ -900,12 +1012,14 @@ mod tests {
     use super::Fulgur;
     use crate::fulgur::{
         languages::supported_languages::SupportedLanguage, settings::Settings,
-        shared_state::SharedAppState, tab::Tab, window_manager::WindowManager,
+        shared_state::SharedAppState, tab::Tab, ui::tabs::editor_tab::TabTransferData,
+        window_manager::WindowManager,
     };
     use gpui::{
-        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
-        Window, div,
+        AppContext, Context, Entity, IntoElement, Render, SharedString, TestAppContext,
+        VisualTestContext, Window, div,
     };
+    use gpui_component::input::Position;
     use parking_lot::Mutex;
     use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
@@ -1614,6 +1728,268 @@ mod tests {
                 };
                 this.handle_tab_drop(&dragged, 0, window, cx);
                 assert_eq!(this.tabs[0].id(), id_2, "dropped tab should land at slot 0");
+            });
+        });
+    }
+
+    // ========== send-to: helpers ==========
+
+    fn make_transfer_data() -> TabTransferData {
+        TabTransferData {
+            title: SharedString::from("sent.rs"),
+            content: "let x = 42;".to_string(),
+            file_path: None,
+            modified: false,
+            original_content: "let x = 42;".to_string(),
+            encoding: "UTF-8".to_string(),
+            language: SupportedLanguage::Rust,
+            show_markdown_toolbar: false,
+            show_markdown_preview: false,
+            file_size_bytes: None,
+            file_last_modified: None,
+            cursor_position: Position::default(),
+        }
+    }
+
+    // ========== extract_tab_transfer_data() tests ==========
+
+    #[gpui::test]
+    fn test_extract_transfer_data_returns_none_for_missing_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|_window, cx| {
+            let result = fulgur.update(cx, |this, cx| this.extract_tab_transfer_data(9999, cx));
+            assert!(result.is_none(), "unknown tab id must return None");
+        });
+    }
+
+    #[gpui::test]
+    fn test_extract_transfer_data_captures_content_and_metadata(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|_window, cx| {
+            // The initial tab created by setup_fulgur has id=0 and empty content
+            let data = fulgur
+                .update(cx, |this, cx| this.extract_tab_transfer_data(0, cx))
+                .expect("should extract data from the initial tab");
+            assert_eq!(data.content, "");
+            assert!(data.file_path.is_none());
+            assert!(!data.modified);
+            assert_eq!(data.encoding, "UTF-8");
+            assert_eq!(data.language, SupportedLanguage::Plain);
+        });
+    }
+
+    // ========== handle_pending_tab_transfer() tests ==========
+
+    #[gpui::test]
+    fn test_handle_pending_tab_transfer_no_op_when_none(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let count_before = this.tabs.len();
+                this.handle_pending_tab_transfer(window, cx);
+                assert_eq!(
+                    this.tabs.len(),
+                    count_before,
+                    "no tab should be added when pending is None"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_tab_transfer_adds_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let count_before = this.tabs.len();
+                this.pending_tab_transfer = Some(make_transfer_data());
+                this.handle_pending_tab_transfer(window, cx);
+                assert_eq!(this.tabs.len(), count_before + 1);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_tab_transfer_sets_as_active(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.pending_tab_transfer = Some(make_transfer_data());
+                this.handle_pending_tab_transfer(window, cx);
+                assert_eq!(
+                    this.active_tab_index,
+                    Some(this.tabs.len() - 1),
+                    "transferred tab must become the active tab"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_tab_transfer_consumes_pending_field(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.pending_tab_transfer = Some(make_transfer_data());
+                this.handle_pending_tab_transfer(window, cx);
+                assert!(
+                    this.pending_tab_transfer.is_none(),
+                    "pending field must be consumed after handling"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_tab_transfer_sets_deferred_scroll(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.pending_tab_transfer = Some(make_transfer_data());
+                this.handle_pending_tab_transfer(window, cx);
+                assert!(
+                    this.pending_transfer_scroll.is_some(),
+                    "cursor scroll must be deferred to the next frame"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_tab_transfer_preserves_content(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.pending_tab_transfer = Some(make_transfer_data());
+                this.handle_pending_tab_transfer(window, cx);
+                let last = this.tabs.len() - 1;
+                let editor = this.tabs[last]
+                    .as_editor()
+                    .expect("transferred tab must be an editor tab");
+                assert_eq!(editor.content.read(cx).text().to_string(), "let x = 42;");
+                assert_eq!(editor.language, SupportedLanguage::Rust);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_tab_transfer_increments_tab_id(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let id_before = this.next_tab_id;
+                this.pending_tab_transfer = Some(make_transfer_data());
+                this.handle_pending_tab_transfer(window, cx);
+                assert_eq!(
+                    this.next_tab_id,
+                    id_before + 1,
+                    "next_tab_id must increment after transfer"
+                );
+            });
+        });
+    }
+
+    // ========== handle_pending_tab_removal() tests ==========
+
+    #[gpui::test]
+    fn test_handle_pending_tab_removal_no_op_when_none(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let count_before = this.tabs.len();
+                this.handle_pending_tab_removal(window, cx);
+                assert_eq!(
+                    this.tabs.len(),
+                    count_before,
+                    "no tab should be removed when pending is None"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_tab_removal_removes_correct_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                // Add a second tab so closing the first leaves one remaining
+                this.new_tab(window, cx);
+                let first_id = this.tabs[0].id();
+                this.pending_tab_removal = Some(first_id);
+                this.handle_pending_tab_removal(window, cx);
+                assert!(
+                    this.tabs.iter().all(|t| t.id() != first_id),
+                    "removed tab must not appear in the tab list"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_tab_removal_consumes_pending_field(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                let first_id = this.tabs[0].id();
+                this.pending_tab_removal = Some(first_id);
+                this.handle_pending_tab_removal(window, cx);
+                assert!(
+                    this.pending_tab_removal.is_none(),
+                    "pending field must be consumed after handling"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_tab_removal_closes_window_when_last_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                // Exactly one tab exists by default; mark it for removal
+                assert_eq!(this.tabs.len(), 1, "setup should start with one tab");
+                let only_tab_id = this.tabs[0].id();
+                this.pending_tab_removal = Some(only_tab_id);
+                // Should not panic and should empty the tab list before closing the window
+                this.handle_pending_tab_removal(window, cx);
+                assert!(
+                    this.tabs.is_empty(),
+                    "all tabs must be gone when the only tab is sent away"
+                );
+                assert!(
+                    this.pending_tab_removal.is_none(),
+                    "pending field must be consumed"
+                );
+            });
+        });
+    }
+
+    // ========== handle_pending_transfer_scroll() tests ==========
+
+    #[gpui::test]
+    fn test_handle_pending_transfer_scroll_no_op_when_none(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                // Must not panic and pending must remain None
+                this.handle_pending_transfer_scroll(window, cx);
+                assert!(this.pending_transfer_scroll.is_none());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_pending_transfer_scroll_consumes_position(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.pending_transfer_scroll = Some(Position::default());
+                this.handle_pending_transfer_scroll(window, cx);
+                assert!(
+                    this.pending_transfer_scroll.is_none(),
+                    "position must be consumed after scrolling"
+                );
             });
         });
     }

@@ -38,16 +38,20 @@ impl CustomTitleBar {
         self.app_menu_bar.update(cx, |bar, cx| bar.reload(cx));
     }
 
-    /// Set the title of the title bar
+    /// Set the title of the title bar.
+    ///
+    /// When `window_name` is `Some`, appends the name in parentheses to disambiguate
+    /// multiple open windows, e.g. `"foo.rs - Fulgur (A)"` or `"Fulgur (A)"`.
     ///
     /// ### Arguments
-    /// - `title`: The optionaltitle to set (if None, the default title is used)
-    pub fn set_title(&mut self, title: Option<String>) {
-        if let Some(title) = title {
-            self.title = format!("{} - Fulgur", title);
-        } else {
-            self.title = DEFAULT_TITLE.to_string();
-        }
+    /// - `title`: The file or tab title to display; `None` shows only the app name
+    /// - `window_name`: The window identifier to append; `None` omits it
+    pub fn set_title(&mut self, title: Option<String>, window_name: Option<&str>) {
+        let suffix = window_name.map(|n| format!(" ({})", n)).unwrap_or_default();
+        self.title = match title {
+            Some(t) => format!("{} - Fulgur{}", t, suffix),
+            None => format!("{}{}", DEFAULT_TITLE, suffix),
+        };
     }
 }
 

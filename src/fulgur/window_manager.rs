@@ -1,4 +1,4 @@
-use crate::fulgur::{Fulgur, state_persistence};
+use crate::fulgur::{Fulgur, state_persistence, ui::tabs::editor_tab::TabTransferData};
 use gpui::*;
 use gpui_component::WindowExt;
 use gpui_component::notification::NotificationType;
@@ -13,6 +13,32 @@ pub struct WindowManager {
     windows: HashMap<WindowId, WeakEntity<Fulgur>>,
     /// The last focused window for file opening
     last_focused: Option<WindowId>,
+    /// Assigned display names (A, B, ..., Z, AA, ...) per window, allocated on registration
+    window_names: HashMap<WindowId, String>,
+    /// Monotonically increasing counter used to assign unique names; never resets or reuses
+    next_name_index: usize,
+}
+
+/// Convert a zero-based index to an alphabetic window name (A, B, ..., Z, AA, AB, ...).
+///
+/// This follows the same scheme as spreadsheet column labels:
+/// 0 → "A", 25 → "Z", 26 → "AA", 27 → "AB", …
+///
+/// ### Arguments
+/// - `index`: The zero-based index to convert
+///
+/// ### Returns
+/// - `String`: The alphabetic name corresponding to the index
+fn index_to_name(mut index: usize) -> String {
+    let mut name = String::new();
+    loop {
+        name.insert(0, (b'A' + (index % 26) as u8) as char);
+        if index < 26 {
+            break;
+        }
+        index = index / 26 - 1;
+    }
+    name
 }
 
 impl Global for WindowManager {}
@@ -26,6 +52,8 @@ impl WindowManager {
         Self {
             windows: HashMap::new(),
             last_focused: None,
+            window_names: HashMap::new(),
+            next_name_index: 0,
         }
     }
 
@@ -38,6 +66,9 @@ impl WindowManager {
         log::debug!("Registering window {:?}", window_id);
         self.windows.insert(window_id, entity);
         self.last_focused = Some(window_id);
+        let name = index_to_name(self.next_name_index);
+        self.next_name_index += 1;
+        self.window_names.insert(window_id, name);
     }
 
     /// Unregister a window when it closes
@@ -47,6 +78,7 @@ impl WindowManager {
     pub fn unregister(&mut self, window_id: WindowId) {
         log::debug!("Unregistering window {:?}", window_id);
         self.windows.remove(&window_id);
+        self.window_names.remove(&window_id);
 
         // Update last_focused if this was the focused window
         if self.last_focused == Some(window_id) {
@@ -79,6 +111,21 @@ impl WindowManager {
     /// - `usize`: The number of open windows
     pub fn window_count(&self) -> usize {
         self.windows.len()
+    }
+
+    /// Return the display name for a window, but only when multiple windows are open.
+    ///
+    /// ### Arguments
+    /// - `window_id`: The ID of the window
+    ///
+    /// ### Returns
+    /// - `Some(&str)`: The name (e.g. "A", "B", "AA") when more than one window is open
+    /// - `None`: When only one window is open or the ID is unknown
+    pub fn get_window_name(&self, window_id: WindowId) -> Option<&str> {
+        if self.windows.len() <= 1 {
+            return None;
+        }
+        self.window_names.get(&window_id).map(|s| s.as_str())
     }
 
     /// Get all window entities
@@ -225,6 +272,12 @@ impl Fulgur {
             cx.update_global::<WindowManager, _>(|manager, _| {
                 manager.unregister(self.window_id);
             });
+            // Notify remaining windows so they update their titles (remove or reassign suffix)
+            for weak in cx.global::<WindowManager>().get_all_windows() {
+                if let Some(entity) = weak.upgrade() {
+                    entity.update(cx, |_, cx| cx.notify());
+                }
+            }
             true
         }
     }
@@ -250,11 +303,69 @@ impl Fulgur {
                     cx.update_global::<WindowManager, _>(|manager, _| {
                         manager.register(window_id, view.downgrade());
                     });
+                    // Notify all windows so they update their titles to include the window name
+                    for weak in cx.global::<WindowManager>().get_all_windows() {
+                        if let Some(entity) = weak.upgrade() {
+                            entity.update(cx, |_, cx| cx.notify());
+                        }
+                    }
                     let view_clone = view.clone();
                     window.on_window_should_close(cx, move |window, cx| {
                         view_clone.update(cx, |fulgur, cx| {
                             fulgur.on_window_close_requested(window, cx)
                         })
+                    });
+                    view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
+                    cx.new(|cx| gpui_component::Root::new(view, window, cx))
+                })?;
+                window.update(cx, |_, window, _| {
+                    window.activate_window();
+                })?;
+                Ok::<_, anyhow::Error>(())
+            })
+            .detach();
+    }
+
+    /// Open a new Fulgur window and transfer a tab into it on the first render.
+    ///
+    /// Behaves like `open_new_window` but sets `pending_tab_transfer` on the new
+    /// window entity before the first render cycle, so the tab lands in the new
+    /// window as if it had been sent via the normal cross-window transfer path.
+    ///
+    /// ### Arguments
+    /// - `data` - The serialized tab state to transfer
+    /// - `cx` - The context for the application
+    pub fn open_new_window_with_tab(&self, data: TabTransferData, cx: &mut Context<Self>) {
+        let async_cx = cx.to_async();
+        async_cx
+            .spawn(async move |cx| {
+                let window_options = WindowOptions {
+                    titlebar: Some(gpui_component::TitleBar::title_bar_options()),
+                    #[cfg(target_os = "linux")]
+                    window_decorations: Some(gpui::WindowDecorations::Client),
+                    ..Default::default()
+                };
+                let window = cx.open_window(window_options, move |window, cx| {
+                    window.set_window_title("Fulgur");
+                    let window_id = window.window_handle().window_id();
+                    let view = Fulgur::new(window, cx, window_id, usize::MAX - 1);
+                    cx.update_global::<WindowManager, _>(|manager, _| {
+                        manager.register(window_id, view.downgrade());
+                    });
+                    for weak in cx.global::<WindowManager>().get_all_windows() {
+                        if let Some(entity) = weak.upgrade() {
+                            entity.update(cx, |_, cx| cx.notify());
+                        }
+                    }
+                    let view_clone = view.clone();
+                    window.on_window_should_close(cx, move |window, cx| {
+                        view_clone.update(cx, |fulgur, cx| {
+                            fulgur.on_window_close_requested(window, cx)
+                        })
+                    });
+                    view.update(cx, |fulgur, cx| {
+                        fulgur.pending_tab_transfer = Some(data);
+                        cx.notify();
                     });
                     view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
                     cx.new(|cx| gpui_component::Root::new(view, window, cx))

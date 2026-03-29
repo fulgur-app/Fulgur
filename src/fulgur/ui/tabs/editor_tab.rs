@@ -30,6 +30,22 @@ pub struct EditorTab {
     pub file_last_modified: Option<SystemTime>,
 }
 
+/// All state required to transfer an editor tab between windows
+pub struct TabTransferData {
+    pub title: SharedString,
+    pub content: String,
+    pub file_path: Option<std::path::PathBuf>,
+    pub modified: bool,
+    pub original_content: String,
+    pub encoding: String,
+    pub language: SupportedLanguage,
+    pub show_markdown_toolbar: bool,
+    pub show_markdown_preview: bool,
+    pub file_size_bytes: Option<u64>,
+    pub file_last_modified: Option<SystemTime>,
+    pub cursor_position: Position,
+}
+
 /// Parameters for creating an editor tab as a duplicate of another
 pub struct FromDuplicateParams {
     pub id: usize,
@@ -270,6 +286,57 @@ impl EditorTab {
         }
     }
 
+    /// Recreate a tab in a new window from transferred state.
+    ///
+    /// Preserves text content, file path, unsaved-change state, language, encoding,
+    /// markdown panel visibility, and cursor position. Called by the target window
+    /// when processing a deferred `pending_tab_transfer`.
+    ///
+    /// ### Arguments
+    /// - `id`: The new tab ID, allocated by the receiving window
+    /// - `data`: All state captured from the source tab
+    /// - `window`: The target window context
+    /// - `cx`: The application context
+    /// - `settings`: The receiving window's editor settings
+    ///
+    /// ### Returns
+    /// - `EditorTab`: The newly created tab, ready to be pushed onto the tab list
+    pub fn from_transfer(
+        id: usize,
+        data: TabTransferData,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) -> Self {
+        let cursor_position = data.cursor_position;
+        let content = cx.new(|cx| {
+            make_input_state(
+                window,
+                cx,
+                language_registry_name(&data.language),
+                Some(data.content),
+                settings,
+            )
+        });
+        content.update(cx, |state, cx| {
+            state.set_cursor_position(cursor_position, window, cx);
+        });
+        Self {
+            id,
+            title: data.title,
+            content,
+            file_path: data.file_path,
+            modified: data.modified,
+            original_content: data.original_content,
+            encoding: data.encoding,
+            language: data.language,
+            show_markdown_toolbar: data.show_markdown_toolbar,
+            show_markdown_preview: data.show_markdown_preview,
+            file_size_bytes: data.file_size_bytes,
+            file_last_modified: data.file_last_modified,
+        }
+    }
+
     /// Update cached metadata used by tab tooltip rendering.
     ///
     /// ### Arguments
@@ -468,7 +535,7 @@ fn string_to_u32(string: &str) -> u32 {
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "gpui-test-support")]
-    use super::{EditorTab, FromDuplicateParams, FromFileParams};
+    use super::{EditorTab, FromDuplicateParams, FromFileParams, TabTransferData};
     use super::{extract_line_number, string_to_u32};
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::languages::supported_languages::SupportedLanguage;
@@ -478,6 +545,8 @@ mod tests {
     use gpui::SharedString;
     #[cfg(feature = "gpui-test-support")]
     use gpui::{AppContext, Context, IntoElement, Render, TestAppContext, Window, div};
+    #[cfg(feature = "gpui-test-support")]
+    use gpui_component::input::Position;
 
     #[cfg(feature = "gpui-test-support")]
     struct EmptyView;
@@ -930,6 +999,198 @@ mod tests {
                     Some("suggested_name.md".to_string())
                 );
 
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    // ========== from_transfer() tests ==========
+
+    #[cfg(feature = "gpui-test-support")]
+    fn make_transfer_data() -> TabTransferData {
+        TabTransferData {
+            title: SharedString::from("transfer.rs"),
+            content: "fn main() {}".to_string(),
+            file_path: Some(std::path::PathBuf::from("/tmp/transfer.rs")),
+            modified: false,
+            original_content: "fn main() {}".to_string(),
+            encoding: "UTF-8".to_string(),
+            language: SupportedLanguage::Rust,
+            show_markdown_toolbar: true,
+            show_markdown_preview: false,
+            file_size_bytes: Some(12),
+            file_last_modified: None,
+            cursor_position: Position::default(),
+        }
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_from_transfer_preserves_all_fields(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::from_transfer(99, make_transfer_data(), window, cx, &settings);
+                assert_eq!(tab.id, 99);
+                assert_eq!(tab.title, SharedString::from("transfer.rs"));
+                assert_eq!(
+                    tab.file_path,
+                    Some(std::path::PathBuf::from("/tmp/transfer.rs"))
+                );
+                assert!(!tab.modified);
+                assert_eq!(tab.original_content, "fn main() {}");
+                assert_eq!(tab.encoding, "UTF-8");
+                assert_eq!(tab.language, SupportedLanguage::Rust);
+                assert!(tab.show_markdown_toolbar);
+                assert!(!tab.show_markdown_preview);
+                assert_eq!(tab.file_size_bytes, Some(12));
+                assert!(tab.file_last_modified.is_none());
+                assert_eq!(tab.content.read(cx).text().to_string(), "fn main() {}");
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_from_transfer_assigns_new_id(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::from_transfer(77, make_transfer_data(), window, cx, &settings);
+                assert_eq!(
+                    tab.id, 77,
+                    "id must be the parameter, not from transfer data"
+                );
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+        let data = TabTransferData {
+            title: SharedString::from("Untitled"),
+            content: "scratch content".to_string(),
+            file_path: None,
+            modified: false,
+            original_content: "".to_string(),
+            encoding: "UTF-8".to_string(),
+            language: SupportedLanguage::Plain,
+            show_markdown_toolbar: false,
+            show_markdown_preview: false,
+            file_size_bytes: None,
+            file_last_modified: None,
+            cursor_position: Position::default(),
+        };
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::from_transfer(1, data, window, cx, &settings);
+                assert!(tab.file_path.is_none());
+                assert!(tab.file_size_bytes.is_none());
+                assert!(tab.file_last_modified.is_none());
+                assert_eq!(tab.content.read(cx).text().to_string(), "scratch content");
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+        let data = TabTransferData {
+            title: SharedString::from("changed.md"),
+            content: "edited content".to_string(),
+            file_path: Some(std::path::PathBuf::from("/tmp/changed.md")),
+            modified: true,
+            original_content: "original content".to_string(),
+            encoding: "UTF-8".to_string(),
+            language: SupportedLanguage::Markdown,
+            show_markdown_toolbar: false,
+            show_markdown_preview: false,
+            file_size_bytes: None,
+            file_last_modified: None,
+            cursor_position: Position::default(),
+        };
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::from_transfer(2, data, window, cx, &settings);
+                assert!(tab.modified, "modified flag must be preserved");
+                assert_eq!(
+                    tab.original_content, "original content",
+                    "original content must differ from current"
+                );
+                assert_eq!(tab.content.read(cx).text().to_string(), "edited content");
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+        let data = TabTransferData {
+            title: SharedString::from("script.py"),
+            content: "print('hello')".to_string(),
+            file_path: None,
+            modified: false,
+            original_content: "print('hello')".to_string(),
+            encoding: "UTF-8".to_string(),
+            language: SupportedLanguage::Python,
+            show_markdown_toolbar: false,
+            show_markdown_preview: false,
+            file_size_bytes: None,
+            file_last_modified: None,
+            cursor_position: Position::default(),
+        };
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::from_transfer(3, data, window, cx, &settings);
+                assert_eq!(tab.language, SupportedLanguage::Python);
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let settings = EditorSettings::new();
+        let data = TabTransferData {
+            title: SharedString::from("note.md"),
+            content: "# Note".to_string(),
+            file_path: None,
+            modified: false,
+            original_content: "# Note".to_string(),
+            encoding: "UTF-8".to_string(),
+            language: SupportedLanguage::Markdown,
+            show_markdown_toolbar: true,
+            show_markdown_preview: true,
+            file_size_bytes: None,
+            file_last_modified: None,
+            cursor_position: Position::default(),
+        };
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let tab = EditorTab::from_transfer(4, data, window, cx, &settings);
+                assert!(tab.show_markdown_toolbar);
+                assert!(tab.show_markdown_preview);
                 cx.new(|_| EmptyView)
             })
             .expect("failed to open test window");
