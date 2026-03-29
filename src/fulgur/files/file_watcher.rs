@@ -425,6 +425,17 @@ mod tests {
     };
     use tempfile::TempDir;
 
+    /// Build an OS-agnostic temporary test path.
+    ///
+    /// ### Arguments
+    /// - `file_name`: The file name to append to the platform temp directory.
+    ///
+    /// ### Returns
+    /// - `PathBuf`: A path under `std::env::temp_dir()` suitable for cross-platform tests.
+    fn temp_test_path(file_name: &str) -> PathBuf {
+        std::env::temp_dir().join(file_name)
+    }
+
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
         cx.update(|cx| {
             gpui_component::init(cx);
@@ -458,7 +469,7 @@ mod tests {
     fn test_handle_notify_event_maps_modify_to_modified(_cx: &mut TestAppContext) {
         let (event_tx, event_rx) = channel();
         let pending_rename_from = Mutex::new(None);
-        let path = PathBuf::from("/tmp/fulgur_notify_modify.txt");
+        let path = temp_test_path("fulgur_notify_modify.txt");
         let event = Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
             .add_path(path.clone());
         FileWatcher::handle_notify_event(event, &event_tx, &pending_rename_from);
@@ -472,7 +483,7 @@ mod tests {
     fn test_handle_notify_event_maps_remove_to_deleted(_cx: &mut TestAppContext) {
         let (event_tx, event_rx) = channel();
         let pending_rename_from = Mutex::new(None);
-        let path = PathBuf::from("/tmp/fulgur_notify_deleted.txt");
+        let path = temp_test_path("fulgur_notify_deleted.txt");
         let event = Event::new(EventKind::Remove(RemoveKind::File)).add_path(path.clone());
         FileWatcher::handle_notify_event(event, &event_tx, &pending_rename_from);
         assert!(matches!(
@@ -485,8 +496,8 @@ mod tests {
     fn test_handle_notify_event_maps_rename_both_to_renamed(_cx: &mut TestAppContext) {
         let (event_tx, event_rx) = channel();
         let pending_rename_from = Mutex::new(None);
-        let from = PathBuf::from("/tmp/fulgur_notify_old.txt");
-        let to = PathBuf::from("/tmp/fulgur_notify_new.txt");
+        let from = temp_test_path("fulgur_notify_old.txt");
+        let to = temp_test_path("fulgur_notify_new.txt");
         let event = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
             .add_path(from.clone())
             .add_path(to.clone());
@@ -504,8 +515,8 @@ mod tests {
     fn test_handle_notify_event_pairs_linux_split_rename(_cx: &mut TestAppContext) {
         let (event_tx, event_rx) = channel();
         let pending_rename_from = Mutex::new(None);
-        let from = PathBuf::from("/tmp/fulgur_notify_linux_from.txt");
-        let to = PathBuf::from("/tmp/fulgur_notify_linux_to.txt");
+        let from = temp_test_path("fulgur_notify_linux_from.txt");
+        let to = temp_test_path("fulgur_notify_linux_to.txt");
         let from_event = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::From)))
             .add_path(from.clone());
         FileWatcher::handle_notify_event(from_event, &event_tx, &pending_rename_from);
@@ -586,9 +597,70 @@ mod tests {
     }
 
     #[gpui::test]
+    fn test_handle_file_watch_event_modified_active_tab_does_not_queue_conflict(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let path = temp_test_path("fulgur_conflict_active.txt");
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
+                    editor_tab.file_path = Some(path.clone());
+                    editor_tab.modified = true;
+                    editor_tab.content.update(cx, |input_state, cx| {
+                        input_state.set_value("local-edits", window, cx);
+                    });
+                }
+                this.active_tab_index = Some(0);
+                this.handle_file_watch_event(FileWatchEvent::Modified(path.clone()), window, cx);
+                assert!(
+                    !this.file_watch_state.pending_conflicts.contains_key(&path),
+                    "active-tab conflict should prompt immediately, not queue"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_file_watch_event_modified_inactive_tab_defers_until_activation(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let deferred_path = temp_test_path("fulgur_conflict_inactive.txt");
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
+                    editor_tab.file_path = Some(deferred_path.clone());
+                    editor_tab.modified = true;
+                }
+                this.set_active_tab(1, window, cx);
+                this.handle_file_watch_event(
+                    FileWatchEvent::Modified(deferred_path.clone()),
+                    window,
+                    cx,
+                );
+                assert_eq!(
+                    this.file_watch_state.pending_conflicts.get(&deferred_path),
+                    Some(&0),
+                    "inactive modified tab should queue deferred conflict"
+                );
+                this.set_active_tab(0, window, cx);
+                assert!(
+                    !this
+                        .file_watch_state
+                        .pending_conflicts
+                        .contains_key(&deferred_path),
+                    "deferred conflict should be consumed when tab is activated"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
     fn test_handle_file_watch_event_deleted_keeps_editor_state(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        let path = PathBuf::from("/tmp/fulgur_deleted_branch.txt");
+        let path = temp_test_path("fulgur_deleted_branch.txt");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
@@ -622,8 +694,8 @@ mod tests {
     #[gpui::test]
     fn test_handle_file_watch_event_renamed_updates_path_and_title(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        let from = PathBuf::from("/tmp/fulgur_rename_from.rs");
-        let to = PathBuf::from("/tmp/fulgur_rename_to.rs");
+        let from = temp_test_path("fulgur_rename_from.rs");
+        let to = temp_test_path("fulgur_rename_to.rs");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
