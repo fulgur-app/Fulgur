@@ -563,19 +563,9 @@ impl Fulgur {
 mod tests {
     use super::{Fulgur, WindowManager};
     use crate::fulgur::{settings::Settings, shared_state::SharedAppState};
-    use gpui::{
-        AppContext, Context, Entity, IntoElement, Render, TestAppContext, Window, WindowId, div,
-    };
+    use gpui::{AppContext, BorrowAppContext, Entity, TestAppContext, WindowId};
     use parking_lot::Mutex;
     use std::{cell::RefCell, path::PathBuf, sync::Arc};
-
-    struct EmptyView;
-
-    impl Render for EmptyView {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div()
-        }
-    }
 
     /// Initialize test globals required by `Fulgur::new`.
     ///
@@ -607,8 +597,8 @@ mod tests {
                 let window_id = window.window_handle().window_id();
                 let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                 *window_id_slot.borrow_mut() = Some(window_id);
-                *fulgur_slot.borrow_mut() = Some(fulgur);
-                cx.new(|_| EmptyView)
+                *fulgur_slot.borrow_mut() = Some(fulgur.clone());
+                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
             })
             .expect("failed to open test window");
         });
@@ -631,6 +621,52 @@ mod tests {
     /// - `PathBuf`: A path rooted under `std::env::temp_dir()`.
     fn temp_test_path(file_name: &str) -> PathBuf {
         std::env::temp_dir().join(file_name)
+    }
+
+    /// Register a window entity inside the global `WindowManager`.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test application context.
+    /// - `window_id`: The ID of the window to register.
+    /// - `fulgur`: The `Fulgur` entity associated with the window.
+    fn register_window_in_global_manager(
+        cx: &mut TestAppContext,
+        window_id: WindowId,
+        fulgur: &Entity<Fulgur>,
+    ) {
+        cx.update(|cx| {
+            cx.update_global::<WindowManager, _>(|manager, _| {
+                manager.register(window_id, fulgur.downgrade());
+            });
+        });
+    }
+
+    /// Invoke `on_window_close_requested` against a specific window in tests.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test application context.
+    /// - `window_id`: The target window ID to run close handling against.
+    /// - `fulgur`: The `Fulgur` entity that owns the close handler.
+    ///
+    /// ### Returns
+    /// - `bool`: The return value from `Fulgur::on_window_close_requested`.
+    fn invoke_window_close_requested(
+        cx: &mut TestAppContext,
+        window_id: WindowId,
+        fulgur: &Entity<Fulgur>,
+    ) -> bool {
+        cx.update(|cx| {
+            for handle in cx.windows() {
+                if handle.window_id() == window_id {
+                    return handle
+                        .update(cx, |_, window, cx| {
+                            fulgur.update(cx, |this, cx| this.on_window_close_requested(window, cx))
+                        })
+                        .expect("failed to run close handler on test window");
+                }
+            }
+            panic!("failed to locate target test window by id");
+        })
     }
 
     #[gpui::test]
@@ -725,6 +761,82 @@ mod tests {
                 missing, None,
                 "missing files should return no matching window"
             );
+        });
+    }
+
+    #[gpui::test]
+    fn test_on_window_close_requested_last_window_with_confirm_exit_blocks_close(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let (window_id, fulgur) = open_window_with_fulgur(cx);
+        register_window_in_global_manager(cx, window_id, &fulgur);
+        cx.update(|cx| {
+            fulgur.update(cx, |this, _| {
+                this.settings.app_settings.confirm_exit = true;
+            });
+        });
+        let should_close = invoke_window_close_requested(cx, window_id, &fulgur);
+        assert!(
+            !should_close,
+            "last window should remain open when confirm_exit is enabled"
+        );
+        cx.update(|cx| {
+            let manager = cx.global::<WindowManager>();
+            assert_eq!(manager.window_count(), 1);
+            assert!(manager.get_window(window_id).is_some());
+        });
+    }
+
+    #[gpui::test]
+    fn test_on_window_close_requested_last_window_without_confirm_exit_closes_and_unregisters(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let (window_id, fulgur) = open_window_with_fulgur(cx);
+        register_window_in_global_manager(cx, window_id, &fulgur);
+        cx.update(|cx| {
+            fulgur.update(cx, |this, _| {
+                this.settings.app_settings.confirm_exit = false;
+            });
+        });
+        let should_close = invoke_window_close_requested(cx, window_id, &fulgur);
+        assert!(
+            should_close,
+            "last window should close when confirm_exit is disabled"
+        );
+        cx.update(|cx| {
+            let manager = cx.global::<WindowManager>();
+            assert_eq!(manager.window_count(), 0);
+            assert!(manager.get_window(window_id).is_none());
+        });
+    }
+
+    #[gpui::test]
+    fn test_on_window_close_requested_non_last_window_closes_even_with_confirm_exit_enabled(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
+        let (window_id_two, fulgur_two) = open_window_with_fulgur(cx);
+        register_window_in_global_manager(cx, window_id_one, &fulgur_one);
+        register_window_in_global_manager(cx, window_id_two, &fulgur_two);
+        cx.update(|cx| {
+            fulgur_two.update(cx, |this, _| {
+                this.settings.app_settings.confirm_exit = true;
+            });
+        });
+        let should_close = invoke_window_close_requested(cx, window_id_two, &fulgur_two);
+        assert!(
+            should_close,
+            "non-last windows should close without quit confirmation flow"
+        );
+        cx.update(|cx| {
+            let manager = cx.global::<WindowManager>();
+            assert_eq!(manager.window_count(), 1);
+            assert!(manager.get_window(window_id_one).is_some());
+            assert!(manager.get_window(window_id_two).is_none());
+            assert_eq!(manager.get_last_focused(), Some(window_id_one));
         });
     }
 }
