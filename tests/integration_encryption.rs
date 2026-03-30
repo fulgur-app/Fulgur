@@ -97,6 +97,7 @@ fn test_generate_key_pair_produces_unique_keys() {
 }
 
 #[test]
+#[ignore = "requires an unlocked system keychain; run locally with -- --include-ignored"]
 fn test_keychain_save_and_load_private_key() {
     let entry_name = "test_keychain_save_and_load";
     cleanup_keychain_entry(entry_name);
@@ -111,6 +112,7 @@ fn test_keychain_save_and_load_private_key() {
 }
 
 #[test]
+#[ignore = "requires an unlocked system keychain; run locally with -- --include-ignored"]
 fn test_keychain_load_nonexistent_entry() {
     cleanup_keychain_entry("nonexistent_entry");
     let result = load_from_test_keychain("nonexistent_entry").expect("Should not error");
@@ -118,6 +120,7 @@ fn test_keychain_load_nonexistent_entry() {
 }
 
 #[test]
+#[ignore = "requires an unlocked system keychain; run locally with -- --include-ignored"]
 fn test_keychain_overwrite_existing_entry() {
     let entry_name = "test_keychain_overwrite";
     cleanup_keychain_entry(entry_name);
@@ -133,6 +136,7 @@ fn test_keychain_overwrite_existing_entry() {
 }
 
 #[test]
+#[ignore = "requires an unlocked system keychain; run locally with -- --include-ignored"]
 fn test_keychain_save_and_load_api_key() {
     let entry_name = "test_keychain_api_key";
     cleanup_keychain_entry(entry_name);
@@ -266,6 +270,7 @@ fn test_decrypt_with_corrupted_ciphertext_fails() {
 // ============================================================================
 
 #[test]
+#[ignore = "requires an unlocked system keychain; run locally with -- --include-ignored"]
 fn test_full_integration_keychain_and_encryption() {
     let entry_name = "test_full_integration";
     cleanup_keychain_entry(entry_name);
@@ -289,6 +294,7 @@ fn test_full_integration_keychain_and_encryption() {
 }
 
 #[test]
+#[ignore = "requires an unlocked system keychain; run locally with -- --include-ignored"]
 fn test_multi_device_simulation() {
     cleanup_keychain_entry("device1_private");
     cleanup_keychain_entry("device2_private");
@@ -332,6 +338,7 @@ fn test_multi_device_simulation() {
 }
 
 #[test]
+#[ignore = "requires an unlocked system keychain; run locally with -- --include-ignored"]
 fn test_keychain_persistence_across_multiple_operations() {
     let entry_name = "test_keychain_persistence";
     cleanup_keychain_entry(entry_name);
