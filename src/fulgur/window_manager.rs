@@ -558,3 +558,173 @@ impl Fulgur {
         }
     }
 }
+
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod tests {
+    use super::{Fulgur, WindowManager};
+    use crate::fulgur::{settings::Settings, shared_state::SharedAppState};
+    use gpui::{
+        AppContext, Context, Entity, IntoElement, Render, TestAppContext, Window, WindowId, div,
+    };
+    use parking_lot::Mutex;
+    use std::{cell::RefCell, path::PathBuf, sync::Arc};
+
+    struct EmptyView;
+
+    impl Render for EmptyView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
+    }
+
+    /// Initialize test globals required by `Fulgur::new`.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test application context to initialize.
+    fn setup_test_globals(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            let mut settings = Settings::new();
+            settings.editor_settings.watch_files = false;
+            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(WindowManager::new());
+        });
+    }
+
+    /// Open a window that owns a `Fulgur` entity and return both identifiers.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test application context used to open the window.
+    ///
+    /// ### Returns
+    /// - `(WindowId, Entity<Fulgur>)`: The window ID and the associated `Fulgur` entity.
+    fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Fulgur>) {
+        let window_id_slot: RefCell<Option<WindowId>> = RefCell::new(None);
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let window_id = window.window_handle().window_id();
+                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                *window_id_slot.borrow_mut() = Some(window_id);
+                *fulgur_slot.borrow_mut() = Some(fulgur);
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+        (
+            window_id_slot
+                .into_inner()
+                .expect("failed to capture test window id"),
+            fulgur_slot
+                .into_inner()
+                .expect("failed to capture test Fulgur entity"),
+        )
+    }
+
+    /// Build an OS-agnostic temporary path for file lookup tests.
+    ///
+    /// ### Arguments
+    /// - `file_name`: The file name to append to the platform temp directory.
+    ///
+    /// ### Returns
+    /// - `PathBuf`: A path rooted under `std::env::temp_dir()`.
+    fn temp_test_path(file_name: &str) -> PathBuf {
+        std::env::temp_dir().join(file_name)
+    }
+
+    #[gpui::test]
+    fn test_register_unregister_and_focus_tracking(cx: &mut TestAppContext) {
+        setup_test_globals(cx);
+        let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
+        let (window_id_two, fulgur_two) = open_window_with_fulgur(cx);
+        cx.update(|_| {
+            let mut manager = WindowManager::new();
+            assert_eq!(manager.window_count(), 0);
+            assert_eq!(manager.get_last_focused(), None);
+            manager.register(window_id_one, fulgur_one.downgrade());
+            assert_eq!(manager.window_count(), 1);
+            assert_eq!(manager.get_last_focused(), Some(window_id_one));
+            assert!(manager.get_window(window_id_one).is_some());
+            manager.register(window_id_two, fulgur_two.downgrade());
+            assert_eq!(manager.window_count(), 2);
+            assert_eq!(manager.get_last_focused(), Some(window_id_two));
+            let window_ids = manager.get_all_window_ids();
+            assert_eq!(window_ids.len(), 2);
+            assert!(window_ids.contains(&window_id_one));
+            assert!(window_ids.contains(&window_id_two));
+            assert_eq!(manager.get_all_windows().len(), 2);
+            manager.set_focused(window_id_one);
+            assert_eq!(manager.get_last_focused(), Some(window_id_one));
+            manager.unregister(window_id_one);
+            assert_eq!(manager.window_count(), 1);
+            assert_eq!(manager.get_last_focused(), Some(window_id_two));
+            assert!(manager.get_window(window_id_one).is_none());
+            // Focusing an unregistered window must leave focus unchanged.
+            manager.set_focused(window_id_one);
+            assert_eq!(manager.get_last_focused(), Some(window_id_two));
+            manager.unregister(window_id_two);
+            assert_eq!(manager.window_count(), 0);
+            assert_eq!(manager.get_last_focused(), None);
+        });
+    }
+
+    #[gpui::test]
+    fn test_find_window_with_file_returns_other_window_with_matching_tab(cx: &mut TestAppContext) {
+        setup_test_globals(cx);
+        let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
+        let (other_window_id, other_fulgur) = open_window_with_fulgur(cx);
+        let target_path = temp_test_path("fulgur_window_manager_cross_window_lookup.md");
+        cx.update(|cx| {
+            other_fulgur.update(cx, |fulgur, _| {
+                let editor = fulgur
+                    .tabs
+                    .first_mut()
+                    .and_then(|tab| tab.as_editor_mut())
+                    .expect("expected initial editor tab");
+                editor.file_path = Some(target_path.clone());
+            });
+            let mut manager = WindowManager::new();
+            manager.register(current_window_id, current_fulgur.downgrade());
+            manager.register(other_window_id, other_fulgur.downgrade());
+            let found_window_id =
+                manager.find_window_with_file(&target_path, current_window_id, cx);
+            assert_eq!(found_window_id, Some(other_window_id));
+        });
+    }
+
+    #[gpui::test]
+    fn test_find_window_with_file_skips_current_window_and_returns_none_on_miss(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
+        let (other_window_id, other_fulgur) = open_window_with_fulgur(cx);
+        let current_only_path = temp_test_path("fulgur_window_manager_current_only.rs");
+        let missing_path = temp_test_path("fulgur_window_manager_missing.rs");
+        cx.update(|cx| {
+            current_fulgur.update(cx, |fulgur, _| {
+                let editor = fulgur
+                    .tabs
+                    .first_mut()
+                    .and_then(|tab| tab.as_editor_mut())
+                    .expect("expected initial editor tab");
+                editor.file_path = Some(current_only_path.clone());
+            });
+            let mut manager = WindowManager::new();
+            manager.register(current_window_id, current_fulgur.downgrade());
+            manager.register(other_window_id, other_fulgur.downgrade());
+            let found_in_other =
+                manager.find_window_with_file(&current_only_path, current_window_id, cx);
+            assert_eq!(
+                found_in_other, None,
+                "current window must be ignored during cross-window lookup"
+            );
+            let missing = manager.find_window_with_file(&missing_path, current_window_id, cx);
+            assert_eq!(
+                missing, None,
+                "missing files should return no matching window"
+            );
+        });
+    }
+}
