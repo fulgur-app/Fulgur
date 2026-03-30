@@ -563,7 +563,7 @@ impl Fulgur {
 mod tests {
     use super::{Fulgur, WindowManager};
     use crate::fulgur::{settings::Settings, shared_state::SharedAppState};
-    use gpui::{AppContext, BorrowAppContext, Entity, TestAppContext, WindowId};
+    use gpui::{AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId};
     use parking_lot::Mutex;
     use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
@@ -667,6 +667,99 @@ mod tests {
             }
             panic!("failed to locate target test window by id");
         })
+    }
+
+    /// Invoke `do_open_file` against a specific window in tests.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test application context.
+    /// - `window_id`: The target window ID where the open request should run.
+    /// - `fulgur`: The `Fulgur` entity that owns the open handler.
+    /// - `path`: The file path to open.
+    fn invoke_do_open_file(
+        cx: &mut TestAppContext,
+        window_id: WindowId,
+        fulgur: &Entity<Fulgur>,
+        path: PathBuf,
+    ) {
+        cx.update(|cx| {
+            for handle in cx.windows() {
+                if handle.window_id() == window_id {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            fulgur
+                                .update(cx, |this, cx| this.do_open_file(window, cx, path.clone()));
+                        })
+                        .expect("failed to run do_open_file on test window");
+                    return;
+                }
+            }
+            panic!("failed to locate target test window by id");
+        });
+    }
+
+    /// Invoke `handle_dock_activate_tab` against a specific window in tests.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test application context.
+    /// - `window_id`: The target window ID where the dock action should run.
+    /// - `fulgur`: The `Fulgur` entity that owns the dock handler.
+    /// - `path`: The file path carried by `DockActivateTab`.
+    fn invoke_dock_activate_tab(
+        cx: &mut TestAppContext,
+        window_id: WindowId,
+        fulgur: &Entity<Fulgur>,
+        path: PathBuf,
+    ) {
+        cx.update(|cx| {
+            for handle in cx.windows() {
+                if handle.window_id() == window_id {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            fulgur.update(cx, |this, cx| {
+                                let action =
+                                    crate::fulgur::ui::menus::DockActivateTab(path.clone());
+                                this.handle_dock_activate_tab(&action, window, cx);
+                            });
+                        })
+                        .expect("failed to run DockActivateTab on test window");
+                    return;
+                }
+            }
+            panic!("failed to locate target test window by id");
+        });
+    }
+
+    /// Invoke `handle_dock_activate_tab_by_title` against a specific window in tests.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test application context.
+    /// - `window_id`: The target window ID where the dock action should run.
+    /// - `fulgur`: The `Fulgur` entity that owns the dock handler.
+    /// - `title`: The tab title carried by `DockActivateTabByTitle`.
+    fn invoke_dock_activate_tab_by_title(
+        cx: &mut TestAppContext,
+        window_id: WindowId,
+        fulgur: &Entity<Fulgur>,
+        title: SharedString,
+    ) {
+        cx.update(|cx| {
+            for handle in cx.windows() {
+                if handle.window_id() == window_id {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            fulgur.update(cx, |this, cx| {
+                                let action =
+                                    crate::fulgur::ui::menus::DockActivateTabByTitle(title.clone());
+                                this.handle_dock_activate_tab_by_title(&action, window, cx);
+                            });
+                        })
+                        .expect("failed to run DockActivateTabByTitle on test window");
+                    return;
+                }
+            }
+            panic!("failed to locate target test window by id");
+        });
     }
 
     #[gpui::test]
@@ -837,6 +930,127 @@ mod tests {
             assert!(manager.get_window(window_id_one).is_some());
             assert!(manager.get_window(window_id_two).is_none());
             assert_eq!(manager.get_last_focused(), Some(window_id_one));
+        });
+    }
+
+    #[gpui::test]
+    fn test_do_open_file_does_not_open_duplicate_when_file_exists_in_another_window(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
+        let (other_window_id, other_fulgur) = open_window_with_fulgur(cx);
+        register_window_in_global_manager(cx, current_window_id, &current_fulgur);
+        register_window_in_global_manager(cx, other_window_id, &other_fulgur);
+        let shared_path = temp_test_path("fulgur_cross_window_existing_file.rs");
+        cx.update(|cx| {
+            other_fulgur.update(cx, |fulgur, _| {
+                let editor = fulgur
+                    .tabs
+                    .first_mut()
+                    .and_then(|tab| tab.as_editor_mut())
+                    .expect("expected initial editor tab");
+                editor.file_path = Some(shared_path.clone());
+            });
+        });
+        let tab_count_before = cx.update(|cx| current_fulgur.read(cx).tabs.len());
+        invoke_do_open_file(cx, current_window_id, &current_fulgur, shared_path.clone());
+        cx.run_until_parked();
+        let tab_count_after = cx.update(|cx| current_fulgur.read(cx).tabs.len());
+        assert_eq!(
+            tab_count_after, tab_count_before,
+            "opening a file already open in another window should not create a duplicate tab"
+        );
+    }
+
+    #[gpui::test]
+    fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppContext) {
+        setup_test_globals(cx);
+        let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
+        let (other_window_id, other_fulgur) = open_window_with_fulgur(cx);
+        register_window_in_global_manager(cx, current_window_id, &current_fulgur);
+        register_window_in_global_manager(cx, other_window_id, &other_fulgur);
+        let target_path = temp_test_path("fulgur_dock_focus_transfer.rs");
+        cx.update(|cx| {
+            for handle in cx.windows() {
+                if handle.window_id() == other_window_id {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            other_fulgur.update(cx, |this, cx| {
+                                this.new_tab(window, cx);
+                                this.active_tab_index = Some(0);
+                                if let Some(editor) =
+                                    this.tabs.get_mut(1).and_then(|tab| tab.as_editor_mut())
+                                {
+                                    editor.file_path = Some(target_path.clone());
+                                    editor.title = "dock-target.rs".into();
+                                }
+                            });
+                        })
+                        .expect("failed to prepare target window tab state");
+                    break;
+                }
+            }
+        });
+
+        invoke_dock_activate_tab(cx, current_window_id, &current_fulgur, target_path.clone());
+        cx.run_until_parked();
+
+        cx.update(|cx| {
+            let other = other_fulgur.read(cx);
+            assert_eq!(
+                other.active_tab_index,
+                Some(1),
+                "dock activation by path should activate the matching tab in the other window"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
+        let (other_window_id, other_fulgur) = open_window_with_fulgur(cx);
+        register_window_in_global_manager(cx, current_window_id, &current_fulgur);
+        register_window_in_global_manager(cx, other_window_id, &other_fulgur);
+        let target_title: SharedString = "cross-window-title-target".into();
+        cx.update(|cx| {
+            for handle in cx.windows() {
+                if handle.window_id() == other_window_id {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            other_fulgur.update(cx, |this, cx| {
+                                this.new_tab(window, cx);
+                                this.active_tab_index = Some(0);
+                                if let Some(editor) =
+                                    this.tabs.get_mut(1).and_then(|tab| tab.as_editor_mut())
+                                {
+                                    editor.title = target_title.clone();
+                                }
+                            });
+                        })
+                        .expect("failed to prepare target window title state");
+                    break;
+                }
+            }
+        });
+        invoke_dock_activate_tab_by_title(
+            cx,
+            current_window_id,
+            &current_fulgur,
+            target_title.clone(),
+        );
+        cx.run_until_parked();
+
+        cx.update(|cx| {
+            let other = other_fulgur.read(cx);
+            assert_eq!(
+                other.active_tab_index,
+                Some(1),
+                "dock activation by title should activate the matching tab in the other window"
+            );
         });
     }
 }
