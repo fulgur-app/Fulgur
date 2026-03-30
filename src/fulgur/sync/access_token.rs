@@ -256,6 +256,20 @@ pub fn get_valid_token(
     Ok(token_response.access_token)
 }
 
+impl TokenStateManager {
+    /// Inject a pre-built token directly into the manager
+    ///
+    /// Bypasses network calls so tests can verify the fast path of `get_valid_token`
+    /// and the effect of `clear_token` on the cached state.
+    ///
+    /// This method is intended for use in tests only.
+    pub fn inject_token_for_test(&self, token: String, expires_at: OffsetDateTime) {
+        let mut state = self.state.lock();
+        state.access_token = Some(token);
+        state.token_expires_at = Some(expires_at);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
