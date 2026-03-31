@@ -564,6 +564,7 @@ mod tests {
     use super::{Fulgur, WindowManager};
     use crate::fulgur::{settings::Settings, shared_state::SharedAppState};
     use gpui::{AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId};
+    use gpui_component::notification::NotificationType;
     use parking_lot::Mutex;
     use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
@@ -691,6 +692,34 @@ mod tests {
                                 .update(cx, |this, cx| this.do_open_file(window, cx, path.clone()));
                         })
                         .expect("failed to run do_open_file on test window");
+                    return;
+                }
+            }
+            panic!("failed to locate target test window by id");
+        });
+    }
+
+    /// Invoke `process_window_state_updates` against a specific window in tests.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test application context.
+    /// - `window_id`: The target window ID where the render-phase processing should run.
+    /// - `fulgur`: The `Fulgur` entity that owns the processing method.
+    fn invoke_process_window_state_updates(
+        cx: &mut TestAppContext,
+        window_id: WindowId,
+        fulgur: &Entity<Fulgur>,
+    ) {
+        cx.update(|cx| {
+            for handle in cx.windows() {
+                if handle.window_id() == window_id {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            fulgur.update(cx, |this, cx| {
+                                this.process_window_state_updates(window, cx);
+                            });
+                        })
+                        .expect("failed to run process_window_state_updates on test window");
                     return;
                 }
             }
@@ -930,6 +959,54 @@ mod tests {
             assert!(manager.get_window(window_id_one).is_some());
             assert!(manager.get_window(window_id_two).is_none());
             assert_eq!(manager.get_last_focused(), Some(window_id_one));
+        });
+    }
+
+    #[gpui::test]
+    fn test_process_window_state_updates_drains_local_and_sync_pending_notifications(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let (window_id, fulgur) = open_window_with_fulgur(cx);
+        register_window_in_global_manager(cx, window_id, &fulgur);
+
+        cx.update(|cx| {
+            fulgur.update(cx, |this, cx| {
+                this.pending_notification = Some((
+                    NotificationType::Warning,
+                    "pending from current window".into(),
+                ));
+                *this.shared_state(cx).sync_state.pending_notification.lock() = Some((
+                    NotificationType::Success,
+                    "pending from sync background task".into(),
+                ));
+            });
+        });
+
+        invoke_process_window_state_updates(cx, window_id, &fulgur);
+
+        cx.update(|cx| {
+            fulgur.update(cx, |this, cx| {
+                assert!(
+                    this.pending_notification.is_none(),
+                    "window-local pending notification must be drained during render processing"
+                );
+                assert!(
+                    this.shared_state(cx)
+                        .sync_state
+                        .pending_notification
+                        .lock()
+                        .is_none(),
+                    "sync pending notification must be drained during render processing"
+                );
+            });
+
+            let manager = cx.global::<WindowManager>();
+            assert_eq!(
+                manager.get_last_focused(),
+                Some(window_id),
+                "process_window_state_updates should keep focus tracking in sync"
+            );
         });
     }
 
