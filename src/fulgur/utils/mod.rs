@@ -1,8 +1,12 @@
 pub mod atomic_write;
 pub mod crypto_helper;
+#[cfg(target_os = "windows")]
+pub mod jump_list;
 pub mod logger;
 pub mod paths;
 pub mod retry;
 pub mod sanitize;
+#[cfg(target_os = "windows")]
+pub mod single_instance;
 pub mod updater;
 pub mod utilities;

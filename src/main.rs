@@ -90,6 +90,11 @@ fn url_to_path(url_string: &str) -> Option<PathBuf> {
 }
 
 fn main() {
+    // On Windows, set the Application User Model ID before any window is created
+    // so that the taskbar button and the jump list share the same AUMID.
+    #[cfg(target_os = "windows")]
+    fulgur::utils::jump_list::set_app_user_model_id();
+
     if let Err(e) = fulgur::utils::logger::init() {
         eprintln!("Failed to initialize logger: {}", e);
     }
@@ -110,10 +115,31 @@ fn main() {
     if args.len() > 1 {
         log::debug!("File to open from command-line: {}", args[1]);
     }
+    // Check for jump-list command flags before collecting file paths.
+    #[cfg(target_os = "windows")]
+    {
+        let ipc_cmd = if args.iter().any(|a| a == "--new-tab") {
+            Some("new-tab")
+        } else if args.iter().any(|a| a == "--new-window") {
+            Some("new-window")
+        } else {
+            None
+        };
+        if let Some(cmd) = ipc_cmd {
+            if fulgur::utils::single_instance::try_send_command_to_existing_instance(cmd) {
+                return;
+            }
+        }
+    }
+
     let cli_file_paths: Vec<PathBuf> = args
         .iter()
         .skip(1)
         .filter_map(|arg| {
+            // Skip our own jump-list flags so they aren't treated as file paths.
+            if arg == "--new-tab" || arg == "--new-window" {
+                return None;
+            }
             let path = PathBuf::from(arg);
             if path.exists() && path.is_file() {
                 Some(path)
@@ -125,6 +151,15 @@ fn main() {
             }
         })
         .collect();
+
+    // On Windows, if we have file paths AND another Fulgur is already running,
+    // forward the paths to it and exit — that instance will open/focus the files.
+    #[cfg(target_os = "windows")]
+    if !cli_file_paths.is_empty()
+        && fulgur::utils::single_instance::try_forward_to_existing_instance(&cli_file_paths)
+    {
+        return;
+    }
 
     let app = gpui_platform::application().with_assets(Assets);
     let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -174,6 +209,15 @@ fn main() {
         let shared_state =
             fulgur::shared_state::SharedAppState::new(settings, pending_files.clone());
         cx.set_global(shared_state);
+        // On Windows, start the IPC listener now that SharedAppState is registered.
+        // We grab the two arcs from the global so there's a single source of truth.
+        #[cfg(target_os = "windows")]
+        {
+            let shared = cx.global::<fulgur::shared_state::SharedAppState>();
+            let pf = shared.pending_files_from_macos.clone();
+            let pic = shared.pending_ipc_commands.clone();
+            fulgur::utils::single_instance::start_ipc_listener(pf, pic);
+        }
         cx.set_global(fulgur::window_manager::WindowManager::new());
         let windows_state = fulgur::state_persistence::WindowsState::load().ok();
         if let Some(ws) = windows_state.filter(|ws| !ws.windows.is_empty()) {

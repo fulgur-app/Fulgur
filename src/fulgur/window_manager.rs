@@ -3,7 +3,7 @@ use gpui::*;
 use gpui_component::WindowExt;
 use gpui_component::notification::NotificationType;
 use std::collections::HashMap;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
@@ -411,6 +411,8 @@ impl Fulgur {
         }
         #[cfg(target_os = "macos")]
         self.update_dock_menu_if_changed(cx);
+        #[cfg(target_os = "windows")]
+        self.update_jump_list_if_changed(cx);
     }
 
     /// Update the macOS dock menu if the open tabs or recent files have changed.
@@ -530,6 +532,123 @@ impl Fulgur {
             .collect();
         let dock_items = build_dock_menu(&windows, &recent_files);
         cx.set_dock_menu(dock_items);
+    }
+
+    /// Update the Windows taskbar Jump List if the open tabs or recent files have changed.
+    ///
+    /// Mirrors `update_dock_menu_if_changed`: computes a hash of all tabs across all
+    /// windows plus recent files and only rebuilds when the hash differs.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    #[cfg(target_os = "windows")]
+    fn update_jump_list_if_changed(&mut self, cx: &mut Context<Self>) {
+        use crate::fulgur::ui::menus::DockMenuTab;
+        use crate::fulgur::utils::jump_list::update_windows_jump_list;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+
+        struct RawTab {
+            path: Option<PathBuf>,
+            title: SharedString,
+        }
+
+        let mut all_windows_raw: Vec<Vec<RawTab>> = Vec::new();
+        let current_window_raw: Vec<RawTab> = self
+            .tabs
+            .iter()
+            .map(|tab| {
+                let path = tab.as_editor().and_then(|e| e.file_path.clone());
+                if let Some(ref p) = path {
+                    p.hash(&mut hasher);
+                }
+                tab.title().hash(&mut hasher);
+                RawTab {
+                    path,
+                    title: tab.title(),
+                }
+            })
+            .collect();
+        all_windows_raw.push(current_window_raw);
+        let manager = cx.global::<WindowManager>();
+        let other_windows: Vec<WeakEntity<Fulgur>> = manager
+            .get_all_window_ids()
+            .into_iter()
+            .filter(|id| *id != self.window_id)
+            .filter_map(|id| manager.get_window(id))
+            .collect();
+        for weak in other_windows {
+            if let Some(entity) = weak.upgrade() {
+                let other = entity.read(cx);
+                let window_raw: Vec<RawTab> = other
+                    .tabs
+                    .iter()
+                    .map(|tab| {
+                        let path = tab.as_editor().and_then(|e| e.file_path.clone());
+                        if let Some(ref p) = path {
+                            p.hash(&mut hasher);
+                        }
+                        tab.title().hash(&mut hasher);
+                        RawTab {
+                            path,
+                            title: tab.title(),
+                        }
+                    })
+                    .collect();
+                all_windows_raw.push(window_raw);
+            }
+        }
+        let recent_files = self.settings.get_recent_files();
+        for file in &recent_files {
+            file.hash(&mut hasher);
+        }
+        let hash = hasher.finish();
+        if hash == self.last_jump_list_hash {
+            return;
+        }
+        self.last_jump_list_hash = hash;
+        let all_file_paths: Vec<PathBuf> = all_windows_raw
+            .iter()
+            .flat_map(|w| w.iter())
+            .filter_map(|t| t.path.clone())
+            .collect();
+        let display_name_for_path = |path: &PathBuf| -> SharedString {
+            let filename = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Untitled");
+            let has_duplicate = all_file_paths.iter().any(|other_path| {
+                other_path != path
+                    && (other_path.file_name().and_then(|n| n.to_str()) == Some(filename))
+            });
+            if has_duplicate
+                && let Some(parent_name) = path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+            {
+                return SharedString::from(format!("{} (../{})", filename, parent_name));
+            }
+            SharedString::from(filename.to_string())
+        };
+        let windows_data: Vec<Vec<DockMenuTab>> = all_windows_raw
+            .into_iter()
+            .map(|window_raw| {
+                window_raw
+                    .into_iter()
+                    .map(|raw| match raw.path {
+                        Some(path) => DockMenuTab::File {
+                            name: display_name_for_path(&path),
+                            path,
+                        },
+                        None => DockMenuTab::Titled {
+                            name: raw.title.clone(),
+                            title: raw.title,
+                        },
+                    })
+                    .collect()
+            })
+            .collect();
+        update_windows_jump_list(&windows_data, &recent_files);
     }
 
     /// Handle the DockActivateTab action: focus the tab with the given file path,
@@ -666,6 +785,50 @@ impl Fulgur {
                 }
             })
             .detach();
+        }
+    }
+
+    /// Process pending IPC commands from the Windows jump list listener
+    ///
+    /// Drains the `pending_ipc_commands` queue and executes each command
+    /// in-process. Only the last-focused window processes the queue, mirroring
+    /// the behaviour of `process_pending_files_from_macos`.
+    ///
+    /// ### Arguments
+    /// - `window`: The window being rendered
+    /// - `cx`: The application context
+    #[cfg(target_os = "windows")]
+    pub fn process_pending_ipc_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let should_process = cx
+            .global::<WindowManager>()
+            .get_last_focused()
+            .map(|id| id == self.window_id)
+            .unwrap_or(true);
+        if !should_process {
+            return;
+        }
+        let commands: Vec<String> = {
+            let shared = self.shared_state(cx);
+            if let Some(mut q) = shared.pending_ipc_commands.try_lock() {
+                q.drain(..).collect()
+            } else {
+                Vec::new()
+            }
+        };
+        for cmd in commands {
+            match cmd.as_str() {
+                "new-tab" => {
+                    log::info!("IPC: opening new tab");
+                    self.new_tab(window, cx);
+                }
+                "new-window" => {
+                    log::info!("IPC: opening new window");
+                    self.open_new_window(cx);
+                }
+                other => {
+                    log::warn!("IPC: unknown command '{other}'");
+                }
+            }
         }
     }
 }

@@ -79,6 +79,9 @@ pub struct SharedAppState {
     pub update_info: Arc<Mutex<Option<UpdateInfo>>>,
     /// Files from macOS "Open with" events (already `Arc<Mutex>`)
     pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
+    /// Pending IPC commands from Windows jump list ("new-tab", "new-window")
+    #[cfg(target_os = "windows")]
+    pub pending_ipc_commands: Arc<Mutex<Vec<String>>>,
     /// Shared HTTP agent for connection pooling across all requests
     pub http_agent: Arc<ureq::Agent>,
 }
@@ -108,6 +111,8 @@ impl SharedAppState {
             sync_error: Arc::new(Mutex::new(sync_error)),
             update_info: Arc::new(Mutex::new(None)),
             pending_files_from_macos,
+            #[cfg(target_os = "windows")]
+            pending_ipc_commands: Arc::new(Mutex::new(Vec::new())),
             http_agent: Arc::new(ureq::Agent::new_with_config(
                 ureq::config::Config::builder()
                     .timeout_connect(Some(std::time::Duration::from_secs(5)))

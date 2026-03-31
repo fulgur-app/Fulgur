@@ -120,6 +120,8 @@ pub struct Fulgur {
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
     #[cfg(target_os = "macos")]
     last_dock_menu_hash: u64, // Hash of the last dock menu state to avoid unnecessary rebuilds
+    #[cfg(target_os = "windows")]
+    last_jump_list_hash: u64, // Hash of the last jump list state to avoid unnecessary rebuilds
 }
 
 impl Fulgur {
@@ -199,6 +201,8 @@ impl Fulgur {
                 pending_transfer_scroll: None,
                 #[cfg(target_os = "macos")]
                 last_dock_menu_hash: 0,
+                #[cfg(target_os = "windows")]
+                last_jump_list_hash: 0,
             }
         });
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
@@ -423,6 +427,8 @@ impl Render for Fulgur {
         self.process_update_notifications(window, cx);
         self.synchronize_settings_from_other_windows(cx);
         self.process_pending_files_from_macos(window, cx);
+        #[cfg(target_os = "windows")]
+        self.process_pending_ipc_commands(window, cx);
         self.process_shared_files_from_sync(window, cx);
         self.process_file_watch_events(window, cx);
         self.process_sse_events(window, cx);
