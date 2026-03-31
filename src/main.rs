@@ -291,3 +291,44 @@ async fn create_window(
 
     Ok(())
 }
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::url_to_path;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_url_to_path_returns_file_for_existing_file_url() {
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let file_path = dir.path().join("hello world.txt");
+        std::fs::write(&file_path, "content").expect("failed to write temp file");
+
+        let path_string = file_path.to_string_lossy();
+        let encoded = urlencoding::encode(&path_string);
+        let file_url = format!("file://{encoded}");
+
+        let resolved = url_to_path(&file_url);
+        assert!(
+            resolved.is_some(),
+            "existing file URL should resolve to a local path"
+        );
+    }
+
+    #[test]
+    fn test_url_to_path_rejects_invalid_percent_encoded_url() {
+        let invalid = "file://%E0%A4%A";
+        assert!(
+            url_to_path(invalid).is_none(),
+            "invalid percent-encoded URL must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_url_to_path_rejects_non_existing_target() {
+        let missing_url = "file:///this/path/does/not/exist.txt";
+        assert!(
+            url_to_path(missing_url).is_none(),
+            "non-existing targets must not be returned as openable file paths"
+        );
+    }
+}

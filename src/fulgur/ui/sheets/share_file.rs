@@ -447,3 +447,149 @@ impl Fulgur {
         });
     }
 }
+
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod tests {
+    use super::{Device, Fulgur};
+    use crate::fulgur::{
+        settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
+    };
+    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
+    use parking_lot::Mutex;
+    use std::{cell::RefCell, path::PathBuf, sync::Arc};
+
+    /// Initialize globals and open a test window with a Root-mounted `Fulgur`.
+    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            let mut settings = Settings::new();
+            settings.editor_settings.watch_files = false;
+            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(WindowManager::new());
+        });
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        let window = cx
+            .update(|cx| {
+                cx.open_window(Default::default(), |window, cx| {
+                    let window_id = window.window_handle().window_id();
+                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    *fulgur_slot.borrow_mut() = Some(fulgur.clone());
+                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                })
+            })
+            .expect("failed to open test window");
+        let visual_cx = VisualTestContext::from_window(window.into(), cx);
+        visual_cx.run_until_parked();
+        let fulgur = fulgur_slot
+            .into_inner()
+            .expect("failed to capture Fulgur entity");
+        (fulgur, visual_cx)
+    }
+
+    fn make_device(id: &str) -> Device {
+        Device {
+            id: id.to_string(),
+            name: format!("{id}-name"),
+            device_type: "desktop".to_string(),
+            public_key: Some("age1dummypublickey".to_string()),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            expires_at: "2025-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[gpui::test]
+    fn test_process_pending_share_sheet_ignores_queue_when_sheet_not_pending(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.pending_share_sheet = false;
+                *this.shared_state(cx).sync_state.pending_devices.lock() =
+                    Some((Err("device fetch failed".to_string()), false));
+                this.process_pending_share_sheet(window, cx);
+                assert!(
+                    this.shared_state(cx)
+                        .sync_state
+                        .pending_devices
+                        .lock()
+                        .is_some(),
+                    "queue must be untouched when there is no pending share sheet"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_process_pending_share_sheet_keeps_waiting_until_background_result_arrives(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.pending_share_sheet = true;
+                *this.shared_state(cx).sync_state.pending_devices.lock() = None;
+                this.process_pending_share_sheet(window, cx);
+                assert!(
+                    this.pending_share_sheet,
+                    "sheet should stay pending while background task has not produced a result"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_process_pending_share_sheet_consumes_error_result_and_clears_flag(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.pending_share_sheet = true;
+                *this.shared_state(cx).sync_state.pending_devices.lock() =
+                    Some((Err("authentication failed".to_string()), false));
+                this.process_pending_share_sheet(window, cx);
+                assert!(
+                    !this.pending_share_sheet,
+                    "pending flag must be cleared once a result is consumed"
+                );
+                assert!(
+                    this.shared_state(cx)
+                        .sync_state
+                        .pending_devices
+                        .lock()
+                        .is_none(),
+                    "pending result must be drained from shared state"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_process_pending_share_sheet_consumes_success_result_and_clears_flag(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.pending_share_sheet = true;
+                *this.shared_state(cx).sync_state.pending_devices.lock() =
+                    Some((Ok(vec![make_device("device-1")]), false));
+                this.process_pending_share_sheet(window, cx);
+                assert!(
+                    !this.pending_share_sheet,
+                    "pending flag must be cleared when device list is consumed"
+                );
+                assert!(
+                    this.shared_state(cx)
+                        .sync_state
+                        .pending_devices
+                        .lock()
+                        .is_none(),
+                    "device queue must be drained after processing"
+                );
+            });
+        });
+    }
+}

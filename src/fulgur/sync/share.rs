@@ -434,7 +434,51 @@ mod tests {
     use crate::fulgur::sync::{
         access_token::TokenStateManager, synchronization::SynchronizationError,
     };
+    use crate::fulgur::utils::crypto_helper::generate_key_pair;
     use std::sync::Arc;
+
+    // ---------------------------------------------------------------------------
+    // Test helpers
+    // ---------------------------------------------------------------------------
+
+    fn make_http_agent() -> ureq::Agent {
+        ureq::Agent::new_with_config(ureq::config::Config::builder().build())
+    }
+
+    /// Build a `SynchronizationSettings` whose server URL points at a port that
+    /// is guaranteed to refuse connections immediately (no real network needed).
+    fn make_settings_with_server_url() -> SynchronizationSettings {
+        let mut s = SynchronizationSettings::new();
+        s.server_url = Some("http://127.0.0.1:19999".to_string());
+        s
+    }
+
+    fn make_token_manager_with_valid_token() -> Arc<TokenStateManager> {
+        let manager = Arc::new(TokenStateManager::new());
+        let expires_at = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+        manager.inject_token_for_test("test-jwt-token".to_string(), expires_at);
+        manager
+    }
+
+    fn make_device(id: &str, device_type: &str, public_key: Option<&str>) -> Device {
+        Device {
+            id: id.to_string(),
+            name: format!("{}-name", id),
+            device_type: device_type.to_string(),
+            public_key: public_key.map(str::to_string),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            expires_at: "2025-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    fn make_basic_request(device_id: &str) -> ShareFileRequest {
+        ShareFileRequest {
+            content: "hello world".to_string(),
+            file_name: "test.txt".to_string(),
+            device_ids: vec![device_id.to_string()],
+            file_path: None,
+        }
+    }
 
     // ========== Compression Tests ==========
 
@@ -705,5 +749,268 @@ fn main() {
         };
         let message = result.summary_message();
         assert_eq!(message, "The file was not shared.");
+    }
+
+    #[test]
+    fn test_share_result_summary_message_single_success() {
+        let result = ShareResult {
+            successes: vec![("device1".to_string(), "2025-06-30".to_string())],
+            failures: vec![],
+        };
+        let message = result.summary_message();
+        assert!(message.contains("File shared successfully"));
+        assert!(message.contains("1 device(s)"));
+        assert!(message.contains("2025-06-30"));
+    }
+
+    // ========== share_file validation guards ==========
+
+    #[test]
+    fn test_share_file_rejects_missing_server_url() {
+        let settings = SynchronizationSettings::new(); // server_url = None
+        let request = ShareFileRequest {
+            content: "hello".to_string(),
+            file_name: "test.txt".to_string(),
+            device_ids: vec!["device-1".to_string()],
+            file_path: None,
+        };
+        let result = share_file(
+            &settings,
+            request,
+            &[],
+            Arc::new(TokenStateManager::new()),
+            &make_http_agent(),
+        );
+        assert!(
+            matches!(result, Err(SynchronizationError::ServerUrlMissing)),
+            "Expected ServerUrlMissing, got: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_share_file_rejects_empty_content() {
+        let mut settings = SynchronizationSettings::new();
+        settings.server_url = Some("https://example.com".to_string());
+        let request = ShareFileRequest {
+            content: String::new(),
+            file_name: "test.txt".to_string(),
+            device_ids: vec!["device-1".to_string()],
+            file_path: None,
+        };
+        let result = share_file(
+            &settings,
+            request,
+            &[],
+            Arc::new(TokenStateManager::new()),
+            &make_http_agent(),
+        );
+        assert!(
+            matches!(result, Err(SynchronizationError::ContentMissing)),
+            "Expected ContentMissing, got: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_share_file_rejects_empty_file_name() {
+        let mut settings = SynchronizationSettings::new();
+        settings.server_url = Some("https://example.com".to_string());
+        let request = ShareFileRequest {
+            content: "hello".to_string(),
+            file_name: String::new(),
+            device_ids: vec!["device-1".to_string()],
+            file_path: None,
+        };
+        let result = share_file(
+            &settings,
+            request,
+            &[],
+            Arc::new(TokenStateManager::new()),
+            &make_http_agent(),
+        );
+        assert!(
+            matches!(result, Err(SynchronizationError::FileNameMissing)),
+            "Expected FileNameMissing, got: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_share_file_rejects_empty_device_ids() {
+        let mut settings = SynchronizationSettings::new();
+        settings.server_url = Some("https://example.com".to_string());
+        let request = ShareFileRequest {
+            content: "hello".to_string(),
+            file_name: "test.txt".to_string(),
+            device_ids: vec![],
+            file_path: None,
+        };
+        let result = share_file(
+            &settings,
+            request,
+            &[],
+            Arc::new(TokenStateManager::new()),
+            &make_http_agent(),
+        );
+        assert!(
+            matches!(result, Err(SynchronizationError::DeviceIdsMissing)),
+            "Expected DeviceIdsMissing, got: {:?}",
+            result.err()
+        );
+    }
+
+    // ========== share_file per-device execution paths ==========
+    // These tests inject a valid cached token to bypass the network token-refresh
+    // and exercise the per-device branches inside the scoped thread pool.
+
+    #[test]
+    fn test_share_file_records_failure_for_unknown_device_id() {
+        // device_ids contains an ID that is absent from the devices slice.
+        let settings = make_settings_with_server_url();
+        let token_manager = make_token_manager_with_valid_token();
+        let result = share_file(
+            &settings,
+            make_basic_request("nonexistent-device"),
+            &[], // no devices provided
+            token_manager,
+            &make_http_agent(),
+        )
+        .expect("share_file should return Ok(ShareResult) even on per-device failure");
+        assert_eq!(result.successes.len(), 0);
+        assert_eq!(result.failures.len(), 1);
+        assert_eq!(result.failures[0].0, "nonexistent-device");
+        assert!(
+            matches!(result.failures[0].1, SynchronizationError::Other(_)),
+            "Unknown device should produce Other error, got: {:?}",
+            result.failures[0].1
+        );
+    }
+
+    #[test]
+    fn test_share_file_records_failure_when_device_has_no_public_key() {
+        let settings = make_settings_with_server_url();
+        let token_manager = make_token_manager_with_valid_token();
+        let device = make_device("device-no-key", "desktop", None);
+        let result = share_file(
+            &settings,
+            make_basic_request("device-no-key"),
+            &[device],
+            token_manager,
+            &make_http_agent(),
+        )
+        .expect("share_file should return Ok(ShareResult)");
+        assert_eq!(result.successes.len(), 0);
+        assert_eq!(result.failures.len(), 1);
+        assert!(
+            matches!(
+                result.failures[0].1,
+                SynchronizationError::MissingPublicKey(_)
+            ),
+            "Device without public key should produce MissingPublicKey, got: {:?}",
+            result.failures[0].1
+        );
+    }
+
+    #[test]
+    fn test_share_file_records_failure_when_device_has_invalid_public_key() {
+        let settings = make_settings_with_server_url();
+        let token_manager = make_token_manager_with_valid_token();
+        let device = make_device(
+            "device-bad-key",
+            "laptop",
+            Some("not-a-valid-age-public-key"),
+        );
+        let result = share_file(
+            &settings,
+            make_basic_request("device-bad-key"),
+            &[device],
+            token_manager,
+            &make_http_agent(),
+        )
+        .expect("share_file should return Ok(ShareResult)");
+        assert_eq!(result.successes.len(), 0);
+        assert_eq!(result.failures.len(), 1);
+        assert!(
+            matches!(result.failures[0].1, SynchronizationError::EncryptionFailed),
+            "Invalid public key should produce EncryptionFailed, got: {:?}",
+            result.failures[0].1
+        );
+    }
+
+    #[test]
+    fn test_share_file_with_valid_device_key_fails_at_network() {
+        // Encryption succeeds; the failure comes from the network call to a
+        // non-listening port (ConnectionRefused, immediate).
+        let settings = make_settings_with_server_url(); // 127.0.0.1:19999
+        let token_manager = make_token_manager_with_valid_token();
+        let (_, public_key) = generate_key_pair();
+        let device = make_device("device-valid-key", "server", Some(&public_key.to_string()));
+        let result = share_file(
+            &settings,
+            make_basic_request("device-valid-key"),
+            &[device],
+            token_manager,
+            &make_http_agent(),
+        )
+        .expect("share_file returns Ok(ShareResult) even when per-device send fails");
+        assert_eq!(result.successes.len(), 0);
+        assert_eq!(result.failures.len(), 1);
+        assert_eq!(result.failures[0].0, "device-valid-key");
+        // The error must be network-level, not a validation or crypto error.
+        assert!(
+            !matches!(
+                result.failures[0].1,
+                SynchronizationError::EncryptionFailed
+                    | SynchronizationError::MissingPublicKey(_)
+                    | SynchronizationError::ContentMissing
+                    | SynchronizationError::ContentTooLarge
+            ),
+            "Expected a network-level error, got: {:?}",
+            result.failures[0].1
+        );
+    }
+
+    #[test]
+    fn test_share_file_multi_device_collects_all_failures() {
+        // Two device IDs: one absent from the slice, one present but without a key.
+        // Both should land in failures; the result is still Ok(ShareResult).
+        let settings = make_settings_with_server_url();
+        let token_manager = make_token_manager_with_valid_token();
+        let device_no_key = make_device("device-no-key", "desktop", None);
+        let request = ShareFileRequest {
+            content: "shared content".to_string(),
+            file_name: "multi.txt".to_string(),
+            device_ids: vec!["device-missing".to_string(), "device-no-key".to_string()],
+            file_path: None,
+        };
+        let result = share_file(
+            &settings,
+            request,
+            &[device_no_key],
+            token_manager,
+            &make_http_agent(),
+        )
+        .expect("share_file should return Ok(ShareResult)");
+        assert_eq!(result.successes.len(), 0);
+        assert_eq!(result.failures.len(), 2);
+        assert!(!result.is_complete_success());
+    }
+
+    // ========== get_devices validation ==========
+
+    #[test]
+    fn test_get_devices_fails_without_server_url() {
+        let settings = SynchronizationSettings::new(); // server_url = None
+        let result = get_devices(
+            &settings,
+            Arc::new(TokenStateManager::new()),
+            &make_http_agent(),
+        );
+        assert!(
+            matches!(result, Err(SynchronizationError::ServerUrlMissing)),
+            "Expected ServerUrlMissing, got: {:?}",
+            result.err()
+        );
     }
 }

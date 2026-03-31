@@ -760,6 +760,8 @@ mod tests {
         AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
         Window, div,
     };
+    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+    use gpui::{BorrowAppContext, WindowId};
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
     #[cfg(feature = "gpui-test-support")]
@@ -775,6 +777,18 @@ mod tests {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div()
         }
+    }
+
+    /// Build an OS-agnostic temporary test path.
+    ///
+    /// ### Parameters
+    /// - `file_name`: The file name to append to the platform temp directory.
+    ///
+    /// ### Returns
+    /// - `PathBuf`: A path under `std::env::temp_dir()` suitable for cross-platform tests.
+    #[cfg(feature = "gpui-test-support")]
+    fn temp_test_path(file_name: &str) -> PathBuf {
+        std::env::temp_dir().join(file_name)
     }
 
     #[cfg(feature = "gpui-test-support")]
@@ -808,13 +822,72 @@ mod tests {
         (fulgur, visual_cx)
     }
 
+    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+    fn setup_test_globals(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            let mut settings = Settings::new();
+            settings.editor_settings.watch_files = false;
+            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(WindowManager::new());
+        });
+    }
+
+    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+    fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Fulgur>) {
+        let window_id_slot: RefCell<Option<WindowId>> = RefCell::new(None);
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                let window_id = window.window_handle().window_id();
+                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                *window_id_slot.borrow_mut() = Some(window_id);
+                *fulgur_slot.borrow_mut() = Some(fulgur.clone());
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+        (
+            window_id_slot
+                .into_inner()
+                .expect("failed to capture test window id"),
+            fulgur_slot
+                .into_inner()
+                .expect("failed to capture test Fulgur entity"),
+        )
+    }
+
+    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+    fn invoke_process_pending_files_from_macos(
+        cx: &mut TestAppContext,
+        window_id: WindowId,
+        fulgur: &Entity<Fulgur>,
+    ) {
+        cx.update(|cx| {
+            for handle in cx.windows() {
+                if handle.window_id() == window_id {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            fulgur.update(cx, |this, cx| {
+                                this.process_pending_files_from_macos(window, cx);
+                            });
+                        })
+                        .expect("failed to run process_pending_files_from_macos on test window");
+                    return;
+                }
+            }
+            panic!("failed to locate target test window by id");
+        });
+    }
+
     // ========== find_tab_by_path tests ==========
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
     fn test_find_tab_by_path_returns_index_for_existing_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        let path = PathBuf::from("/tmp/fulgur_find_tab_test.txt");
+        let path = temp_test_path("fulgur_find_tab_test.txt");
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
@@ -991,7 +1064,7 @@ mod tests {
     #[gpui::test]
     fn test_do_open_file_focuses_existing_tab_when_already_open(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        let path = PathBuf::from("/tmp/fulgur_already_open_test.txt");
+        let path = temp_test_path("fulgur_already_open_test.txt");
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
@@ -1046,5 +1119,55 @@ mod tests {
             .and_then(|p| std::fs::canonicalize(p).ok())
             .unwrap_or_else(|| tab_path.clone().unwrap_or_default());
         assert_eq!(canonical_actual, canonical_expected);
+    }
+
+    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+    #[gpui::test]
+    fn test_process_pending_files_from_macos_only_focused_window_drains_queue(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
+        let (window_id_two, fulgur_two) = open_window_with_fulgur(cx);
+        cx.update(|cx| {
+            cx.update_global::<WindowManager, _>(|manager, _| {
+                manager.register(window_id_one, fulgur_one.downgrade());
+                manager.register(window_id_two, fulgur_two.downgrade());
+            });
+        });
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let file_path = dir.path().join("macos-open-url-focus-test.txt");
+        std::fs::write(&file_path, "from open-url event").expect("failed to write temp file");
+        cx.update(|cx| {
+            let shared = cx.global::<SharedAppState>();
+            shared
+                .pending_files_from_macos
+                .lock()
+                .push(file_path.clone());
+        });
+        // Window 1 is not last focused, so it must not drain the queue.
+        invoke_process_pending_files_from_macos(cx, window_id_one, &fulgur_one);
+        cx.update(|cx| {
+            let shared = cx.global::<SharedAppState>();
+            assert_eq!(
+                shared.pending_files_from_macos.lock().len(),
+                1,
+                "non-focused windows must not consume pending macOS open-url files"
+            );
+        });
+        invoke_process_pending_files_from_macos(cx, window_id_two, &fulgur_two);
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let shared = cx.global::<SharedAppState>();
+            assert!(
+                shared.pending_files_from_macos.lock().is_empty(),
+                "focused window should consume pending macOS open-url files"
+            );
+            let tab_count = fulgur_two.read(cx).tabs.len();
+            assert!(
+                tab_count >= 2,
+                "processing a queued file should open it in a new tab"
+            );
+        });
     }
 }

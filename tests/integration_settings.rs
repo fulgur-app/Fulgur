@@ -48,15 +48,26 @@ fn create_custom_settings() -> Settings {
         .is_deduplication = false;
     settings
         .recent_files
-        .add_file(PathBuf::from("/path/to/file1.txt"));
+        .add_file(PathBuf::from("samples/file1.txt"));
     settings
         .recent_files
-        .add_file(PathBuf::from("/path/to/file2.rs"));
+        .add_file(PathBuf::from("samples/file2.rs"));
     settings
         .recent_files
-        .add_file(PathBuf::from("/path/to/file3.md"));
+        .add_file(PathBuf::from("samples/file3.md"));
 
     settings
+}
+
+/// Build an OS-agnostic temporary test path.
+///
+/// ### Parameters
+/// - `file_name`: The file name to append to the platform temp directory.
+///
+/// ### Returns
+/// - `PathBuf`: A path under `std::env::temp_dir()` suitable for cross-platform tests.
+fn temp_test_path(file_name: &str) -> PathBuf {
+    std::env::temp_dir().join(file_name)
 }
 
 /// Create a temporary file path for testing
@@ -309,9 +320,9 @@ fn test_settings_recent_files_multiple() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let settings_path = temp_settings_path(&temp_dir);
     let mut original = Settings::new();
-    let file1 = PathBuf::from("/tmp/test1.txt");
-    let file2 = PathBuf::from("/tmp/test2.rs");
-    let file3 = PathBuf::from("/home/user/doc.md");
+    let file1 = temp_test_path("test1.txt");
+    let file2 = temp_test_path("test2.rs");
+    let file3 = temp_test_path("doc.md");
     original.recent_files.add_file(file1.clone());
     original.recent_files.add_file(file2.clone());
     original.recent_files.add_file(file3.clone());
@@ -334,7 +345,7 @@ fn test_settings_recent_files_respects_max_limit() {
     for i in 0..12 {
         original
             .recent_files
-            .add_file(PathBuf::from(format!("/tmp/file{}.txt", i)));
+            .add_file(temp_test_path(&format!("file{}.txt", i)));
     }
     original
         .save_to_path(&settings_path)
@@ -346,8 +357,8 @@ fn test_settings_recent_files_respects_max_limit() {
         "Should respect max_files limit"
     );
     let loaded_files = loaded.recent_files.get_files();
-    assert_eq!(loaded_files[0], PathBuf::from("/tmp/file2.txt"));
-    assert_eq!(loaded_files[9], PathBuf::from("/tmp/file11.txt"));
+    assert_eq!(loaded_files[0], temp_test_path("file2.txt"));
+    assert_eq!(loaded_files[9], temp_test_path("file11.txt"));
 }
 
 #[test]
