@@ -757,9 +757,11 @@ mod tests {
     };
     #[cfg(feature = "gpui-test-support")]
     use gpui::{
-        AppContext, BorrowAppContext, Context, Entity, IntoElement, Render, TestAppContext,
-        VisualTestContext, Window, WindowId, div,
+        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
+        Window, div,
     };
+    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+    use gpui::{BorrowAppContext, WindowId};
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
     #[cfg(feature = "gpui-test-support")]
