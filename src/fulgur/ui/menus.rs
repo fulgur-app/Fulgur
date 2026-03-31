@@ -432,11 +432,19 @@ impl Fulgur {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
+    use super::{DockMenuTab, build_dock_menu};
     use super::{
         KeybindingDispatchAction, build_default_key_bindings, default_keybinding_dispatch_specs,
     };
     use core::prelude::v1::test;
+    #[cfg(target_os = "macos")]
+    use gpui::MenuItem;
+    #[cfg(target_os = "macos")]
+    use gpui::SharedString;
     use std::collections::HashSet;
+    #[cfg(target_os = "macos")]
+    use std::path::PathBuf;
 
     fn has_binding(
         specs: &[super::KeybindingDispatchSpec],
@@ -514,5 +522,56 @@ mod tests {
         let specs = default_keybinding_dispatch_specs();
         let keybindings = build_default_key_bindings();
         assert_eq!(keybindings.len(), specs.len());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_build_dock_menu_with_recent_and_window_groups_filters_empty_windows() {
+        let windows = vec![
+            vec![DockMenuTab::Titled {
+                name: SharedString::from("Untitled"),
+                title: SharedString::from("Untitled"),
+            }],
+            vec![],
+            vec![DockMenuTab::File {
+                name: SharedString::from("notes.md"),
+                path: PathBuf::from("/tmp/notes.md"),
+            }],
+        ];
+        let recent = vec![
+            PathBuf::from("/tmp/recent-a.rs"),
+            PathBuf::from("/tmp/recent-b.rs"),
+        ];
+        let items = build_dock_menu(&windows, &recent);
+        assert!(
+            matches!(items.first(), Some(MenuItem::Submenu(_))),
+            "dock menu should begin with the recent-files submenu when recents exist"
+        );
+        let separator_count = items
+            .iter()
+            .filter(|item| matches!(item, MenuItem::Separator))
+            .count();
+        assert_eq!(
+            separator_count, 3,
+            "expected separators: after recents, between window groups, and before new actions"
+        );
+        assert_eq!(
+            items.len(),
+            8,
+            "expected submenu+separator, two tab actions with one group separator, trailing separator, and two creation actions"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_build_dock_menu_without_recent_or_tabs_returns_creation_actions_only() {
+        let items = build_dock_menu(&[], &[]);
+        assert_eq!(items.len(), 2);
+        assert!(
+            items
+                .iter()
+                .all(|item| !matches!(item, MenuItem::Separator | MenuItem::Submenu(_))),
+            "when no recents or tabs exist, dock menu should only include direct action items"
+        );
     }
 }
