@@ -4,6 +4,11 @@ use age::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use keyring::Entry;
+use std::{
+    collections::HashMap,
+    ffi::OsStr,
+    sync::{Mutex, OnceLock},
+};
 use zeroize::Zeroizing;
 
 use crate::fulgur::settings::Settings;
@@ -12,6 +17,128 @@ use crate::fulgur::settings::Settings;
 const PRIVATE_KEY_NAME: &str = "private_key";
 const DEVICE_API_KEY: &str = "device_api_key";
 const SERVICE_NAME: &str = "Fulgur";
+
+/// Checks whether an environment variable contains a truthy value.
+///
+/// Accepted truthy values are: `1`, `true`, `yes`, `on` (case-insensitive).
+///
+/// ### Arguments
+/// - `name`: The environment variable name to evaluate.
+///
+/// ### Returns
+/// - `true`: If the variable exists and is set to a recognized truthy value.
+/// - `false`: Otherwise.
+fn env_var_is_truthy(name: &str) -> bool {
+    matches!(
+        std::env::var(name)
+            .ok()
+            .map(|v| v.to_ascii_lowercase())
+            .as_deref(),
+        Some("1" | "true" | "yes" | "on")
+    )
+}
+
+/// Determines whether keychain operations should use the in-memory backend.
+///
+/// This avoids interactive keychain prompts during `cargo test` and in CI.
+/// Set `FULGUR_USE_REAL_KEYCHAIN=1` to force real keychain access.
+///
+/// Precedence:
+/// 1. `FULGUR_USE_REAL_KEYCHAIN=1` always forces the real keychain backend.
+/// 2. `FULGUR_DISABLE_KEYCHAIN=1` forces the in-memory backend.
+/// 3. `CI=1` forces the in-memory backend.
+/// 4. Test binary heuristics (`target/*/deps/*-<hash>`) use the in-memory backend.
+///
+/// ### Returns
+/// - `true`: Use in-memory keychain storage.
+/// - `false`: Use the platform keychain backend.
+fn should_use_in_memory_keychain() -> bool {
+    if env_var_is_truthy("FULGUR_USE_REAL_KEYCHAIN") {
+        return false;
+    }
+    if env_var_is_truthy("FULGUR_DISABLE_KEYCHAIN") {
+        return true;
+    }
+    if env_var_is_truthy("CI") {
+        return true;
+    }
+    // `cargo test` binaries are typically emitted under `target/*/deps/`.
+    if let Ok(exe) = std::env::current_exe() {
+        let in_deps_dir = exe
+            .parent()
+            .is_some_and(|parent| parent.ends_with("deps"));
+        let has_hashed_test_name = exe
+            .file_name()
+            .and_then(OsStr::to_str)
+            .is_some_and(|name| name.contains('-'));
+        if in_deps_dir && has_hashed_test_name {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns the process-local in-memory keychain store.
+///
+/// ### Returns
+/// - `&'static Mutex<HashMap<String, String>>`: Shared in-memory credential store.
+fn in_memory_keychain() -> &'static Mutex<HashMap<String, String>> {
+    static STORE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Builds the in-memory storage key for a keychain user entry.
+///
+/// ### Arguments
+/// - `user`: The keychain entry name (for example, `private_key`).
+///
+/// ### Returns
+/// - `String`: A namespaced key using the service name and user.
+fn in_memory_key(user: &str) -> String {
+    format!("{SERVICE_NAME}:{user}")
+}
+
+/// Saves or removes a value in the in-memory keychain backend.
+///
+/// If `value` is `None` or empty, the entry is removed.
+///
+/// ### Arguments
+/// - `user`: The keychain entry name.
+/// - `value`: The value to save.
+///
+/// ### Returns
+/// - `Ok(())`: The in-memory operation succeeded.
+/// - `Err(anyhow::Error)`: The in-memory store lock failed.
+fn save_or_remove_to_in_memory_keychain(user: &str, value: Option<&str>) -> anyhow::Result<()> {
+    let mut keychain = in_memory_keychain()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Failed to lock in-memory keychain"))?;
+    let key = in_memory_key(user);
+    if let Some(value) = value
+        && !value.is_empty()
+    {
+        keychain.insert(key, value.to_string());
+    } else {
+        keychain.remove(&key);
+    }
+    Ok(())
+}
+
+/// Loads a value from the in-memory keychain backend.
+///
+/// ### Arguments
+/// - `user`: The keychain entry name.
+///
+/// ### Returns
+/// - `Ok(Some(String))`: The value exists.
+/// - `Ok(None)`: The value does not exist.
+/// - `Err(anyhow::Error)`: The in-memory store lock failed.
+fn load_from_in_memory_keychain(user: &str) -> anyhow::Result<Option<String>> {
+    let keychain = in_memory_keychain()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Failed to lock in-memory keychain"))?;
+    Ok(keychain.get(&in_memory_key(user)).cloned())
+}
 
 /// Generate a matching pair of private/public keys
 ///
@@ -59,6 +186,9 @@ pub fn save_device_api_key_to_keychain(device_api_key: Option<String>) -> anyhow
 /// - `Ok()`: The value has been succesfully saved in the keychain
 /// - `Err(anyhow::Error)`: If the value could not be saved
 fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> anyhow::Result<()> {
+    if should_use_in_memory_keychain() {
+        return save_or_remove_to_in_memory_keychain(user, value);
+    }
     let entry = Entry::new(SERVICE_NAME, user)?;
     if let Some(value) = value
         && !value.is_empty()
@@ -104,6 +234,9 @@ pub fn load_device_api_key_from_keychain() -> anyhow::Result<Option<String>> {
 /// - `Ok(Option<String>)`: The value if it exists, otherwise `None`
 /// - `Err(anyhow::Error)`: If the value could not be loaded
 fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
+    if should_use_in_memory_keychain() {
+        return load_from_in_memory_keychain(user);
+    }
     let entry = Entry::new(SERVICE_NAME, user)?;
     match entry.get_password() {
         Ok(value) if value.is_empty() => {
