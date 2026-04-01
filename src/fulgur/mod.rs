@@ -32,8 +32,7 @@ use settings::Settings;
 use std::{collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
 use tab::Tab;
 use ui::{
-    bars::search_bar_actions::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*,
-    themes,
+    bars::search_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*, themes,
 };
 
 /// Search and replace functionality state
