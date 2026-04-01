@@ -195,8 +195,8 @@ pub fn build_default_key_bindings() -> Vec<KeyBinding> {
         .collect()
 }
 
-/// A single tab entry for the dock menu, carrying the display name and the action to fire
-#[cfg(target_os = "macos")]
+/// A single tab entry for the dock/taskbar menu, carrying the display name and the action to fire
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub enum DockMenuTab {
     /// File-backed editor tab — use path for reliable cross-window lookup
     File { name: SharedString, path: PathBuf },
