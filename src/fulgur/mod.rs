@@ -16,7 +16,6 @@ use crate::fulgur::{
     languages::supported_languages::SupportedLanguage,
     sync::sse::SseState,
     ui::{dialogs::about::about, notifications::update_notification::make_update_notification},
-    utils::crypto_helper,
 };
 use gpui::*;
 use gpui_component::{
