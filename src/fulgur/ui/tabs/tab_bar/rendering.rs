@@ -1,69 +1,25 @@
-use crate::fulgur::{
-    Fulgur,
-    tab::Tab,
-    ui::components_utils::{self, TAB_BAR_BUTTON_SIZE, TAB_BAR_HEIGHT, button_factory},
-    ui::icons::CustomIcon,
-    ui::tabs::tab_drag::DraggedTab,
-    window_manager::WindowManager,
-};
 use gpui::*;
 use gpui_component::{
-    ActiveTheme, Sizable, StyledExt, Theme, ThemeRegistry,
+    ActiveTheme, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     h_flex,
     menu::{ContextMenuExt, PopupMenuItem},
     tooltip::Tooltip,
     v_flex,
 };
-use serde::Deserialize;
 
-#[derive(Action, Clone, PartialEq, Deserialize)]
-#[action(namespace = fulgur, no_json)]
-pub struct CloseTabAction(pub usize);
+use crate::fulgur::{
+    Fulgur,
+    tab::Tab,
+    ui::tabs::tab_drag::DraggedTab,
+    ui::{components_utils, icons::CustomIcon},
+    window_manager::WindowManager,
+};
 
-#[derive(Action, Clone, PartialEq, Deserialize)]
-#[action(namespace = fulgur, no_json)]
-pub struct CloseTabsToLeft(pub usize);
-
-#[derive(Action, Clone, PartialEq, Deserialize)]
-#[action(namespace = fulgur, no_json)]
-pub struct CloseTabsToRight(pub usize);
-
-#[derive(Action, Clone, PartialEq, Deserialize)]
-#[action(namespace = fulgur, no_json)]
-pub struct CloseAllOtherTabs(pub usize);
-
-#[derive(Action, Clone, PartialEq, Deserialize)]
-#[action(namespace = fulgur, no_json)]
-pub struct ShowInFileManager(pub usize);
-
-#[derive(Action, Clone, PartialEq, Deserialize)]
-#[action(namespace = fulgur, no_json)]
-pub struct DuplicateTab(pub usize);
-
-actions!(fulgur, [CloseAllTabsAction, SendTabToWindowNoOp]);
-
-/// Create a tab bar button
-///
-/// ### Arguments
-/// - `id`: The ID of the button
-/// - `tooltip`: The tooltip of the button
-/// - `icon`: The icon of the button
-/// - `border_color`: The color of the border
-///
-/// ### Returns
-/// - `Button`: A tab bar button
-pub fn tab_bar_button_factory(
-    id: &'static str,
-    tooltip: &'static str,
-    icon: CustomIcon,
-    border_color: Hsla,
-) -> Button {
-    button_factory(id, tooltip, icon, border_color)
-        .border_b_1()
-        .h(TAB_BAR_BUTTON_SIZE)
-        .w(TAB_BAR_BUTTON_SIZE)
-}
+use super::{
+    CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
+    DuplicateTab, SendTabToWindowNoOp, ShowInFileManager, tab_bar_button_factory,
+};
 
 impl Fulgur {
     /// Get the display title for a tab, including parent folder if there are duplicates
@@ -74,7 +30,11 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `(String, Option<String>)`: A tuple of (filename, optional parent folder)
-    fn get_tab_display_title(&self, index: usize, tab: &Tab) -> (String, Option<String>) {
+    pub(crate) fn get_tab_display_title(
+        &self,
+        index: usize,
+        tab: &Tab,
+    ) -> (String, Option<String>) {
         let base_title = tab.title();
         if let Some(editor_tab) = tab.as_editor()
             && let Some(ref path) = editor_tab.file_path
@@ -110,179 +70,6 @@ impl Fulgur {
         (base_title.to_string(), None)
     }
 
-    /// Handle close tab action from context menu
-    ///
-    /// ### Arguments
-    /// - `action`: The action to handle
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn on_close_tab_action(
-        &mut self,
-        action: &CloseTabAction,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.close_tab(action.0, window, cx);
-    }
-
-    /// Handle close tabs to left action from context menu
-    ///
-    /// ### Arguments
-    /// - `action`: The action to handle
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn on_close_tabs_to_left(
-        &mut self,
-        action: &CloseTabsToLeft,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.close_tabs_to_left(action.0, window, cx);
-    }
-
-    /// Handle close tabs to right action from context menu
-    ///
-    /// ### Arguments
-    /// - `action`: The action to handle
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn on_close_tabs_to_right(
-        &mut self,
-        action: &CloseTabsToRight,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.close_tabs_to_right(action.0, window, cx);
-    }
-
-    /// Handle close all tabs action from context menu
-    ///
-    /// ### Arguments
-    /// - `action`: The action to handle
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn on_close_all_tabs_action(
-        &mut self,
-        _: &CloseAllTabsAction,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.close_all_tabs(window, cx);
-    }
-
-    /// Handle close all tabs action from context menu
-    ///
-    /// ### Arguments
-    /// - `action`: The action to handle
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn on_close_all_other_tabs_action(
-        &mut self,
-        _: &CloseAllOtherTabs,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.close_other_tabs(window, cx);
-    }
-
-    /// Handle show in file manager action from context menu
-    ///
-    /// Opens the file manager and selects the file associated with the given tab.
-    ///
-    /// On macOS, uses `open -R` to reveal and select the file in Finder.
-    /// On Windows, uses `explorer /select,` to select the file in Explorer.
-    /// On Linux, falls back to opening the parent directory, as there is no
-    /// universal "reveal file" command across desktop environments.
-    ///
-    /// ### Arguments
-    /// - `action`: The action carrying the tab index
-    /// - `_window`: The window context
-    /// - `_cx`: The application context
-    pub fn on_show_in_file_manager(
-        &mut self,
-        action: &ShowInFileManager,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-        let Some(tab) = self.tabs.get(action.0) else {
-            return;
-        };
-        let Some(editor_tab) = tab.as_editor() else {
-            return;
-        };
-        let Some(ref file_path) = editor_tab.file_path else {
-            return;
-        };
-
-        let result = reveal_file_in_file_manager(file_path);
-        if let Err(e) = result {
-            log::error!("Failed to open file manager: {}", e);
-        }
-    }
-
-    /// Handle duplicate tab action from context menu
-    ///
-    /// ### Arguments
-    /// - `action`: The action carrying the tab index
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn on_duplicate_tab(
-        &mut self,
-        action: &DuplicateTab,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.duplicate_tab(action.0, window, cx);
-    }
-
-    /// Handle next tab action
-    ///
-    /// ### Arguments
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn on_next_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(active_index) = self.active_tab_index {
-            let next_index = (active_index + 1) % self.tabs.len();
-            self.set_active_tab(next_index, window, cx);
-        }
-    }
-
-    /// Handle previous tab action
-    ///
-    /// ### Arguments
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn on_previous_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(active_index) = self.active_tab_index {
-            let previous_index = (active_index + self.tabs.len() - 1) % self.tabs.len();
-            self.set_active_tab(previous_index, window, cx);
-        }
-    }
-
-    /// Handle theme switching action
-    ///
-    /// Applies the selected theme, updates settings, refreshes windows, and rebuilds menus.
-    ///
-    /// ### Arguments
-    /// - `theme_name`: The name of the theme to switch to (as SharedString from action)
-    /// - `cx`: The application context
-    pub fn switch_to_theme(&mut self, theme_name: gpui::SharedString, cx: &mut Context<Self>) {
-        if let Some(theme_config) = ThemeRegistry::global(cx)
-            .themes()
-            .get(theme_name.as_ref())
-            .cloned()
-        {
-            Theme::global_mut(cx).apply_config(&theme_config);
-            self.settings.app_settings.theme = theme_name;
-            self.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_show);
-            let _ = self.update_and_propagate_settings(cx);
-        }
-        cx.refresh_windows();
-        let menus =
-            crate::fulgur::ui::menus::build_menus(self.settings.recent_files.get_files(), None);
-        self.update_menus(menus, cx);
-    }
-
     /// Render the tab bar
     ///
     /// ### Arguments
@@ -291,6 +78,8 @@ impl Fulgur {
     /// ### Returns
     /// - `Div`: The rendered tab bar element
     pub fn render_tab_bar(&self, cx: &mut Context<Self>) -> Div {
+        use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
+
         let mut tab_bar = div()
             .flex()
             .items_center()
@@ -384,6 +173,7 @@ impl Fulgur {
     /// a muted, semi-transparent style to distinguish it from real tabs.
     ///
     /// ### Arguments
+    /// - `slot`: The insertion slot index
     /// - `dragged`: The dragged tab data (used for title and modified state)
     /// - `cx`: The application context
     ///
@@ -395,6 +185,8 @@ impl Fulgur {
         dragged: &DraggedTab,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
+
         let modified_indicator = if dragged.is_modified { " •" } else { "" };
         div()
             .id(("ghost-tab", slot))
@@ -474,6 +266,8 @@ impl Fulgur {
     /// ### Returns
     /// - `AnyElement`: The rendered tab element
     pub fn render_tab(&self, index: usize, tab: &Tab, cx: &mut Context<Self>) -> AnyElement {
+        use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
+
         let tab_id = tab.id();
         let is_active = match self.active_tab_index {
             Some(active_index) => index == active_index,
@@ -763,266 +557,5 @@ impl Fulgur {
                 )
         });
         tab_with_content.into_any_element()
-    }
-}
-
-/// Reveals a file in the platform's native file manager with the file selected.
-///
-/// - **macOS**: `open -R <path>` — reveals and selects the file in Finder
-/// - **Windows**: `explorer /select,<path>` — selects the file in Explorer
-/// - **Linux**: falls back to opening the parent directory via the `open` crate,
-///   as there is no universal "reveal" command across desktop environments
-///
-/// ### Arguments
-/// - `file_path`: The path of the file to reveal
-///
-/// ### Returns
-/// - `Ok(())` on success, `Err` with an error message on failure
-fn reveal_file_in_file_manager(file_path: &std::path::Path) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg("-R")
-            .arg(file_path)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(format!("/select,{}", file_path.display()))
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        let parent = file_path
-            .parent()
-            .ok_or_else(|| "File has no parent directory".to_string())?;
-        open::that(parent).map_err(|e| e.to_string())
-    }
-}
-
-/// Opens the theme repository in the default browser
-///
-/// This is a standalone helper function for the GetTheme action.
-pub fn open_theme_repository() {
-    if let Err(e) = open::that("https://github.com/longbridge/gpui-component/tree/main/themes") {
-        log::error!("Failed to open browser: {}", e);
-    }
-}
-
-#[cfg(all(test, feature = "gpui-test-support"))]
-mod tests {
-    use super::Fulgur;
-    use crate::fulgur::{
-        settings::Settings, shared_state::SharedAppState, tab::Tab, window_manager::WindowManager,
-    };
-    use gpui::{
-        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
-        Window, div,
-    };
-    use parking_lot::Mutex;
-    use std::{cell::RefCell, path::PathBuf, sync::Arc};
-
-    struct EmptyView;
-
-    impl Render for EmptyView {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div()
-        }
-    }
-
-    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(|cx| {
-            gpui_component::init(cx);
-            let mut settings = Settings::new();
-            settings.editor_settings.watch_files = false;
-            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-            cx.set_global(SharedAppState::new(settings, pending_files));
-            cx.set_global(WindowManager::new());
-        });
-        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
-        let window = cx
-            .update(|cx| {
-                cx.open_window(Default::default(), |window, cx| {
-                    let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
-                    *fulgur_slot.borrow_mut() = Some(fulgur);
-                    cx.new(|_| EmptyView)
-                })
-            })
-            .expect("failed to open test window");
-        let visual_cx = VisualTestContext::from_window(window.into(), cx);
-        visual_cx.run_until_parked();
-        let fulgur = fulgur_slot
-            .into_inner()
-            .expect("failed to capture Fulgur entity");
-        (fulgur, visual_cx)
-    }
-
-    // ========== get_tab_display_title tests ==========
-
-    #[gpui::test]
-    fn test_get_tab_display_title_returns_filename_for_unique_path(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, _cx| {
-                if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
-                    e.file_path = Some(PathBuf::from("/projects/foo/main.rs"));
-                }
-                let tab = this.tabs.first().unwrap();
-                let (filename, folder) = this.get_tab_display_title(0, tab);
-                assert_eq!(filename, "main.rs");
-                assert!(
-                    folder.is_none(),
-                    "unique filename should have no parent folder suffix"
-                );
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(
-        cx: &mut TestAppContext,
-    ) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
-                    e.file_path = Some(PathBuf::from("/projects/a/main.rs"));
-                }
-                this.new_tab(window, cx);
-                if let Some(Tab::Editor(e)) = this.tabs.get_mut(1) {
-                    e.file_path = Some(PathBuf::from("/projects/b/main.rs"));
-                }
-                let tab0 = this.tabs.first().unwrap();
-                let (filename0, folder0) = this.get_tab_display_title(0, tab0);
-                assert_eq!(filename0, "main.rs");
-                assert_eq!(
-                    folder0.as_deref(),
-                    Some("../a"),
-                    "first tab should show its parent folder when filename is shared"
-                );
-                let tab1 = this.tabs.get(1).unwrap();
-                let (filename1, folder1) = this.get_tab_display_title(1, tab1);
-                assert_eq!(filename1, "main.rs");
-                assert_eq!(
-                    folder1.as_deref(),
-                    Some("../b"),
-                    "second tab should show its own parent folder"
-                );
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn test_get_tab_display_title_returns_tab_title_for_untitled_tab(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, _cx| {
-                // The default tab has no file_path; its display title should be the tab's own title
-                let tab = this.tabs.first().unwrap();
-                let tab_title = tab.title().to_string();
-                let (display_title, folder) = this.get_tab_display_title(0, tab);
-                assert_eq!(display_title, tab_title);
-                assert!(folder.is_none());
-            });
-        });
-    }
-
-    // ========== on_next_tab tests ==========
-
-    #[gpui::test]
-    fn test_on_next_tab_advances_active_index_by_one(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.new_tab(window, cx);
-                this.new_tab(window, cx);
-                // Three tabs: move to index 0, then advance
-                this.set_active_tab(0, window, cx);
-                this.on_next_tab(window, cx);
-                assert_eq!(this.active_tab_index, Some(1));
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn test_on_next_tab_wraps_around_from_last_to_first(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.new_tab(window, cx);
-                this.new_tab(window, cx);
-                let last = this.tabs.len() - 1;
-                this.set_active_tab(last, window, cx);
-                this.on_next_tab(window, cx);
-                assert_eq!(this.active_tab_index, Some(0));
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn test_on_next_tab_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.active_tab_index = None;
-                this.on_next_tab(window, cx);
-                assert_eq!(this.active_tab_index, None);
-            });
-        });
-    }
-
-    // ========== on_previous_tab tests ==========
-
-    #[gpui::test]
-    fn test_on_previous_tab_moves_to_previous_index(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.new_tab(window, cx);
-                this.new_tab(window, cx);
-                let last = this.tabs.len() - 1;
-                this.set_active_tab(last, window, cx);
-                this.on_previous_tab(window, cx);
-                assert_eq!(this.active_tab_index, Some(last - 1));
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn test_on_previous_tab_wraps_around_from_first_to_last(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.new_tab(window, cx);
-                this.new_tab(window, cx);
-                this.set_active_tab(0, window, cx);
-                this.on_previous_tab(window, cx);
-                let last = this.tabs.len() - 1;
-                assert_eq!(this.active_tab_index, Some(last));
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn test_on_previous_tab_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.active_tab_index = None;
-                this.on_previous_tab(window, cx);
-                assert_eq!(this.active_tab_index, None);
-            });
-        });
     }
 }
