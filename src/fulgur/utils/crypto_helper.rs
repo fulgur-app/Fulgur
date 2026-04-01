@@ -64,9 +64,7 @@ fn should_use_in_memory_keychain() -> bool {
     }
     // `cargo test` binaries are typically emitted under `target/*/deps/`.
     if let Ok(exe) = std::env::current_exe() {
-        let in_deps_dir = exe
-            .parent()
-            .is_some_and(|parent| parent.ends_with("deps"));
+        let in_deps_dir = exe.parent().is_some_and(|parent| parent.ends_with("deps"));
         let has_hashed_test_name = exe
             .file_name()
             .and_then(OsStr::to_str)
