@@ -3,6 +3,7 @@ use crate::fulgur::Fulgur;
 use gpui::*;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::hash::{Hash, Hasher};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::path::PathBuf;
 
 impl Fulgur {
