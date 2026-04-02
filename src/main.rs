@@ -125,10 +125,10 @@ fn main() {
         } else {
             None
         };
-        if let Some(cmd) = ipc_cmd {
-            if fulgur::utils::single_instance::try_send_command_to_existing_instance(cmd) {
-                return;
-            }
+        if let Some(cmd) = ipc_cmd
+            && fulgur::utils::single_instance::try_send_command_to_existing_instance(cmd)
+        {
+            return;
         }
     }
 
