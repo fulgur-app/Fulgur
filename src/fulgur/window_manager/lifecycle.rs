@@ -1,6 +1,6 @@
 use super::WindowManager;
-use crate::fulgur::ui::tabs::editor_tab::TabTransferData;
 use crate::fulgur::Fulgur;
+use crate::fulgur::ui::tabs::editor_tab::TabTransferData;
 use gpui::*;
 use gpui_component::notification::NotificationType;
 
