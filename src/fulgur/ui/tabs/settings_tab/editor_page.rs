@@ -192,6 +192,30 @@ pub fn create_editor_page(
                 .default_value(default_editor_settings.show_whitespaces),
             )
             .description("Show whitespace characters (spaces and tabs) in the editor."),
+            SettingItem::new(
+                "Highlight Colors",
+                SettingField::switch(
+                    {
+                        let entity = entity.clone();
+                        move |cx: &App| {
+                            entity.read(cx).settings.editor_settings.highlight_colors
+                        }
+                    },
+                    {
+                        let entity = entity.clone();
+                        move |val: bool, cx: &mut App| {
+                            entity.update(cx, |this, cx| {
+                                this.settings.editor_settings.highlight_colors = val;
+                                let _ = this.update_and_propagate_settings(cx);
+                            });
+                        }
+                    },
+                )
+                .default_value(default_editor_settings.highlight_colors),
+            )
+            .description(
+                "Show colored backgrounds for hex color codes (#RGB and #RRGGBB) in the editor.",
+            ),
         ]),
         SettingGroup::new().title("Markdown").items(vec![
             SettingItem::new(

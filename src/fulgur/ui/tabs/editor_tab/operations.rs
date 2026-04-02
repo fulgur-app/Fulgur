@@ -26,12 +26,57 @@ impl EditorTab {
     /// - `window`: The window context
     /// - `cx`: The application context
     /// - `settings`: The settings for the input state
-    pub fn update_settings(&self, window: &mut Window, cx: &mut App, settings: &EditorSettings) {
+    pub fn update_settings(
+        &mut self,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) {
+        let has_provider = self.content.read(cx).lsp.document_color_provider.is_some();
+        let wants_provider = settings.highlight_colors;
+
+        if has_provider != wants_provider {
+            self.rebuild_input_state(window, cx, settings);
+            return;
+        }
+
         self.content.update(cx, |input_state, cx| {
             input_state.set_line_number(settings.show_line_numbers, window, cx);
             input_state.set_indent_guides(settings.show_indent_guides, window, cx);
             input_state.set_soft_wrap(settings.soft_wrap, window, cx);
             input_state.set_show_whitespaces(settings.show_whitespaces, window, cx);
+        });
+    }
+
+    /// Rebuild the InputState to apply highlight_colors changes.
+    ///
+    /// The document_color_provider can only be set at creation time (Lsp internal
+    /// state is not publicly clearable), so toggling the setting requires
+    /// recreating the InputState while preserving cursor position.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    /// - `settings`: The editor settings
+    pub fn rebuild_input_state(
+        &mut self,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) {
+        let cursor = self.content.read(cx).cursor_position();
+        let current_content = self.content.read(cx).text().to_string();
+        self.content = cx.new(|cx| {
+            super::make_input_state(
+                window,
+                cx,
+                language_registry_name(&self.language),
+                Some(current_content),
+                settings,
+            )
+        });
+        self.content.update(cx, |state, cx| {
+            state.set_cursor_position(cursor, window, cx);
         });
     }
 

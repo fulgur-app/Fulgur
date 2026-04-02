@@ -91,6 +91,8 @@ pub struct EditorSettings {
     pub watch_files: bool,
     #[serde(default = "default_use_spaces")]
     pub use_spaces: bool,
+    #[serde(default = "default_highlight_colors")]
+    pub highlight_colors: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -133,6 +135,14 @@ fn default_font_family() -> String {
     "Monaco".to_string()
 }
 
+/// Default value for highlight_colors setting
+///
+/// ### Returns
+/// - `true`: enable hex color highlighting by default
+fn default_highlight_colors() -> bool {
+    true
+}
+
 /// Default value for is_deduplication setting
 ///
 /// ### Returns
@@ -164,6 +174,7 @@ impl EditorSettings {
             markdown_settings: MarkdownSettings::new(),
             watch_files: default_watch_files(),
             use_spaces: default_use_spaces(),
+            highlight_colors: default_highlight_colors(),
         }
     }
 }

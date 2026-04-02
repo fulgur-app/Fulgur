@@ -1,4 +1,5 @@
 mod constructors;
+pub mod hex_color_provider;
 mod navigation;
 mod operations;
 
@@ -9,6 +10,7 @@ pub use navigation::{Jump, extract_line_number};
 
 use gpui::*;
 use gpui_component::input::{InputState, TabSize};
+use std::rc::Rc;
 use std::time::SystemTime;
 
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
@@ -83,7 +85,7 @@ fn make_input_state(
     content: Option<String>,
     settings: &EditorSettings,
 ) -> InputState {
-    InputState::new(window, cx)
+    let mut state = InputState::new(window, cx)
         .code_editor(language_name.to_string())
         .line_number(settings.show_line_numbers)
         .indent_guides(settings.show_indent_guides)
@@ -93,5 +95,12 @@ fn make_input_state(
         })
         .soft_wrap(settings.soft_wrap)
         .show_whitespaces(settings.show_whitespaces)
-        .default_value(content.unwrap_or_default())
+        .default_value(content.unwrap_or_default());
+
+    if settings.highlight_colors {
+        state.lsp.document_color_provider =
+            Some(Rc::new(hex_color_provider::ColorHighlightProvider));
+    }
+
+    state
 }
