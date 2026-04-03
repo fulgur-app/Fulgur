@@ -2,5 +2,6 @@
 // This embeds the icon into the executable so it appears in Explorer
 
 // The icon with the lowest ID value is the application icon
-// IDI_ICON1 is the standard ID for the main application icon
-IDI_ICON1 ICON "..\\..\\assets\\icon.ico"
+1 ICON "..\\..\\assets\\icon.ico"
+// Second icon used for file associations (referenced as index 1)
+2 ICON "..\\..\\assets\\file_icon.ico"
