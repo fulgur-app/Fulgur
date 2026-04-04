@@ -31,6 +31,7 @@ actions!(
         SelectTheme,
         CheckForUpdates,
         PrintFile,
+        ToggleColorPicker,
     ]
 );
 
@@ -67,6 +68,7 @@ enum KeybindingDispatchAction {
     PreviousTab,
     JumpToLine,
     PrintFile,
+    ToggleColorPicker,
 }
 
 /// A platform keybinding dispatch specification used to build runtime keybindings.
@@ -119,6 +121,9 @@ impl KeybindingDispatchSpec {
                 KeyBinding::new(self.keystroke, JumpToLine, None)
             }
             KeybindingDispatchAction::PrintFile => KeyBinding::new(self.keystroke, PrintFile, None),
+            KeybindingDispatchAction::ToggleColorPicker => {
+                KeyBinding::new(self.keystroke, ToggleColorPicker, None)
+            }
         }
     }
 }
@@ -181,6 +186,10 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
         KeybindingDispatchSpec::new("cmd-p", KeybindingDispatchAction::PrintFile),
         #[cfg(not(target_os = "macos"))]
         KeybindingDispatchSpec::new("ctrl-p", KeybindingDispatchAction::PrintFile),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-alt-c", KeybindingDispatchAction::ToggleColorPicker),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-alt-c", KeybindingDispatchAction::ToggleColorPicker),
     ]
 }
 
@@ -284,6 +293,10 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
                 MenuItem::separator(),
                 MenuItem::action("Find & Replace", FindInFile),
             ],
+        },
+        Menu {
+            name: "View".into(),
+            items: vec![MenuItem::action("Color picker", ToggleColorPicker)],
         },
         Menu {
             name: "Go".into(),
