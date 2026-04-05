@@ -642,7 +642,10 @@ impl Fulgur {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        format_hsla, format_oklch, hsla_to_oklch, oklch_to_hsla, parse_hex, parse_hsla, parse_oklch,
+    };
+    use gpui::hsla;
 
     #[test]
     fn test_format_oklch_produces_valid_string() {

@@ -9,3 +9,6 @@ pub mod notifications;
 pub mod sheets;
 pub mod tabs;
 pub mod themes;
+
+#[cfg(test)]
+mod color_picker_bar_tests;

@@ -3,6 +3,6 @@
 //! This module exposes the Fulgur application's internal modules for testing
 //! and potential library usage.
 
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 pub mod fulgur;
