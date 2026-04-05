@@ -1,11 +1,13 @@
 use crate::fulgur::{
     Fulgur,
-    ui::{components_utils::SEARCH_BAR_HEIGHT, icons::CustomIcon},
+    ui::{
+        components_utils::SEARCH_BAR_HEIGHT, copy_button::CopyButton, icons::CustomIcon,
+        insert_button::InsertButton,
+    },
 };
 use gpui::*;
 use gpui_component::{
     ActiveTheme,
-    clipboard::Clipboard,
     color_picker::{ColorPickerEvent, ColorPickerState},
     h_flex,
     input::{Input, InputEvent, InputState},
@@ -390,6 +392,34 @@ impl ColorPickerBarState {
 }
 
 impl Fulgur {
+    /// Insert a value at the cursor position in the active editor tab,
+    /// replacing the current selection if any.
+    ///
+    /// ### Arguments
+    /// - `value`: The string to insert
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn insert_color_value(
+        &mut self,
+        value: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(index) = self.active_tab_index
+            && let Some(crate::fulgur::tab::Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
+        {
+            editor_tab.content.update(cx, |input_state, cx| {
+                let selection = input_state.selected_text_range(true, window, cx);
+                if selection.is_some() {
+                    input_state.replace(value, window, cx);
+                } else {
+                    input_state.insert(value, window, cx);
+                }
+                cx.notify();
+            });
+        }
+    }
+
     /// Toggle the color picker bar visibility.
     ///
     /// ### Arguments
@@ -436,27 +466,36 @@ impl Fulgur {
                 .border_color(cx.theme().border)
                 .child(
                     div()
+                        .id("color-picker-scroll-container")
                         .flex()
-                        .items_center()
-                        .child(self.render_color_picker_section(cx))
-                        .child(self.render_color_value_section(
-                            "Hex",
-                            &hex_value,
-                            &self.color_picker_bar_state.hex_input,
-                            cx,
-                        ))
-                        .child(self.render_color_value_section(
-                            "OkLCH",
-                            &oklch_value,
-                            &self.color_picker_bar_state.oklch_input,
-                            cx,
-                        ))
-                        .child(self.render_color_value_section(
-                            "HSLA",
-                            &hsla_value,
-                            &self.color_picker_bar_state.hsla_input,
-                            cx,
-                        )),
+                        .flex_1()
+                        .overflow_x_scroll()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_1()
+                                .items_center()
+                                .h(SEARCH_BAR_HEIGHT)
+                                .child(self.render_color_picker_section(cx))
+                                .child(self.render_color_value_section(
+                                    "Hex",
+                                    &hex_value,
+                                    &self.color_picker_bar_state.hex_input,
+                                    cx,
+                                ))
+                                .child(self.render_color_value_section(
+                                    "OkLCH",
+                                    &oklch_value,
+                                    &self.color_picker_bar_state.oklch_input,
+                                    cx,
+                                ))
+                                .child(self.render_color_value_section(
+                                    "HSLA",
+                                    &hsla_value,
+                                    &self.color_picker_bar_state.hsla_input,
+                                    cx,
+                                )),
+                        ),
                 )
                 .child(self.render_color_picker_close_button(cx)),
         )
@@ -470,6 +509,7 @@ impl Fulgur {
         let color_picker_state = &self.color_picker_bar_state.color_picker_state;
         h_flex()
             .items_center()
+            .flex_shrink_0()
             .px_2()
             .gap_2()
             .h(SEARCH_BAR_HEIGHT)
@@ -499,7 +539,8 @@ impl Fulgur {
         div()
             .flex()
             .items_center()
-            .w(px(300.0))
+            .flex_1()
+            .min_w(px(330.0))
             .h(SEARCH_BAR_HEIGHT)
             .border_l_1()
             .border_color(cx.theme().border)
@@ -511,13 +552,23 @@ impl Fulgur {
                     .child(label),
             )
             .child(
-                div()
-                    .flex_1()
-                    .px_1()
-                    .child(Input::new(input_state).appearance(false).bordered(false)),
+                Input::new(input_state)
+                    .appearance(false)
+                    .bordered(false)
+                    .px_0(),
             )
             .child(
-                Clipboard::new(SharedString::from(format!("color-copy-{}", label)))
+                InsertButton::new(SharedString::from(format!("color-insert-{}", label))).on_click(
+                    cx.listener({
+                        let value = value.to_string();
+                        move |this, _, window, cx| {
+                            this.insert_color_value(value.clone(), window, cx);
+                        }
+                    }),
+                ),
+            )
+            .child(
+                CopyButton::new(SharedString::from(format!("color-copy-{}", label)))
                     .value(SharedString::from(value.to_string())),
             )
     }
