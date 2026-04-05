@@ -187,9 +187,9 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
         #[cfg(not(target_os = "macos"))]
         KeybindingDispatchSpec::new("ctrl-p", KeybindingDispatchAction::PrintFile),
         #[cfg(target_os = "macos")]
-        KeybindingDispatchSpec::new("cmd-alt-c", KeybindingDispatchAction::ToggleColorPicker),
+        KeybindingDispatchSpec::new("cmd-shift-c", KeybindingDispatchAction::ToggleColorPicker),
         #[cfg(not(target_os = "macos"))]
-        KeybindingDispatchSpec::new("ctrl-alt-c", KeybindingDispatchAction::ToggleColorPicker),
+        KeybindingDispatchSpec::new("ctrl-shift-c", KeybindingDispatchAction::ToggleColorPicker),
     ]
 }
 
@@ -296,7 +296,10 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
         },
         Menu {
             name: "View".into(),
-            items: vec![MenuItem::action("Color picker", ToggleColorPicker)],
+            items: vec![
+                MenuItem::action("Color picker", ToggleColorPicker),
+                MenuItem::separator(),
+            ],
         },
         Menu {
             name: "Go".into(),
