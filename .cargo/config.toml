@@ -1,0 +1,4 @@
+[env]
+# Increase stack size for proc-macro threads to prevent stack overflow
+# in syn's recursive descent parser when processing large source files.
+RUST_MIN_STACK = "16777216"
