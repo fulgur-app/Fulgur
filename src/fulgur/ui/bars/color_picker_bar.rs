@@ -13,7 +13,7 @@ use gpui_component::{
     input::{Input, InputEvent, InputState},
 };
 
-use super::search_bar::search_bar_button_factory;
+use super::search_bar::{search_bar_button_factory, search_bar_toggle_button_factory};
 
 /// Convert an HSLA color to OkLCH (Lightness, Chroma, Hue) components.
 ///
@@ -494,7 +494,8 @@ impl Fulgur {
                                     &hsla_value,
                                     &self.color_picker_bar_state.hsla_input,
                                     cx,
-                                )),
+                                ))
+                                .child(self.render_highlight_toggle_button(cx)),
                         ),
                 )
                 .child(self.render_color_picker_close_button(cx)),
@@ -570,6 +571,42 @@ impl Fulgur {
             .child(
                 CopyButton::new(SharedString::from(format!("color-copy-{}", label)))
                     .value(SharedString::from(value.to_string())),
+            )
+    }
+
+    /// Render the highlight colors toggle button for the color picker bar.
+    ///
+    /// Mirrors the "Highlight Colors" setting from the editor settings page.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Div`: The rendered toggle button
+    fn render_highlight_toggle_button(&self, cx: &mut Context<Self>) -> Div {
+        let highlight_colors = self.settings.editor_settings.highlight_colors;
+        div()
+            .flex()
+            .items_center()
+            .p_0()
+            .m_0()
+            .border_l_1()
+            .border_color(cx.theme().border)
+            .child(
+                search_bar_toggle_button_factory(
+                    "highlight-colors-toggle",
+                    "Toggle color highlighting",
+                    CustomIcon::Highlighter,
+                    cx.theme().border,
+                    cx.theme().tab_bar,
+                    cx.theme().accent,
+                    highlight_colors,
+                )
+                .on_click(cx.listener(|this, _, _window, cx| {
+                    this.settings.editor_settings.highlight_colors =
+                        !this.settings.editor_settings.highlight_colors;
+                    let _ = this.update_and_propagate_settings(cx);
+                })),
             )
     }
 
