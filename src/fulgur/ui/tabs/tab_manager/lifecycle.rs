@@ -9,7 +9,7 @@ use crate::fulgur::{
         },
     },
 };
-use gpui::*;
+use gpui::{App, Context, Focusable, ParentElement, SharedString, Styled, Window, div, px};
 use gpui_component::{
     WindowExt,
     select::{SearchableVec, SelectEvent},

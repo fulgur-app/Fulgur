@@ -190,7 +190,8 @@ impl BackoffCalculator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{BackoffCalculator, RetryConfig, with_retry};
+    use std::time::Duration;
 
     #[test]
     fn test_retry_success_first_attempt() {

@@ -1,5 +1,7 @@
-use std::time::Duration;
-
+use crate::fulgur::ui::{
+    components_utils::{CORNERS_SIZE, SEARCH_BAR_HEIGHT},
+    icons::CustomIcon,
+};
 use gpui::{
     App, ClipboardItem, ElementId, IntoElement, RenderOnce, SharedString, Styled, Window,
     prelude::FluentBuilder,
@@ -8,11 +10,7 @@ use gpui_component::{
     Sizable, StyledExt,
     button::{Button, ButtonVariants},
 };
-
-use crate::fulgur::ui::{
-    components_utils::{CORNERS_SIZE, SEARCH_BAR_HEIGHT},
-    icons::CustomIcon,
-};
+use std::time::Duration;
 
 /// A copy-to-clipboard button styled to match Fulgur's bar buttons.
 ///

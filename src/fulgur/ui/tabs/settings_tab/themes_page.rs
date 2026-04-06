@@ -1,3 +1,8 @@
+use crate::fulgur::{
+    Fulgur,
+    settings::Themes,
+    ui::{icons::CustomIcon, themes},
+};
 use gpui::{Entity, IntoElement, ParentElement, SharedString, Styled, div};
 use gpui_component::{
     ActiveTheme, Sizable, StyledExt,
@@ -5,12 +10,6 @@ use gpui_component::{
     h_flex,
     setting::{SettingGroup, SettingItem, SettingPage},
     v_flex,
-};
-
-use crate::fulgur::{
-    Fulgur,
-    settings::Themes,
-    ui::{icons::CustomIcon, themes},
 };
 
 impl Fulgur {

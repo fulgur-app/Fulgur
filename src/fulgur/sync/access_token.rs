@@ -1,11 +1,10 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use crate::fulgur::settings::SynchronizationSettings;
 use crate::fulgur::sync::synchronization::{SynchronizationError, handle_ureq_error};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use fulgur_common::api::sync::AccessTokenResponse;
 use parking_lot::{Condvar, Mutex};
+use std::sync::Arc;
+use std::time::Duration;
 use time::OffsetDateTime;
 
 /// JWT access token state for thread-safe token management
@@ -272,7 +271,7 @@ impl TokenStateManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::is_token_valid;
     use time::OffsetDateTime;
 
     #[test]

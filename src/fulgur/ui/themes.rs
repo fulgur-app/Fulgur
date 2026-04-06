@@ -1,6 +1,7 @@
 use crate::fulgur::Fulgur;
 use crate::fulgur::settings::{Settings, Themes};
-use gpui::*;
+
+use gpui::{Action, App, Entity};
 use gpui_component::{Theme, ThemeMode, ThemeRegistry};
 use rust_embed::RustEmbed;
 use std::fs;

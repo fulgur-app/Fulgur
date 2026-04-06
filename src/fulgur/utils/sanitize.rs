@@ -48,7 +48,7 @@ pub fn sanitize_filename(filename: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::sanitize_filename;
 
     #[test]
     fn test_sanitize_normal_filename() {

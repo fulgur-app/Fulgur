@@ -1,14 +1,12 @@
-use gpui::*;
-use gpui_component::input::Position;
-use std::time::SystemTime;
-
+use super::{EditorTab, Jump};
 use crate::fulgur::languages::supported_languages::{
     SupportedLanguage, language_from_content, language_registry_name,
 };
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::UNTITLED;
-
-use super::{EditorTab, Jump};
+use gpui::{App, AppContext, Window};
+use gpui_component::input::Position;
+use std::time::SystemTime;
 
 impl EditorTab {
     /// Update cached metadata used by tab tooltip rendering.

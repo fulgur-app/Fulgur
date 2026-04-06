@@ -80,7 +80,7 @@ pub fn config_file(filename: &str) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{config_dir, config_file, config_subdir};
 
     #[test]
     fn test_config_dir_exists() {

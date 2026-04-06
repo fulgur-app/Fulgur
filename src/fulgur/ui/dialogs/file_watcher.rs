@@ -1,6 +1,6 @@
 use std::{ops::DerefMut, path::PathBuf};
 
-use gpui::*;
+use gpui::{Context, ParentElement, Styled, Window, div, px};
 use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, v_flex};
 
 use crate::fulgur::Fulgur;

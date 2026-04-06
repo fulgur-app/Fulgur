@@ -1,6 +1,6 @@
 use super::WindowManager;
 use crate::fulgur::{Fulgur, state_persistence};
-use gpui::*;
+use gpui::{BorrowAppContext, Context, Window};
 use gpui_component::WindowExt;
 
 impl Fulgur {

@@ -2,7 +2,7 @@ use crate::fulgur::{
     Fulgur, languages::supported_languages::SupportedLanguage, settings::MarkdownPreviewMode,
     tab::Tab, ui::tabs::markdown_preview_tab::MarkdownPreviewTab,
 };
-use gpui::*;
+use gpui::{Context, SharedString, Window};
 
 impl Fulgur {
     /// Open or close the Markdown preview tab for the active editor tab.

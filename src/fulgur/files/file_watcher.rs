@@ -1,15 +1,13 @@
+use crate::fulgur::Fulgur;
+use crate::fulgur::tab::Tab;
+use crate::fulgur::utils::utilities::collect_events;
+use gpui::{Context, Window};
+use notify::{Error as NotifyError, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
-
-use gpui::{Context, Window};
-use notify::{Error as NotifyError, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-
-use crate::fulgur::Fulgur;
-use crate::fulgur::tab::Tab;
-use crate::fulgur::utils::utilities::collect_events;
 
 /// File watching state for external file change detection
 pub struct FileWatchState {

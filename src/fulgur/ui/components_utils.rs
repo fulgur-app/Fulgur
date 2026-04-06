@@ -1,13 +1,11 @@
-use std::time::SystemTime;
-use time::OffsetDateTime;
-
-use gpui::*;
+use crate::fulgur::ui::icons::CustomIcon;
+use gpui::{Corners, DefiniteLength, Hsla, Pixels, Styled, px, relative};
 use gpui_component::{
     Sizable, StyledExt,
     button::{Button, ButtonVariants},
 };
-
-use crate::fulgur::ui::icons::CustomIcon;
+use std::time::SystemTime;
+use time::OffsetDateTime;
 
 /// The height of the tab bar
 pub const TAB_BAR_HEIGHT: Pixels = px(34.0);
@@ -123,9 +121,20 @@ pub fn format_file_size(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use core::prelude::v1::test;
+    use gpui::{px, red, relative};
+    use gpui_component::button::Button;
     use std::time::{Duration, UNIX_EPOCH};
+
+    use crate::fulgur::ui::{
+        components_utils::{
+            CORNERS_SIZE, EMPTY, LINE_HEIGHT, MARKDOWN_BAR_BUTTON_SIZE, MARKDOWN_BAR_HEIGHT,
+            SEARCH_BAR_BUTTON_SIZE, SEARCH_BAR_HEIGHT, TAB_BAR_BUTTON_SIZE, TAB_BAR_HEIGHT,
+            TEXT_SIZE, UNTITLED, UTF_8, button_factory, format_file_size, format_system_time,
+            reveal_in_file_manager_label,
+        },
+        icons::CustomIcon,
+    };
 
     #[test]
     fn test_constants_are_consistent() {

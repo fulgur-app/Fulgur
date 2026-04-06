@@ -5,7 +5,12 @@ use crate::fulgur::{
         insert_button::InsertButton,
     },
 };
-use gpui::*;
+
+use gpui::{
+    AppContext, Context, Corner, Div, Entity, EntityInputHandler, Hsla, InteractiveElement,
+    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    Window, div, hsla,
+};
 use gpui_component::{
     ActiveTheme,
     color_picker::{ColorPickerEvent, ColorPickerState},
@@ -103,7 +108,7 @@ fn oklch_to_hsla(l: f32, c: f32, h: f32) -> Hsla {
             1.055 * c.powf(1.0 / 2.4) - 0.055
         }
     };
-    Rgba {
+    gpui::Rgba {
         r: from_linear(lin_r),
         g: from_linear(lin_g),
         b: from_linear(lin_b),
@@ -541,7 +546,7 @@ impl Fulgur {
             .flex()
             .items_center()
             .flex_1()
-            .min_w(px(330.0))
+            .min_w(gpui::px(330.0))
             .h(SEARCH_BAR_HEIGHT)
             .border_l_1()
             .border_color(cx.theme().border)

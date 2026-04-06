@@ -1,3 +1,7 @@
+use crate::fulgur::{
+    Fulgur, settings::AppSettings, sync::synchronization::perform_initial_synchronization,
+    utils::crypto_helper,
+};
 use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, div};
 use gpui_component::{
     ActiveTheme, Sizable,
@@ -5,11 +9,6 @@ use gpui_component::{
     h_flex,
     setting::{SettingField, SettingGroup, SettingItem, SettingPage},
     v_flex,
-};
-
-use crate::fulgur::{
-    Fulgur, settings::AppSettings, sync::synchronization::perform_initial_synchronization,
-    utils::crypto_helper,
 };
 
 const DEVICE_KEY_PLACEHOLDER: &str = "<Device Key>";

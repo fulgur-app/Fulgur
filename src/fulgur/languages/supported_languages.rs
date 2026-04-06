@@ -1,6 +1,5 @@
-use gpui_component::highlighter::Language;
-
 use crate::fulgur::Fulgur;
+use gpui_component::highlighter::Language;
 
 /// Lists all supported languages, including some that are not supported by the language registry but are close enough.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -585,7 +584,7 @@ pub fn register_external_languages() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{SupportedLanguage, language_from_content};
 
     #[test]
     fn test_m_file_objc_by_import() {

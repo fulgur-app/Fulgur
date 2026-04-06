@@ -3,7 +3,8 @@ use crate::fulgur::{
     ui::components_utils::{MARKDOWN_BAR_BUTTON_SIZE, MARKDOWN_BAR_HEIGHT, button_factory},
     ui::icons::CustomIcon,
 };
-use gpui::*;
+
+use gpui::{Context, Div, EntityInputHandler, Hsla, ParentElement, Styled, Window, div};
 use gpui_component::{ActiveTheme, button::Button, h_flex};
 
 /// Create a markdown bar button

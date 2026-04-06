@@ -1,6 +1,8 @@
-use std::{fs, sync::Arc};
-
-use gpui::{prelude::FluentBuilder, *};
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    App, Context, Div, Entity, InteractiveElement, ParentElement, PathPromptOptions, SharedString,
+    Stateful, StatefulInteractiveElement, Styled, Window, div, px,
+};
 use gpui_component::{
     ActiveTheme, Sizable, Theme, ThemeMode, ThemeRegistry, WindowExt,
     button::{Button, ButtonVariants},
@@ -10,6 +12,7 @@ use gpui_component::{
     v_flex,
 };
 use parking_lot::Mutex;
+use std::{fs, sync::Arc};
 
 use crate::fulgur::{
     Fulgur,

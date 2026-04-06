@@ -1,14 +1,13 @@
+use crate::fulgur::ui::{
+    components_utils::{CORNERS_SIZE, SEARCH_BAR_HEIGHT},
+    icons::CustomIcon,
+};
 use gpui::{
     App, ClickEvent, ElementId, IntoElement, RenderOnce, Styled, Window, prelude::FluentBuilder,
 };
 use gpui_component::{
     Sizable, StyledExt,
     button::{Button, ButtonVariants},
-};
-
-use crate::fulgur::ui::{
-    components_utils::{CORNERS_SIZE, SEARCH_BAR_HEIGHT},
-    icons::CustomIcon,
 };
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;

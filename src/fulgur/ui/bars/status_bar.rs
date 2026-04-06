@@ -9,7 +9,10 @@ use crate::fulgur::{
         icons::CustomIcon,
     },
 };
-use gpui::{prelude::FluentBuilder, *};
+use gpui::{
+    Animation, AnimationExt, Context, Div, Hsla, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement, Styled, div, prelude::FluentBuilder,
+};
 use gpui_component::{ActiveTheme, Icon, h_flex, input::Position};
 use std::f32::consts::PI;
 use std::time::Duration;
@@ -147,7 +150,7 @@ pub fn status_bar_sync_button(
                 let spinning_icon = Icon::new(CustomIcon::Zap).with_animation(
                     "sync-spinner",
                     Animation::new(Duration::from_secs(1)).repeat(),
-                    |icon, delta| icon.rotate(radians(delta * 2.0 * PI)),
+                    |icon, delta| icon.rotate(gpui::radians(delta * 2.0 * PI)),
                 );
                 button = button
                     .child(spinning_icon)

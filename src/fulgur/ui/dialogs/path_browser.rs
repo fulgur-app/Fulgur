@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use gpui::*;
+use gpui::{
+    AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    Render, StatefulInteractiveElement, Styled, Subscription, Window, div, px,
+};
 use gpui_component::{
     ActiveTheme, h_flex,
     input::{Input, InputEvent, InputState},
@@ -220,7 +223,7 @@ impl Render for PathBrowser {
                     FontWeight::NORMAL
                 };
                 let row = h_flex()
-                    .id(SharedString::from(
+                    .id(gpui::SharedString::from(
                         entry.full_path.to_string_lossy().to_string(),
                     ))
                     .w_full()

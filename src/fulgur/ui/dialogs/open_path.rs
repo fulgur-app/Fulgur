@@ -1,7 +1,7 @@
 use std::ops::DerefMut;
 use std::path::PathBuf;
 
-use gpui::*;
+use gpui::{AppContext, Context, Focusable, ParentElement, SharedString, Styled, Window, div, px};
 use gpui_component::{
     WindowExt, button::ButtonVariant, dialog::DialogButtonProps, notification::NotificationType,
 };

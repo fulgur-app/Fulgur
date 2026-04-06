@@ -1,13 +1,10 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-use gpui::*;
-// gpui_component is used in create_window function
+use fulgur::fulgur;
+use gpui::{AppContext, AssetSource, BorrowAppContext, SharedString};
 use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
-
-use fulgur::fulgur;
-
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -32,7 +29,7 @@ impl AssetSource for Assets {
     ///
     /// ### Returns
     /// - `Result<Option<Cow<'static, [u8]>>>`: The asset data if found, otherwise None
-    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+    fn load(&self, path: &str) -> anyhow::Result<Option<Cow<'static, [u8]>>> {
         if path.is_empty() {
             return Ok(None);
         }
@@ -55,7 +52,7 @@ impl AssetSource for Assets {
     ///
     /// ### Returns
     /// - `Result<Vec<SharedString>>`: The list of assets
-    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
+    fn list(&self, path: &str) -> anyhow::Result<Vec<SharedString>> {
         Ok(Self::iter()
             .filter_map(|p| p.starts_with(path).then(|| p.into()))
             .collect())

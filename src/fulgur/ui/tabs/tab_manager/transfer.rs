@@ -3,7 +3,7 @@ use crate::fulgur::{
     tab::Tab,
     ui::tabs::editor_tab::{EditorTab, TabTransferData},
 };
-use gpui::*;
+use gpui::{App, Context, Window};
 
 impl Fulgur {
     /// Extract all transferable state from an editor tab identified by `tab_id`.

@@ -8,7 +8,7 @@ mod tests;
 
 pub use navigation::{Jump, extract_line_number};
 
-use gpui::*;
+use gpui::{Context, Entity, SharedString, Window};
 use gpui_component::input::{InputState, TabSize};
 use std::rc::Rc;
 use std::time::SystemTime;

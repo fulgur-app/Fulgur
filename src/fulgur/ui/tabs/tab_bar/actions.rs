@@ -1,12 +1,10 @@
-use gpui::*;
-use gpui_component::{ActiveTheme, Theme, ThemeRegistry};
-
-use crate::fulgur::Fulgur;
-
 use super::{
     CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
     DuplicateTab, ShowInFileManager,
 };
+use crate::fulgur::Fulgur;
+use gpui::{Context, Window};
+use gpui_component::{ActiveTheme, Theme, ThemeRegistry};
 
 impl Fulgur {
     /// Handle close tab action from context menu

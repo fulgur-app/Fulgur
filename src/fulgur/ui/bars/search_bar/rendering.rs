@@ -1,3 +1,4 @@
+use super::{search_bar_button_factory, search_bar_toggle_button_factory};
 use crate::fulgur::{
     Fulgur,
     ui::{
@@ -5,10 +6,8 @@ use crate::fulgur::{
         icons::CustomIcon,
     },
 };
-use gpui::*;
+use gpui::{Context, Div, ParentElement, Styled, div};
 use gpui_component::{ActiveTheme, StyledExt, input::Input};
-
-use super::{search_bar_button_factory, search_bar_toggle_button_factory};
 
 impl Fulgur {
     /// Render the search bar

@@ -1,11 +1,10 @@
-use gpui::*;
-
 use crate::fulgur::{
     Fulgur,
     ui::tabs::{
         editor_tab::EditorTab, markdown_preview_tab::MarkdownPreviewTab, settings_tab::SettingsTab,
     },
 };
+use gpui::SharedString;
 
 /// Enum representing different types of tabs
 #[derive(Clone)]

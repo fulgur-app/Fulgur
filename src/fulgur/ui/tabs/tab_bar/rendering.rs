@@ -1,13 +1,7 @@
-use gpui::*;
-use gpui_component::{
-    ActiveTheme, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
-    h_flex,
-    menu::{ContextMenuExt, PopupMenuItem},
-    tooltip::Tooltip,
-    v_flex,
+use super::{
+    CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
+    DuplicateTab, SendTabToWindowNoOp, ShowInFileManager, tab_bar_button_factory,
 };
-
 use crate::fulgur::{
     Fulgur,
     tab::Tab,
@@ -15,10 +9,18 @@ use crate::fulgur::{
     ui::{components_utils, icons::CustomIcon},
     window_manager::WindowManager,
 };
-
-use super::{
-    CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
-    DuplicateTab, SendTabToWindowNoOp, ShowInFileManager, tab_bar_button_factory,
+use gpui::{
+    AnyElement, AppContext, ClickEvent, Context, Div, DragMoveEvent, InteractiveElement,
+    IntoElement, MouseButton, ParentElement, SharedString, StatefulInteractiveElement, Styled,
+    WeakEntity, div, px,
+};
+use gpui_component::{
+    ActiveTheme, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    h_flex,
+    menu::{ContextMenuExt, PopupMenuItem},
+    tooltip::Tooltip,
+    v_flex,
 };
 
 impl Fulgur {
@@ -79,7 +81,6 @@ impl Fulgur {
     /// - `Div`: The rendered tab bar element
     pub fn render_tab_bar(&self, cx: &mut Context<Self>) -> Div {
         use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
-
         let mut tab_bar = div()
             .flex()
             .items_center()

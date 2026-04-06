@@ -1,4 +1,8 @@
-use gpui::{prelude::FluentBuilder, *};
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    App, Context, Div, Element, Entity, InteractiveElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, px,
+};
 use gpui_component::{
     ActiveTheme, Placement, WindowExt, h_flex, scroll::ScrollableElement, v_flex,
 };

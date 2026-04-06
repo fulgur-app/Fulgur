@@ -1,9 +1,8 @@
+use crate::fulgur::utils::paths;
 use log::LevelFilter;
-use simplelog::*;
+use simplelog::{ConfigBuilder, WriteLogger};
 use std::fs::File;
 use std::path::PathBuf;
-
-use crate::fulgur::utils::paths;
 
 /// Get the path to the log file, create the log file directory if it doesn't exist
 ///
@@ -57,7 +56,8 @@ pub fn set_debug_mode(debug_mode: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::fulgur::utils::logger::set_debug_mode;
+    use log::LevelFilter;
 
     // All assertions live in a single test function to avoid races on the
     // process-wide `log::max_level()` global when tests run in parallel.

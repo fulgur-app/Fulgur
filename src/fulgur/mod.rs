@@ -8,8 +8,6 @@ pub mod sync;
 mod ui;
 pub mod utils;
 pub mod window_manager;
-use crate::register_action;
-
 use crate::fulgur::{
     editor_tab::EditorTab,
     files::file_watcher::FileWatchState,
@@ -20,7 +18,12 @@ use crate::fulgur::{
         notifications::update_notification::make_update_notification,
     },
 };
-use gpui::*;
+use crate::register_action;
+use gpui::{
+    AnyElement, App, AppContext, Context, Corner, DismissEvent, Entity, ExternalPaths, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels,
+    Point, Render, ScrollHandle, SharedString, Styled, Subscription, Window, WindowId, div, px,
+};
 use gpui_component::{
     ActiveTheme, Root, StyledExt, WindowExt,
     input::{Input, InputEvent, InputState},
@@ -386,8 +389,8 @@ impl Fulgur {
             .map(|(pos, menu)| (*pos, menu.clone()))
         {
             root = root.child(
-                deferred(
-                    anchored()
+                gpui::deferred(
+                    gpui::anchored()
                         .position(position)
                         .snap_to_window_with_margin(px(8.))
                         .anchor(Corner::TopLeft)

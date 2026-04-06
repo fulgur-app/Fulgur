@@ -1,10 +1,8 @@
-use std::{fs, path::PathBuf};
-
+use crate::fulgur::themes::{BundledThemes, themes_directory_path};
 use gpui::SharedString;
 use gpui_component::scroll::ScrollbarShow;
 use serde::{Deserialize, Serialize};
-
-use crate::fulgur::themes::{BundledThemes, themes_directory_path};
+use std::{fs, path::PathBuf};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SynchronizationSettings {

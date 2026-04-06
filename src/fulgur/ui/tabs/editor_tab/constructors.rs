@@ -1,13 +1,11 @@
-use gpui::*;
-use std::time::SystemTime;
-
+use super::{EditorTab, FromDuplicateParams, FromFileParams, TabTransferData};
 use crate::fulgur::languages::supported_languages::{
     language_from_content, language_registry_name,
 };
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
-
-use super::{EditorTab, FromDuplicateParams, FromFileParams, TabTransferData};
+use gpui::{App, AppContext, SharedString, Window};
+use std::time::SystemTime;
 
 impl EditorTab {
     /// Create a new tab

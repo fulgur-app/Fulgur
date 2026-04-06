@@ -1,5 +1,3 @@
-use std::{collections::HashSet, path::PathBuf};
-
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams},
@@ -12,8 +10,12 @@ use crate::fulgur::{
     window_manager,
 };
 use chardetng::EncodingDetector;
-use gpui::*;
+use gpui::{
+    AsyncWindowContext, Context, ExternalPaths, Focusable, PathPromptOptions, SharedString,
+    WeakEntity, Window,
+};
 use gpui_component::{WindowExt, notification::NotificationType};
+use std::{collections::HashSet, path::PathBuf};
 
 /// Detect encoding from file bytes
 ///

@@ -3,7 +3,7 @@ mod lifecycle;
 mod render;
 
 use crate::fulgur::Fulgur;
-use gpui::*;
+use gpui::{App, Global, WeakEntity, WindowId};
 use std::collections::HashMap;
 use std::path::PathBuf;
 

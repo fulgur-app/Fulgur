@@ -1,4 +1,4 @@
-use super::*;
+use crate::fulgur::settings::{RecentFiles, Settings};
 use std::path::PathBuf;
 
 #[test]
