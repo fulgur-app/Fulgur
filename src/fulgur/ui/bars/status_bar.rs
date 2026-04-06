@@ -376,13 +376,29 @@ impl Fulgur {
                     .when(is_markdown, |this| this.child(preview_button))
                     .when(is_markdown, |this| this.child(toolbar_button)),
             )
-            .child(
+            .child({
+                let color_picker_active = self.color_picker_bar_state.show_color_picker;
+                let color_button = status_bar_toggle_button_factory(
+                    "Color".to_string(),
+                    cx.theme().border,
+                    cx.theme().muted,
+                    color_picker_active,
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _event: &MouseDownEvent, _window, cx| {
+                        this.color_picker_bar_state.show_color_picker =
+                            !this.color_picker_bar_state.show_color_picker;
+                        cx.notify();
+                    }),
+                );
                 div()
                     .flex()
                     .justify_end()
+                    .child(color_button)
                     .child(jump_to_line_button)
-                    .child(status_bar_right_item_factory(encoding, cx.theme().border)),
-            )
+                    .child(status_bar_right_item_factory(encoding, cx.theme().border))
+            })
     }
 }
 

@@ -15,7 +15,10 @@ use crate::fulgur::{
     files::file_watcher::FileWatchState,
     languages::supported_languages::SupportedLanguage,
     sync::sse::SseState,
-    ui::{dialogs::about::about, notifications::update_notification::make_update_notification},
+    ui::{
+        bars::color_picker_bar::ColorPickerBarState, dialogs::about::about,
+        notifications::update_notification::make_update_notification,
+    },
 };
 use gpui::*;
 use gpui_component::{
@@ -86,15 +89,16 @@ impl SearchState {
 }
 
 pub struct Fulgur {
-    pub window_id: WindowId,                    // The ID of this window
-    focus_handle: FocusHandle,                  // The focus handle for the application
-    title_bar: Entity<CustomTitleBar>,          // The title bar of the application
-    tabs: Vec<Tab>,                             // The tabs in the application
-    active_tab_index: Option<usize>,            // Index of the active tab
-    next_tab_id: usize,                         // The next tab ID
-    pub search_state: SearchState,              // Search and replace functionality state
-    pub jump_to_line_input: Entity<InputState>, // Input for jumping to a line in the editor
-    pending_jump: Option<editor_tab::Jump>,     // Pending jump to line action
+    pub window_id: WindowId,                         // The ID of this window
+    focus_handle: FocusHandle,                       // The focus handle for the application
+    title_bar: Entity<CustomTitleBar>,               // The title bar of the application
+    tabs: Vec<Tab>,                                  // The tabs in the application
+    active_tab_index: Option<usize>,                 // Index of the active tab
+    next_tab_id: usize,                              // The next tab ID
+    pub search_state: SearchState,                   // Search and replace functionality state
+    pub color_picker_bar_state: ColorPickerBarState, // Color picker bar state
+    pub jump_to_line_input: Entity<InputState>,      // Input for jumping to a line in the editor
+    pending_jump: Option<editor_tab::Jump>,          // Pending jump to line action
     jump_to_line_dialog_open: bool, // Flag to indicate that the jump to line dialog is open
     pub settings: Settings,         // The settings for the application (local copy for fast access)
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
@@ -174,6 +178,7 @@ impl Fulgur {
                 active_tab_index: None,
                 next_tab_id: 0,
                 search_state: SearchState::new(search_input, replace_input, search_subscription),
+                color_picker_bar_state: ColorPickerBarState::new(window, cx),
                 jump_to_line_input,
                 pending_jump: None,
                 jump_to_line_dialog_open: false,
@@ -306,6 +311,7 @@ impl Fulgur {
         register_action!(app_content, cx, Quit => quit);
         register_action!(app_content, cx, SettingsTab => open_settings);
         register_action!(app_content, cx, FindInFile => find_in_file);
+        register_action!(app_content, cx, ToggleColorPicker => toggle_color_picker);
         register_action!(app_content, cx, NextTab => on_next_tab);
         register_action!(app_content, cx, PreviousTab => on_previous_tab);
         register_action!(app_content, cx, JumpToLine => show_jump_to_line_dialog);
@@ -336,7 +342,8 @@ impl Fulgur {
             .child(self.render_tab_bar(cx))
             .child(self.render_content_area(active_tab, window, cx))
             .children(self.render_markdown_bar(cx))
-            .children(self.render_search_bar(cx));
+            .children(self.render_search_bar(cx))
+            .children(self.render_color_picker_bar(cx));
         if let Some(index) = self.active_tab_index
             && let Some(Tab::Editor(_)) = self.tabs.get(index)
         {
