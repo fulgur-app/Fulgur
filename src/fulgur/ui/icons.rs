@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui::{AnyElement, App, Entity, IntoElement, SharedString};
 use gpui_component::Icon;
 
 #[derive(Clone)]

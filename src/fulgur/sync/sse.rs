@@ -1,20 +1,3 @@
-use gpui::App;
-use std::{
-    io::{BufReader, Read},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc::{Receiver, Sender},
-    },
-    thread,
-    time::{Duration, Instant},
-};
-
-use gpui::{Context, SharedString, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
-use parking_lot::Mutex;
-use serde::Serialize;
-
 use crate::fulgur::{
     Fulgur,
     settings::SynchronizationSettings,
@@ -26,6 +9,21 @@ use crate::fulgur::{
         },
     },
     utils::{retry::BackoffCalculator, sanitize::sanitize_filename, utilities::collect_events},
+};
+use gpui::App;
+use gpui::{Context, SharedString, Window};
+use gpui_component::{WindowExt, notification::NotificationType};
+use parking_lot::Mutex;
+use serde::Serialize;
+use std::{
+    io::{BufReader, Read},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{Receiver, Sender},
+    },
+    thread,
+    time::{Duration, Instant},
 };
 
 /// Maximum size for SSE event data accumulation (10x payload limit to account for

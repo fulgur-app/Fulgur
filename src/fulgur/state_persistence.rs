@@ -1,8 +1,7 @@
+use crate::fulgur::utils::atomic_write::atomic_write_file;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-use crate::fulgur::utils::atomic_write::atomic_write_file;
 
 /// Persisted state of a single editor tab
 ///

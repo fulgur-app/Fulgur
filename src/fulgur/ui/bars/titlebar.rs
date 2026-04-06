@@ -1,5 +1,8 @@
 // Custom title bar with platform-specific menu bar placement
-use gpui::*;
+
+use gpui::{
+    App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
+};
 #[cfg(not(target_os = "macos"))]
 use gpui_component::menu::AppMenuBar;
 use gpui_component::{ActiveTheme, StyledExt, TitleBar, h_flex};
@@ -86,6 +89,8 @@ impl Render for CustomTitleBar {
         }
         #[cfg(target_os = "macos")]
         {
+            use gpui::Styled;
+
             title_bar = title_bar.child(div().w_20());
         }
         title_bar

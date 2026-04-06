@@ -1,11 +1,9 @@
+use super::Settings;
+use crate::fulgur::utils::atomic_write::atomic_write_file;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
-
-use crate::fulgur::utils::atomic_write::atomic_write_file;
-
-use super::Settings;
 
 impl Settings {
     /// Get the path to the settings file

@@ -1,6 +1,8 @@
 use super::WindowManager;
 use crate::fulgur::Fulgur;
-use gpui::*;
+#[cfg(target_os = "macos")]
+use gpui::Context;
+use gpui::{Entity, WeakEntity, Window, WindowId};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::hash::{Hash, Hasher};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -16,6 +18,8 @@ impl Fulgur {
     /// - `cx`: The application context
     #[cfg(target_os = "macos")]
     pub(super) fn update_dock_menu_if_changed(&mut self, cx: &mut Context<Self>) {
+        use gpui::{SharedString, WeakEntity};
+
         use crate::fulgur::ui::menus::{DockMenuTab, build_dock_menu};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
 

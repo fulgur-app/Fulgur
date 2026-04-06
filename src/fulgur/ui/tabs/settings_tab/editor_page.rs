@@ -1,12 +1,11 @@
+use crate::fulgur::{
+    Fulgur,
+    settings::{EditorSettings, MarkdownPreviewMode},
+};
 use gpui::{App, Entity, SharedString, Styled, px};
 use gpui_component::{
     select::{SearchableVec, Select, SelectState},
     setting::{NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage},
-};
-
-use crate::fulgur::{
-    Fulgur,
-    settings::{EditorSettings, MarkdownPreviewMode},
 };
 
 /// Create the Editor settings page

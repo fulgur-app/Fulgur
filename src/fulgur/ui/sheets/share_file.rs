@@ -1,15 +1,3 @@
-use std::sync::Arc;
-
-use gpui::{prelude::FluentBuilder, *};
-use gpui_component::{
-    ActiveTheme, Icon, Sizable, WindowExt,
-    button::{Button, ButtonVariants},
-    h_flex,
-    notification::NotificationType,
-    scroll::ScrollableElement,
-    v_flex,
-};
-
 use crate::fulgur::{
     Fulgur,
     sync::{
@@ -18,6 +6,19 @@ use crate::fulgur::{
     },
     ui::icons::CustomIcon,
 };
+use gpui::{
+    App, Div, Element, Entity, SharedString, StatefulInteractiveElement, prelude::FluentBuilder,
+};
+use gpui::{Context, InteractiveElement, ParentElement, Styled, Window, div, px};
+use gpui_component::{
+    ActiveTheme, Icon, Sizable, WindowExt,
+    button::{Button, ButtonVariants},
+    h_flex,
+    notification::NotificationType,
+    scroll::ScrollableElement,
+    v_flex,
+};
+use std::sync::Arc;
 
 /// Create a device item for the share file sheet
 ///

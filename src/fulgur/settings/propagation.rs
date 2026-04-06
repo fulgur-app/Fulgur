@@ -1,7 +1,6 @@
+use crate::fulgur::{Fulgur, ui::tabs::tab::Tab, window_manager};
 use gpui::{Context, Window};
 use gpui_component::notification::NotificationType;
-
-use crate::fulgur::{Fulgur, ui::tabs::tab::Tab, window_manager};
 
 impl Fulgur {
     /// Update settings and propagate to all windows

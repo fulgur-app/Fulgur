@@ -8,7 +8,7 @@ use crate::fulgur::ui::{
     components_utils::{SEARCH_BAR_BUTTON_SIZE, button_factory},
     icons::CustomIcon,
 };
-use gpui::*;
+use gpui::{Hsla, Styled};
 use gpui_component::button::Button;
 
 #[derive(Debug, Clone)]

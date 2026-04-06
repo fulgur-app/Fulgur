@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui::{App, ParentElement, Styled, Window, div, img, px};
 use gpui_component::{Icon, WindowExt, h_flex, link::Link};
 
 use crate::fulgur::ui::icons::CustomIcon;

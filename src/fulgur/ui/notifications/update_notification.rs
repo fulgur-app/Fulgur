@@ -1,5 +1,5 @@
 use crate::fulgur::utils::updater::UpdateInfo;
-use gpui::*;
+use gpui::{SharedString, Styled};
 use gpui_component::{button::ButtonVariants, notification::Notification};
 
 /// Create an update notification with a download button

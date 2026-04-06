@@ -1,5 +1,5 @@
 use crate::fulgur::{Fulgur, tab::Tab};
-use gpui::*;
+use gpui::{Context, Window};
 
 impl Fulgur {
     /// Update the modified status of the tabs

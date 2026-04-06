@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui::{Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div};
 use gpui_component::ActiveTheme;
 
 /// Data carried during a tab drag operation.

@@ -1,10 +1,3 @@
-use std::{fmt, sync::Arc, thread, time::Duration, time::Instant};
-
-use fulgur_common::api::sync::{BeginResponse, InitialSynchronizationPayload};
-use gpui::{App, Context, Entity, SharedString, Window};
-use gpui_component::notification::NotificationType;
-use parking_lot::Mutex;
-
 use super::access_token::{TokenStateManager, get_valid_token};
 use super::sse::connect_sse;
 use crate::fulgur::Fulgur;
@@ -16,6 +9,11 @@ use crate::fulgur::utils::crypto_helper::{
     self, load_device_api_key_from_keychain, load_private_key_from_keychain,
 };
 use crate::fulgur::utils::sanitize::sanitize_filename;
+use fulgur_common::api::sync::{BeginResponse, InitialSynchronizationPayload};
+use gpui::{App, Context, Entity, SharedString, Window};
+use gpui_component::notification::NotificationType;
+use parking_lot::Mutex;
+use std::{fmt, sync::Arc, thread, time::Duration, time::Instant};
 
 /// Handle ureq errors and convert them to SynchronizationError with appropriate logging
 ///

@@ -1,6 +1,6 @@
 use std::ops::DerefMut;
 
-use gpui::*;
+use gpui::{Context, Focusable, ParentElement, Styled, Window, div, px};
 use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input};
 
 use crate::fulgur::{Fulgur, editor_tab};

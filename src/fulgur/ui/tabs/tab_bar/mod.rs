@@ -4,7 +4,7 @@ mod rendering;
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;
 
-use gpui::*;
+use gpui::{Action, Hsla, Styled};
 use gpui_component::button::Button;
 use serde::Deserialize;
 

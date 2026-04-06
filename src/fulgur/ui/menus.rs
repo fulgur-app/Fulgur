@@ -1,10 +1,10 @@
-use gpui::*;
-use std::path::PathBuf;
-
 use crate::fulgur::{Fulgur, utils::updater::check_for_updates};
+use gpui::{Context, KeyBinding, Menu, MenuItem, SharedString, Window, actions};
 #[cfg(not(target_os = "macos"))]
 use gpui_component::GlobalState;
 use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_macros::Action;
+use std::path::PathBuf;
 
 actions!(
     fulgur,

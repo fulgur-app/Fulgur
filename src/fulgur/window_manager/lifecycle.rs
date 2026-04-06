@@ -1,7 +1,7 @@
 use super::WindowManager;
 use crate::fulgur::Fulgur;
 use crate::fulgur::ui::tabs::editor_tab::TabTransferData;
-use gpui::*;
+use gpui::{AppContext, BorrowAppContext, Context, Window, WindowOptions};
 use gpui_component::notification::NotificationType;
 
 impl Fulgur {

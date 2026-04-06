@@ -5,6 +5,7 @@
 //! category for file-backed tabs across all open windows, and a Tasks section
 //! with "New Tab" and "New Window" entries that launch a fresh Fulgur instance.
 
+use crate::fulgur::ui::menus::DockMenuTab;
 use std::path::PathBuf;
 use windows::{
     Win32::{
@@ -26,8 +27,6 @@ use windows::{
     },
     core::{GUID, HSTRING, Interface, PCWSTR, PWSTR},
 };
-
-use crate::fulgur::ui::menus::DockMenuTab;
 
 /// PKEY_Title: {F29F85E0-4FF9-1068-AB91-08002B27B3D9}, PID 2
 /// Sets the visible label of a jump-list item.

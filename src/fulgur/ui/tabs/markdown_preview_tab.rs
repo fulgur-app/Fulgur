@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui::{Entity, SharedString};
 use gpui_component::input::InputState;
 
 /// A read-only tab that renders a live Markdown preview for a linked editor tab.

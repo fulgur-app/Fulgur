@@ -1,14 +1,3 @@
-use std::{io::Read, path::PathBuf, sync::Arc};
-
-use sha2::{Digest, Sha256};
-
-use flate2::{
-    Compression,
-    read::{GzDecoder, GzEncoder},
-};
-use fulgur_common::api::{devices::DeviceResponse, shares::ShareFilePayload};
-use gpui_component::Icon;
-
 use crate::fulgur::{
     settings::SynchronizationSettings,
     sync::{
@@ -18,6 +7,14 @@ use crate::fulgur::{
     ui::icons::CustomIcon,
     utils::crypto_helper,
 };
+use flate2::{
+    Compression,
+    read::{GzDecoder, GzEncoder},
+};
+use fulgur_common::api::{devices::DeviceResponse, shares::ShareFilePayload};
+use gpui_component::Icon;
+use sha2::{Digest, Sha256};
+use std::{io::Read, path::PathBuf, sync::Arc};
 
 pub type Device = DeviceResponse;
 pub const MAX_SYNC_SHARE_PAYLOAD_BYTES: usize = 1024 * 1024;
@@ -429,7 +426,10 @@ pub fn share_file(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        Device, MAX_DECOMPRESSED_BYTES, MAX_SYNC_SHARE_PAYLOAD_BYTES, ShareFileRequest,
+        ShareResult, compress_content, decompress_content, get_devices, share_file,
+    };
     use crate::fulgur::settings::SynchronizationSettings;
     use crate::fulgur::sync::{
         access_token::TokenStateManager, synchronization::SynchronizationError,

@@ -1,3 +1,4 @@
+use crate::fulgur::settings::Settings;
 use age::{
     secrecy::ExposeSecret,
     x25519::{Identity, Recipient},
@@ -10,8 +11,6 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 use zeroize::Zeroizing;
-
-use crate::fulgur::settings::Settings;
 
 // Names of the entries in the keychain
 const PRIVATE_KEY_NAME: &str = "private_key";
@@ -370,7 +369,7 @@ pub fn decrypt_bytes(encrypted_b64: &str, private_key_str: &str) -> anyhow::Resu
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{decrypt_bytes, encrypt_bytes, generate_key_pair, serialize};
 
     #[test]
     fn test_encrypt_decrypt_bytes() {

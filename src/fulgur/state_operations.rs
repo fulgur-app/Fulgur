@@ -3,11 +3,14 @@ use crate::fulgur::{
     editor_tab::{EditorTab, FromFileParams},
     files::file_operations::detect_encoding_and_decode,
     languages::supported_languages::SupportedLanguage,
-    state_persistence::*,
+    state_persistence::{
+        SerializedWindowBounds, TabState, WindowState, WindowsState, get_file_modified_time,
+        is_file_newer,
+    },
     tab::Tab,
     ui::components_utils::{UNTITLED, UTF_8},
 };
-use gpui::*;
+use gpui::{App, AppContext, Context, Window};
 use gpui_component::{highlighter::Language, input::TabSize};
 use std::fs;
 use std::path::PathBuf;

@@ -1,9 +1,8 @@
-use std::borrow::Cow;
-
 use crate::fulgur::Fulgur;
-use gpui::*;
+use gpui::{App, Context, Focusable, Window};
 use gpui_component::input::Position;
 use lsp_types::{Diagnostic, DiagnosticSeverity};
+use std::borrow::Cow;
 
 use super::SearchMatch;
 
