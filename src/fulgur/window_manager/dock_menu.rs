@@ -1,8 +1,6 @@
 use super::WindowManager;
 use crate::fulgur::Fulgur;
-#[cfg(target_os = "macos")]
-use gpui::Context;
-use gpui::{Entity, WeakEntity, Window, WindowId};
+use gpui::{Context, Entity, WeakEntity, Window, WindowId};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::hash::{Hash, Hasher};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
