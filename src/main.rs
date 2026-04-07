@@ -272,6 +272,8 @@ async fn create_window(
         window_bounds,
         display_id,
         #[cfg(target_os = "linux")]
+        app_id: Some("Fulgur".to_string()),
+        #[cfg(target_os = "linux")]
         window_decorations: Some(gpui::WindowDecorations::Client),
         ..Default::default()
     };
