@@ -284,7 +284,7 @@ impl Fulgur {
     /// Build the main application content with all action handlers
     ///
     /// ### Arguments
-    /// - `active_tab`: The currently active tab (if any) to render in the content area
+    /// - `active_tab_index`: The index of the currently active tab (if any)
     /// - `window`: The window to build the content for
     /// - `cx`: The application context
     ///
@@ -292,7 +292,7 @@ impl Fulgur {
     /// - `impl IntoElement`: The fully constructed content area with all action handlers attached
     fn build_app_content_with_actions(
         &self,
-        active_tab: Option<Tab>,
+        active_tab_index: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
@@ -343,7 +343,7 @@ impl Fulgur {
             }));
         app_content = app_content
             .child(self.render_tab_bar(cx))
-            .child(self.render_content_area(active_tab, window, cx))
+            .child(self.render_content_area(active_tab_index, window, cx))
             .children(self.render_markdown_bar(cx))
             .children(self.render_search_bar(cx))
             .children(self.render_color_picker_bar(cx));
@@ -457,10 +457,7 @@ impl Render for Fulgur {
         }
         self.update_modified_status(cx);
         self.process_pending_tab_scroll(cx);
-        let active_tab = self
-            .active_tab_index
-            .and_then(|index| self.tabs.get(index).cloned());
-        let app_content = self.build_app_content_with_actions(active_tab.clone(), window, cx);
+        let app_content = self.build_app_content_with_actions(self.active_tab_index, window, cx);
         self.assemble_ui_tree(app_content, window, cx)
     }
 }
@@ -554,7 +551,7 @@ impl Fulgur {
     /// Render the content area (editor or settings)
     ///
     /// ### Arguments
-    /// - `active_tab`: The active tab (if any)
+    /// - `active_tab_index`: The index of the active tab (if any)
     /// - `window`: The window context
     /// - `cx`: The application context
     ///
@@ -562,11 +559,13 @@ impl Fulgur {
     /// - `AnyElement`: The rendered content area element (wrapped in AnyElement)
     fn render_content_area(
         &self,
-        active_tab: Option<Tab>,
+        active_tab_index: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if let Some(tab) = active_tab {
+        if let Some(active_index) = active_tab_index
+            && let Some(tab) = self.tabs.get(active_index)
+        {
             match tab {
                 Tab::Editor(editor_tab) => {
                     let editor_input = Input::new(&editor_tab.content)
