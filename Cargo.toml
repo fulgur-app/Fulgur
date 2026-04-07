@@ -739,14 +739,14 @@ desktop-template = "resources/linux/Fulgur.desktop.hbs"
 
 [package.metadata.packager.deb.files]
 "resources/linux/app.fulgur.fulgur.metainfo.xml" = "usr/share/metainfo/app.fulgur.fulgur.metainfo.xml"
-"assets/icon_16.png" = "usr/share/icons/hicolor/16x16/apps/Fulgur.png"
-"assets/icon_32.png" = "usr/share/icons/hicolor/32x32/apps/Fulgur.png"
-"assets/icon_48.png" = "usr/share/icons/hicolor/48x48/apps/Fulgur.png"
-"assets/icon_64.png" = "usr/share/icons/hicolor/64x64/apps/Fulgur.png"
-"assets/icon_128.png" = "usr/share/icons/hicolor/128x128/apps/Fulgur.png"
-"assets/icon_256.png" = "usr/share/icons/hicolor/256x256/apps/Fulgur.png"
-"assets/icon_512.png" = "usr/share/icons/hicolor/512x512/apps/Fulgur.png"
-"assets/icon.png" = "usr/share/pixmaps/Fulgur.png"
+"assets/icon_16.png" = "usr/share/icons/hicolor/16x16/apps/app.fulgur.fulgur.png"
+"assets/icon_32.png" = "usr/share/icons/hicolor/32x32/apps/app.fulgur.fulgur.png"
+"assets/icon_48.png" = "usr/share/icons/hicolor/48x48/apps/app.fulgur.fulgur.png"
+"assets/icon_64.png" = "usr/share/icons/hicolor/64x64/apps/app.fulgur.fulgur.png"
+"assets/icon_128.png" = "usr/share/icons/hicolor/128x128/apps/app.fulgur.fulgur.png"
+"assets/icon_256.png" = "usr/share/icons/hicolor/256x256/apps/app.fulgur.fulgur.png"
+"assets/icon_512.png" = "usr/share/icons/hicolor/512x512/apps/app.fulgur.fulgur.png"
+"assets/icon.png" = "usr/share/pixmaps/app.fulgur.fulgur.png"
 
 [package.metadata.packager.appimage.files]
 "resources/linux/app.fulgur.fulgur.metainfo.xml" = "usr/share/metainfo/app.fulgur.fulgur.metainfo.xml"

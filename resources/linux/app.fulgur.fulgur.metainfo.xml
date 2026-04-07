@@ -4,7 +4,8 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>Apache-2.0</project_license>
   <name>Fulgur</name>
-  <summary>Lightning fast, multiplatform, themable text editor</summary>
+  <icon type="stock">app.fulgur.fulgur</icon>
+  <summary>Lightning-fast, fully themable, multiplatform text editor with secure file synchronization</summary>
 
   <developer id="app.fulgur">
     <name>PRRPCHT</name>
@@ -12,17 +13,21 @@
 
   <description>
     <p>
-      Fulgur is a modern, GPU-accelerated text editor built for developers and power users.
+      Fulgur is a GPU-accelerated, open-source text editor built with Rust and GPUI.
     </p>
     <p>
-      It focuses on speed, clean theming, and a productive editing experience across platforms.
+      It supports 50+ languages, first-class Markdown editing, and runs on Windows, macOS, and Linux.
+    </p>
+    <p>
+      Fulgur works offline by default and can securely sync text files between devices with end-to-end encryption via Fulgurant.
     </p>
   </description>
 
   <launchable type="desktop-id">Fulgur.desktop</launchable>
 
-  <url type="homepage">https://github.com/PRRPCHT/fulgur</url>
-  <url type="bugtracker">https://github.com/PRRPCHT/fulgur/issues</url>
+  <url type="homepage">https://fulgur.app</url>
+  <url type="bugtracker">https://github.com/fulgur-app/Fulgur/issues</url>
+  <url type="vcs-browser">https://github.com/fulgur-app/Fulgur</url>
 
   <categories>
     <category>Development</category>
