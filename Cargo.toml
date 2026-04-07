@@ -146,12 +146,14 @@ resources = ["LICENCE", "THIRD-PARTY-LICENSES"]
 identifier = "app.fulgur.fulgur"
 authors = ["PRRPCHT"]
 publisher = "PRRPCHT"
-description = "Lightning fast, multiplatform, themable text editor"
+description = "Lightning-fast, fully themable, multiplatform text editor with secure file synchronization"
 long-description = """
-Fulgur is a modern, GPU-accelerated text editor designed for developers and power users.
+Fulgur is a GPU-accelerated, open-source text editor built with Rust and GPUI.
+It supports 50+ languages, first-class Markdown editing, and runs on Windows, macOS, and Linux.
+Fulgur works offline by default and can securely sync text files between devices with end-to-end encryption via Fulgurant.
 """
-homepage = "https://github.com/PRRPCHT/fulgur"
-copyright = "Copyright (c) 2025 PRRPCHT"
+homepage = "https://fulgur.app"
+copyright = "Copyright (c) 2025-2026 PRRPCHT"
 category = "DeveloperTool"
 icons = ["assets/icon.icns", "assets/icon.ico", "assets/icon_512.png", "assets/icon_256.png", "assets/icon_128.png", "assets/icon_64.png", "assets/icon_48.png", "assets/icon_32.png", "assets/icon_16.png"]
 
@@ -731,3 +733,9 @@ entitlements = "entitlements.plist"
 
 [package.metadata.packager.linux]
 generate-desktop-entry = true
+
+[package.metadata.packager.deb.files]
+"resources/linux/app.fulgur.fulgur.metainfo.xml" = "usr/share/metainfo/app.fulgur.fulgur.metainfo.xml"
+
+[package.metadata.packager.appimage.files]
+"resources/linux/app.fulgur.fulgur.metainfo.xml" = "usr/share/metainfo/app.fulgur.fulgur.metainfo.xml"

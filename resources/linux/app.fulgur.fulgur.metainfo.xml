@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.fulgur.fulgur</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>Fulgur</name>
+  <summary>Lightning fast, multiplatform, themable text editor</summary>
+
+  <developer id="app.fulgur">
+    <name>PRRPCHT</name>
+  </developer>
+
+  <description>
+    <p>
+      Fulgur is a modern, GPU-accelerated text editor built for developers and power users.
+    </p>
+    <p>
+      It focuses on speed, clean theming, and a productive editing experience across platforms.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">Fulgur.desktop</launchable>
+
+  <url type="homepage">https://github.com/PRRPCHT/fulgur</url>
+  <url type="bugtracker">https://github.com/PRRPCHT/fulgur/issues</url>
+
+  <categories>
+    <category>Development</category>
+    <category>TextEditor</category>
+    <category>Utility</category>
+  </categories>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Main editing interface</caption>
+      <image type="source">https://raw.githubusercontent.com/PRRPCHT/fulgur/main/assets/readme/fulgur_1.webp</image>
+    </screenshot>
+    <screenshot>
+      <caption>Tab and project workflow</caption>
+      <image type="source">https://raw.githubusercontent.com/PRRPCHT/fulgur/main/assets/readme/fulgur_2.webp</image>
+    </screenshot>
+    <screenshot>
+      <caption>Split views and editor layout</caption>
+      <image type="source">https://raw.githubusercontent.com/PRRPCHT/fulgur/main/assets/readme/fulgur_3.webp</image>
+    </screenshot>
+    <screenshot>
+      <caption>Theme and UI showcase</caption>
+      <image type="source">https://raw.githubusercontent.com/PRRPCHT/fulgur/main/assets/readme/fulgur_4.webp</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.5.0" date="2026-04-07"/>
+  </releases>
+
+  <provides>
+    <binary>Fulgur</binary>
+  </provides>
+
+  <content_rating type="oars-1.1"/>
+</component>
