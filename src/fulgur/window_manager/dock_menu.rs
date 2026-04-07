@@ -140,6 +140,7 @@ impl Fulgur {
         use crate::fulgur::ui::menus::DockMenuTab;
         use crate::fulgur::utils::jump_list::update_windows_jump_list;
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        use gpui::SharedString;
 
         struct RawTab {
             path: Option<PathBuf>,
