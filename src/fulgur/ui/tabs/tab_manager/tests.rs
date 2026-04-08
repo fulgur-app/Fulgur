@@ -400,6 +400,127 @@ fn test_open_markdown_preview_tab_is_noop_without_active_tab(cx: &mut TestAppCon
     });
 }
 
+#[gpui::test]
+fn test_markdown_preview_cache_updates_in_panel_mode(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let source_tab_id = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.settings.editor_settings.markdown_settings.preview_mode =
+                crate::fulgur::settings::MarkdownPreviewMode::Panel;
+            let (source_tab_id, source_content) = {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.language = SupportedLanguage::Markdown;
+                (editor.id, editor.content.clone())
+            };
+            let preview_text = this.markdown_preview_text_for(source_tab_id, &source_content, cx);
+            assert!(
+                this.markdown_preview_cache.contains_key(&source_tab_id),
+                "panel render should create markdown preview cache entry"
+            );
+            assert_eq!(preview_text, SharedString::from(""));
+            source_tab_id
+        })
+    });
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            if let Some(source_tab) = this.tabs.iter_mut().find(|tab| tab.id() == source_tab_id)
+                && let Some(editor_tab) = source_tab.as_editor_mut()
+            {
+                editor_tab.content.update(cx, |input_state, cx| {
+                    input_state.set_value("# cached preview text", window, cx);
+                });
+            }
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, _cx| {
+            let cached = this
+                .markdown_preview_cache
+                .get(&source_tab_id)
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            assert_eq!(
+                cached, "# cached preview text",
+                "preview cache should update when source content changes"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_markdown_preview_cache_populates_for_dedicated_preview_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.settings.editor_settings.markdown_settings.preview_mode =
+                crate::fulgur::settings::MarkdownPreviewMode::DedicatedTab;
+            if let Some(editor) = this.get_active_editor_tab_mut() {
+                editor.language = SupportedLanguage::Markdown;
+            }
+            let source_tab_id = this.tabs[0].as_editor().expect("expected editor tab").id;
+            this.open_markdown_preview_tab(window, cx);
+            let preview_content = this.tabs[1]
+                .as_markdown_preview()
+                .expect("expected dedicated preview tab")
+                .content
+                .clone();
+            let _ = this.markdown_preview_text_for(source_tab_id, &preview_content, cx);
+            assert!(
+                this.markdown_preview_cache.contains_key(&source_tab_id),
+                "dedicated preview render should populate markdown cache"
+            );
+            assert!(
+                this.markdown_preview_subscriptions
+                    .contains_key(&source_tab_id),
+                "dedicated preview render should register cache subscription"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_prune_markdown_preview_cache_removes_unused_entries(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.settings.editor_settings.markdown_settings.preview_mode =
+                crate::fulgur::settings::MarkdownPreviewMode::Panel;
+            let mut source_info = None;
+            if let Some(editor) = this.get_active_editor_tab_mut() {
+                editor.language = SupportedLanguage::Markdown;
+                editor.show_markdown_preview = true;
+                source_info = Some((editor.id, editor.content.clone()));
+            }
+            if let Some((source_tab_id, source_content)) = source_info {
+                let _ = this.markdown_preview_text_for(source_tab_id, &source_content, cx);
+            }
+            assert!(
+                !this.markdown_preview_cache.is_empty(),
+                "cache should be populated before prune"
+            );
+
+            if let Some(editor) = this.get_active_editor_tab_mut() {
+                editor.language = SupportedLanguage::Plain;
+                editor.show_markdown_preview = false;
+            }
+            this.prune_markdown_preview_cache(cx);
+            assert!(
+                this.markdown_preview_cache.is_empty(),
+                "cache should drop entries for non-preview sources"
+            );
+            assert!(
+                this.markdown_preview_subscriptions.is_empty(),
+                "subscriptions should drop entries for non-preview sources"
+            );
+        });
+    });
+}
+
 // ========== maybe_open_markdown_preview_for_editor tests ==========
 
 #[gpui::test]
