@@ -256,6 +256,23 @@ impl Drop for FileWatcher {
 }
 
 impl Fulgur {
+    /// Remove file-watcher bookkeeping entries for one file path.
+    ///
+    /// ### Arguments
+    /// - `path`: File path to remove from debounce/save/conflict maps
+    fn prune_file_watch_bookkeeping_for_path(&mut self, path: &PathBuf) {
+        self.file_watch_state.last_file_events.remove(path);
+        self.file_watch_state.last_file_saves.remove(path);
+        self.file_watch_state.pending_conflicts.remove(path);
+    }
+
+    /// Clear all file-watcher bookkeeping maps.
+    fn clear_file_watch_bookkeeping(&mut self) {
+        self.file_watch_state.last_file_events.clear();
+        self.file_watch_state.last_file_saves.clear();
+        self.file_watch_state.pending_conflicts.clear();
+    }
+
     /// Handle file watch events received from the file watcher
     ///
     /// ### Description
@@ -359,6 +376,7 @@ impl Fulgur {
             watcher.stop();
         }
         self.file_watch_state.file_watch_events = None;
+        self.clear_file_watch_bookkeeping();
     }
 
     /// Add a file to the watcher
@@ -381,6 +399,7 @@ impl Fulgur {
         if let Some(watcher) = &mut self.file_watch_state.file_watcher {
             watcher.unwatch_file(path);
         }
+        self.prune_file_watch_bookkeeping_for_path(path);
     }
 
     /// Collect and process file watch events:
@@ -700,6 +719,15 @@ mod tests {
                     editor_tab.file_path = Some(from.clone());
                     editor_tab.title = "fulgur_rename_from.rs".into();
                 }
+                this.file_watch_state
+                    .last_file_events
+                    .insert(from.clone(), Instant::now());
+                this.file_watch_state
+                    .last_file_saves
+                    .insert(from.clone(), Instant::now());
+                this.file_watch_state
+                    .pending_conflicts
+                    .insert(from.clone(), 0);
                 this.handle_file_watch_event(
                     FileWatchEvent::Renamed {
                         from: from.clone(),
@@ -716,6 +744,82 @@ mod tests {
                     .expect("expected active editor tab");
                 assert_eq!(current_path, Some(to));
                 assert_eq!(current_title, "fulgur_rename_to.rs");
+                assert!(
+                    !this.file_watch_state.last_file_events.contains_key(&from),
+                    "rename should prune old-path debounce bookkeeping"
+                );
+                assert!(
+                    !this.file_watch_state.last_file_saves.contains_key(&from),
+                    "rename should prune old-path save bookkeeping"
+                );
+                assert!(
+                    !this.file_watch_state.pending_conflicts.contains_key(&from),
+                    "rename should prune old-path deferred conflict bookkeeping"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_unwatch_file_prunes_bookkeeping_maps(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let path = temp_test_path("fulgur_unwatch_cleanup.txt");
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                this.file_watch_state
+                    .last_file_events
+                    .insert(path.clone(), Instant::now());
+                this.file_watch_state
+                    .last_file_saves
+                    .insert(path.clone(), Instant::now());
+                this.file_watch_state
+                    .pending_conflicts
+                    .insert(path.clone(), 0);
+                this.unwatch_file(&path);
+                assert!(
+                    !this.file_watch_state.last_file_events.contains_key(&path),
+                    "unwatch must prune debounce bookkeeping"
+                );
+                assert!(
+                    !this.file_watch_state.last_file_saves.contains_key(&path),
+                    "unwatch must prune save bookkeeping"
+                );
+                assert!(
+                    !this.file_watch_state.pending_conflicts.contains_key(&path),
+                    "unwatch must prune deferred conflict bookkeeping"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_stop_file_watcher_clears_bookkeeping_maps(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let path = temp_test_path("fulgur_stop_watcher_cleanup.txt");
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                this.file_watch_state
+                    .last_file_events
+                    .insert(path.clone(), Instant::now());
+                this.file_watch_state
+                    .last_file_saves
+                    .insert(path.clone(), Instant::now());
+                this.file_watch_state
+                    .pending_conflicts
+                    .insert(path.clone(), 0);
+                this.stop_file_watcher();
+                assert!(
+                    this.file_watch_state.last_file_events.is_empty(),
+                    "stopping watcher must clear debounce bookkeeping"
+                );
+                assert!(
+                    this.file_watch_state.last_file_saves.is_empty(),
+                    "stopping watcher must clear save bookkeeping"
+                );
+                assert!(
+                    this.file_watch_state.pending_conflicts.is_empty(),
+                    "stopping watcher must clear deferred conflict bookkeeping"
+                );
             });
         });
     }
