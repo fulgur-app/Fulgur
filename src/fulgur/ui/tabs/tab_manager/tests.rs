@@ -539,6 +539,85 @@ fn test_panel_preview_flag_can_be_toggled(cx: &mut TestAppContext) {
     });
 }
 
+// ========== update_modified_status tests ==========
+
+#[gpui::test]
+fn test_update_modified_status_updates_tab_on_input_change(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let editor_content = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_modified_status(cx);
+            let editor = this.tabs[0].as_editor().expect("expected editor tab");
+            assert!(!editor.modified, "fresh tab should start as unmodified");
+            editor.content.clone()
+        })
+    });
+
+    visual_cx.update(|window, cx| {
+        editor_content.update(cx, |input_state, cx| {
+            input_state.set_value("changed in active tab", window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, _cx| {
+            let editor = this.tabs[0].as_editor().expect("expected editor tab");
+            assert!(
+                editor.modified,
+                "InputEvent::Change should update modified state incrementally"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_update_modified_status_does_not_duplicate_subscriptions(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_modified_status(cx);
+            let count_after_first = this.editor_modified_subscriptions.len();
+            this.update_modified_status(cx);
+            let count_after_second = this.editor_modified_subscriptions.len();
+            assert_eq!(
+                count_after_first, count_after_second,
+                "re-running update should not add duplicate subscriptions"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_update_modified_status_prunes_subscriptions_for_closed_tabs(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.new_tab(window, cx);
+            this.update_modified_status(cx);
+            assert_eq!(
+                this.editor_modified_subscriptions.len(),
+                2,
+                "two editor tabs should produce two subscriptions"
+            );
+
+            let removed_id = this.tabs[0].id();
+            this.remove_tab_by_id(removed_id, window, cx);
+            this.update_modified_status(cx);
+
+            assert!(
+                !this.editor_modified_subscriptions.contains_key(&removed_id),
+                "closed tab subscription should be pruned"
+            );
+            assert_eq!(
+                this.editor_modified_subscriptions.len(),
+                1,
+                "one editor tab should keep one subscription"
+            );
+        });
+    });
+}
+
 // ========== reorder_tab tests ==========
 
 #[gpui::test]
@@ -722,7 +801,11 @@ fn make_transfer_data() -> TabTransferData {
         content: "let x = 42;".to_string(),
         file_path: None,
         modified: false,
-        original_content: "let x = 42;".to_string(),
+        original_content_hash: crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str(
+            "let x = 42;",
+        )
+        .0,
+        original_content_len: "let x = 42;".len(),
         encoding: "UTF-8".to_string(),
         language: SupportedLanguage::Rust,
         show_markdown_toolbar: false,

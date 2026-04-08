@@ -283,7 +283,9 @@ impl Fulgur {
                 content: content_entity,
                 file_path: None,
                 modified: true,
-                original_content: String::new(),
+                original_content_hash:
+                    crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str("").0,
+                original_content_len: 0,
                 encoding: "UTF-8".to_string(),
                 language: SupportedLanguage::Plain,
                 show_markdown_toolbar: self
@@ -315,13 +317,9 @@ impl Fulgur {
         let mut tab_states = Vec::new();
         for tab in &self.tabs {
             if let Some(editor_tab) = tab.as_editor() {
-                let current_content = editor_tab.content.read(cx).text().to_string();
-                let is_modified = current_content != editor_tab.original_content;
-                if editor_tab.file_path.is_none() && current_content.is_empty() {
-                    continue;
-                }
                 let tab_state = if let Some(ref path) = editor_tab.file_path {
-                    if is_modified {
+                    if editor_tab.content_differs_from_original(cx) {
+                        let current_content = editor_tab.content.read(cx).text().to_string();
                         TabState {
                             title: editor_tab.title.to_string(),
                             file_path: Some(path.clone()),
@@ -337,6 +335,10 @@ impl Fulgur {
                         }
                     }
                 } else {
+                    let current_content = editor_tab.content.read(cx).text().to_string();
+                    if current_content.is_empty() {
+                        continue;
+                    }
                     TabState {
                         title: editor_tab.title.to_string(),
                         file_path: None,

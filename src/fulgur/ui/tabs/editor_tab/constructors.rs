@@ -27,6 +27,7 @@ impl EditorTab {
         settings: &EditorSettings,
     ) -> Self {
         let language = crate::fulgur::languages::supported_languages::SupportedLanguage::Plain;
+        let (original_content_hash, original_content_len) = super::content_fingerprint_from_str("");
         let content = cx.new(|cx| {
             super::make_input_state(
                 window,
@@ -42,7 +43,8 @@ impl EditorTab {
             content,
             file_path: None,
             modified: false,
-            original_content: String::new(),
+            original_content_hash,
+            original_content_len,
             encoding: UTF_8.to_string(),
             language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
@@ -74,6 +76,7 @@ impl EditorTab {
         settings: &EditorSettings,
     ) -> Self {
         let language = language_from_content(&file_name, &contents);
+        let (original_content_hash, original_content_len) = super::content_fingerprint_from_str("");
         let content = cx.new(|cx| {
             super::make_input_state(
                 window,
@@ -87,9 +90,10 @@ impl EditorTab {
             id,
             title: file_name.into(),
             content,
-            file_path: None,                 // No path - forces "Save as..." dialog
-            modified: true,                  // Mark as modified
-            original_content: String::new(), // Empty so check_modified() keeps it as modified
+            file_path: None,       // No path - forces "Save as..." dialog
+            modified: true,        // Mark as modified
+            original_content_hash, // Empty so check_modified() keeps it as modified
+            original_content_len,
             encoding: UTF_8.to_string(),
             language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
@@ -116,6 +120,8 @@ impl EditorTab {
         settings: &EditorSettings,
     ) -> Self {
         let content_len = params.contents.len();
+        let (original_content_hash, original_content_len) =
+            super::content_fingerprint_from_str(&params.contents);
         let file_name = params
             .path
             .file_name()
@@ -144,7 +150,8 @@ impl EditorTab {
             content,
             file_path: Some(params.path),
             modified: params.is_modified,
-            original_content: params.contents,
+            original_content_hash,
+            original_content_len,
             encoding: params.encoding,
             language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
@@ -173,6 +180,7 @@ impl EditorTab {
         cx: &mut App,
         settings: &EditorSettings,
     ) -> Self {
+        let (original_content_hash, original_content_len) = super::content_fingerprint_from_str("");
         let content = cx.new(|cx| {
             super::make_input_state(
                 window,
@@ -188,7 +196,8 @@ impl EditorTab {
             content,
             file_path: None,
             modified: true,
-            original_content: String::new(),
+            original_content_hash,
+            original_content_len,
             encoding: params.encoding,
             language: params.language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
@@ -239,7 +248,8 @@ impl EditorTab {
             content,
             file_path: data.file_path,
             modified: data.modified,
-            original_content: data.original_content,
+            original_content_hash: data.original_content_hash,
+            original_content_len: data.original_content_len,
             encoding: data.encoding,
             language: data.language,
             show_markdown_toolbar: data.show_markdown_toolbar,

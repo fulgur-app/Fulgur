@@ -544,7 +544,7 @@ mod tests {
                     editor_tab.content.update(cx, |input_state, cx| {
                         input_state.set_value("stale-content", window, cx);
                     });
-                    editor_tab.original_content = "stale-content".to_string();
+                    editor_tab.set_original_content_from_str("stale-content");
                     editor_tab.modified = false;
                 }
                 this.handle_file_watch_event(FileWatchEvent::Modified(path.clone()), window, cx);
@@ -576,7 +576,7 @@ mod tests {
                     editor_tab.content.update(cx, |input_state, cx| {
                         input_state.set_value("local-content", window, cx);
                     });
-                    editor_tab.original_content = "local-content".to_string();
+                    editor_tab.set_original_content_from_str("local-content");
                     editor_tab.modified = false;
                 }
                 this.file_watch_state
@@ -666,7 +666,7 @@ mod tests {
                     editor_tab.content.update(cx, |input_state, cx| {
                         input_state.set_value("current-content", window, cx);
                     });
-                    editor_tab.original_content = "current-content".to_string();
+                    editor_tab.set_original_content_from_str("current-content");
                     editor_tab.title = "deleted_branch.txt".into();
                 }
                 this.handle_file_watch_event(FileWatchEvent::Deleted(path.clone()), window, cx);

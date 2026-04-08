@@ -9,7 +9,7 @@ mod tests;
 pub use navigation::{Jump, extract_line_number};
 
 use gpui::{Context, Entity, SharedString, Window};
-use gpui_component::input::{InputState, TabSize};
+use gpui_component::input::{InputState, Rope, TabSize};
 use std::rc::Rc;
 use std::time::SystemTime;
 
@@ -24,7 +24,8 @@ pub struct EditorTab {
     pub content: Entity<InputState>,
     pub file_path: Option<std::path::PathBuf>,
     pub modified: bool,
-    pub original_content: String,
+    pub original_content_hash: u64,
+    pub original_content_len: usize,
     pub encoding: String,
     pub language: SupportedLanguage,
     pub show_markdown_toolbar: bool,
@@ -39,7 +40,8 @@ pub struct TabTransferData {
     pub content: String,
     pub file_path: Option<std::path::PathBuf>,
     pub modified: bool,
-    pub original_content: String,
+    pub original_content_hash: u64,
+    pub original_content_len: usize,
     pub encoding: String,
     pub language: SupportedLanguage,
     pub show_markdown_toolbar: bool,
@@ -56,6 +58,46 @@ pub struct FromDuplicateParams {
     pub current_content: String,
     pub encoding: String,
     pub language: SupportedLanguage,
+}
+
+const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+const FNV_PRIME: u64 = 0x100000001b3;
+
+fn fnv1a_update(mut hash: u64, bytes: &[u8]) -> u64 {
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
+/// Build a lightweight content fingerprint from a UTF-8 string.
+///
+/// ### Arguments
+/// - `content`: The content string to fingerprint
+///
+/// ### Returns
+/// - `(u64, usize)`: `(hash, byte_len)` for the content
+pub(crate) fn content_fingerprint_from_str(content: &str) -> (u64, usize) {
+    let hash = fnv1a_update(FNV_OFFSET_BASIS, content.as_bytes());
+    (hash, content.len())
+}
+
+/// Build a lightweight content fingerprint from a rope.
+///
+/// ### Arguments
+/// - `content`: The rope buffer to fingerprint
+///
+/// ### Returns
+/// - `(u64, usize)`: `(hash, byte_len)` for the content
+pub(crate) fn content_fingerprint_from_rope(content: &Rope) -> (u64, usize) {
+    let mut hash = FNV_OFFSET_BASIS;
+    let mut byte_len = 0;
+    for chunk in content.chunks() {
+        hash = fnv1a_update(hash, chunk.as_bytes());
+        byte_len += chunk.len();
+    }
+    (hash, byte_len)
 }
 
 /// Parameters for creating an editor tab from a file

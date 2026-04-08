@@ -35,7 +35,7 @@ use gpui_component::{
     v_flex,
 };
 use settings::Settings;
-use std::{collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
+use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
 use tab::Tab;
 use ui::{
     bars::search_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*, themes,
@@ -108,6 +108,7 @@ pub struct Fulgur {
     local_settings_version: u64, // Track the version of settings this window has loaded
     rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
+    editor_modified_subscriptions: HashMap<usize, Subscription>, // Per-editor subscriptions for incremental modified-state updates
     tab_scroll_handle: ScrollHandle, // Scroll handle for the tab bar to scroll active tab into view
     pending_tab_scroll: Option<usize>, // Deferred scroll-to-tab request (needs one render cycle for layout)
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
@@ -190,6 +191,7 @@ impl Fulgur {
                 local_settings_version: 0,
                 rendered_tabs: HashSet::new(),
                 tabs_pending_update: HashSet::new(),
+                editor_modified_subscriptions: HashMap::new(),
                 tab_scroll_handle: ScrollHandle::new(),
                 pending_tab_scroll: None,
                 file_watch_state: FileWatchState::new(),
@@ -253,7 +255,7 @@ impl Fulgur {
     /// - `settings`: The application settings (already loaded and resolved, including first-run overrides)
     pub fn init(cx: &mut App, settings: &mut Settings) {
         let recent_files = settings.get_recent_files();
-        languages::supported_languages::register_external_languages();
+        //languages::supported_languages::register_external_languages();
         themes::init(settings, cx, move |cx| {
             cx.bind_keys(build_default_key_bindings());
             let menus = build_menus(&recent_files, None);

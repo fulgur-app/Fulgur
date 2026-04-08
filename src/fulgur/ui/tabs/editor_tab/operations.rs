@@ -86,8 +86,8 @@ impl EditorTab {
     /// ### Returns
     /// - `True` if the tab's content has been modified, `False` otherwise
     pub fn check_modified(&mut self, cx: &mut App) -> bool {
-        let current_text = self.content.read(cx).text().to_string();
-        self.modified = current_text != self.original_content;
+        let is_modified = self.content_differs_from_original(cx);
+        self.modified = is_modified;
         self.modified
     }
 
@@ -96,8 +96,38 @@ impl EditorTab {
     /// ### Arguments
     /// - `cx`: The application context
     pub fn mark_as_saved(&mut self, cx: &mut App) {
-        self.original_content = self.content.read(cx).text().to_string();
+        let (hash, len) = {
+            let current_text = self.content.read(cx).text();
+            super::content_fingerprint_from_rope(current_text)
+        };
+        self.original_content_hash = hash;
+        self.original_content_len = len;
         self.modified = false;
+    }
+
+    /// Update original-content fingerprint from a string source.
+    ///
+    /// ### Arguments
+    /// - `content`: Content to set as the new saved baseline
+    pub fn set_original_content_from_str(&mut self, content: &str) {
+        let (hash, len) = super::content_fingerprint_from_str(content);
+        self.original_content_hash = hash;
+        self.original_content_len = len;
+    }
+
+    /// Check whether current buffer content differs from the saved baseline.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `True` when content differs from baseline, `False` otherwise
+    pub fn content_differs_from_original(&self, cx: &App) -> bool {
+        let (current_hash, current_len) = {
+            let current_text = self.content.read(cx).text();
+            super::content_fingerprint_from_rope(current_text)
+        };
+        current_hash != self.original_content_hash || current_len != self.original_content_len
     }
 
     /// Get suggested filename for "Save as..." dialog
