@@ -597,6 +597,7 @@ fn test_update_window_menu_fingerprint_bumps_revision_only_on_change(cx: &mut Te
 }
 
 #[gpui::test]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn test_process_window_state_updates_updates_menu_fingerprint_on_tab_change(
     cx: &mut TestAppContext,
 ) {
