@@ -1,5 +1,7 @@
 use super::SearchMatch;
-use super::actions::{apply_replacements, find_matches, get_line_col_fast};
+use super::actions::{
+    apply_replacements, find_matches, find_matches_with_scratch, get_line_col_fast,
+};
 use core::prelude::v1::test;
 
 #[cfg(feature = "gpui-test-support")]
@@ -484,6 +486,54 @@ fn test_find_matches_line_col_accuracy() {
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].line, 1);
     assert_eq!(matches[0].col, 6); // "hello" starts at column 6 of line 2
+}
+
+#[test]
+fn test_find_matches_with_scratch_matches_baseline() {
+    let text = "Alpha beta\nalpha BETA\nalpha";
+    let query = "alpha";
+    let baseline = find_matches(text, query, false, false);
+    let mut newline_offsets_scratch = Vec::new();
+    let mut lowercase_text_scratch = String::new();
+    let with_scratch = find_matches_with_scratch(
+        text,
+        query,
+        false,
+        false,
+        &mut newline_offsets_scratch,
+        &mut lowercase_text_scratch,
+    );
+    assert_eq!(with_scratch.len(), baseline.len());
+    assert_eq!(with_scratch[0].start, baseline[0].start);
+    assert_eq!(with_scratch[1].start, baseline[1].start);
+    assert_eq!(with_scratch[2].start, baseline[2].start);
+}
+
+#[test]
+fn test_find_matches_with_scratch_rebuilds_offsets_between_calls() {
+    let mut newline_offsets_scratch = vec![999, 1000, 1001];
+    let mut lowercase_text_scratch = "stale".repeat(64);
+    let first = find_matches_with_scratch(
+        "line1\nline2\nline3",
+        "line",
+        false,
+        false,
+        &mut newline_offsets_scratch,
+        &mut lowercase_text_scratch,
+    );
+    assert_eq!(first.len(), 3);
+
+    let second = find_matches_with_scratch(
+        "short",
+        "sh",
+        false,
+        false,
+        &mut newline_offsets_scratch,
+        &mut lowercase_text_scratch,
+    );
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].line, 0);
+    assert_eq!(second[0].col, 0);
 }
 
 // ========== Visibility control ==========

@@ -58,6 +58,9 @@ pub struct SearchState {
     pub last_search_match_case: bool,
     pub last_search_match_whole_word: bool,
     pub search_subscription: gpui::Subscription,
+    pub search_text_scratch: String,
+    pub search_newline_offsets_scratch: Vec<usize>,
+    pub search_lowercase_text_scratch: String,
 }
 
 impl SearchState {
@@ -87,6 +90,9 @@ impl SearchState {
             last_search_match_case: false,
             last_search_match_whole_word: false,
             search_subscription,
+            search_text_scratch: String::new(),
+            search_newline_offsets_scratch: Vec::new(),
+            search_lowercase_text_scratch: String::new(),
         }
     }
 }
