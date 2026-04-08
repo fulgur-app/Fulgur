@@ -1,4 +1,6 @@
-use super::{EditorTab, FromDuplicateParams, FromFileParams, TabTransferData};
+use super::{
+    EditorTab, FromDuplicateParams, FromFileParams, TabTransferData, content_fingerprint_from_str,
+};
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
 use crate::fulgur::settings::EditorSettings;
 use gpui::{AppContext, Context, IntoElement, Render, SharedString, TestAppContext, Window, div};
@@ -30,7 +32,8 @@ fn make_transfer_data() -> TabTransferData {
         content: "fn main() {}".to_string(),
         file_path: Some(std::path::PathBuf::from("/tmp/transfer.rs")),
         modified: false,
-        original_content: "fn main() {}".to_string(),
+        original_content_hash: content_fingerprint_from_str("fn main() {}").0,
+        original_content_len: "fn main() {}".len(),
         encoding: "UTF-8".to_string(),
         language: SupportedLanguage::Rust,
         show_markdown_toolbar: true,
@@ -53,7 +56,11 @@ fn test_editor_tab_new_construction(cx: &mut TestAppContext) {
             assert_eq!(tab.title, SharedString::from("Scratch"));
             assert!(tab.file_path.is_none());
             assert!(!tab.modified);
-            assert_eq!(tab.original_content, "");
+            assert_eq!(
+                tab.original_content_hash,
+                content_fingerprint_from_str("").0
+            );
+            assert_eq!(tab.original_content_len, 0);
             assert_eq!(tab.encoding, "UTF-8");
             assert_eq!(tab.language, SupportedLanguage::Plain);
             assert_eq!(
@@ -95,7 +102,11 @@ fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
             assert_eq!(tab.title, SharedString::from("shared.rs"));
             assert!(tab.file_path.is_none());
             assert!(tab.modified);
-            assert_eq!(tab.original_content, "");
+            assert_eq!(
+                tab.original_content_hash,
+                content_fingerprint_from_str("").0
+            );
+            assert_eq!(tab.original_content_len, 0);
             assert_eq!(tab.encoding, "UTF-8");
             assert_eq!(tab.language, SupportedLanguage::Rust);
             assert!(tab.show_markdown_toolbar);
@@ -130,7 +141,11 @@ fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
             assert_eq!(tab.title, SharedString::from("test_file.md •"));
             assert_eq!(tab.file_path, Some(path));
             assert!(tab.modified);
-            assert_eq!(tab.original_content, contents);
+            assert_eq!(
+                tab.original_content_hash,
+                content_fingerprint_from_str(&contents).0
+            );
+            assert_eq!(tab.original_content_len, contents.len());
             assert_eq!(tab.encoding, "UTF-8");
             assert_eq!(tab.language, SupportedLanguage::Markdown);
             assert_eq!(tab.file_size_bytes, Some(12));
@@ -161,7 +176,11 @@ fn test_editor_tab_from_duplicate_construction(cx: &mut TestAppContext) {
             assert_eq!(tab.title, SharedString::from("copy.rs"));
             assert!(tab.file_path.is_none());
             assert!(tab.modified);
-            assert_eq!(tab.original_content, "");
+            assert_eq!(
+                tab.original_content_hash,
+                content_fingerprint_from_str("").0
+            );
+            assert_eq!(tab.original_content_len, 0);
             assert_eq!(tab.encoding, "UTF-8");
             assert_eq!(tab.language, SupportedLanguage::Rust);
             assert_eq!(tab.file_size_bytes, None);
@@ -189,7 +208,11 @@ fn test_editor_tab_check_modified_and_mark_as_saved(cx: &mut TestAppContext) {
         cx.open_window(Default::default(), |window, cx| {
             let mut tab = EditorTab::from_file(params, window, cx, &settings);
             assert!(!tab.modified);
-            assert_eq!(tab.original_content, "original");
+            assert_eq!(
+                tab.original_content_hash,
+                content_fingerprint_from_str("original").0
+            );
+            assert_eq!(tab.original_content_len, "original".len());
 
             tab.content.update(cx, |content, cx| {
                 content.set_value("changed", window, cx);
@@ -200,9 +223,69 @@ fn test_editor_tab_check_modified_and_mark_as_saved(cx: &mut TestAppContext) {
 
             tab.mark_as_saved(cx);
             assert!(!tab.modified);
-            assert_eq!(tab.original_content, "changed");
+            assert_eq!(
+                tab.original_content_hash,
+                content_fingerprint_from_str("changed").0
+            );
+            assert_eq!(tab.original_content_len, "changed".len());
             assert!(!tab.check_modified(cx));
 
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
+#[gpui::test]
+fn test_editor_tab_check_modified_detects_same_length_content_change(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let settings = EditorSettings::new();
+    let params = FromFileParams {
+        id: 32,
+        path: temp_test_path("modified_same_len.md"),
+        contents: "abcd".to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: false,
+    };
+    cx.update(|cx| {
+        cx.open_window(Default::default(), |window, cx| {
+            let mut tab = EditorTab::from_file(params, window, cx, &settings);
+            tab.content.update(cx, |content, cx| {
+                content.set_value("abce", window, cx);
+            });
+            assert!(tab.check_modified(cx));
+            assert!(tab.modified);
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
+#[gpui::test]
+fn test_editor_tab_check_modified_handles_multibyte_utf8_content(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let settings = EditorSettings::new();
+    let params = FromFileParams {
+        id: 33,
+        path: temp_test_path("modified_utf8.md"),
+        contents: "\u{00E9}\u{1F642}\u{6F22}".to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: false,
+    };
+    cx.update(|cx| {
+        cx.open_window(Default::default(), |window, cx| {
+            let mut tab = EditorTab::from_file(params, window, cx, &settings);
+            assert!(
+                !tab.check_modified(cx),
+                "unchanged UTF-8 content must remain unmodified"
+            );
+            tab.content.update(cx, |content, cx| {
+                content.set_value("\u{00E9}\u{1F643}\u{6F22}", window, cx);
+            });
+            assert!(
+                tab.check_modified(cx),
+                "changing a multibyte character must set modified=true"
+            );
             cx.new(|_| EmptyView)
         })
         .expect("failed to open test window");
@@ -286,7 +369,11 @@ fn test_from_transfer_preserves_all_fields(cx: &mut TestAppContext) {
                 Some(std::path::PathBuf::from("/tmp/transfer.rs"))
             );
             assert!(!tab.modified);
-            assert_eq!(tab.original_content, "fn main() {}");
+            assert_eq!(
+                tab.original_content_hash,
+                content_fingerprint_from_str("fn main() {}").0
+            );
+            assert_eq!(tab.original_content_len, "fn main() {}".len());
             assert_eq!(tab.encoding, "UTF-8");
             assert_eq!(tab.language, SupportedLanguage::Rust);
             assert!(tab.show_markdown_toolbar);
@@ -326,7 +413,8 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
         content: "scratch content".to_string(),
         file_path: None,
         modified: false,
-        original_content: "".to_string(),
+        original_content_hash: content_fingerprint_from_str("").0,
+        original_content_len: 0,
         encoding: "UTF-8".to_string(),
         language: SupportedLanguage::Plain,
         show_markdown_toolbar: false,
@@ -357,7 +445,8 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
         content: "edited content".to_string(),
         file_path: Some(std::path::PathBuf::from("/tmp/changed.md")),
         modified: true,
-        original_content: "original content".to_string(),
+        original_content_hash: content_fingerprint_from_str("original content").0,
+        original_content_len: "original content".len(),
         encoding: "UTF-8".to_string(),
         language: SupportedLanguage::Markdown,
         show_markdown_toolbar: false,
@@ -371,7 +460,8 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
             let tab = EditorTab::from_transfer(2, data, window, cx, &settings);
             assert!(tab.modified, "modified flag must be preserved");
             assert_eq!(
-                tab.original_content, "original content",
+                tab.original_content_hash,
+                content_fingerprint_from_str("original content").0,
                 "original content must differ from current"
             );
             assert_eq!(tab.content.read(cx).text().to_string(), "edited content");
@@ -390,7 +480,8 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
         content: "print('hello')".to_string(),
         file_path: None,
         modified: false,
-        original_content: "print('hello')".to_string(),
+        original_content_hash: content_fingerprint_from_str("print('hello')").0,
+        original_content_len: "print('hello')".len(),
         encoding: "UTF-8".to_string(),
         language: SupportedLanguage::Python,
         show_markdown_toolbar: false,
@@ -418,7 +509,8 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
         content: "# Note".to_string(),
         file_path: None,
         modified: false,
-        original_content: "# Note".to_string(),
+        original_content_hash: content_fingerprint_from_str("# Note").0,
+        original_content_len: "# Note".len(),
         encoding: "UTF-8".to_string(),
         language: SupportedLanguage::Markdown,
         show_markdown_toolbar: true,
