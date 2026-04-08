@@ -22,45 +22,46 @@ use gpui_component::{
     tooltip::Tooltip,
     v_flex,
 };
+use std::collections::HashMap;
 
 impl Fulgur {
-    /// Get the display title for a tab, including parent folder if there are duplicates
+    /// Build a per-filename tab count map for disambiguation.
+    ///
+    /// ### Returns
+    /// - `HashMap<String, usize>`: Map of filename to number of open tabs with that filename
+    pub(crate) fn build_tab_filename_counts(&self) -> HashMap<String, usize> {
+        let mut filename_counts = HashMap::new();
+        for tab in &self.tabs {
+            if let Some(editor_tab) = tab.as_editor()
+                && let Some(path) = editor_tab.file_path.as_ref()
+                && let Some(filename) = path.file_name().and_then(|n| n.to_str())
+            {
+                *filename_counts.entry(filename.to_string()).or_insert(0) += 1;
+            }
+        }
+        filename_counts
+    }
+
+    /// Get the display title for a tab, including parent folder when duplicated.
     ///
     /// ### Arguments
-    /// - `index`: The index of the tab
     /// - `tab`: The tab to get the title for
+    /// - `filename_counts`: Precomputed filename frequencies for all open tabs
     ///
     /// ### Returns
     /// - `(String, Option<String>)`: A tuple of (filename, optional parent folder)
     pub(crate) fn get_tab_display_title(
         &self,
-        index: usize,
         tab: &Tab,
+        filename_counts: &HashMap<String, usize>,
     ) -> (String, Option<String>) {
         let base_title = tab.title();
         if let Some(editor_tab) = tab.as_editor()
             && let Some(ref path) = editor_tab.file_path
         {
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let duplicate_count = self
-                .tabs
-                .iter()
-                .enumerate()
-                .filter(|(i, t)| {
-                    if *i == index {
-                        return false;
-                    }
-                    if let Some(editor) = t.as_editor()
-                        && let Some(ref other_path) = editor.file_path
-                        && let Some(other_filename) =
-                            other_path.file_name().and_then(|n| n.to_str())
-                    {
-                        return other_filename == filename;
-                    }
-                    false
-                })
-                .count();
-            if duplicate_count > 0
+            let duplicate_count = filename_counts.get(filename).copied().unwrap_or(0);
+            if duplicate_count > 1
                 && let Some(parent) = path.parent()
                 && let Some(parent_name) = parent.file_name().and_then(|n| n.to_str())
             {
@@ -241,13 +242,14 @@ impl Fulgur {
         } else {
             None
         };
+        let filename_counts = self.build_tab_filename_counts();
         let capacity = self.tabs.len() + if ghost.is_some() { 1 } else { 0 };
         let mut elements: Vec<AnyElement> = Vec::with_capacity(capacity);
         if let Some((0, dragged)) = ghost {
             elements.push(self.render_ghost_tab(0, dragged, cx));
         }
         for (index, tab) in self.tabs.iter().enumerate() {
-            elements.push(self.render_tab(index, tab, cx));
+            elements.push(self.render_tab(index, tab, &filename_counts, cx));
             if let Some((slot, dragged)) = ghost
                 && slot == index + 1
             {
@@ -266,7 +268,13 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `AnyElement`: The rendered tab element
-    pub fn render_tab(&self, index: usize, tab: &Tab, cx: &mut Context<Self>) -> AnyElement {
+    pub fn render_tab(
+        &self,
+        index: usize,
+        tab: &Tab,
+        filename_counts: &HashMap<String, usize>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
 
         let tab_id = tab.id();
@@ -373,7 +381,7 @@ impl Fulgur {
                 .build(window, cx)
             });
         }
-        let (filename, folder) = self.get_tab_display_title(index, tab);
+        let (filename, folder) = self.get_tab_display_title(tab, filename_counts);
         let modified_indicator = if tab.is_modified() { " •" } else { "" };
         let mut title_container = div().flex().items_center().gap_1().pl_1().child(
             div()
