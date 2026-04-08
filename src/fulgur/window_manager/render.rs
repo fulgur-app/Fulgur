@@ -35,6 +35,8 @@ impl Fulgur {
         if let Some((notification_type, message)) = sync_notification {
             window.push_notification((notification_type, message), cx);
         }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        self.publish_window_menu_fingerprint_if_changed(cx);
         #[cfg(target_os = "macos")]
         self.update_dock_menu_if_changed(cx);
         #[cfg(target_os = "windows")]

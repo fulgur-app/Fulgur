@@ -126,8 +126,14 @@ pub struct Fulgur {
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
     pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    local_window_menu_fingerprint: u64, // Cached local menu-state fingerprint published to WindowManager
+    #[cfg(target_os = "macos")]
+    last_dock_menu_revision: u64, // Last global menu-state revision processed by dock menu updater
     #[cfg(target_os = "macos")]
     last_dock_menu_hash: u64, // Hash of the last dock menu state to avoid unnecessary rebuilds
+    #[cfg(target_os = "windows")]
+    last_jump_list_revision: u64, // Last global menu-state revision processed by jump list updater
     #[cfg(target_os = "windows")]
     last_jump_list_hash: u64, // Hash of the last jump list state to avoid unnecessary rebuilds
 }
@@ -230,8 +236,14 @@ impl Fulgur {
                 pending_tab_transfer: None,
                 pending_tab_removal: None,
                 pending_transfer_scroll: None,
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                local_window_menu_fingerprint: 0,
+                #[cfg(target_os = "macos")]
+                last_dock_menu_revision: 0,
                 #[cfg(target_os = "macos")]
                 last_dock_menu_hash: 0,
+                #[cfg(target_os = "windows")]
+                last_jump_list_revision: 0,
                 #[cfg(target_os = "windows")]
                 last_jump_list_hash: 0,
             }

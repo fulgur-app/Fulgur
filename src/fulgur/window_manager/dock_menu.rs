@@ -1,12 +1,55 @@
 use super::WindowManager;
 use crate::fulgur::Fulgur;
-use gpui::{Context, Entity, WeakEntity, Window, WindowId};
+use gpui::{BorrowAppContext, Context, Entity, WeakEntity, Window, WindowId};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::hash::{Hash, Hasher};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::path::PathBuf;
 
 impl Fulgur {
+    /// Compute a lightweight fingerprint for this window's dock/jump-list inputs.
+    ///
+    /// Includes all local tabs (id/title/path) and recent files to detect when
+    /// system menu state may need rebuilding.
+    ///
+    /// ### Returns
+    /// - `u64`: Fingerprint of this window's menu-relevant state
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    fn compute_local_menu_fingerprint(&mut self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for tab in &self.tabs {
+            tab.id().hash(&mut hasher);
+            tab.title().hash(&mut hasher);
+            if let Some(path) = tab.as_editor().and_then(|editor| editor.file_path.as_ref()) {
+                path.hash(&mut hasher);
+            }
+        }
+        for file in self.settings.get_recent_files() {
+            file.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// Publish this window's local menu fingerprint to the `WindowManager`.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    pub(super) fn publish_window_menu_fingerprint_if_changed(&mut self, cx: &mut Context<Self>) {
+        let fingerprint = self.compute_local_menu_fingerprint();
+        let already_published = cx
+            .global::<WindowManager>()
+            .get_window_menu_fingerprint(self.window_id)
+            == Some(fingerprint);
+        if fingerprint == self.local_window_menu_fingerprint && already_published {
+            return;
+        }
+        self.local_window_menu_fingerprint = fingerprint;
+        cx.update_global::<WindowManager, _>(|manager, _| {
+            manager.update_window_menu_fingerprint(self.window_id, fingerprint);
+        });
+    }
+
     /// Update the macOS dock menu if the open tabs or recent files have changed.
     ///
     /// Computes a hash of the current state (all tabs across all windows and recent files)
@@ -19,6 +62,11 @@ impl Fulgur {
         use gpui::{SharedString, WeakEntity};
 
         use crate::fulgur::ui::menus::{DockMenuTab, build_dock_menu};
+        let menu_state_revision = cx.global::<WindowManager>().menu_state_revision();
+        if menu_state_revision == self.last_dock_menu_revision {
+            return;
+        }
+        self.last_dock_menu_revision = menu_state_revision;
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
         // Collect raw tab data from all windows: (file_path_or_none, title, window_group_index)
@@ -139,6 +187,11 @@ impl Fulgur {
     pub(super) fn update_jump_list_if_changed(&mut self, cx: &mut Context<Self>) {
         use crate::fulgur::ui::menus::DockMenuTab;
         use crate::fulgur::utils::jump_list::update_windows_jump_list;
+        let menu_state_revision = cx.global::<WindowManager>().menu_state_revision();
+        if menu_state_revision == self.last_jump_list_revision {
+            return;
+        }
+        self.last_jump_list_revision = menu_state_revision;
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         use gpui::SharedString;
 
