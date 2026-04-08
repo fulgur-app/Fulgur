@@ -63,8 +63,9 @@ fn test_get_tab_display_title_returns_filename_for_unique_path(cx: &mut TestAppC
             if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
                 e.file_path = Some(PathBuf::from("/projects/foo/main.rs"));
             }
+            let filename_counts = this.build_tab_filename_counts();
             let tab = this.tabs.first().unwrap();
-            let (filename, folder) = this.get_tab_display_title(0, tab);
+            let (filename, folder) = this.get_tab_display_title(tab, &filename_counts);
             assert_eq!(filename, "main.rs");
             assert!(
                 folder.is_none(),
@@ -86,8 +87,9 @@ fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(cx: &m
             if let Some(Tab::Editor(e)) = this.tabs.get_mut(1) {
                 e.file_path = Some(PathBuf::from("/projects/b/main.rs"));
             }
+            let filename_counts = this.build_tab_filename_counts();
             let tab0 = this.tabs.first().unwrap();
-            let (filename0, folder0) = this.get_tab_display_title(0, tab0);
+            let (filename0, folder0) = this.get_tab_display_title(tab0, &filename_counts);
             assert_eq!(filename0, "main.rs");
             assert_eq!(
                 folder0.as_deref(),
@@ -95,7 +97,7 @@ fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(cx: &m
                 "first tab should show its parent folder when filename is shared"
             );
             let tab1 = this.tabs.get(1).unwrap();
-            let (filename1, folder1) = this.get_tab_display_title(1, tab1);
+            let (filename1, folder1) = this.get_tab_display_title(tab1, &filename_counts);
             assert_eq!(filename1, "main.rs");
             assert_eq!(
                 folder1.as_deref(),
@@ -112,9 +114,10 @@ fn test_get_tab_display_title_returns_tab_title_for_untitled_tab(cx: &mut TestAp
     visual_cx.update(|_window, cx| {
         fulgur.update(cx, |this, _cx| {
             // The default tab has no file_path; its display title should be the tab's own title
+            let filename_counts = this.build_tab_filename_counts();
             let tab = this.tabs.first().unwrap();
             let tab_title = tab.title().to_string();
-            let (display_title, folder) = this.get_tab_display_title(0, tab);
+            let (display_title, folder) = this.get_tab_display_title(tab, &filename_counts);
             assert_eq!(display_title, tab_title);
             assert!(folder.is_none());
         });

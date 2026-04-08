@@ -35,7 +35,7 @@ use gpui_component::{
     v_flex,
 };
 use settings::Settings;
-use std::{collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
+use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
 use tab::Tab;
 use ui::{
     bars::search_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*, themes,
@@ -58,6 +58,9 @@ pub struct SearchState {
     pub last_search_match_case: bool,
     pub last_search_match_whole_word: bool,
     pub search_subscription: gpui::Subscription,
+    pub search_text_scratch: String,
+    pub search_newline_offsets_scratch: Vec<usize>,
+    pub search_lowercase_text_scratch: String,
 }
 
 impl SearchState {
@@ -87,6 +90,9 @@ impl SearchState {
             last_search_match_case: false,
             last_search_match_whole_word: false,
             search_subscription,
+            search_text_scratch: String::new(),
+            search_newline_offsets_scratch: Vec::new(),
+            search_lowercase_text_scratch: String::new(),
         }
     }
 }
@@ -108,6 +114,9 @@ pub struct Fulgur {
     local_settings_version: u64, // Track the version of settings this window has loaded
     rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
+    editor_modified_subscriptions: HashMap<usize, Subscription>, // Per-editor subscriptions for incremental modified-state updates
+    markdown_preview_cache: HashMap<usize, SharedString>, // Cached markdown source text keyed by source editor tab id
+    markdown_preview_subscriptions: HashMap<usize, Subscription>, // Per-source subscriptions for markdown preview cache updates
     tab_scroll_handle: ScrollHandle, // Scroll handle for the tab bar to scroll active tab into view
     pending_tab_scroll: Option<usize>, // Deferred scroll-to-tab request (needs one render cycle for layout)
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
@@ -123,13 +132,38 @@ pub struct Fulgur {
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
     pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    local_window_menu_fingerprint: u64, // Cached local menu-state fingerprint published to WindowManager
+    #[cfg(target_os = "macos")]
+    last_dock_menu_revision: u64, // Last global menu-state revision processed by dock menu updater
     #[cfg(target_os = "macos")]
     last_dock_menu_hash: u64, // Hash of the last dock menu state to avoid unnecessary rebuilds
+    #[cfg(target_os = "windows")]
+    last_jump_list_revision: u64, // Last global menu-state revision processed by jump list updater
     #[cfg(target_os = "windows")]
     last_jump_list_hash: u64, // Hash of the last jump list state to avoid unnecessary rebuilds
 }
 
 impl Fulgur {
+    /// Check whether an editor tab should be tracked as a markdown preview source.
+    ///
+    /// ### Arguments
+    /// - `language`: The editor tab language
+    /// - `show_markdown_preview`: Per-tab markdown preview toggle
+    ///
+    /// ### Returns
+    /// - `True` when this tab should keep markdown preview cache/subscriptions alive
+    fn should_track_markdown_preview_source(
+        language: SupportedLanguage,
+        show_markdown_preview: bool,
+    ) -> bool {
+        show_markdown_preview
+            && matches!(
+                language,
+                SupportedLanguage::Markdown | SupportedLanguage::MarkdownInline
+            )
+    }
+
     /// Get shared application state
     ///
     /// ### Arguments
@@ -190,6 +224,9 @@ impl Fulgur {
                 local_settings_version: 0,
                 rendered_tabs: HashSet::new(),
                 tabs_pending_update: HashSet::new(),
+                editor_modified_subscriptions: HashMap::new(),
+                markdown_preview_cache: HashMap::new(),
+                markdown_preview_subscriptions: HashMap::new(),
                 tab_scroll_handle: ScrollHandle::new(),
                 pending_tab_scroll: None,
                 file_watch_state: FileWatchState::new(),
@@ -205,8 +242,14 @@ impl Fulgur {
                 pending_tab_transfer: None,
                 pending_tab_removal: None,
                 pending_transfer_scroll: None,
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                local_window_menu_fingerprint: 0,
+                #[cfg(target_os = "macos")]
+                last_dock_menu_revision: 0,
                 #[cfg(target_os = "macos")]
                 last_dock_menu_hash: 0,
+                #[cfg(target_os = "windows")]
+                last_jump_list_revision: 0,
                 #[cfg(target_os = "windows")]
                 last_jump_list_hash: 0,
             }
@@ -253,7 +296,7 @@ impl Fulgur {
     /// - `settings`: The application settings (already loaded and resolved, including first-run overrides)
     pub fn init(cx: &mut App, settings: &mut Settings) {
         let recent_files = settings.get_recent_files();
-        languages::supported_languages::register_external_languages();
+        //languages::supported_languages::register_external_languages();
         themes::init(settings, cx, move |cx| {
             cx.bind_keys(build_default_key_bindings());
             let menus = build_menus(&recent_files, None);
@@ -284,15 +327,15 @@ impl Fulgur {
     /// Build the main application content with all action handlers
     ///
     /// ### Arguments
-    /// - `active_tab`: The currently active tab (if any) to render in the content area
+    /// - `active_tab_index`: The index of the currently active tab (if any)
     /// - `window`: The window to build the content for
     /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `impl IntoElement`: The fully constructed content area with all action handlers attached
     fn build_app_content_with_actions(
-        &self,
-        active_tab: Option<Tab>,
+        &mut self,
+        active_tab_index: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
@@ -343,7 +386,7 @@ impl Fulgur {
             }));
         app_content = app_content
             .child(self.render_tab_bar(cx))
-            .child(self.render_content_area(active_tab, window, cx))
+            .child(self.render_content_area(active_tab_index, window, cx))
             .children(self.render_markdown_bar(cx))
             .children(self.render_search_bar(cx))
             .children(self.render_color_picker_bar(cx));
@@ -456,11 +499,9 @@ impl Render for Fulgur {
             self.jump_to_line_dialog_open = true;
         }
         self.update_modified_status(cx);
+        self.prune_markdown_preview_cache(cx);
         self.process_pending_tab_scroll(cx);
-        let active_tab = self
-            .active_tab_index
-            .and_then(|index| self.tabs.get(index).cloned());
-        let app_content = self.build_app_content_with_actions(active_tab.clone(), window, cx);
+        let app_content = self.build_app_content_with_actions(self.active_tab_index, window, cx);
         self.assemble_ui_tree(app_content, window, cx)
     }
 }
@@ -554,22 +595,57 @@ impl Fulgur {
     /// Render the content area (editor or settings)
     ///
     /// ### Arguments
-    /// - `active_tab`: The active tab (if any)
+    /// - `active_tab_index`: The index of the active tab (if any)
     /// - `window`: The window context
     /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `AnyElement`: The rendered content area element (wrapped in AnyElement)
     fn render_content_area(
-        &self,
-        active_tab: Option<Tab>,
+        &mut self,
+        active_tab_index: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        enum ActiveTabRenderData {
+            Editor {
+                tab_id: usize,
+                language: SupportedLanguage,
+                show_markdown_preview: bool,
+                content: Entity<InputState>,
+            },
+            Settings,
+            MarkdownPreview {
+                source_tab_id: usize,
+                content: Entity<InputState>,
+            },
+        }
+
+        let active_tab = active_tab_index.and_then(|active_index| {
+            self.tabs.get(active_index).map(|tab| match tab {
+                Tab::Editor(editor_tab) => ActiveTabRenderData::Editor {
+                    tab_id: editor_tab.id,
+                    language: editor_tab.language,
+                    show_markdown_preview: editor_tab.show_markdown_preview,
+                    content: editor_tab.content.clone(),
+                },
+                Tab::Settings(_) => ActiveTabRenderData::Settings,
+                Tab::MarkdownPreview(preview_tab) => ActiveTabRenderData::MarkdownPreview {
+                    source_tab_id: preview_tab.source_tab_id,
+                    content: preview_tab.content.clone(),
+                },
+            })
+        });
+
         if let Some(tab) = active_tab {
             match tab {
-                Tab::Editor(editor_tab) => {
-                    let editor_input = Input::new(&editor_tab.content)
+                ActiveTabRenderData::Editor {
+                    tab_id,
+                    language,
+                    show_markdown_preview,
+                    content,
+                } => {
+                    let editor_input = Input::new(&content)
                         .bordered(false)
                         .p_0()
                         .h_full()
@@ -580,11 +656,12 @@ impl Fulgur {
                         cx.listener(|this, event: &MouseDownEvent, window, cx| {
                             this.on_editor_right_click(event, window, cx);
                         });
-                    if editor_tab.language == SupportedLanguage::Markdown
-                        && editor_tab.show_markdown_preview
+                    if language == SupportedLanguage::Markdown
+                        && show_markdown_preview
                         && self.settings.editor_settings.markdown_settings.preview_mode
                             == crate::fulgur::settings::MarkdownPreviewMode::Panel
                     {
+                        let preview_text = self.markdown_preview_text_for(tab_id, &content, cx);
                         return v_flex()
                             .w_full()
                             .flex_1()
@@ -601,16 +678,13 @@ impl Fulgur {
                                     )
                                     .child(
                                         resizable_panel().child(
-                                            TextView::markdown(
-                                                "markdown-preview",
-                                                editor_tab.content.read(cx).value().clone(),
-                                            )
-                                            .flex_none()
-                                            .py_0()
-                                            .px_2()
-                                            .scrollable(true)
-                                            .selectable(true)
-                                            .bg(cx.theme().muted),
+                                            TextView::markdown("markdown-preview", preview_text)
+                                                .flex_none()
+                                                .py_0()
+                                                .px_2()
+                                                .scrollable(true)
+                                                .selectable(true)
+                                                .bg(cx.theme().muted),
                                         ),
                                     ),
                             )
@@ -623,7 +697,7 @@ impl Fulgur {
                         .child(editor_input)
                         .into_any_element();
                 }
-                Tab::Settings(_) => {
+                ActiveTabRenderData::Settings => {
                     return v_flex()
                         .id("settings-tab-scrollable")
                         .w_full()
@@ -632,25 +706,105 @@ impl Fulgur {
                         .child(self.render_settings(window, cx))
                         .into_any_element();
                 }
-                Tab::MarkdownPreview(preview_tab) => {
+                ActiveTabRenderData::MarkdownPreview {
+                    source_tab_id,
+                    content,
+                } => {
+                    let preview_text = self.markdown_preview_text_for(source_tab_id, &content, cx);
                     return v_flex()
                         .w_full()
                         .flex_1()
                         .child(
-                            TextView::markdown(
-                                "markdown-preview-tab",
-                                preview_tab.content.read(cx).value().clone(),
-                            )
-                            .py_2()
-                            .px_4()
-                            .scrollable(true)
-                            .selectable(true),
+                            TextView::markdown("markdown-preview-tab", preview_text)
+                                .py_2()
+                                .px_4()
+                                .scrollable(true)
+                                .selectable(true),
                         )
                         .into_any_element();
                 }
             }
         }
         v_flex().w_full().flex_1().into_any_element()
+    }
+
+    /// Remove markdown preview cache entries for tabs that no longer exist.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    fn prune_markdown_preview_cache(&mut self, cx: &mut Context<Self>) {
+        let source_ids: HashSet<usize> = self
+            .tabs
+            .iter()
+            .filter_map(|tab| match tab {
+                Tab::MarkdownPreview(preview_tab) => Some(preview_tab.source_tab_id),
+                Tab::Editor(editor_tab)
+                    if Self::should_track_markdown_preview_source(
+                        editor_tab.language,
+                        editor_tab.show_markdown_preview,
+                    ) =>
+                {
+                    Some(editor_tab.id)
+                }
+                _ => None,
+            })
+            .collect();
+
+        let before_cache = self.markdown_preview_cache.len();
+        let before_subs = self.markdown_preview_subscriptions.len();
+        self.markdown_preview_cache
+            .retain(|tab_id, _| source_ids.contains(tab_id));
+        self.markdown_preview_subscriptions
+            .retain(|tab_id, _| source_ids.contains(tab_id));
+        if self.markdown_preview_cache.len() != before_cache
+            || self.markdown_preview_subscriptions.len() != before_subs
+        {
+            cx.notify();
+        }
+    }
+
+    /// Get cached markdown text for a source tab, updating the cache lazily.
+    ///
+    /// ### Arguments
+    /// - `source_tab_id`: Source editor tab id for this preview
+    /// - `content`: Source editor content entity
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `SharedString`: Cached markdown source text for rendering
+    fn markdown_preview_text_for(
+        &mut self,
+        source_tab_id: usize,
+        content: &Entity<InputState>,
+        cx: &mut Context<Self>,
+    ) -> SharedString {
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            self.markdown_preview_cache.entry(source_tab_id)
+        {
+            entry.insert(content.read(cx).value().clone());
+        }
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            self.markdown_preview_subscriptions.entry(source_tab_id)
+        {
+            let subscription =
+                cx.subscribe(content, move |this: &mut Self, _, ev: &InputEvent, cx| {
+                    if !matches!(ev, InputEvent::Change) {
+                        return;
+                    }
+                    if let Some(source_tab) = this.tabs.iter().find(|tab| tab.id() == source_tab_id)
+                        && let Tab::Editor(editor_tab) = source_tab
+                    {
+                        this.markdown_preview_cache
+                            .insert(source_tab_id, editor_tab.content.read(cx).value().clone());
+                        cx.notify();
+                    }
+                });
+            entry.insert(subscription);
+        }
+        self.markdown_preview_cache
+            .get(&source_tab_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Set the title of the title bar.
@@ -706,5 +860,42 @@ impl Fulgur {
                     .font_bold()
                     .child("Drop files to open"),
             )
+    }
+}
+
+#[cfg(test)]
+mod markdown_preview_cache_unit_tests {
+    use super::*;
+
+    #[test]
+    fn test_should_track_markdown_preview_source_for_markdown() {
+        assert!(Fulgur::should_track_markdown_preview_source(
+            SupportedLanguage::Markdown,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_should_track_markdown_preview_source_for_markdown_inline() {
+        assert!(Fulgur::should_track_markdown_preview_source(
+            SupportedLanguage::MarkdownInline,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_should_not_track_markdown_preview_source_when_toggle_disabled() {
+        assert!(!Fulgur::should_track_markdown_preview_source(
+            SupportedLanguage::Markdown,
+            false
+        ));
+    }
+
+    #[test]
+    fn test_should_not_track_markdown_preview_source_for_non_markdown() {
+        assert!(!Fulgur::should_track_markdown_preview_source(
+            SupportedLanguage::Plain,
+            true
+        ));
     }
 }

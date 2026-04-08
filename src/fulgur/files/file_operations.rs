@@ -101,7 +101,7 @@ impl Fulgur {
                         editor_tab.content.update(cx, |input_state, cx| {
                             input_state.set_value(&contents, window, cx);
                         });
-                        editor_tab.original_content = contents;
+                        editor_tab.set_original_content_from_str(&contents);
                         editor_tab.encoding = encoding;
                         editor_tab.modified = false;
                         editor_tab.update_file_tooltip_cache(bytes.len());
@@ -947,7 +947,7 @@ mod tests {
             fulgur.update(cx, |this, _cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
                     editor_tab.file_path = Some(path.clone());
-                    editor_tab.original_content = "initial content".to_string();
+                    editor_tab.set_original_content_from_str("initial content");
                 }
             });
         });

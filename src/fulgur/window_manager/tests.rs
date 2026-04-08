@@ -557,3 +557,99 @@ fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut
         );
     });
 }
+
+#[gpui::test]
+fn test_update_window_menu_fingerprint_bumps_revision_only_on_change(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    cx.update(|_| {
+        let mut manager = WindowManager::new();
+        manager.register(window_id, fulgur.downgrade());
+        let revision_after_register = manager.menu_state_revision();
+        assert!(
+            manager.update_window_menu_fingerprint(window_id, 42),
+            "first fingerprint publication must bump menu revision"
+        );
+        let revision_after_first_publish = manager.menu_state_revision();
+        assert_ne!(
+            revision_after_first_publish, revision_after_register,
+            "menu revision should change after first fingerprint publication"
+        );
+        assert!(
+            !manager.update_window_menu_fingerprint(window_id, 42),
+            "publishing an unchanged fingerprint must not bump menu revision"
+        );
+        assert_eq!(
+            manager.menu_state_revision(),
+            revision_after_first_publish,
+            "menu revision should remain stable when fingerprint does not change"
+        );
+        assert!(
+            manager.update_window_menu_fingerprint(window_id, 99),
+            "changed fingerprint must bump menu revision"
+        );
+        assert_eq!(
+            manager.get_window_menu_fingerprint(window_id),
+            Some(99),
+            "window manager should store the latest published fingerprint"
+        );
+    });
+}
+
+#[gpui::test]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn test_process_window_state_updates_updates_menu_fingerprint_on_tab_change(
+    cx: &mut TestAppContext,
+) {
+    setup_test_globals(cx);
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id, &fulgur);
+
+    invoke_process_window_state_updates(cx, window_id, &fulgur);
+    let (initial_revision, initial_fingerprint) = cx.update(|cx| {
+        let manager = cx.global::<WindowManager>();
+        (
+            manager.menu_state_revision(),
+            manager.get_window_menu_fingerprint(window_id),
+        )
+    });
+    assert!(
+        initial_fingerprint.is_some(),
+        "first render processing should publish a menu fingerprint"
+    );
+
+    invoke_process_window_state_updates(cx, window_id, &fulgur);
+    let revision_after_no_change =
+        cx.update(|cx| cx.global::<WindowManager>().menu_state_revision());
+    assert_eq!(
+        revision_after_no_change, initial_revision,
+        "menu revision should not change when tab state is unchanged"
+    );
+
+    cx.update(|cx| {
+        fulgur.update(cx, |this, _| {
+            let editor = this
+                .tabs
+                .first_mut()
+                .and_then(|tab| tab.as_editor_mut())
+                .expect("expected initial editor tab");
+            editor.title = "menu-state-changed.md".into();
+        });
+    });
+    invoke_process_window_state_updates(cx, window_id, &fulgur);
+    let (updated_revision, updated_fingerprint) = cx.update(|cx| {
+        let manager = cx.global::<WindowManager>();
+        (
+            manager.menu_state_revision(),
+            manager.get_window_menu_fingerprint(window_id),
+        )
+    });
+    assert_ne!(
+        updated_revision, initial_revision,
+        "menu revision should change after tab state update"
+    );
+    assert_ne!(
+        updated_fingerprint, initial_fingerprint,
+        "published fingerprint should change after tab state update"
+    );
+}

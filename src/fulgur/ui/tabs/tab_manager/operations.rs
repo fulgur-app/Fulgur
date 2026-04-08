@@ -1,16 +1,61 @@
 use crate::fulgur::{Fulgur, tab::Tab};
 use gpui::{Context, Window};
+use gpui_component::input::InputEvent;
+use std::collections::HashSet;
 
 impl Fulgur {
     /// Update the modified status of the tabs
     ///
+    /// Uses per-editor input subscriptions so modified state is updated only when
+    /// text changes, avoiding a full tab scan on every frame.
+    ///
     /// ### Arguments
     /// - `cx`: The application context
     pub fn update_modified_status(&mut self, cx: &mut Context<Self>) {
-        for tab in self.tabs.iter_mut() {
-            if let Tab::Editor(editor_tab) = tab {
-                editor_tab.check_modified(cx);
+        let active_editor_ids: HashSet<usize> = self
+            .tabs
+            .iter()
+            .filter_map(|tab| match tab {
+                Tab::Editor(editor_tab) => Some(editor_tab.id),
+                _ => None,
+            })
+            .collect();
+
+        self.editor_modified_subscriptions
+            .retain(|tab_id, _| active_editor_ids.contains(tab_id));
+
+        let mut tabs_to_subscribe = Vec::new();
+        for tab in self.tabs.iter() {
+            let Tab::Editor(editor_tab) = tab else {
+                continue;
+            };
+            if self
+                .editor_modified_subscriptions
+                .contains_key(&editor_tab.id)
+            {
+                continue;
             }
+            tabs_to_subscribe.push((editor_tab.id, editor_tab.content.clone()));
+        }
+
+        for (tab_id, content) in tabs_to_subscribe {
+            let subscription =
+                cx.subscribe(&content, move |this: &mut Self, _, ev: &InputEvent, cx| {
+                    if !matches!(ev, InputEvent::Change) {
+                        return;
+                    }
+                    if let Some(tab) = this.tabs.iter_mut().find(|tab| tab.id() == tab_id)
+                        && let Tab::Editor(editor_tab) = tab
+                    {
+                        let old_modified = editor_tab.modified;
+                        editor_tab.check_modified(cx);
+                        if editor_tab.modified != old_modified {
+                            cx.notify();
+                        }
+                    }
+                });
+            self.editor_modified_subscriptions
+                .insert(tab_id, subscription);
         }
     }
 

@@ -13,6 +13,7 @@ use crate::fulgur::{
 use gpui::{App, AppContext, Context, Window};
 use gpui_component::{highlighter::Language, input::TabSize};
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 
 /// Decision for how to restore a tab from saved state
@@ -223,11 +224,11 @@ impl Fulgur {
             .file_path
             .as_ref()
             .and_then(get_file_modified_time);
-        let can_read_file = tab_state
+        let mut readable_file = tab_state
             .file_path
             .as_ref()
-            .map(|p| fs::read(p).is_ok())
-            .unwrap_or(false);
+            .and_then(|path| fs::File::open(path).ok());
+        let can_read_file = readable_file.is_some();
         let decision = determine_tab_restore_strategy(
             tab_state.file_path.clone(),
             tab_state.content.clone(),
@@ -238,7 +239,9 @@ impl Fulgur {
         );
         let (content, path, encoding, is_modified) = match decision {
             TabRestoreDecision::LoadFromFile { path } => {
-                let bytes = fs::read(&path).ok()?;
+                let mut bytes = Vec::new();
+                let mut file = readable_file.take()?;
+                file.read_to_end(&mut bytes).ok()?;
                 let (enc, file_content) = detect_encoding_and_decode(&bytes);
                 (file_content, Some(path), enc, false)
             }
@@ -283,7 +286,9 @@ impl Fulgur {
                 content: content_entity,
                 file_path: None,
                 modified: true,
-                original_content: String::new(),
+                original_content_hash:
+                    crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str("").0,
+                original_content_len: 0,
                 encoding: "UTF-8".to_string(),
                 language: SupportedLanguage::Plain,
                 show_markdown_toolbar: self
@@ -315,13 +320,9 @@ impl Fulgur {
         let mut tab_states = Vec::new();
         for tab in &self.tabs {
             if let Some(editor_tab) = tab.as_editor() {
-                let current_content = editor_tab.content.read(cx).text().to_string();
-                let is_modified = current_content != editor_tab.original_content;
-                if editor_tab.file_path.is_none() && current_content.is_empty() {
-                    continue;
-                }
                 let tab_state = if let Some(ref path) = editor_tab.file_path {
-                    if is_modified {
+                    if editor_tab.content_differs_from_original(cx) {
+                        let current_content = editor_tab.content.read(cx).text().to_string();
                         TabState {
                             title: editor_tab.title.to_string(),
                             file_path: Some(path.clone()),
@@ -337,6 +338,10 @@ impl Fulgur {
                         }
                     }
                 } else {
+                    let current_content = editor_tab.content.read(cx).text().to_string();
+                    if current_content.is_empty() {
+                        continue;
+                    }
                     TabState {
                         title: editor_tab.title.to_string(),
                         file_path: None,
@@ -410,5 +415,97 @@ impl Fulgur {
             active_tab_index: self.active_editor_index_for_state(),
             window_bounds,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TabRestoreDecision, determine_tab_restore_strategy};
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_determine_tab_restore_strategy_loads_from_file_when_newer_and_readable() {
+        let decision = determine_tab_restore_strategy(
+            Some(PathBuf::from("/tmp/example.md")),
+            Some("saved".to_string()),
+            Some("2026-04-07T09:00:00Z".to_string()),
+            true,
+            Some("2026-04-07T10:00:00Z".to_string()),
+            true,
+        );
+        assert_eq!(
+            decision,
+            TabRestoreDecision::LoadFromFile {
+                path: PathBuf::from("/tmp/example.md")
+            }
+        );
+    }
+
+    #[test]
+    fn test_determine_tab_restore_strategy_uses_saved_content_when_newer_but_unreadable() {
+        let decision = determine_tab_restore_strategy(
+            Some(PathBuf::from("/tmp/example.md")),
+            Some("saved".to_string()),
+            Some("2026-04-07T09:00:00Z".to_string()),
+            true,
+            Some("2026-04-07T10:00:00Z".to_string()),
+            false,
+        );
+        assert_eq!(
+            decision,
+            TabRestoreDecision::UseSavedContentWithPath {
+                path: PathBuf::from("/tmp/example.md"),
+                content: "saved".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_determine_tab_restore_strategy_skips_path_only_tab_when_unreadable() {
+        let decision = determine_tab_restore_strategy(
+            Some(PathBuf::from("/tmp/example.md")),
+            None,
+            None,
+            true,
+            None,
+            false,
+        );
+        assert_eq!(decision, TabRestoreDecision::Skip);
+    }
+
+    #[test]
+    fn test_determine_tab_restore_strategy_loads_path_only_tab_when_readable() {
+        let decision = determine_tab_restore_strategy(
+            Some(PathBuf::from("/tmp/example.md")),
+            None,
+            None,
+            true,
+            None,
+            true,
+        );
+        assert_eq!(
+            decision,
+            TabRestoreDecision::LoadFromFile {
+                path: PathBuf::from("/tmp/example.md")
+            }
+        );
+    }
+
+    #[test]
+    fn test_determine_tab_restore_strategy_uses_saved_content_without_path_when_missing_file() {
+        let decision = determine_tab_restore_strategy(
+            Some(PathBuf::from("/tmp/example.md")),
+            Some("saved".to_string()),
+            Some("2026-04-07T09:00:00Z".to_string()),
+            false,
+            None,
+            false,
+        );
+        assert_eq!(
+            decision,
+            TabRestoreDecision::UseSavedContentNoPath {
+                content: "saved".to_string(),
+            }
+        );
     }
 }

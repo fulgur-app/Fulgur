@@ -6,6 +6,20 @@ use std::borrow::Cow;
 
 use super::SearchMatch;
 
+/// Refresh the newline-offset scratch buffer for fast line/column lookup.
+///
+/// ### Arguments
+/// - `text`: Source text being searched
+/// - `newline_offsets_scratch`: Reusable scratch vector populated with `\n` byte offsets
+fn refresh_newline_offsets(text: &str, newline_offsets_scratch: &mut Vec<usize>) {
+    newline_offsets_scratch.clear();
+    newline_offsets_scratch.extend(
+        text.bytes()
+            .enumerate()
+            .filter_map(|(i, b)| if b == b'\n' { Some(i) } else { None }),
+    );
+}
+
 /// Find all matches in the text
 ///
 /// ### Arguments
@@ -16,34 +30,67 @@ use super::SearchMatch;
 ///
 /// ### Returns
 /// - `Vec<SearchMatch>`: A vector of search matches
+#[cfg(test)]
 pub(super) fn find_matches(
     text: &str,
     query: &str,
     match_case: bool,
     match_whole_word: bool,
 ) -> Vec<SearchMatch> {
+    let mut newline_offsets_scratch = Vec::new();
+    let mut lowercase_text_scratch = String::new();
+    find_matches_with_scratch(
+        text,
+        query,
+        match_case,
+        match_whole_word,
+        &mut newline_offsets_scratch,
+        &mut lowercase_text_scratch,
+    )
+}
+
+/// Find all matches in the text while reusing caller-provided scratch buffers.
+///
+/// ### Arguments
+/// - `text`: The text to search in
+/// - `query`: The search query
+/// - `match_case`: Whether to match case
+/// - `match_whole_word`: Whether to match whole words only
+/// - `newline_offsets_scratch`: Reusable newline-offset buffer
+/// - `lowercase_text_scratch`: Reusable lowercase-text buffer
+///
+/// ### Returns
+/// - `Vec<SearchMatch>`: A vector of search matches
+pub(super) fn find_matches_with_scratch(
+    text: &str,
+    query: &str,
+    match_case: bool,
+    match_whole_word: bool,
+    newline_offsets_scratch: &mut Vec<usize>,
+    lowercase_text_scratch: &mut String,
+) -> Vec<SearchMatch> {
     let mut matches = Vec::new();
     if query.is_empty() {
         return matches;
     }
-    let search_text: Cow<str> = if match_case {
-        Cow::Borrowed(text)
+
+    refresh_newline_offsets(text, newline_offsets_scratch);
+
+    let search_text = if match_case {
+        text
     } else {
-        Cow::Owned(text.to_lowercase())
+        lowercase_text_scratch.clear();
+        lowercase_text_scratch.extend(text.chars().flat_map(char::to_lowercase));
+        lowercase_text_scratch.as_str()
     };
     let search_query: Cow<str> = if match_case {
         Cow::Borrowed(query)
     } else {
         Cow::Owned(query.to_lowercase())
     };
-    let newline_offsets: Vec<usize> = text
-        .bytes()
-        .enumerate()
-        .filter_map(|(i, b)| if b == b'\n' { Some(i) } else { None })
-        .collect();
 
     let mut start_pos = 0;
-    while let Some(pos) = search_text[start_pos..].find(&*search_query) {
+    while let Some(pos) = search_text[start_pos..].find(search_query.as_ref()) {
         let absolute_pos = start_pos + pos;
         let end_pos = absolute_pos + query.len();
         if match_whole_word {
@@ -63,7 +110,7 @@ pub(super) fn find_matches(
                 continue;
             }
         }
-        let (line, col) = get_line_col_fast(text, absolute_pos, &newline_offsets);
+        let (line, col) = get_line_col_fast(text, absolute_pos, newline_offsets_scratch);
         matches.push(SearchMatch {
             start: absolute_pos,
             end: end_pos,
@@ -191,10 +238,12 @@ impl Fulgur {
         self.search_state.search_matches.clear();
         self.search_state.current_match_index = None;
         if let Some(active_index) = self.active_tab_index
-            && let Some(tab) = self.tabs.get(active_index)
-            && let Some(editor_tab) = tab.as_editor()
+            && let Some(content_entity) = self
+                .tabs
+                .get(active_index)
+                .and_then(|tab| tab.as_editor().map(|editor_tab| editor_tab.content.clone()))
         {
-            editor_tab.content.update(cx, |content, _cx| {
+            content_entity.update(cx, |content, _cx| {
                 if let Some(diagnostics) = content.diagnostics_mut() {
                     diagnostics.clear();
                 }
@@ -203,10 +252,27 @@ impl Fulgur {
                 cx.notify();
                 return;
             }
-            let text = editor_tab.content.read(cx).text().to_string();
-            let cursor_pos = editor_tab.content.read(cx).cursor();
-            self.search_state.search_matches = self.find_matches_inner(&text, &query);
-            editor_tab.content.update(cx, |content, cx| {
+            let mut search_text_scratch =
+                std::mem::take(&mut self.search_state.search_text_scratch);
+            let cursor_pos = {
+                let content = content_entity.read(cx);
+                search_text_scratch.clear();
+                for chunk in content.text().chunks() {
+                    search_text_scratch.push_str(chunk);
+                }
+                content.cursor()
+            };
+            let matches = find_matches_with_scratch(
+                search_text_scratch.as_str(),
+                &query,
+                match_case,
+                match_whole_word,
+                &mut self.search_state.search_newline_offsets_scratch,
+                &mut self.search_state.search_lowercase_text_scratch,
+            );
+            self.search_state.search_text_scratch = search_text_scratch;
+            self.search_state.search_matches = matches;
+            content_entity.update(cx, |content, cx| {
                 if let Some(diagnostics) = content.diagnostics_mut() {
                     for search_match in &self.search_state.search_matches {
                         let diagnostic = Diagnostic {
@@ -253,23 +319,6 @@ impl Fulgur {
         }
 
         cx.notify();
-    }
-
-    /// Find all matches in the text using the current search state options
-    ///
-    /// ### Arguments
-    /// - `text`: The text to search in
-    /// - `query`: The search query
-    ///
-    /// ### Returns
-    /// - `Vec<SearchMatch>`: A vector of search matches
-    fn find_matches_inner(&self, text: &str, query: &str) -> Vec<SearchMatch> {
-        find_matches(
-            text,
-            query,
-            self.search_state.match_case,
-            self.search_state.match_whole_word,
-        )
     }
 
     /// Navigate to the next search match

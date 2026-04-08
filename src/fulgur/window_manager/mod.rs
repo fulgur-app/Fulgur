@@ -20,6 +20,10 @@ pub struct WindowManager {
     window_names: HashMap<WindowId, String>,
     /// Monotonically increasing counter used to assign unique names; never resets or reuses
     next_name_index: usize,
+    /// Per-window fingerprint used to detect dock menu / jump list relevant changes
+    window_menu_fingerprints: HashMap<WindowId, u64>,
+    /// Global revision incremented whenever dock menu / jump list input state changes
+    menu_state_revision: u64,
 }
 
 /// Convert a zero-based index to an alphabetic window name (A, B, ..., Z, AA, AB, ...).
@@ -57,7 +61,17 @@ impl WindowManager {
             last_focused: None,
             window_names: HashMap::new(),
             next_name_index: 0,
+            window_menu_fingerprints: HashMap::new(),
+            menu_state_revision: 0,
         }
+    }
+
+    /// Bump the global menu-state revision.
+    ///
+    /// This revision is consumed by per-window render code to avoid rebuilding
+    /// dock/jump list data when no window state relevant to those menus changed.
+    fn bump_menu_state_revision(&mut self) {
+        self.menu_state_revision = self.menu_state_revision.wrapping_add(1);
     }
 
     /// Register a new window
@@ -72,6 +86,7 @@ impl WindowManager {
         let name = index_to_name(self.next_name_index);
         self.next_name_index += 1;
         self.window_names.insert(window_id, name);
+        self.bump_menu_state_revision();
     }
 
     /// Unregister a window when it closes
@@ -82,11 +97,13 @@ impl WindowManager {
         log::debug!("Unregistering window {:?}", window_id);
         self.windows.remove(&window_id);
         self.window_names.remove(&window_id);
+        self.window_menu_fingerprints.remove(&window_id);
 
         // Update last_focused if this was the focused window
         if self.last_focused == Some(window_id) {
             self.last_focused = self.windows.keys().next().copied();
         }
+        self.bump_menu_state_revision();
     }
 
     /// Update last focused window
@@ -156,6 +173,51 @@ impl WindowManager {
     /// - `Option<WeakEntity<Fulgur>>`: The window entity if it exists
     pub fn get_window(&self, window_id: WindowId) -> Option<WeakEntity<Fulgur>> {
         self.windows.get(&window_id).cloned()
+    }
+
+    /// Update the dock menu / jump list fingerprint for one window.
+    ///
+    /// ### Arguments
+    /// - `window_id`: The window whose fingerprint is being published
+    /// - `fingerprint`: Hash of all menu-relevant local window state
+    ///
+    /// ### Returns
+    /// - `true`: Fingerprint changed and global menu revision was bumped
+    /// - `false`: Fingerprint unchanged or window is no longer registered
+    pub fn update_window_menu_fingerprint(
+        &mut self,
+        window_id: WindowId,
+        fingerprint: u64,
+    ) -> bool {
+        if !self.windows.contains_key(&window_id) {
+            return false;
+        }
+        if self.window_menu_fingerprints.get(&window_id) == Some(&fingerprint) {
+            return false;
+        }
+        self.window_menu_fingerprints.insert(window_id, fingerprint);
+        self.bump_menu_state_revision();
+        true
+    }
+
+    /// Get the latest published fingerprint for a specific window.
+    ///
+    /// ### Arguments
+    /// - `window_id`: The target window ID
+    ///
+    /// ### Returns
+    /// - `Some(u64)`: Last known fingerprint for this window
+    /// - `None`: Window has not published one yet
+    pub fn get_window_menu_fingerprint(&self, window_id: WindowId) -> Option<u64> {
+        self.window_menu_fingerprints.get(&window_id).copied()
+    }
+
+    /// Get the current global dock menu / jump list state revision.
+    ///
+    /// ### Returns
+    /// - `u64`: Monotonic revision that changes when menu input state changes
+    pub fn menu_state_revision(&self) -> u64 {
+        self.menu_state_revision
     }
 
     /// Find window that has file open

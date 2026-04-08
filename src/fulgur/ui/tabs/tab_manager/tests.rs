@@ -400,6 +400,127 @@ fn test_open_markdown_preview_tab_is_noop_without_active_tab(cx: &mut TestAppCon
     });
 }
 
+#[gpui::test]
+fn test_markdown_preview_cache_updates_in_panel_mode(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let source_tab_id = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.settings.editor_settings.markdown_settings.preview_mode =
+                crate::fulgur::settings::MarkdownPreviewMode::Panel;
+            let (source_tab_id, source_content) = {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                editor.language = SupportedLanguage::Markdown;
+                (editor.id, editor.content.clone())
+            };
+            let preview_text = this.markdown_preview_text_for(source_tab_id, &source_content, cx);
+            assert!(
+                this.markdown_preview_cache.contains_key(&source_tab_id),
+                "panel render should create markdown preview cache entry"
+            );
+            assert_eq!(preview_text, SharedString::from(""));
+            source_tab_id
+        })
+    });
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            if let Some(source_tab) = this.tabs.iter_mut().find(|tab| tab.id() == source_tab_id)
+                && let Some(editor_tab) = source_tab.as_editor_mut()
+            {
+                editor_tab.content.update(cx, |input_state, cx| {
+                    input_state.set_value("# cached preview text", window, cx);
+                });
+            }
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, _cx| {
+            let cached = this
+                .markdown_preview_cache
+                .get(&source_tab_id)
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+            assert_eq!(
+                cached, "# cached preview text",
+                "preview cache should update when source content changes"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_markdown_preview_cache_populates_for_dedicated_preview_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.settings.editor_settings.markdown_settings.preview_mode =
+                crate::fulgur::settings::MarkdownPreviewMode::DedicatedTab;
+            if let Some(editor) = this.get_active_editor_tab_mut() {
+                editor.language = SupportedLanguage::Markdown;
+            }
+            let source_tab_id = this.tabs[0].as_editor().expect("expected editor tab").id;
+            this.open_markdown_preview_tab(window, cx);
+            let preview_content = this.tabs[1]
+                .as_markdown_preview()
+                .expect("expected dedicated preview tab")
+                .content
+                .clone();
+            let _ = this.markdown_preview_text_for(source_tab_id, &preview_content, cx);
+            assert!(
+                this.markdown_preview_cache.contains_key(&source_tab_id),
+                "dedicated preview render should populate markdown cache"
+            );
+            assert!(
+                this.markdown_preview_subscriptions
+                    .contains_key(&source_tab_id),
+                "dedicated preview render should register cache subscription"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_prune_markdown_preview_cache_removes_unused_entries(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.settings.editor_settings.markdown_settings.preview_mode =
+                crate::fulgur::settings::MarkdownPreviewMode::Panel;
+            let mut source_info = None;
+            if let Some(editor) = this.get_active_editor_tab_mut() {
+                editor.language = SupportedLanguage::Markdown;
+                editor.show_markdown_preview = true;
+                source_info = Some((editor.id, editor.content.clone()));
+            }
+            if let Some((source_tab_id, source_content)) = source_info {
+                let _ = this.markdown_preview_text_for(source_tab_id, &source_content, cx);
+            }
+            assert!(
+                !this.markdown_preview_cache.is_empty(),
+                "cache should be populated before prune"
+            );
+
+            if let Some(editor) = this.get_active_editor_tab_mut() {
+                editor.language = SupportedLanguage::Plain;
+                editor.show_markdown_preview = false;
+            }
+            this.prune_markdown_preview_cache(cx);
+            assert!(
+                this.markdown_preview_cache.is_empty(),
+                "cache should drop entries for non-preview sources"
+            );
+            assert!(
+                this.markdown_preview_subscriptions.is_empty(),
+                "subscriptions should drop entries for non-preview sources"
+            );
+        });
+    });
+}
+
 // ========== maybe_open_markdown_preview_for_editor tests ==========
 
 #[gpui::test]
@@ -535,6 +656,85 @@ fn test_panel_preview_flag_can_be_toggled(cx: &mut TestAppContext) {
                 .map(|e| e.show_markdown_preview)
                 .unwrap_or(false);
             assert_ne!(initial, after, "show_markdown_preview should toggle");
+        });
+    });
+}
+
+// ========== update_modified_status tests ==========
+
+#[gpui::test]
+fn test_update_modified_status_updates_tab_on_input_change(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let editor_content = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_modified_status(cx);
+            let editor = this.tabs[0].as_editor().expect("expected editor tab");
+            assert!(!editor.modified, "fresh tab should start as unmodified");
+            editor.content.clone()
+        })
+    });
+
+    visual_cx.update(|window, cx| {
+        editor_content.update(cx, |input_state, cx| {
+            input_state.set_value("changed in active tab", window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, _cx| {
+            let editor = this.tabs[0].as_editor().expect("expected editor tab");
+            assert!(
+                editor.modified,
+                "InputEvent::Change should update modified state incrementally"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_update_modified_status_does_not_duplicate_subscriptions(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_modified_status(cx);
+            let count_after_first = this.editor_modified_subscriptions.len();
+            this.update_modified_status(cx);
+            let count_after_second = this.editor_modified_subscriptions.len();
+            assert_eq!(
+                count_after_first, count_after_second,
+                "re-running update should not add duplicate subscriptions"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_update_modified_status_prunes_subscriptions_for_closed_tabs(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.new_tab(window, cx);
+            this.update_modified_status(cx);
+            assert_eq!(
+                this.editor_modified_subscriptions.len(),
+                2,
+                "two editor tabs should produce two subscriptions"
+            );
+
+            let removed_id = this.tabs[0].id();
+            this.remove_tab_by_id(removed_id, window, cx);
+            this.update_modified_status(cx);
+
+            assert!(
+                !this.editor_modified_subscriptions.contains_key(&removed_id),
+                "closed tab subscription should be pruned"
+            );
+            assert_eq!(
+                this.editor_modified_subscriptions.len(),
+                1,
+                "one editor tab should keep one subscription"
+            );
         });
     });
 }
@@ -722,7 +922,11 @@ fn make_transfer_data() -> TabTransferData {
         content: "let x = 42;".to_string(),
         file_path: None,
         modified: false,
-        original_content: "let x = 42;".to_string(),
+        original_content_hash: crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str(
+            "let x = 42;",
+        )
+        .0,
+        original_content_len: "let x = 42;".len(),
         encoding: "UTF-8".to_string(),
         language: SupportedLanguage::Rust,
         show_markdown_toolbar: false,
