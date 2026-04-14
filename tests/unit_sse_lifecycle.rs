@@ -14,9 +14,14 @@ use fulgur::fulgur::sync::sse::{SseEvent, SseState, connect_sse};
 use fulgur::fulgur::sync::synchronization::{
     SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
 };
+use fulgur_common::api::shares::SharedFileResponse;
 use parking_lot::Mutex;
 use std::sync::{Arc, atomic::AtomicBool};
 use std::time::{Duration, Instant};
+
+fn make_pending_shared_files() -> Arc<Mutex<Vec<SharedFileResponse>>> {
+    Arc::new(Mutex::new(Vec::new()))
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -231,6 +236,7 @@ fn test_connect_sse_fails_without_server_url() {
         status,
         token_manager,
         http_agent,
+        make_pending_shared_files(),
     );
 
     assert!(
@@ -263,6 +269,7 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
         status,
         token_manager,
         http_agent,
+        make_pending_shared_files(),
     )
     .expect("connect_sse should succeed with a server URL");
 
@@ -298,6 +305,7 @@ fn test_connect_sse_returns_ok_handle_with_valid_settings() {
         status,
         token_manager,
         http_agent,
+        make_pending_shared_files(),
     );
 
     assert!(

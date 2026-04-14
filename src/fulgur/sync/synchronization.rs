@@ -217,6 +217,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                         sync_server_connection_status.clone(),
                         Arc::clone(&token_state),
                         Arc::clone(&http_agent),
+                        Arc::clone(&pending_shared_files),
                     ) {
                         Ok(handle) => {
                             *sse_thread_handle.lock() = Some(handle);

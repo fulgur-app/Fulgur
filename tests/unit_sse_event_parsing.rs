@@ -1,7 +1,7 @@
 //! Unit tests for SSE event parsing
 //!
 //! These tests verify the `SseEvent::parse()` function correctly handles
-//! various event types, valid/invalid JSON, and edge cases.
+//! the heartbeat and the slimmed share doorbell, plus invalid input.
 
 use fulgur::fulgur::sync::sse::SseEvent;
 
@@ -20,13 +20,13 @@ fn assert_heartbeat(event: &SseEvent, expected_timestamp: &str) {
     }
 }
 
-/// Check if an SseEvent is a ShareAvailable with expected file_name
-fn assert_share_available(event: &SseEvent, expected_file_name: &str) {
+/// Check if an SseEvent is a ShareAvailable with the expected share_id
+fn assert_share_available(event: &SseEvent, expected_share_id: &str) {
     match event {
         SseEvent::ShareAvailable(notification) => {
             assert_eq!(
-                notification.file_name, expected_file_name,
-                "Share file_name mismatch"
+                notification.share_id, expected_share_id,
+                "Share share_id mismatch"
             );
         }
         _ => panic!("Expected ShareAvailable event, got: {:?}", event),
@@ -94,111 +94,48 @@ fn test_parse_heartbeat_whitespace_only() {
     assert_heartbeat(&event, "");
 }
 
-// Share notification tests
+// Share doorbell tests
 
 #[test]
 fn test_parse_valid_share_notification() {
-    let data = r#"{
-        "share_id": "share-123",
-        "source_device_id": "device-src",
-        "destination_device_id": "device-dest",
-        "file_name": "test.txt",
-        "file_size": 1024,
-        "file_hash": "abc123hash",
-        "content": "base64encodedcontent",
-        "created_at": "2024-01-15T12:00:00Z",
-        "expires_at": "2024-01-16T12:00:00Z"
-    }"#;
+    let data = r#"{"share_id":"share-123"}"#;
     let event = SseEvent::parse("share_available", data);
-    assert_share_available(&event, "test.txt");
-
-    // Verify all fields are parsed correctly
-    match event {
-        SseEvent::ShareAvailable(notification) => {
-            assert_eq!(notification.share_id, "share-123");
-            assert_eq!(notification.source_device_id, "device-src");
-            assert_eq!(notification.destination_device_id, "device-dest");
-            assert_eq!(notification.file_size, 1024);
-            assert_eq!(notification.file_hash, "abc123hash");
-            assert_eq!(notification.content, "base64encodedcontent");
-            assert_eq!(notification.created_at, "2024-01-15T12:00:00Z");
-            assert_eq!(notification.expires_at, "2024-01-16T12:00:00Z");
-        }
-        _ => panic!("Expected ShareAvailable event"),
-    }
+    assert_share_available(&event, "share-123");
 }
 
 #[test]
-fn test_parse_share_notification_with_unicode_filename() {
-    let data = r#"{
-        "share_id": "share-123",
-        "source_device_id": "device-src",
-        "destination_device_id": "device-dest",
-        "file_name": "文件.txt",
-        "file_size": 1024,
-        "file_hash": "abc123hash",
-        "content": "base64encodedcontent",
-        "created_at": "2024-01-15T12:00:00Z",
-        "expires_at": "2024-01-16T12:00:00Z"
-    }"#;
+fn test_parse_share_notification_uuid_share_id() {
+    let data = r#"{"share_id":"550e8400-e29b-41d4-a716-446655440000"}"#;
     let event = SseEvent::parse("share_available", data);
-    assert_share_available(&event, "文件.txt");
+    assert_share_available(&event, "550e8400-e29b-41d4-a716-446655440000");
 }
 
 #[test]
-fn test_parse_share_notification_with_special_chars_filename() {
+fn test_parse_share_notification_ignores_extra_fields() {
+    // Forward-compatibility: legacy fields from the fat-payload era must not
+    // break the parser if a stale server is still attached.
     let data = r#"{
-        "share_id": "share-123",
+        "share_id": "share-xyz",
         "source_device_id": "device-src",
-        "destination_device_id": "device-dest",
-        "file_name": "my file (1) [copy].txt",
-        "file_size": 1024,
-        "file_hash": "abc123hash",
-        "content": "base64encodedcontent",
-        "created_at": "2024-01-15T12:00:00Z",
-        "expires_at": "2024-01-16T12:00:00Z"
+        "file_name": "legacy.txt",
+        "content": "base64encodedcontent"
     }"#;
     let event = SseEvent::parse("share_available", data);
-    assert_share_available(&event, "my file (1) [copy].txt");
-}
-
-#[test]
-fn test_parse_share_notification_large_file_size() {
-    let data = r#"{
-        "share_id": "share-123",
-        "source_device_id": "device-src",
-        "destination_device_id": "device-dest",
-        "file_name": "large.zip",
-        "file_size": 1073741824,
-        "file_hash": "abc123hash",
-        "content": "base64encodedcontent",
-        "created_at": "2024-01-15T12:00:00Z",
-        "expires_at": "2024-01-16T12:00:00Z"
-    }"#;
-    let event = SseEvent::parse("share_available", data);
-    match event {
-        SseEvent::ShareAvailable(notification) => {
-            assert_eq!(notification.file_size, 1073741824); // 1GB
-        }
-        _ => panic!("Expected ShareAvailable event"),
-    }
+    assert_share_available(&event, "share-xyz");
 }
 
 #[test]
 fn test_parse_share_notification_invalid_json() {
     // Invalid JSON should return Error
-    let data = r#"{"file_name":invalid}"#;
+    let data = r#"{"share_id":invalid}"#;
     let event = SseEvent::parse("share_available", data);
     assert_error(&event);
 }
 
 #[test]
 fn test_parse_share_notification_missing_required_field() {
-    // Missing required field should fail deserialization
-    let data = r#"{
-        "share_id": "share-123",
-        "source_device_id": "device-src"
-    }"#;
+    // Missing share_id must fail deserialization
+    let data = r#"{"other_field":"value"}"#;
     let event = SseEvent::parse("share_available", data);
     assert_error(&event);
 }
@@ -283,50 +220,4 @@ fn test_parse_event_type_with_whitespace() {
     let data = r#"{"timestamp":"2024-01-15T12:00:00Z"}"#;
     let event = SseEvent::parse(" heartbeat ", data);
     assert_error(&event);
-}
-
-#[test]
-fn test_parse_share_with_zero_file_size() {
-    let data = r#"{
-        "share_id": "share-123",
-        "source_device_id": "device-src",
-        "destination_device_id": "device-dest",
-        "file_name": "empty.txt",
-        "file_size": 0,
-        "file_hash": "abc123hash",
-        "content": "",
-        "created_at": "2024-01-15T12:00:00Z",
-        "expires_at": "2024-01-16T12:00:00Z"
-    }"#;
-    let event = SseEvent::parse("share_available", data);
-    match event {
-        SseEvent::ShareAvailable(notification) => {
-            assert_eq!(notification.file_size, 0);
-            assert_eq!(notification.content, "");
-        }
-        _ => panic!("Expected ShareAvailable event"),
-    }
-}
-
-#[test]
-fn test_parse_share_with_negative_file_size() {
-    // Negative file size should be accepted by i64 type
-    let data = r#"{
-        "share_id": "share-123",
-        "source_device_id": "device-src",
-        "destination_device_id": "device-dest",
-        "file_name": "test.txt",
-        "file_size": -1,
-        "file_hash": "abc123hash",
-        "content": "base64encodedcontent",
-        "created_at": "2024-01-15T12:00:00Z",
-        "expires_at": "2024-01-16T12:00:00Z"
-    }"#;
-    let event = SseEvent::parse("share_available", data);
-    match event {
-        SseEvent::ShareAvailable(notification) => {
-            assert_eq!(notification.file_size, -1);
-        }
-        _ => panic!("Expected ShareAvailable event"),
-    }
 }
