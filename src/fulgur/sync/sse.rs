@@ -3,13 +3,14 @@ use crate::fulgur::{
     settings::SynchronizationSettings,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
-        share::MAX_SYNC_SHARE_PAYLOAD_BYTES,
+        share::{MAX_SYNC_SHARE_PAYLOAD_BYTES, fetch_pending_shares},
         synchronization::{
             SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
         },
     },
     utils::{retry::BackoffCalculator, sanitize::sanitize_filename, utilities::collect_events},
 };
+use fulgur_common::api::shares::SharedFileResponse;
 use gpui::App;
 use gpui::{Context, SharedString, Window};
 use gpui_component::{WindowExt, notification::NotificationType};
@@ -136,6 +137,54 @@ fn read_line_with_timeout<R: Read>(
     }
 }
 
+/// Fetch pending shares from the server into the shared queue.
+///
+/// ### Arguments
+/// - `synchronization_settings`: The synchronization settings
+/// - `token_state`: Arc to the token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `pending_shared_files`: Shared queue that the UI tick drains
+/// - `reason`: Short tag for logging ("reconnect" or "doorbell")
+fn fetch_pending_shares_into(
+    synchronization_settings: &SynchronizationSettings,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &Arc<ureq::Agent>,
+    pending_shared_files: &Arc<Mutex<Vec<SharedFileResponse>>>,
+    reason: &str,
+) {
+    match fetch_pending_shares(
+        synchronization_settings,
+        Arc::clone(token_state),
+        http_agent,
+    ) {
+        Ok(shares) => {
+            if shares.is_empty() {
+                log::debug!("Fetch ({}): no pending shares", reason);
+                return;
+            }
+            let count = shares.len();
+            let mut queue = pending_shared_files.lock();
+            for mut share in shares {
+                if share.content.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
+                    log::warn!(
+                        "Dropping shared file '{}' from device {}: encrypted payload exceeds {} bytes",
+                        share.file_name,
+                        share.source_device_id,
+                        MAX_SYNC_SHARE_PAYLOAD_BYTES
+                    );
+                    continue;
+                }
+                share.file_name = sanitize_filename(&share.file_name);
+                queue.push(share);
+            }
+            log::info!("Fetch ({}): queued {} pending share(s)", reason, count);
+        }
+        Err(e) => {
+            log::warn!("Fetch ({}) failed: {}", reason, e);
+        }
+    }
+}
+
 /// Connect to SSE (Server-Sent Events) endpoint on the sync serverfor real-time notifications
 ///
 /// ### Description
@@ -162,6 +211,7 @@ pub fn connect_sse(
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
     token_state: Arc<TokenStateManager>,
     http_agent: Arc<ureq::Agent>,
+    pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
 ) -> Result<thread::JoinHandle<()>, SynchronizationError> {
     let server_url = synchronization_settings
         .server_url
@@ -171,6 +221,7 @@ pub fn connect_sse(
     let settings_clone = synchronization_settings.clone();
     let token_state_clone = Arc::clone(&token_state);
     let http_agent_clone = Arc::clone(&http_agent);
+    let pending_shared_files_clone = Arc::clone(&pending_shared_files);
     let handle = thread::spawn(move || {
         // Exponential backoff for reconnection attempts (1s, 2s, 4s, 8s... up to 5 minutes)
         let mut backoff = BackoffCalculator::default_settings();
@@ -212,6 +263,13 @@ pub fn connect_sse(
                     );
                     log::info!("SSE connection established");
                     backoff.record_success(); // Reset backoff on successful connection
+                    fetch_pending_shares_into(
+                        &settings_clone,
+                        &token_state_clone,
+                        &http_agent_clone,
+                        &pending_shared_files_clone,
+                        "reconnect",
+                    );
                     resp
                 }
                 Err(e) => {
@@ -266,6 +324,19 @@ pub fn connect_sse(
                             log::info!("SSE event type: {}", current_event_type);
                             log::debug!("SSE event received ({} bytes)", current_data.len());
                             let event = SseEvent::parse(&current_event_type, &current_data);
+                            if let SseEvent::ShareAvailable(ref notification) = event {
+                                log::info!(
+                                    "Share doorbell received (share_id={}), fetching pending shares",
+                                    notification.share_id
+                                );
+                                fetch_pending_shares_into(
+                                    &settings_clone,
+                                    &token_state_clone,
+                                    &http_agent_clone,
+                                    &pending_shared_files_clone,
+                                    "doorbell",
+                                );
+                            }
                             if let Err(e) = event_tx.send(event) {
                                 log::error!("Failed to send SSE event: {}", e);
                                 break;
@@ -317,18 +388,10 @@ pub struct HeartbeatData {
     pub timestamp: String,
 }
 
-/// Share notification event data sent by SSE when a file is shared
+/// Lightweight share notification carried over SSE.
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct ShareNotification {
     pub share_id: String,
-    pub source_device_id: String,
-    pub destination_device_id: String,
-    pub file_name: String,
-    pub file_size: i64,
-    pub file_hash: String,
-    pub content: String, // Encrypted and base64 encoded
-    pub created_at: String,
-    pub expires_at: String,
 }
 
 /// SSE Event types that can be received from the server
@@ -428,6 +491,8 @@ impl Fulgur {
             let sync_status = self.shared_state(cx).sync_state.connection_status.clone();
             let token_state = Arc::clone(&self.shared_state(cx).sync_state.token_state);
             let http_agent = Arc::clone(&self.shared_state(cx).http_agent);
+            let pending_shared_files =
+                Arc::clone(&self.shared_state(cx).sync_state.pending_shared_files);
             let handle_storage = Arc::clone(&self.sse_state.sse_thread_handle);
             thread::spawn(move || {
                 // Wait for previous SSE thread to exit before starting new connection
@@ -462,6 +527,7 @@ impl Fulgur {
                             sync_status,
                             token_state,
                             http_agent,
+                            pending_shared_files,
                         ) {
                             Ok(new_handle) => {
                                 *handle_storage.lock() = Some(new_handle);
@@ -521,36 +587,11 @@ impl Fulgur {
                 }
             }
             SseEvent::ShareAvailable(notification) => {
-                if notification.content.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
-                    log::warn!(
-                        "Dropping shared file '{}' from device {}: encrypted payload exceeds {} bytes",
-                        notification.file_name,
-                        notification.source_device_id,
-                        MAX_SYNC_SHARE_PAYLOAD_BYTES
-                    );
-                    return;
-                }
-                let safe_filename = sanitize_filename(&notification.file_name);
-                log::info!(
-                    "File shared from device {}: {} (sanitized: {})",
-                    notification.source_device_id,
-                    notification.file_name,
-                    safe_filename
+                log::debug!(
+                    "Share doorbell on UI tick (share_id={})",
+                    notification.share_id
                 );
-                {
-                    let mut files = self.shared_state(cx).sync_state.pending_shared_files.lock();
-                    let shared_file = fulgur_common::api::shares::SharedFileResponse {
-                        id: notification.share_id,
-                        source_device_id: notification.source_device_id.clone(),
-                        file_name: safe_filename.clone(),
-                        file_size: notification.file_size as i32,
-                        content: notification.content,
-                        created_at: notification.created_at,
-                        expires_at: notification.expires_at,
-                    };
-                    files.push(shared_file);
-                }
-                let message = SharedString::from(format!("New file received: {}", safe_filename));
+                let message = SharedString::from("New file received".to_string());
                 window.push_notification((NotificationType::Info, message), cx);
             }
             SseEvent::Error(err) => {
@@ -580,8 +621,7 @@ mod tests {
     use super::{ShareNotification, SseEvent, SseState};
     use crate::fulgur::{
         Fulgur, settings::Settings, shared_state::SharedAppState,
-        sync::share::MAX_SYNC_SHARE_PAYLOAD_BYTES, sync::synchronization::SynchronizationStatus,
-        window_manager::WindowManager,
+        sync::synchronization::SynchronizationStatus, window_manager::WindowManager,
     };
     use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
     use parking_lot::Mutex;
@@ -620,17 +660,9 @@ mod tests {
     }
 
     /// Build a minimal valid `ShareNotification` for use in tests.
-    fn make_share_notification(file_name: &str, content: &str) -> ShareNotification {
+    fn make_share_notification(share_id: &str) -> ShareNotification {
         ShareNotification {
-            share_id: "share-123".to_string(),
-            source_device_id: "device-src".to_string(),
-            destination_device_id: "device-dest".to_string(),
-            file_name: file_name.to_string(),
-            file_size: content.len() as i64,
-            file_hash: "abc123hash".to_string(),
-            content: content.to_string(),
-            created_at: "2024-01-15T12:00:00Z".to_string(),
-            expires_at: "2024-01-16T12:00:00Z".to_string(),
+            share_id: share_id.to_string(),
         }
     }
 
@@ -776,7 +808,7 @@ mod tests {
     // --- handle_sse_event: ShareAvailable ---
 
     #[gpui::test]
-    fn test_handle_share_available_adds_file_to_pending_files(cx: &mut TestAppContext) {
+    fn test_handle_share_available_does_not_touch_pending_files(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
@@ -788,22 +820,7 @@ mod tests {
                         .is_empty(),
                     "pending_shared_files should start empty"
                 );
-                let notification = make_share_notification("report.txt", "file_content");
-                this.handle_sse_event(SseEvent::ShareAvailable(notification), window, cx);
-                let files = this.shared_state(cx).sync_state.pending_shared_files.lock();
-                assert_eq!(files.len(), 1, "exactly one file must be added");
-                assert_eq!(files[0].file_name, "report.txt");
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn test_handle_share_available_oversized_payload_is_dropped(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                let oversized_content = "x".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES + 1);
-                let notification = make_share_notification("huge.bin", &oversized_content);
+                let notification = make_share_notification("share-abc");
                 this.handle_sse_event(SseEvent::ShareAvailable(notification), window, cx);
                 assert!(
                     this.shared_state(cx)
@@ -811,7 +828,8 @@ mod tests {
                         .pending_shared_files
                         .lock()
                         .is_empty(),
-                    "Oversized payload must be silently dropped"
+                    "UI doorbell handler must not push into pending_shared_files; \
+                     the SSE worker drains via /api/shares instead"
                 );
             });
         });
