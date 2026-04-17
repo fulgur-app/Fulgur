@@ -12,7 +12,7 @@ use flate2::{
     read::{GzDecoder, GzEncoder},
 };
 use fulgur_common::api::{
-    devices::DeviceResponse,
+    devices::{DeviceResponse, DevicesResponse},
     shares::{ShareFilePayload, SharedFileResponse},
 };
 use gpui_component::Icon;
@@ -111,13 +111,13 @@ pub fn get_icon(device: &Device) -> Icon {
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
-/// - `Ok(Vec<Device>)`: The devices
+/// - `Ok((Vec<Device>, Option<u64>))`: The devices and the server-reported maximum share file size (if advertised)
 /// - `Err(SynchronizationError)`: If the devices could not be retrieved
 pub fn get_devices(
     synchronization_settings: &SynchronizationSettings,
     token_state: Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
-) -> Result<Vec<Device>, SynchronizationError> {
+) -> Result<(Vec<Device>, Option<u64>), SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
@@ -129,16 +129,22 @@ pub fn get_devices(
         .call()
         .map_err(|e| handle_ureq_error(e, "Failed to get devices"))?;
 
-    let devices: Vec<Device> = response
+    let devices_response: DevicesResponse = response
         .body_mut()
-        .read_json::<Vec<Device>>()
+        .read_json::<DevicesResponse>()
         .map_err(|e| {
             log::error!("Failed to read devices: {}", e);
             SynchronizationError::InvalidResponse(e.to_string())
         })?;
 
-    log::debug!("Retrieved {} devices from server", devices.len());
-    Ok(devices)
+    log::debug!(
+        "Retrieved {} devices from server",
+        devices_response.devices.len()
+    );
+    Ok((
+        devices_response.devices,
+        devices_response.max_file_size_bytes,
+    ))
 }
 
 /// Atomically fetch and delete all pending shares for the current device.
@@ -318,6 +324,7 @@ pub fn share_file(
     devices: &[Device],
     token_state: Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
+    max_file_size_bytes: u64,
 ) -> Result<ShareResult, SynchronizationError> {
     let server_url = synchronization_settings
         .server_url
@@ -326,8 +333,14 @@ pub fn share_file(
     if request.content.is_empty() {
         return Err(SynchronizationError::ContentMissing);
     }
-    if request.content.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
-        return Err(SynchronizationError::ContentTooLarge);
+    if max_file_size_bytes != u64::MAX {
+        let max_size = max_file_size_bytes as usize;
+        if request.content.len() > max_size {
+            return Err(SynchronizationError::ContentTooLarge {
+                file_size: request.content.len(),
+                max_size,
+            });
+        }
     }
     if request.file_name.is_empty() {
         return Err(SynchronizationError::FileNameMissing);
@@ -650,9 +663,13 @@ fn main() {
             &[],
             Arc::new(TokenStateManager::new()),
             &ureq::Agent::new_with_config(ureq::config::Config::default()),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
 
-        assert!(matches!(result, Err(SynchronizationError::ContentTooLarge)));
+        assert!(matches!(
+            result,
+            Err(SynchronizationError::ContentTooLarge { .. })
+        ));
     }
 
     #[test]
@@ -676,10 +693,11 @@ fn main() {
             &[],
             Arc::new(TokenStateManager::new()),
             &ureq::Agent::new_with_config(ureq::config::Config::default()),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
 
         assert!(
-            !matches!(result, Err(SynchronizationError::ContentTooLarge)),
+            !matches!(result, Err(SynchronizationError::ContentTooLarge { .. })),
             "Payload at exact limit should not be rejected as too large"
         );
     }
@@ -819,6 +837,7 @@ fn main() {
             &[],
             Arc::new(TokenStateManager::new()),
             &make_http_agent(),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
         assert!(
             matches!(result, Err(SynchronizationError::ServerUrlMissing)),
@@ -843,6 +862,7 @@ fn main() {
             &[],
             Arc::new(TokenStateManager::new()),
             &make_http_agent(),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
         assert!(
             matches!(result, Err(SynchronizationError::ContentMissing)),
@@ -867,6 +887,7 @@ fn main() {
             &[],
             Arc::new(TokenStateManager::new()),
             &make_http_agent(),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
         assert!(
             matches!(result, Err(SynchronizationError::FileNameMissing)),
@@ -891,6 +912,7 @@ fn main() {
             &[],
             Arc::new(TokenStateManager::new()),
             &make_http_agent(),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
         assert!(
             matches!(result, Err(SynchronizationError::DeviceIdsMissing)),
@@ -914,6 +936,7 @@ fn main() {
             &[], // no devices provided
             token_manager,
             &make_http_agent(),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
         .expect("share_file should return Ok(ShareResult) even on per-device failure");
         assert_eq!(result.successes.len(), 0);
@@ -937,6 +960,7 @@ fn main() {
             &[device],
             token_manager,
             &make_http_agent(),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
         .expect("share_file should return Ok(ShareResult)");
         assert_eq!(result.successes.len(), 0);
@@ -966,6 +990,7 @@ fn main() {
             &[device],
             token_manager,
             &make_http_agent(),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
         .expect("share_file should return Ok(ShareResult)");
         assert_eq!(result.successes.len(), 0);
@@ -991,6 +1016,7 @@ fn main() {
             &[device],
             token_manager,
             &make_http_agent(),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
         .expect("share_file returns Ok(ShareResult) even when per-device send fails");
         assert_eq!(result.successes.len(), 0);
@@ -1003,7 +1029,7 @@ fn main() {
                 SynchronizationError::EncryptionFailed
                     | SynchronizationError::MissingPublicKey(_)
                     | SynchronizationError::ContentMissing
-                    | SynchronizationError::ContentTooLarge
+                    | SynchronizationError::ContentTooLarge { .. }
             ),
             "Expected a network-level error, got: {:?}",
             result.failures[0].1
@@ -1029,6 +1055,7 @@ fn main() {
             &[device_no_key],
             token_manager,
             &make_http_agent(),
+            MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
         .expect("share_file should return Ok(ShareResult)");
         assert_eq!(result.successes.len(), 0);

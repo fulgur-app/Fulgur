@@ -38,6 +38,8 @@ pub struct SyncState {
     pub pending_notification: Arc<Mutex<Option<(NotificationType, SharedString)>>>,
     /// Pending devices list from background fetch (checked in render loop to open share sheet)
     pub pending_devices: Arc<Mutex<Option<PendingDevicesResult>>>,
+    /// Maximum file size for sharing (bytes), as reported by the server.
+    pub max_file_size_bytes: Arc<AtomicU64>,
 }
 
 impl SyncState {
@@ -59,6 +61,7 @@ impl SyncState {
             initialized: Arc::new(AtomicBool::new(false)),
             pending_notification: Arc::new(Mutex::new(None)),
             pending_devices: Arc::new(Mutex::new(None)),
+            max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),
         }
     }
 }

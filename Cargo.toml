@@ -18,7 +18,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Types
-fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.3.0"}
+fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.4.0"}
 lsp-types = "0.97"
 
 # Serialization

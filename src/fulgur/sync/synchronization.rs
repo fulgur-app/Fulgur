@@ -36,6 +36,11 @@ pub fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationEr
                 SynchronizationError::AuthenticationFailed
             } else if code == 400 {
                 SynchronizationError::BadRequest
+            } else if code == 413 {
+                SynchronizationError::ContentTooLarge {
+                    file_size: 0,
+                    max_size: 0,
+                }
             } else {
                 SynchronizationError::ServerError(code)
             }
@@ -155,6 +160,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     let sse_thread_handle = entity.read(cx).sse_state.sse_thread_handle.clone();
     let token_state = shared.sync_state.token_state.clone();
     let http_agent = Arc::clone(&shared.http_agent);
+    let max_file_size_bytes = shared.sync_state.max_file_size_bytes.clone();
     thread::spawn(move || {
         // Small delay to ensure app initialization doesn't block
         thread::sleep(Duration::from_millis(100));
@@ -193,6 +199,16 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                     sync_server_connection_status.clone(),
                     SynchronizationStatus::Connected,
                 );
+                match begin_response.max_file_size_bytes {
+                    Some(max_size) => {
+                        max_file_size_bytes.store(max_size, std::sync::atomic::Ordering::Relaxed);
+                        log::info!("Server max file size: {} bytes", max_size);
+                    }
+                    None => {
+                        max_file_size_bytes.store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
+                        log::info!("Server max file size: no limit");
+                    }
+                }
                 {
                     let mut device_name = device_name.lock();
                     *device_name = Some(begin_response.device_name);
@@ -284,10 +300,21 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
     let device_name = shared.sync_state.device_name.clone();
     let pending_shared_files = shared.sync_state.pending_shared_files.clone();
     let pending_notification = shared.sync_state.pending_notification.clone();
+    let max_file_size_bytes = shared.sync_state.max_file_size_bytes.clone();
     thread::spawn(move || {
         let result = initial_synchronization(&synchronization_settings, token_state, &http_agent);
         let (notification, status) = match result {
             Ok(begin_response) => {
+                match begin_response.max_file_size_bytes {
+                    Some(max_size) => {
+                        max_file_size_bytes.store(max_size, std::sync::atomic::Ordering::Relaxed);
+                        log::info!("Server max file size: {} bytes", max_size);
+                    }
+                    None => {
+                        max_file_size_bytes.store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
+                        log::info!("Server max file size: no limit");
+                    }
+                }
                 {
                     let mut name = device_name.lock();
                     *name = Some(begin_response.device_name.clone());
@@ -328,7 +355,7 @@ pub enum SynchronizationError {
     CompressionFailed,
     ConnectionFailed,
     ContentMissing,
-    ContentTooLarge,
+    ContentTooLarge { file_size: usize, max_size: usize },
     DeviceIdsMissing,
     DeviceKeyMissing,
     EmailMissing,
@@ -353,7 +380,19 @@ impl fmt::Display for SynchronizationError {
             SynchronizationError::CompressionFailed => write!(f, "Compression failed"),
             SynchronizationError::ConnectionFailed => write!(f, "Cannot connect to sync server"),
             SynchronizationError::ContentMissing => write!(f, "Content is missing"),
-            SynchronizationError::ContentTooLarge => write!(f, "Content is too large to share"),
+            SynchronizationError::ContentTooLarge {
+                file_size: 0,
+                max_size: 0,
+            } => write!(f, "File is too large to share (rejected by server)"),
+            SynchronizationError::ContentTooLarge {
+                file_size,
+                max_size,
+            } => write!(
+                f,
+                "File is too large to share ({} KB, max {} KB)",
+                file_size / 1024,
+                max_size / 1024
+            ),
             SynchronizationError::DeviceIdsMissing => write!(f, "Device IDs are missing"),
             SynchronizationError::DeviceKeyMissing => write!(f, "Key is missing"),
             SynchronizationError::EmailMissing => write!(f, "Email is missing"),

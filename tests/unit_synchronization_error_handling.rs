@@ -149,7 +149,10 @@ fn test_sync_status_from_error_other_variants() {
         SynchronizationError::BadRequest,
         SynchronizationError::CompressionFailed,
         SynchronizationError::ContentMissing,
-        SynchronizationError::ContentTooLarge,
+        SynchronizationError::ContentTooLarge {
+            file_size: 2048,
+            max_size: 1024,
+        },
         SynchronizationError::DeviceIdsMissing,
         SynchronizationError::DeviceKeyMissing,
         SynchronizationError::EmailMissing,
@@ -280,8 +283,18 @@ fn test_sync_error_display_all_simple_variants() {
         ),
         (SynchronizationError::ContentMissing, "Content is missing"),
         (
-            SynchronizationError::ContentTooLarge,
-            "Content is too large to share",
+            SynchronizationError::ContentTooLarge {
+                file_size: 2048,
+                max_size: 1024,
+            },
+            "File is too large to share (2 KB, max 1 KB)",
+        ),
+        (
+            SynchronizationError::ContentTooLarge {
+                file_size: 0,
+                max_size: 0,
+            },
+            "File is too large to share (rejected by server)",
         ),
         (
             SynchronizationError::DeviceIdsMissing,
