@@ -157,36 +157,46 @@ fn handle_share_file(
         );
         return;
     }
-    let (sync_settings, request, token_state, http_agent, pending_notification) =
-        entity.update(cx, |this, cx| {
-            let active_tab = this.get_active_editor_tab();
-            let content = active_tab
-                .as_ref()
-                .map(|tab| tab.content.read(cx).value().to_string())
-                .unwrap_or_default();
-            let file_path = active_tab.as_ref().and_then(|tab| tab.file_path.clone());
-            let file_name = file_path
-                .as_ref()
-                .and_then(|path| path.file_name())
-                .and_then(|name| name.to_str())
-                .unwrap_or("Untitled")
-                .to_string();
-            (
-                this.settings.app_settings.synchronization_settings.clone(),
-                ShareFileRequest {
-                    content,
-                    file_name,
-                    device_ids: ids,
-                    file_path,
-                },
-                Arc::clone(&this.shared_state(cx).sync_state.token_state),
-                Arc::clone(&this.shared_state(cx).http_agent),
-                this.shared_state(cx)
-                    .sync_state
-                    .pending_notification
-                    .clone(),
-            )
-        });
+    let (
+        sync_settings,
+        request,
+        token_state,
+        http_agent,
+        pending_notification,
+        max_file_size_bytes,
+    ) = entity.update(cx, |this, cx| {
+        let active_tab = this.get_active_editor_tab();
+        let content = active_tab
+            .as_ref()
+            .map(|tab| tab.content.read(cx).value().to_string())
+            .unwrap_or_default();
+        let file_path = active_tab.as_ref().and_then(|tab| tab.file_path.clone());
+        let file_name = file_path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("Untitled")
+            .to_string();
+        (
+            this.settings.app_settings.synchronization_settings.clone(),
+            ShareFileRequest {
+                content,
+                file_name,
+                device_ids: ids,
+                file_path,
+            },
+            Arc::clone(&this.shared_state(cx).sync_state.token_state),
+            Arc::clone(&this.shared_state(cx).http_agent),
+            this.shared_state(cx)
+                .sync_state
+                .pending_notification
+                .clone(),
+            this.shared_state(cx)
+                .sync_state
+                .max_file_size_bytes
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )
+    });
     window.close_sheet(cx);
     window.push_notification(
         (
@@ -196,7 +206,14 @@ fn handle_share_file(
         cx,
     );
     std::thread::spawn(move || {
-        let result = share_file(&sync_settings, request, &devices, token_state, &http_agent);
+        let result = share_file(
+            &sync_settings,
+            request,
+            &devices,
+            token_state,
+            &http_agent,
+            max_file_size_bytes,
+        );
         let notification = match result {
             Ok(share_result) => {
                 if share_result.is_complete_success() {
@@ -271,6 +288,7 @@ impl Fulgur {
         let device_name_shared = shared.sync_state.device_name.clone();
         let pending_shared_files = shared.sync_state.pending_shared_files.clone();
         let pending_devices = shared.sync_state.pending_devices.clone();
+        let max_file_size_bytes = shared.sync_state.max_file_size_bytes.clone();
         self.pending_share_sheet = true;
         std::thread::spawn(move || {
             if needs_reconnect {
@@ -282,6 +300,12 @@ impl Fulgur {
                     Ok(begin_response) => {
                         *device_name_shared.lock() = Some(begin_response.device_name.clone());
                         *pending_shared_files.lock() = begin_response.shares;
+                        match begin_response.max_file_size_bytes {
+                            Some(max_size) => max_file_size_bytes
+                                .store(max_size, std::sync::atomic::Ordering::Relaxed),
+                            None => max_file_size_bytes
+                                .store(u64::MAX, std::sync::atomic::Ordering::Relaxed),
+                        }
                         crate::fulgur::sync::synchronization::set_sync_server_connection_status(
                             connection_status.clone(),
                             SynchronizationStatus::Connected,
@@ -302,7 +326,13 @@ impl Fulgur {
             let result = get_devices(&synchronization_settings, token_state, &http_agent);
             *connecting_since.lock() = None;
             match result {
-                Ok(devices) => {
+                Ok((devices, server_max_size)) => {
+                    match server_max_size {
+                        Some(max_size) => max_file_size_bytes
+                            .store(max_size, std::sync::atomic::Ordering::Relaxed),
+                        None => max_file_size_bytes
+                            .store(u64::MAX, std::sync::atomic::Ordering::Relaxed),
+                    }
                     crate::fulgur::sync::synchronization::set_sync_server_connection_status(
                         connection_status,
                         SynchronizationStatus::Connected,
