@@ -153,6 +153,7 @@ Guidelines:
 - File watcher tests require at least 500 ms of initialization time and should use timeouts of 5 seconds or more for event detection.
 - Do not mock I/O in integration tests. Test against real files and real state.
 - Except for platform specific features, tests should run on all platforms.
+- Extensive testing is very welcome, but avoid obvious tests like "does the function return the value we set?".
 
 ---
 
