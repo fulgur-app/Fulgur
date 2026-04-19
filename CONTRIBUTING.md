@@ -53,13 +53,15 @@ These are enforced by CI. A PR that fails any of them will not be reviewed.
 
 ## Documentation
 
-Every public function and non-trivial private function must have a documentation comment using Rust's `///` syntax with the following structure:
+Every public function and non-trivial private function must have a documentation comment using Rust's `///` syntax.
+
+For `Result` returns, use `Ok`/`Err` variants:
 
 ```rust
 /// Short summary line
 ///
 /// ### Description
-/// Optional — only when the summary alone is not enough to understand the behavior.
+/// Optional, only when the summary alone is not enough to understand the behavior.
 ///
 /// ### Arguments
 /// - `arg_name`: What it is and any constraints
@@ -67,12 +69,43 @@ Every public function and non-trivial private function must have a documentation
 /// ### Returns
 /// - `Ok(T)`: What success looks like
 /// - `Err(E)`: What can fail and why
-pub fn share_file(request: ShareFileRequest) -> anyhow::Result<(T)> {
+pub fn share_file(request: ShareFileRequest) -> anyhow::Result<T> {
     ...
 }
 ```
 
-Omit `### Description`, `### Arguments`, or `### Returns` when they add no information (e.g. a function with no arguments, or one whose name and return type are self-explanatory). Do not describe the implementation — describe the contract.
+For `Option` returns, use `Some`/`None` variants:
+
+```rust
+/// Find the index of a tab with the given file path
+///
+/// ### Arguments
+/// - `path`: The path to search for
+///
+/// ### Returns
+/// - `Some(usize)`: The index of the tab if found
+/// - `None`: If the tab was not found
+pub fn find_tab_by_path(&self, path: &PathBuf) -> Option<usize> {
+    ...
+}
+```
+
+For plain returns, use the type name directly:
+
+```rust
+/// Detect encoding from file bytes
+///
+/// ### Arguments
+/// - `bytes`: The bytes to detect encoding from
+///
+/// ### Returns
+/// - `(String, String)`: The detected encoding and decoded string
+pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
+    ...
+}
+```
+
+Omit `### Description`, `### Arguments`, or `### Returns` when they add no information (e.g. a function with no arguments, or one whose name and return type are self-explanatory). Do not describe the implementation, only describe the contract.
 
 ---
 
