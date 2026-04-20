@@ -4,3 +4,5 @@ pub mod jump_line;
 pub mod open_path;
 pub mod open_remote;
 pub mod path_browser;
+pub mod ssh_host_fingerprint;
+pub mod ssh_password;

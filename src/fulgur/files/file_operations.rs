@@ -2,6 +2,10 @@ use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
     sync::ssh::url::RemoteSpec,
+    sync::ssh::{
+        self,
+        session::{HostKeyDecision, HostKeyRequest},
+    },
     tab::Tab,
     ui::{
         components_utils::{UNTITLED, UTF_8},
@@ -16,7 +20,8 @@ use gpui::{
     WeakEntity, Window,
 };
 use gpui_component::{WindowExt, notification::NotificationType};
-use std::{collections::HashSet, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
+use zeroize::Zeroizing;
 
 /// Detect encoding from file bytes
 ///
@@ -321,16 +326,138 @@ impl Fulgur {
         cx: &mut Context<Self>,
         spec: RemoteSpec,
     ) {
-        let tab_id = self.next_tab_id;
-        let editor_tab =
-            EditorTab::from_remote(tab_id, spec, window, cx, &self.settings.editor_settings);
-        let idx = self.tabs.len();
-        self.tabs.push(Tab::Editor(editor_tab));
-        self.active_tab_index = Some(idx);
-        self.pending_tab_scroll = Some(idx);
-        self.next_tab_id += 1;
-        self.focus_active_tab(window, cx);
-        cx.notify();
+        let host = spec.host.clone();
+        let port = spec.port;
+        let user = spec.user.clone();
+        let entity = cx.entity().downgrade();
+
+        self.show_ssh_password_dialog(
+            window,
+            cx,
+            host,
+            port,
+            user,
+            move |resolved_user, password, window, cx| {
+                let mut spec_with_user = spec.clone();
+                spec_with_user.user = Some(resolved_user);
+                spec_with_user.password_in_url = None;
+                if let Some(entity) = entity.upgrade() {
+                    entity.update(cx, |fulgur, cx| {
+                        fulgur.spawn_ssh_open_task(window, cx, spec_with_user, password);
+                    });
+                }
+            },
+        );
+    }
+
+    /// Spawn the blocking SSH connect + file-read task plus a GPUI monitoring task.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context used to spawn the async monitoring task
+    /// - `cx`: The application context
+    /// - `spec`: The remote file specification with a resolved username
+    /// - `password`: The session-scoped password (zeroed on drop)
+    fn spawn_ssh_open_task(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        spec: RemoteSpec,
+        password: Zeroizing<String>,
+    ) {
+        let pending_remote_open = Arc::clone(&self.pending_remote_open);
+
+        let pending_host_key: Arc<parking_lot::Mutex<Option<HostKeyRequest>>> =
+            Arc::new(parking_lot::Mutex::new(None));
+        let pending_host_key_for_thread = Arc::clone(&pending_host_key);
+        let pending_host_key_for_task = Arc::clone(&pending_host_key);
+
+        let pending_remote_for_thread = Arc::clone(&pending_remote_open);
+        let pending_remote_for_task = Arc::clone(&pending_remote_open);
+
+        let spec_for_thread = spec.clone();
+        let user = spec.user.clone().unwrap_or_default();
+
+        std::thread::spawn(move || {
+            let slot = pending_host_key_for_thread;
+            let session_result = self::ssh::session::connect(
+                &spec_for_thread,
+                &user,
+                &password,
+                move |fingerprint, host, port| {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    *slot.lock() = Some(HostKeyRequest {
+                        fingerprint: fingerprint.to_string(),
+                        host: host.to_string(),
+                        port,
+                        decision_tx: tx,
+                    });
+                    match rx.recv() {
+                        Ok(decision) => decision,
+                        Err(_) => HostKeyDecision::Reject,
+                    }
+                },
+            );
+
+            let outcome = session_result
+                .and_then(|session| {
+                    self::ssh::sftp::read_remote_file(&session, &spec_for_thread.path)
+                        .map(|bytes| (session, bytes))
+                })
+                .map(|(_, bytes)| {
+                    let (encoding, content) = detect_encoding_and_decode(&bytes);
+                    RemoteFileResult {
+                        spec: spec_for_thread,
+                        content,
+                        encoding,
+                        file_size: bytes.len(),
+                    }
+                })
+                .map_err(|e| e.user_message());
+
+            *pending_remote_for_thread.lock() = Some(outcome);
+        });
+
+        cx.spawn_in(window, async move |view, async_cx| {
+            let deadline = std::time::Instant::now() + Duration::from_secs(60);
+            loop {
+                async_cx
+                    .background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+
+                if std::time::Instant::now() > deadline {
+                    *pending_remote_for_task.lock() =
+                        Some(Err("SSH connection timed out (60 s)".to_string()));
+                    async_cx
+                        .update(|_, cx| {
+                            _ = view.update(cx, |_, cx| cx.notify());
+                        })
+                        .ok();
+                    break;
+                }
+
+                let hk_req = pending_host_key_for_task.lock().take();
+                if let Some(req) = hk_req {
+                    async_cx
+                        .update(|window, cx| {
+                            _ = view.update(cx, |fulgur, cx| {
+                                fulgur.show_ssh_host_fingerprint_dialog(window, cx, req);
+                            });
+                        })
+                        .ok();
+                }
+
+                if pending_remote_for_task.lock().is_some() {
+                    async_cx
+                        .update(|_, cx| {
+                            _ = view.update(cx, |_, cx| cx.notify());
+                        })
+                        .ok();
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     /// Handle opening a file from the command line (double-click or "Open with")

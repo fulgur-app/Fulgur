@@ -1,4 +1,5 @@
 use super::{EditorTab, FromDuplicateParams, FromFileParams, TabLocation, TabTransferData};
+use crate::fulgur::files::file_operations::RemoteFileResult;
 use crate::fulgur::languages::supported_languages::{
     language_from_content, language_registry_name,
 };
@@ -257,6 +258,60 @@ impl EditorTab {
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: None,
             file_last_modified: None,
+        }
+    }
+
+    /// Create a new tab from a successfully loaded remote file.
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the tab
+    /// - `result`: The successfully loaded remote file result
+    /// - `window`: The window to create the tab in
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
+    ///
+    /// ### Returns
+    /// - `EditorTab`: The new tab with remote file content
+    pub fn from_remote_loaded(
+        id: usize,
+        result: RemoteFileResult,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) -> Self {
+        let file_name = result
+            .spec
+            .path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&result.spec.path)
+            .to_string();
+        let language = language_from_content(&file_name, &result.content);
+        let (original_content_hash, original_content_len) =
+            super::content_fingerprint_from_str(&result.content);
+        let content = cx.new(|cx| {
+            super::make_input_state(
+                window,
+                cx,
+                language_registry_name(&language),
+                Some(result.content),
+                settings,
+            )
+        });
+        Self {
+            id,
+            title: file_name.into(),
+            content,
+            location: TabLocation::Remote(result.spec),
+            modified: false,
+            original_content_hash,
+            original_content_len,
+            encoding: result.encoding,
+            language,
+            show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
+            show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: Some(result.file_size as u64),
+            file_last_modified: Some(SystemTime::now()),
         }
     }
 

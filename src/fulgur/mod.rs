@@ -851,7 +851,20 @@ impl Fulgur {
                     remote_file.spec.host,
                     remote_file.spec.path
                 );
-                self.do_open_remote_file(window, cx, remote_file.spec);
+                let editor_tab = EditorTab::from_remote_loaded(
+                    self.next_tab_id,
+                    remote_file,
+                    window,
+                    cx,
+                    &self.settings.editor_settings,
+                );
+                let idx = self.tabs.len();
+                self.tabs.push(Tab::Editor(editor_tab));
+                self.active_tab_index = Some(idx);
+                self.pending_tab_scroll = Some(idx);
+                self.next_tab_id += 1;
+                self.focus_active_tab(window, cx);
+                cx.notify();
             }
             Err(msg) => {
                 self.pending_notification = Some((NotificationType::Error, msg.into()));
