@@ -34,6 +34,7 @@ keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "li
 
 # Networking
 ureq = { version = "3.2.0", features = ["json"] }
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 
 # Encoding
 chardetng = "0.1.17"
