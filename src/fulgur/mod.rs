@@ -554,7 +554,7 @@ impl Fulgur {
             return;
         };
         let editor_focus = editor_tab.content.focus_handle(cx);
-        let has_file = editor_tab.file_path.is_some();
+        let has_file = editor_tab.file_path().is_some();
         let position = event.position;
 
         let menu = PopupMenu::build(window, cx, {

@@ -176,7 +176,7 @@ impl Fulgur {
             self.active_tab_index = Some(index);
             self.tab_scroll_handle.scroll_to_item(index);
             let pending_path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) {
-                if let Some(path) = &editor_tab.file_path {
+                if let Some(path) = editor_tab.file_path() {
                     if self
                         .file_watch_state
                         .pending_conflicts
@@ -554,7 +554,7 @@ impl Fulgur {
     pub fn remove_tab_by_id(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
             let path_to_unwatch = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(pos) {
-                editor_tab.file_path.clone()
+                editor_tab.file_path().cloned()
             } else {
                 None
             };

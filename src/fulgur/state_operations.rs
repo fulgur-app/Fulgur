@@ -1,6 +1,6 @@
 use crate::fulgur::{
     Fulgur,
-    editor_tab::{EditorTab, FromFileParams},
+    editor_tab::{EditorTab, FromFileParams, TabLocation},
     files::file_operations::detect_encoding_and_decode,
     languages::supported_languages::SupportedLanguage,
     state_persistence::{
@@ -284,7 +284,7 @@ impl Fulgur {
                 id: tab_id,
                 title: tab_state.title.into(),
                 content: content_entity,
-                file_path: None,
+                location: TabLocation::Untitled,
                 modified: true,
                 original_content_hash:
                     crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str("").0,
@@ -320,7 +320,7 @@ impl Fulgur {
         let mut tab_states = Vec::new();
         for tab in &self.tabs {
             if let Some(editor_tab) = tab.as_editor() {
-                let tab_state = if let Some(ref path) = editor_tab.file_path {
+                let tab_state = if let Some(path) = editor_tab.file_path() {
                     if editor_tab.content_differs_from_original(cx) {
                         let current_content = editor_tab.content.read(cx).text().to_string();
                         TabState {

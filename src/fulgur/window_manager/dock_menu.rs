@@ -22,7 +22,7 @@ impl Fulgur {
         for tab in &self.tabs {
             tab.id().hash(&mut hasher);
             tab.title().hash(&mut hasher);
-            if let Some(path) = tab.as_editor().and_then(|editor| editor.file_path.as_ref()) {
+            if let Some(path) = tab.as_editor().and_then(|editor| editor.file_path()) {
                 path.hash(&mut hasher);
             }
         }
@@ -83,7 +83,7 @@ impl Fulgur {
             .tabs
             .iter()
             .map(|tab| {
-                let path = tab.as_editor().and_then(|e| e.file_path.clone());
+                let path = tab.as_editor().and_then(|e| e.file_path().cloned());
                 if let Some(ref p) = path {
                     p.hash(&mut hasher);
                 }
@@ -109,7 +109,7 @@ impl Fulgur {
                     .tabs
                     .iter()
                     .map(|tab| {
-                        let path = tab.as_editor().and_then(|e| e.file_path.clone());
+                        let path = tab.as_editor().and_then(|e| e.file_path().cloned());
                         if let Some(ref p) = path {
                             p.hash(&mut hasher);
                         }
@@ -207,7 +207,7 @@ impl Fulgur {
             .tabs
             .iter()
             .map(|tab| {
-                let path = tab.as_editor().and_then(|e| e.file_path.clone());
+                let path = tab.as_editor().and_then(|e| e.file_path().cloned());
                 if let Some(ref p) = path {
                     p.hash(&mut hasher);
                 }
@@ -233,7 +233,7 @@ impl Fulgur {
                     .tabs
                     .iter()
                     .map(|tab| {
-                        let path = tab.as_editor().and_then(|e| e.file_path.clone());
+                        let path = tab.as_editor().and_then(|e| e.file_path().cloned());
                         if let Some(ref p) = path {
                             p.hash(&mut hasher);
                         }

@@ -1,5 +1,7 @@
 use super::WindowManager;
-use crate::fulgur::{Fulgur, settings::Settings, shared_state::SharedAppState};
+use crate::fulgur::{
+    Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
+};
 use gpui::{AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId};
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
@@ -275,7 +277,7 @@ fn test_find_window_with_file_returns_other_window_with_matching_tab(cx: &mut Te
                 .first_mut()
                 .and_then(|tab| tab.as_editor_mut())
                 .expect("expected initial editor tab");
-            editor.file_path = Some(target_path.clone());
+            editor.location = TabLocation::Local(target_path.clone());
         });
         let mut manager = WindowManager::new();
         manager.register(current_window_id, current_fulgur.downgrade());
@@ -301,7 +303,7 @@ fn test_find_window_with_file_skips_current_window_and_returns_none_on_miss(
                 .first_mut()
                 .and_then(|tab| tab.as_editor_mut())
                 .expect("expected initial editor tab");
-            editor.file_path = Some(current_only_path.clone());
+            editor.location = TabLocation::Local(current_only_path.clone());
         });
         let mut manager = WindowManager::new();
         manager.register(current_window_id, current_fulgur.downgrade());
@@ -461,7 +463,7 @@ fn test_do_open_file_does_not_open_duplicate_when_file_exists_in_another_window(
                 .first_mut()
                 .and_then(|tab| tab.as_editor_mut())
                 .expect("expected initial editor tab");
-            editor.file_path = Some(shared_path.clone());
+            editor.location = TabLocation::Local(shared_path.clone());
         });
     });
     let tab_count_before = cx.update(|cx| current_fulgur.read(cx).tabs.len());
@@ -493,7 +495,7 @@ fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppC
                             if let Some(editor) =
                                 this.tabs.get_mut(1).and_then(|tab| tab.as_editor_mut())
                             {
-                                editor.file_path = Some(target_path.clone());
+                                editor.location = TabLocation::Local(target_path.clone());
                                 editor.title = "dock-target.rs".into();
                             }
                         });

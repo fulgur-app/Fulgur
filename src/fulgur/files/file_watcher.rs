@@ -1,4 +1,5 @@
 use crate::fulgur::Fulgur;
+use crate::fulgur::editor_tab::TabLocation;
 use crate::fulgur::tab::Tab;
 use crate::fulgur::utils::utilities::collect_events;
 use gpui::{Context, Window};
@@ -334,7 +335,7 @@ impl Fulgur {
                     self.unwatch_file(&from);
                     self.watch_file(&to);
                     if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
-                        editor_tab.file_path = Some(to.clone());
+                        editor_tab.location = TabLocation::Local(to.clone());
                         editor_tab.title = to
                             .file_name()
                             .and_then(|n| n.to_str())
@@ -360,7 +361,7 @@ impl Fulgur {
         }
         for tab in &self.tabs {
             if let Tab::Editor(editor_tab) = tab
-                && let Some(path) = &editor_tab.file_path
+                && let Some(path) = editor_tab.file_path()
                 && let Err(e) = watcher.watch_file(path.clone())
             {
                 log::warn!("Failed to watch file {}: {}", path.display(), e);
@@ -422,8 +423,8 @@ impl Fulgur {
 mod tests {
     use super::{FileWatchEvent, FileWatcher};
     use crate::fulgur::{
-        Fulgur, settings::Settings, shared_state::SharedAppState, tab::Tab,
-        window_manager::WindowManager,
+        Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
+        tab::Tab, window_manager::WindowManager,
     };
     use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
     use notify::{
@@ -559,7 +560,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.file_path = Some(path.clone());
+                    editor_tab.location = TabLocation::Local(path.clone());
                     editor_tab.content.update(cx, |input_state, cx| {
                         input_state.set_value("stale-content", window, cx);
                     });
@@ -591,7 +592,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.file_path = Some(path.clone());
+                    editor_tab.location = TabLocation::Local(path.clone());
                     editor_tab.content.update(cx, |input_state, cx| {
                         input_state.set_value("local-content", window, cx);
                     });
@@ -622,7 +623,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.file_path = Some(path.clone());
+                    editor_tab.location = TabLocation::Local(path.clone());
                     editor_tab.modified = true;
                     editor_tab.content.update(cx, |input_state, cx| {
                         input_state.set_value("local-edits", window, cx);
@@ -648,7 +649,7 @@ mod tests {
             fulgur.update(cx, |this, cx| {
                 this.new_tab(window, cx);
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.file_path = Some(deferred_path.clone());
+                    editor_tab.location = TabLocation::Local(deferred_path.clone());
                     editor_tab.modified = true;
                 }
                 this.set_active_tab(1, window, cx);
@@ -681,7 +682,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.file_path = Some(path.clone());
+                    editor_tab.location = TabLocation::Local(path.clone());
                     editor_tab.content.update(cx, |input_state, cx| {
                         input_state.set_value("current-content", window, cx);
                     });
@@ -695,7 +696,7 @@ mod tests {
                     .and_then(Tab::as_editor)
                     .map(|editor_tab| {
                         (
-                            editor_tab.file_path.clone(),
+                            editor_tab.file_path().cloned(),
                             editor_tab.title.to_string(),
                             editor_tab.content.read(cx).text().to_string(),
                         )
@@ -716,7 +717,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.file_path = Some(from.clone());
+                    editor_tab.location = TabLocation::Local(from.clone());
                     editor_tab.title = "fulgur_rename_from.rs".into();
                 }
                 this.file_watch_state
@@ -740,7 +741,12 @@ mod tests {
                     .tabs
                     .first()
                     .and_then(Tab::as_editor)
-                    .map(|editor_tab| (editor_tab.file_path.clone(), editor_tab.title.to_string()))
+                    .map(|editor_tab| {
+                        (
+                            editor_tab.file_path().cloned(),
+                            editor_tab.title.to_string(),
+                        )
+                    })
                     .expect("expected active editor tab");
                 assert_eq!(current_path, Some(to));
                 assert_eq!(current_title, "fulgur_rename_to.rs");

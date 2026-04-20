@@ -1,4 +1,4 @@
-use super::{EditorTab, FromDuplicateParams, FromFileParams, TabTransferData};
+use super::{EditorTab, FromDuplicateParams, FromFileParams, TabLocation, TabTransferData};
 use crate::fulgur::languages::supported_languages::{
     language_from_content, language_registry_name,
 };
@@ -41,7 +41,7 @@ impl EditorTab {
             id,
             title: title.into(),
             content,
-            file_path: None,
+            location: TabLocation::Untitled,
             modified: false,
             original_content_hash,
             original_content_len,
@@ -90,9 +90,9 @@ impl EditorTab {
             id,
             title: file_name.into(),
             content,
-            file_path: None,       // No path - forces "Save as..." dialog
-            modified: true,        // Mark as modified
-            original_content_hash, // Empty so check_modified() keeps it as modified
+            location: TabLocation::Untitled,
+            modified: true,
+            original_content_hash,
             original_content_len,
             encoding: UTF_8.to_string(),
             language,
@@ -148,7 +148,7 @@ impl EditorTab {
             id: params.id,
             title: title.into(),
             content,
-            file_path: Some(params.path),
+            location: TabLocation::Local(params.path),
             modified: params.is_modified,
             original_content_hash,
             original_content_len,
@@ -194,7 +194,7 @@ impl EditorTab {
             id: params.id,
             title: params.title,
             content,
-            file_path: None,
+            location: TabLocation::Untitled,
             modified: true,
             original_content_hash,
             original_content_len,
@@ -246,7 +246,7 @@ impl EditorTab {
             id,
             title: data.title,
             content,
-            file_path: data.file_path,
+            location: data.location,
             modified: data.modified,
             original_content_hash: data.original_content_hash,
             original_content_len: data.original_content_len,

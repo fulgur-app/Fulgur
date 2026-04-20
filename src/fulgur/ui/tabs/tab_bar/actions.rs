@@ -107,7 +107,7 @@ impl Fulgur {
         let Some(editor_tab) = tab.as_editor() else {
             return;
         };
-        let Some(ref file_path) = editor_tab.file_path else {
+        let Some(file_path) = editor_tab.file_path() else {
             return;
         };
 

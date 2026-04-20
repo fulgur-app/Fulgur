@@ -33,7 +33,7 @@ impl Fulgur {
         let mut filename_counts = HashMap::new();
         for tab in &self.tabs {
             if let Some(editor_tab) = tab.as_editor()
-                && let Some(path) = editor_tab.file_path.as_ref()
+                && let Some(path) = editor_tab.file_path()
                 && let Some(filename) = path.file_name().and_then(|n| n.to_str())
             {
                 *filename_counts.entry(filename.to_string()).or_insert(0) += 1;
@@ -57,7 +57,7 @@ impl Fulgur {
     ) -> (String, Option<String>) {
         let base_title = tab.title();
         if let Some(editor_tab) = tab.as_editor()
-            && let Some(ref path) = editor_tab.file_path
+            && let Some(path) = editor_tab.file_path()
         {
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let duplicate_count = filename_counts.get(filename).copied().unwrap_or(0);
@@ -287,8 +287,7 @@ impl Fulgur {
         let total_tabs = self.tabs.len();
         let file_path = tab.as_editor().and_then(|editor_tab| {
             editor_tab
-                .file_path
-                .as_ref()
+                .file_path()
                 .and_then(|path| path.to_str().map(|s| s.to_string()))
         });
         let has_file_path = file_path.is_some();

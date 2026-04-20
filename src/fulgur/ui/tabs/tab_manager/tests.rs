@@ -89,7 +89,7 @@ fn test_new_tab_produces_untitled_editor_tab_without_file_path(cx: &mut TestAppC
             this.new_tab(window, cx);
             let last = this.tabs.last().expect("expected at least one tab");
             let editor = last.as_editor().expect("expected an editor tab");
-            assert!(editor.file_path.is_none());
+            assert!(editor.file_path().is_none());
             assert!(!editor.modified);
         });
     });
@@ -292,7 +292,7 @@ fn test_duplicate_tab_preserves_content_and_language(cx: &mut TestAppContext) {
 
             let duplicate = this.tabs[1].as_editor().expect("expected editor tab");
             assert_eq!(duplicate.language, SupportedLanguage::Rust);
-            assert!(duplicate.file_path.is_none());
+            assert!(duplicate.file_path().is_none());
         });
     });
 }
@@ -920,7 +920,7 @@ fn make_transfer_data() -> TabTransferData {
     TabTransferData {
         title: SharedString::from("sent.rs"),
         content: "let x = 42;".to_string(),
-        file_path: None,
+        location: crate::fulgur::ui::tabs::editor_tab::TabLocation::Untitled,
         modified: false,
         original_content_hash: crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str(
             "let x = 42;",
@@ -957,7 +957,7 @@ fn test_extract_transfer_data_captures_content_and_metadata(cx: &mut TestAppCont
             .update(cx, |this, cx| this.extract_tab_transfer_data(0, cx))
             .expect("should extract data from the initial tab");
         assert_eq!(data.content, "");
-        assert!(data.file_path.is_none());
+        assert!(data.location.is_untitled());
         assert!(!data.modified);
         assert_eq!(data.encoding, "UTF-8");
         assert_eq!(data.language, SupportedLanguage::Plain);

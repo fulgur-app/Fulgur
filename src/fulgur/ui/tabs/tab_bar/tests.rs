@@ -1,4 +1,5 @@
 use crate::fulgur::Fulgur;
+use crate::fulgur::ui::tabs::editor_tab::TabLocation;
 use crate::fulgur::{
     settings::Settings, shared_state::SharedAppState, tab::Tab, window_manager::WindowManager,
 };
@@ -61,7 +62,7 @@ fn test_get_tab_display_title_returns_filename_for_unique_path(cx: &mut TestAppC
     visual_cx.update(|_window, cx| {
         fulgur.update(cx, |this, _cx| {
             if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
-                e.file_path = Some(PathBuf::from("/projects/foo/main.rs"));
+                e.location = TabLocation::Local(PathBuf::from("/projects/foo/main.rs"));
             }
             let filename_counts = this.build_tab_filename_counts();
             let tab = this.tabs.first().unwrap();
@@ -81,11 +82,11 @@ fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(cx: &m
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
-                e.file_path = Some(PathBuf::from("/projects/a/main.rs"));
+                e.location = TabLocation::Local(PathBuf::from("/projects/a/main.rs"));
             }
             this.new_tab(window, cx);
             if let Some(Tab::Editor(e)) = this.tabs.get_mut(1) {
-                e.file_path = Some(PathBuf::from("/projects/b/main.rs"));
+                e.location = TabLocation::Local(PathBuf::from("/projects/b/main.rs"));
             }
             let filename_counts = this.build_tab_filename_counts();
             let tab0 = this.tabs.first().unwrap();
