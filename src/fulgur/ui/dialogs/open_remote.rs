@@ -44,8 +44,11 @@ impl Fulgur {
                     let url = input_ok.read(cx).value().to_string();
                     match parse_remote_url(&url) {
                         Ok(spec) => {
-                            entity_ok.update(cx, |this, cx| {
-                                this.do_open_remote_file(window, cx, spec);
+                            entity_ok.update(cx, |_, cx| {
+                                // Defer remote-auth dialog opening until this URL dialog has fully closed.
+                                cx.defer_in(window, move |this, window, cx| {
+                                    this.do_open_remote_file(window, cx, spec);
+                                });
                             });
                             true
                         }
