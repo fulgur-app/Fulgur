@@ -1,6 +1,7 @@
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
+    sync::ssh::url::RemoteSpec,
     tab::Tab,
     ui::{
         components_utils::{UNTITLED, UTF_8},
@@ -50,6 +51,14 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     };
     log::debug!("File encoding detected as: {}", encoding_name);
     (encoding_name, decoded.to_string())
+}
+
+/// Result of a successfully loaded remote file, delivered by the SSH background thread.
+pub struct RemoteFileResult {
+    pub spec: RemoteSpec,
+    pub content: String,
+    pub encoding: String,
+    pub file_size: usize,
 }
 
 impl Fulgur {
@@ -298,6 +307,30 @@ impl Fulgur {
             Self::open_file_from_path(view, window, path).await
         })
         .detach();
+    }
+
+    /// Open a remote file from a parsed `RemoteSpec`.
+    ///
+    /// ### Arguments
+    /// - `window`: The window to open the tab in
+    /// - `cx`: The application context
+    /// - `spec`: The parsed remote file specification
+    pub fn do_open_remote_file(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        spec: RemoteSpec,
+    ) {
+        let tab_id = self.next_tab_id;
+        let editor_tab =
+            EditorTab::from_remote(tab_id, spec, window, cx, &self.settings.editor_settings);
+        let idx = self.tabs.len();
+        self.tabs.push(Tab::Editor(editor_tab));
+        self.active_tab_index = Some(idx);
+        self.pending_tab_scroll = Some(idx);
+        self.next_tab_id += 1;
+        self.focus_active_tab(window, cx);
+        cx.notify();
     }
 
     /// Handle opening a file from the command line (double-click or "Open with")

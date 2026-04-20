@@ -10,7 +10,7 @@ pub mod utils;
 pub mod window_manager;
 use crate::fulgur::{
     editor_tab::EditorTab,
-    files::file_watcher::FileWatchState,
+    files::{file_operations::RemoteFileResult, file_watcher::FileWatchState},
     languages::supported_languages::SupportedLanguage,
     sync::sse::SseState,
     ui::{
@@ -132,6 +132,7 @@ pub struct Fulgur {
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
     pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
+    pending_remote_open: Arc<parking_lot::Mutex<Option<Result<RemoteFileResult, String>>>>, // Slot for SSH background thread to deliver a loaded remote file
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     local_window_menu_fingerprint: u64, // Cached local menu-state fingerprint published to WindowManager
     #[cfg(target_os = "macos")]
@@ -242,6 +243,7 @@ impl Fulgur {
                 pending_tab_transfer: None,
                 pending_tab_removal: None,
                 pending_transfer_scroll: None,
+                pending_remote_open: Arc::new(parking_lot::Mutex::new(None)),
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 local_window_menu_fingerprint: 0,
                 #[cfg(target_os = "macos")]
@@ -351,6 +353,7 @@ impl Fulgur {
         register_action!(app_content, cx, NewFile => new_tab);
         register_action!(app_content, cx, OpenFile => open_file);
         register_action!(app_content, cx, OpenPath => show_open_from_path_dialog);
+        register_action!(app_content, cx, OpenRemote => show_open_remote_dialog);
         register_action!(app_content, cx, CloseAllFiles => close_all_tabs);
         register_action!(app_content, cx, SaveFile => save_file);
         register_action!(app_content, cx, SaveFileAs => save_file_as);
@@ -483,6 +486,7 @@ impl Render for Fulgur {
         self.process_shared_files_from_sync(window, cx);
         self.process_file_watch_events(window, cx);
         self.process_sse_events(window, cx);
+        self.process_pending_remote_files(window, cx);
         self.process_pending_share_sheet(window, cx);
         if self.tabs.is_empty() {
             self.active_tab_index = None;
@@ -824,6 +828,35 @@ impl Fulgur {
         self.title_bar.update(cx, |this, _cx| {
             this.set_title(title, window_name.as_deref());
         });
+    }
+
+    /// Drain the pending remote file slot and open the loaded content in a new tab.
+    ///
+    /// Called every render pass. When the SSH background thread delivers a result
+    /// (success or error), this method consumes it and either opens a new tab with
+    /// the loaded content or shows an error notification.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn process_pending_remote_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let outcome = self.pending_remote_open.lock().take();
+        let Some(result) = outcome else {
+            return;
+        };
+        match result {
+            Ok(remote_file) => {
+                log::debug!(
+                    "Remote file loaded: {}:{}",
+                    remote_file.spec.host,
+                    remote_file.spec.path
+                );
+                self.do_open_remote_file(window, cx, remote_file.spec);
+            }
+            Err(msg) => {
+                self.pending_notification = Some((NotificationType::Error, msg.into()));
+            }
+        }
     }
 
     /// Render a visual overlay while external files are being dragged over the window.

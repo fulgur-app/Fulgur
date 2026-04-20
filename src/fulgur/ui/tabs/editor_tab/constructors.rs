@@ -3,6 +3,7 @@ use crate::fulgur::languages::supported_languages::{
     language_from_content, language_registry_name,
 };
 use crate::fulgur::settings::EditorSettings;
+use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
 use gpui::{App, AppContext, SharedString, Window};
 use std::time::SystemTime;
@@ -200,6 +201,58 @@ impl EditorTab {
             original_content_len,
             encoding: params.encoding,
             language: params.language,
+            show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
+            show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: None,
+            file_last_modified: None,
+        }
+    }
+
+    /// Create a new tab associated with a remote file.
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the tab
+    /// - `spec`: The parsed remote file specification
+    /// - `window`: The window to create the tab in
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
+    ///
+    /// ### Returns
+    /// - `EditorTab`: The new tab
+    pub fn from_remote(
+        id: usize,
+        spec: RemoteSpec,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) -> Self {
+        let file_name = spec
+            .path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&spec.path)
+            .to_string();
+        let language = language_from_content(&file_name, "");
+        let (original_content_hash, original_content_len) = super::content_fingerprint_from_str("");
+        let content = cx.new(|cx| {
+            super::make_input_state(
+                window,
+                cx,
+                language_registry_name(&language),
+                None,
+                settings,
+            )
+        });
+        Self {
+            id,
+            title: file_name.into(),
+            content,
+            location: TabLocation::Remote(spec),
+            modified: false,
+            original_content_hash,
+            original_content_len,
+            encoding: UTF_8.to_string(),
+            language,
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: None,
