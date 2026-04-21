@@ -75,6 +75,21 @@ pub struct RemoteFileResult {
     pub file_size: usize,
 }
 
+/// A queued remote-open outcome consumed by `Fulgur::process_pending_remote_files`.
+pub struct PendingRemoteOpenOutcome {
+    pub target_tab_id: Option<usize>,
+    pub result: Result<RemoteFileResult, String>,
+}
+
+/// Inputs required to execute a remote open in the SSH worker thread.
+struct RemoteOpenTaskParams {
+    spec: RemoteSpec,
+    password: Zeroizing<String>,
+    credential_key: SshCredKey,
+    ssh_session_cache: Arc<parking_lot::Mutex<ssh::credentials::SshCredentialCache>>,
+    target_tab_id: Option<usize>,
+}
+
 /// Inputs required to execute a remote save in the SSH worker thread.
 struct RemoteSaveTaskParams {
     tab_id: usize,
@@ -343,7 +358,24 @@ impl Fulgur {
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
+        spec: RemoteSpec,
+    ) {
+        self.open_remote_file_with_target(window, cx, spec, None);
+    }
+
+    /// Start loading a remote file and apply the result either to a new tab or an existing tab.
+    ///
+    /// ### Arguments
+    /// - `window`: The target window
+    /// - `cx`: The application context
+    /// - `spec`: The remote specification
+    /// - `target_tab_id`: Existing tab to refresh, or `None` to open in a new tab
+    fn open_remote_file_with_target(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
         mut spec: RemoteSpec,
+        target_tab_id: Option<usize>,
     ) {
         let ssh_session_cache = Arc::clone(&self.shared_state(cx).ssh_session_cache);
 
@@ -361,10 +393,13 @@ impl Fulgur {
                 self.spawn_ssh_open_task(
                     window,
                     cx,
-                    spec,
-                    cached_password,
-                    cache_key,
-                    Arc::clone(&ssh_session_cache),
+                    RemoteOpenTaskParams {
+                        spec,
+                        password: cached_password,
+                        credential_key: cache_key,
+                        ssh_session_cache: Arc::clone(&ssh_session_cache),
+                        target_tab_id,
+                    },
                 );
                 return;
             }
@@ -399,15 +434,35 @@ impl Fulgur {
                         fulgur.spawn_ssh_open_task(
                             window,
                             cx,
-                            spec_with_user,
-                            password,
-                            cache_key,
-                            Arc::clone(&cache_for_callback),
+                            RemoteOpenTaskParams {
+                                spec: spec_with_user,
+                                password,
+                                credential_key: cache_key,
+                                ssh_session_cache: Arc::clone(&cache_for_callback),
+                                target_tab_id,
+                            },
                         );
                     });
                 }
             },
         );
+    }
+
+    /// Lazily reconnect and reload a restored remote tab when the user activates it.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    /// - `tab_id`: Stable tab id to refresh
+    /// - `spec`: Remote location spec for the tab
+    pub fn ensure_remote_tab_loaded(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        tab_id: usize,
+        spec: RemoteSpec,
+    ) {
+        self.open_remote_file_with_target(window, cx, spec, Some(tab_id));
     }
 
     /// Spawn the blocking SSH connect + file-read task plus a GPUI monitoring task.
@@ -423,11 +478,18 @@ impl Fulgur {
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
-        spec: RemoteSpec,
-        password: Zeroizing<String>,
-        credential_key: SshCredKey,
-        ssh_session_cache: Arc<parking_lot::Mutex<ssh::credentials::SshCredentialCache>>,
+        params: RemoteOpenTaskParams,
     ) {
+        let RemoteOpenTaskParams {
+            spec,
+            password,
+            credential_key,
+            ssh_session_cache,
+            target_tab_id,
+        } = params;
+        if let Some(tab_id) = target_tab_id {
+            self.inflight_remote_restore.insert(tab_id);
+        }
         let pending_remote_open = Arc::clone(&self.pending_remote_open);
 
         let pending_host_key: Arc<parking_lot::Mutex<Option<HostKeyRequest>>> =
@@ -489,6 +551,7 @@ impl Fulgur {
             Self::publish_remote_open_outcome(
                 &open_finished_for_thread,
                 &pending_remote_for_thread,
+                target_tab_id,
                 outcome,
             );
         });
@@ -528,6 +591,7 @@ impl Fulgur {
                     Self::publish_remote_open_outcome(
                         &open_finished_for_task,
                         &pending_remote_for_task,
+                        target_tab_id,
                         Err("SSH connection timed out (60 s)".to_string()),
                     );
                     async_cx
@@ -554,11 +618,15 @@ impl Fulgur {
     /// - `false`: Another outcome already won the race and this one was ignored.
     fn publish_remote_open_outcome(
         open_finished: &AtomicBool,
-        pending_remote: &parking_lot::Mutex<Vec<Result<RemoteFileResult, String>>>,
+        pending_remote: &parking_lot::Mutex<Vec<PendingRemoteOpenOutcome>>,
+        target_tab_id: Option<usize>,
         outcome: Result<RemoteFileResult, String>,
     ) -> bool {
         if !open_finished.swap(true, Ordering::AcqRel) {
-            pending_remote.lock().push(outcome);
+            pending_remote.lock().push(PendingRemoteOpenOutcome {
+                target_tab_id,
+                result: outcome,
+            });
             true
         } else {
             false
@@ -924,6 +992,8 @@ impl Fulgur {
                     editor_tab.set_original_content_from_str(saved_content);
                     editor_tab.modified = editor_tab.content_differs_from_original(cx);
                     editor_tab.update_file_tooltip_cache(saved_content.len());
+                    self.pending_remote_restore.remove(&tab_id);
+                    self.inflight_remote_restore.remove(&tab_id);
                     cx.notify();
                 }
             }
@@ -1334,11 +1404,13 @@ mod tests {
         let published_success = Fulgur::publish_remote_open_outcome(
             &open_finished,
             &pending_remote,
+            None,
             Ok(make_remote_result()),
         );
         let published_timeout = Fulgur::publish_remote_open_outcome(
             &open_finished,
             &pending_remote,
+            None,
             Err("SSH connection timed out (60 s)".to_string()),
         );
 
@@ -1347,7 +1419,7 @@ mod tests {
         let queue = pending_remote.lock();
         assert_eq!(queue.len(), 1, "only one outcome must be queued");
         assert!(
-            queue[0].is_ok(),
+            queue[0].result.is_ok(),
             "queued outcome should be the success result"
         );
     }
@@ -1360,11 +1432,13 @@ mod tests {
         let published_timeout = Fulgur::publish_remote_open_outcome(
             &open_finished,
             &pending_remote,
+            None,
             Err("SSH connection timed out (60 s)".to_string()),
         );
         let published_success = Fulgur::publish_remote_open_outcome(
             &open_finished,
             &pending_remote,
+            None,
             Ok(make_remote_result()),
         );
 
@@ -1376,7 +1450,7 @@ mod tests {
         let queue = pending_remote.lock();
         assert_eq!(queue.len(), 1, "only one outcome must be queued");
         assert!(
-            queue[0].is_err(),
+            queue[0].result.is_err(),
             "queued outcome should be the timeout result"
         );
     }

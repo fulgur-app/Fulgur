@@ -5,7 +5,40 @@
 
 use std::path::PathBuf;
 
-use fulgur::fulgur::state_operations::{TabRestoreDecision, determine_tab_restore_strategy};
+use fulgur::fulgur::state_operations::{
+    TabRestoreDecision, determine_tab_restore_strategy as determine_tab_restore_strategy_inner,
+};
+
+/// Compatibility wrapper for restore-strategy tests that do not exercise remote-tab metadata.
+///
+/// ### Arguments
+/// - `saved_path`: Persisted local path, if any.
+/// - `saved_content`: Persisted content snapshot, if any.
+/// - `last_saved`: Persisted local file timestamp, if any.
+/// - `file_exists`: Whether the local file currently exists.
+/// - `file_modified_time`: Current filesystem modified timestamp, if any.
+/// - `can_read_file`: Whether the local file is readable.
+///
+/// ### Returns
+/// - `TabRestoreDecision`: Restoration decision for local/untitled tab scenarios.
+fn determine_tab_restore_strategy(
+    saved_path: Option<PathBuf>,
+    saved_content: Option<String>,
+    last_saved: Option<String>,
+    file_exists: bool,
+    file_modified_time: Option<String>,
+    can_read_file: bool,
+) -> TabRestoreDecision {
+    determine_tab_restore_strategy_inner(
+        saved_path,
+        None,
+        saved_content,
+        last_saved,
+        file_exists,
+        file_modified_time,
+        can_read_file,
+    )
+}
 
 /// Build an OS-agnostic temporary test path.
 ///

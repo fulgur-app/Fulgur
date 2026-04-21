@@ -1,11 +1,11 @@
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
-    files::file_operations::detect_encoding_and_decode,
+    files::file_operations::{RemoteFileResult, detect_encoding_and_decode},
     languages::supported_languages::SupportedLanguage,
     state_persistence::{
-        SerializedWindowBounds, TabState, WindowState, WindowsState, get_file_modified_time,
-        is_file_newer,
+        SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
+        get_file_modified_time, is_file_newer,
     },
     tab::Tab,
     ui::components_utils::{UNTITLED, UTF_8},
@@ -19,6 +19,11 @@ use std::path::PathBuf;
 /// Decision for how to restore a tab from saved state
 #[derive(Debug, PartialEq, Eq)]
 pub enum TabRestoreDecision {
+    /// Restore a remote tab (SSH/SFTP) from serialized metadata.
+    RestoreRemote {
+        remote: SerializedRemoteSpec,
+        content: Option<String>,
+    },
     /// Load content from file on disk
     LoadFromFile { path: PathBuf },
     /// Use saved content with file path
@@ -43,12 +48,20 @@ pub enum TabRestoreDecision {
 /// - `TabRestoreDecision`: The decision for how to restore this tab
 pub fn determine_tab_restore_strategy(
     saved_path: Option<PathBuf>,
+    saved_remote: Option<SerializedRemoteSpec>,
     saved_content: Option<String>,
     last_saved: Option<String>,
     file_exists: bool,
     file_modified_time: Option<String>,
     can_read_file: bool,
 ) -> TabRestoreDecision {
+    if let Some(remote) = saved_remote {
+        return TabRestoreDecision::RestoreRemote {
+            remote,
+            content: saved_content,
+        };
+    }
+
     match (saved_path, saved_content) {
         // Case 1: Has both path and content (modified file)
         (Some(path), Some(content)) => {
@@ -140,6 +153,8 @@ impl Fulgur {
                     window_state.tabs.len()
                 );
                 self.tabs.clear();
+                self.pending_remote_restore.clear();
+                self.inflight_remote_restore.clear();
                 let mut tab_id = 0;
                 for tab_state in &window_state.tabs {
                     let tab = self.restore_tab_from_state(tab_state.clone(), tab_id, window, cx);
@@ -207,7 +222,7 @@ impl Fulgur {
     /// - `Some(EditorTab)`: The restored tab
     /// - `None`: If the tab could not be restored
     fn restore_tab_from_state(
-        &self,
+        &mut self,
         tab_state: TabState,
         tab_id: usize,
         window: &mut Window,
@@ -231,6 +246,7 @@ impl Fulgur {
         let can_read_file = readable_file.is_some();
         let decision = determine_tab_restore_strategy(
             tab_state.file_path.clone(),
+            tab_state.remote.clone(),
             tab_state.content.clone(),
             tab_state.last_saved,
             file_exists,
@@ -238,6 +254,25 @@ impl Fulgur {
             can_read_file,
         );
         let (content, path, encoding, is_modified) = match decision {
+            TabRestoreDecision::RestoreRemote { remote, content } => {
+                let is_modified = content.is_some();
+                let restored_content = content.unwrap_or_default();
+                let mut tab = EditorTab::from_remote_loaded(
+                    tab_id,
+                    RemoteFileResult {
+                        spec: remote.to_remote_spec(),
+                        file_size: restored_content.len(),
+                        content: restored_content,
+                        encoding: UTF_8.to_string(),
+                    },
+                    window,
+                    cx,
+                    &self.settings.editor_settings,
+                );
+                tab.modified = is_modified;
+                self.pending_remote_restore.insert(tab_id);
+                return Some(tab);
+            }
             TabRestoreDecision::LoadFromFile { path } => {
                 let mut bytes = Vec::new();
                 let mut file = readable_file.take()?;
@@ -320,33 +355,53 @@ impl Fulgur {
         let mut tab_states = Vec::new();
         for tab in &self.tabs {
             if let Some(editor_tab) = tab.as_editor() {
-                let tab_state = if let Some(path) = editor_tab.file_path() {
-                    if editor_tab.content_differs_from_original(cx) {
-                        let current_content = editor_tab.content.read(cx).text().to_string();
-                        TabState {
-                            title: editor_tab.title.to_string(),
-                            file_path: Some(path.clone()),
-                            content: Some(current_content),
-                            last_saved: get_file_modified_time(path),
+                let tab_state = match &editor_tab.location {
+                    TabLocation::Local(path) => {
+                        if editor_tab.content_differs_from_original(cx) {
+                            let current_content = editor_tab.content.read(cx).text().to_string();
+                            TabState {
+                                title: editor_tab.title.to_string(),
+                                file_path: Some(path.clone()),
+                                content: Some(current_content),
+                                last_saved: get_file_modified_time(path),
+                                remote: None,
+                            }
+                        } else {
+                            TabState {
+                                title: editor_tab.title.to_string(),
+                                file_path: Some(path.clone()),
+                                content: None,
+                                last_saved: None,
+                                remote: None,
+                            }
                         }
-                    } else {
+                    }
+                    TabLocation::Remote(remote_spec) => {
+                        let content = if editor_tab.content_differs_from_original(cx) {
+                            Some(editor_tab.content.read(cx).text().to_string())
+                        } else {
+                            None
+                        };
                         TabState {
                             title: editor_tab.title.to_string(),
-                            file_path: Some(path.clone()),
-                            content: None,
+                            file_path: None,
+                            content,
                             last_saved: None,
+                            remote: Some(SerializedRemoteSpec::from_remote_spec(remote_spec)),
                         }
                     }
-                } else {
-                    let current_content = editor_tab.content.read(cx).text().to_string();
-                    if current_content.is_empty() {
-                        continue;
-                    }
-                    TabState {
-                        title: editor_tab.title.to_string(),
-                        file_path: None,
-                        content: Some(current_content),
-                        last_saved: None,
+                    TabLocation::Untitled => {
+                        let current_content = editor_tab.content.read(cx).text().to_string();
+                        if current_content.is_empty() {
+                            continue;
+                        }
+                        TabState {
+                            title: editor_tab.title.to_string(),
+                            file_path: None,
+                            content: Some(current_content),
+                            last_saved: None,
+                            remote: None,
+                        }
                     }
                 };
                 tab_states.push(tab_state);
@@ -421,12 +476,14 @@ impl Fulgur {
 #[cfg(test)]
 mod tests {
     use super::{TabRestoreDecision, determine_tab_restore_strategy};
+    use crate::fulgur::state_persistence::SerializedRemoteSpec;
     use std::path::PathBuf;
 
     #[test]
     fn test_determine_tab_restore_strategy_loads_from_file_when_newer_and_readable() {
         let decision = determine_tab_restore_strategy(
             Some(PathBuf::from("/tmp/example.md")),
+            None,
             Some("saved".to_string()),
             Some("2026-04-07T09:00:00Z".to_string()),
             true,
@@ -445,6 +502,7 @@ mod tests {
     fn test_determine_tab_restore_strategy_uses_saved_content_when_newer_but_unreadable() {
         let decision = determine_tab_restore_strategy(
             Some(PathBuf::from("/tmp/example.md")),
+            None,
             Some("saved".to_string()),
             Some("2026-04-07T09:00:00Z".to_string()),
             true,
@@ -466,6 +524,7 @@ mod tests {
             Some(PathBuf::from("/tmp/example.md")),
             None,
             None,
+            None,
             true,
             None,
             false,
@@ -477,6 +536,7 @@ mod tests {
     fn test_determine_tab_restore_strategy_loads_path_only_tab_when_readable() {
         let decision = determine_tab_restore_strategy(
             Some(PathBuf::from("/tmp/example.md")),
+            None,
             None,
             None,
             true,
@@ -495,6 +555,7 @@ mod tests {
     fn test_determine_tab_restore_strategy_uses_saved_content_without_path_when_missing_file() {
         let decision = determine_tab_restore_strategy(
             Some(PathBuf::from("/tmp/example.md")),
+            None,
             Some("saved".to_string()),
             Some("2026-04-07T09:00:00Z".to_string()),
             false,
@@ -505,6 +566,34 @@ mod tests {
             decision,
             TabRestoreDecision::UseSavedContentNoPath {
                 content: "saved".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_determine_tab_restore_strategy_restores_remote_tabs() {
+        let remote = SerializedRemoteSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: "alice".to_string(),
+            path: "/tmp/test.txt".to_string(),
+        };
+
+        let decision = determine_tab_restore_strategy(
+            None,
+            Some(remote.clone()),
+            Some("cached".to_string()),
+            None,
+            false,
+            None,
+            false,
+        );
+
+        assert_eq!(
+            decision,
+            TabRestoreDecision::RestoreRemote {
+                remote,
+                content: Some("cached".to_string()),
             }
         );
     }

@@ -4,7 +4,7 @@ use crate::fulgur::{
     ui::{
         components_utils::UNTITLED,
         tabs::{
-            editor_tab::{EditorTab, FromDuplicateParams},
+            editor_tab::{EditorTab, FromDuplicateParams, TabLocation},
             settings_tab::SettingsTab,
         },
     },
@@ -195,6 +195,24 @@ impl Fulgur {
             if let Some(path) = pending_path {
                 self.file_watch_state.pending_conflicts.remove(&path);
                 self.show_file_conflict_dialog(path, index, window, cx);
+            }
+            let pending_remote_reload = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index)
+            {
+                match &editor_tab.location {
+                    TabLocation::Remote(spec)
+                        if self.pending_remote_restore.contains(&editor_tab.id)
+                            && !self.inflight_remote_restore.contains(&editor_tab.id)
+                            && !editor_tab.modified =>
+                    {
+                        Some((editor_tab.id, spec.clone()))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if let Some((tab_id, spec)) = pending_remote_reload {
+                self.ensure_remote_tab_loaded(window, cx, tab_id, spec);
             }
             self.focus_active_tab(window, cx);
             if self.search_state.show_search {
@@ -568,6 +586,8 @@ impl Fulgur {
             };
             self.tabs.remove(pos);
             self.close_tab_manage_focus(window, cx, pos);
+            self.pending_remote_restore.remove(&tab_id);
+            self.inflight_remote_restore.remove(&tab_id);
             if let Some(path) = path_to_unwatch {
                 self.unwatch_file(&path);
             }
