@@ -1,5 +1,6 @@
 use super::error::SshError;
 use super::session::SshSession;
+use ssh2::{OpenFlags, OpenType, RenameFlags};
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -73,18 +74,89 @@ pub fn write_remote_file(
         return write_result;
     }
 
-    let rename_result = session
-        .sftp
-        .rename(
-            tmp_path,
-            dest_path,
-            Some(ssh2::RenameFlags::OVERWRITE | ssh2::RenameFlags::ATOMIC),
-        )
+    let rename_result = rename_with_fallback(session, tmp_path, dest_path, remote_path, data)
         .map_err(|e| SshError::SftpError(format!("Rename failed for {remote_path}: {e}")));
 
-    if rename_result.is_err() {
-        let _ = session.sftp.unlink(tmp_path);
-    }
+    let _ = session.sftp.unlink(tmp_path);
 
     rename_result
+}
+
+/// Try to rename a temporary file over the destination with progressively more compatible modes.
+///
+/// ### Arguments
+/// - `session`: Established SSH session with SFTP subsystem.
+/// - `tmp_path`: Temporary file path containing fully written bytes.
+/// - `dest_path`: Final destination path.
+/// - `remote_path`: Destination path string for logging and error messages.
+/// - `data`: File contents used by the direct-write fallback.
+///
+/// ### Returns
+/// - `Ok(())`: Rename succeeded, or compatibility fallback direct-write succeeded.
+/// - `Err(String)`: All rename attempts and fallback write failed.
+fn rename_with_fallback(
+    session: &SshSession,
+    tmp_path: &Path,
+    dest_path: &Path,
+    remote_path: &str,
+    data: &[u8],
+) -> Result<(), String> {
+    let attempts = [
+        (
+            "overwrite+atomic",
+            Some(RenameFlags::OVERWRITE | RenameFlags::ATOMIC),
+        ),
+        ("overwrite", Some(RenameFlags::OVERWRITE)),
+        ("default", None),
+    ];
+
+    let mut last_err = String::new();
+    for (label, flags) in attempts {
+        match session.sftp.rename(tmp_path, dest_path, flags) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = format!("{label}: {e}");
+                log::warn!("SFTP rename mode '{label}' failed for {remote_path}: {e}");
+            }
+        }
+    }
+
+    log::warn!(
+        "All SFTP rename modes failed for {remote_path}; trying direct write fallback (non-atomic)"
+    );
+    direct_write_fallback(session, dest_path, remote_path, data)
+        .map_err(|fallback_err| format!("{last_err}; fallback direct write failed: {fallback_err}"))
+}
+
+/// Write file contents directly to the destination path when server-side rename is unsupported.
+///
+/// ### Description
+/// This compatibility fallback is non-atomic and is only used when all rename modes fail.
+///
+/// ### Arguments
+/// - `session`: Established SSH session with SFTP subsystem.
+/// - `dest_path`: Final destination path.
+/// - `remote_path`: Destination path string for error messages.
+/// - `data`: File contents to write.
+///
+/// ### Returns
+/// - `Ok(())`: Direct write succeeded.
+/// - `Err(String)`: Destination open or write failed.
+fn direct_write_fallback(
+    session: &SshSession,
+    dest_path: &Path,
+    remote_path: &str,
+    data: &[u8],
+) -> Result<(), String> {
+    let mut dest = session
+        .sftp
+        .open_mode(
+            dest_path,
+            OpenFlags::WRITE | OpenFlags::TRUNCATE | OpenFlags::CREATE,
+            0o644,
+            OpenType::File,
+        )
+        .map_err(|e| format!("cannot open destination for direct write: {e}"))?;
+    dest.write_all(data)
+        .map_err(|e| format!("write error during fallback for {remote_path}: {e}"))
 }

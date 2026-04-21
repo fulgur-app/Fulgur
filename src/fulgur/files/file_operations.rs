@@ -75,6 +75,16 @@ pub struct RemoteFileResult {
     pub file_size: usize,
 }
 
+/// Inputs required to execute a remote save in the SSH worker thread.
+struct RemoteSaveTaskParams {
+    tab_id: usize,
+    spec: RemoteSpec,
+    saved_content: Arc<String>,
+    password: Zeroizing<String>,
+    credential_key: SshCredKey,
+    ssh_session_cache: Arc<parking_lot::Mutex<ssh::credentials::SshCredentialCache>>,
+}
+
 impl Fulgur {
     /// Find the index of a tab with the given file path
     ///
@@ -639,6 +649,294 @@ impl Fulgur {
         }
     }
 
+    /// Save a remote tab by resolving credentials then spawning an SSH/SFTP worker.
+    ///
+    /// ### Arguments
+    /// - `window`: The window used to spawn dialog and monitoring tasks
+    /// - `cx`: The application context
+    /// - `tab_id`: Stable editor-tab id used to apply completion updates
+    /// - `spec`: Remote file specification for the tab
+    /// - `contents`: Snapshot of editor contents to persist remotely
+    fn save_remote_file(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        tab_id: usize,
+        mut spec: RemoteSpec,
+        contents: String,
+    ) {
+        let ssh_session_cache = Arc::clone(&self.shared_state(cx).ssh_session_cache);
+        if let (Some(user), Some(password)) = (spec.user.clone(), spec.password_in_url.take()) {
+            let key = SshCredKey::new(spec.host.clone(), spec.port, user);
+            ssh_session_cache.lock().insert(key, password);
+        }
+
+        let saved_content = Arc::new(contents);
+        if let Some(user) = spec.user.clone() {
+            let cache_key = SshCredKey::new(spec.host.clone(), spec.port, user.clone());
+            if let Some(cached_password) = ssh_session_cache.lock().get(&cache_key).cloned() {
+                spec.password_in_url = None;
+                self.spawn_ssh_save_task(
+                    window,
+                    cx,
+                    RemoteSaveTaskParams {
+                        tab_id,
+                        spec,
+                        saved_content: Arc::clone(&saved_content),
+                        password: cached_password,
+                        credential_key: cache_key,
+                        ssh_session_cache: Arc::clone(&ssh_session_cache),
+                    },
+                );
+                return;
+            }
+        }
+
+        let host = spec.host.clone();
+        let port = spec.port;
+        let user = spec.user.clone();
+        let entity = cx.entity().downgrade();
+        let cache_for_callback = Arc::clone(&ssh_session_cache);
+
+        self.show_ssh_password_dialog(
+            window,
+            cx,
+            host,
+            port,
+            user,
+            move |resolved_user, password, window, cx| {
+                let mut spec_with_user = spec.clone();
+                spec_with_user.user = Some(resolved_user.clone());
+                spec_with_user.password_in_url = None;
+                let cache_key = SshCredKey::new(
+                    spec_with_user.host.clone(),
+                    spec_with_user.port,
+                    resolved_user.clone(),
+                );
+                if let Some(entity) = entity.upgrade() {
+                    entity.update(cx, |fulgur, cx| {
+                        cache_for_callback
+                            .lock()
+                            .insert(cache_key.clone(), password.clone());
+                        if let Some(Tab::Editor(editor_tab)) =
+                            fulgur.tabs.iter_mut().find(|tab| tab.id() == tab_id)
+                            && let TabLocation::Remote(remote_spec) = &mut editor_tab.location
+                        {
+                            remote_spec.user = Some(resolved_user.clone());
+                        }
+                        fulgur.spawn_ssh_save_task(
+                            window,
+                            cx,
+                            RemoteSaveTaskParams {
+                                tab_id,
+                                spec: spec_with_user,
+                                saved_content: Arc::clone(&saved_content),
+                                password,
+                                credential_key: cache_key,
+                                ssh_session_cache: Arc::clone(&cache_for_callback),
+                            },
+                        );
+                    });
+                }
+            },
+        );
+    }
+
+    /// Spawn a blocking SSH/SFTP save worker with host-key UI monitoring.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context used to spawn the async monitor task
+    /// - `cx`: The application context
+    /// - `params`: All data required to run the remote save operation
+    fn spawn_ssh_save_task(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        params: RemoteSaveTaskParams,
+    ) {
+        let RemoteSaveTaskParams {
+            tab_id,
+            spec,
+            saved_content,
+            password,
+            credential_key,
+            ssh_session_cache,
+        } = params;
+        let pending_host_key: Arc<parking_lot::Mutex<Option<HostKeyRequest>>> =
+            Arc::new(parking_lot::Mutex::new(None));
+        let pending_host_key_for_thread = Arc::clone(&pending_host_key);
+        let pending_host_key_for_task = Arc::clone(&pending_host_key);
+
+        let pending_save_result: Arc<parking_lot::Mutex<Option<Result<(), String>>>> =
+            Arc::new(parking_lot::Mutex::new(None));
+        let pending_save_for_thread = Arc::clone(&pending_save_result);
+        let pending_save_for_task = Arc::clone(&pending_save_result);
+
+        let save_finished = Arc::new(AtomicBool::new(false));
+        let save_finished_for_thread = Arc::clone(&save_finished);
+        let save_finished_for_task = Arc::clone(&save_finished);
+
+        let spec_for_thread = spec.clone();
+        let user = spec.user.clone().unwrap_or_default();
+        let cache_for_thread = Arc::clone(&ssh_session_cache);
+        let credential_key_for_thread = credential_key.clone();
+        let content_for_thread = Arc::clone(&saved_content);
+
+        std::thread::spawn(move || {
+            let slot = pending_host_key_for_thread;
+            let session_result = self::ssh::session::connect(
+                &spec_for_thread,
+                &user,
+                &password,
+                move |fingerprint, host, port| {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    *slot.lock() = Some(HostKeyRequest {
+                        fingerprint: fingerprint.to_string(),
+                        host: host.to_string(),
+                        port,
+                        decision_tx: tx,
+                    });
+                    match rx.recv() {
+                        Ok(decision) => decision,
+                        Err(_) => HostKeyDecision::Reject,
+                    }
+                },
+            );
+            if let Err(self::ssh::error::SshError::AuthFailed) = &session_result {
+                cache_for_thread.lock().remove(&credential_key_for_thread);
+            }
+            let outcome = session_result
+                .and_then(|session| {
+                    self::ssh::sftp::write_remote_file(
+                        &session,
+                        &spec_for_thread.path,
+                        content_for_thread.as_bytes(),
+                    )
+                })
+                .map_err(|e| e.user_message());
+            Self::publish_remote_save_outcome(
+                &save_finished_for_thread,
+                &pending_save_for_thread,
+                outcome,
+            );
+        });
+
+        cx.spawn_in(window, async move |view, async_cx| {
+            let deadline = std::time::Instant::now() + Duration::from_secs(60);
+            loop {
+                async_cx
+                    .background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+
+                let hk_req = pending_host_key_for_task.lock().take();
+                if let Some(req) = hk_req {
+                    async_cx
+                        .update(|window, cx| {
+                            _ = view.update(cx, |fulgur, cx| {
+                                fulgur.show_ssh_host_fingerprint_dialog(window, cx, req);
+                            });
+                        })
+                        .ok();
+                }
+
+                let save_result = pending_save_for_task.lock().take();
+                if let Some(result) = save_result {
+                    let saved_content = Arc::clone(&saved_content);
+                    async_cx
+                        .update(|_, cx| {
+                            _ = view.update(cx, |fulgur, cx| {
+                                fulgur.handle_remote_save_result(
+                                    tab_id,
+                                    saved_content.as_str(),
+                                    result,
+                                    cx,
+                                );
+                            });
+                        })
+                        .ok();
+                    break;
+                }
+
+                if std::time::Instant::now() > deadline {
+                    if let Some(request) = pending_host_key_for_task.lock().take() {
+                        let _ = request.decision_tx.send(HostKeyDecision::Reject);
+                    }
+                    Self::publish_remote_save_outcome(
+                        &save_finished_for_task,
+                        &pending_save_for_task,
+                        Err("SSH save timed out (60 s)".to_string()),
+                    );
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Publish a remote-save outcome exactly once for a single save operation.
+    ///
+    /// ### Arguments
+    /// - `save_finished`: Per-operation completion flag shared by worker and monitor
+    /// - `pending_save`: Shared slot consumed by the monitor task
+    /// - `outcome`: Save result to publish
+    ///
+    /// ### Returns
+    /// - `true`: The outcome was accepted and stored
+    /// - `false`: Another outcome already won the race and this one was ignored
+    fn publish_remote_save_outcome(
+        save_finished: &AtomicBool,
+        pending_save: &parking_lot::Mutex<Option<Result<(), String>>>,
+        outcome: Result<(), String>,
+    ) -> bool {
+        if !save_finished.swap(true, Ordering::AcqRel) {
+            *pending_save.lock() = Some(outcome);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Apply a completed remote-save result on the UI thread.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: Stable editor-tab id associated with the save request
+    /// - `saved_content`: Snapshot that was successfully sent to the remote host
+    /// - `result`: Save outcome from the worker task
+    /// - `cx`: The application context
+    fn handle_remote_save_result(
+        &mut self,
+        tab_id: usize,
+        saved_content: &str,
+        result: Result<(), String>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(()) => {
+                if let Some(editor_tab) = self.tabs.iter_mut().find_map(|tab| {
+                    if let Tab::Editor(editor_tab) = tab {
+                        (editor_tab.id == tab_id).then_some(editor_tab)
+                    } else {
+                        None
+                    }
+                }) {
+                    // Keep async save semantics correct: if content changed after dispatch,
+                    // this remains dirty because baseline is set to the persisted snapshot.
+                    editor_tab.set_original_content_from_str(saved_content);
+                    editor_tab.modified = editor_tab.content_differs_from_original(cx);
+                    editor_tab.update_file_tooltip_cache(saved_content.len());
+                    cx.notify();
+                }
+            }
+            Err(msg) => {
+                self.pending_notification = Some((
+                    NotificationType::Error,
+                    format!("Failed to save: {msg}").into(),
+                ));
+                cx.notify();
+            }
+        }
+    }
+
     /// Save a file
     ///
     /// ### Arguments
@@ -652,39 +950,49 @@ impl Fulgur {
             return;
         };
         let active_tab = &self.tabs[active_tab_index];
-        let (path, content_entity) = match active_tab {
-            Tab::Editor(editor_tab) => {
-                let Some(file_path) = editor_tab.file_path().cloned() else {
-                    self.save_file_as(window, cx);
-                    return;
-                };
-                (file_path, editor_tab.content.clone())
-            }
+        let (tab_id, location, content_entity) = match active_tab {
+            Tab::Editor(editor_tab) => (
+                editor_tab.id,
+                editor_tab.location.clone(),
+                editor_tab.content.clone(),
+            ),
             Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
         };
-        let contents = content_entity.read(cx).text().to_string();
-        log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
-        if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
-            log::error!("Failed to save file {:?}: {}", path, e);
-            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-            window.push_notification(
-                (
-                    NotificationType::Error,
-                    SharedString::from(format!("Failed to save '{}': {}", file_name, e)),
-                ),
-                cx,
-            );
+        if matches!(location, TabLocation::Untitled) {
+            self.save_file_as(window, cx);
             return;
         }
-        log::debug!("File saved successfully: {:?}", path);
-        self.file_watch_state
-            .last_file_saves
-            .insert(path.clone(), std::time::Instant::now());
-        if let Tab::Editor(editor_tab) = &mut self.tabs[active_tab_index] {
-            editor_tab.mark_as_saved(cx);
-            editor_tab.update_file_tooltip_cache(contents.len());
+        let contents = content_entity.read(cx).text().to_string();
+        match location {
+            TabLocation::Local(path) => {
+                log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
+                if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
+                    log::error!("Failed to save file {:?}: {}", path, e);
+                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+                    window.push_notification(
+                        (
+                            NotificationType::Error,
+                            SharedString::from(format!("Failed to save '{}': {}", file_name, e)),
+                        ),
+                        cx,
+                    );
+                    return;
+                }
+                log::debug!("File saved successfully: {:?}", path);
+                self.file_watch_state
+                    .last_file_saves
+                    .insert(path.clone(), std::time::Instant::now());
+                if let Tab::Editor(editor_tab) = &mut self.tabs[active_tab_index] {
+                    editor_tab.mark_as_saved(cx);
+                    editor_tab.update_file_tooltip_cache(contents.len());
+                }
+                cx.notify();
+            }
+            TabLocation::Remote(spec) => {
+                self.save_remote_file(window, cx, tab_id, spec, contents);
+            }
+            TabLocation::Untitled => {}
         }
-        cx.notify();
     }
 
     /// Save a file as
@@ -1071,6 +1379,49 @@ mod tests {
             queue[0].is_err(),
             "queued outcome should be the timeout result"
         );
+    }
+
+    #[test]
+    fn test_publish_remote_save_outcome_ignores_timeout_after_success() {
+        let save_finished = AtomicBool::new(false);
+        let pending_save = parking_lot::Mutex::new(None);
+
+        let published_success =
+            Fulgur::publish_remote_save_outcome(&save_finished, &pending_save, Ok(()));
+        let published_timeout = Fulgur::publish_remote_save_outcome(
+            &save_finished,
+            &pending_save,
+            Err("SSH save timed out (60 s)".to_string()),
+        );
+
+        assert!(published_success, "first save outcome should win");
+        assert!(!published_timeout, "timeout must be ignored after success");
+        let result = pending_save.lock();
+        assert!(result.is_some(), "one save outcome should be queued");
+        assert!(result.as_ref().is_some_and(Result::is_ok));
+    }
+
+    #[test]
+    fn test_publish_remote_save_outcome_ignores_success_after_timeout() {
+        let save_finished = AtomicBool::new(false);
+        let pending_save = parking_lot::Mutex::new(None);
+
+        let published_timeout = Fulgur::publish_remote_save_outcome(
+            &save_finished,
+            &pending_save,
+            Err("SSH save timed out (60 s)".to_string()),
+        );
+        let published_success =
+            Fulgur::publish_remote_save_outcome(&save_finished, &pending_save, Ok(()));
+
+        assert!(published_timeout, "first save outcome should win");
+        assert!(
+            !published_success,
+            "late success must be ignored after timeout"
+        );
+        let result = pending_save.lock();
+        assert!(result.is_some(), "one save outcome should be queued");
+        assert!(result.as_ref().is_some_and(Result::is_err));
     }
 
     // ========== GPUI-backed tests ==========
