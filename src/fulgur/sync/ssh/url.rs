@@ -15,6 +15,28 @@ pub struct RemoteSpec {
     pub password_in_url: Option<Zeroizing<String>>,
 }
 
+/// Build a stable `ssh://` URL from a `RemoteSpec` for persistence and recents.
+///
+/// ### Description
+/// The generated URL never includes a password. Home-relative paths (`~/...`)
+/// are encoded as `/~/...` so they can be round-tripped back to `~/...` by
+/// `parse_remote_url`.
+///
+/// ### Arguments
+/// - `spec`: Remote file metadata to encode.
+///
+/// ### Returns
+/// - `String`: Canonical URL that can be fed back into `parse_remote_url`.
+pub fn format_remote_url(spec: &RemoteSpec) -> String {
+    let host = format_host_for_url(&spec.host);
+    let authority = match spec.user.as_deref() {
+        Some(user) if !user.is_empty() => format!("{user}@{host}:{}", spec.port),
+        _ => format!("{host}:{}", spec.port),
+    };
+    let path = format_path_for_url(&spec.path);
+    format!("ssh://{authority}{path}")
+}
+
 /// Parse a user-supplied string into a `RemoteSpec`.
 ///
 /// ### Description
@@ -62,7 +84,7 @@ fn parse_url_style(rest: &str) -> Result<RemoteSpec, SshError> {
     })?;
 
     let authority = &rest[..slash_idx];
-    let path = rest[slash_idx..].to_string();
+    let path = normalize_url_style_path(&rest[slash_idx..]);
 
     if path == "/" {
         return Err(SshError::ParseError(
@@ -96,6 +118,57 @@ fn parse_url_style(rest: &str) -> Result<RemoteSpec, SshError> {
         path,
         password_in_url,
     })
+}
+
+/// Convert a runtime path into a URL path segment.
+///
+/// ### Arguments
+/// - `path`: Runtime remote path.
+///
+/// ### Returns
+/// - `String`: URL-ready absolute path.
+fn format_path_for_url(path: &str) -> String {
+    if let Some(relative) = path.strip_prefix("~/") {
+        format!("/~/{relative}")
+    } else if path == "~" {
+        "/~".to_string()
+    } else if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    }
+}
+
+/// Normalize URL-style path tokens back to runtime representation.
+///
+/// ### Arguments
+/// - `path`: URL-style absolute path as parsed from an `ssh://` URL.
+///
+/// ### Returns
+/// - `String`: Runtime path where `/~/...` is mapped back to `~/...`.
+fn normalize_url_style_path(path: &str) -> String {
+    if path == "/~" {
+        "~".to_string()
+    } else if let Some(relative) = path.strip_prefix("/~/") {
+        format!("~/{relative}")
+    } else {
+        path.to_string()
+    }
+}
+
+/// Format hosts in URL authority form (wrap IPv6 literals with brackets).
+///
+/// ### Arguments
+/// - `host`: Raw host or address.
+///
+/// ### Returns
+/// - `String`: URL authority-safe host string.
+fn format_host_for_url(host: &str) -> String {
+    if host.contains(':') && !host.starts_with('[') && !host.ends_with(']') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    }
 }
 
 /// Parse a `[user@]host:path` scp-style string into a `RemoteSpec`.
@@ -296,5 +369,43 @@ mod tests {
     fn whitespace_trimmed() {
         let spec = parse_remote_url("  ssh://user@host/path  ").unwrap();
         assert_eq!(spec.host, "host");
+    }
+
+    #[test]
+    fn format_remote_url_roundtrips_absolute_path() {
+        let original = RemoteSpec {
+            host: "example.com".to_string(),
+            port: 2222,
+            user: Some("alice".to_string()),
+            path: "/var/log/syslog".to_string(),
+            password_in_url: None,
+        };
+        let formatted = format_remote_url(&original);
+        let parsed = parse_remote_url(&formatted).unwrap();
+
+        assert_eq!(parsed.host, original.host);
+        assert_eq!(parsed.port, original.port);
+        assert_eq!(parsed.user, original.user);
+        assert_eq!(parsed.path, original.path);
+        assert!(parsed.password_in_url.is_none());
+    }
+
+    #[test]
+    fn format_remote_url_roundtrips_home_relative_path() {
+        let original = RemoteSpec {
+            host: "::1".to_string(),
+            port: 22,
+            user: Some("bob".to_string()),
+            path: "~/projects/fulgur/notes.md".to_string(),
+            password_in_url: None,
+        };
+        let formatted = format_remote_url(&original);
+        let parsed = parse_remote_url(&formatted).unwrap();
+
+        assert_eq!(parsed.host, original.host);
+        assert_eq!(parsed.port, original.port);
+        assert_eq!(parsed.user, original.user);
+        assert_eq!(parsed.path, original.path);
+        assert!(parsed.password_in_url.is_none());
     }
 }

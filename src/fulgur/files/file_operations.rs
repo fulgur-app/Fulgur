@@ -1,7 +1,7 @@
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
-    sync::ssh::url::RemoteSpec,
+    sync::ssh::url::{RemoteSpec, parse_remote_url},
     sync::ssh::{
         self,
         credentials::SshCredKey,
@@ -346,6 +346,39 @@ impl Fulgur {
             Self::open_file_from_path(view, window, path).await
         })
         .detach();
+    }
+
+    /// Open a recent entry, dispatching to local or remote open logic.
+    ///
+    /// ### Arguments
+    /// - `window`: The target window
+    /// - `cx`: The application context
+    /// - `path`: The recent entry payload
+    pub fn do_open_recent_file(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        path: PathBuf,
+    ) {
+        let recent_value = path.to_string_lossy();
+        if recent_value.starts_with("ssh://") || recent_value.starts_with("sftp://") {
+            match parse_remote_url(recent_value.as_ref()) {
+                Ok(spec) => self.do_open_remote_file(window, cx, spec),
+                Err(error) => {
+                    self.pending_notification = Some((
+                        NotificationType::Error,
+                        format!(
+                            "Failed to open remote recent file: {}",
+                            error.user_message()
+                        )
+                        .into(),
+                    ));
+                    cx.notify();
+                }
+            }
+            return;
+        }
+        self.do_open_file(window, cx, path);
     }
 
     /// Open a remote file from a parsed `RemoteSpec`.
