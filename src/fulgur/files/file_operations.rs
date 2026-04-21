@@ -21,7 +21,15 @@ use gpui::{
     WeakEntity, Window,
 };
 use gpui_component::{WindowExt, notification::NotificationType};
-use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 use zeroize::Zeroizing;
 
 /// Detect encoding from file bytes
@@ -419,6 +427,9 @@ impl Fulgur {
 
         let pending_remote_for_thread = Arc::clone(&pending_remote_open);
         let pending_remote_for_task = Arc::clone(&pending_remote_open);
+        let open_finished = Arc::new(AtomicBool::new(false));
+        let open_finished_for_thread = Arc::clone(&open_finished);
+        let open_finished_for_task = Arc::clone(&open_finished);
 
         let spec_for_thread = spec.clone();
         let user = spec.user.clone().unwrap_or_default();
@@ -465,7 +476,11 @@ impl Fulgur {
                 })
                 .map_err(|e| e.user_message());
 
-            *pending_remote_for_thread.lock() = Some(outcome);
+            Self::publish_remote_open_outcome(
+                &open_finished_for_thread,
+                &pending_remote_for_thread,
+                outcome,
+            );
         });
 
         cx.spawn_in(window, async move |view, async_cx| {
@@ -476,9 +491,7 @@ impl Fulgur {
                     .timer(Duration::from_millis(100))
                     .await;
 
-                if std::time::Instant::now() > deadline {
-                    *pending_remote_for_task.lock() =
-                        Some(Err("SSH connection timed out (60 s)".to_string()));
+                if open_finished_for_task.load(Ordering::Acquire) {
                     async_cx
                         .update(|_, cx| {
                             _ = view.update(cx, |_, cx| cx.notify());
@@ -498,7 +511,15 @@ impl Fulgur {
                         .ok();
                 }
 
-                if pending_remote_for_task.lock().is_some() {
+                if std::time::Instant::now() > deadline {
+                    if let Some(request) = pending_host_key_for_task.lock().take() {
+                        let _ = request.decision_tx.send(HostKeyDecision::Reject);
+                    }
+                    Self::publish_remote_open_outcome(
+                        &open_finished_for_task,
+                        &pending_remote_for_task,
+                        Err("SSH connection timed out (60 s)".to_string()),
+                    );
                     async_cx
                         .update(|_, cx| {
                             _ = view.update(cx, |_, cx| cx.notify());
@@ -509,6 +530,29 @@ impl Fulgur {
             }
         })
         .detach();
+    }
+
+    /// Publish a remote-open outcome exactly once for a single open operation.
+    ///
+    /// ### Arguments
+    /// - `open_finished`: Per-operation completion flag shared by the worker and monitor task.
+    /// - `pending_remote`: Queue of remote-open outcomes drained by the render loop.
+    /// - `outcome`: Success or failure result to enqueue.
+    ///
+    /// ### Returns
+    /// - `true`: The outcome was accepted and enqueued.
+    /// - `false`: Another outcome already won the race and this one was ignored.
+    fn publish_remote_open_outcome(
+        open_finished: &AtomicBool,
+        pending_remote: &parking_lot::Mutex<Vec<Result<RemoteFileResult, String>>>,
+        outcome: Result<RemoteFileResult, String>,
+    ) -> bool {
+        if !open_finished.swap(true, Ordering::AcqRel) {
+            pending_remote.lock().push(outcome);
+            true
+        } else {
+            false
+        }
     }
 
     /// Handle opening a file from the command line (double-click or "Open with")
@@ -929,6 +973,8 @@ impl Fulgur {
 mod tests {
     use super::detect_encoding_and_decode;
     use crate::fulgur::ui::components_utils::UTF_8;
+    use crate::fulgur::{Fulgur, sync::ssh::url::RemoteSpec};
+    use std::sync::atomic::AtomicBool;
 
     // ========== detect_encoding_and_decode tests ==========
 
@@ -957,12 +1003,82 @@ mod tests {
         assert!(!decoded.is_empty());
     }
 
+    fn make_remote_result() -> super::RemoteFileResult {
+        super::RemoteFileResult {
+            spec: RemoteSpec {
+                host: "example.com".to_string(),
+                port: 22,
+                user: Some("alice".to_string()),
+                path: "/tmp/test.txt".to_string(),
+                password_in_url: None,
+            },
+            content: "ok".to_string(),
+            encoding: UTF_8.to_string(),
+            file_size: 2,
+        }
+    }
+
+    #[test]
+    fn test_publish_remote_open_outcome_ignores_timeout_after_success() {
+        let open_finished = AtomicBool::new(false);
+        let pending_remote = parking_lot::Mutex::new(Vec::new());
+
+        let published_success = Fulgur::publish_remote_open_outcome(
+            &open_finished,
+            &pending_remote,
+            Ok(make_remote_result()),
+        );
+        let published_timeout = Fulgur::publish_remote_open_outcome(
+            &open_finished,
+            &pending_remote,
+            Err("SSH connection timed out (60 s)".to_string()),
+        );
+
+        assert!(published_success, "first outcome should win");
+        assert!(!published_timeout, "timeout must be ignored after success");
+        let queue = pending_remote.lock();
+        assert_eq!(queue.len(), 1, "only one outcome must be queued");
+        assert!(
+            queue[0].is_ok(),
+            "queued outcome should be the success result"
+        );
+    }
+
+    #[test]
+    fn test_publish_remote_open_outcome_ignores_success_after_timeout() {
+        let open_finished = AtomicBool::new(false);
+        let pending_remote = parking_lot::Mutex::new(Vec::new());
+
+        let published_timeout = Fulgur::publish_remote_open_outcome(
+            &open_finished,
+            &pending_remote,
+            Err("SSH connection timed out (60 s)".to_string()),
+        );
+        let published_success = Fulgur::publish_remote_open_outcome(
+            &open_finished,
+            &pending_remote,
+            Ok(make_remote_result()),
+        );
+
+        assert!(published_timeout, "first outcome should win");
+        assert!(
+            !published_success,
+            "late success must be ignored after timeout"
+        );
+        let queue = pending_remote.lock();
+        assert_eq!(queue.len(), 1, "only one outcome must be queued");
+        assert!(
+            queue[0].is_err(),
+            "queued outcome should be the timeout result"
+        );
+    }
+
     // ========== GPUI-backed tests ==========
 
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::{
-        Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
-        tab::Tab, window_manager::WindowManager,
+        editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState, tab::Tab,
+        window_manager::WindowManager,
     };
     #[cfg(feature = "gpui-test-support")]
     use gpui::{

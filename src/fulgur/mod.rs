@@ -132,7 +132,7 @@ pub struct Fulgur {
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
     pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
-    pending_remote_open: Arc<parking_lot::Mutex<Option<Result<RemoteFileResult, String>>>>, // Slot for SSH background thread to deliver a loaded remote file
+    pending_remote_open: Arc<parking_lot::Mutex<Vec<Result<RemoteFileResult, String>>>>, // Queue for SSH background threads to deliver loaded remote files
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     local_window_menu_fingerprint: u64, // Cached local menu-state fingerprint published to WindowManager
     #[cfg(target_os = "macos")]
@@ -243,7 +243,7 @@ impl Fulgur {
                 pending_tab_transfer: None,
                 pending_tab_removal: None,
                 pending_transfer_scroll: None,
-                pending_remote_open: Arc::new(parking_lot::Mutex::new(None)),
+                pending_remote_open: Arc::new(parking_lot::Mutex::new(Vec::new())),
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 local_window_menu_fingerprint: 0,
                 #[cfg(target_os = "macos")]
@@ -830,44 +830,46 @@ impl Fulgur {
         });
     }
 
-    /// Drain the pending remote file slot and open the loaded content in a new tab.
+    /// Drain pending remote file results and open loaded content in new tabs.
     ///
-    /// Called every render pass. When the SSH background thread delivers a result
-    /// (success or error), this method consumes it and either opens a new tab with
-    /// the loaded content or shows an error notification.
+    /// Called every render pass. When SSH background threads deliver results
+    /// (success or error), this method consumes them and either opens new tabs with
+    /// loaded content or shows error notifications.
     ///
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
     fn process_pending_remote_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let outcome = self.pending_remote_open.lock().take();
-        let Some(result) = outcome else {
+        let outcomes = std::mem::take(&mut *self.pending_remote_open.lock());
+        if outcomes.is_empty() {
             return;
-        };
-        match result {
-            Ok(remote_file) => {
-                log::debug!(
-                    "Remote file loaded: {}:{}",
-                    remote_file.spec.host,
-                    remote_file.spec.path
-                );
-                let editor_tab = EditorTab::from_remote_loaded(
-                    self.next_tab_id,
-                    remote_file,
-                    window,
-                    cx,
-                    &self.settings.editor_settings,
-                );
-                let idx = self.tabs.len();
-                self.tabs.push(Tab::Editor(editor_tab));
-                self.active_tab_index = Some(idx);
-                self.pending_tab_scroll = Some(idx);
-                self.next_tab_id += 1;
-                self.focus_active_tab(window, cx);
-                cx.notify();
-            }
-            Err(msg) => {
-                self.pending_notification = Some((NotificationType::Error, msg.into()));
+        }
+        for result in outcomes {
+            match result {
+                Ok(remote_file) => {
+                    log::debug!(
+                        "Remote file loaded: {}:{}",
+                        remote_file.spec.host,
+                        remote_file.spec.path
+                    );
+                    let editor_tab = EditorTab::from_remote_loaded(
+                        self.next_tab_id,
+                        remote_file,
+                        window,
+                        cx,
+                        &self.settings.editor_settings,
+                    );
+                    let idx = self.tabs.len();
+                    self.tabs.push(Tab::Editor(editor_tab));
+                    self.active_tab_index = Some(idx);
+                    self.pending_tab_scroll = Some(idx);
+                    self.next_tab_id += 1;
+                    self.focus_active_tab(window, cx);
+                    cx.notify();
+                }
+                Err(msg) => {
+                    self.pending_notification = Some((NotificationType::Error, msg.into()));
+                }
             }
         }
     }
