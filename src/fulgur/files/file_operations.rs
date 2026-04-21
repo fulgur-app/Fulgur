@@ -4,6 +4,7 @@ use crate::fulgur::{
     sync::ssh::url::RemoteSpec,
     sync::ssh::{
         self,
+        credentials::SshCredKey,
         session::{HostKeyDecision, HostKeyRequest},
     },
     tab::Tab,
@@ -324,12 +325,38 @@ impl Fulgur {
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
-        spec: RemoteSpec,
+        mut spec: RemoteSpec,
     ) {
+        let ssh_session_cache = Arc::clone(&self.shared_state(cx).ssh_session_cache);
+
+        // If the URL embeds a password, move it immediately into the session cache.
+        if let (Some(user), Some(password)) = (spec.user.clone(), spec.password_in_url.take()) {
+            let key = SshCredKey::new(spec.host.clone(), spec.port, user);
+            ssh_session_cache.lock().insert(key, password);
+        }
+
+        // Reuse a cached password when we already know the user.
+        if let Some(user) = spec.user.clone() {
+            let cache_key = SshCredKey::new(spec.host.clone(), spec.port, user.clone());
+            if let Some(cached_password) = ssh_session_cache.lock().get(&cache_key).cloned() {
+                spec.password_in_url = None;
+                self.spawn_ssh_open_task(
+                    window,
+                    cx,
+                    spec,
+                    cached_password,
+                    cache_key,
+                    Arc::clone(&ssh_session_cache),
+                );
+                return;
+            }
+        }
+
         let host = spec.host.clone();
         let port = spec.port;
         let user = spec.user.clone();
         let entity = cx.entity().downgrade();
+        let cache_for_callback = Arc::clone(&ssh_session_cache);
 
         self.show_ssh_password_dialog(
             window,
@@ -341,9 +368,24 @@ impl Fulgur {
                 let mut spec_with_user = spec.clone();
                 spec_with_user.user = Some(resolved_user);
                 spec_with_user.password_in_url = None;
+                let cache_key = SshCredKey::new(
+                    spec_with_user.host.clone(),
+                    spec_with_user.port,
+                    spec_with_user.user.clone().unwrap_or_default(),
+                );
                 if let Some(entity) = entity.upgrade() {
                     entity.update(cx, |fulgur, cx| {
-                        fulgur.spawn_ssh_open_task(window, cx, spec_with_user, password);
+                        cache_for_callback
+                            .lock()
+                            .insert(cache_key.clone(), password.clone());
+                        fulgur.spawn_ssh_open_task(
+                            window,
+                            cx,
+                            spec_with_user,
+                            password,
+                            cache_key,
+                            Arc::clone(&cache_for_callback),
+                        );
                     });
                 }
             },
@@ -357,12 +399,16 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `spec`: The remote file specification with a resolved username
     /// - `password`: The session-scoped password (zeroed on drop)
+    /// - `credential_key`: Cache key identifying `(host, port, user)` for this connection
+    /// - `ssh_session_cache`: Shared in-memory password cache across windows
     fn spawn_ssh_open_task(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
         spec: RemoteSpec,
         password: Zeroizing<String>,
+        credential_key: SshCredKey,
+        ssh_session_cache: Arc<parking_lot::Mutex<ssh::credentials::SshCredentialCache>>,
     ) {
         let pending_remote_open = Arc::clone(&self.pending_remote_open);
 
@@ -376,6 +422,8 @@ impl Fulgur {
 
         let spec_for_thread = spec.clone();
         let user = spec.user.clone().unwrap_or_default();
+        let cache_for_thread = Arc::clone(&ssh_session_cache);
+        let credential_key_for_thread = credential_key.clone();
 
         std::thread::spawn(move || {
             let slot = pending_host_key_for_thread;
@@ -397,6 +445,9 @@ impl Fulgur {
                     }
                 },
             );
+            if let Err(self::ssh::error::SshError::AuthFailed) = &session_result {
+                cache_for_thread.lock().remove(&credential_key_for_thread);
+            }
 
             let outcome = session_result
                 .and_then(|session| {
