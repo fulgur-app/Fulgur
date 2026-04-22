@@ -38,7 +38,9 @@ use gpui_component::{
     v_flex,
 };
 use settings::Settings;
-use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
+use std::{
+    collections::HashMap, collections::HashSet, path::PathBuf, sync::Arc, sync::atomic::AtomicBool,
+};
 use tab::Tab;
 use ui::{
     bars::search_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*, themes,
@@ -386,7 +388,7 @@ impl Fulgur {
         register_action!(app_content, cx, tab_bar::CloseAllOtherTabs => on_close_all_other_tabs_action(&action));
         register_action!(app_content, cx, tab_bar::ShowInFileManager => on_show_in_file_manager(&action));
         register_action!(app_content, cx, tab_bar::DuplicateTab => on_duplicate_tab(&action));
-        register_action!(app_content, cx, OpenRecentFile => do_open_file(.0));
+        register_action!(app_content, cx, OpenRecentFile => do_open_recent_file(.0));
         register_action!(app_content, cx, CheckForUpdates => check_for_updates);
         register_action!(app_content, cx, GetTheme => call_no_args tab_bar::open_theme_repository);
         register_action!(app_content, cx, NewWindow => open_new_window(cx_only));
@@ -895,6 +897,8 @@ impl Fulgur {
                         self.pending_remote_restore.remove(&tab_id);
                         self.apply_remote_reload_to_existing_tab(tab_id, remote_file, window, cx);
                     } else {
+                        let recent_remote_url =
+                            crate::fulgur::sync::ssh::url::format_remote_url(&remote_file.spec);
                         log::debug!(
                             "Remote file loaded: {}:{}",
                             remote_file.spec.host,
@@ -913,6 +917,27 @@ impl Fulgur {
                         self.pending_tab_scroll = Some(idx);
                         self.next_tab_id += 1;
                         self.focus_active_tab(window, cx);
+                        if let Err(e) = self.settings.add_file(PathBuf::from(recent_remote_url)) {
+                            log::error!("Failed to add remote file to recent files: {}", e);
+                        }
+                        let update_link = self
+                            .shared_state(cx)
+                            .update_info
+                            .lock()
+                            .as_ref()
+                            .map(|info| info.download_url.clone());
+                        let menus = build_menus(&self.settings.get_recent_files(), update_link);
+                        self.update_menus(menus, cx);
+                        if let Err(e) = self.save_state(cx, window) {
+                            log::error!(
+                                "Failed to save app state after opening remote file: {}",
+                                e
+                            );
+                            self.pending_notification = Some((
+                                NotificationType::Warning,
+                                format!("Remote file opened but failed to save state: {e}").into(),
+                            ));
+                        }
                         cx.notify();
                     }
                 }
