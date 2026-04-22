@@ -75,10 +75,24 @@ pub struct RemoteFileResult {
     pub file_size: usize,
 }
 
+/// Data required to open a remote browsing dialog when the requested path is not a file.
+#[derive(Clone)]
+pub struct RemoteBrowseResult {
+    pub directory_spec: RemoteSpec,
+    pub entries: Vec<self::ssh::sftp::RemoteDirectoryEntry>,
+    pub notice: Option<String>,
+}
+
+/// Successful outcomes of a remote open attempt.
+pub enum RemoteOpenResult {
+    File(RemoteFileResult),
+    Browse(RemoteBrowseResult),
+}
+
 /// A queued remote-open outcome consumed by `Fulgur::process_pending_remote_files`.
 pub struct PendingRemoteOpenOutcome {
     pub target_tab_id: Option<usize>,
-    pub result: Result<RemoteFileResult, String>,
+    pub result: Result<RemoteOpenResult, String>,
 }
 
 /// Inputs required to execute a remote open in the SSH worker thread.
@@ -499,6 +513,92 @@ impl Fulgur {
         self.open_remote_file_with_target(window, cx, spec, Some(tab_id));
     }
 
+    /// Resolve a remote open request into either file contents or a browse fallback.
+    ///
+    /// ### Arguments
+    /// - `session`: Established SSH session with SFTP subsystem.
+    /// - `spec`: Requested remote location.
+    ///
+    /// ### Returns
+    /// - `Ok(RemoteOpenResult::File)`: Target is a readable file.
+    /// - `Ok(RemoteOpenResult::Browse)`: Target is a directory or missing path.
+    /// - `Err(SshError)`: Remote classification or I/O failure.
+    fn resolve_remote_open_result(
+        session: &self::ssh::session::SshSession,
+        spec: &RemoteSpec,
+    ) -> Result<RemoteOpenResult, self::ssh::error::SshError> {
+        use self::ssh::sftp::{
+            RemotePathKind, classify_remote_path, closest_existing_remote_directory,
+        };
+
+        match classify_remote_path(session, &spec.path)? {
+            RemotePathKind::File => {
+                let bytes = self::ssh::sftp::read_remote_file(session, &spec.path)?;
+                let (encoding, content) = detect_encoding_and_decode(&bytes);
+                Ok(RemoteOpenResult::File(RemoteFileResult {
+                    spec: spec.clone(),
+                    content,
+                    encoding,
+                    file_size: bytes.len(),
+                }))
+            }
+            RemotePathKind::Directory => {
+                Self::build_remote_browse_result(session, spec, &spec.path, None)
+            }
+            RemotePathKind::Missing => {
+                let fallback_directory = closest_existing_remote_directory(session, &spec.path)?;
+                let notice = Some(format!(
+                    "Remote path '{}' was not found. Showing closest existing directory '{}'.",
+                    spec.path, fallback_directory
+                ));
+                Self::build_remote_browse_result(session, spec, &fallback_directory, notice)
+            }
+        }
+    }
+
+    /// Build remote browser entries for a directory fallback dialog.
+    ///
+    /// ### Arguments
+    /// - `session`: Established SSH session with SFTP subsystem.
+    /// - `base_spec`: Original open request spec.
+    /// - `directory_path`: Directory path to list.
+    /// - `notice`: Optional informational message for the UI.
+    ///
+    /// ### Returns
+    /// - `Ok(RemoteOpenResult::Browse)`: Browser payload with directory entries.
+    /// - `Err(SshError)`: Directory listing failed.
+    fn build_remote_browse_result(
+        session: &self::ssh::session::SshSession,
+        base_spec: &RemoteSpec,
+        directory_path: &str,
+        notice: Option<String>,
+    ) -> Result<RemoteOpenResult, self::ssh::error::SshError> {
+        let directory = if directory_path.trim().is_empty() {
+            self::ssh::REMOTE_ROOT_PATH.to_string()
+        } else {
+            directory_path.to_string()
+        };
+        let mut directory_spec = base_spec.clone();
+        directory_spec.path = directory.clone();
+
+        let mut entries: Vec<self::ssh::sftp::RemoteDirectoryEntry> = Vec::new();
+        if directory != self::ssh::REMOTE_ROOT_PATH {
+            let parent = self::ssh::sftp::parent_remote_path(&directory);
+            entries.push(self::ssh::sftp::RemoteDirectoryEntry {
+                name: "..".to_string(),
+                is_dir: true,
+                full_path: parent,
+            });
+        }
+        entries.extend(self::ssh::sftp::list_remote_directory(session, &directory)?);
+
+        Ok(RemoteOpenResult::Browse(RemoteBrowseResult {
+            directory_spec,
+            entries,
+            notice,
+        }))
+    }
+
     /// Spawn the blocking SSH connect + file-read task plus a GPUI monitoring task.
     ///
     /// ### Arguments
@@ -568,16 +668,18 @@ impl Fulgur {
 
             let outcome = session_result
                 .and_then(|session| {
-                    self::ssh::sftp::read_remote_file(&session, &spec_for_thread.path)
-                        .map(|bytes| (session, bytes))
-                })
-                .map(|(_, bytes)| {
-                    let (encoding, content) = detect_encoding_and_decode(&bytes);
-                    RemoteFileResult {
-                        spec: spec_for_thread,
-                        content,
-                        encoding,
-                        file_size: bytes.len(),
+                    if target_tab_id.is_some() {
+                        let bytes =
+                            self::ssh::sftp::read_remote_file(&session, &spec_for_thread.path)?;
+                        let (encoding, content) = detect_encoding_and_decode(&bytes);
+                        Ok(RemoteOpenResult::File(RemoteFileResult {
+                            spec: spec_for_thread.clone(),
+                            content,
+                            encoding,
+                            file_size: bytes.len(),
+                        }))
+                    } else {
+                        Self::resolve_remote_open_result(&session, &spec_for_thread)
                     }
                 })
                 .map_err(|e| e.user_message());
@@ -654,7 +756,7 @@ impl Fulgur {
         open_finished: &AtomicBool,
         pending_remote: &parking_lot::Mutex<Vec<PendingRemoteOpenOutcome>>,
         target_tab_id: Option<usize>,
-        outcome: Result<RemoteFileResult, String>,
+        outcome: Result<RemoteOpenResult, String>,
     ) -> bool {
         if !open_finished.swap(true, Ordering::AcqRel) {
             pending_remote.lock().push(PendingRemoteOpenOutcome {
@@ -1415,8 +1517,8 @@ mod tests {
         assert!(!decoded.is_empty());
     }
 
-    fn make_remote_result() -> super::RemoteFileResult {
-        super::RemoteFileResult {
+    fn make_remote_result() -> super::RemoteOpenResult {
+        super::RemoteOpenResult::File(super::RemoteFileResult {
             spec: RemoteSpec {
                 host: "example.com".to_string(),
                 port: 22,
@@ -1427,7 +1529,7 @@ mod tests {
             content: "ok".to_string(),
             encoding: UTF_8.to_string(),
             file_size: 2,
-        }
+        })
     }
 
     #[test]

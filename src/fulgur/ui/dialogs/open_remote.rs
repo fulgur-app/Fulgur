@@ -6,7 +6,12 @@ use gpui_component::{
     notification::NotificationType,
 };
 
-use crate::fulgur::{Fulgur, sync::ssh::url::parse_remote_url};
+use crate::fulgur::{
+    Fulgur,
+    files::file_operations::RemoteBrowseResult,
+    sync::ssh::{REMOTE_ROOT_PATH, credentials::SshCredKey, url::parse_remote_url},
+    ui::dialogs::remote_path_browser::{RemotePathBrowser, RemotePathBrowserConnection},
+};
 
 impl Fulgur {
     /// Show the open remote file dialog.
@@ -68,6 +73,148 @@ impl Fulgur {
                 })
                 .on_cancel(|_, _, _| true)
         });
+    }
+
+    /// Show the remote path browser dialog for a host and preselected directory/path.
+    ///
+    /// ### Arguments
+    /// - `window`: The window to show the dialog in.
+    /// - `cx`: The application context.
+    /// - `browse`: Browser payload with target directory and preloaded entries.
+    pub fn show_remote_path_browser_dialog(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        browse: RemoteBrowseResult,
+    ) {
+        let spec = browse.directory_spec.clone();
+        let Some(user) = spec.user.clone() else {
+            window.push_notification(
+                (
+                    NotificationType::Error,
+                    SharedString::from("Cannot browse remote path: missing SSH user"),
+                ),
+                cx,
+            );
+            return;
+        };
+
+        let connection = RemotePathBrowserConnection {
+            host: spec.host.clone(),
+            port: spec.port,
+            user: user.clone(),
+            credential_key: SshCredKey::new(spec.host.clone(), spec.port, user),
+            ssh_session_cache: self.shared_state(cx).ssh_session_cache.clone(),
+        };
+        let initial_path = browser_directory_input(&spec.path);
+        let initial_entries = browse.entries.clone();
+        let notice = browse.notice.clone();
+        let browser = cx.new(|cx| {
+            RemotePathBrowser::new(
+                window,
+                cx,
+                initial_path,
+                initial_entries,
+                notice,
+                connection,
+            )
+        });
+        let browser_input = browser.read(cx).input().clone();
+        let entity = cx.entity().clone();
+        let spec_for_ok = spec.clone();
+
+        window.open_alert_dialog(cx.deref_mut(), move |modal, window, cx| {
+            let focus_handle = browser_input.read(cx).focus_handle(cx);
+            window.focus(&focus_handle, cx);
+
+            let browser_for_ok = browser.clone();
+            let spec_for_ok = spec_for_ok.clone();
+            let entity_for_ok = entity.clone();
+
+            modal
+                .title(div().text_size(px(16.)).child("Browse remote files..."))
+                .keyboard(true)
+                .button_props(
+                    DialogButtonProps::default()
+                        .show_cancel(true)
+                        .cancel_text("Cancel")
+                        .cancel_variant(ButtonVariant::Secondary)
+                        .ok_text("Open")
+                        .ok_variant(ButtonVariant::Primary),
+                )
+                .overlay_closable(false)
+                .close_button(false)
+                .child(browser_for_ok.clone())
+                .on_ok(move |_, window: &mut Window, cx| {
+                    let raw_path = browser_for_ok.read(cx).input().read(cx).value().to_string();
+                    let selected_path = normalize_remote_browser_selection(&raw_path);
+                    if selected_path.is_empty() {
+                        window.push_notification(
+                            (
+                                NotificationType::Error,
+                                SharedString::from("Please choose a remote path"),
+                            ),
+                            cx,
+                        );
+                        return false;
+                    }
+
+                    let mut open_spec = spec_for_ok.clone();
+                    open_spec.path = selected_path;
+                    open_spec.password_in_url = None;
+                    entity_for_ok.update(cx, |_, cx| {
+                        // Defer to avoid opening nested dialogs while this one is closing.
+                        cx.defer_in(window, move |this, window, cx| {
+                            this.do_open_remote_file(window, cx, open_spec);
+                        });
+                    });
+                    true
+                })
+                .on_cancel(|_, _, _| true)
+        });
+    }
+}
+
+/// Normalize browser-selected remote path text for open attempts.
+///
+/// ### Arguments
+/// - `raw`: Browser input value.
+///
+/// ### Returns
+/// - `String`: Absolute remote path, defaulting to `/`.
+fn normalize_remote_browser_selection(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return REMOTE_ROOT_PATH.to_string();
+    }
+    if trimmed == "~" || trimmed.starts_with("~/") {
+        return REMOTE_ROOT_PATH.to_string();
+    }
+    if trimmed.starts_with(REMOTE_ROOT_PATH) {
+        if trimmed.len() > 1 {
+            return trimmed.trim_end_matches(REMOTE_ROOT_PATH).to_string();
+        }
+        return REMOTE_ROOT_PATH.to_string();
+    }
+    format!(
+        "{REMOTE_ROOT_PATH}{}",
+        trimmed.trim_start_matches(REMOTE_ROOT_PATH)
+    )
+}
+
+/// Format a directory path for the browser input so it behaves as a folder context.
+///
+/// ### Arguments
+/// - `path`: Directory path to display.
+///
+/// ### Returns
+/// - `String`: Browser input value ending with `/` (except for root).
+fn browser_directory_input(path: &str) -> String {
+    let normalized = normalize_remote_browser_selection(path);
+    if normalized == REMOTE_ROOT_PATH {
+        REMOTE_ROOT_PATH.to_string()
+    } else {
+        format!("{normalized}/")
     }
 }
 

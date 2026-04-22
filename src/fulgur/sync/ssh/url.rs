@@ -1,4 +1,4 @@
-use super::error::SshError;
+use super::{REMOTE_ROOT_PATH, error::SshError};
 use zeroize::Zeroizing;
 
 /// Parsed remote file specification extracted from a user-supplied SSH URL.
@@ -43,8 +43,10 @@ pub fn format_remote_url(spec: &RemoteSpec) -> String {
 /// Accepted formats:
 /// - `ssh://[user[:pass]@]host[:port]/absolute/path`
 /// - `sftp://[user[:pass]@]host[:port]/absolute/path` (alias for `ssh://`)
+/// - `ssh://[user[:pass]@]host[:port]` (host only, defaults to `/`)
 /// - `[user@]host:/absolute/path` scp-style, absolute path
 /// - `[user@]host:relative/path` scp-style, resolved relative to remote `$HOME`
+/// - `[user@]host` scp-style host-only shorthand, defaults to `/`
 ///
 /// IPv6 addresses must use bracket notation: `[::1]` or `[::1]:2222`.
 ///
@@ -77,19 +79,18 @@ pub fn parse_remote_url(input: &str) -> Result<RemoteSpec, SshError> {
 ///
 /// ### Returns
 /// - `Ok(RemoteSpec)`: Successfully parsed specification.
-/// - `Err(SshError::ParseError)`: Missing path, root-only path, empty host, or invalid port.
+/// - `Err(SshError::ParseError)`: Empty host or invalid port.
 fn parse_url_style(rest: &str) -> Result<RemoteSpec, SshError> {
-    let slash_idx = rest.find('/').ok_or_else(|| {
-        SshError::ParseError("URL must include a path (e.g. ssh://host/path/to/file)".to_string())
-    })?;
-
-    let authority = &rest[..slash_idx];
-    let path = normalize_url_style_path(&rest[slash_idx..]);
-
-    if path == "/" {
-        return Err(SshError::ParseError(
-            "Path must point to a file, not just '/'".to_string(),
-        ));
+    let (authority, path) = if let Some(slash_idx) = rest.find('/') {
+        (
+            &rest[..slash_idx],
+            normalize_url_style_path(&rest[slash_idx..]),
+        )
+    } else {
+        (rest, REMOTE_ROOT_PATH.to_string())
+    };
+    if authority.is_empty() {
+        return Err(SshError::ParseError("Host must not be empty".to_string()));
     }
 
     let (userinfo, hostport) = match authority.rfind('@') {
@@ -177,27 +178,22 @@ fn format_host_for_url(host: &str) -> String {
 /// - `input`: Full input string (already confirmed to have no `ssh://` or `sftp://` prefix).
 ///
 /// ### Returns
-/// - `Ok(RemoteSpec)`: Successfully parsed specification; relative paths are prefixed with `~/`.
-/// - `Err(SshError::ParseError)`: No colon separator, empty path, empty host, or invalid port.
+/// - `Ok(RemoteSpec)`: Successfully parsed specification; relative paths are prefixed with `~/`,
+///   and host-only forms default to `/`.
+/// - `Err(SshError::ParseError)`: Empty host or invalid port.
 fn parse_scp_style(input: &str) -> Result<RemoteSpec, SshError> {
-    let colon_idx = input.find(':').ok_or_else(|| {
-        SshError::ParseError(
-            "Unrecognised format. Use ssh://user@host/path or user@host:/path".to_string(),
-        )
-    })?;
-
-    let authority = &input[..colon_idx];
-    let raw_path = &input[colon_idx + 1..];
-
-    if raw_path.is_empty() {
-        return Err(SshError::ParseError("Path must not be empty".to_string()));
-    }
-
-    // Prefix relative paths with ~/ so the remote shell resolves them against $HOME.
-    let path = if raw_path.starts_with('/') {
-        raw_path.to_string()
+    let (authority, path) = if let Some(colon_idx) = input.find(':') {
+        let authority = &input[..colon_idx];
+        let raw_path = &input[colon_idx + 1..];
+        if raw_path.is_empty() {
+            (authority, REMOTE_ROOT_PATH.to_string())
+        } else if raw_path.starts_with(REMOTE_ROOT_PATH) {
+            (authority, raw_path.to_string())
+        } else {
+            (authority, format!("~/{raw_path}"))
+        }
     } else {
-        format!("~/{raw_path}")
+        (input, REMOTE_ROOT_PATH.to_string())
     };
 
     let (user, host_str) = match authority.find('@') {
@@ -341,13 +337,25 @@ mod tests {
     }
 
     #[test]
-    fn missing_path_fails() {
-        assert!(parse_remote_url("ssh://user@host").is_err());
+    fn ssh_url_without_path_defaults_to_root() {
+        let spec = parse_remote_url("ssh://user@host").unwrap();
+        assert_eq!(spec.user.as_deref(), Some("user"));
+        assert_eq!(spec.host, "host");
+        assert_eq!(spec.path, REMOTE_ROOT_PATH);
     }
 
     #[test]
-    fn root_path_only_fails() {
-        assert!(parse_remote_url("ssh://user@host/").is_err());
+    fn root_path_is_allowed() {
+        let spec = parse_remote_url("ssh://user@host/").unwrap();
+        assert_eq!(spec.path, REMOTE_ROOT_PATH);
+    }
+
+    #[test]
+    fn scp_host_only_defaults_to_root() {
+        let spec = parse_remote_url("user@server").unwrap();
+        assert_eq!(spec.user.as_deref(), Some("user"));
+        assert_eq!(spec.host, "server");
+        assert_eq!(spec.path, REMOTE_ROOT_PATH);
     }
 
     #[test]

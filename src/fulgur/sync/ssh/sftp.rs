@@ -1,6 +1,7 @@
+use super::REMOTE_ROOT_PATH;
 use super::error::SshError;
 use super::session::SshSession;
-use ssh2::{OpenFlags, OpenType, RenameFlags};
+use ssh2::{ErrorCode, OpenFlags, OpenType, RenameFlags};
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -25,6 +26,145 @@ pub fn read_remote_file(session: &SshSession, remote_path: &str) -> Result<Vec<u
         .map_err(|e| SshError::SftpError(format!("Read error on {remote_path}: {e}")))?;
 
     Ok(buf)
+}
+
+/// Type classification for a remote SFTP path.
+pub enum RemotePathKind {
+    /// Path points to a regular file.
+    File,
+    /// Path points to a directory.
+    Directory,
+    /// Path does not exist on the remote host.
+    Missing,
+}
+
+/// A single entry in a remote directory listing.
+#[derive(Clone, Debug)]
+pub struct RemoteDirectoryEntry {
+    pub name: String,
+    pub is_dir: bool,
+    pub full_path: String,
+}
+
+/// Classify a remote path as file, directory, or missing.
+///
+/// ### Arguments
+/// - `session`: Established SSH session with SFTP subsystem.
+/// - `remote_path`: Path to classify on the remote host.
+///
+/// ### Returns
+/// - `Ok(RemotePathKind::File)`: Path exists and is a file.
+/// - `Ok(RemotePathKind::Directory)`: Path exists and is a directory.
+/// - `Ok(RemotePathKind::Missing)`: Path does not exist.
+/// - `Err(SshError::SftpError)`: Metadata lookup failed for another reason.
+pub fn classify_remote_path(
+    session: &SshSession,
+    remote_path: &str,
+) -> Result<RemotePathKind, SshError> {
+    let normalized = normalize_remote_path(remote_path);
+    let path = Path::new(&normalized);
+    match session.sftp.stat(path) {
+        Ok(stat) => {
+            if let Some(perm) = stat.perm {
+                // POSIX mode bits where 0o040000 indicates a directory.
+                if perm & 0o170000 == 0o040000 {
+                    return Ok(RemotePathKind::Directory);
+                }
+                return Ok(RemotePathKind::File);
+            }
+
+            // Fallback when the server omits mode bits.
+            if session.sftp.opendir(path).is_ok() {
+                Ok(RemotePathKind::Directory)
+            } else {
+                Ok(RemotePathKind::File)
+            }
+        }
+        Err(err) => match err.code() {
+            ErrorCode::SFTP(2) => Ok(RemotePathKind::Missing),
+            _ => Err(SshError::SftpError(format!(
+                "Cannot inspect {normalized}: {err}"
+            ))),
+        },
+    }
+}
+
+/// Find the closest existing remote directory for an input path.
+///
+/// ### Description
+/// Walks upward through parent paths until it finds an existing directory,
+/// falling back to `/` if needed.
+///
+/// ### Arguments
+/// - `session`: Established SSH session with SFTP subsystem.
+/// - `path`: Candidate path to resolve.
+///
+/// ### Returns
+/// - `Ok(String)`: Closest existing directory path.
+/// - `Err(SshError::SftpError)`: Path checks failed unexpectedly.
+pub fn closest_existing_remote_directory(
+    session: &SshSession,
+    path: &str,
+) -> Result<String, SshError> {
+    let mut candidate = normalize_remote_path(path);
+    loop {
+        match classify_remote_path(session, &candidate)? {
+            RemotePathKind::Directory => return Ok(candidate),
+            RemotePathKind::File | RemotePathKind::Missing => {
+                if candidate == REMOTE_ROOT_PATH {
+                    return Ok(REMOTE_ROOT_PATH.to_string());
+                }
+                candidate = parent_remote_path(&candidate);
+            }
+        }
+    }
+}
+
+/// Read and sort a remote directory listing.
+///
+/// ### Arguments
+/// - `session`: Established SSH session with SFTP subsystem.
+/// - `directory`: Existing remote directory path.
+///
+/// ### Returns
+/// - `Ok(Vec<RemoteDirectoryEntry>)`: Directory entries sorted with directories first.
+/// - `Err(SshError::SftpError)`: Directory read failed.
+pub fn list_remote_directory(
+    session: &SshSession,
+    directory: &str,
+) -> Result<Vec<RemoteDirectoryEntry>, SshError> {
+    let directory = normalize_remote_path(directory);
+    let path = Path::new(&directory);
+    let mut entries = session
+        .sftp
+        .readdir(path)
+        .map_err(|e| SshError::SftpError(format!("Cannot list directory {directory}: {e}")))?
+        .into_iter()
+        .filter_map(|(entry_path, stat)| {
+            let name = entry_path.file_name()?.to_string_lossy().to_string();
+            if name == "." || name == ".." {
+                return None;
+            }
+            let is_dir = stat
+                .perm
+                .map(|perm| perm & 0o170000 == 0o040000)
+                .unwrap_or(false);
+            let full_path = join_remote_path(&directory, &name);
+            Some(RemoteDirectoryEntry {
+                name,
+                is_dir,
+                full_path,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    entries.truncate(500);
+    Ok(entries)
 }
 
 /// Write bytes to a remote file via SFTP using an atomic temp-then-rename approach.
@@ -159,4 +299,82 @@ fn direct_write_fallback(
         .map_err(|e| format!("cannot open destination for direct write: {e}"))?;
     dest.write_all(data)
         .map_err(|e| format!("write error during fallback for {remote_path}: {e}"))
+}
+
+/// Normalize remote paths to forward-slash absolute form.
+///
+/// ### Arguments
+/// - `path`: Raw remote path input.
+///
+/// ### Returns
+/// - `String`: Normalized path, defaulting to `/` when empty.
+fn normalize_remote_path(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return REMOTE_ROOT_PATH.to_string();
+    }
+    if trimmed == "~" || trimmed.starts_with("~/") {
+        return trimmed.to_string();
+    }
+    let slashes = trimmed.replace('\\', REMOTE_ROOT_PATH);
+    if slashes.starts_with(REMOTE_ROOT_PATH) {
+        slashes
+    } else {
+        format!("{REMOTE_ROOT_PATH}{slashes}")
+    }
+}
+
+/// Compute the parent path for a normalized remote path.
+///
+/// ### Arguments
+/// - `path`: Normalized remote path.
+///
+/// ### Returns
+/// - `String`: Parent directory path (returns `/` for root or single-segment paths).
+pub fn parent_remote_path(path: &str) -> String {
+    let trimmed = path.trim_end_matches(REMOTE_ROOT_PATH);
+    if trimmed.is_empty() || trimmed == REMOTE_ROOT_PATH {
+        return REMOTE_ROOT_PATH.to_string();
+    }
+    match trimmed.rfind(REMOTE_ROOT_PATH) {
+        Some(0) | None => REMOTE_ROOT_PATH.to_string(),
+        Some(index) => trimmed[..index].to_string(),
+    }
+}
+
+/// Join a directory and entry name into a normalized remote path.
+///
+/// ### Arguments
+/// - `directory`: Parent directory path.
+/// - `name`: Entry name in that directory.
+///
+/// ### Returns
+/// - `String`: Joined full path.
+fn join_remote_path(directory: &str, name: &str) -> String {
+    let directory = normalize_remote_path(directory);
+    if directory == REMOTE_ROOT_PATH {
+        format!("{REMOTE_ROOT_PATH}{name}")
+    } else {
+        format!("{}/{}", directory.trim_end_matches(REMOTE_ROOT_PATH), name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{REMOTE_ROOT_PATH, parent_remote_path};
+
+    #[test]
+    fn parent_remote_path_of_root_is_root() {
+        assert_eq!(parent_remote_path(REMOTE_ROOT_PATH), REMOTE_ROOT_PATH);
+    }
+
+    #[test]
+    fn parent_remote_path_of_single_segment_returns_root() {
+        assert_eq!(parent_remote_path("/tmp"), REMOTE_ROOT_PATH);
+    }
+
+    #[test]
+    fn parent_remote_path_of_nested_path_returns_parent() {
+        assert_eq!(parent_remote_path("/tmp/nested/file.txt"), "/tmp/nested");
+    }
 }

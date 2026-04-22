@@ -11,7 +11,7 @@ pub mod window_manager;
 use crate::fulgur::{
     editor_tab::EditorTab,
     files::{
-        file_operations::{PendingRemoteOpenOutcome, RemoteFileResult},
+        file_operations::{PendingRemoteOpenOutcome, RemoteFileResult, RemoteOpenResult},
         file_watcher::FileWatchState,
     },
     languages::supported_languages::SupportedLanguage,
@@ -894,7 +894,7 @@ impl Fulgur {
             }
 
             match outcome.result {
-                Ok(remote_file) => {
+                Ok(RemoteOpenResult::File(remote_file)) => {
                     if let Some(tab_id) = outcome.target_tab_id {
                         self.pending_remote_restore.remove(&tab_id);
                         self.apply_remote_reload_to_existing_tab(tab_id, remote_file, window, cx);
@@ -942,6 +942,17 @@ impl Fulgur {
                             ));
                         }
                         cx.notify();
+                    }
+                }
+                Ok(RemoteOpenResult::Browse(browse)) => {
+                    if let Some(tab_id) = outcome.target_tab_id {
+                        self.pending_remote_restore.insert(tab_id);
+                        self.pending_notification = Some((
+                            NotificationType::Error,
+                            "Restored remote tab path is no longer a file".into(),
+                        ));
+                    } else {
+                        self.show_remote_path_browser_dialog(window, cx, browse);
                     }
                 }
                 Err(msg) => {
