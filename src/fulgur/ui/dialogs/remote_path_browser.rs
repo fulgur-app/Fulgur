@@ -14,12 +14,19 @@ use gpui_component::{
     scroll::ScrollableElement,
     v_flex,
 };
-use std::sync::Arc;
+use std::{
+    sync::{Arc, mpsc},
+    time::Duration,
+};
 
 use crate::fulgur::ui::icons::CustomIcon;
 
 const MAX_VISIBLE_BROWSER_ROWS: usize = 10;
 const BROWSER_ROW_HEIGHT_PX: f32 = 28.0;
+const BROWSER_REFRESH_DEBOUNCE_MS: u64 = 300;
+const BROWSER_REFRESH_DEBOUNCE: Duration = Duration::from_millis(BROWSER_REFRESH_DEBOUNCE_MS);
+const BROWSER_WORKER_DISCONNECTED_MESSAGE: &str =
+    "Remote browser worker stopped. Re-open the browser dialog.";
 
 /// Connection details used by the remote path browser when listing directories.
 #[derive(Clone)]
@@ -36,11 +43,18 @@ pub struct RemotePathBrowser {
     input: Entity<InputState>,
     entries: Vec<RemoteDirectoryEntry>,
     notice: Option<String>,
-    connection: RemotePathBrowserConnection,
+    worker_tx: mpsc::Sender<BrowserListRequest>,
+    debounce_generation: u64,
     refresh_generation: u64,
     is_loading: bool,
     error_message: Option<String>,
     _input_subscription: Subscription,
+}
+
+/// Background-worker request for one remote browser listing.
+struct BrowserListRequest {
+    raw_input: String,
+    response_tx: mpsc::Sender<Result<Vec<RemoteDirectoryEntry>, String>>,
 }
 
 impl RemotePathBrowser {
@@ -73,22 +87,24 @@ impl RemotePathBrowser {
         let _input_subscription =
             cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
                 if let InputEvent::Change = ev {
-                    this.refresh_entries(cx);
+                    this.schedule_refresh(cx);
                 }
             });
+        let worker_tx = spawn_browser_worker(connection.clone());
 
         let mut this = Self {
             input,
             entries: initial_entries,
             notice,
-            connection,
+            worker_tx,
+            debounce_generation: 0,
             refresh_generation: 0,
             is_loading: false,
             error_message: None,
             _input_subscription,
         };
         if this.entries.is_empty() {
-            this.refresh_entries(cx);
+            this.dispatch_refresh(cx);
         }
         this
     }
@@ -101,24 +117,60 @@ impl RemotePathBrowser {
         &self.input
     }
 
-    /// Refresh remote directory entries for the current input path.
+    /// Schedule a debounced remote-directory refresh for the current input path.
     ///
     /// ### Arguments
     /// - `cx`: Component context.
-    fn refresh_entries(&mut self, cx: &mut Context<Self>) {
+    fn schedule_refresh(&mut self, cx: &mut Context<Self>) {
+        self.debounce_generation = self.debounce_generation.wrapping_add(1);
+        let generation = self.debounce_generation;
+        let weak = cx.entity().downgrade();
+        cx.spawn(async move |_, cx| {
+            cx.background_executor()
+                .timer(BROWSER_REFRESH_DEBOUNCE)
+                .await;
+            let Some(entity) = weak.upgrade() else {
+                return;
+            };
+            entity.update(cx, |this, cx| {
+                if this.debounce_generation != generation {
+                    return;
+                }
+                this.dispatch_refresh(cx);
+            });
+        })
+        .detach();
+    }
+
+    /// Dispatch a remote-directory refresh request to the browser worker.
+    ///
+    /// ### Arguments
+    /// - `cx`: Component context.
+    fn dispatch_refresh(&mut self, cx: &mut Context<Self>) {
         let raw = self.input.read(cx).value().to_string();
-        self.refresh_generation += 1;
+        self.refresh_generation = self.refresh_generation.wrapping_add(1);
         let generation = self.refresh_generation;
         self.is_loading = true;
         self.error_message = None;
         self.notice = None;
 
         let weak = cx.entity().downgrade();
-        let connection = self.connection.clone();
+        let worker_tx = self.worker_tx.clone();
         cx.spawn(async move |_, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { list_entries_for_input(&connection, &raw) })
+                .spawn(async move {
+                    let (response_tx, response_rx) = mpsc::channel();
+                    worker_tx
+                        .send(BrowserListRequest {
+                            raw_input: raw,
+                            response_tx,
+                        })
+                        .map_err(|_| BROWSER_WORKER_DISCONNECTED_MESSAGE.to_string())?;
+                    response_rx
+                        .recv()
+                        .map_err(|_| BROWSER_WORKER_DISCONNECTED_MESSAGE.to_string())?
+                })
                 .await;
 
             let Some(entity) = weak.upgrade() else {
@@ -311,8 +363,57 @@ fn normalize_remote_browser_path(path: &str) -> String {
 fn list_entries_for_input(
     connection: &RemotePathBrowserConnection,
     raw_input: &str,
+    session: &mut Option<ssh::session::SshSession>,
 ) -> Result<Vec<RemoteDirectoryEntry>, String> {
     let (directory, filter) = parse_remote_browser_input(raw_input);
+
+    for attempt in 0..=1 {
+        if session.is_none() {
+            *session = Some(connect_browser_session(connection, &directory)?);
+        }
+        let listing_result = session
+            .as_ref()
+            .ok_or_else(|| "Remote browser session is unavailable".to_string())
+            .and_then(|connected_session| {
+                let parent =
+                    ssh::sftp::closest_existing_remote_directory(connected_session, &directory)
+                        .map_err(|e| e.user_message())?;
+                ssh::sftp::list_remote_directory(connected_session, &parent)
+                    .map_err(|e| e.user_message())
+            });
+        match listing_result {
+            Ok(mut entries) => {
+                if !filter.is_empty() {
+                    let filter_lower = filter.to_lowercase();
+                    entries.retain(|entry| entry.name.to_lowercase().starts_with(&filter_lower));
+                }
+                return Ok(entries);
+            }
+            Err(_) if attempt == 0 => {
+                *session = None;
+            }
+            Err(error) => {
+                return Err(error);
+            }
+        }
+    }
+
+    Err("Failed to list remote directory".to_string())
+}
+
+/// Connect a browser worker to the remote host.
+///
+/// ### Arguments
+/// - `connection`: Remote host + credential-cache metadata.
+/// - `directory`: Current directory context used by the browser request.
+///
+/// ### Returns
+/// - `Ok(SshSession)`: Connected SSH session with SFTP subsystem.
+/// - `Err(String)`: Credentials are missing or SSH connection failed.
+fn connect_browser_session(
+    connection: &RemotePathBrowserConnection,
+    directory: &str,
+) -> Result<ssh::session::SshSession, String> {
     let password = connection
         .ssh_session_cache
         .lock()
@@ -326,31 +427,55 @@ fn list_entries_for_input(
         host: connection.host.clone(),
         port: connection.port,
         user: Some(connection.user.clone()),
-        path: directory.clone(),
+        path: directory.to_string(),
         password_in_url: None,
     };
 
-    let session = ssh::session::connect(&spec, &connection.user, &password, |_, _, _| {
+    ssh::session::connect(&spec, &connection.user, &password, |_, _, _| {
         ssh::HostKeyDecision::Reject
     })
-    .map_err(|e| e.user_message())?;
+    .map_err(|e| e.user_message())
+}
 
-    let parent = ssh::sftp::closest_existing_remote_directory(&session, &directory)
-        .map_err(|e| e.user_message())?;
-    let mut entries =
-        ssh::sftp::list_remote_directory(&session, &parent).map_err(|e| e.user_message())?;
-    if !filter.is_empty() {
-        let filter_lower = filter.to_lowercase();
-        entries.retain(|entry| entry.name.to_lowercase().starts_with(&filter_lower));
-    }
-    Ok(entries)
+/// Spawn a browser worker thread that reuses one SSH session across requests.
+///
+/// ### Arguments
+/// - `connection`: Remote connection + credential-cache metadata.
+///
+/// ### Returns
+/// - `mpsc::Sender<BrowserListRequest>`: Request channel for asynchronous listing jobs.
+fn spawn_browser_worker(
+    connection: RemotePathBrowserConnection,
+) -> mpsc::Sender<BrowserListRequest> {
+    let (request_tx, request_rx) = mpsc::channel::<BrowserListRequest>();
+    std::thread::spawn(move || {
+        let mut session: Option<ssh::session::SshSession> = None;
+        while let Ok(request) = request_rx.recv() {
+            let mut latest_request = request;
+            while let Ok(next) = request_rx.try_recv() {
+                let _ = latest_request.response_tx.send(Err(
+                    "Remote browser request superseded by newer input".to_string(),
+                ));
+                latest_request = next;
+            }
+
+            let result =
+                list_entries_for_input(&connection, &latest_request.raw_input, &mut session);
+            if result.is_err() {
+                // Force reconnect on next attempt after a failed listing.
+                session = None;
+            }
+            let _ = latest_request.response_tx.send(result);
+        }
+    });
+    request_tx
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        BROWSER_ROW_HEIGHT_PX, MAX_VISIBLE_BROWSER_ROWS, browser_list_height,
-        normalize_remote_browser_path, parse_remote_browser_input,
+        BROWSER_REFRESH_DEBOUNCE_MS, BROWSER_ROW_HEIGHT_PX, MAX_VISIBLE_BROWSER_ROWS,
+        browser_list_height, normalize_remote_browser_path, parse_remote_browser_input,
     };
     use gpui::px;
 
@@ -384,5 +509,10 @@ mod tests {
     fn browser_list_height_is_fixed_to_ten_rows() {
         let expected = px(MAX_VISIBLE_BROWSER_ROWS as f32 * BROWSER_ROW_HEIGHT_PX);
         assert_eq!(browser_list_height(), expected);
+    }
+
+    #[test]
+    fn browser_refresh_debounce_is_300ms() {
+        assert_eq!(BROWSER_REFRESH_DEBOUNCE_MS, 300);
     }
 }
