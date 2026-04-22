@@ -16,9 +16,11 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn show_open_remote_dialog(&self, window: &mut Window, cx: &mut Context<Self>) {
         let entity = cx.entity().clone();
+        let remembered_url = self.last_failed_remote_open_url.clone().unwrap_or_default();
         let input = cx.new(|cx| {
             gpui_component::input::InputState::new(window, cx)
                 .placeholder("ssh://user@host/path/to/file")
+                .default_value(remembered_url.clone())
         });
         let input_for_ok = input.clone();
         window.open_alert_dialog(cx.deref_mut(), move |modal, window, cx| {

@@ -138,6 +138,7 @@ pub struct Fulgur {
     pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
     pending_remote_open: Arc<parking_lot::Mutex<Vec<PendingRemoteOpenOutcome>>>, // Queue for SSH background threads to deliver loaded remote files
+    last_failed_remote_open_url: Option<String>, // Last attempted remote URL kept for retry prefill after connection/open failures
     pending_remote_restore: HashSet<usize>, // Restored remote tab ids that should lazily reconnect on first activation/save
     inflight_remote_restore: HashSet<usize>, // Restored remote tabs currently running a reconnect task
     pending_initial_active_tab: Option<usize>, // Active tab to re-activate after first render so dialogs can open safely
@@ -253,6 +254,7 @@ impl Fulgur {
                 pending_tab_removal: None,
                 pending_transfer_scroll: None,
                 pending_remote_open: Arc::new(parking_lot::Mutex::new(Vec::new())),
+                last_failed_remote_open_url: None,
                 pending_remote_restore: HashSet::new(),
                 inflight_remote_restore: HashSet::new(),
                 pending_initial_active_tab: None,
@@ -897,6 +899,7 @@ impl Fulgur {
                         self.pending_remote_restore.remove(&tab_id);
                         self.apply_remote_reload_to_existing_tab(tab_id, remote_file, window, cx);
                     } else {
+                        self.last_failed_remote_open_url = None;
                         let recent_remote_url =
                             crate::fulgur::sync::ssh::url::format_remote_url(&remote_file.spec);
                         log::debug!(

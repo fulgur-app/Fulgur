@@ -1,7 +1,7 @@
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
-    sync::ssh::url::{RemoteSpec, parse_remote_url},
+    sync::ssh::url::{RemoteSpec, format_remote_url, parse_remote_url},
     sync::ssh::{
         self,
         credentials::SshCredKey,
@@ -393,6 +393,7 @@ impl Fulgur {
         cx: &mut Context<Self>,
         spec: RemoteSpec,
     ) {
+        self.last_failed_remote_open_url = Some(format_remote_url(&spec));
         self.open_remote_file_with_target(window, cx, spec, None);
     }
 
