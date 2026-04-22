@@ -1,4 +1,5 @@
 use crate::fulgur::Fulgur;
+use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::tabs::editor_tab::TabLocation;
 use crate::fulgur::{
     settings::Settings, shared_state::SharedAppState, tab::Tab, window_manager::WindowManager,
@@ -121,6 +122,40 @@ fn test_get_tab_display_title_returns_tab_title_for_untitled_tab(cx: &mut TestAp
             let (display_title, folder) = this.get_tab_display_title(tab, &filename_counts);
             assert_eq!(display_title, tab_title);
             assert!(folder.is_none());
+        });
+    });
+}
+
+#[gpui::test]
+fn test_remote_tab_indicator_label_returns_ssh_for_remote_editor_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, _cx| {
+            if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
+                e.location = TabLocation::Remote(RemoteSpec {
+                    host: "example.com".to_string(),
+                    port: 22,
+                    user: Some("alice".to_string()),
+                    path: "/tmp/test.txt".to_string(),
+                    password_in_url: None,
+                });
+            }
+            let tab = this.tabs.first().expect("default tab should exist");
+            assert_eq!(this.remote_tab_indicator_label(tab), Some("R"));
+        });
+    });
+}
+
+#[gpui::test]
+fn test_remote_tab_indicator_label_is_none_for_local_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, _cx| {
+            if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
+                e.location = TabLocation::Local(PathBuf::from("/tmp/local.txt"));
+            }
+            let tab = this.tabs.first().expect("default tab should exist");
+            assert_eq!(this.remote_tab_indicator_label(tab), None);
         });
     });
 }

@@ -5,6 +5,7 @@ use super::{
 use crate::fulgur::{
     Fulgur,
     tab::Tab,
+    ui::tabs::editor_tab::TabLocation,
     ui::tabs::tab_drag::DraggedTab,
     ui::{components_utils, icons::CustomIcon},
     window_manager::WindowManager,
@@ -25,6 +26,23 @@ use gpui_component::{
 use std::collections::HashMap;
 
 impl Fulgur {
+    /// Resolve the optional tab badge label for remote editor tabs.
+    ///
+    /// ### Arguments
+    /// - `tab`: The tab to inspect.
+    ///
+    /// ### Returns
+    /// - `Some(&'static str)`: `"R"` when the tab points to a remote location.
+    /// - `None`: For local, untitled, settings, and markdown preview tabs.
+    pub(crate) fn remote_tab_indicator_label(&self, tab: &Tab) -> Option<&'static str> {
+        let editor_tab = tab.as_editor()?;
+        if matches!(editor_tab.location, TabLocation::Remote(_)) {
+            Some("R")
+        } else {
+            None
+        }
+    }
+
     /// Build a per-filename tab count map for disambiguation.
     ///
     /// ### Returns
@@ -382,7 +400,21 @@ impl Fulgur {
         }
         let (filename, folder) = self.get_tab_display_title(tab, filename_counts);
         let modified_indicator = if tab.is_modified() { " •" } else { "" };
-        let mut title_container = div().flex().items_center().gap_1().pl_1().child(
+        let mut title_container = div().flex().items_center().gap_1().pl_1();
+        if let Some(remote_indicator) = self.remote_tab_indicator_label(tab) {
+            title_container = title_container.child(
+                div()
+                    .text_sm()
+                    .font_semibold()
+                    .text_color(if is_active {
+                        cx.theme().tab_active_foreground.opacity(0.50)
+                    } else {
+                        cx.theme().primary.opacity(0.80)
+                    })
+                    .child(remote_indicator),
+            );
+        }
+        title_container = title_container.child(
             div()
                 .text_sm()
                 .text_color(if is_active {
