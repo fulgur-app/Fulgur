@@ -1,4 +1,6 @@
+use std::cell::Cell;
 use std::ops::DerefMut;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
@@ -6,7 +8,7 @@ use gpui::{
 };
 use gpui_component::{
     WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input,
-    notification::NotificationType,
+    notification::NotificationType, v_flex,
 };
 use zeroize::Zeroizing;
 
@@ -52,21 +54,25 @@ impl Fulgur {
         let password_input_ok = password_input.clone();
         let prefilled_ok = prefilled_user.clone();
         let on_confirm = Arc::new(on_confirm);
+        let has_initialized_focus = Rc::new(Cell::new(false));
 
         window.open_alert_dialog(cx.deref_mut(), move |modal, window, cx| {
-            let focus_handle = if show_user_field {
-                user_input.read(cx).focus_handle(cx)
-            } else {
-                password_input.read(cx).focus_handle(cx)
-            };
-            window.focus(&focus_handle, cx);
+            if !has_initialized_focus.get() {
+                let focus_handle = if show_user_field {
+                    user_input.read(cx).focus_handle(cx)
+                } else {
+                    password_input.read(cx).focus_handle(cx)
+                };
+                window.focus(&focus_handle, cx);
+                has_initialized_focus.set(true);
+            }
 
             let user_input_inner = user_input_ok.clone();
             let password_input_inner = password_input_ok.clone();
             let prefilled_inner = prefilled_ok.clone();
             let on_confirm_inner = Arc::clone(&on_confirm);
 
-            let mut m = modal
+            let m = modal
                 .title(div().text_size(px(16.)).child(title.clone()))
                 .keyboard(true)
                 .button_props(
@@ -80,10 +86,17 @@ impl Fulgur {
                 .overlay_closable(false)
                 .close_button(false);
 
-            if show_user_field {
-                m = m.child(Input::new(&user_input));
-            }
-            m.child(Input::new(&password_input))
+            let form = if show_user_field {
+                v_flex()
+                    .w_full()
+                    .gap_2()
+                    .child(Input::new(&user_input))
+                    .child(Input::new(&password_input))
+            } else {
+                v_flex().w_full().gap_2().child(Input::new(&password_input))
+            };
+
+            m.child(form)
                 .on_ok(move |_, window: &mut Window, cx| {
                     let username = if show_user_field {
                         user_input_inner.read(cx).value().to_string()
