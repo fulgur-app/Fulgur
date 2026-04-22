@@ -92,6 +92,7 @@ pub enum RemoteOpenResult {
 /// A queued remote-open outcome consumed by `Fulgur::process_pending_remote_files`.
 pub struct PendingRemoteOpenOutcome {
     pub target_tab_id: Option<usize>,
+    pub target_request_id: Option<u64>,
     pub result: Result<RemoteOpenResult, String>,
 }
 
@@ -102,11 +103,13 @@ struct RemoteOpenTaskParams {
     credential_key: SshCredKey,
     ssh_session_cache: Arc<parking_lot::Mutex<ssh::credentials::SshCredentialCache>>,
     target_tab_id: Option<usize>,
+    target_request_id: Option<u64>,
 }
 
 /// Inputs required to execute a remote save in the SSH worker thread.
 struct RemoteSaveTaskParams {
     tab_id: usize,
+    request_id: u64,
     spec: RemoteSpec,
     saved_content: Arc<String>,
     password: Zeroizing<String>,
@@ -426,6 +429,13 @@ impl Fulgur {
         target_tab_id: Option<usize>,
     ) {
         let ssh_session_cache = Arc::clone(&self.shared_state(cx).ssh_session_cache);
+        let target_request_id = target_tab_id.map(|tab_id| {
+            let request_id = self.next_remote_request_id;
+            self.next_remote_request_id = self.next_remote_request_id.wrapping_add(1);
+            self.latest_remote_open_request_by_tab
+                .insert(tab_id, request_id);
+            request_id
+        });
 
         // If the URL embeds a password, move it immediately into the session cache.
         if let (Some(user), Some(password)) = (spec.user.clone(), spec.password_in_url.take()) {
@@ -447,6 +457,7 @@ impl Fulgur {
                         credential_key: cache_key,
                         ssh_session_cache: Arc::clone(&ssh_session_cache),
                         target_tab_id,
+                        target_request_id,
                     },
                 );
                 return;
@@ -488,6 +499,7 @@ impl Fulgur {
                                 credential_key: cache_key,
                                 ssh_session_cache: Arc::clone(&cache_for_callback),
                                 target_tab_id,
+                                target_request_id,
                             },
                         );
                     });
@@ -620,6 +632,7 @@ impl Fulgur {
             credential_key,
             ssh_session_cache,
             target_tab_id,
+            target_request_id,
         } = params;
         if let Some(tab_id) = target_tab_id {
             self.inflight_remote_restore.insert(tab_id);
@@ -688,6 +701,7 @@ impl Fulgur {
                 &open_finished_for_thread,
                 &pending_remote_for_thread,
                 target_tab_id,
+                target_request_id,
                 outcome,
             );
         });
@@ -728,6 +742,7 @@ impl Fulgur {
                         &open_finished_for_task,
                         &pending_remote_for_task,
                         target_tab_id,
+                        target_request_id,
                         Err("SSH connection timed out (60 s)".to_string()),
                     );
                     async_cx
@@ -747,6 +762,8 @@ impl Fulgur {
     /// ### Arguments
     /// - `open_finished`: Per-operation completion flag shared by the worker and monitor task.
     /// - `pending_remote`: Queue of remote-open outcomes drained by the render loop.
+    /// - `target_tab_id`: Existing tab id for a reload operation, or `None` for new-tab opens.
+    /// - `target_request_id`: Monotonic request token used to reject stale completions.
     /// - `outcome`: Success or failure result to enqueue.
     ///
     /// ### Returns
@@ -756,11 +773,13 @@ impl Fulgur {
         open_finished: &AtomicBool,
         pending_remote: &parking_lot::Mutex<Vec<PendingRemoteOpenOutcome>>,
         target_tab_id: Option<usize>,
+        target_request_id: Option<u64>,
         outcome: Result<RemoteOpenResult, String>,
     ) -> bool {
         if !open_finished.swap(true, Ordering::AcqRel) {
             pending_remote.lock().push(PendingRemoteOpenOutcome {
                 target_tab_id,
+                target_request_id,
                 result: outcome,
             });
             true
@@ -880,11 +899,16 @@ impl Fulgur {
             let cache_key = SshCredKey::new(spec.host.clone(), spec.port, user.clone());
             if let Some(cached_password) = ssh_session_cache.lock().get(&cache_key).cloned() {
                 spec.password_in_url = None;
+                let request_id = self.next_remote_request_id;
+                self.next_remote_request_id = self.next_remote_request_id.wrapping_add(1);
+                self.latest_remote_save_request_by_tab
+                    .insert(tab_id, request_id);
                 self.spawn_ssh_save_task(
                     window,
                     cx,
                     RemoteSaveTaskParams {
                         tab_id,
+                        request_id,
                         spec,
                         saved_content: Arc::clone(&saved_content),
                         password: cached_password,
@@ -928,11 +952,18 @@ impl Fulgur {
                         {
                             remote_spec.user = Some(resolved_user.clone());
                         }
+                        let request_id = fulgur.next_remote_request_id;
+                        fulgur.next_remote_request_id =
+                            fulgur.next_remote_request_id.wrapping_add(1);
+                        fulgur
+                            .latest_remote_save_request_by_tab
+                            .insert(tab_id, request_id);
                         fulgur.spawn_ssh_save_task(
                             window,
                             cx,
                             RemoteSaveTaskParams {
                                 tab_id,
+                                request_id,
                                 spec: spec_with_user,
                                 saved_content: Arc::clone(&saved_content),
                                 password,
@@ -960,6 +991,7 @@ impl Fulgur {
     ) {
         let RemoteSaveTaskParams {
             tab_id,
+            request_id,
             spec,
             saved_content,
             password,
@@ -1052,6 +1084,7 @@ impl Fulgur {
                             _ = view.update(cx, |fulgur, cx| {
                                 fulgur.handle_remote_save_result(
                                     tab_id,
+                                    request_id,
                                     saved_content.as_str(),
                                     result,
                                     cx,
@@ -1104,16 +1137,23 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `tab_id`: Stable editor-tab id associated with the save request
+    /// - `request_id`: Monotonic save request token used to ignore stale completions
     /// - `saved_content`: Snapshot that was successfully sent to the remote host
     /// - `result`: Save outcome from the worker task
     /// - `cx`: The application context
     fn handle_remote_save_result(
         &mut self,
         tab_id: usize,
+        request_id: u64,
         saved_content: &str,
         result: Result<(), String>,
         cx: &mut Context<Self>,
     ) {
+        if self.latest_remote_save_request_by_tab.get(&tab_id).copied() != Some(request_id) {
+            return;
+        }
+        self.latest_remote_save_request_by_tab.remove(&tab_id);
+
         match result {
             Ok(()) => {
                 if let Some(editor_tab) = self.tabs.iter_mut().find_map(|tab| {
@@ -1541,11 +1581,13 @@ mod tests {
             &open_finished,
             &pending_remote,
             None,
+            None,
             Ok(make_remote_result()),
         );
         let published_timeout = Fulgur::publish_remote_open_outcome(
             &open_finished,
             &pending_remote,
+            None,
             None,
             Err("SSH connection timed out (60 s)".to_string()),
         );
@@ -1569,11 +1611,13 @@ mod tests {
             &open_finished,
             &pending_remote,
             None,
+            None,
             Err("SSH connection timed out (60 s)".to_string()),
         );
         let published_success = Fulgur::publish_remote_open_outcome(
             &open_finished,
             &pending_remote,
+            None,
             None,
             Ok(make_remote_result()),
         );

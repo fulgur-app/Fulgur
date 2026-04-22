@@ -271,7 +271,6 @@ impl Fulgur {
                         this.close_all_tabs(window, cx);
                     } else {
                         this.active_tab_index = None;
-                        this.next_tab_id = 1;
                         if let Err(e) = this.save_state(cx, window) {
                             log::error!("Failed to save state after closing all tabs: {}", e);
                             this.pending_notification = Some((
@@ -289,7 +288,6 @@ impl Fulgur {
         }
         if self.tabs.is_empty() {
             self.active_tab_index = None;
-            self.next_tab_id = 1;
         }
         if let Err(e) = self.save_state(cx, window) {
             log::error!("Failed to save app state after closing all tabs: {}", e);
@@ -588,6 +586,8 @@ impl Fulgur {
             self.close_tab_manage_focus(window, cx, pos);
             self.pending_remote_restore.remove(&tab_id);
             self.inflight_remote_restore.remove(&tab_id);
+            self.latest_remote_open_request_by_tab.remove(&tab_id);
+            self.latest_remote_save_request_by_tab.remove(&tab_id);
             if let Some(path) = path_to_unwatch {
                 self.unwatch_file(&path);
             }

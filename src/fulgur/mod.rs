@@ -138,6 +138,9 @@ pub struct Fulgur {
     pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
     pending_remote_open: Arc<parking_lot::Mutex<Vec<PendingRemoteOpenOutcome>>>, // Queue for SSH background threads to deliver loaded remote files
+    next_remote_request_id: u64, // Monotonic identifier for remote open/save operations targeting existing tabs
+    latest_remote_open_request_by_tab: HashMap<usize, u64>, // Latest remote-open request id expected per tab id
+    latest_remote_save_request_by_tab: HashMap<usize, u64>, // Latest remote-save request id expected per tab id
     last_failed_remote_open_url: Option<String>, // Last attempted remote URL kept for retry prefill after connection/open failures
     pending_remote_restore: HashSet<usize>, // Restored remote tab ids that should lazily reconnect on first activation/save
     inflight_remote_restore: HashSet<usize>, // Restored remote tabs currently running a reconnect task
@@ -254,6 +257,9 @@ impl Fulgur {
                 pending_tab_removal: None,
                 pending_transfer_scroll: None,
                 pending_remote_open: Arc::new(parking_lot::Mutex::new(Vec::new())),
+                next_remote_request_id: 1,
+                latest_remote_open_request_by_tab: HashMap::new(),
+                latest_remote_save_request_by_tab: HashMap::new(),
                 last_failed_remote_open_url: None,
                 pending_remote_restore: HashSet::new(),
                 inflight_remote_restore: HashSet::new(),
@@ -889,13 +895,27 @@ impl Fulgur {
             return;
         }
         for outcome in outcomes {
-            if let Some(tab_id) = outcome.target_tab_id {
+            let target_tab_id = outcome.target_tab_id;
+            if let Some(tab_id) = target_tab_id {
+                if let Some(request_id) = outcome.target_request_id
+                    && self.latest_remote_open_request_by_tab.get(&tab_id).copied()
+                        != Some(request_id)
+                {
+                    // A newer request for this tab is already in flight; ignore stale completion.
+                    continue;
+                }
+                if let Some(request_id) = outcome.target_request_id
+                    && self.latest_remote_open_request_by_tab.get(&tab_id).copied()
+                        == Some(request_id)
+                {
+                    self.latest_remote_open_request_by_tab.remove(&tab_id);
+                }
                 self.inflight_remote_restore.remove(&tab_id);
             }
 
             match outcome.result {
                 Ok(RemoteOpenResult::File(remote_file)) => {
-                    if let Some(tab_id) = outcome.target_tab_id {
+                    if let Some(tab_id) = target_tab_id {
                         self.pending_remote_restore.remove(&tab_id);
                         self.apply_remote_reload_to_existing_tab(tab_id, remote_file, window, cx);
                     } else {
@@ -945,7 +965,7 @@ impl Fulgur {
                     }
                 }
                 Ok(RemoteOpenResult::Browse(browse)) => {
-                    if let Some(tab_id) = outcome.target_tab_id {
+                    if let Some(tab_id) = target_tab_id {
                         self.pending_remote_restore.insert(tab_id);
                         self.pending_notification = Some((
                             NotificationType::Error,
@@ -956,7 +976,7 @@ impl Fulgur {
                     }
                 }
                 Err(msg) => {
-                    if let Some(tab_id) = outcome.target_tab_id {
+                    if let Some(tab_id) = target_tab_id {
                         self.pending_remote_restore.insert(tab_id);
                     }
                     self.pending_notification = Some((NotificationType::Error, msg.into()));
