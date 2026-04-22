@@ -32,6 +32,12 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+const SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS: u64 = 60;
+const SSH_HOST_KEY_APPROVAL_TIMEOUT: Duration =
+    Duration::from_secs(SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS);
+const SSH_CONNECTION_TIMEOUT_LABEL: &str = "SSH connection timed out";
+const SSH_SAVE_TIMEOUT_LABEL: &str = "SSH save timed out";
+
 /// Detect encoding from file bytes
 ///
 /// ### Arguments
@@ -611,6 +617,29 @@ impl Fulgur {
         }))
     }
 
+    /// Wait for a host-key trust decision with a bounded timeout.
+    ///
+    /// ### Arguments
+    /// - `decision_rx`: Receiver used by the host-key dialog to deliver `Accept` or `Reject`
+    /// - `timed_out`: Shared flag set when the wait elapsed without a decision
+    ///
+    /// ### Returns
+    /// - `HostKeyDecision::Accept`: The user accepted the presented host key
+    /// - `HostKeyDecision::Reject`: The user rejected the key, the channel closed, or timeout elapsed
+    fn wait_for_host_key_decision(
+        decision_rx: std::sync::mpsc::Receiver<HostKeyDecision>,
+        timed_out: &AtomicBool,
+    ) -> HostKeyDecision {
+        match decision_rx.recv_timeout(SSH_HOST_KEY_APPROVAL_TIMEOUT) {
+            Ok(decision) => decision,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                timed_out.store(true, Ordering::Release);
+                HostKeyDecision::Reject
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => HostKeyDecision::Reject,
+        }
+    }
+
     /// Spawn the blocking SSH connect + file-read task plus a GPUI monitoring task.
     ///
     /// ### Arguments
@@ -649,6 +678,8 @@ impl Fulgur {
         let open_finished = Arc::new(AtomicBool::new(false));
         let open_finished_for_thread = Arc::clone(&open_finished);
         let open_finished_for_task = Arc::clone(&open_finished);
+        let host_key_decision_timed_out = Arc::new(AtomicBool::new(false));
+        let host_key_decision_timed_out_for_thread = Arc::clone(&host_key_decision_timed_out);
 
         let spec_for_thread = spec.clone();
         let user = spec.user.clone().unwrap_or_default();
@@ -657,6 +688,8 @@ impl Fulgur {
 
         std::thread::spawn(move || {
             let slot = pending_host_key_for_thread;
+            let host_key_decision_timed_out_for_callback =
+                Arc::clone(&host_key_decision_timed_out_for_thread);
             let session_result = self::ssh::session::connect(
                 &spec_for_thread,
                 &user,
@@ -669,17 +702,14 @@ impl Fulgur {
                         port,
                         decision_tx: tx,
                     });
-                    match rx.recv() {
-                        Ok(decision) => decision,
-                        Err(_) => HostKeyDecision::Reject,
-                    }
+                    Self::wait_for_host_key_decision(rx, &host_key_decision_timed_out_for_callback)
                 },
             );
             if let Err(self::ssh::error::SshError::AuthFailed) = &session_result {
                 cache_for_thread.lock().remove(&credential_key_for_thread);
             }
 
-            let outcome = session_result
+            let mut outcome = session_result
                 .and_then(|session| {
                     if target_tab_id.is_some() {
                         let bytes =
@@ -696,6 +726,12 @@ impl Fulgur {
                     }
                 })
                 .map_err(|e| e.user_message());
+            if host_key_decision_timed_out_for_thread.load(Ordering::Acquire) {
+                outcome = Err(format!(
+                    "{} ({} s)",
+                    SSH_CONNECTION_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                ));
+            }
 
             Self::publish_remote_open_outcome(
                 &open_finished_for_thread,
@@ -707,7 +743,7 @@ impl Fulgur {
         });
 
         cx.spawn_in(window, async move |view, async_cx| {
-            let deadline = std::time::Instant::now() + Duration::from_secs(60);
+            let deadline = std::time::Instant::now() + SSH_HOST_KEY_APPROVAL_TIMEOUT;
             loop {
                 async_cx
                     .background_executor()
@@ -743,7 +779,10 @@ impl Fulgur {
                         &pending_remote_for_task,
                         target_tab_id,
                         target_request_id,
-                        Err("SSH connection timed out (60 s)".to_string()),
+                        Err(format!(
+                            "{} ({} s)",
+                            SSH_CONNECTION_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                        )),
                     );
                     async_cx
                         .update(|_, cx| {
@@ -1011,6 +1050,8 @@ impl Fulgur {
         let save_finished = Arc::new(AtomicBool::new(false));
         let save_finished_for_thread = Arc::clone(&save_finished);
         let save_finished_for_task = Arc::clone(&save_finished);
+        let host_key_decision_timed_out = Arc::new(AtomicBool::new(false));
+        let host_key_decision_timed_out_for_thread = Arc::clone(&host_key_decision_timed_out);
 
         let spec_for_thread = spec.clone();
         let user = spec.user.clone().unwrap_or_default();
@@ -1020,6 +1061,8 @@ impl Fulgur {
 
         std::thread::spawn(move || {
             let slot = pending_host_key_for_thread;
+            let host_key_decision_timed_out_for_callback =
+                Arc::clone(&host_key_decision_timed_out_for_thread);
             let session_result = self::ssh::session::connect(
                 &spec_for_thread,
                 &user,
@@ -1032,16 +1075,13 @@ impl Fulgur {
                         port,
                         decision_tx: tx,
                     });
-                    match rx.recv() {
-                        Ok(decision) => decision,
-                        Err(_) => HostKeyDecision::Reject,
-                    }
+                    Self::wait_for_host_key_decision(rx, &host_key_decision_timed_out_for_callback)
                 },
             );
             if let Err(self::ssh::error::SshError::AuthFailed) = &session_result {
                 cache_for_thread.lock().remove(&credential_key_for_thread);
             }
-            let outcome = session_result
+            let mut outcome = session_result
                 .and_then(|session| {
                     self::ssh::sftp::write_remote_file(
                         &session,
@@ -1050,6 +1090,12 @@ impl Fulgur {
                     )
                 })
                 .map_err(|e| e.user_message());
+            if host_key_decision_timed_out_for_thread.load(Ordering::Acquire) {
+                outcome = Err(format!(
+                    "{} ({} s)",
+                    SSH_SAVE_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                ));
+            }
             Self::publish_remote_save_outcome(
                 &save_finished_for_thread,
                 &pending_save_for_thread,
@@ -1058,7 +1104,7 @@ impl Fulgur {
         });
 
         cx.spawn_in(window, async move |view, async_cx| {
-            let deadline = std::time::Instant::now() + Duration::from_secs(60);
+            let deadline = std::time::Instant::now() + SSH_HOST_KEY_APPROVAL_TIMEOUT;
             loop {
                 async_cx
                     .background_executor()
@@ -1102,7 +1148,10 @@ impl Fulgur {
                     Self::publish_remote_save_outcome(
                         &save_finished_for_task,
                         &pending_save_for_task,
-                        Err("SSH save timed out (60 s)".to_string()),
+                        Err(format!(
+                            "{} ({} s)",
+                            SSH_SAVE_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                        )),
                     );
                 }
             }
