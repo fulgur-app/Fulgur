@@ -15,6 +15,7 @@ use zeroize::Zeroizing;
 
 const CONNECT_TIMEOUT_SECS: u64 = 10;
 const SESSION_TIMEOUT_MS: u32 = 30_000;
+const LIBSSH2_AUTHENTICATION_FAILED_CODE: i32 = -18;
 
 /// An established SSH session with an open SFTP subsystem.
 ///
@@ -96,7 +97,7 @@ pub fn connect(
 
     session
         .userauth_password(user, password.as_str())
-        .map_err(|_| SshError::AuthFailed)?;
+        .map_err(map_password_auth_error)?;
 
     if !session.authenticated() {
         return Err(SshError::AuthFailed);
@@ -107,6 +108,23 @@ pub fn connect(
         .map_err(|e| SshError::SftpError(e.to_string()))?;
 
     Ok(SshSession { session, sftp })
+}
+
+/// Classify `userauth_password` failures as credential rejection or transport/session errors.
+///
+/// ### Arguments
+/// - `error`: Raw ssh2 error returned from `userauth_password`.
+///
+/// ### Returns
+/// - `SshError::AuthFailed`: Password authentication was explicitly rejected by the server.
+/// - `SshError::ConnectionFailed`: Any non-auth failure during the authentication request.
+fn map_password_auth_error(error: ssh2::Error) -> SshError {
+    match error.code() {
+        ssh2::ErrorCode::Session(code) if code == LIBSSH2_AUTHENTICATION_FAILED_CODE => {
+            SshError::AuthFailed
+        }
+        _ => SshError::ConnectionFailed(format!("SSH authentication request failed: {error}")),
+    }
 }
 
 /// Verify the server's host key against `~/.ssh/known_hosts`.
@@ -722,9 +740,10 @@ fn apply_unix_mode(path: &Path, mode: u32) {
 mod tests {
     use super::{
         aggregate_check_results, default_hostkey_algorithms, known_host_algorithms_for_target,
-        known_hosts_entry_host, push_unique_hostkey_alg,
+        known_hosts_entry_host, map_password_auth_error, push_unique_hostkey_alg,
         resolve_known_host_check_result_from_entries, wildcard_pattern_matches,
     };
+    use crate::fulgur::sync::ssh::error::SshError;
     use ssh_key::{PublicKey, known_hosts::KnownHosts};
 
     fn parse_known_host_entries(input: &str) -> Vec<ssh_key::known_hosts::Entry> {
@@ -856,5 +875,25 @@ example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA6rWI3G1sz07DnfFlrouTcysQlj2P+j
     #[test]
     fn default_hostkey_algorithms_is_not_empty() {
         assert!(!default_hostkey_algorithms().is_empty());
+    }
+
+    #[test]
+    fn map_password_auth_error_maps_authentication_rejection() {
+        let error = ssh2::Error::from_errno(ssh2::ErrorCode::Session(-18));
+        assert!(matches!(
+            map_password_auth_error(error),
+            SshError::AuthFailed
+        ));
+    }
+
+    #[test]
+    fn map_password_auth_error_maps_non_auth_errors_to_connection_failed() {
+        let error = ssh2::Error::from_errno(ssh2::ErrorCode::Session(-7));
+        match map_password_auth_error(error) {
+            SshError::ConnectionFailed(message) => {
+                assert!(message.contains("SSH authentication request failed"));
+            }
+            other => panic!("expected ConnectionFailed, got {other:?}"),
+        }
     }
 }
