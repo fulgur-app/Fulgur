@@ -1,8 +1,10 @@
-use super::{EditorTab, FromDuplicateParams, FromFileParams, TabTransferData};
+use super::{EditorTab, FromDuplicateParams, FromFileParams, TabLocation, TabTransferData};
+use crate::fulgur::files::file_operations::RemoteFileResult;
 use crate::fulgur::languages::supported_languages::{
     language_from_content, language_registry_name,
 };
 use crate::fulgur::settings::EditorSettings;
+use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
 use gpui::{App, AppContext, SharedString, Window};
 use std::time::SystemTime;
@@ -41,7 +43,7 @@ impl EditorTab {
             id,
             title: title.into(),
             content,
-            file_path: None,
+            location: TabLocation::Untitled,
             modified: false,
             original_content_hash,
             original_content_len,
@@ -90,9 +92,9 @@ impl EditorTab {
             id,
             title: file_name.into(),
             content,
-            file_path: None,       // No path - forces "Save as..." dialog
-            modified: true,        // Mark as modified
-            original_content_hash, // Empty so check_modified() keeps it as modified
+            location: TabLocation::Untitled,
+            modified: true,
+            original_content_hash,
             original_content_len,
             encoding: UTF_8.to_string(),
             language,
@@ -148,7 +150,7 @@ impl EditorTab {
             id: params.id,
             title: title.into(),
             content,
-            file_path: Some(params.path),
+            location: TabLocation::Local(params.path),
             modified: params.is_modified,
             original_content_hash,
             original_content_len,
@@ -194,7 +196,7 @@ impl EditorTab {
             id: params.id,
             title: params.title,
             content,
-            file_path: None,
+            location: TabLocation::Untitled,
             modified: true,
             original_content_hash,
             original_content_len,
@@ -204,6 +206,112 @@ impl EditorTab {
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: None,
             file_last_modified: None,
+        }
+    }
+
+    /// Create a new tab associated with a remote file.
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the tab
+    /// - `spec`: The parsed remote file specification
+    /// - `window`: The window to create the tab in
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
+    ///
+    /// ### Returns
+    /// - `EditorTab`: The new tab
+    pub fn from_remote(
+        id: usize,
+        spec: RemoteSpec,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) -> Self {
+        let file_name = spec
+            .path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&spec.path)
+            .to_string();
+        let language = language_from_content(&file_name, "");
+        let (original_content_hash, original_content_len) = super::content_fingerprint_from_str("");
+        let content = cx.new(|cx| {
+            super::make_input_state(
+                window,
+                cx,
+                language_registry_name(&language),
+                None,
+                settings,
+            )
+        });
+        Self {
+            id,
+            title: file_name.into(),
+            content,
+            location: TabLocation::Remote(spec),
+            modified: false,
+            original_content_hash,
+            original_content_len,
+            encoding: UTF_8.to_string(),
+            language,
+            show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
+            show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: None,
+            file_last_modified: None,
+        }
+    }
+
+    /// Create a new tab from a successfully loaded remote file.
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the tab
+    /// - `result`: The successfully loaded remote file result
+    /// - `window`: The window to create the tab in
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
+    ///
+    /// ### Returns
+    /// - `EditorTab`: The new tab with remote file content
+    pub fn from_remote_loaded(
+        id: usize,
+        result: RemoteFileResult,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) -> Self {
+        let file_name = result
+            .spec
+            .path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&result.spec.path)
+            .to_string();
+        let language = language_from_content(&file_name, &result.content);
+        let (original_content_hash, original_content_len) =
+            super::content_fingerprint_from_str(&result.content);
+        let content = cx.new(|cx| {
+            super::make_input_state(
+                window,
+                cx,
+                language_registry_name(&language),
+                Some(result.content),
+                settings,
+            )
+        });
+        Self {
+            id,
+            title: file_name.into(),
+            content,
+            location: TabLocation::Remote(result.spec),
+            modified: false,
+            original_content_hash,
+            original_content_len,
+            encoding: result.encoding,
+            language,
+            show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
+            show_markdown_preview: settings.markdown_settings.show_markdown_preview,
+            file_size_bytes: Some(result.file_size as u64),
+            file_last_modified: Some(SystemTime::now()),
         }
     }
 
@@ -246,7 +354,7 @@ impl EditorTab {
             id,
             title: data.title,
             content,
-            file_path: data.file_path,
+            location: data.location,
             modified: data.modified,
             original_content_hash: data.original_content_hash,
             original_content_len: data.original_content_len,

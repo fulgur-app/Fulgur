@@ -30,10 +30,14 @@ base64 = "0.22.1"
 age = "0.11.2"
 zeroize = "1.8.2"
 sha2 = "0.10.9"
+sha1 = "0.10.6"
+hmac = "0.12.1"
+ssh-key = { version = "0.6.7", features = ["std"] }
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "linux-native"] }
 
 # Networking
 ureq = { version = "3.2.0", features = ["json"] }
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 
 # Encoding
 chardetng = "0.1.17"

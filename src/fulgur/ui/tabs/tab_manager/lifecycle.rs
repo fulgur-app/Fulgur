@@ -4,7 +4,7 @@ use crate::fulgur::{
     ui::{
         components_utils::UNTITLED,
         tabs::{
-            editor_tab::{EditorTab, FromDuplicateParams},
+            editor_tab::{EditorTab, FromDuplicateParams, TabLocation},
             settings_tab::SettingsTab,
         },
     },
@@ -176,7 +176,7 @@ impl Fulgur {
             self.active_tab_index = Some(index);
             self.tab_scroll_handle.scroll_to_item(index);
             let pending_path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) {
-                if let Some(path) = &editor_tab.file_path {
+                if let Some(path) = editor_tab.file_path() {
                     if self
                         .file_watch_state
                         .pending_conflicts
@@ -195,6 +195,24 @@ impl Fulgur {
             if let Some(path) = pending_path {
                 self.file_watch_state.pending_conflicts.remove(&path);
                 self.show_file_conflict_dialog(path, index, window, cx);
+            }
+            let pending_remote_reload = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index)
+            {
+                match &editor_tab.location {
+                    TabLocation::Remote(spec)
+                        if self.pending_remote_restore.contains(&editor_tab.id)
+                            && !self.inflight_remote_restore.contains(&editor_tab.id)
+                            && !editor_tab.modified =>
+                    {
+                        Some((editor_tab.id, spec.clone()))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if let Some((tab_id, spec)) = pending_remote_reload {
+                self.ensure_remote_tab_loaded(window, cx, tab_id, spec);
             }
             self.focus_active_tab(window, cx);
             if self.search_state.show_search {
@@ -253,7 +271,6 @@ impl Fulgur {
                         this.close_all_tabs(window, cx);
                     } else {
                         this.active_tab_index = None;
-                        this.next_tab_id = 1;
                         if let Err(e) = this.save_state(cx, window) {
                             log::error!("Failed to save state after closing all tabs: {}", e);
                             this.pending_notification = Some((
@@ -271,7 +288,6 @@ impl Fulgur {
         }
         if self.tabs.is_empty() {
             self.active_tab_index = None;
-            self.next_tab_id = 1;
         }
         if let Err(e) = self.save_state(cx, window) {
             log::error!("Failed to save app state after closing all tabs: {}", e);
@@ -554,7 +570,7 @@ impl Fulgur {
     pub fn remove_tab_by_id(&mut self, tab_id: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(pos) = self.tabs.iter().position(|t| t.id() == tab_id) {
             let path_to_unwatch = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(pos) {
-                editor_tab.file_path.clone()
+                editor_tab.file_path().cloned()
             } else {
                 None
             };
@@ -568,6 +584,10 @@ impl Fulgur {
             };
             self.tabs.remove(pos);
             self.close_tab_manage_focus(window, cx, pos);
+            self.pending_remote_restore.remove(&tab_id);
+            self.inflight_remote_restore.remove(&tab_id);
+            self.latest_remote_open_request_by_tab.remove(&tab_id);
+            self.latest_remote_save_request_by_tab.remove(&tab_id);
             if let Some(path) = path_to_unwatch {
                 self.unwatch_file(&path);
             }

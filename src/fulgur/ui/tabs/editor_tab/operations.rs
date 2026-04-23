@@ -157,7 +157,7 @@ impl EditorTab {
         cx: &mut App,
         settings: &EditorSettings,
     ) {
-        if let Some(ref path) = self.file_path {
+        if let Some(path) = self.location.local_path() {
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let current_content = self.content.read(cx).text().to_string();
             let language = language_from_content(file_name, &current_content);

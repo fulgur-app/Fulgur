@@ -1,6 +1,12 @@
 use crate::fulgur::{
     Fulgur,
-    editor_tab::{EditorTab, FromFileParams},
+    editor_tab::{EditorTab, FromFileParams, TabLocation},
+    sync::ssh::url::{RemoteSpec, format_remote_url, parse_remote_url},
+    sync::ssh::{
+        self,
+        credentials::SshCredKey,
+        session::{HostKeyDecision, HostKeyRequest},
+    },
     tab::Tab,
     ui::{
         components_utils::{UNTITLED, UTF_8},
@@ -15,7 +21,22 @@ use gpui::{
     WeakEntity, Window,
 };
 use gpui_component::{WindowExt, notification::NotificationType};
-use std::{collections::HashSet, path::PathBuf};
+use std::{
+    collections::HashSet,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
+use zeroize::Zeroizing;
+
+const SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS: u64 = 60;
+const SSH_HOST_KEY_APPROVAL_TIMEOUT: Duration =
+    Duration::from_secs(SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS);
+const SSH_CONNECTION_TIMEOUT_LABEL: &str = "SSH connection timed out";
+const SSH_SAVE_TIMEOUT_LABEL: &str = "SSH save timed out";
 
 /// Detect encoding from file bytes
 ///
@@ -52,6 +73,56 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     (encoding_name, decoded.to_string())
 }
 
+/// Result of a successfully loaded remote file, delivered by the SSH background thread.
+pub struct RemoteFileResult {
+    pub spec: RemoteSpec,
+    pub content: String,
+    pub encoding: String,
+    pub file_size: usize,
+}
+
+/// Data required to open a remote browsing dialog when the requested path is not a file.
+#[derive(Clone)]
+pub struct RemoteBrowseResult {
+    pub directory_spec: RemoteSpec,
+    pub entries: Vec<self::ssh::sftp::RemoteDirectoryEntry>,
+    pub notice: Option<String>,
+}
+
+/// Successful outcomes of a remote open attempt.
+pub enum RemoteOpenResult {
+    File(RemoteFileResult),
+    Browse(RemoteBrowseResult),
+}
+
+/// A queued remote-open outcome consumed by `Fulgur::process_pending_remote_files`.
+pub struct PendingRemoteOpenOutcome {
+    pub target_tab_id: Option<usize>,
+    pub target_request_id: Option<u64>,
+    pub result: Result<RemoteOpenResult, String>,
+}
+
+/// Inputs required to execute a remote open in the SSH worker thread.
+struct RemoteOpenTaskParams {
+    spec: RemoteSpec,
+    password: Zeroizing<String>,
+    credential_key: SshCredKey,
+    ssh_session_cache: Arc<parking_lot::Mutex<ssh::credentials::SshCredentialCache>>,
+    target_tab_id: Option<usize>,
+    target_request_id: Option<u64>,
+}
+
+/// Inputs required to execute a remote save in the SSH worker thread.
+struct RemoteSaveTaskParams {
+    tab_id: usize,
+    request_id: u64,
+    spec: RemoteSpec,
+    saved_content: Arc<String>,
+    password: Zeroizing<String>,
+    credential_key: SshCredKey,
+    ssh_session_cache: Arc<parking_lot::Mutex<ssh::credentials::SshCredentialCache>>,
+}
+
 impl Fulgur {
     /// Find the index of a tab with the given file path
     ///
@@ -64,11 +135,30 @@ impl Fulgur {
     pub fn find_tab_by_path(&self, path: &PathBuf) -> Option<usize> {
         self.tabs.iter().position(|tab| {
             if let Tab::Editor(editor_tab) = tab {
-                if let Some(ref tab_path) = editor_tab.file_path {
-                    tab_path == path
-                } else {
-                    false
-                }
+                editor_tab.file_path().is_some_and(|p| p == path)
+            } else {
+                false
+            }
+        })
+    }
+
+    /// Find the index of an editor tab opened from the same remote location.
+    ///
+    /// ### Arguments
+    /// - `spec`: Remote location to search for.
+    ///
+    /// ### Returns
+    /// - `Some(usize)`: The index of the matching remote tab.
+    /// - `None`: If no tab matches this remote location.
+    pub fn find_tab_by_remote_spec(&self, spec: &RemoteSpec) -> Option<usize> {
+        self.tabs.iter().position(|tab| {
+            if let Tab::Editor(editor_tab) = tab
+                && let TabLocation::Remote(existing_spec) = &editor_tab.location
+            {
+                existing_spec.host == spec.host
+                    && existing_spec.port == spec.port
+                    && existing_spec.user == spec.user
+                    && existing_spec.path == spec.path
             } else {
                 false
             }
@@ -88,7 +178,7 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         let path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
-            editor_tab.file_path.clone()
+            editor_tab.file_path().cloned()
         } else {
             None
         };
@@ -304,6 +394,468 @@ impl Fulgur {
         .detach();
     }
 
+    /// Open a recent entry, dispatching to local or remote open logic.
+    ///
+    /// ### Arguments
+    /// - `window`: The target window
+    /// - `cx`: The application context
+    /// - `path`: The recent entry payload
+    pub fn do_open_recent_file(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        path: PathBuf,
+    ) {
+        let recent_value = path.to_string_lossy();
+        if recent_value.starts_with("ssh://") || recent_value.starts_with("sftp://") {
+            match parse_remote_url(recent_value.as_ref()) {
+                Ok(spec) => self.do_open_remote_file(window, cx, spec),
+                Err(error) => {
+                    self.pending_notification = Some((
+                        NotificationType::Error,
+                        format!(
+                            "Failed to open remote recent file: {}",
+                            error.user_message()
+                        )
+                        .into(),
+                    ));
+                    cx.notify();
+                }
+            }
+            return;
+        }
+        self.do_open_file(window, cx, path);
+    }
+
+    /// Open a remote file from a parsed `RemoteSpec`.
+    ///
+    /// ### Arguments
+    /// - `window`: The window to open the tab in
+    /// - `cx`: The application context
+    /// - `spec`: The parsed remote file specification
+    pub fn do_open_remote_file(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        spec: RemoteSpec,
+    ) {
+        if let Some(tab_index) = self.find_tab_by_remote_spec(&spec) {
+            self.active_tab_index = Some(tab_index);
+            self.focus_active_tab(window, cx);
+            cx.notify();
+            return;
+        }
+        self.last_failed_remote_open_url = Some(format_remote_url(&spec));
+        self.open_remote_file_with_target(window, cx, spec, None);
+    }
+
+    /// Start loading a remote file and apply the result either to a new tab or an existing tab.
+    ///
+    /// ### Arguments
+    /// - `window`: The target window
+    /// - `cx`: The application context
+    /// - `spec`: The remote specification
+    /// - `target_tab_id`: Existing tab to refresh, or `None` to open in a new tab
+    fn open_remote_file_with_target(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        mut spec: RemoteSpec,
+        target_tab_id: Option<usize>,
+    ) {
+        let ssh_session_cache = Arc::clone(&self.shared_state(cx).ssh_session_cache);
+        let target_request_id = target_tab_id.map(|tab_id| {
+            let request_id = self.next_remote_request_id;
+            self.next_remote_request_id = self.next_remote_request_id.wrapping_add(1);
+            self.latest_remote_open_request_by_tab
+                .insert(tab_id, request_id);
+            request_id
+        });
+
+        // If the URL embeds a password, move it immediately into the session cache.
+        if let (Some(user), Some(password)) = (spec.user.clone(), spec.password_in_url.take()) {
+            let key = SshCredKey::new(spec.host.clone(), spec.port, user);
+            ssh_session_cache.lock().insert(key, password);
+        }
+
+        // Reuse a cached password when we already know the user.
+        if let Some(user) = spec.user.clone() {
+            let cache_key = SshCredKey::new(spec.host.clone(), spec.port, user.clone());
+            if let Some(cached_password) = ssh_session_cache.lock().get(&cache_key).cloned() {
+                spec.password_in_url = None;
+                self.spawn_ssh_open_task(
+                    window,
+                    cx,
+                    RemoteOpenTaskParams {
+                        spec,
+                        password: cached_password,
+                        credential_key: cache_key,
+                        ssh_session_cache: Arc::clone(&ssh_session_cache),
+                        target_tab_id,
+                        target_request_id,
+                    },
+                );
+                return;
+            }
+        }
+
+        let host = spec.host.clone();
+        let port = spec.port;
+        let user = spec.user.clone();
+        let entity = cx.entity().downgrade();
+        let cache_for_callback = Arc::clone(&ssh_session_cache);
+
+        self.show_ssh_password_dialog(
+            window,
+            cx,
+            host,
+            port,
+            user,
+            move |resolved_user, password, window, cx| {
+                let mut spec_with_user = spec.clone();
+                spec_with_user.user = Some(resolved_user);
+                spec_with_user.password_in_url = None;
+                let cache_key = SshCredKey::new(
+                    spec_with_user.host.clone(),
+                    spec_with_user.port,
+                    spec_with_user.user.clone().unwrap_or_default(),
+                );
+                if let Some(entity) = entity.upgrade() {
+                    entity.update(cx, |fulgur, cx| {
+                        cache_for_callback
+                            .lock()
+                            .insert(cache_key.clone(), password.clone());
+                        fulgur.spawn_ssh_open_task(
+                            window,
+                            cx,
+                            RemoteOpenTaskParams {
+                                spec: spec_with_user,
+                                password,
+                                credential_key: cache_key,
+                                ssh_session_cache: Arc::clone(&cache_for_callback),
+                                target_tab_id,
+                                target_request_id,
+                            },
+                        );
+                    });
+                }
+            },
+        );
+    }
+
+    /// Lazily reconnect and reload a restored remote tab when the user activates it.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    /// - `tab_id`: Stable tab id to refresh
+    /// - `spec`: Remote location spec for the tab
+    pub fn ensure_remote_tab_loaded(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        tab_id: usize,
+        spec: RemoteSpec,
+    ) {
+        self.open_remote_file_with_target(window, cx, spec, Some(tab_id));
+    }
+
+    /// Resolve a remote open request into either file contents or a browse fallback.
+    ///
+    /// ### Arguments
+    /// - `session`: Established SSH session with SFTP subsystem.
+    /// - `spec`: Requested remote location.
+    ///
+    /// ### Returns
+    /// - `Ok(RemoteOpenResult::File)`: Target is a readable file.
+    /// - `Ok(RemoteOpenResult::Browse)`: Target is a directory or missing path.
+    /// - `Err(SshError)`: Remote classification or I/O failure.
+    fn resolve_remote_open_result(
+        session: &self::ssh::session::SshSession,
+        spec: &RemoteSpec,
+    ) -> Result<RemoteOpenResult, self::ssh::error::SshError> {
+        use self::ssh::sftp::{
+            RemotePathKind, classify_remote_path, closest_existing_remote_directory,
+        };
+
+        match classify_remote_path(session, &spec.path)? {
+            RemotePathKind::File => {
+                let bytes = self::ssh::sftp::read_remote_file(session, &spec.path)?;
+                let (encoding, content) = detect_encoding_and_decode(&bytes);
+                Ok(RemoteOpenResult::File(RemoteFileResult {
+                    spec: spec.clone(),
+                    content,
+                    encoding,
+                    file_size: bytes.len(),
+                }))
+            }
+            RemotePathKind::Directory => {
+                Self::build_remote_browse_result(session, spec, &spec.path, None)
+            }
+            RemotePathKind::Missing => {
+                let fallback_directory = closest_existing_remote_directory(session, &spec.path)?;
+                let notice = Some(format!(
+                    "Remote path '{}' was not found. Showing closest existing directory '{}'.",
+                    spec.path, fallback_directory
+                ));
+                Self::build_remote_browse_result(session, spec, &fallback_directory, notice)
+            }
+        }
+    }
+
+    /// Build remote browser entries for a directory fallback dialog.
+    ///
+    /// ### Arguments
+    /// - `session`: Established SSH session with SFTP subsystem.
+    /// - `base_spec`: Original open request spec.
+    /// - `directory_path`: Directory path to list.
+    /// - `notice`: Optional informational message for the UI.
+    ///
+    /// ### Returns
+    /// - `Ok(RemoteOpenResult::Browse)`: Browser payload with directory entries.
+    /// - `Err(SshError)`: Directory listing failed.
+    fn build_remote_browse_result(
+        session: &self::ssh::session::SshSession,
+        base_spec: &RemoteSpec,
+        directory_path: &str,
+        notice: Option<String>,
+    ) -> Result<RemoteOpenResult, self::ssh::error::SshError> {
+        let directory = if directory_path.trim().is_empty() {
+            self::ssh::REMOTE_ROOT_PATH.to_string()
+        } else {
+            directory_path.to_string()
+        };
+        let mut directory_spec = base_spec.clone();
+        directory_spec.path = directory.clone();
+
+        let mut entries: Vec<self::ssh::sftp::RemoteDirectoryEntry> = Vec::new();
+        if directory != self::ssh::REMOTE_ROOT_PATH {
+            let parent = self::ssh::sftp::parent_remote_path(&directory);
+            entries.push(self::ssh::sftp::RemoteDirectoryEntry {
+                name: "..".to_string(),
+                is_dir: true,
+                full_path: parent,
+            });
+        }
+        entries.extend(self::ssh::sftp::list_remote_directory(session, &directory)?);
+
+        Ok(RemoteOpenResult::Browse(RemoteBrowseResult {
+            directory_spec,
+            entries,
+            notice,
+        }))
+    }
+
+    /// Wait for a host-key trust decision with a bounded timeout.
+    ///
+    /// ### Arguments
+    /// - `decision_rx`: Receiver used by the host-key dialog to deliver `Accept` or `Reject`
+    /// - `timed_out`: Shared flag set when the wait elapsed without a decision
+    ///
+    /// ### Returns
+    /// - `HostKeyDecision::Accept`: The user accepted the presented host key
+    /// - `HostKeyDecision::Reject`: The user rejected the key, the channel closed, or timeout elapsed
+    fn wait_for_host_key_decision(
+        decision_rx: std::sync::mpsc::Receiver<HostKeyDecision>,
+        timed_out: &AtomicBool,
+    ) -> HostKeyDecision {
+        match decision_rx.recv_timeout(SSH_HOST_KEY_APPROVAL_TIMEOUT) {
+            Ok(decision) => decision,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                timed_out.store(true, Ordering::Release);
+                HostKeyDecision::Reject
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => HostKeyDecision::Reject,
+        }
+    }
+
+    /// Spawn the blocking SSH connect + file-read task plus a GPUI monitoring task.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context used to spawn the async monitoring task
+    /// - `cx`: The application context
+    /// - `spec`: The remote file specification with a resolved username
+    /// - `password`: The session-scoped password (zeroed on drop)
+    /// - `credential_key`: Cache key identifying `(host, port, user)` for this connection
+    /// - `ssh_session_cache`: Shared in-memory password cache across windows
+    fn spawn_ssh_open_task(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        params: RemoteOpenTaskParams,
+    ) {
+        let RemoteOpenTaskParams {
+            spec,
+            password,
+            credential_key,
+            ssh_session_cache,
+            target_tab_id,
+            target_request_id,
+        } = params;
+        if let Some(tab_id) = target_tab_id {
+            self.inflight_remote_restore.insert(tab_id);
+        }
+        let pending_remote_open = Arc::clone(&self.pending_remote_open);
+
+        let pending_host_key: Arc<parking_lot::Mutex<Option<HostKeyRequest>>> =
+            Arc::new(parking_lot::Mutex::new(None));
+        let pending_host_key_for_thread = Arc::clone(&pending_host_key);
+        let pending_host_key_for_task = Arc::clone(&pending_host_key);
+
+        let pending_remote_for_thread = Arc::clone(&pending_remote_open);
+        let pending_remote_for_task = Arc::clone(&pending_remote_open);
+        let open_finished = Arc::new(AtomicBool::new(false));
+        let open_finished_for_thread = Arc::clone(&open_finished);
+        let open_finished_for_task = Arc::clone(&open_finished);
+        let host_key_decision_timed_out = Arc::new(AtomicBool::new(false));
+        let host_key_decision_timed_out_for_thread = Arc::clone(&host_key_decision_timed_out);
+
+        let spec_for_thread = spec.clone();
+        let user = spec.user.clone().unwrap_or_default();
+        let cache_for_thread = Arc::clone(&ssh_session_cache);
+        let credential_key_for_thread = credential_key.clone();
+
+        std::thread::spawn(move || {
+            let slot = pending_host_key_for_thread;
+            let host_key_decision_timed_out_for_callback =
+                Arc::clone(&host_key_decision_timed_out_for_thread);
+            let session_result = self::ssh::session::connect(
+                &spec_for_thread,
+                &user,
+                &password,
+                move |fingerprint, host, port| {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    *slot.lock() = Some(HostKeyRequest {
+                        fingerprint: fingerprint.to_string(),
+                        host: host.to_string(),
+                        port,
+                        decision_tx: tx,
+                    });
+                    Self::wait_for_host_key_decision(rx, &host_key_decision_timed_out_for_callback)
+                },
+            );
+            if let Err(self::ssh::error::SshError::AuthFailed) = &session_result {
+                cache_for_thread.lock().remove(&credential_key_for_thread);
+            }
+
+            let mut outcome = session_result
+                .and_then(|session| {
+                    if target_tab_id.is_some() {
+                        let bytes =
+                            self::ssh::sftp::read_remote_file(&session, &spec_for_thread.path)?;
+                        let (encoding, content) = detect_encoding_and_decode(&bytes);
+                        Ok(RemoteOpenResult::File(RemoteFileResult {
+                            spec: spec_for_thread.clone(),
+                            content,
+                            encoding,
+                            file_size: bytes.len(),
+                        }))
+                    } else {
+                        Self::resolve_remote_open_result(&session, &spec_for_thread)
+                    }
+                })
+                .map_err(|e| e.user_message());
+            if host_key_decision_timed_out_for_thread.load(Ordering::Acquire) {
+                outcome = Err(format!(
+                    "{} ({} s)",
+                    SSH_CONNECTION_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                ));
+            }
+
+            Self::publish_remote_open_outcome(
+                &open_finished_for_thread,
+                &pending_remote_for_thread,
+                target_tab_id,
+                target_request_id,
+                outcome,
+            );
+        });
+
+        cx.spawn_in(window, async move |view, async_cx| {
+            let deadline = std::time::Instant::now() + SSH_HOST_KEY_APPROVAL_TIMEOUT;
+            loop {
+                async_cx
+                    .background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+
+                if open_finished_for_task.load(Ordering::Acquire) {
+                    async_cx
+                        .update(|_, cx| {
+                            _ = view.update(cx, |_, cx| cx.notify());
+                        })
+                        .ok();
+                    break;
+                }
+
+                let hk_req = pending_host_key_for_task.lock().take();
+                if let Some(req) = hk_req {
+                    async_cx
+                        .update(|window, cx| {
+                            _ = view.update(cx, |fulgur, cx| {
+                                fulgur.show_ssh_host_fingerprint_dialog(window, cx, req);
+                            });
+                        })
+                        .ok();
+                }
+
+                if std::time::Instant::now() > deadline {
+                    if let Some(request) = pending_host_key_for_task.lock().take() {
+                        let _ = request.decision_tx.send(HostKeyDecision::Reject);
+                    }
+                    Self::publish_remote_open_outcome(
+                        &open_finished_for_task,
+                        &pending_remote_for_task,
+                        target_tab_id,
+                        target_request_id,
+                        Err(format!(
+                            "{} ({} s)",
+                            SSH_CONNECTION_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                        )),
+                    );
+                    async_cx
+                        .update(|_, cx| {
+                            _ = view.update(cx, |_, cx| cx.notify());
+                        })
+                        .ok();
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Publish a remote-open outcome exactly once for a single open operation.
+    ///
+    /// ### Arguments
+    /// - `open_finished`: Per-operation completion flag shared by the worker and monitor task.
+    /// - `pending_remote`: Queue of remote-open outcomes drained by the render loop.
+    /// - `target_tab_id`: Existing tab id for a reload operation, or `None` for new-tab opens.
+    /// - `target_request_id`: Monotonic request token used to reject stale completions.
+    /// - `outcome`: Success or failure result to enqueue.
+    ///
+    /// ### Returns
+    /// - `true`: The outcome was accepted and enqueued.
+    /// - `false`: Another outcome already won the race and this one was ignored.
+    fn publish_remote_open_outcome(
+        open_finished: &AtomicBool,
+        pending_remote: &parking_lot::Mutex<Vec<PendingRemoteOpenOutcome>>,
+        target_tab_id: Option<usize>,
+        target_request_id: Option<u64>,
+        outcome: Result<RemoteOpenResult, String>,
+    ) -> bool {
+        if !open_finished.swap(true, Ordering::AcqRel) {
+            pending_remote.lock().push(PendingRemoteOpenOutcome {
+                target_tab_id,
+                target_request_id,
+                result: outcome,
+            });
+            true
+        } else {
+            false
+        }
+    }
+
     /// Handle opening a file from the command line (double-click or "Open with")
     ///
     /// ### Behavior
@@ -388,6 +940,327 @@ impl Fulgur {
         }
     }
 
+    /// Save a remote tab by resolving credentials then spawning an SSH/SFTP worker.
+    ///
+    /// ### Arguments
+    /// - `window`: The window used to spawn dialog and monitoring tasks
+    /// - `cx`: The application context
+    /// - `tab_id`: Stable editor-tab id used to apply completion updates
+    /// - `spec`: Remote file specification for the tab
+    /// - `contents`: Snapshot of editor contents to persist remotely
+    fn save_remote_file(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        tab_id: usize,
+        mut spec: RemoteSpec,
+        contents: String,
+    ) {
+        let ssh_session_cache = Arc::clone(&self.shared_state(cx).ssh_session_cache);
+        if let (Some(user), Some(password)) = (spec.user.clone(), spec.password_in_url.take()) {
+            let key = SshCredKey::new(spec.host.clone(), spec.port, user);
+            ssh_session_cache.lock().insert(key, password);
+        }
+
+        let saved_content = Arc::new(contents);
+        if let Some(user) = spec.user.clone() {
+            let cache_key = SshCredKey::new(spec.host.clone(), spec.port, user.clone());
+            if let Some(cached_password) = ssh_session_cache.lock().get(&cache_key).cloned() {
+                spec.password_in_url = None;
+                let request_id = self.next_remote_request_id;
+                self.next_remote_request_id = self.next_remote_request_id.wrapping_add(1);
+                self.latest_remote_save_request_by_tab
+                    .insert(tab_id, request_id);
+                self.spawn_ssh_save_task(
+                    window,
+                    cx,
+                    RemoteSaveTaskParams {
+                        tab_id,
+                        request_id,
+                        spec,
+                        saved_content: Arc::clone(&saved_content),
+                        password: cached_password,
+                        credential_key: cache_key,
+                        ssh_session_cache: Arc::clone(&ssh_session_cache),
+                    },
+                );
+                return;
+            }
+        }
+
+        let host = spec.host.clone();
+        let port = spec.port;
+        let user = spec.user.clone();
+        let entity = cx.entity().downgrade();
+        let cache_for_callback = Arc::clone(&ssh_session_cache);
+
+        self.show_ssh_password_dialog(
+            window,
+            cx,
+            host,
+            port,
+            user,
+            move |resolved_user, password, window, cx| {
+                let mut spec_with_user = spec.clone();
+                spec_with_user.user = Some(resolved_user.clone());
+                spec_with_user.password_in_url = None;
+                let cache_key = SshCredKey::new(
+                    spec_with_user.host.clone(),
+                    spec_with_user.port,
+                    resolved_user.clone(),
+                );
+                if let Some(entity) = entity.upgrade() {
+                    entity.update(cx, |fulgur, cx| {
+                        cache_for_callback
+                            .lock()
+                            .insert(cache_key.clone(), password.clone());
+                        if let Some(Tab::Editor(editor_tab)) =
+                            fulgur.tabs.iter_mut().find(|tab| tab.id() == tab_id)
+                            && let TabLocation::Remote(remote_spec) = &mut editor_tab.location
+                        {
+                            remote_spec.user = Some(resolved_user.clone());
+                        }
+                        let request_id = fulgur.next_remote_request_id;
+                        fulgur.next_remote_request_id =
+                            fulgur.next_remote_request_id.wrapping_add(1);
+                        fulgur
+                            .latest_remote_save_request_by_tab
+                            .insert(tab_id, request_id);
+                        fulgur.spawn_ssh_save_task(
+                            window,
+                            cx,
+                            RemoteSaveTaskParams {
+                                tab_id,
+                                request_id,
+                                spec: spec_with_user,
+                                saved_content: Arc::clone(&saved_content),
+                                password,
+                                credential_key: cache_key,
+                                ssh_session_cache: Arc::clone(&cache_for_callback),
+                            },
+                        );
+                    });
+                }
+            },
+        );
+    }
+
+    /// Spawn a blocking SSH/SFTP save worker with host-key UI monitoring.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context used to spawn the async monitor task
+    /// - `cx`: The application context
+    /// - `params`: All data required to run the remote save operation
+    fn spawn_ssh_save_task(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        params: RemoteSaveTaskParams,
+    ) {
+        let RemoteSaveTaskParams {
+            tab_id,
+            request_id,
+            spec,
+            saved_content,
+            password,
+            credential_key,
+            ssh_session_cache,
+        } = params;
+        let pending_host_key: Arc<parking_lot::Mutex<Option<HostKeyRequest>>> =
+            Arc::new(parking_lot::Mutex::new(None));
+        let pending_host_key_for_thread = Arc::clone(&pending_host_key);
+        let pending_host_key_for_task = Arc::clone(&pending_host_key);
+
+        let pending_save_result: Arc<parking_lot::Mutex<Option<Result<(), String>>>> =
+            Arc::new(parking_lot::Mutex::new(None));
+        let pending_save_for_thread = Arc::clone(&pending_save_result);
+        let pending_save_for_task = Arc::clone(&pending_save_result);
+
+        let save_finished = Arc::new(AtomicBool::new(false));
+        let save_finished_for_thread = Arc::clone(&save_finished);
+        let save_finished_for_task = Arc::clone(&save_finished);
+        let host_key_decision_timed_out = Arc::new(AtomicBool::new(false));
+        let host_key_decision_timed_out_for_thread = Arc::clone(&host_key_decision_timed_out);
+
+        let spec_for_thread = spec.clone();
+        let user = spec.user.clone().unwrap_or_default();
+        let cache_for_thread = Arc::clone(&ssh_session_cache);
+        let credential_key_for_thread = credential_key.clone();
+        let content_for_thread = Arc::clone(&saved_content);
+
+        std::thread::spawn(move || {
+            let slot = pending_host_key_for_thread;
+            let host_key_decision_timed_out_for_callback =
+                Arc::clone(&host_key_decision_timed_out_for_thread);
+            let session_result = self::ssh::session::connect(
+                &spec_for_thread,
+                &user,
+                &password,
+                move |fingerprint, host, port| {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    *slot.lock() = Some(HostKeyRequest {
+                        fingerprint: fingerprint.to_string(),
+                        host: host.to_string(),
+                        port,
+                        decision_tx: tx,
+                    });
+                    Self::wait_for_host_key_decision(rx, &host_key_decision_timed_out_for_callback)
+                },
+            );
+            if let Err(self::ssh::error::SshError::AuthFailed) = &session_result {
+                cache_for_thread.lock().remove(&credential_key_for_thread);
+            }
+            let mut outcome = session_result
+                .and_then(|session| {
+                    self::ssh::sftp::write_remote_file(
+                        &session,
+                        &spec_for_thread.path,
+                        content_for_thread.as_bytes(),
+                    )
+                })
+                .map_err(|e| e.user_message());
+            if host_key_decision_timed_out_for_thread.load(Ordering::Acquire) {
+                outcome = Err(format!(
+                    "{} ({} s)",
+                    SSH_SAVE_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                ));
+            }
+            Self::publish_remote_save_outcome(
+                &save_finished_for_thread,
+                &pending_save_for_thread,
+                outcome,
+            );
+        });
+
+        cx.spawn_in(window, async move |view, async_cx| {
+            let deadline = std::time::Instant::now() + SSH_HOST_KEY_APPROVAL_TIMEOUT;
+            loop {
+                async_cx
+                    .background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+
+                let hk_req = pending_host_key_for_task.lock().take();
+                if let Some(req) = hk_req {
+                    async_cx
+                        .update(|window, cx| {
+                            _ = view.update(cx, |fulgur, cx| {
+                                fulgur.show_ssh_host_fingerprint_dialog(window, cx, req);
+                            });
+                        })
+                        .ok();
+                }
+
+                let save_result = pending_save_for_task.lock().take();
+                if let Some(result) = save_result {
+                    let saved_content = Arc::clone(&saved_content);
+                    async_cx
+                        .update(|_, cx| {
+                            _ = view.update(cx, |fulgur, cx| {
+                                fulgur.handle_remote_save_result(
+                                    tab_id,
+                                    request_id,
+                                    saved_content.as_str(),
+                                    result,
+                                    cx,
+                                );
+                            });
+                        })
+                        .ok();
+                    break;
+                }
+
+                if std::time::Instant::now() > deadline {
+                    if let Some(request) = pending_host_key_for_task.lock().take() {
+                        let _ = request.decision_tx.send(HostKeyDecision::Reject);
+                    }
+                    Self::publish_remote_save_outcome(
+                        &save_finished_for_task,
+                        &pending_save_for_task,
+                        Err(format!(
+                            "{} ({} s)",
+                            SSH_SAVE_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                        )),
+                    );
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Publish a remote-save outcome exactly once for a single save operation.
+    ///
+    /// ### Arguments
+    /// - `save_finished`: Per-operation completion flag shared by worker and monitor
+    /// - `pending_save`: Shared slot consumed by the monitor task
+    /// - `outcome`: Save result to publish
+    ///
+    /// ### Returns
+    /// - `true`: The outcome was accepted and stored
+    /// - `false`: Another outcome already won the race and this one was ignored
+    fn publish_remote_save_outcome(
+        save_finished: &AtomicBool,
+        pending_save: &parking_lot::Mutex<Option<Result<(), String>>>,
+        outcome: Result<(), String>,
+    ) -> bool {
+        if !save_finished.swap(true, Ordering::AcqRel) {
+            *pending_save.lock() = Some(outcome);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Apply a completed remote-save result on the UI thread.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: Stable editor-tab id associated with the save request
+    /// - `request_id`: Monotonic save request token used to ignore stale completions
+    /// - `saved_content`: Snapshot that was successfully sent to the remote host
+    /// - `result`: Save outcome from the worker task
+    /// - `cx`: The application context
+    fn handle_remote_save_result(
+        &mut self,
+        tab_id: usize,
+        request_id: u64,
+        saved_content: &str,
+        result: Result<(), String>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.latest_remote_save_request_by_tab.get(&tab_id).copied() != Some(request_id) {
+            return;
+        }
+        self.latest_remote_save_request_by_tab.remove(&tab_id);
+
+        match result {
+            Ok(()) => {
+                if let Some(editor_tab) = self.tabs.iter_mut().find_map(|tab| {
+                    if let Tab::Editor(editor_tab) = tab {
+                        (editor_tab.id == tab_id).then_some(editor_tab)
+                    } else {
+                        None
+                    }
+                }) {
+                    // Keep async save semantics correct: if content changed after dispatch,
+                    // this remains dirty because baseline is set to the persisted snapshot.
+                    editor_tab.set_original_content_from_str(saved_content);
+                    editor_tab.modified = editor_tab.content_differs_from_original(cx);
+                    editor_tab.update_file_tooltip_cache(saved_content.len());
+                    self.pending_remote_restore.remove(&tab_id);
+                    self.inflight_remote_restore.remove(&tab_id);
+                    cx.notify();
+                }
+            }
+            Err(msg) => {
+                self.pending_notification = Some((
+                    NotificationType::Error,
+                    format!("Failed to save: {msg}").into(),
+                ));
+                cx.notify();
+            }
+        }
+    }
+
     /// Save a file
     ///
     /// ### Arguments
@@ -401,39 +1274,49 @@ impl Fulgur {
             return;
         };
         let active_tab = &self.tabs[active_tab_index];
-        let (path, content_entity) = match active_tab {
-            Tab::Editor(editor_tab) => {
-                let Some(file_path) = editor_tab.file_path.clone() else {
-                    self.save_file_as(window, cx);
-                    return;
-                };
-                (file_path, editor_tab.content.clone())
-            }
+        let (tab_id, location, content_entity) = match active_tab {
+            Tab::Editor(editor_tab) => (
+                editor_tab.id,
+                editor_tab.location.clone(),
+                editor_tab.content.clone(),
+            ),
             Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
         };
-        let contents = content_entity.read(cx).text().to_string();
-        log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
-        if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
-            log::error!("Failed to save file {:?}: {}", path, e);
-            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-            window.push_notification(
-                (
-                    NotificationType::Error,
-                    SharedString::from(format!("Failed to save '{}': {}", file_name, e)),
-                ),
-                cx,
-            );
+        if matches!(location, TabLocation::Untitled) {
+            self.save_file_as(window, cx);
             return;
         }
-        log::debug!("File saved successfully: {:?}", path);
-        self.file_watch_state
-            .last_file_saves
-            .insert(path.clone(), std::time::Instant::now());
-        if let Tab::Editor(editor_tab) = &mut self.tabs[active_tab_index] {
-            editor_tab.mark_as_saved(cx);
-            editor_tab.update_file_tooltip_cache(contents.len());
+        let contents = content_entity.read(cx).text().to_string();
+        match location {
+            TabLocation::Local(path) => {
+                log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
+                if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
+                    log::error!("Failed to save file {:?}: {}", path, e);
+                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+                    window.push_notification(
+                        (
+                            NotificationType::Error,
+                            SharedString::from(format!("Failed to save '{}': {}", file_name, e)),
+                        ),
+                        cx,
+                    );
+                    return;
+                }
+                log::debug!("File saved successfully: {:?}", path);
+                self.file_watch_state
+                    .last_file_saves
+                    .insert(path.clone(), std::time::Instant::now());
+                if let Tab::Editor(editor_tab) = &mut self.tabs[active_tab_index] {
+                    editor_tab.mark_as_saved(cx);
+                    editor_tab.update_file_tooltip_cache(contents.len());
+                }
+                cx.notify();
+            }
+            TabLocation::Remote(spec) => {
+                self.save_remote_file(window, cx, tab_id, spec, contents);
+            }
+            TabLocation::Untitled => {}
         }
-        cx.notify();
     }
 
     /// Save a file as
@@ -450,7 +1333,7 @@ impl Fulgur {
         };
         let (content_entity, directory, suggested_filename) = match &self.tabs[active_tab_index] {
             Tab::Editor(editor_tab) => {
-                let dir = if let Some(ref path) = editor_tab.file_path {
+                let dir = if let Some(path) = editor_tab.file_path() {
                     path.parent()
                         .unwrap_or(std::path::Path::new("."))
                         .to_path_buf()
@@ -490,7 +1373,7 @@ impl Fulgur {
                         let old_path = if let Some(Tab::Editor(editor_tab)) =
                             this.tabs.get(active_tab_index)
                         {
-                            editor_tab.file_path.clone()
+                            editor_tab.file_path().cloned()
                         } else {
                             None
                         };
@@ -501,7 +1384,7 @@ impl Fulgur {
                             .last_file_saves
                             .insert(path.clone(), std::time::Instant::now());
                         if let Some(Tab::Editor(editor_tab)) = this.tabs.get_mut(active_tab_index) {
-                            editor_tab.file_path = Some(path.clone());
+                            editor_tab.location = TabLocation::Local(path.clone());
                             editor_tab.title = path
                                 .file_name()
                                 .and_then(|n| n.to_str())
@@ -722,6 +1605,8 @@ impl Fulgur {
 mod tests {
     use super::detect_encoding_and_decode;
     use crate::fulgur::ui::components_utils::UTF_8;
+    use crate::fulgur::{Fulgur, sync::ssh::url::RemoteSpec};
+    use std::sync::atomic::AtomicBool;
 
     // ========== detect_encoding_and_decode tests ==========
 
@@ -750,11 +1635,132 @@ mod tests {
         assert!(!decoded.is_empty());
     }
 
+    fn make_remote_result() -> super::RemoteOpenResult {
+        super::RemoteOpenResult::File(super::RemoteFileResult {
+            spec: RemoteSpec {
+                host: "example.com".to_string(),
+                port: 22,
+                user: Some("alice".to_string()),
+                path: "/tmp/test.txt".to_string(),
+                password_in_url: None,
+            },
+            content: "ok".to_string(),
+            encoding: UTF_8.to_string(),
+            file_size: 2,
+        })
+    }
+
+    #[test]
+    fn test_publish_remote_open_outcome_ignores_timeout_after_success() {
+        let open_finished = AtomicBool::new(false);
+        let pending_remote = parking_lot::Mutex::new(Vec::new());
+
+        let published_success = Fulgur::publish_remote_open_outcome(
+            &open_finished,
+            &pending_remote,
+            None,
+            None,
+            Ok(make_remote_result()),
+        );
+        let published_timeout = Fulgur::publish_remote_open_outcome(
+            &open_finished,
+            &pending_remote,
+            None,
+            None,
+            Err("SSH connection timed out (60 s)".to_string()),
+        );
+
+        assert!(published_success, "first outcome should win");
+        assert!(!published_timeout, "timeout must be ignored after success");
+        let queue = pending_remote.lock();
+        assert_eq!(queue.len(), 1, "only one outcome must be queued");
+        assert!(
+            queue[0].result.is_ok(),
+            "queued outcome should be the success result"
+        );
+    }
+
+    #[test]
+    fn test_publish_remote_open_outcome_ignores_success_after_timeout() {
+        let open_finished = AtomicBool::new(false);
+        let pending_remote = parking_lot::Mutex::new(Vec::new());
+
+        let published_timeout = Fulgur::publish_remote_open_outcome(
+            &open_finished,
+            &pending_remote,
+            None,
+            None,
+            Err("SSH connection timed out (60 s)".to_string()),
+        );
+        let published_success = Fulgur::publish_remote_open_outcome(
+            &open_finished,
+            &pending_remote,
+            None,
+            None,
+            Ok(make_remote_result()),
+        );
+
+        assert!(published_timeout, "first outcome should win");
+        assert!(
+            !published_success,
+            "late success must be ignored after timeout"
+        );
+        let queue = pending_remote.lock();
+        assert_eq!(queue.len(), 1, "only one outcome must be queued");
+        assert!(
+            queue[0].result.is_err(),
+            "queued outcome should be the timeout result"
+        );
+    }
+
+    #[test]
+    fn test_publish_remote_save_outcome_ignores_timeout_after_success() {
+        let save_finished = AtomicBool::new(false);
+        let pending_save = parking_lot::Mutex::new(None);
+
+        let published_success =
+            Fulgur::publish_remote_save_outcome(&save_finished, &pending_save, Ok(()));
+        let published_timeout = Fulgur::publish_remote_save_outcome(
+            &save_finished,
+            &pending_save,
+            Err("SSH save timed out (60 s)".to_string()),
+        );
+
+        assert!(published_success, "first save outcome should win");
+        assert!(!published_timeout, "timeout must be ignored after success");
+        let result = pending_save.lock();
+        assert!(result.is_some(), "one save outcome should be queued");
+        assert!(result.as_ref().is_some_and(Result::is_ok));
+    }
+
+    #[test]
+    fn test_publish_remote_save_outcome_ignores_success_after_timeout() {
+        let save_finished = AtomicBool::new(false);
+        let pending_save = parking_lot::Mutex::new(None);
+
+        let published_timeout = Fulgur::publish_remote_save_outcome(
+            &save_finished,
+            &pending_save,
+            Err("SSH save timed out (60 s)".to_string()),
+        );
+        let published_success =
+            Fulgur::publish_remote_save_outcome(&save_finished, &pending_save, Ok(()));
+
+        assert!(published_timeout, "first save outcome should win");
+        assert!(
+            !published_success,
+            "late success must be ignored after timeout"
+        );
+        let result = pending_save.lock();
+        assert!(result.is_some(), "one save outcome should be queued");
+        assert!(result.as_ref().is_some_and(Result::is_err));
+    }
+
     // ========== GPUI-backed tests ==========
 
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::{
-        Fulgur, settings::Settings, shared_state::SharedAppState, tab::Tab,
+        editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState, tab::Tab,
         window_manager::WindowManager,
     };
     #[cfg(feature = "gpui-test-support")]
@@ -895,7 +1901,7 @@ mod tests {
             fulgur.update(cx, |this, cx| {
                 this.new_tab(window, cx);
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
-                    editor_tab.file_path = Some(path.clone());
+                    editor_tab.location = TabLocation::Local(path.clone());
                 }
                 let expected_index = this.tabs.len() - 1;
                 let result = this.find_tab_by_path(&path);
@@ -933,6 +1939,51 @@ mod tests {
         });
     }
 
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_find_tab_by_remote_spec_returns_index_for_existing_remote_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let spec = RemoteSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: Some("alice".to_string()),
+            path: "/var/log/syslog".to_string(),
+            password_in_url: None,
+        };
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
+                    editor_tab.location = TabLocation::Remote(spec.clone());
+                }
+                let expected_index = this.tabs.len() - 1;
+                let result = this.find_tab_by_remote_spec(&spec);
+                assert_eq!(result, Some(expected_index));
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_find_tab_by_remote_spec_returns_none_for_unknown_remote_spec(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let spec = RemoteSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: Some("alice".to_string()),
+            path: "/var/log/syslog".to_string(),
+            password_in_url: None,
+        };
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                let result = this.find_tab_by_remote_spec(&spec);
+                assert_eq!(result, None);
+            });
+        });
+    }
+
     // ========== reload_tab_from_disk tests ==========
 
     #[cfg(feature = "gpui-test-support")]
@@ -946,7 +1997,7 @@ mod tests {
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, _cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
-                    editor_tab.file_path = Some(path.clone());
+                    editor_tab.location = TabLocation::Local(path.clone());
                     editor_tab.set_original_content_from_str("initial content");
                 }
             });
@@ -1013,7 +2064,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
-                    editor_tab.file_path = Some(path.clone());
+                    editor_tab.location = TabLocation::Local(path.clone());
                 }
                 this.save_file(window, cx);
             });
@@ -1032,7 +2083,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
-                    editor_tab.file_path = Some(path.clone());
+                    editor_tab.location = TabLocation::Local(path.clone());
                     editor_tab.modified = true;
                 }
                 this.save_file(window, cx);
@@ -1071,7 +2122,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
-                    editor_tab.file_path = Some(path.clone());
+                    editor_tab.location = TabLocation::Local(path.clone());
                 }
                 let count_before = this.tabs.len();
                 this.do_open_file(window, cx, path.clone());
@@ -1112,7 +2163,7 @@ mod tests {
             this.tabs
                 .last()
                 .and_then(|t| t.as_editor())
-                .and_then(|e| e.file_path.clone())
+                .and_then(|e| e.file_path().cloned())
         });
         // Canonicalize both sides since macOS may resolve /var/ -> /private/var/
         let canonical_expected = std::fs::canonicalize(&path).unwrap_or(path.clone());
@@ -1121,6 +2172,37 @@ mod tests {
             .and_then(|p| std::fs::canonicalize(p).ok())
             .unwrap_or_else(|| tab_path.clone().unwrap_or_default());
         assert_eq!(canonical_actual, canonical_expected);
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_do_open_recent_file_focuses_existing_remote_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let spec = RemoteSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: Some("alice".to_string()),
+            path: "/tmp/notes.md".to_string(),
+            password_in_url: None,
+        };
+        let remote_recent = PathBuf::from(super::format_remote_url(&spec));
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
+                    editor_tab.location = TabLocation::Remote(spec.clone());
+                }
+                this.new_tab(window, cx);
+                let tab_count_before = this.tabs.len();
+                this.do_open_recent_file(window, cx, remote_recent.clone());
+                assert_eq!(
+                    this.tabs.len(),
+                    tab_count_before,
+                    "remote recent should focus existing tab instead of creating a duplicate"
+                );
+                assert_eq!(this.active_tab_index, Some(0));
+            });
+        });
     }
 
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]

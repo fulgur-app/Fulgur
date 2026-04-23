@@ -77,7 +77,14 @@ Xcode must be installed (e.g. from the App Store) as well as the Xcode command l
 
 #### Windows
 
-Install the [Windows SDK](https://developer.microsoft.com/en-us/windows/downloads/sdk-archive/) matching the version of your OS and make sure that `fxd.exe` (matching your architecure e.g. x86-64, arm...) is in the path.
+Install the [Windows SDK](https://developer.microsoft.com/en-us/windows/downloads/sdk-archive/) matching the version of your OS and make sure that `fxd.exe` (matching your architecture e.g. x86-64, arm...) is in the path.
+
+Fulgur bundles OpenSSL for SSH remote file editing, which requires two additional build tools:
+
+- [Strawberry Perl](https://strawberryperl.com/) — needed for OpenSSL's `Configure` script
+- [NASM](https://www.nasm.us/) — needed for OpenSSL's assembly routines
+
+Both must be on your `PATH` before running `cargo build`.
 
 ### Build Fulgur
 

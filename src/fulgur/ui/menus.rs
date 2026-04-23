@@ -17,6 +17,7 @@ actions!(
         NewWindow,
         OpenFile,
         OpenPath,
+        OpenRemote,
         SaveFileAs,
         SaveFile,
         CloseFile,
@@ -57,6 +58,7 @@ enum KeybindingDispatchAction {
     OpenFile,
     NewFile,
     OpenPath,
+    OpenRemote,
     NewWindow,
     CloseFile,
     CloseAllFiles,
@@ -100,6 +102,9 @@ impl KeybindingDispatchSpec {
             KeybindingDispatchAction::OpenFile => KeyBinding::new(self.keystroke, OpenFile, None),
             KeybindingDispatchAction::NewFile => KeyBinding::new(self.keystroke, NewFile, None),
             KeybindingDispatchAction::OpenPath => KeyBinding::new(self.keystroke, OpenPath, None),
+            KeybindingDispatchAction::OpenRemote => {
+                KeyBinding::new(self.keystroke, OpenRemote, None)
+            }
             KeybindingDispatchAction::NewWindow => KeyBinding::new(self.keystroke, NewWindow, None),
             KeybindingDispatchAction::CloseFile => KeyBinding::new(self.keystroke, CloseFile, None),
             KeybindingDispatchAction::CloseAllFiles => {
@@ -146,6 +151,10 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
         KeybindingDispatchSpec::new("cmd-shift-o", KeybindingDispatchAction::OpenPath),
         #[cfg(not(target_os = "macos"))]
         KeybindingDispatchSpec::new("ctrl-shift-o", KeybindingDispatchAction::OpenPath),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-shift-r", KeybindingDispatchAction::OpenRemote),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-shift-r", KeybindingDispatchAction::OpenRemote),
         #[cfg(target_os = "macos")]
         KeybindingDispatchSpec::new("cmd-shift-n", KeybindingDispatchAction::NewWindow),
         #[cfg(not(target_os = "macos"))]
@@ -267,6 +276,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
                 MenuItem::action("New Window", NewWindow),
                 MenuItem::action("Open...", OpenFile),
                 MenuItem::action("Open from path...", OpenPath),
+                MenuItem::action("Open remote file...", OpenRemote),
                 MenuItem::Submenu(Menu {
                     name: "Recent Files".into(),
                     items: recent_files_items,

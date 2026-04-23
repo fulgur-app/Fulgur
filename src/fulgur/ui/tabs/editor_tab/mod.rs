@@ -1,15 +1,18 @@
 mod constructors;
 pub mod hex_color_provider;
+mod location;
 mod navigation;
 mod operations;
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;
 
+pub use location::TabLocation;
 pub use navigation::{Jump, extract_line_number};
 
 use gpui::{Context, Entity, SharedString, Window};
 use gpui_component::input::{InputState, Rope, TabSize};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::SystemTime;
 
@@ -22,7 +25,7 @@ pub struct EditorTab {
     pub id: usize,
     pub title: SharedString,
     pub content: Entity<InputState>,
-    pub file_path: Option<std::path::PathBuf>,
+    pub location: TabLocation,
     pub modified: bool,
     pub original_content_hash: u64,
     pub original_content_len: usize,
@@ -38,7 +41,7 @@ pub struct EditorTab {
 pub struct TabTransferData {
     pub title: SharedString,
     pub content: String,
-    pub file_path: Option<std::path::PathBuf>,
+    pub location: TabLocation,
     pub modified: bool,
     pub original_content_hash: u64,
     pub original_content_len: usize,
@@ -58,6 +61,17 @@ pub struct FromDuplicateParams {
     pub current_content: String,
     pub encoding: String,
     pub language: SupportedLanguage,
+}
+
+impl EditorTab {
+    /// Return the local filesystem path, if this tab holds a local file.
+    ///
+    /// ### Returns
+    /// - `Some(&PathBuf)`: The local path.
+    /// - `None`: If the tab is remote or untitled.
+    pub fn file_path(&self) -> Option<&PathBuf> {
+        self.location.local_path()
+    }
 }
 
 const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;

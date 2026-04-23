@@ -15,7 +15,7 @@ use tempfile::TempDir;
 
 // Import from the main crate
 use fulgur::fulgur::state_persistence::{
-    SerializedWindowBounds, TabState, WindowState, WindowsState,
+    SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
 };
 
 /// Create a temporary file path for testing
@@ -44,6 +44,7 @@ fn create_file_tab_unmodified() -> TabState {
         file_path: Some(path),
         content: None,
         last_saved: None,
+        remote: None,
     }
 }
 
@@ -62,6 +63,7 @@ fn create_file_tab_modified() -> TabState {
         file_path: Some(path),
         content: Some("# Modified Content\n\nThis has unsaved changes.".to_string()),
         last_saved: Some("2024-01-15T10:30:00Z".to_string()),
+        remote: None,
     }
 }
 
@@ -75,6 +77,7 @@ fn create_unsaved_tab() -> TabState {
         file_path: None,
         content: Some("New file content".to_string()),
         last_saved: None,
+        remote: None,
     }
 }
 
@@ -381,12 +384,14 @@ fn test_state_roundtrip_with_real_temp_files() {
                     file_path: Some(file1_path.clone()),
                     content: None,
                     last_saved: None,
+                    remote: None,
                 },
                 TabState {
                     title: "real_file2.rs".to_string(),
                     file_path: Some(file2_path.clone()),
                     content: Some("Modified!".to_string()),
                     last_saved: Some("2024-01-01T00:00:00Z".to_string()),
+                    remote: None,
                 },
             ],
             active_tab_index: Some(0),
@@ -426,6 +431,7 @@ fn test_state_roundtrip_with_unicode_content() {
                 file_path: Some(unicode_path),
                 content: Some(unicode_content.to_string()),
                 last_saved: Some("2024-01-01T00:00:00Z".to_string()),
+                remote: None,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds::default(),
@@ -579,6 +585,51 @@ fn test_state_json_structure_validation() {
 }
 
 #[test]
+fn test_state_roundtrip_preserves_remote_spec_without_password_fields() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let state_path = temp_state_path(&temp_dir);
+    let original = WindowsState {
+        windows: vec![WindowState {
+            tabs: vec![TabState {
+                title: "remote.txt".to_string(),
+                file_path: None,
+                content: Some("cached remote content".to_string()),
+                last_saved: None,
+                remote: Some(SerializedRemoteSpec {
+                    host: "example.com".to_string(),
+                    port: 2222,
+                    user: "alice".to_string(),
+                    path: "/srv/remote.txt".to_string(),
+                }),
+            }],
+            active_tab_index: Some(0),
+            window_bounds: SerializedWindowBounds::default(),
+        }],
+    };
+
+    original
+        .save_to_path(&state_path)
+        .expect("Failed to save remote state");
+    let loaded = WindowsState::load_from_path(&state_path).expect("Failed to load remote state");
+
+    assert_eq!(loaded.windows.len(), 1);
+    let loaded_remote = loaded.windows[0].tabs[0]
+        .remote
+        .as_ref()
+        .expect("remote metadata should be restored");
+    assert_eq!(loaded_remote.host, "example.com");
+    assert_eq!(loaded_remote.port, 2222);
+    assert_eq!(loaded_remote.user, "alice");
+    assert_eq!(loaded_remote.path, "/srv/remote.txt");
+
+    let json_content = fs::read_to_string(&state_path).expect("Failed to read state file");
+    assert!(
+        !json_content.contains("password"),
+        "state.json must not persist SSH passwords"
+    );
+}
+
+#[test]
 fn test_state_preserves_window_order() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let state_path = temp_state_path(&temp_dir);
@@ -590,6 +641,7 @@ fn test_state_preserves_window_order() {
                 file_path: None,
                 content: Some(format!("This is window number {}", i)),
                 last_saved: None,
+                remote: None,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds {

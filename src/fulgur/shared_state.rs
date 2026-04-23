@@ -1,3 +1,4 @@
+use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::utils::crypto_helper::check_private_public_keys;
 use crate::fulgur::utils::updater::UpdateInfo;
 use crate::fulgur::{
@@ -87,6 +88,10 @@ pub struct SharedAppState {
     pub pending_ipc_commands: Arc<Mutex<Vec<String>>>,
     /// Shared HTTP agent for connection pooling across all requests
     pub http_agent: Arc<ureq::Agent>,
+    /// Session-scoped SSH password cache keyed by `(host, port, user)`.
+    ///
+    /// The cache is memory-only and dropped on app exit.
+    pub ssh_session_cache: Arc<Mutex<SshCredentialCache>>,
 }
 
 impl gpui::Global for SharedAppState {}
@@ -122,6 +127,7 @@ impl SharedAppState {
                     .timeout_global(Some(std::time::Duration::from_secs(10)))
                     .build(),
             )),
+            ssh_session_cache: Arc::new(Mutex::new(SshCredentialCache::new())),
         }
     }
 

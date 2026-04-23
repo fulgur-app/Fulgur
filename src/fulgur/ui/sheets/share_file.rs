@@ -170,7 +170,7 @@ fn handle_share_file(
             .as_ref()
             .map(|tab| tab.content.read(cx).value().to_string())
             .unwrap_or_default();
-        let file_path = active_tab.as_ref().and_then(|tab| tab.file_path.clone());
+        let file_path = active_tab.as_ref().and_then(|tab| tab.file_path().cloned());
         let file_name = file_path
             .as_ref()
             .and_then(|path| path.file_name())

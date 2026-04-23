@@ -1,5 +1,6 @@
 use super::{
-    EditorTab, FromDuplicateParams, FromFileParams, TabTransferData, content_fingerprint_from_str,
+    EditorTab, FromDuplicateParams, FromFileParams, TabLocation, TabTransferData,
+    content_fingerprint_from_str,
 };
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
 use crate::fulgur::settings::EditorSettings;
@@ -30,7 +31,7 @@ fn make_transfer_data() -> TabTransferData {
     TabTransferData {
         title: SharedString::from("transfer.rs"),
         content: "fn main() {}".to_string(),
-        file_path: Some(std::path::PathBuf::from("/tmp/transfer.rs")),
+        location: TabLocation::Local(std::path::PathBuf::from("/tmp/transfer.rs")),
         modified: false,
         original_content_hash: content_fingerprint_from_str("fn main() {}").0,
         original_content_len: "fn main() {}".len(),
@@ -54,7 +55,7 @@ fn test_editor_tab_new_construction(cx: &mut TestAppContext) {
             let tab = EditorTab::new(7, "Scratch", window, cx, &settings);
             assert_eq!(tab.id, 7);
             assert_eq!(tab.title, SharedString::from("Scratch"));
-            assert!(tab.file_path.is_none());
+            assert!(tab.file_path().is_none());
             assert!(!tab.modified);
             assert_eq!(
                 tab.original_content_hash,
@@ -100,7 +101,7 @@ fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
             );
             assert_eq!(tab.id, 9);
             assert_eq!(tab.title, SharedString::from("shared.rs"));
-            assert!(tab.file_path.is_none());
+            assert!(tab.file_path().is_none());
             assert!(tab.modified);
             assert_eq!(
                 tab.original_content_hash,
@@ -139,7 +140,7 @@ fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
             let tab = EditorTab::from_file(params, window, cx, &settings);
             assert_eq!(tab.id, 13);
             assert_eq!(tab.title, SharedString::from("test_file.md •"));
-            assert_eq!(tab.file_path, Some(path));
+            assert_eq!(tab.file_path().cloned(), Some(path));
             assert!(tab.modified);
             assert_eq!(
                 tab.original_content_hash,
@@ -174,7 +175,7 @@ fn test_editor_tab_from_duplicate_construction(cx: &mut TestAppContext) {
             let tab = EditorTab::from_duplicate(params, window, cx, &settings);
             assert_eq!(tab.id, 22);
             assert_eq!(tab.title, SharedString::from("copy.rs"));
-            assert!(tab.file_path.is_none());
+            assert!(tab.file_path().is_none());
             assert!(tab.modified);
             assert_eq!(
                 tab.original_content_hash,
@@ -365,7 +366,7 @@ fn test_from_transfer_preserves_all_fields(cx: &mut TestAppContext) {
             assert_eq!(tab.id, 99);
             assert_eq!(tab.title, SharedString::from("transfer.rs"));
             assert_eq!(
-                tab.file_path,
+                tab.file_path().cloned(),
                 Some(std::path::PathBuf::from("/tmp/transfer.rs"))
             );
             assert!(!tab.modified);
@@ -411,7 +412,7 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
     let data = TabTransferData {
         title: SharedString::from("Untitled"),
         content: "scratch content".to_string(),
-        file_path: None,
+        location: TabLocation::Untitled,
         modified: false,
         original_content_hash: content_fingerprint_from_str("").0,
         original_content_len: 0,
@@ -426,7 +427,7 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
     cx.update(|cx| {
         cx.open_window(Default::default(), |window, cx| {
             let tab = EditorTab::from_transfer(1, data, window, cx, &settings);
-            assert!(tab.file_path.is_none());
+            assert!(tab.file_path().is_none());
             assert!(tab.file_size_bytes.is_none());
             assert!(tab.file_last_modified.is_none());
             assert_eq!(tab.content.read(cx).text().to_string(), "scratch content");
@@ -443,7 +444,7 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
     let data = TabTransferData {
         title: SharedString::from("changed.md"),
         content: "edited content".to_string(),
-        file_path: Some(std::path::PathBuf::from("/tmp/changed.md")),
+        location: TabLocation::Local(std::path::PathBuf::from("/tmp/changed.md")),
         modified: true,
         original_content_hash: content_fingerprint_from_str("original content").0,
         original_content_len: "original content".len(),
@@ -478,7 +479,7 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
     let data = TabTransferData {
         title: SharedString::from("script.py"),
         content: "print('hello')".to_string(),
-        file_path: None,
+        location: TabLocation::Untitled,
         modified: false,
         original_content_hash: content_fingerprint_from_str("print('hello')").0,
         original_content_len: "print('hello')".len(),
@@ -507,7 +508,7 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
     let data = TabTransferData {
         title: SharedString::from("note.md"),
         content: "# Note".to_string(),
-        file_path: None,
+        location: TabLocation::Untitled,
         modified: false,
         original_content_hash: content_fingerprint_from_str("# Note").0,
         original_content_len: "# Note".len(),

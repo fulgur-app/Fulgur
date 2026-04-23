@@ -10,7 +10,10 @@ pub mod utils;
 pub mod window_manager;
 use crate::fulgur::{
     editor_tab::EditorTab,
-    files::file_watcher::FileWatchState,
+    files::{
+        file_operations::{PendingRemoteOpenOutcome, RemoteFileResult, RemoteOpenResult},
+        file_watcher::FileWatchState,
+    },
     languages::supported_languages::SupportedLanguage,
     sync::sse::SseState,
     ui::{
@@ -35,7 +38,9 @@ use gpui_component::{
     v_flex,
 };
 use settings::Settings;
-use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
+use std::{
+    collections::HashMap, collections::HashSet, path::PathBuf, sync::Arc, sync::atomic::AtomicBool,
+};
 use tab::Tab;
 use ui::{
     bars::search_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*, themes,
@@ -132,6 +137,15 @@ pub struct Fulgur {
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
     pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
+    pending_remote_open: Arc<parking_lot::Mutex<Vec<PendingRemoteOpenOutcome>>>, // Queue for SSH background threads to deliver loaded remote files
+    next_remote_request_id: u64, // Monotonic identifier for remote open/save operations targeting existing tabs
+    latest_remote_open_request_by_tab: HashMap<usize, u64>, // Latest remote-open request id expected per tab id
+    latest_remote_save_request_by_tab: HashMap<usize, u64>, // Latest remote-save request id expected per tab id
+    last_failed_remote_open_url: Option<String>, // Last attempted remote URL kept for retry prefill after connection/open failures
+    pending_remote_restore: HashSet<usize>, // Restored remote tab ids that should lazily reconnect on first activation/save
+    inflight_remote_restore: HashSet<usize>, // Restored remote tabs currently running a reconnect task
+    pending_initial_active_tab: Option<usize>, // Active tab to re-activate after first render so dialogs can open safely
+    has_rendered_once: bool, // Tracks first render completion for startup actions that require mounted Root layers
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     local_window_menu_fingerprint: u64, // Cached local menu-state fingerprint published to WindowManager
     #[cfg(target_os = "macos")]
@@ -242,6 +256,15 @@ impl Fulgur {
                 pending_tab_transfer: None,
                 pending_tab_removal: None,
                 pending_transfer_scroll: None,
+                pending_remote_open: Arc::new(parking_lot::Mutex::new(Vec::new())),
+                next_remote_request_id: 1,
+                latest_remote_open_request_by_tab: HashMap::new(),
+                latest_remote_save_request_by_tab: HashMap::new(),
+                last_failed_remote_open_url: None,
+                pending_remote_restore: HashSet::new(),
+                inflight_remote_restore: HashSet::new(),
+                pending_initial_active_tab: None,
+                has_rendered_once: false,
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 local_window_menu_fingerprint: 0,
                 #[cfg(target_os = "macos")]
@@ -280,6 +303,7 @@ impl Fulgur {
                 // usize::MAX - 1 means new window receiving a tab transfer: skip initial tab
                 this.load_state(window, cx, window_index);
                 this.pending_tab_scroll = this.active_tab_index;
+                this.pending_initial_active_tab = this.active_tab_index;
             }
             if this.settings.editor_settings.watch_files {
                 this.start_file_watcher();
@@ -351,6 +375,7 @@ impl Fulgur {
         register_action!(app_content, cx, NewFile => new_tab);
         register_action!(app_content, cx, OpenFile => open_file);
         register_action!(app_content, cx, OpenPath => show_open_from_path_dialog);
+        register_action!(app_content, cx, OpenRemote => show_open_remote_dialog);
         register_action!(app_content, cx, CloseAllFiles => close_all_tabs);
         register_action!(app_content, cx, SaveFile => save_file);
         register_action!(app_content, cx, SaveFileAs => save_file_as);
@@ -371,7 +396,7 @@ impl Fulgur {
         register_action!(app_content, cx, tab_bar::CloseAllOtherTabs => on_close_all_other_tabs_action(&action));
         register_action!(app_content, cx, tab_bar::ShowInFileManager => on_show_in_file_manager(&action));
         register_action!(app_content, cx, tab_bar::DuplicateTab => on_duplicate_tab(&action));
-        register_action!(app_content, cx, OpenRecentFile => do_open_file(.0));
+        register_action!(app_content, cx, OpenRecentFile => do_open_recent_file(.0));
         register_action!(app_content, cx, CheckForUpdates => check_for_updates);
         register_action!(app_content, cx, GetTheme => call_no_args tab_bar::open_theme_repository);
         register_action!(app_content, cx, NewWindow => open_new_window(cx_only));
@@ -474,6 +499,7 @@ impl Render for Fulgur {
     /// ### Returns
     /// - `impl IntoElement`: The rendered Fulgur instance
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.process_pending_initial_active_tab_activation(window, cx);
         self.process_window_state_updates(window, cx);
         self.process_update_notifications(window, cx);
         self.synchronize_settings_from_other_windows(cx);
@@ -483,6 +509,7 @@ impl Render for Fulgur {
         self.process_shared_files_from_sync(window, cx);
         self.process_file_watch_events(window, cx);
         self.process_sse_events(window, cx);
+        self.process_pending_remote_files(window, cx);
         self.process_pending_share_sheet(window, cx);
         if self.tabs.is_empty() {
             self.active_tab_index = None;
@@ -507,6 +534,33 @@ impl Render for Fulgur {
 }
 
 impl Fulgur {
+    /// Activate the initially restored tab after the first render pass.
+    ///
+    /// The first render builds the window's `Root` layers. Startup flows that can open
+    /// dialogs (like remote password prompts triggered by `set_active_tab`) must wait
+    /// until that initial render has completed.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn process_pending_initial_active_tab_activation(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.has_rendered_once {
+            self.has_rendered_once = true;
+            if self.pending_initial_active_tab.is_some() {
+                cx.notify();
+            }
+            return;
+        }
+
+        if let Some(index) = self.pending_initial_active_tab.take() {
+            self.set_active_tab(index, window, cx);
+        }
+    }
+
     /// Process a deferred scroll-to-tab request
     ///
     /// GPUI's ScrollHandle needs one render cycle to populate child bounds and overflow
@@ -554,7 +608,7 @@ impl Fulgur {
             return;
         };
         let editor_focus = editor_tab.content.focus_handle(cx);
-        let has_file = editor_tab.file_path.is_some();
+        let has_file = editor_tab.file_path().is_some();
         let position = event.position;
 
         let menu = PopupMenu::build(window, cx, {
@@ -824,6 +878,157 @@ impl Fulgur {
         self.title_bar.update(cx, |this, _cx| {
             this.set_title(title, window_name.as_deref());
         });
+    }
+
+    /// Drain pending remote file results and open loaded content in new tabs.
+    ///
+    /// Called every render pass. When SSH background threads deliver results
+    /// (success or error), this method consumes them and either opens new tabs with
+    /// loaded content or shows error notifications.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn process_pending_remote_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let outcomes = std::mem::take(&mut *self.pending_remote_open.lock());
+        if outcomes.is_empty() {
+            return;
+        }
+        for outcome in outcomes {
+            let target_tab_id = outcome.target_tab_id;
+            if let Some(tab_id) = target_tab_id {
+                if let Some(request_id) = outcome.target_request_id
+                    && self.latest_remote_open_request_by_tab.get(&tab_id).copied()
+                        != Some(request_id)
+                {
+                    // A newer request for this tab is already in flight; ignore stale completion.
+                    continue;
+                }
+                if let Some(request_id) = outcome.target_request_id
+                    && self.latest_remote_open_request_by_tab.get(&tab_id).copied()
+                        == Some(request_id)
+                {
+                    self.latest_remote_open_request_by_tab.remove(&tab_id);
+                }
+                self.inflight_remote_restore.remove(&tab_id);
+            }
+
+            match outcome.result {
+                Ok(RemoteOpenResult::File(remote_file)) => {
+                    if let Some(tab_id) = target_tab_id {
+                        self.pending_remote_restore.remove(&tab_id);
+                        self.apply_remote_reload_to_existing_tab(tab_id, remote_file, window, cx);
+                    } else {
+                        self.last_failed_remote_open_url = None;
+                        let recent_remote_url =
+                            crate::fulgur::sync::ssh::url::format_remote_url(&remote_file.spec);
+                        log::debug!(
+                            "Remote file loaded: {}:{}",
+                            remote_file.spec.host,
+                            remote_file.spec.path
+                        );
+                        let editor_tab = EditorTab::from_remote_loaded(
+                            self.next_tab_id,
+                            remote_file,
+                            window,
+                            cx,
+                            &self.settings.editor_settings,
+                        );
+                        let idx = self.tabs.len();
+                        self.tabs.push(Tab::Editor(editor_tab));
+                        self.active_tab_index = Some(idx);
+                        self.pending_tab_scroll = Some(idx);
+                        self.next_tab_id += 1;
+                        self.focus_active_tab(window, cx);
+                        if let Err(e) = self.settings.add_file(PathBuf::from(recent_remote_url)) {
+                            log::error!("Failed to add remote file to recent files: {}", e);
+                        }
+                        let update_link = self
+                            .shared_state(cx)
+                            .update_info
+                            .lock()
+                            .as_ref()
+                            .map(|info| info.download_url.clone());
+                        let menus = build_menus(&self.settings.get_recent_files(), update_link);
+                        self.update_menus(menus, cx);
+                        if let Err(e) = self.save_state(cx, window) {
+                            log::error!(
+                                "Failed to save app state after opening remote file: {}",
+                                e
+                            );
+                            self.pending_notification = Some((
+                                NotificationType::Warning,
+                                format!("Remote file opened but failed to save state: {e}").into(),
+                            ));
+                        }
+                        cx.notify();
+                    }
+                }
+                Ok(RemoteOpenResult::Browse(browse)) => {
+                    if let Some(tab_id) = target_tab_id {
+                        self.pending_remote_restore.insert(tab_id);
+                        self.pending_notification = Some((
+                            NotificationType::Error,
+                            "Restored remote tab path is no longer a file".into(),
+                        ));
+                    } else {
+                        self.show_remote_path_browser_dialog(window, cx, browse);
+                    }
+                }
+                Err(msg) => {
+                    if let Some(tab_id) = target_tab_id {
+                        self.pending_remote_restore.insert(tab_id);
+                    }
+                    self.pending_notification = Some((NotificationType::Error, msg.into()));
+                }
+            }
+        }
+    }
+
+    /// Apply fresh remote contents to an already-restored tab after lazy reconnect.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: Stable editor tab id to update
+    /// - `remote_file`: Loaded remote payload from SSH worker
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn apply_remote_reload_to_existing_tab(
+        &mut self,
+        tab_id: usize,
+        remote_file: RemoteFileResult,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(editor_tab) = self.tabs.iter_mut().find_map(|tab| match tab {
+            Tab::Editor(editor_tab) if editor_tab.id == tab_id => Some(editor_tab),
+            _ => None,
+        }) else {
+            return;
+        };
+
+        editor_tab.content.update(cx, |input_state, cx| {
+            input_state.set_value(&remote_file.content, window, cx);
+        });
+        editor_tab.location =
+            crate::fulgur::editor_tab::TabLocation::Remote(remote_file.spec.clone());
+        editor_tab.encoding = remote_file.encoding;
+        editor_tab.set_original_content_from_str(&remote_file.content);
+        editor_tab.modified = false;
+        editor_tab.update_file_tooltip_cache(remote_file.file_size);
+        let filename = remote_file
+            .spec
+            .path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&remote_file.spec.path)
+            .to_string();
+        editor_tab.title = filename.into();
+        let language = crate::fulgur::languages::supported_languages::language_from_content(
+            editor_tab.title.as_ref(),
+            &remote_file.content,
+        );
+        editor_tab.force_language(window, cx, language, &self.settings.editor_settings);
+        cx.notify();
     }
 
     /// Render a visual overlay while external files are being dragged over the window.

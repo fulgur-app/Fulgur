@@ -22,7 +22,7 @@ impl Fulgur {
         Some(TabTransferData {
             title: editor.title.clone(),
             content: content_state.text().to_string(),
-            file_path: editor.file_path.clone(),
+            location: editor.location.clone(),
             modified: editor.modified,
             original_content_hash: editor.original_content_hash,
             original_content_len: editor.original_content_len,
@@ -49,7 +49,7 @@ impl Fulgur {
         if let Some(data) = self.pending_tab_transfer.take() {
             let id = self.next_tab_id;
             self.next_tab_id += 1;
-            let file_path = data.file_path.clone();
+            let local_path = data.location.local_path().cloned();
             let cursor_position = data.cursor_position;
             let tab =
                 EditorTab::from_transfer(id, data, window, cx, &self.settings.editor_settings);
@@ -58,7 +58,7 @@ impl Fulgur {
             self.active_tab_index = Some(new_index);
             self.pending_tab_scroll = Some(new_index);
             self.pending_transfer_scroll = Some(cursor_position);
-            if let Some(path) = file_path {
+            if let Some(path) = local_path {
                 self.watch_file(&path);
             }
             self.focus_active_tab(window, cx);

@@ -56,6 +56,17 @@ jobs:
         with:
           shared-key: ${{ matrix.os }}-cargo
 
+      # ssh2 vendored-openssl requires NASM and Perl to compile OpenSSL from source on Windows
+      - name: Install NASM (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
+
+      - name: Install Perl (Windows)
+        if: runner.os == 'Windows'
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
       # -- Coverage setup (Linux + main/PRs only) --
 
       - name: Install coverage tools
