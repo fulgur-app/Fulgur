@@ -71,16 +71,37 @@ pub fn connect(
     host_key_cb: impl FnOnce(&str, &str, u16) -> HostKeyDecision,
 ) -> Result<SshSession, SshError> {
     let addr_str = format!("{}:{}", spec.host, spec.port);
-    let addr = addr_str
+    let addrs: Vec<_> = addr_str
         .to_socket_addrs()
         .map_err(|e| SshError::ConnectionFailed(format!("Cannot resolve {}: {}", addr_str, e)))?
-        .next()
+        .collect();
+    if addrs.is_empty() {
+        return Err(SshError::ConnectionFailed(format!(
+            "No addresses found for {}",
+            addr_str
+        )));
+    }
+    // Try each resolved address in order (DNS may return IPv6 before IPv4; fall through on
+    // EHOSTUNREACH so the connection succeeds even when only one address family is routable).
+    let mut last_err = None;
+    let tcp = addrs
+        .into_iter()
+        .find_map(|addr| {
+            match TcpStream::connect_timeout(&addr, Duration::from_secs(CONNECT_TIMEOUT_SECS)) {
+                Ok(stream) => Some(stream),
+                Err(e) => {
+                    last_err = Some(e);
+                    None
+                }
+            }
+        })
         .ok_or_else(|| {
-            SshError::ConnectionFailed(format!("No addresses found for {}", addr_str))
+            SshError::ConnectionFailed(
+                last_err
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| "unknown error".to_string()),
+            )
         })?;
-
-    let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(CONNECT_TIMEOUT_SECS))
-        .map_err(|e| SshError::ConnectionFailed(e.to_string()))?;
 
     let mut session = Session::new().map_err(|e| SshError::ConnectionFailed(e.to_string()))?;
     if let Some(hostkey_prefs) = hostkey_method_preferences_from_known_hosts(&spec.host, spec.port)
