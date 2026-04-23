@@ -182,7 +182,7 @@ fn format_host_for_url(host: &str) -> String {
 ///   and host-only forms default to `/`.
 /// - `Err(SshError::ParseError)`: Empty host or invalid port.
 fn parse_scp_style(input: &str) -> Result<RemoteSpec, SshError> {
-    let (authority, path) = if let Some(colon_idx) = input.find(':') {
+    let (authority, path) = if let Some(colon_idx) = find_scp_path_separator(input) {
         let authority = &input[..colon_idx];
         let raw_path = &input[colon_idx + 1..];
         if raw_path.is_empty() {
@@ -212,6 +212,27 @@ fn parse_scp_style(input: &str) -> Result<RemoteSpec, SshError> {
     })
 }
 
+/// Find the scp authority/path separator (`:`) outside bracketed IPv6 literals.
+///
+/// ### Arguments
+/// - `input`: SCP-style input such as `user@host:/path` or `user@[::1]:/path`.
+///
+/// ### Returns
+/// - `Some(usize)`: Byte index of the separator colon.
+/// - `None`: No path separator was found outside IPv6 brackets.
+fn find_scp_path_separator(input: &str) -> Option<usize> {
+    let mut in_brackets = false;
+    for (idx, ch) in input.char_indices() {
+        match ch {
+            '[' => in_brackets = true,
+            ']' => in_brackets = false,
+            ':' if !in_brackets => return Some(idx),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Split a `host[:port]` or `[ipv6_addr][:port]` string into a host and port pair.
 ///
 /// ### Arguments
@@ -230,12 +251,22 @@ fn parse_hostport(hostport: &str) -> Result<(String, u16), SshError> {
             .find(']')
             .ok_or_else(|| SshError::ParseError("Unclosed '[' in IPv6 address".to_string()))?;
         let host = hostport[1..close].to_string();
+        if host.is_empty() {
+            return Err(SshError::ParseError("Host must not be empty".to_string()));
+        }
         let rest = &hostport[close + 1..];
-        let port = if let Some(p) = rest.strip_prefix(':') {
+        let port = if rest.is_empty() {
+            22
+        } else if let Some(p) = rest.strip_prefix(':') {
+            if p.is_empty() {
+                return Err(SshError::ParseError("Port must not be empty".to_string()));
+            }
             p.parse::<u16>()
                 .map_err(|_| SshError::ParseError(format!("Invalid port: {p}")))?
         } else {
-            22
+            return Err(SshError::ParseError(format!(
+                "Invalid IPv6 host suffix: {rest}"
+            )));
         };
         return Ok((host, port));
     }
@@ -334,6 +365,33 @@ mod tests {
         let spec = parse_remote_url("ssh://user@[::1]/home/user/file").unwrap();
         assert_eq!(spec.host, "::1");
         assert_eq!(spec.port, 22);
+    }
+
+    #[test]
+    fn scp_style_bracket_ipv6_absolute_path() {
+        let spec = parse_remote_url("user@[::1]:/etc/hosts").unwrap();
+        assert_eq!(spec.user.as_deref(), Some("user"));
+        assert_eq!(spec.host, "::1");
+        assert_eq!(spec.port, 22);
+        assert_eq!(spec.path, "/etc/hosts");
+    }
+
+    #[test]
+    fn scp_style_bracket_ipv6_relative_path() {
+        let spec = parse_remote_url("user@[::1]:notes/todo.txt").unwrap();
+        assert_eq!(spec.user.as_deref(), Some("user"));
+        assert_eq!(spec.host, "::1");
+        assert_eq!(spec.path, "~/notes/todo.txt");
+    }
+
+    #[test]
+    fn bracketed_ipv6_with_invalid_suffix_fails() {
+        assert!(parse_remote_url("ssh://user@[::1]junk/path").is_err());
+    }
+
+    #[test]
+    fn bracketed_ipv6_with_empty_port_fails() {
+        assert!(parse_remote_url("ssh://user@[::1]:/path").is_err());
     }
 
     #[test]
