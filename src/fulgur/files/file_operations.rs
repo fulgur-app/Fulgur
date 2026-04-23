@@ -142,6 +142,29 @@ impl Fulgur {
         })
     }
 
+    /// Find the index of an editor tab opened from the same remote location.
+    ///
+    /// ### Arguments
+    /// - `spec`: Remote location to search for.
+    ///
+    /// ### Returns
+    /// - `Some(usize)`: The index of the matching remote tab.
+    /// - `None`: If no tab matches this remote location.
+    pub fn find_tab_by_remote_spec(&self, spec: &RemoteSpec) -> Option<usize> {
+        self.tabs.iter().position(|tab| {
+            if let Tab::Editor(editor_tab) = tab
+                && let TabLocation::Remote(existing_spec) = &editor_tab.location
+            {
+                existing_spec.host == spec.host
+                    && existing_spec.port == spec.port
+                    && existing_spec.user == spec.user
+                    && existing_spec.path == spec.path
+            } else {
+                false
+            }
+        })
+    }
+
     /// Reload tab content from disk
     ///
     /// ### Arguments
@@ -416,6 +439,12 @@ impl Fulgur {
         cx: &mut Context<Self>,
         spec: RemoteSpec,
     ) {
+        if let Some(tab_index) = self.find_tab_by_remote_spec(&spec) {
+            self.active_tab_index = Some(tab_index);
+            self.focus_active_tab(window, cx);
+            cx.notify();
+            return;
+        }
         self.last_failed_remote_open_url = Some(format_remote_url(&spec));
         self.open_remote_file_with_target(window, cx, spec, None);
     }
@@ -1910,6 +1939,51 @@ mod tests {
         });
     }
 
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_find_tab_by_remote_spec_returns_index_for_existing_remote_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let spec = RemoteSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: Some("alice".to_string()),
+            path: "/var/log/syslog".to_string(),
+            password_in_url: None,
+        };
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
+                    editor_tab.location = TabLocation::Remote(spec.clone());
+                }
+                let expected_index = this.tabs.len() - 1;
+                let result = this.find_tab_by_remote_spec(&spec);
+                assert_eq!(result, Some(expected_index));
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_find_tab_by_remote_spec_returns_none_for_unknown_remote_spec(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let spec = RemoteSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: Some("alice".to_string()),
+            path: "/var/log/syslog".to_string(),
+            password_in_url: None,
+        };
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                let result = this.find_tab_by_remote_spec(&spec);
+                assert_eq!(result, None);
+            });
+        });
+    }
+
     // ========== reload_tab_from_disk tests ==========
 
     #[cfg(feature = "gpui-test-support")]
@@ -2098,6 +2172,37 @@ mod tests {
             .and_then(|p| std::fs::canonicalize(p).ok())
             .unwrap_or_else(|| tab_path.clone().unwrap_or_default());
         assert_eq!(canonical_actual, canonical_expected);
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_do_open_recent_file_focuses_existing_remote_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let spec = RemoteSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: Some("alice".to_string()),
+            path: "/tmp/notes.md".to_string(),
+            password_in_url: None,
+        };
+        let remote_recent = PathBuf::from(super::format_remote_url(&spec));
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
+                    editor_tab.location = TabLocation::Remote(spec.clone());
+                }
+                this.new_tab(window, cx);
+                let tab_count_before = this.tabs.len();
+                this.do_open_recent_file(window, cx, remote_recent.clone());
+                assert_eq!(
+                    this.tabs.len(),
+                    tab_count_before,
+                    "remote recent should focus existing tab instead of creating a duplicate"
+                );
+                assert_eq!(this.active_tab_index, Some(0));
+            });
+        });
     }
 
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
