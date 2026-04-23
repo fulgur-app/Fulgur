@@ -1,0 +1,10 @@
+# cargo-audit configuration for Fulgur
+# https://docs.rs/cargo-audit/latest/cargo_audit/config/index.html
+
+[advisories]
+ignore = [
+    # rsa - Marvin Attack timing side-channel; no fix available upstream.
+    # Mandatory transitive dependency of ssh-key 0.6.7; client-side use only,
+    # not exposed to untrusted remote timing observations.
+    "RUSTSEC-2023-0071",
+]
