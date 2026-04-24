@@ -1,15 +1,17 @@
 name: Security Audit
 
 on:
-  push:
-    branches: [main, dev-*]
-    paths: ['Cargo.lock', 'deny.toml']
   pull_request:
     branches: [main]
     paths: ['Cargo.lock', 'deny.toml']
   schedule:
     - cron: '0 8 * * 3' # Every Wednesday at 8:00 UTC
   workflow_dispatch:
+
+# Cancel superseded PR runs; scheduled and manual runs always complete.
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
