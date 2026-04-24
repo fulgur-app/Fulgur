@@ -516,27 +516,29 @@ impl Fulgur {
                     None
                 }
             };
+            let server_max_size = self
+                .shared_state(cx)
+                .sync_state
+                .max_file_size_bytes
+                .load(std::sync::atomic::Ordering::Acquire);
             if let Some(encryption_key) = encryption_key_opt {
                 for shared_file in shared_files_to_open {
-                    if shared_file.content.len() > share::MAX_SYNC_SHARE_PAYLOAD_BYTES {
+                    if server_max_size != u64::MAX
+                        && shared_file.content.len() as u64 > server_max_size.saturating_mul(2)
+                    {
                         log::warn!(
-                            "Skipping shared file '{}' from device {}: encrypted payload exceeds {} bytes",
+                            "Skipping shared file '{}' from device {}: encrypted payload ({} bytes) exceeds 2x the server max ({} bytes)",
                             shared_file.file_name,
                             shared_file.source_device_id,
-                            share::MAX_SYNC_SHARE_PAYLOAD_BYTES
+                            shared_file.content.len(),
+                            server_max_size
                         );
                         continue;
                     }
                     let decrypted_result =
                         crypto_helper::decrypt_bytes(&shared_file.content, &encryption_key)
                             .and_then(|compressed_bytes| {
-                                if compressed_bytes.len() > share::MAX_SYNC_SHARE_PAYLOAD_BYTES {
-                                    return Err(anyhow::anyhow!(
-                                        "Compressed payload exceeds {} bytes limit",
-                                        share::MAX_SYNC_SHARE_PAYLOAD_BYTES
-                                    ));
-                                }
-                                share::decompress_content(&compressed_bytes)
+                                share::decompress_content(&compressed_bytes, server_max_size)
                             });
                     match decrypted_result {
                         Ok(decrypted_content) => {
