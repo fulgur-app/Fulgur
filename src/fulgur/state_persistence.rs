@@ -196,7 +196,7 @@ impl WindowsState {
     /// ### Returns
     /// - `Ok(PathBuf)`: The path to the state file
     /// - `Err(anyhow::Error)`: If the state file path could not be determined
-    fn state_file_path() -> anyhow::Result<PathBuf> {
+    pub(crate) fn state_file_path() -> anyhow::Result<PathBuf> {
         let mut path = crate::fulgur::utils::paths::config_dir()?;
         path.push("state.json");
         Ok(path)

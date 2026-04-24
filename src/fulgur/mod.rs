@@ -4,6 +4,7 @@ pub mod settings;
 pub mod shared_state;
 pub mod state_operations;
 pub mod state_persistence;
+pub mod state_writer;
 pub mod sync;
 mod ui;
 pub mod utils;
