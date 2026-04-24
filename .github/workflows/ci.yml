@@ -274,6 +274,35 @@ jobs:
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
           echo "Coverage: $COVERAGE%"
 
+  # Aggregator job named "CI" so branch protection can require a single stable
+  # status check instead of every individual job. Fails if any PR-gate job
+  # failed; allows "skipped" so dev-push (which skips msrv/docs-validate) still
+  # reports green.
+  ci:
+    name: CI
+    needs: [fmt, clippy, test, msrv, docs-validate]
+    if: ${{ always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/dev-')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gate results
+        env:
+          FMT: ${{ needs.fmt.result }}
+          CLIPPY: ${{ needs.clippy.result }}
+          TEST: ${{ needs.test.result }}
+          MSRV: ${{ needs.msrv.result }}
+          DOCS_VALIDATE: ${{ needs.docs-validate.result }}
+        run: |
+          failed=0
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "msrv:$MSRV" "docs-validate:$DOCS_VALIDATE"; do
+            name="${entry%%:*}"
+            result="${entry#*:}"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "Gate failed: $name = $result"
+              failed=1
+            fi
+          done
+          exit $failed
+
   # Single aggregated Telegram notification for the whole workflow run. Replaces
   # the per-job notification steps (two Telegram messages per PR) with one.
   notify:
