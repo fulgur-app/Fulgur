@@ -194,7 +194,7 @@ fn handle_share_file(
             this.shared_state(cx)
                 .sync_state
                 .max_file_size_bytes
-                .load(std::sync::atomic::Ordering::Relaxed),
+                .load(std::sync::atomic::Ordering::Acquire),
         )
     });
     window.close_sheet(cx);
@@ -300,12 +300,10 @@ impl Fulgur {
                     Ok(begin_response) => {
                         *device_name_shared.lock() = Some(begin_response.device_name.clone());
                         *pending_shared_files.lock() = begin_response.shares;
-                        match begin_response.max_file_size_bytes {
-                            Some(max_size) => max_file_size_bytes
-                                .store(max_size, std::sync::atomic::Ordering::Relaxed),
-                            None => max_file_size_bytes
-                                .store(u64::MAX, std::sync::atomic::Ordering::Relaxed),
-                        }
+                        crate::fulgur::sync::synchronization::store_server_max_file_size(
+                            &max_file_size_bytes,
+                            begin_response.max_file_size_bytes,
+                        );
                         crate::fulgur::sync::synchronization::set_sync_server_connection_status(
                             connection_status.clone(),
                             SynchronizationStatus::Connected,
@@ -327,12 +325,10 @@ impl Fulgur {
             *connecting_since.lock() = None;
             match result {
                 Ok((devices, server_max_size)) => {
-                    match server_max_size {
-                        Some(max_size) => max_file_size_bytes
-                            .store(max_size, std::sync::atomic::Ordering::Relaxed),
-                        None => max_file_size_bytes
-                            .store(u64::MAX, std::sync::atomic::Ordering::Relaxed),
-                    }
+                    crate::fulgur::sync::synchronization::store_server_max_file_size(
+                        &max_file_size_bytes,
+                        server_max_size,
+                    );
                     crate::fulgur::sync::synchronization::set_sync_server_connection_status(
                         connection_status,
                         SynchronizationStatus::Connected,

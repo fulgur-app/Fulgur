@@ -76,6 +76,32 @@ pub fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationEr
     }
 }
 
+/// Validate and persist the server-advertised `max_file_size_bytes`.
+///
+/// ### Arguments
+/// - `atomic`: The shared atomic holding the current cap
+/// - `advertised`: The `Option<u64>` received from the server's response
+pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, advertised: Option<u64>) {
+    let value = match advertised {
+        None => {
+            log::info!("Server max file size: no limit");
+            u64::MAX
+        }
+        Some(0) => {
+            log::warn!(
+                "Server advertised max_file_size_bytes = 0 (would disable sharing); falling back to {} bytes",
+                share::MAX_SYNC_SHARE_PAYLOAD_BYTES
+            );
+            share::MAX_SYNC_SHARE_PAYLOAD_BYTES as u64
+        }
+        Some(n) => {
+            log::info!("Server max file size: {} bytes", n);
+            n
+        }
+    };
+    atomic.store(value, std::sync::atomic::Ordering::Release);
+}
+
 /// Initial synchronization with the server. This endpoint returns both the encryption key and any shared files waiting for this device.
 ///
 /// ### Arguments
@@ -199,16 +225,10 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                     sync_server_connection_status.clone(),
                     SynchronizationStatus::Connected,
                 );
-                match begin_response.max_file_size_bytes {
-                    Some(max_size) => {
-                        max_file_size_bytes.store(max_size, std::sync::atomic::Ordering::Relaxed);
-                        log::info!("Server max file size: {} bytes", max_size);
-                    }
-                    None => {
-                        max_file_size_bytes.store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
-                        log::info!("Server max file size: no limit");
-                    }
-                }
+                store_server_max_file_size(
+                    &max_file_size_bytes,
+                    begin_response.max_file_size_bytes,
+                );
                 {
                     let mut device_name = device_name.lock();
                     *device_name = Some(begin_response.device_name);
@@ -305,16 +325,10 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
         let result = initial_synchronization(&synchronization_settings, token_state, &http_agent);
         let (notification, status) = match result {
             Ok(begin_response) => {
-                match begin_response.max_file_size_bytes {
-                    Some(max_size) => {
-                        max_file_size_bytes.store(max_size, std::sync::atomic::Ordering::Relaxed);
-                        log::info!("Server max file size: {} bytes", max_size);
-                    }
-                    None => {
-                        max_file_size_bytes.store(u64::MAX, std::sync::atomic::Ordering::Relaxed);
-                        log::info!("Server max file size: no limit");
-                    }
-                }
+                store_server_max_file_size(
+                    &max_file_size_bytes,
+                    begin_response.max_file_size_bytes,
+                );
                 {
                     let mut name = device_name.lock();
                     *name = Some(begin_response.device_name.clone());
@@ -554,5 +568,43 @@ impl Fulgur {
                 log::error!("Cannot decrypt shared files: encryption key not available");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::store_server_max_file_size;
+    use crate::fulgur::sync::share;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn none_is_stored_as_unlimited() {
+        let atomic = AtomicU64::new(0);
+        store_server_max_file_size(&atomic, None);
+        assert_eq!(atomic.load(Ordering::Acquire), u64::MAX);
+    }
+
+    #[test]
+    fn zero_is_replaced_with_safe_default() {
+        let atomic = AtomicU64::new(0);
+        store_server_max_file_size(&atomic, Some(0));
+        assert_eq!(
+            atomic.load(Ordering::Acquire),
+            share::MAX_SYNC_SHARE_PAYLOAD_BYTES as u64
+        );
+    }
+
+    #[test]
+    fn positive_values_are_accepted_verbatim() {
+        let atomic = AtomicU64::new(0);
+        store_server_max_file_size(&atomic, Some(5 * 1024 * 1024));
+        assert_eq!(atomic.load(Ordering::Acquire), 5 * 1024 * 1024);
+    }
+
+    #[test]
+    fn very_large_values_are_trusted_as_user_choice() {
+        let atomic = AtomicU64::new(0);
+        store_server_max_file_size(&atomic, Some(u64::MAX - 1));
+        assert_eq!(atomic.load(Ordering::Acquire), u64::MAX - 1);
     }
 }
