@@ -22,17 +22,14 @@ use std::{io::Read, path::PathBuf, sync::Arc};
 pub type Device = DeviceResponse;
 pub const MAX_SYNC_SHARE_PAYLOAD_BYTES: usize = 1024 * 1024;
 
-/// Maximum allowed size for decompressed content (2x the compressed payload limit).
-const MAX_DECOMPRESSED_BYTES: usize = 2 * MAX_SYNC_SHARE_PAYLOAD_BYTES;
-
 /// Maximum allowed compression ratio (decompressed / compressed).
 ///
 /// Calibrated from observed gzip behavior on realistic editor content: a
 /// short-phrase pattern repeated many times compresses around 380x, while
 /// pure-byte-repetition bombs exceed 1000x. 512x accommodates the former with
 /// headroom while still rejecting the latter, so a bomb's per-request cost is
-/// bounded by `compressed.len() * 512` instead of the absolute decompression
-/// ceiling.
+/// bounded by `compressed.len() * 512` regardless of the absolute size cap the
+/// server advertises.
 const MAX_COMPRESSION_RATIO: usize = 512;
 
 /// Minimum decompression buffer size, regardless of compressed input size.
@@ -41,6 +38,13 @@ const MAX_COMPRESSION_RATIO: usize = 512;
 /// amount of content (the ratio cap alone would make 100 B inputs limited to
 /// 20 KB, which is too tight for legitimate use).
 const MIN_DECOMPRESSION_BUFFER_BYTES: usize = 64 * 1024;
+
+/// Initial buffer allocation ratio used to pre-size the decompression `Vec`.
+///
+/// Kept modest so an unlimited server cap (`u64::MAX`) does not translate into
+/// gigabyte-scale pre-allocations. The `Vec` will grow naturally if the actual
+/// content exceeds this estimate.
+const INITIAL_BUFFER_RATIO: usize = 16;
 
 /// Parameters for sharing a file
 pub struct ShareFileRequest {
@@ -77,36 +81,42 @@ fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
 /// Decompress content that was compressed with gzip
 ///
 /// ### Description
-/// Bounds decompression two ways to defend against gzip bombs:
-/// - rejects the compressed payload up-front if it exceeds
-///   `MAX_SYNC_SHARE_PAYLOAD_BYTES`
-/// - caps the decompressed buffer at
-///   `min(MAX_DECOMPRESSED_BYTES, max(compressed.len() * MAX_COMPRESSION_RATIO, MIN_DECOMPRESSION_BUFFER_BYTES))`,
-///   making the per-request memory and CPU cost of a bomb proportional to its
-///   input size instead of always hitting the absolute ceiling.
 ///
 /// ### Arguments
 /// - `compressed`: The compressed content as bytes
+/// - `max_size`: The server-advertised maximum file size in bytes. `u64::MAX`
+///   means the user configured the server for no limit.
 ///
 /// ### Returns
 /// - `Ok(String)`: The decompressed content as string
-/// - `Err(anyhow::Error)`: If the compressed payload is oversized, the
-///   decompressed payload exceeds the ratio-bounded cap, or the output is not
-///   valid UTF-8
-pub fn decompress_content(compressed: &[u8]) -> anyhow::Result<String> {
-    if compressed.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
+/// - `Err(anyhow::Error)`: If the compressed payload is oversized for the
+///   advertised limit, the decompressed payload exceeds the ratio-bounded cap
+///   or the absolute limit, or the output is not valid UTF-8
+pub fn decompress_content(compressed: &[u8], max_size: u64) -> anyhow::Result<String> {
+    let max_size_usize = if max_size == u64::MAX {
+        usize::MAX
+    } else {
+        usize::try_from(max_size).unwrap_or(usize::MAX)
+    };
+    if max_size != u64::MAX && compressed.len() > max_size_usize {
         return Err(anyhow::anyhow!(
-            "Compressed payload exceeds {} bytes limit",
-            MAX_SYNC_SHARE_PAYLOAD_BYTES
+            "Compressed payload ({} bytes) exceeds server max file size ({} bytes)",
+            compressed.len(),
+            max_size_usize
         ));
     }
+    let effective_floor = MIN_DECOMPRESSION_BUFFER_BYTES.min(max_size_usize);
     let decompressed_cap = compressed
         .len()
         .saturating_mul(MAX_COMPRESSION_RATIO)
-        .clamp(MIN_DECOMPRESSION_BUFFER_BYTES, MAX_DECOMPRESSED_BYTES);
+        .clamp(effective_floor, max_size_usize);
+    let initial_capacity = compressed
+        .len()
+        .saturating_mul(INITIAL_BUFFER_RATIO)
+        .clamp(effective_floor, decompressed_cap);
     let decoder = GzDecoder::new(compressed);
     let mut limited_reader = decoder.take((decompressed_cap as u64).saturating_add(1));
-    let mut decompressed_bytes = Vec::with_capacity(decompressed_cap);
+    let mut decompressed_bytes = Vec::with_capacity(initial_capacity);
     limited_reader.read_to_end(&mut decompressed_bytes)?;
     if decompressed_bytes.len() > decompressed_cap {
         return Err(anyhow::anyhow!(
@@ -511,8 +521,8 @@ pub fn share_file(
 #[cfg(test)]
 mod tests {
     use super::{
-        Device, MAX_DECOMPRESSED_BYTES, MAX_SYNC_SHARE_PAYLOAD_BYTES, ShareFileRequest,
-        ShareResult, compress_content, decompress_content, get_devices, share_file,
+        Device, MAX_SYNC_SHARE_PAYLOAD_BYTES, ShareFileRequest, ShareResult, compress_content,
+        decompress_content, get_devices, share_file,
     };
     use crate::fulgur::settings::SynchronizationSettings;
     use crate::fulgur::sync::{
@@ -520,6 +530,9 @@ mod tests {
     };
     use crate::fulgur::utils::crypto_helper::generate_key_pair;
     use std::sync::Arc;
+
+    /// Default test cap used by roundtrip tests: no server-advertised limit.
+    const TEST_NO_LIMIT: u64 = u64::MAX;
 
     // ---------------------------------------------------------------------------
     // Test helpers
@@ -570,7 +583,7 @@ mod tests {
     fn test_roundtrip_empty_string() {
         let original = "";
         let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
@@ -578,7 +591,7 @@ mod tests {
     fn test_roundtrip_ascii_text() {
         let original = "The quick brown fox jumps over the lazy dog.";
         let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
@@ -586,7 +599,7 @@ mod tests {
     fn test_roundtrip_unicode_text() {
         let original = "Héllo Wörld! 你好世界 🌍 Привет";
         let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
@@ -594,7 +607,7 @@ mod tests {
     fn test_roundtrip_multiline_text() {
         let original = "Line 1\nLine 2\r\nLine 3\n\tIndented\n\nEmpty line above";
         let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
@@ -602,7 +615,7 @@ mod tests {
     fn test_roundtrip_special_characters() {
         let original = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~";
         let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
@@ -610,7 +623,7 @@ mod tests {
     fn test_roundtrip_large_repetitive_content() {
         let original = "AAAA".repeat(5000);
         let compressed = compress_content(&original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
         // Should compress very well
         assert!(compressed.len() < original.len() / 10);
@@ -620,7 +633,7 @@ mod tests {
     fn test_roundtrip_json_like_content() {
         let original = r#"{"name": "test", "value": 123, "nested": {"key": "value"}}"#;
         let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
@@ -633,7 +646,7 @@ fn main() {
 }
 "#;
         let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
@@ -641,7 +654,7 @@ fn main() {
     fn test_roundtrip_mixed_unicode() {
         let original = "English, 中文, 日本語, 한국어, العربية, עברית, Ελληνικά, Русский";
         let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
@@ -649,7 +662,7 @@ fn main() {
     fn test_roundtrip_emoji_heavy() {
         let original = "🔥🎉🚀💻⚡️🌟✨🎯🌈🦄🐉🌸🍕🎮🎨🎭🎪🎬🎤🎧🎼";
         let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
@@ -658,31 +671,35 @@ fn main() {
         let original = "Lorem ipsum dolor sit amet. ".repeat(10000);
         assert!(original.len() > 250000); // Over 250KB
         let compressed = compress_content(&original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
     #[test]
-    fn test_decompress_rejects_oversized_compressed_payload() {
+    fn test_decompress_rejects_compressed_payload_larger_than_server_max() {
+        // A server advertising a 1 MB limit must reject a compressed blob that
+        // already exceeds that on its own (decompressed can only be larger).
         let oversized_payload = vec![0_u8; MAX_SYNC_SHARE_PAYLOAD_BYTES + 1];
-        let result = decompress_content(&oversized_payload);
+        let result = decompress_content(&oversized_payload, MAX_SYNC_SHARE_PAYLOAD_BYTES as u64);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_decompress_rejects_oversized_decompressed_payload() {
-        let original = "A".repeat(MAX_DECOMPRESSED_BYTES + 1);
+    fn test_decompress_rejects_decompressed_payload_larger_than_server_max() {
+        // Server says 1 MB max. The original is 2 MB+1 of identical characters,
+        // which compresses small but decompresses well past the server limit.
+        let original = "A".repeat(2 * MAX_SYNC_SHARE_PAYLOAD_BYTES + 1);
         let compressed = compress_content(&original).unwrap();
-        let result = decompress_content(&compressed);
+        let result = decompress_content(&compressed, MAX_SYNC_SHARE_PAYLOAD_BYTES as u64);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_decompress_rejects_high_ratio_gzip_bomb() {
-        // A long run of identical characters compresses to a very small payload.
-        // A bomb that inflates far beyond `compressed.len() * MAX_COMPRESSION_RATIO`
-        // must be rejected by the ratio-bounded cap before reaching the absolute
-        // `MAX_DECOMPRESSED_BYTES` ceiling.
+    fn test_decompress_rejects_high_ratio_gzip_bomb_even_when_unlimited() {
+        // Even with `u64::MAX` (user's "no limit" config), a gzip bomb whose
+        // decompressed size exceeds `compressed.len() * MAX_COMPRESSION_RATIO`
+        // must be rejected by the ratio cap — it's the only defense when the
+        // server absolute cap is disabled.
         let original = "A".repeat(1_000_000);
         let compressed = compress_content(&original).unwrap();
         assert!(
@@ -690,7 +707,8 @@ fn main() {
             "precondition: highly repetitive content should compress to a tiny payload, got {}",
             compressed.len()
         );
-        let err = decompress_content(&compressed).expect_err("bomb must be rejected");
+        let err =
+            decompress_content(&compressed, TEST_NO_LIMIT).expect_err("bomb must be rejected");
         let msg = err.to_string();
         assert!(
             msg.contains("ratio-bounded"),
@@ -700,13 +718,24 @@ fn main() {
     }
 
     #[test]
+    fn test_decompress_with_unlimited_max_size_accepts_large_content() {
+        // When the user configures their server for no limit, a genuinely
+        // large legitimate payload that stays within the ratio cap must be
+        // accepted rather than capped by any hard-coded ceiling.
+        let original = "Lorem ipsum dolor sit amet. ".repeat(100_000); // ~2.8 MB
+        let compressed = compress_content(&original).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
+        assert_eq!(decompressed.len(), original.len());
+    }
+
+    #[test]
     fn test_decompress_allows_small_payload_up_to_min_buffer() {
         // A short legitimate payload must still decompress even though the
         // ratio cap (compressed.len() * 200) is smaller than what the minimum
         // decompression buffer allows.
         let original = "Hello, world!".repeat(100); // ~1.3 KB
         let compressed = compress_content(&original).unwrap();
-        let decompressed = decompress_content(&compressed).unwrap();
+        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);
     }
 
