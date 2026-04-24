@@ -126,11 +126,15 @@ impl Fulgur {
                     .push(entity.read(cx).build_window_state_without_bounds(cx));
             }
         }
-        windows_state.save()?;
+        let window_count = windows_state.windows.len();
+        let tab_count = self.tabs.len();
+        let path = WindowsState::state_file_path()?;
+        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+        shared.state_writer.save_blocking(windows_state, path)?;
         log::debug!(
             "Application state saved successfully ({} windows, {} tabs in this window)",
-            windows_state.windows.len(),
-            self.tabs.len()
+            window_count,
+            tab_count
         );
         Ok(())
     }
