@@ -25,6 +25,23 @@ pub const MAX_SYNC_SHARE_PAYLOAD_BYTES: usize = 1024 * 1024;
 /// Maximum allowed size for decompressed content (2x the compressed payload limit).
 const MAX_DECOMPRESSED_BYTES: usize = 2 * MAX_SYNC_SHARE_PAYLOAD_BYTES;
 
+/// Maximum allowed compression ratio (decompressed / compressed).
+///
+/// Calibrated from observed gzip behavior on realistic editor content: a
+/// short-phrase pattern repeated many times compresses around 380x, while
+/// pure-byte-repetition bombs exceed 1000x. 512x accommodates the former with
+/// headroom while still rejecting the latter, so a bomb's per-request cost is
+/// bounded by `compressed.len() * 512` instead of the absolute decompression
+/// ceiling.
+const MAX_COMPRESSION_RATIO: usize = 512;
+
+/// Minimum decompression buffer size, regardless of compressed input size.
+///
+/// A small compressed payload must still be able to decompress to a reasonable
+/// amount of content (the ratio cap alone would make 100 B inputs limited to
+/// 20 KB, which is too tight for legitimate use).
+const MIN_DECOMPRESSION_BUFFER_BYTES: usize = 64 * 1024;
+
 /// Parameters for sharing a file
 pub struct ShareFileRequest {
     pub content: String,
@@ -59,12 +76,23 @@ fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
 
 /// Decompress content that was compressed with gzip
 ///
+/// ### Description
+/// Bounds decompression two ways to defend against gzip bombs:
+/// - rejects the compressed payload up-front if it exceeds
+///   `MAX_SYNC_SHARE_PAYLOAD_BYTES`
+/// - caps the decompressed buffer at
+///   `min(MAX_DECOMPRESSED_BYTES, max(compressed.len() * MAX_COMPRESSION_RATIO, MIN_DECOMPRESSION_BUFFER_BYTES))`,
+///   making the per-request memory and CPU cost of a bomb proportional to its
+///   input size instead of always hitting the absolute ceiling.
+///
 /// ### Arguments
 /// - `compressed`: The compressed content as bytes
 ///
 /// ### Returns
 /// - `Ok(String)`: The decompressed content as string
-/// - `Err(anyhow::Error)`: If the content could not be decompressed
+/// - `Err(anyhow::Error)`: If the compressed payload is oversized, the
+///   decompressed payload exceeds the ratio-bounded cap, or the output is not
+///   valid UTF-8
 pub fn decompress_content(compressed: &[u8]) -> anyhow::Result<String> {
     if compressed.len() > MAX_SYNC_SHARE_PAYLOAD_BYTES {
         return Err(anyhow::anyhow!(
@@ -72,14 +100,18 @@ pub fn decompress_content(compressed: &[u8]) -> anyhow::Result<String> {
             MAX_SYNC_SHARE_PAYLOAD_BYTES
         ));
     }
+    let decompressed_cap = compressed
+        .len()
+        .saturating_mul(MAX_COMPRESSION_RATIO)
+        .clamp(MIN_DECOMPRESSION_BUFFER_BYTES, MAX_DECOMPRESSED_BYTES);
     let decoder = GzDecoder::new(compressed);
-    let mut limited_reader = decoder.take((MAX_DECOMPRESSED_BYTES + 1) as u64);
-    let mut decompressed_bytes = Vec::with_capacity(MAX_SYNC_SHARE_PAYLOAD_BYTES);
+    let mut limited_reader = decoder.take((decompressed_cap as u64).saturating_add(1));
+    let mut decompressed_bytes = Vec::with_capacity(decompressed_cap);
     limited_reader.read_to_end(&mut decompressed_bytes)?;
-    if decompressed_bytes.len() > MAX_DECOMPRESSED_BYTES {
+    if decompressed_bytes.len() > decompressed_cap {
         return Err(anyhow::anyhow!(
-            "Decompressed payload exceeds {} bytes limit",
-            MAX_DECOMPRESSED_BYTES
+            "Decompressed payload exceeds {} bytes cap (ratio-bounded gzip bomb defense)",
+            decompressed_cap
         ));
     }
     let decompressed = String::from_utf8(decompressed_bytes)
@@ -643,6 +675,39 @@ fn main() {
         let compressed = compress_content(&original).unwrap();
         let result = decompress_content(&compressed);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decompress_rejects_high_ratio_gzip_bomb() {
+        // A long run of identical characters compresses to a very small payload.
+        // A bomb that inflates far beyond `compressed.len() * MAX_COMPRESSION_RATIO`
+        // must be rejected by the ratio-bounded cap before reaching the absolute
+        // `MAX_DECOMPRESSED_BYTES` ceiling.
+        let original = "A".repeat(1_000_000);
+        let compressed = compress_content(&original).unwrap();
+        assert!(
+            compressed.len() < 10_000,
+            "precondition: highly repetitive content should compress to a tiny payload, got {}",
+            compressed.len()
+        );
+        let err = decompress_content(&compressed).expect_err("bomb must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("ratio-bounded"),
+            "bomb rejection should cite the ratio cap, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_decompress_allows_small_payload_up_to_min_buffer() {
+        // A short legitimate payload must still decompress even though the
+        // ratio cap (compressed.len() * 200) is smaller than what the minimum
+        // decompression buffer allows.
+        let original = "Hello, world!".repeat(100); // ~1.3 KB
+        let compressed = compress_content(&original).unwrap();
+        let decompressed = decompress_content(&compressed).unwrap();
+        assert_eq!(decompressed, original);
     }
 
     #[test]
