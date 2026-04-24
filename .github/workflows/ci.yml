@@ -1,10 +1,26 @@
 name: CI
 
+# Branch-protection assumption: "Require branches to be up to date before merging"
+# is enforced on main. Under that rule, a PR's CI run validates the exact merge
+# commit that lands, so post-merge we only run coverage + docs-deploy. If that
+# rule is ever disabled, re-enable the fmt/clippy/test/msrv/docs-validate jobs
+# on push-to-main by appending `|| (github.event_name == 'push' && github.ref ==
+# 'refs/heads/main')` to their `if:` conditions.
+
 on:
   push:
     branches: [main, dev-*]
   pull_request:
     branches: [main]
+
+# Cancel superseded runs on the same ref. A PR ref (refs/pull/N/merge) and a
+# push-to-dev-X ref are distinct, so a dev-push smoke and a PR gate will run in
+# parallel when you push with an open PR - they have different scopes (smoke vs
+# full gate) and different notifications, so that is intentional, not duplicated
+# work. Main is excluded from cancellation so a docs deploy cannot be interrupted.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,14 +32,33 @@ env:
   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
-  test:
-    name: Test - ${{ matrix.os }}
+  # Fast-fail gate extracted from the test job so a missed `cargo fmt` reports
+  # in ~30s instead of being hidden behind a 10-minute test run.
+  fmt:
+    name: Formatting
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/dev-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy - ${{ matrix.os }}
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/dev-')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # Full 3-OS matrix on PRs and main, Ubuntu-only on dev-* pushes
-        os: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        # Full 3-OS matrix on PRs (catches cfg-gated platform code), ubuntu-only on dev-* pushes.
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
 
     steps:
       - name: Checkout code
@@ -32,7 +67,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
+          components: clippy
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -51,11 +86,6 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ matrix.os }}-cargo
-
       # ssh2 vendored-openssl requires NASM and Perl to compile OpenSSL from source on Windows
       - name: Install NASM (Windows)
         if: runner.os == 'Windows'
@@ -67,107 +97,55 @@ jobs:
         with:
           perl-version: '5.38'
 
-      # -- Coverage setup (Linux + main/PRs only) --
-
-      - name: Install coverage tools
-        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
-        run: rustup component add llvm-tools-preview
-
-      - name: Install cargo-llvm-cov
-        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      # -- Test phase --
-
-      - name: Run tests with coverage
-        id: coverage
-        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-
-      - name: Run tests
-        if: steps.coverage.outcome == 'skipped'
-        run: cargo test --all-features
-
-      # -- Coverage upload --
-
-      - name: Upload coverage to Codecov
-        if: steps.coverage.outcome == 'success'
-        uses: codecov/codecov-action@v6
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
         with:
-          files: lcov.info
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-      - name: Generate coverage summary
-        id: cov_summary
-        if: steps.coverage.outcome == 'success'
-        run: |
-          COVERAGE=$(awk -F: '/^LF:/{lf+=$2} /^LH:/{lh+=$2} END{if(lf>0) printf "%.2f", (lh/lf)*100; else print "0.00"}' lcov.info)
-          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
-          echo "Coverage: $COVERAGE%"
-
-      # -- Lint phase --
+          shared-key: ${{ matrix.os }}-cargo
 
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Check formatting
+  test:
+    name: Test - ${{ matrix.os }}
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/dev-')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: cargo fmt --all -- --check
+        run: *linux_deps_install_cmd
 
-      # -- Notifications --
+      - name: Install NASM (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
 
-      - name: Telegram notification - Success
-        if: success() && runner.os == 'Linux'
-        env:
-          COVERAGE: ${{ steps.cov_summary.outputs.percentage }}
-        run: |
-          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+      - name: Install Perl (Windows)
+        if: runner.os == 'Windows'
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
 
-          if [ -n "$COVERAGE" ]; then
-            DESCRIPTION="All tests and checks passed successfully on all platforms
-          Coverage: *${COVERAGE}%*"
-          else
-            DESCRIPTION="All tests and checks passed successfully on all platforms"
-          fi
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.os }}-cargo
 
-          MESSAGE="✅ *Fulgur CI - Build Passed*
-
-          ${DESCRIPTION}
-
-          *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
-          *Author:* ${ACTOR}
-
-          [View Run](${RUN_URL})"
-
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
-
-      - name: Telegram notification - Failure
-        if: failure() && runner.os == 'Linux'
-        run: |
-          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
-
-          MESSAGE="❌ *Fulgur CI - Build Failed*
-
-          Build or tests failed
-
-          *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
-          *Author:* ${ACTOR}
-
-          [View Run](${RUN_URL})"
-
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
+      - name: Run tests
+        run: cargo test --all-features
 
   msrv:
     name: Minimum Rust Version (1.94.0)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -181,7 +159,7 @@ jobs:
       - name: Install Linux dependencies
         run: *linux_deps_install_cmd
 
-      # C: Dedicated cache for MSRV (different Rust version)
+      # Dedicated cache for MSRV (different Rust version)
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -190,10 +168,9 @@ jobs:
       - name: Check with minimum Rust version
         run: cargo check --all-features --quiet
 
-  docs:
-    name: Documentation
-    needs: [test]
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+  docs-validate:
+    name: Documentation (validate)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -205,20 +182,41 @@ jobs:
       - name: Install Linux dependencies
         run: *linux_deps_install_cmd
 
-      # C: Shared cache with other Ubuntu jobs
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ubuntu-latest-cargo
 
       - name: Build documentation
-        id: docs
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: '-D warnings'
+
+  docs-deploy:
+    name: Documentation (deploy)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        run: *linux_deps_install_cmd
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-latest-cargo
+
+      - name: Build documentation
         run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: '-D warnings'
 
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main'
         env:
           PAGES_DEPLOY_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
         run: |
@@ -232,40 +230,158 @@ jobs:
           git diff --cached --quiet || git commit -m "docs(fulgur): update from ${COMMIT_SHA:0:7}"
           git push
 
-      - name: Telegram notification - Success
-        if: success()
-        run: |
-          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+  coverage:
+    name: Coverage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      percentage: ${{ steps.cov_summary.outputs.percentage }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
 
-          if [ "$BRANCH" = "main" ]; then
-            DEPLOY_INFO="Deployed to https://fulgur-app.github.io/fulgur/"
-          else
-            DEPLOY_INFO="Validated (not deployed on branch ${BRANCH})"
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install Linux dependencies
+        run: *linux_deps_install_cmd
+
+      # Dedicated cache: coverage builds are instrumented and cannot reuse a standard cache.
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-coverage-cargo
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Run tests with coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Generate coverage summary
+        id: cov_summary
+        run: |
+          COVERAGE=$(awk -F: '/^LF:/{lf+=$2} /^LH:/{lh+=$2} END{if(lf>0) printf "%.2f", (lh/lf)*100; else print "0.00"}' lcov.info)
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+
+  # Aggregator job named "CI" so branch protection can require a single stable
+  # status check instead of every individual job. Fails if any PR-gate job
+  # failed; allows "skipped" so dev-push (which skips msrv/docs-validate) still
+  # reports green.
+  ci:
+    name: CI
+    needs: [fmt, clippy, test, msrv, docs-validate]
+    if: ${{ always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/dev-')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gate results
+        env:
+          FMT: ${{ needs.fmt.result }}
+          CLIPPY: ${{ needs.clippy.result }}
+          TEST: ${{ needs.test.result }}
+          MSRV: ${{ needs.msrv.result }}
+          DOCS_VALIDATE: ${{ needs.docs-validate.result }}
+        run: |
+          failed=0
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "msrv:$MSRV" "docs-validate:$DOCS_VALIDATE"; do
+            name="${entry%%:*}"
+            result="${entry#*:}"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "Gate failed: $name = $result"
+              failed=1
+            fi
+          done
+          exit $failed
+
+  # Single aggregated Telegram notification for the whole workflow run. Replaces
+  # the per-job notification steps (two Telegram messages per PR) with one.
+  notify:
+    name: Telegram notification
+    needs: [fmt, clippy, test, msrv, docs-validate, docs-deploy, coverage]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Compose and send notification
+        env:
+          FMT: ${{ needs.fmt.result }}
+          CLIPPY: ${{ needs.clippy.result }}
+          TEST: ${{ needs.test.result }}
+          MSRV: ${{ needs.msrv.result }}
+          DOCS_VALIDATE: ${{ needs.docs-validate.result }}
+          DOCS_DEPLOY: ${{ needs.docs-deploy.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+          COVERAGE_PCT: ${{ needs.coverage.outputs.percentage }}
+        run: |
+          # Determine overall status: failure > cancelled > success.
+          STATUS="success"
+          for result in "$FMT" "$CLIPPY" "$TEST" "$MSRV" "$DOCS_VALIDATE" "$DOCS_DEPLOY" "$COVERAGE"; do
+            if [ "$result" = "failure" ]; then
+              STATUS="failure"
+            elif [ "$result" = "cancelled" ] && [ "$STATUS" != "failure" ]; then
+              STATUS="cancelled"
+            fi
+          done
+
+          # Stay silent on concurrency-cancelled runs; the superseding run will notify.
+          if [ "$STATUS" = "cancelled" ]; then
+            echo "Run cancelled, skipping notification"
+            exit 0
           fi
 
-          MESSAGE="✅ *Fulgur Documentation - Built Successfully*
+          # Per-job summary line, omitting jobs that did not run.
+          SUMMARY=""
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "msrv:$MSRV" "docs-validate:$DOCS_VALIDATE" "docs-deploy:$DOCS_DEPLOY" "coverage:$COVERAGE"; do
+            name="${entry%%:*}"
+            result="${entry#*:}"
+            case "$result" in
+              success) SUMMARY="${SUMMARY}${name} ✅ · " ;;
+              failure) SUMMARY="${SUMMARY}${name} ❌ · " ;;
+            esac
+          done
+          SUMMARY="${SUMMARY% · }"
 
-          ${DEPLOY_INFO}
+          if [ -z "$SUMMARY" ]; then
+            echo "No jobs ran, skipping notification"
+            exit 0
+          fi
 
-          *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
-          *Author:* ${ACTOR}
+          if [ "$STATUS" = "success" ]; then
+            ICON="✅"
+            TITLE="Fulgur CI - Build Passed"
+          else
+            ICON="❌"
+            TITLE="Fulgur CI - Build Failed"
+          fi
 
-          [View Run](${RUN_URL})"
+          # Main-only extras: coverage percentage and docs deployment URL.
+          EXTRAS=""
+          if [ -n "$COVERAGE_PCT" ]; then
+            EXTRAS="${EXTRAS}
+          Coverage: *${COVERAGE_PCT}%*"
+          fi
+          if [ "$DOCS_DEPLOY" = "success" ]; then
+            EXTRAS="${EXTRAS}
+          Docs: https://fulgur-app.github.io/fulgur/"
+          fi
 
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
-
-      - name: Telegram notification - Failure
-        if: failure()
-        run: |
           COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
 
-          MESSAGE="❌ *Fulgur Documentation - Build Failed*
+          MESSAGE="${ICON} *${TITLE}*
 
-          Documentation build produced warnings or errors
+          ${SUMMARY}${EXTRAS}
 
           *Branch:* \`${BRANCH}\`
           *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
