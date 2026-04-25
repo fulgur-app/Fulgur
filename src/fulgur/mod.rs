@@ -122,6 +122,7 @@ pub struct Fulgur {
     tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
     editor_modified_subscriptions: HashMap<usize, Subscription>, // Per-editor subscriptions for incremental modified-state updates
     markdown_preview_cache: HashMap<usize, SharedString>, // Cached markdown source text keyed by source editor tab id
+    markdown_preview_to_refresh: HashSet<usize>, // Source tab ids whose cached preview text is stale and must be refreshed on next read
     markdown_preview_subscriptions: HashMap<usize, Subscription>, // Per-source subscriptions for markdown preview cache updates
     tab_scroll_handle: ScrollHandle, // Scroll handle for the tab bar to scroll active tab into view
     pending_tab_scroll: Option<usize>, // Deferred scroll-to-tab request (needs one render cycle for layout)
@@ -241,6 +242,7 @@ impl Fulgur {
                 tabs_pending_update: HashSet::new(),
                 editor_modified_subscriptions: HashMap::new(),
                 markdown_preview_cache: HashMap::new(),
+                markdown_preview_to_refresh: HashSet::new(),
                 markdown_preview_subscriptions: HashMap::new(),
                 tab_scroll_handle: ScrollHandle::new(),
                 pending_tab_scroll: None,
@@ -811,6 +813,8 @@ impl Fulgur {
             .retain(|tab_id, _| source_ids.contains(tab_id));
         self.markdown_preview_subscriptions
             .retain(|tab_id, _| source_ids.contains(tab_id));
+        self.markdown_preview_to_refresh
+            .retain(|tab_id| source_ids.contains(tab_id));
         if self.markdown_preview_cache.len() != before_cache
             || self.markdown_preview_subscriptions.len() != before_subs
         {
@@ -818,7 +822,7 @@ impl Fulgur {
         }
     }
 
-    /// Get cached markdown text for a source tab, updating the cache lazily.
+    /// Get cached markdown text for a source tab, refreshing lazily on demand.
     ///
     /// ### Arguments
     /// - `source_tab_id`: Source editor tab id for this preview
@@ -834,11 +838,6 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) -> SharedString {
         if let std::collections::hash_map::Entry::Vacant(entry) =
-            self.markdown_preview_cache.entry(source_tab_id)
-        {
-            entry.insert(content.read(cx).value().clone());
-        }
-        if let std::collections::hash_map::Entry::Vacant(entry) =
             self.markdown_preview_subscriptions.entry(source_tab_id)
         {
             let subscription =
@@ -846,15 +845,16 @@ impl Fulgur {
                     if !matches!(ev, InputEvent::Change) {
                         return;
                     }
-                    if let Some(source_tab) = this.tabs.iter().find(|tab| tab.id() == source_tab_id)
-                        && let Tab::Editor(editor_tab) = source_tab
-                    {
-                        this.markdown_preview_cache
-                            .insert(source_tab_id, editor_tab.content.read(cx).value().clone());
-                        cx.notify();
-                    }
+                    this.markdown_preview_to_refresh.insert(source_tab_id);
+                    cx.notify();
                 });
             entry.insert(subscription);
+        }
+        let needs_refresh = self.markdown_preview_to_refresh.remove(&source_tab_id)
+            || !self.markdown_preview_cache.contains_key(&source_tab_id);
+        if needs_refresh {
+            self.markdown_preview_cache
+                .insert(source_tab_id, content.read(cx).value());
         }
         self.markdown_preview_cache
             .get(&source_tab_id)
