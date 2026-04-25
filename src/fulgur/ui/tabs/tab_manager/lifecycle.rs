@@ -588,6 +588,10 @@ impl Fulgur {
             self.inflight_remote_restore.remove(&tab_id);
             self.latest_remote_open_request_by_tab.remove(&tab_id);
             self.latest_remote_save_request_by_tab.remove(&tab_id);
+            self.editor_modified_subscriptions.remove(&tab_id);
+            self.markdown_preview_cache.remove(&tab_id);
+            self.markdown_preview_to_refresh.remove(&tab_id);
+            self.markdown_preview_subscriptions.remove(&tab_id);
             if let Some(path) = path_to_unwatch {
                 self.unwatch_file(&path);
             }
@@ -595,6 +599,7 @@ impl Fulgur {
                 && let Some(preview_pos) = self.tabs.iter().position(|t| t.id() == preview_id)
             {
                 self.tabs.remove(preview_pos);
+                self.editor_modified_subscriptions.remove(&preview_id);
                 if let Some(ai) = self.active_tab_index {
                     if preview_pos < ai && ai > 0 {
                         self.active_tab_index = Some(ai - 1);
@@ -610,7 +615,41 @@ impl Fulgur {
                     self.active_tab_index = None;
                 }
             }
+            self.debug_assert_tab_maps_consistent();
             cx.notify();
+        }
+    }
+
+    /// In debug builds, assert that tab-keyed maps do not retain entries for tabs
+    /// that no longer exist (i.e. no subscription/cache leaks after a removal).
+    fn debug_assert_tab_maps_consistent(&self) {
+        if cfg!(debug_assertions) {
+            let live: std::collections::HashSet<usize> =
+                self.tabs.iter().map(|tab| tab.id()).collect();
+            for &id in self.editor_modified_subscriptions.keys() {
+                debug_assert!(
+                    live.contains(&id),
+                    "editor_modified_subscriptions retains entry for removed tab {id}",
+                );
+            }
+            for &id in self.markdown_preview_cache.keys() {
+                debug_assert!(
+                    live.contains(&id),
+                    "markdown_preview_cache retains entry for removed tab {id}",
+                );
+            }
+            for &id in self.markdown_preview_to_refresh.iter() {
+                debug_assert!(
+                    live.contains(&id),
+                    "markdown_preview_to_refresh retains entry for removed tab {id}",
+                );
+            }
+            for &id in self.markdown_preview_subscriptions.keys() {
+                debug_assert!(
+                    live.contains(&id),
+                    "markdown_preview_subscriptions retains entry for removed tab {id}",
+                );
+            }
         }
     }
 
