@@ -212,6 +212,155 @@ fn settings_load_without_is_deduplication_field() {
     );
 }
 
+#[test]
+fn validate_clamps_font_size_below_minimum() {
+    let mut settings = Settings::new();
+    settings.editor_settings.font_size = 2.0;
+    settings.validate();
+    assert_eq!(settings.editor_settings.font_size, 6.0);
+}
+
+#[test]
+fn validate_clamps_font_size_above_maximum() {
+    let mut settings = Settings::new();
+    settings.editor_settings.font_size = 200.0;
+    settings.validate();
+    assert_eq!(settings.editor_settings.font_size, 72.0);
+}
+
+#[test]
+fn validate_leaves_font_size_unchanged_when_valid() {
+    let mut settings = Settings::new();
+    settings.editor_settings.font_size = 16.0;
+    settings.validate();
+    assert_eq!(settings.editor_settings.font_size, 16.0);
+}
+
+#[test]
+fn validate_replaces_non_finite_font_size_with_default() {
+    let mut settings = Settings::new();
+    settings.editor_settings.font_size = f32::NAN;
+    settings.validate();
+    assert_eq!(settings.editor_settings.font_size, 14.0);
+}
+
+#[test]
+fn validate_clamps_tab_size_zero_to_minimum() {
+    let mut settings = Settings::new();
+    settings.editor_settings.tab_size = 0;
+    settings.validate();
+    assert_eq!(settings.editor_settings.tab_size, 1);
+}
+
+#[test]
+fn validate_clamps_tab_size_above_maximum() {
+    let mut settings = Settings::new();
+    settings.editor_settings.tab_size = 100;
+    settings.validate();
+    assert_eq!(settings.editor_settings.tab_size, 16);
+}
+
+#[test]
+fn validate_leaves_tab_size_unchanged_when_valid() {
+    let mut settings = Settings::new();
+    settings.editor_settings.tab_size = 4;
+    settings.validate();
+    assert_eq!(settings.editor_settings.tab_size, 4);
+}
+
+#[test]
+fn validate_clamps_max_recent_files_above_maximum() {
+    let mut settings = Settings::new();
+    settings.recent_files.max_files = 500;
+    settings.validate();
+    assert_eq!(settings.recent_files.max_files, 100);
+}
+
+#[test]
+fn validate_leaves_max_recent_files_unchanged_when_within_range() {
+    let mut settings = Settings::new();
+    settings.recent_files.max_files = 10;
+    settings.validate();
+    assert_eq!(settings.recent_files.max_files, 10);
+}
+
+#[test]
+fn validate_clears_malformed_server_url() {
+    let mut settings = Settings::new();
+    settings.app_settings.synchronization_settings.server_url = Some("not a url".to_string());
+    settings.validate();
+    assert_eq!(
+        settings.app_settings.synchronization_settings.server_url,
+        None
+    );
+}
+
+#[test]
+fn validate_keeps_valid_server_url() {
+    let mut settings = Settings::new();
+    settings.app_settings.synchronization_settings.server_url =
+        Some("https://sync.example.com".to_string());
+    settings.validate();
+    assert_eq!(
+        settings.app_settings.synchronization_settings.server_url,
+        Some("https://sync.example.com".to_string())
+    );
+}
+
+#[test]
+fn validate_keeps_none_server_url_unchanged() {
+    let mut settings = Settings::new();
+    settings.app_settings.synchronization_settings.server_url = None;
+    settings.validate();
+    assert_eq!(
+        settings.app_settings.synchronization_settings.server_url,
+        None
+    );
+}
+
+#[test]
+fn validate_clears_email_without_at_sign() {
+    let mut settings = Settings::new();
+    settings.app_settings.synchronization_settings.email = Some("notanemail".to_string());
+    settings.validate();
+    assert_eq!(settings.app_settings.synchronization_settings.email, None);
+}
+
+#[test]
+fn validate_clears_email_with_at_at_start() {
+    let mut settings = Settings::new();
+    settings.app_settings.synchronization_settings.email = Some("@nodomain".to_string());
+    settings.validate();
+    assert_eq!(settings.app_settings.synchronization_settings.email, None);
+}
+
+#[test]
+fn validate_clears_email_missing_tld() {
+    let mut settings = Settings::new();
+    settings.app_settings.synchronization_settings.email = Some("user@nodot".to_string());
+    settings.validate();
+    assert_eq!(settings.app_settings.synchronization_settings.email, None);
+}
+
+#[test]
+fn validate_keeps_valid_email() {
+    let mut settings = Settings::new();
+    settings.app_settings.synchronization_settings.email = Some("user@example.com".to_string());
+    settings.validate();
+    assert_eq!(
+        settings.app_settings.synchronization_settings.email,
+        Some("user@example.com".to_string())
+    );
+}
+
+#[test]
+fn validate_keeps_none_email_unchanged() {
+    let mut settings = Settings::new();
+    settings.app_settings.synchronization_settings.email = None;
+    settings.validate();
+    assert_eq!(settings.app_settings.synchronization_settings.email, None);
+}
+
 #[cfg(feature = "gpui-test-support")]
 mod gpui_settings_versioning_tests {
     use crate::fulgur::{
