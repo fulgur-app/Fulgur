@@ -1,4 +1,4 @@
-use crate::fulgur::utils::updater::UpdateInfo;
+use crate::fulgur::utils::updater::{UpdateInfo, is_valid_release_page_url};
 use gpui::{SharedString, Styled};
 use gpui_component::{button::ButtonVariants, notification::Notification};
 
@@ -24,13 +24,17 @@ pub fn make_update_notification(update_info: &UpdateInfo) -> Notification {
                 .label("Download")
                 .mr_2()
                 .on_click(cx.listener(move |this, _, window, cx| {
-                    match open::that(&url) {
-                        Ok(_) => {
-                            log::debug!("Successfully opened browser for update");
+                    if is_valid_release_page_url(&url) {
+                        match open::that(&url) {
+                            Ok(_) => {
+                                log::debug!("Successfully opened browser for update");
+                            }
+                            Err(e) => {
+                                log::error!("Failed to open browser: {}", e);
+                            }
                         }
-                        Err(e) => {
-                            log::error!("Failed to open browser: {}", e);
-                        }
+                    } else {
+                        log::error!("Refusing to open non-canonical update URL: {}", url);
                     }
                     this.dismiss(window, cx);
                 }))

@@ -43,6 +43,7 @@ ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 chardetng = "0.1.17"
 encoding_rs = "0.8.35"
 urlencoding = "2.1.3"
+url = "2.5.8"
 
 # Logging
 log = "0.4.29"
