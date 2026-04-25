@@ -1,4 +1,7 @@
-use crate::fulgur::{Fulgur, utils::updater::check_for_updates};
+use crate::fulgur::{
+    Fulgur,
+    utils::updater::{check_for_updates, is_valid_release_page_url},
+};
 use gpui::{Context, KeyBinding, Menu, MenuItem, SharedString, Window, actions};
 #[cfg(not(target_os = "macos"))]
 use gpui_component::GlobalState;
@@ -404,7 +407,12 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn check_for_updates(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(update_info) = self.shared_state(cx).update_info.lock().as_ref() {
-            match open::that(update_info.download_url.clone()) {
+            let url = update_info.download_url.clone();
+            if !is_valid_release_page_url(&url) {
+                log::error!("Refusing to open non-canonical update URL: {}", url);
+                return;
+            }
+            match open::that(url) {
                 Ok(_) => {
                     log::debug!("Successfully opened browser");
                 }

@@ -69,6 +69,7 @@ dependencies = [
  "tree-sitter-powershell",
  "tree-sitter-r",
  "ureq",
+ "url",
  "urlencoding",
  "windows 0.61.3",
  "zeroize",
