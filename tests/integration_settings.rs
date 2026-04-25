@@ -217,7 +217,7 @@ fn assert_settings_equal(original: &Settings, loaded: &Settings, context: &str) 
 fn test_settings_roundtrip_with_default_values() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let settings_path = temp_settings_path(&temp_dir);
-    let mut original = Settings::new();
+    let original = Settings::new();
     original
         .save_to_path(&settings_path)
         .expect("Failed to save settings");
@@ -229,7 +229,7 @@ fn test_settings_roundtrip_with_default_values() {
 fn test_settings_roundtrip_with_custom_values() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let settings_path = temp_settings_path(&temp_dir);
-    let mut original = create_custom_settings();
+    let original = create_custom_settings();
     original
         .save_to_path(&settings_path)
         .expect("Failed to save settings");
@@ -304,7 +304,7 @@ fn test_settings_optional_fields_some() {
 fn test_settings_recent_files_empty() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let settings_path = temp_settings_path(&temp_dir);
-    let mut original = Settings::new();
+    let original = Settings::new();
     original
         .save_to_path(&settings_path)
         .expect("Failed to save settings");
@@ -365,7 +365,7 @@ fn test_settings_recent_files_respects_max_limit() {
 fn test_settings_json_format_is_valid() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let settings_path = temp_settings_path(&temp_dir);
-    let mut settings = create_custom_settings();
+    let settings = create_custom_settings();
     settings
         .save_to_path(&settings_path)
         .expect("Failed to save settings");
@@ -482,7 +482,7 @@ fn test_settings_save_creates_parent_directory() {
         .join("settings.json");
     std::fs::create_dir_all(nested_path.parent().unwrap())
         .expect("Failed to create parent directories");
-    let mut settings = Settings::new();
+    let settings = Settings::new();
     let result = settings.save_to_path(&nested_path);
     assert!(result.is_ok(), "Saving to nested path should succeed");
     assert!(

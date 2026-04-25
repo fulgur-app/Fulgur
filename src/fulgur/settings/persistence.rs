@@ -30,7 +30,7 @@ impl Settings {
     /// ### Returns
     /// - `Ok(())`: The result of the operation
     /// - `Err(anyhow::Error)`: If there was an error saving the settings
-    pub fn save_to_path(&mut self, path: &Path) -> anyhow::Result<()> {
+    pub fn save_to_path(&self, path: &Path) -> anyhow::Result<()> {
         let json = serde_json::to_string_pretty(&self)?;
         atomic_write_file(path, json.as_bytes())
     }
@@ -60,7 +60,7 @@ impl Settings {
     /// ### Returns
     /// - `Ok(())`: The result of the operation
     /// - `Err(anyhow::Error)`: If there was an error saving the settings
-    pub fn save(&mut self) -> anyhow::Result<()> {
+    pub fn save(&self) -> anyhow::Result<()> {
         let path = Self::settings_file_path()?;
         self.save_to_path(&path)
     }
@@ -79,7 +79,7 @@ impl Settings {
     ///
     /// ### Returns
     /// - `Vec<PathBuf>`: The recent files
-    pub fn get_recent_files(&mut self) -> Vec<PathBuf> {
+    pub fn get_recent_files(&self) -> Vec<PathBuf> {
         let mut files = self.recent_files.get_files().clone();
         files.reverse();
         files
