@@ -105,6 +105,7 @@ impl Fulgur {
             user: user.clone(),
             credential_key: SshCredKey::new(spec.host.clone(), spec.port, user),
             ssh_session_cache: self.shared_state(cx).ssh_session_cache.clone(),
+            ssh_session_pool: self.shared_state(cx).ssh_session_pool.clone(),
         };
         let initial_path = browser_directory_input(&spec.path);
         let initial_entries = browse.entries.clone();

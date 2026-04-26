@@ -438,15 +438,28 @@ fn test_markdown_preview_cache_updates_in_panel_mode(cx: &mut TestAppContext) {
     visual_cx.run_until_parked();
 
     visual_cx.update(|_window, cx| {
-        fulgur.update(cx, |this, _cx| {
-            let cached = this
-                .markdown_preview_cache
-                .get(&source_tab_id)
-                .map(|s| s.to_string())
-                .unwrap_or_default();
+        fulgur.update(cx, |this, cx| {
+            assert!(
+                this.markdown_preview_to_refresh.contains(&source_tab_id),
+                "source content change should mark preview cache dirty"
+            );
+            let source_content = this
+                .tabs
+                .iter()
+                .find(|tab| tab.id() == source_tab_id)
+                .and_then(|tab| tab.as_editor())
+                .expect("source tab still exists")
+                .content
+                .clone();
+            let preview_text = this.markdown_preview_text_for(source_tab_id, &source_content, cx);
             assert_eq!(
-                cached, "# cached preview text",
-                "preview cache should update when source content changes"
+                preview_text.as_ref(),
+                "# cached preview text",
+                "lazy preview read should reflect latest source content"
+            );
+            assert!(
+                !this.markdown_preview_to_refresh.contains(&source_tab_id),
+                "dirty flag should be cleared after refresh"
             );
         });
     });

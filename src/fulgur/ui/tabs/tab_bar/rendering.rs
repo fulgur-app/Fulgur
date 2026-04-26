@@ -26,6 +26,38 @@ use gpui_component::{
 use std::collections::HashMap;
 
 impl Fulgur {
+    /// Compute a fingerprint that changes whenever the set of open file paths changes.
+    ///
+    /// ### Returns
+    /// - `u64`: The computed fingerprint value.
+    fn compute_tab_filename_fingerprint(&self) -> u64 {
+        let mut hash: u64 = self.tabs.len() as u64;
+        for tab in &self.tabs {
+            if let Some(editor) = tab.as_editor()
+                && let Some(path) = editor.file_path()
+            {
+                for byte in path.as_os_str().as_encoded_bytes() {
+                    hash = hash
+                        .wrapping_mul(0x0000_0100_0000_01b3)
+                        .wrapping_add(*byte as u64);
+                }
+            }
+            hash ^= tab.id() as u64;
+            hash = hash.rotate_left(17);
+        }
+        hash
+    }
+
+    /// Rebuild the cached tab filename frequency map only when the tab list has changed.
+    pub(crate) fn refresh_tab_filename_counts(&mut self) {
+        let fp = self.compute_tab_filename_fingerprint();
+        if fp == self.tab_filename_fp {
+            return;
+        }
+        self.tab_filename_fp = fp;
+        self.cached_tab_filename_counts = self.build_tab_filename_counts();
+    }
+
     /// Resolve the optional tab badge label for remote editor tabs.
     ///
     /// ### Arguments
@@ -91,13 +123,13 @@ impl Fulgur {
         (base_title.to_string(), None)
     }
 
-    /// Render the tab bar
+    /// Render the full tab bar
     ///
     /// ### Arguments
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Div`: The rendered tab bar element
+    /// - `Div`: The fully composed tab bar element
     pub fn render_tab_bar(&self, cx: &mut Context<Self>) -> Div {
         use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
         let mut tab_bar = div()
@@ -260,14 +292,14 @@ impl Fulgur {
         } else {
             None
         };
-        let filename_counts = self.build_tab_filename_counts();
+        let filename_counts = &self.cached_tab_filename_counts;
         let capacity = self.tabs.len() + if ghost.is_some() { 1 } else { 0 };
         let mut elements: Vec<AnyElement> = Vec::with_capacity(capacity);
         if let Some((0, dragged)) = ghost {
             elements.push(self.render_ghost_tab(0, dragged, cx));
         }
         for (index, tab) in self.tabs.iter().enumerate() {
-            elements.push(self.render_tab(index, tab, &filename_counts, cx));
+            elements.push(self.render_tab(index, tab, filename_counts, cx));
             if let Some((slot, dragged)) = ghost
                 && slot == index + 1
             {
@@ -277,15 +309,17 @@ impl Fulgur {
         elements
     }
 
-    /// Render a single tab
+    /// Render a single tab in the tab bar
     ///
     /// ### Arguments
-    /// - `index`: The index of the tab
+    /// - `index`: Position of the tab in `self.tabs`
     /// - `tab`: The tab to render
+    /// - `filename_counts`: Precomputed map of filename to occurrence count, used to show a
+    ///   disambiguating folder segment when multiple open tabs share the same filename
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `AnyElement`: The rendered tab element
+    /// - `AnyElement`: The fully composed tab element ready to be inserted into the tab bar
     pub fn render_tab(
         &self,
         index: usize,

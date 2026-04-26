@@ -1,5 +1,6 @@
 use crate::fulgur::state_writer::StateWriter;
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
+use crate::fulgur::sync::ssh::pool::SshSessionPool;
 use crate::fulgur::utils::crypto_helper::check_private_public_keys;
 use crate::fulgur::utils::updater::UpdateInfo;
 use crate::fulgur::{
@@ -93,6 +94,9 @@ pub struct SharedAppState {
     ///
     /// The cache is memory-only and dropped on app exit.
     pub ssh_session_cache: Arc<Mutex<SshCredentialCache>>,
+    /// Process-wide pool of authenticated SSH sessions used to amortize TCP +
+    /// SSH handshakes across successive remote operations.
+    pub ssh_session_pool: Arc<SshSessionPool>,
     /// Dedicated background writer for `WindowsState` persistence.
     pub state_writer: Arc<StateWriter>,
 }
@@ -131,6 +135,7 @@ impl SharedAppState {
                     .build(),
             )),
             ssh_session_cache: Arc::new(Mutex::new(SshCredentialCache::new())),
+            ssh_session_pool: Arc::new(SshSessionPool::new()),
             state_writer: Arc::new(StateWriter::new()),
         }
     }
