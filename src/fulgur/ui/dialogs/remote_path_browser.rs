@@ -1,6 +1,7 @@
 use crate::fulgur::sync::ssh::{
     self,
     credentials::{SshCredKey, SshCredentialCache},
+    pool::{PooledSession, SshSessionPool},
     sftp::RemoteDirectoryEntry,
     url::RemoteSpec,
 };
@@ -36,6 +37,7 @@ pub struct RemotePathBrowserConnection {
     pub user: String,
     pub credential_key: SshCredKey,
     pub ssh_session_cache: Arc<parking_lot::Mutex<SshCredentialCache>>,
+    pub ssh_session_pool: Arc<SshSessionPool>,
 }
 
 /// Browser state for navigating remote directories over SFTP.
@@ -354,7 +356,7 @@ fn normalize_remote_browser_path(path: &str) -> String {
 /// Fetch and filter remote directory entries for one browser input value.
 ///
 /// ### Arguments
-/// - `connection`: Remote connection + credential-cache context.
+/// - `connection`: Remote connection + credential-cache + session-pool context.
 /// - `raw_input`: Path string from the browser input.
 ///
 /// ### Returns
@@ -363,24 +365,18 @@ fn normalize_remote_browser_path(path: &str) -> String {
 fn list_entries_for_input(
     connection: &RemotePathBrowserConnection,
     raw_input: &str,
-    session: &mut Option<ssh::session::SshSession>,
 ) -> Result<Vec<RemoteDirectoryEntry>, String> {
     let (directory, filter) = parse_remote_browser_input(raw_input);
 
     for attempt in 0..=1 {
-        if session.is_none() {
-            *session = Some(connect_browser_session(connection, &directory)?);
-        }
-        let listing_result = session
-            .as_ref()
-            .ok_or_else(|| "Remote browser session is unavailable".to_string())
-            .and_then(|connected_session| {
-                let parent =
-                    ssh::sftp::closest_existing_remote_directory(connected_session, &directory)
-                        .map_err(|e| e.user_message())?;
-                ssh::sftp::list_remote_directory(connected_session, &parent)
-                    .map_err(|e| e.user_message())
-            });
+        let pooled = checkout_browser_session(connection, &directory)?;
+        let listing_result: Result<Vec<RemoteDirectoryEntry>, String> = (|| {
+            let parent = ssh::sftp::closest_existing_remote_directory(pooled.session(), &directory)
+                .map_err(|e| e.user_message())?;
+            ssh::sftp::list_remote_directory(pooled.session(), &parent)
+                .map_err(|e| e.user_message())
+        })();
+
         match listing_result {
             Ok(mut entries) => {
                 if !filter.is_empty() {
@@ -390,9 +386,10 @@ fn list_entries_for_input(
                 return Ok(entries);
             }
             Err(_) if attempt == 0 => {
-                *session = None;
+                pooled.invalidate();
             }
             Err(error) => {
+                pooled.invalidate();
                 return Err(error);
             }
         }
@@ -401,19 +398,19 @@ fn list_entries_for_input(
     Err("Failed to list remote directory".to_string())
 }
 
-/// Connect a browser worker to the remote host.
+/// Check out an SSH session for one browser listing call.
 ///
 /// ### Arguments
-/// - `connection`: Remote host + credential-cache metadata.
-/// - `directory`: Current directory context used by the browser request.
+/// - `connection`: Remote host + credential-cache + session-pool metadata.
+/// - `directory`: Current directory context used to seed the remote spec.
 ///
 /// ### Returns
-/// - `Ok(SshSession)`: Connected SSH session with SFTP subsystem.
+/// - `Ok(PooledSession)`: Pool-managed session ready for SFTP listings.
 /// - `Err(String)`: Credentials are missing or SSH connection failed.
-fn connect_browser_session(
+fn checkout_browser_session(
     connection: &RemotePathBrowserConnection,
     directory: &str,
-) -> Result<ssh::session::SshSession, String> {
+) -> Result<PooledSession, String> {
     let password = connection
         .ssh_session_cache
         .lock()
@@ -431,16 +428,18 @@ fn connect_browser_session(
         password_in_url: None,
     };
 
-    ssh::session::connect(&spec, &connection.user, &password, |_, _, _| {
-        ssh::HostKeyDecision::Reject
-    })
-    .map_err(|e| e.user_message())
+    connection
+        .ssh_session_pool
+        .checkout_or_connect(&spec, &connection.user, &password, |_, _, _| {
+            ssh::HostKeyDecision::Reject
+        })
+        .map_err(|e| e.user_message())
 }
 
-/// Spawn a browser worker thread that reuses one SSH session across requests.
+/// Spawn a browser worker thread that pulls fresh sessions from the global pool per request.
 ///
 /// ### Arguments
-/// - `connection`: Remote connection + credential-cache metadata.
+/// - `connection`: Remote connection + credential-cache + session-pool metadata.
 ///
 /// ### Returns
 /// - `mpsc::Sender<BrowserListRequest>`: Request channel for asynchronous listing jobs.
@@ -449,7 +448,6 @@ fn spawn_browser_worker(
 ) -> mpsc::Sender<BrowserListRequest> {
     let (request_tx, request_rx) = mpsc::channel::<BrowserListRequest>();
     std::thread::spawn(move || {
-        let mut session: Option<ssh::session::SshSession> = None;
         while let Ok(request) = request_rx.recv() {
             let mut latest_request = request;
             while let Ok(next) = request_rx.try_recv() {
@@ -459,12 +457,7 @@ fn spawn_browser_worker(
                 latest_request = next;
             }
 
-            let result =
-                list_entries_for_input(&connection, &latest_request.raw_input, &mut session);
-            if result.is_err() {
-                // Force reconnect on next attempt after a failed listing.
-                session = None;
-            }
+            let result = list_entries_for_input(&connection, &latest_request.raw_input);
             let _ = latest_request.response_tx.send(result);
         }
     });

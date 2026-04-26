@@ -18,11 +18,20 @@ const SESSION_TIMEOUT_MS: u32 = 30_000;
 const LIBSSH2_AUTHENTICATION_FAILED_CODE: i32 = -18;
 
 /// An established SSH session with an open SFTP subsystem.
-///
-/// `Session` and `Sftp` are not `Send`, so this struct must stay within the thread that created it.
 pub struct SshSession {
     pub session: Session,
     pub sftp: ssh2::Sftp,
+}
+
+impl SshSession {
+    /// Report whether the underlying ssh2 session still believes it is authenticated.
+    ///
+    /// ### Returns
+    /// - `true`: ssh2 reports the session as authenticated.
+    /// - `false`: The session is not authenticated and should be discarded.
+    pub fn is_authenticated(&self) -> bool {
+        self.session.authenticated()
+    }
 }
 
 /// Decision returned by the host-key callback when a server is not yet in `known_hosts`.

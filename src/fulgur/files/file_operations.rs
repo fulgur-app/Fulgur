@@ -5,6 +5,7 @@ use crate::fulgur::{
     sync::ssh::{
         self,
         credentials::SshCredKey,
+        pool::SshSessionPool,
         session::{HostKeyDecision, HostKeyRequest},
     },
     tab::Tab,
@@ -108,6 +109,7 @@ struct RemoteOpenTaskParams {
     password: Zeroizing<String>,
     credential_key: SshCredKey,
     ssh_session_cache: Arc<parking_lot::Mutex<ssh::credentials::SshCredentialCache>>,
+    ssh_session_pool: Arc<SshSessionPool>,
     target_tab_id: Option<usize>,
     target_request_id: Option<u64>,
 }
@@ -121,6 +123,7 @@ struct RemoteSaveTaskParams {
     password: Zeroizing<String>,
     credential_key: SshCredKey,
     ssh_session_cache: Arc<parking_lot::Mutex<ssh::credentials::SshCredentialCache>>,
+    ssh_session_pool: Arc<SshSessionPool>,
 }
 
 impl Fulgur {
@@ -464,6 +467,7 @@ impl Fulgur {
         target_tab_id: Option<usize>,
     ) {
         let ssh_session_cache = Arc::clone(&self.shared_state(cx).ssh_session_cache);
+        let ssh_session_pool = Arc::clone(&self.shared_state(cx).ssh_session_pool);
         let target_request_id = target_tab_id.map(|tab_id| {
             let request_id = self.next_remote_request_id;
             self.next_remote_request_id = self.next_remote_request_id.wrapping_add(1);
@@ -491,6 +495,7 @@ impl Fulgur {
                         password: cached_password,
                         credential_key: cache_key,
                         ssh_session_cache: Arc::clone(&ssh_session_cache),
+                        ssh_session_pool: Arc::clone(&ssh_session_pool),
                         target_tab_id,
                         target_request_id,
                     },
@@ -504,6 +509,7 @@ impl Fulgur {
         let user = spec.user.clone();
         let entity = cx.entity().downgrade();
         let cache_for_callback = Arc::clone(&ssh_session_cache);
+        let pool_for_callback = Arc::clone(&ssh_session_pool);
 
         self.show_ssh_password_dialog(
             window,
@@ -533,6 +539,7 @@ impl Fulgur {
                                 password,
                                 credential_key: cache_key,
                                 ssh_session_cache: Arc::clone(&cache_for_callback),
+                                ssh_session_pool: Arc::clone(&pool_for_callback),
                                 target_tab_id,
                                 target_request_id,
                             },
@@ -689,6 +696,7 @@ impl Fulgur {
             password,
             credential_key,
             ssh_session_cache,
+            ssh_session_pool,
             target_tab_id,
             target_request_id,
         } = params;
@@ -714,12 +722,13 @@ impl Fulgur {
         let user = spec.user.clone().unwrap_or_default();
         let cache_for_thread = Arc::clone(&ssh_session_cache);
         let credential_key_for_thread = credential_key.clone();
+        let pool_for_thread = Arc::clone(&ssh_session_pool);
 
         std::thread::spawn(move || {
             let slot = pending_host_key_for_thread;
             let host_key_decision_timed_out_for_callback =
                 Arc::clone(&host_key_decision_timed_out_for_thread);
-            let session_result = self::ssh::session::connect(
+            let session_result = pool_for_thread.checkout_or_connect(
                 &spec_for_thread,
                 &user,
                 &password,
@@ -739,20 +748,28 @@ impl Fulgur {
             }
 
             let mut outcome = session_result
-                .and_then(|session| {
-                    if target_tab_id.is_some() {
-                        let bytes =
-                            self::ssh::sftp::read_remote_file(&session, &spec_for_thread.path)?;
-                        let (encoding, content) = detect_encoding_and_decode(&bytes);
-                        Ok(RemoteOpenResult::File(RemoteFileResult {
-                            spec: spec_for_thread.clone(),
-                            content,
-                            encoding,
-                            file_size: bytes.len(),
-                        }))
+                .and_then(|pooled_session| {
+                    let result = if target_tab_id.is_some() {
+                        self::ssh::sftp::read_remote_file(
+                            pooled_session.session(),
+                            &spec_for_thread.path,
+                        )
+                        .map(|bytes| {
+                            let (encoding, content) = detect_encoding_and_decode(&bytes);
+                            RemoteOpenResult::File(RemoteFileResult {
+                                spec: spec_for_thread.clone(),
+                                content,
+                                encoding,
+                                file_size: bytes.len(),
+                            })
+                        })
                     } else {
-                        Self::resolve_remote_open_result(&session, &spec_for_thread)
+                        Self::resolve_remote_open_result(pooled_session.session(), &spec_for_thread)
+                    };
+                    if result.is_err() {
+                        pooled_session.invalidate();
                     }
+                    result
                 })
                 .map_err(|e| e.user_message());
             if host_key_decision_timed_out_for_thread.load(Ordering::Acquire) {
@@ -957,6 +974,7 @@ impl Fulgur {
         contents: String,
     ) {
         let ssh_session_cache = Arc::clone(&self.shared_state(cx).ssh_session_cache);
+        let ssh_session_pool = Arc::clone(&self.shared_state(cx).ssh_session_pool);
         if let (Some(user), Some(password)) = (spec.user.clone(), spec.password_in_url.take()) {
             let key = SshCredKey::new(spec.host.clone(), spec.port, user);
             ssh_session_cache.lock().insert(key, password);
@@ -982,6 +1000,7 @@ impl Fulgur {
                         password: cached_password,
                         credential_key: cache_key,
                         ssh_session_cache: Arc::clone(&ssh_session_cache),
+                        ssh_session_pool: Arc::clone(&ssh_session_pool),
                     },
                 );
                 return;
@@ -993,6 +1012,7 @@ impl Fulgur {
         let user = spec.user.clone();
         let entity = cx.entity().downgrade();
         let cache_for_callback = Arc::clone(&ssh_session_cache);
+        let pool_for_callback = Arc::clone(&ssh_session_pool);
 
         self.show_ssh_password_dialog(
             window,
@@ -1037,6 +1057,7 @@ impl Fulgur {
                                 password,
                                 credential_key: cache_key,
                                 ssh_session_cache: Arc::clone(&cache_for_callback),
+                                ssh_session_pool: Arc::clone(&pool_for_callback),
                             },
                         );
                     });
@@ -1065,6 +1086,7 @@ impl Fulgur {
             password,
             credential_key,
             ssh_session_cache,
+            ssh_session_pool,
         } = params;
         let pending_host_key: Arc<parking_lot::Mutex<Option<HostKeyRequest>>> =
             Arc::new(parking_lot::Mutex::new(None));
@@ -1087,12 +1109,13 @@ impl Fulgur {
         let cache_for_thread = Arc::clone(&ssh_session_cache);
         let credential_key_for_thread = credential_key.clone();
         let content_for_thread = Arc::clone(&saved_content);
+        let pool_for_thread = Arc::clone(&ssh_session_pool);
 
         std::thread::spawn(move || {
             let slot = pending_host_key_for_thread;
             let host_key_decision_timed_out_for_callback =
                 Arc::clone(&host_key_decision_timed_out_for_thread);
-            let session_result = self::ssh::session::connect(
+            let session_result = pool_for_thread.checkout_or_connect(
                 &spec_for_thread,
                 &user,
                 &password,
@@ -1111,12 +1134,16 @@ impl Fulgur {
                 cache_for_thread.lock().remove(&credential_key_for_thread);
             }
             let mut outcome = session_result
-                .and_then(|session| {
-                    self::ssh::sftp::write_remote_file(
-                        &session,
+                .and_then(|pooled_session| {
+                    let result = self::ssh::sftp::write_remote_file(
+                        pooled_session.session(),
                         &spec_for_thread.path,
                         content_for_thread.as_bytes(),
-                    )
+                    );
+                    if result.is_err() {
+                        pooled_session.invalidate();
+                    }
+                    result
                 })
                 .map_err(|e| e.user_message());
             if host_key_decision_timed_out_for_thread.load(Ordering::Acquire) {
