@@ -48,7 +48,8 @@ const INITIAL_BUFFER_RATIO: usize = 16;
 
 /// Parameters for sharing a file
 pub struct ShareFileRequest {
-    pub content: String,
+    /// Reference-counted snapshot of the file content.
+    pub content: Arc<str>,
     pub file_name: String,
     pub device_ids: Vec<String>,
     pub file_path: Option<PathBuf>,
@@ -570,7 +571,7 @@ mod tests {
 
     fn make_basic_request(device_id: &str) -> ShareFileRequest {
         ShareFileRequest {
-            content: "hello world".to_string(),
+            content: Arc::from("hello world"),
             file_name: "test.txt".to_string(),
             device_ids: vec![device_id.to_string()],
             file_path: None,
@@ -745,7 +746,7 @@ fn main() {
         settings.server_url = Some("https://example.com".to_string());
 
         let request = ShareFileRequest {
-            content: "A".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES + 1),
+            content: Arc::from("A".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES + 1)),
             file_name: "large.txt".to_string(),
             device_ids: vec!["device-1".to_string()],
             file_path: None,
@@ -775,7 +776,7 @@ fn main() {
         settings.email = None;
 
         let request = ShareFileRequest {
-            content: "A".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES),
+            content: Arc::from("A".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES)),
             file_name: "max-size.txt".to_string(),
             device_ids: vec!["device-1".to_string()],
             file_path: None,
@@ -920,7 +921,7 @@ fn main() {
     fn test_share_file_rejects_missing_server_url() {
         let settings = SynchronizationSettings::new(); // server_url = None
         let request = ShareFileRequest {
-            content: "hello".to_string(),
+            content: Arc::from("hello"),
             file_name: "test.txt".to_string(),
             device_ids: vec!["device-1".to_string()],
             file_path: None,
@@ -945,7 +946,7 @@ fn main() {
         let mut settings = SynchronizationSettings::new();
         settings.server_url = Some("https://example.com".to_string());
         let request = ShareFileRequest {
-            content: String::new(),
+            content: Arc::from(""),
             file_name: "test.txt".to_string(),
             device_ids: vec!["device-1".to_string()],
             file_path: None,
@@ -970,7 +971,7 @@ fn main() {
         let mut settings = SynchronizationSettings::new();
         settings.server_url = Some("https://example.com".to_string());
         let request = ShareFileRequest {
-            content: "hello".to_string(),
+            content: Arc::from("hello"),
             file_name: String::new(),
             device_ids: vec!["device-1".to_string()],
             file_path: None,
@@ -995,7 +996,7 @@ fn main() {
         let mut settings = SynchronizationSettings::new();
         settings.server_url = Some("https://example.com".to_string());
         let request = ShareFileRequest {
-            content: "hello".to_string(),
+            content: Arc::from("hello"),
             file_name: "test.txt".to_string(),
             device_ids: vec![],
             file_path: None,
@@ -1138,7 +1139,7 @@ fn main() {
         let token_manager = make_token_manager_with_valid_token();
         let device_no_key = make_device("device-no-key", "desktop", None);
         let request = ShareFileRequest {
-            content: "shared content".to_string(),
+            content: Arc::from("shared content"),
             file_name: "multi.txt".to_string(),
             device_ids: vec!["device-missing".to_string(), "device-no-key".to_string()],
             file_path: None,

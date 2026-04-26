@@ -166,10 +166,10 @@ fn handle_share_file(
         max_file_size_bytes,
     ) = entity.update(cx, |this, cx| {
         let active_tab = this.get_active_editor_tab();
-        let content = active_tab
+        let content: Arc<str> = active_tab
             .as_ref()
-            .map(|tab| tab.content.read(cx).value().to_string())
-            .unwrap_or_default();
+            .map(|tab| Arc::from(tab.content.read(cx).value().as_str()))
+            .unwrap_or_else(|| Arc::from(""));
         let file_path = active_tab.as_ref().and_then(|tab| tab.file_path().cloned());
         let file_name = file_path
             .as_ref()
