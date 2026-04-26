@@ -44,7 +44,8 @@ use std::{
 };
 use tab::Tab;
 use ui::{
-    bars::search_bar::SearchMatch, bars::titlebar::CustomTitleBar, menus::*, tabs::*, themes,
+    bars::search_bar::SearchMatch, bars::status_bar::StatusBarCache,
+    bars::titlebar::CustomTitleBar, menus::*, tabs::*, themes,
 };
 
 /// Search and replace functionality state
@@ -136,6 +137,9 @@ pub struct Fulgur {
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
     _editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
     drag_ghost: Option<(usize, ui::tabs::tab_drag::DraggedTab)>, // Ghost tab shown at insertion point during tab drag
+    status_bar_cache: StatusBarCache, // Cached status bar label strings (refreshed each render)
+    cached_tab_filename_counts: HashMap<String, usize>, // Cached tab filename frequency map (refreshed when tabs change)
+    tab_filename_fp: u64, // Fingerprint of the tab list used to detect when cached_tab_filename_counts is stale
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
     pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
@@ -256,6 +260,9 @@ impl Fulgur {
                 editor_context_menu: None,
                 _editor_context_menu_subscription: None,
                 drag_ghost: None,
+                status_bar_cache: StatusBarCache::default(),
+                cached_tab_filename_counts: HashMap::new(),
+                tab_filename_fp: u64::MAX, // sentinel: differs from fingerprint of any real tab list
                 pending_tab_transfer: None,
                 pending_tab_removal: None,
                 pending_transfer_scroll: None,
@@ -531,6 +538,8 @@ impl Render for Fulgur {
         self.update_modified_status(cx);
         self.prune_markdown_preview_cache(cx);
         self.process_pending_tab_scroll(cx);
+        self.refresh_tab_filename_counts();
+        self.refresh_status_bar_labels(cx);
         let app_content = self.build_app_content_with_actions(self.active_tab_index, window, cx);
         self.assemble_ui_tree(app_content, window, cx)
     }

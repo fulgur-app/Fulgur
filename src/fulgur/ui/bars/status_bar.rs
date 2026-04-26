@@ -175,44 +175,89 @@ pub fn status_bar_sync_button(
     button
 }
 
+/// Cached status bar label strings
+pub(crate) struct StatusBarCache {
+    active_tab_index: Option<usize>,
+    cursor_line: u32,
+    cursor_character: u32,
+    language: Option<SupportedLanguage>,
+    encoding: String,
+    line_col: String,
+    language_label: String,
+    encoding_label: String,
+}
+
+impl Default for StatusBarCache {
+    fn default() -> Self {
+        Self {
+            active_tab_index: Some(usize::MAX),
+            cursor_line: 0,
+            cursor_character: 0,
+            language: None,
+            encoding: String::new(),
+            line_col: String::new(),
+            language_label: String::new(),
+            encoding_label: String::new(),
+        }
+    }
+}
+
 impl Fulgur {
-    /// Resolve the state reflected by the status bar for cursor position, language and encoding.
+    /// Refresh the cached status-bar label strings when the active tab's cursor, language, or
+    /// encoding has changed since the last render.
     ///
-    /// ### Parameters:
-    /// - `cx`: The application context.
-    ///
-    /// ### Returns:
-    /// - `(Position, String, String)`: Cursor position, display language label and encoding label.
-    fn status_bar_reflection_values(&self, cx: &Context<Self>) -> (Position, String, String) {
-        let (cursor_pos, language) = match self.active_tab_index {
+    /// ### Arguments
+    /// - `cx`: The application context
+    pub(crate) fn refresh_status_bar_labels(&mut self, cx: &Context<Self>) {
+        let (cursor_pos, language, encoding) = match self.active_tab_index {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
-                    (
-                        editor_tab.content.read(cx).cursor_position(),
-                        Some(editor_tab.language),
-                    )
+                    let cursor = editor_tab.content.read(cx).cursor_position();
+                    let enc = editor_tab.encoding.clone();
+                    (cursor, Some(editor_tab.language), enc)
                 } else {
-                    (Position::default(), Some(SupportedLanguage::Plain))
+                    (
+                        Position::default(),
+                        Some(SupportedLanguage::Plain),
+                        EMPTY.to_string(),
+                    )
                 }
             }
-            None => (Position::default(), None),
+            None => (Position::default(), None, String::new()),
         };
-        let language = match language {
-            Some(language) => pretty_name(&language),
+
+        // Return early when the inputs match the previously cached values.
+        if self.status_bar_cache.active_tab_index == self.active_tab_index
+            && self.status_bar_cache.cursor_line == cursor_pos.line
+            && self.status_bar_cache.cursor_character == cursor_pos.character
+            && self.status_bar_cache.language == language
+            && self.status_bar_cache.encoding == encoding
+        {
+            return;
+        }
+
+        let language_label = match &language {
+            Some(lang) => pretty_name(lang),
             None => EMPTY.to_string(),
         };
-        let encoding = match self.active_tab_index {
-            Some(index) => {
-                if let Some(editor_tab) = self.tabs[index].as_editor() {
-                    editor_tab.encoding.clone()
-                } else {
-                    EMPTY.to_string()
-                }
-            }
+        let encoding_label = match self.active_tab_index {
+            Some(_) => encoding.clone(),
             None => UTF_8.to_string(),
         };
 
-        (cursor_pos, language, encoding)
+        let cache = &mut self.status_bar_cache;
+        cache.active_tab_index = self.active_tab_index;
+        cache.cursor_line = cursor_pos.line;
+        cache.cursor_character = cursor_pos.character;
+        cache.language = language;
+        cache.encoding = encoding;
+        cache.line_col = format!(
+            "Ln {}, Col {}",
+            cursor_pos.line + 1,
+            cursor_pos.character + 1
+        );
+        cache.language_label = language_label;
+        cache.encoding_label = encoding_label;
     }
 
     /// Resolve the sync indicator visual state reflected by the status bar.
@@ -248,17 +293,11 @@ impl Fulgur {
     /// ### Returns
     /// - `impl IntoElement`: The rendered status bar element
     pub fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (cursor_pos, language, encoding) = self.status_bar_reflection_values(cx);
-        let jump_to_line_button_content = format!(
-            "Ln {}, Col {}",
-            cursor_pos.line + 1,
-            cursor_pos.character + 1
-        );
-        let jump_to_line_button = status_bar_button_factory(
-            jump_to_line_button_content,
-            cx.theme().border,
-            cx.theme().muted,
-        );
+        let line_col = self.status_bar_cache.line_col.clone();
+        let language = self.status_bar_cache.language_label.clone();
+        let encoding = self.status_bar_cache.encoding_label.clone();
+        let jump_to_line_button =
+            status_bar_button_factory(line_col, cx.theme().border, cx.theme().muted);
         let jump_to_line_button = jump_to_line_button.on_mouse_down(
             MouseButton::Left,
             cx.listener(|this, _event: &MouseDownEvent, window, cx| {
@@ -489,28 +528,30 @@ mod tests {
                     );
                 });
 
-                let (cursor, language, encoding) = this.status_bar_reflection_values(cx);
-                assert_eq!(cursor.line, 1);
-                assert_eq!(cursor.character, 4);
-                assert_eq!(language, "Rust");
-                assert_eq!(encoding, "ISO-8859-1");
+                this.refresh_status_bar_labels(cx);
+                assert_eq!(this.status_bar_cache.cursor_line, 1);
+                assert_eq!(this.status_bar_cache.cursor_character, 4);
+                assert_eq!(this.status_bar_cache.language_label, "Rust");
+                assert_eq!(this.status_bar_cache.encoding_label, "ISO-8859-1");
+                assert_eq!(this.status_bar_cache.line_col, "Ln 2, Col 5");
             });
         });
     }
 
     #[gpui::test]
-    fn test_status_bar_reflection_uses_defaults_without_active_tab(cx: &mut TestAppContext) {
+    fn test_status_bar_cache_uses_defaults_without_active_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.active_tab_index = None;
 
-                let (cursor, language, encoding) = this.status_bar_reflection_values(cx);
-                assert_eq!(cursor.line, 0);
-                assert_eq!(cursor.character, 0);
-                assert!(language.is_empty());
-                assert_eq!(encoding, UTF_8);
+                this.refresh_status_bar_labels(cx);
+                assert_eq!(this.status_bar_cache.cursor_line, 0);
+                assert_eq!(this.status_bar_cache.cursor_character, 0);
+                assert!(this.status_bar_cache.language_label.is_empty());
+                assert_eq!(this.status_bar_cache.encoding_label, UTF_8);
+                assert_eq!(this.status_bar_cache.line_col, "Ln 1, Col 1");
             });
         });
     }
