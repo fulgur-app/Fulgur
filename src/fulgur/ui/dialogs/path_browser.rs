@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use gpui::{
     AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
@@ -13,6 +14,10 @@ use gpui_component::{
 
 use crate::fulgur::ui::icons::CustomIcon;
 
+const PATH_BROWSER_REFRESH_DEBOUNCE_MS: u64 = 150;
+const PATH_BROWSER_REFRESH_DEBOUNCE: Duration =
+    Duration::from_millis(PATH_BROWSER_REFRESH_DEBOUNCE_MS);
+
 /// A single entry in the file browser list.
 struct PathEntry {
     name: String,
@@ -26,6 +31,8 @@ struct PathEntry {
 pub struct PathBrowser {
     input: Entity<InputState>,
     entries: Vec<PathEntry>,
+    debounce_generation: u64,
+    refresh_generation: u64,
     _input_subscription: Subscription,
 }
 
@@ -150,14 +157,15 @@ impl PathBrowser {
         let _input_subscription =
             cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
                 if let InputEvent::Change = ev {
-                    this.refresh_entries(cx);
-                    cx.notify();
+                    this.schedule_refresh(cx);
                 }
             });
 
         Self {
             input,
             entries: Vec::new(),
+            debounce_generation: 0,
+            refresh_generation: 0,
             _input_subscription,
         }
     }
@@ -170,16 +178,69 @@ impl PathBrowser {
         &self.input
     }
 
-    /// Re-read the directory based on current input value.
+    /// Schedule a debounced directory refresh for the current input value.
+    ///
+    /// ### Description
+    /// Each input change wins the race over previous pending timers via the
+    /// `debounce_generation` counter, so only the most recent change triggers
+    /// a `dispatch_refresh`. This prevents one stat call per keystroke on
+    /// network-mounted directories.
     ///
     /// ### Arguments
-    /// - `cx`: User interface context
-    fn refresh_entries(&mut self, cx: &Context<Self>) {
+    /// - `cx`: User interface context.
+    fn schedule_refresh(&mut self, cx: &mut Context<Self>) {
+        self.debounce_generation = self.debounce_generation.wrapping_add(1);
+        let generation = self.debounce_generation;
+        let weak = cx.entity().downgrade();
+        cx.spawn(async move |_, cx| {
+            cx.background_executor()
+                .timer(PATH_BROWSER_REFRESH_DEBOUNCE)
+                .await;
+            let Some(entity) = weak.upgrade() else {
+                return;
+            };
+            entity.update(cx, |this, cx| {
+                if this.debounce_generation != generation {
+                    return;
+                }
+                this.dispatch_refresh(cx);
+            });
+        })
+        .detach();
+    }
+
+    /// Run a directory listing on the background executor and apply the result.
+    ///
+    /// ### Arguments
+    /// - `cx`: User interface context.
+    fn dispatch_refresh(&mut self, cx: &mut Context<Self>) {
         let raw = self.input.read(cx).value().to_string();
-        self.entries = match parse_input_path(&raw) {
-            Some((parent, filter)) => read_and_filter_entries(&parent, &filter),
-            None => Vec::new(),
-        };
+        self.refresh_generation = self.refresh_generation.wrapping_add(1);
+        let generation = self.refresh_generation;
+        let weak = cx.entity().downgrade();
+        cx.spawn(async move |_, cx| {
+            let entries = cx
+                .background_executor()
+                .spawn(async move {
+                    match parse_input_path(&raw) {
+                        Some((parent, filter)) => read_and_filter_entries(&parent, &filter),
+                        None => Vec::new(),
+                    }
+                })
+                .await;
+
+            let Some(entity) = weak.upgrade() else {
+                return;
+            };
+            entity.update(cx, |this, cx| {
+                if this.refresh_generation != generation {
+                    return;
+                }
+                this.entries = entries;
+                cx.notify();
+            });
+        })
+        .detach();
     }
 }
 
@@ -394,6 +455,9 @@ mod tests {
                 state.set_value(&filter_input, window, cx);
             });
         });
+        visual_cx
+            .background_executor
+            .advance_clock(super::PATH_BROWSER_REFRESH_DEBOUNCE);
         visual_cx.run_until_parked();
 
         let entries: Vec<(String, bool)> = browser.read_with(&visual_cx, |browser, _| {
@@ -461,6 +525,9 @@ mod tests {
                 state.set_value(&valid_input, window, cx);
             });
         });
+        visual_cx
+            .background_executor
+            .advance_clock(super::PATH_BROWSER_REFRESH_DEBOUNCE);
         visual_cx.run_until_parked();
         let has_entries = browser.read_with(&visual_cx, |browser, _| !browser.entries.is_empty());
         assert!(has_entries, "valid input should populate entries");
@@ -476,6 +543,9 @@ mod tests {
                 state.set_value(&invalid_input, window, cx);
             });
         });
+        visual_cx
+            .background_executor
+            .advance_clock(super::PATH_BROWSER_REFRESH_DEBOUNCE);
         visual_cx.run_until_parked();
 
         let is_empty = browser.read_with(&visual_cx, |browser, _| browser.entries.is_empty());
