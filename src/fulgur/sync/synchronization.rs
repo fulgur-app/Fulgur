@@ -376,6 +376,7 @@ pub enum SynchronizationError {
     EncryptionFailed,
     FileNameMissing,
     HostNotFound,
+    InvalidPublicKey(String),
     InvalidResponse(String),
     MissingEncryptionKey,
     MissingPublicKey(String),
@@ -413,6 +414,9 @@ impl fmt::Display for SynchronizationError {
             SynchronizationError::EncryptionFailed => write!(f, "Encryption failed"),
             SynchronizationError::FileNameMissing => write!(f, "File name is missing"),
             SynchronizationError::HostNotFound => write!(f, "Host not found"),
+            SynchronizationError::InvalidPublicKey(name) => {
+                write!(f, "Invalid public key for device: {}", name)
+            }
             SynchronizationError::InvalidResponse(e) => write!(f, "{}", e),
             SynchronizationError::MissingEncryptionKey => write!(f, "Missing encryption key"),
             SynchronizationError::MissingExpirationDate => write!(f, "Missing expiration date"),
