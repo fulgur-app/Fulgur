@@ -311,6 +311,17 @@ pub fn check_private_public_keys(settings: &mut Settings) -> anyhow::Result<()> 
     Ok(())
 }
 
+/// Checks whether a string is a valid age x25519 public key.
+///
+/// ### Arguments
+/// - `key`: The string to validate (expected format: `age1...`)
+///
+/// ### Returns
+/// - `bool`: `true` if the string parses as a valid `age::x25519::Recipient`, `false` otherwise
+pub fn is_valid_public_key(key: &str) -> bool {
+    key.parse::<Recipient>().is_ok()
+}
+
 /// Encrypt bytes (e.g., compressed data) for file sharing using age encryption
 ///
 /// ### Arguments
@@ -369,7 +380,7 @@ pub fn decrypt_bytes(encrypted_b64: &str, private_key_str: &str) -> anyhow::Resu
 
 #[cfg(test)]
 mod tests {
-    use super::{decrypt_bytes, encrypt_bytes, generate_key_pair, serialize};
+    use super::{decrypt_bytes, encrypt_bytes, generate_key_pair, is_valid_public_key, serialize};
 
     #[test]
     fn test_encrypt_decrypt_bytes() {
@@ -423,5 +434,25 @@ mod tests {
         // Try to decrypt with private_key2 (should fail)
         let result = decrypt_bytes(&encrypted, &private_key2_str);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_valid_public_key_accepts_generated_key() {
+        let (_, public_key) = generate_key_pair();
+        assert!(is_valid_public_key(&public_key.to_string()));
+    }
+
+    #[test]
+    fn test_is_valid_public_key_rejects_garbage() {
+        assert!(!is_valid_public_key("not-a-valid-age-key"));
+        assert!(!is_valid_public_key(""));
+        assert!(!is_valid_public_key("age1invalidchars!!!"));
+    }
+
+    #[test]
+    fn test_is_valid_public_key_rejects_private_key() {
+        let (private_key, _) = generate_key_pair();
+        let private_str = serialize(private_key);
+        assert!(!is_valid_public_key(&private_str));
     }
 }

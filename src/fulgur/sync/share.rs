@@ -5,7 +5,7 @@ use crate::fulgur::{
         synchronization::{SynchronizationError, handle_ureq_error},
     },
     ui::icons::CustomIcon,
-    utils::crypto_helper,
+    utils::crypto_helper::{self, is_valid_public_key},
 };
 use flate2::{
     Compression,
@@ -180,14 +180,24 @@ pub fn get_devices(
             SynchronizationError::InvalidResponse(e.to_string())
         })?;
 
-    log::debug!(
-        "Retrieved {} devices from server",
-        devices_response.devices.len()
-    );
-    Ok((
-        devices_response.devices,
-        devices_response.max_file_size_bytes,
-    ))
+    let devices = devices_response
+        .devices
+        .into_iter()
+        .map(|mut device| {
+            if let Some(ref key) = device.public_key
+                && !is_valid_public_key(key)
+            {
+                log::warn!(
+                    "Device '{}' has a malformed public key; ignoring it",
+                    device.name
+                );
+                device.public_key = None;
+            }
+            device
+        })
+        .collect::<Vec<_>>();
+    log::debug!("Retrieved {} devices from server", devices.len());
+    Ok((devices, devices_response.max_file_size_bytes))
 }
 
 /// Atomically fetch and delete all pending shares for the current device.
@@ -302,6 +312,7 @@ fn send_share_request(
 }
 
 /// Result of sharing a file with devices
+#[derive(Debug)]
 pub struct ShareResult {
     pub successes: Vec<(String, String)>, // (device_id, expiration_date)
     pub failures: Vec<(String, SynchronizationError)>, // (device_id, error)
@@ -390,6 +401,18 @@ pub fn share_file(
     }
     if request.device_ids.is_empty() {
         return Err(SynchronizationError::DeviceIdsMissing);
+    }
+    for device_id in &request.device_ids {
+        let device = devices.iter().find(|d| d.id == *device_id).ok_or_else(|| {
+            SynchronizationError::Other(format!("Device {} not found", device_id))
+        })?;
+        match &device.public_key {
+            None => return Err(SynchronizationError::MissingPublicKey(device.name.clone())),
+            Some(key) if !is_valid_public_key(key) => {
+                return Err(SynchronizationError::InvalidPublicKey(device.name.clone()));
+            }
+            _ => {}
+        }
     }
     let token = get_valid_token(
         synchronization_settings,
@@ -1021,11 +1044,11 @@ fn main() {
     // and exercise the per-device branches inside the scoped thread pool.
 
     #[test]
-    fn test_share_file_records_failure_for_unknown_device_id() {
-        // device_ids contains an ID that is absent from the devices slice.
+    fn test_share_file_fails_for_unknown_device_id() {
+        // Upfront validation: an unknown device ID must fail the whole request.
         let settings = make_settings_with_server_url();
         let token_manager = make_token_manager_with_valid_token();
-        let result = share_file(
+        let err = share_file(
             &settings,
             make_basic_request("nonexistent-device"),
             &[], // no devices provided
@@ -1033,23 +1056,21 @@ fn main() {
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
-        .expect("share_file should return Ok(ShareResult) even on per-device failure");
-        assert_eq!(result.successes.len(), 0);
-        assert_eq!(result.failures.len(), 1);
-        assert_eq!(result.failures[0].0, "nonexistent-device");
+        .expect_err("share_file should fail for unknown device ID");
         assert!(
-            matches!(result.failures[0].1, SynchronizationError::Other(_)),
+            matches!(err, SynchronizationError::Other(_)),
             "Unknown device should produce Other error, got: {:?}",
-            result.failures[0].1
+            err
         );
     }
 
     #[test]
-    fn test_share_file_records_failure_when_device_has_no_public_key() {
+    fn test_share_file_fails_when_device_has_no_public_key() {
+        // Upfront validation: a device with no public key must fail before any work.
         let settings = make_settings_with_server_url();
         let token_manager = make_token_manager_with_valid_token();
         let device = make_device("device-no-key", "desktop", None);
-        let result = share_file(
+        let err = share_file(
             &settings,
             make_basic_request("device-no-key"),
             &[device],
@@ -1057,21 +1078,17 @@ fn main() {
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
-        .expect("share_file should return Ok(ShareResult)");
-        assert_eq!(result.successes.len(), 0);
-        assert_eq!(result.failures.len(), 1);
+        .expect_err("share_file should fail when device has no public key");
         assert!(
-            matches!(
-                result.failures[0].1,
-                SynchronizationError::MissingPublicKey(_)
-            ),
+            matches!(err, SynchronizationError::MissingPublicKey(_)),
             "Device without public key should produce MissingPublicKey, got: {:?}",
-            result.failures[0].1
+            err
         );
     }
 
     #[test]
-    fn test_share_file_records_failure_when_device_has_invalid_public_key() {
+    fn test_share_file_fails_when_device_has_invalid_public_key() {
+        // Upfront validation: a malformed key must fail before encryption is attempted.
         let settings = make_settings_with_server_url();
         let token_manager = make_token_manager_with_valid_token();
         let device = make_device(
@@ -1079,7 +1096,7 @@ fn main() {
             "laptop",
             Some("not-a-valid-age-public-key"),
         );
-        let result = share_file(
+        let err = share_file(
             &settings,
             make_basic_request("device-bad-key"),
             &[device],
@@ -1087,13 +1104,11 @@ fn main() {
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
-        .expect("share_file should return Ok(ShareResult)");
-        assert_eq!(result.successes.len(), 0);
-        assert_eq!(result.failures.len(), 1);
+        .expect_err("share_file should fail for a device with an invalid public key");
         assert!(
-            matches!(result.failures[0].1, SynchronizationError::EncryptionFailed),
-            "Invalid public key should produce EncryptionFailed, got: {:?}",
-            result.failures[0].1
+            matches!(err, SynchronizationError::InvalidPublicKey(_)),
+            "Invalid public key should produce InvalidPublicKey, got: {:?}",
+            err
         );
     }
 
@@ -1123,6 +1138,7 @@ fn main() {
                 result.failures[0].1,
                 SynchronizationError::EncryptionFailed
                     | SynchronizationError::MissingPublicKey(_)
+                    | SynchronizationError::InvalidPublicKey(_)
                     | SynchronizationError::ContentMissing
                     | SynchronizationError::ContentTooLarge { .. }
             ),
@@ -1132,9 +1148,9 @@ fn main() {
     }
 
     #[test]
-    fn test_share_file_multi_device_collects_all_failures() {
-        // Two device IDs: one absent from the slice, one present but without a key.
-        // Both should land in failures; the result is still Ok(ShareResult).
+    fn test_share_file_fails_fast_on_first_invalid_device() {
+        // Upfront validation iterates device_ids in order; the first invalid one
+        // fails the whole request before any compression or encryption occurs.
         let settings = make_settings_with_server_url();
         let token_manager = make_token_manager_with_valid_token();
         let device_no_key = make_device("device-no-key", "desktop", None);
@@ -1144,7 +1160,7 @@ fn main() {
             device_ids: vec!["device-missing".to_string(), "device-no-key".to_string()],
             file_path: None,
         };
-        let result = share_file(
+        let err = share_file(
             &settings,
             request,
             &[device_no_key],
@@ -1152,10 +1168,12 @@ fn main() {
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
-        .expect("share_file should return Ok(ShareResult)");
-        assert_eq!(result.successes.len(), 0);
-        assert_eq!(result.failures.len(), 2);
-        assert!(!result.is_complete_success());
+        .expect_err("share_file should fail on the first invalid device");
+        assert!(
+            matches!(err, SynchronizationError::Other(_)),
+            "First unknown device should produce Other error, got: {:?}",
+            err
+        );
     }
 
     // ========== get_devices validation ==========
