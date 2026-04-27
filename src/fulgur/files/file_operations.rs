@@ -12,6 +12,7 @@ use crate::fulgur::{
     ui::{
         components_utils::{UNTITLED, UTF_8},
         menus,
+        notifications::progress::{CancelCallback, start_progress},
     },
     utils::atomic_write::atomic_write_file,
     window_manager,
@@ -724,6 +725,23 @@ impl Fulgur {
         let credential_key_for_thread = credential_key.clone();
         let pool_for_thread = Arc::clone(&ssh_session_pool);
 
+        let progress_label =
+            Self::format_remote_endpoint_label("Connecting to ", &spec.host, spec.port, &user);
+        let entity_weak = cx.entity().downgrade();
+        let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, cx| {
+            if let Some(entity) = entity_weak.upgrade() {
+                entity.update(cx, |fulgur, _cx| {
+                    if let Some(tab_id) = target_tab_id {
+                        fulgur.latest_remote_open_request_by_tab.remove(&tab_id);
+                        fulgur.inflight_remote_restore.remove(&tab_id);
+                    }
+                });
+            }
+        }));
+        let progress = start_progress(window, cx, progress_label.into(), cancel_callback);
+        let cancel_flag = progress.cancel_flag();
+        let cancel_flag_for_thread = Arc::clone(&cancel_flag);
+
         std::thread::spawn(move || {
             let slot = pending_host_key_for_thread;
             let host_key_decision_timed_out_for_callback =
@@ -779,16 +797,22 @@ impl Fulgur {
                 ));
             }
 
-            Self::publish_remote_open_outcome(
-                &open_finished_for_thread,
-                &pending_remote_for_thread,
-                target_tab_id,
-                target_request_id,
-                outcome,
-            );
+            if cancel_flag_for_thread.load(Ordering::Acquire) {
+                // User cancelled — discard the outcome and unblock the monitor task.
+                open_finished_for_thread.store(true, Ordering::Release);
+            } else {
+                Self::publish_remote_open_outcome(
+                    &open_finished_for_thread,
+                    &pending_remote_for_thread,
+                    target_tab_id,
+                    target_request_id,
+                    outcome,
+                );
+            }
         });
 
         cx.spawn_in(window, async move |view, async_cx| {
+            let _progress = progress;
             let deadline = std::time::Instant::now() + SSH_HOST_KEY_APPROVAL_TIMEOUT;
             loop {
                 async_cx
@@ -820,16 +844,20 @@ impl Fulgur {
                     if let Some(request) = pending_host_key_for_task.lock().take() {
                         let _ = request.decision_tx.send(HostKeyDecision::Reject);
                     }
-                    Self::publish_remote_open_outcome(
-                        &open_finished_for_task,
-                        &pending_remote_for_task,
-                        target_tab_id,
-                        target_request_id,
-                        Err(format!(
-                            "{} ({} s)",
-                            SSH_CONNECTION_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
-                        )),
-                    );
+                    if cancel_flag.load(Ordering::Acquire) {
+                        open_finished_for_task.store(true, Ordering::Release);
+                    } else {
+                        Self::publish_remote_open_outcome(
+                            &open_finished_for_task,
+                            &pending_remote_for_task,
+                            target_tab_id,
+                            target_request_id,
+                            Err(format!(
+                                "{} ({} s)",
+                                SSH_CONNECTION_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                            )),
+                        );
+                    }
                     async_cx
                         .update(|_, cx| {
                             _ = view.update(cx, |_, cx| cx.notify());
@@ -840,6 +868,24 @@ impl Fulgur {
             }
         })
         .detach();
+    }
+
+    /// Build a "Verb to user@host:port" label for progress notifications.
+    ///
+    /// ### Arguments
+    /// - `prefix`: Verb prefix ending with a space, e.g. `"Connecting to "`.
+    /// - `host`: Remote host or IP.
+    /// - `port`: SSH port.
+    /// - `user`: Username; an empty string omits the `user@` prefix.
+    ///
+    /// ### Returns
+    /// - `String`: Composed label.
+    fn format_remote_endpoint_label(prefix: &str, host: &str, port: u16, user: &str) -> String {
+        if user.is_empty() {
+            format!("{prefix}{host}:{port}")
+        } else {
+            format!("{prefix}{user}@{host}:{port}")
+        }
     }
 
     /// Publish a remote-open outcome exactly once for a single open operation.
@@ -1111,6 +1157,25 @@ impl Fulgur {
         let content_for_thread = Arc::clone(&saved_content);
         let pool_for_thread = Arc::clone(&ssh_session_pool);
 
+        let progress_label =
+            Self::format_remote_endpoint_label("Saving to ", &spec.host, spec.port, &user);
+        let entity_weak = cx.entity().downgrade();
+        let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, cx| {
+            if let Some(entity) = entity_weak.upgrade() {
+                entity.update(cx, |fulgur, _cx| {
+                    if fulgur
+                        .latest_remote_save_request_by_tab
+                        .get(&tab_id)
+                        .copied()
+                        == Some(request_id)
+                    {
+                        fulgur.latest_remote_save_request_by_tab.remove(&tab_id);
+                    }
+                });
+            }
+        }));
+        let progress = start_progress(window, cx, progress_label.into(), cancel_callback);
+
         std::thread::spawn(move || {
             let slot = pending_host_key_for_thread;
             let host_key_decision_timed_out_for_callback =
@@ -1160,6 +1225,7 @@ impl Fulgur {
         });
 
         cx.spawn_in(window, async move |view, async_cx| {
+            let _progress = progress;
             let deadline = std::time::Instant::now() + SSH_HOST_KEY_APPROVAL_TIMEOUT;
             loop {
                 async_cx

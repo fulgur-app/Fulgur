@@ -4,7 +4,10 @@ use crate::fulgur::{
         share::{Device, ShareFileRequest, get_devices, get_icon, share_file},
         synchronization::SynchronizationStatus,
     },
-    ui::icons::CustomIcon,
+    ui::{
+        icons::CustomIcon,
+        notifications::progress::{CancelCallback, start_progress},
+    },
 };
 use gpui::{
     App, Div, Element, Entity, SharedString, StatefulInteractiveElement, prelude::FluentBuilder,
@@ -198,14 +201,12 @@ fn handle_share_file(
         )
     });
     window.close_sheet(cx);
-    window.push_notification(
-        (
-            NotificationType::Info,
-            SharedString::from("Sharing file..."),
-        ),
-        cx,
-    );
+    let progress_label = format!("Sharing {}...", request.file_name);
+    let cancel_callback: Option<CancelCallback> = Some(Box::new(|_, _| {}));
+    let progress = start_progress(window, cx, progress_label.into(), cancel_callback);
+    let cancel_flag = progress.cancel_flag();
     std::thread::spawn(move || {
+        let _progress = progress;
         let result = share_file(
             &sync_settings,
             request,
@@ -214,6 +215,10 @@ fn handle_share_file(
             &http_agent,
             max_file_size_bytes,
         );
+        if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
+            // User cancelled — drop the result silently.
+            return;
+        }
         let notification = match result {
             Ok(share_result) => {
                 if share_result.is_complete_success() {
