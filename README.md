@@ -24,6 +24,8 @@ Version 0.4.0 is more of a maintenance release, with a strong **focus on perform
 
 Version 0.5.0 introduces the support of **syntax highlighting for 13 new languages** as well as a much better support of PHP, Astro and Svelte. The editor now supports **code folding** and has a new **Markdown preview tab**. We've started to implement comfort features that require platform specific code such as the **Dock menu on macOS**. Talking about macOS, Fulgur is now signed an notarized, no more gatekeeper warnings! Finally, we've added many performance and security improvements which make the experience with Fulgur even nicer.
 
+Version 0.6.0 finally introduces **drag and drop**! Open your files by just dragging and dropping them in Fulgur. **Tabs are also now reorderable** within the same window with D'n'D. Due to a current limitation of GPUI, D'n'D between windows is not supported but a new submenu in a tab's context menu allow to **send the tab to another window**. Colors are now first class citizen with **a powerful color picker and color converter bar** available for all tabs from the status bar, as well as a switchable **color preview within your files**. Last but not least, many improvements such as much nicer icons on Windows and Linux, a Windows taskbar menu and various performance improvements are part of this build.
+
 ### Screenshots
 
 ![](assets/readme/fulgur_1.webp)
@@ -46,7 +48,7 @@ Version 0.5.0 introduces the support of **syntax highlighting for 13 new languag
 
 Fulgur is currently in alpha development. While it has been stable in testing, several features are still being implemented and issues remain to be resolved:
 
-* Drag and drop support
+* DONE in 0.6.0 ~~Drag and drop support~~
 * Profiles support
 * DONE in 0.3.0 ~~Multi-windows support~~
 * CONTINUED in 0.5.0 Syntax highlighting for additional languages
