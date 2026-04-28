@@ -6,24 +6,24 @@ use crate::fulgur::sync::ssh::{
     url::RemoteSpec,
 };
 use gpui::{
-    AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    Render, StatefulInteractiveElement, Styled, Subscription, Window, div, px,
+    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
+    div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme, h_flex,
+    ActiveTheme, Sizable, h_flex,
     input::{Input, InputEvent, InputState},
-    scroll::ScrollableElement,
+    spinner::Spinner,
     v_flex,
 };
+
+use crate::fulgur::ui::icons::CustomIcon;
+
+use super::file_browser::{BrowserEntry, build_browser_entry, render_browser_list};
 use std::{
     sync::{Arc, mpsc},
     time::Duration,
 };
 
-use crate::fulgur::ui::icons::CustomIcon;
-
-const MAX_VISIBLE_BROWSER_ROWS: usize = 10;
-const BROWSER_ROW_HEIGHT_PX: f32 = 28.0;
 const BROWSER_REFRESH_DEBOUNCE_MS: u64 = 300;
 const BROWSER_REFRESH_DEBOUNCE: Duration = Duration::from_millis(BROWSER_REFRESH_DEBOUNCE_MS);
 const BROWSER_WORKER_DISCONNECTED_MESSAGE: &str =
@@ -57,6 +57,18 @@ pub struct RemotePathBrowser {
 struct BrowserListRequest {
     raw_input: String,
     response_tx: mpsc::Sender<Result<Vec<RemoteDirectoryEntry>, String>>,
+}
+
+impl From<&RemoteDirectoryEntry> for BrowserEntry {
+    fn from(e: &RemoteDirectoryEntry) -> Self {
+        build_browser_entry(
+            gpui::SharedString::from(e.full_path.clone()),
+            e.is_dir,
+            &e.name,
+            &e.full_path,
+            '/',
+        )
+    }
 }
 
 impl RemotePathBrowser {
@@ -222,14 +234,7 @@ impl Render for RemotePathBrowser {
             );
         }
 
-        if self.is_loading {
-            container = container.child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child("Loading remote directory..."),
-            );
-        } else if let Some(message) = &self.error_message {
+        if let Some(message) = &self.error_message {
             container = container.child(
                 div()
                     .text_xs()
@@ -238,68 +243,17 @@ impl Render for RemotePathBrowser {
             );
         }
 
-        if !self.entries.is_empty() {
-            let list_height = browser_list_height();
-            let mut list = v_flex().overflow_y_scrollbar().h(list_height).w_full();
-            for entry in &self.entries {
-                let full_path = entry.full_path.clone();
-                let is_dir = entry.is_dir;
-                let input_for_click = input_entity.clone();
-                let icon = if is_dir {
-                    CustomIcon::FolderOpen
-                } else {
-                    CustomIcon::File
-                };
-                let display_name = if is_dir {
-                    format!("{}/", entry.name)
-                } else {
-                    entry.name.clone()
-                };
-                let font_weight = if is_dir {
-                    FontWeight::SEMIBOLD
-                } else {
-                    FontWeight::NORMAL
-                };
-                let row = h_flex()
-                    .id(gpui::SharedString::from(full_path.clone()))
-                    .w_full()
-                    .px_2()
-                    .py_1()
-                    .gap_2()
-                    .items_center()
-                    .cursor_pointer()
-                    .hover(|h| h.bg(cx.theme().muted))
-                    .child(
-                        icon.icon()
-                            .size(px(14.))
-                            .text_color(cx.theme().muted_foreground),
-                    )
-                    .child(div().text_sm().font_weight(font_weight).child(display_name))
-                    .on_click(move |_, window, cx| {
-                        let new_value = if is_dir {
-                            format!("{full_path}/")
-                        } else {
-                            full_path.clone()
-                        };
-                        input_for_click.update(cx, |state, cx| {
-                            state.set_value(&new_value, window, cx);
-                        });
-                    });
-                list = list.child(row);
-            }
+        if let Some(list) = render_browser_list(
+            self.entries.iter().map(BrowserEntry::from),
+            input_entity,
+            cx.theme().muted,
+            cx.theme().muted_foreground,
+        ) {
             container = container.child(list);
         }
 
         container
     }
-}
-
-/// Compute a fixed browser-list height so long directories become scrollable.
-///
-/// ### Returns
-/// - `Pixels`: Height fixed to 10 rows, forcing scrollbar overflow after that.
-fn browser_list_height() -> gpui::Pixels {
-    px(MAX_VISIBLE_BROWSER_ROWS as f32 * BROWSER_ROW_HEIGHT_PX)
 }
 
 /// Parse a browser input path into `(directory_to_list, filter_prefix)`.
@@ -464,11 +418,60 @@ fn spawn_browser_worker(
     request_tx
 }
 
+/// Title component for the remote path browser dialog.
+///
+/// Observes the browser entity and re-renders whenever its loading state
+/// changes, showing a spinner aligned to the right while a listing is in
+/// flight.
+pub struct BrowserDialogTitle {
+    browser: Entity<RemotePathBrowser>,
+    _browser_subscription: Subscription,
+}
+
+impl BrowserDialogTitle {
+    /// Create a title that tracks the loading state of a remote browser.
+    ///
+    /// ### Arguments
+    /// - `browser`: Remote path browser entity to observe.
+    /// - `cx`: Component context.
+    ///
+    /// ### Returns
+    /// - `BrowserDialogTitle`: Initialized title component.
+    pub fn new(browser: Entity<RemotePathBrowser>, cx: &mut Context<Self>) -> Self {
+        let _browser_subscription = cx.observe(&browser, |_, _, cx| {
+            cx.notify();
+        });
+        Self {
+            browser,
+            _browser_subscription,
+        }
+    }
+}
+
+impl Render for BrowserDialogTitle {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let is_loading = self.browser.read(cx).is_loading;
+        h_flex()
+            .w_full()
+            .items_center()
+            .child(div().text_size(px(16.)).child("Browse remote files..."))
+            .when(is_loading, |this| {
+                this.child(
+                    div()
+                        .ml_auto()
+                        .child(Spinner::new().icon(CustomIcon::LoaderCircle).small()),
+                )
+            })
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::file_browser::{
+        BROWSER_ROW_HEIGHT_PX, MAX_VISIBLE_BROWSER_ROWS, browser_list_height,
+    };
     use super::{
-        BROWSER_REFRESH_DEBOUNCE_MS, BROWSER_ROW_HEIGHT_PX, MAX_VISIBLE_BROWSER_ROWS,
-        browser_list_height, normalize_remote_browser_path, parse_remote_browser_input,
+        BROWSER_REFRESH_DEBOUNCE_MS, normalize_remote_browser_path, parse_remote_browser_input,
     };
     use gpui::px;
 
