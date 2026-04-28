@@ -2,3 +2,9 @@
 # Increase stack size for proc-macro threads to prevent stack overflow
 # in syn's recursive descent parser when processing large source files.
 RUST_MIN_STACK = "16777216"
+
+# Use mold on Linux to reduce linker peak memory usage.
+# lld (nightly's default) exhausts RAM on the 7 GB GitHub Actions runners.
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
