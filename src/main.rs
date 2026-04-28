@@ -95,6 +95,9 @@ fn main() {
     if let Err(e) = fulgur::utils::logger::init() {
         eprintln!("Failed to initialize logger: {}", e);
     }
+    if let Ok(config_dir) = fulgur::utils::paths::config_dir() {
+        fulgur::utils::atomic_write::cleanup_orphan_temp_files(&config_dir);
+    }
     let settings_load_result = fulgur::settings::Settings::load();
     let is_first_run = settings_load_result.is_err();
     let mut settings = settings_load_result.unwrap_or_else(|e| {

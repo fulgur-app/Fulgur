@@ -216,6 +216,12 @@ impl WindowsState {
     /// - `Err(anyhow::Error)`: If the app state could not be saved
     pub fn save_to_path(&self, path: &Path) -> anyhow::Result<()> {
         let json = serde_json::to_string_pretty(self)?;
+        if path.exists() {
+            let backup = crate::fulgur::utils::atomic_write::backup_path_for(path);
+            if let Err(e) = fs::copy(path, &backup) {
+                log::warn!("Failed to back up state to '{}': {}", backup.display(), e);
+            }
+        }
         atomic_write_file(path, json.as_bytes())
     }
 
@@ -233,9 +239,28 @@ impl WindowsState {
     pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
         let json = fs::read_to_string(path)
             .map_err(|e| anyhow::anyhow!("Failed to read state file: {}", e))?;
-        let state = serde_json::from_str::<WindowsState>(&json)
-            .map_err(|e| anyhow::anyhow!("Failed to parse state: {}", e))?;
-        Ok(state)
+        match serde_json::from_str::<WindowsState>(&json) {
+            Ok(state) => Ok(state),
+            Err(primary_err) => {
+                let backup = crate::fulgur::utils::atomic_write::backup_path_for(path);
+                log::warn!(
+                    "State file is corrupted ({}), attempting recovery from '{}'",
+                    primary_err,
+                    backup.display()
+                );
+                let bak_json = fs::read_to_string(&backup)
+                    .map_err(|_| anyhow::anyhow!("Failed to parse state: {}", primary_err))?;
+                let state = serde_json::from_str::<WindowsState>(&bak_json).map_err(|bak_err| {
+                    anyhow::anyhow!(
+                        "State and backup are both corrupted: primary={}, backup={}",
+                        primary_err,
+                        bak_err
+                    )
+                })?;
+                log::warn!("State recovered from backup '{}'", backup.display());
+                Ok(state)
+            }
+        }
     }
 
     /// Save the app state to the default state file location
@@ -357,6 +382,48 @@ mod tests {
             last_saved: last_saved.map(std::string::ToString::to_string),
             remote: None,
         }
+    }
+
+    #[test]
+    fn save_to_path_creates_backup_of_previous_state_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        let backup = dir.path().join("state.json.bak");
+
+        let state = WindowsState { windows: vec![] };
+        state.save_to_path(&path).unwrap();
+        assert!(!backup.exists(), "no backup before second save");
+
+        state.save_to_path(&path).unwrap();
+        assert!(backup.exists(), "backup created on second save");
+    }
+
+    #[test]
+    fn load_from_path_recovers_state_from_backup_when_primary_is_corrupted() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        let backup = dir.path().join("state.json.bak");
+
+        let state = WindowsState { windows: vec![] };
+        state.save_to_path(&backup).unwrap();
+
+        fs::write(&path, b"not valid json").unwrap();
+
+        let recovered = WindowsState::load_from_path(&path).unwrap();
+        assert_eq!(recovered.windows.len(), 0);
+    }
+
+    #[test]
+    fn load_from_path_returns_error_when_both_state_and_backup_are_corrupted() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+        let backup = dir.path().join("state.json.bak");
+
+        fs::write(&path, b"bad primary").unwrap();
+        fs::write(&backup, b"bad backup").unwrap();
+
+        let result = WindowsState::load_from_path(&path);
+        assert!(result.is_err());
     }
 
     #[test]
