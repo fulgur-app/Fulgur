@@ -1,5 +1,6 @@
 use crate::fulgur::settings::{RecentFiles, Settings};
 use std::path::PathBuf;
+use tempfile::TempDir;
 
 #[test]
 fn recent_files_new_creates_empty_list_with_correct_max() {
@@ -359,6 +360,54 @@ fn validate_keeps_none_email_unchanged() {
     settings.app_settings.synchronization_settings.email = None;
     settings.validate();
     assert_eq!(settings.app_settings.synchronization_settings.email, None);
+}
+
+#[test]
+fn save_to_path_creates_backup_of_previous_file() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    let backup = dir.path().join("settings.json.bak");
+
+    let mut settings = Settings::new();
+    settings.editor_settings.font_size = 16.0;
+    settings.save_to_path(&path).unwrap();
+    assert!(!backup.exists(), "no backup before second save");
+
+    settings.editor_settings.font_size = 20.0;
+    settings.save_to_path(&path).unwrap();
+    assert!(backup.exists(), "backup created on second save");
+
+    let backup_settings = Settings::load_from_path(&backup).unwrap();
+    assert_eq!(backup_settings.editor_settings.font_size, 16.0);
+}
+
+#[test]
+fn load_from_path_recovers_settings_from_backup_when_primary_is_corrupted() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    let backup = dir.path().join("settings.json.bak");
+
+    let mut settings = Settings::new();
+    settings.editor_settings.font_size = 18.0;
+    Settings::save_to_path(&settings, &backup).unwrap();
+
+    std::fs::write(&path, b"not valid json").unwrap();
+
+    let recovered = Settings::load_from_path(&path).unwrap();
+    assert_eq!(recovered.editor_settings.font_size, 18.0);
+}
+
+#[test]
+fn load_from_path_returns_error_when_both_primary_and_backup_are_corrupted() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    let backup = dir.path().join("settings.json.bak");
+
+    std::fs::write(&path, b"bad primary").unwrap();
+    std::fs::write(&backup, b"bad backup").unwrap();
+
+    let result = Settings::load_from_path(&path);
+    assert!(result.is_err());
 }
 
 #[cfg(feature = "gpui-test-support")]

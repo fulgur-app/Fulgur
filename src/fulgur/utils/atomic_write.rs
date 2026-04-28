@@ -1,6 +1,6 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -101,12 +101,82 @@ pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
     write_result
 }
 
+/// Compute the companion backup path for a file by appending `.bak` to its name.
+///
+/// ### Arguments
+/// - `path`: The path to the source file
+///
+/// ### Returns
+/// - `PathBuf`: The backup path (e.g. `settings.json` → `settings.json.bak`)
+pub fn backup_path_for(path: &Path) -> PathBuf {
+    let name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let mut backup = path.to_path_buf();
+    backup.set_file_name(format!("{}.bak", name));
+    backup
+}
+
+/// Remove orphan temporary files left by previously crashed atomic writes.
+
+///
+/// ### Arguments
+/// - `dir`: The directory to scan
+pub fn cleanup_orphan_temp_files(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+        if name.starts_with('.') && name.ends_with(".tmp") {
+            let path = entry.path();
+            if let Err(e) = fs::remove_file(&path) {
+                log::warn!(
+                    "Failed to remove orphan temp file '{}': {}",
+                    path.display(),
+                    e
+                );
+            } else {
+                log::info!("Removed orphan temp file '{}'", path.display());
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::atomic_write_file;
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use tempfile::TempDir;
+
+    #[test]
+    fn backup_path_for_appends_bak_extension() {
+        let path = Path::new("/config/settings.json");
+        assert_eq!(
+            super::backup_path_for(path),
+            PathBuf::from("/config/settings.json.bak")
+        );
+    }
+
+    #[test]
+    fn cleanup_orphan_temp_files_removes_matching_tmp_files() {
+        let temp_dir = TempDir::new().expect("failed to create temp dir");
+
+        let orphan = temp_dir.path().join(".settings.json.1234.567.0.tmp");
+        fs::write(&orphan, b"orphan").expect("failed to write orphan");
+
+        let regular = temp_dir.path().join("settings.json");
+        fs::write(&regular, b"real").expect("failed to write regular file");
+
+        super::cleanup_orphan_temp_files(temp_dir.path());
+
+        assert!(!orphan.exists(), "orphan .tmp file should be removed");
+        assert!(regular.exists(), "non-tmp file should not be removed");
+    }
 
     #[test]
     fn atomic_write_creates_new_file_with_expected_contents() {

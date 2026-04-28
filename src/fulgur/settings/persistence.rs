@@ -38,6 +38,16 @@ impl Settings {
     /// - `Err(anyhow::Error)`: If there was an error saving the settings
     pub fn save_to_path(&self, path: &Path) -> anyhow::Result<()> {
         let json = serde_json::to_string_pretty(&self)?;
+        if path.exists() {
+            let backup = crate::fulgur::utils::atomic_write::backup_path_for(path);
+            if let Err(e) = fs::copy(path, &backup) {
+                log::warn!(
+                    "Failed to back up settings to '{}': {}",
+                    backup.display(),
+                    e
+                );
+            }
+        }
         atomic_write_file(path, json.as_bytes())
     }
 
@@ -57,10 +67,33 @@ impl Settings {
     pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
         let json = fs::read_to_string(path)
             .map_err(|e| anyhow::anyhow!("Failed to read settings file: {}", e))?;
-        let mut settings: Settings = serde_json::from_str(&json)
-            .map_err(|e| anyhow::anyhow!("Failed to parse settings: {}", e))?;
-        settings.validate();
-        Ok(settings)
+        match serde_json::from_str::<Settings>(&json) {
+            Ok(mut settings) => {
+                settings.validate();
+                Ok(settings)
+            }
+            Err(primary_err) => {
+                let backup = crate::fulgur::utils::atomic_write::backup_path_for(path);
+                log::warn!(
+                    "Settings file is corrupted ({}), attempting recovery from '{}'",
+                    primary_err,
+                    backup.display()
+                );
+                let bak_json = fs::read_to_string(&backup)
+                    .map_err(|_| anyhow::anyhow!("Failed to parse settings: {}", primary_err))?;
+                let mut settings =
+                    serde_json::from_str::<Settings>(&bak_json).map_err(|bak_err| {
+                        anyhow::anyhow!(
+                            "Settings and backup are both corrupted: primary={}, backup={}",
+                            primary_err,
+                            bak_err
+                        )
+                    })?;
+                settings.validate();
+                log::warn!("Settings recovered from backup '{}'", backup.display());
+                Ok(settings)
+            }
+        }
     }
 
     /// Clamp numeric fields into safe ranges and discard malformed optional strings
