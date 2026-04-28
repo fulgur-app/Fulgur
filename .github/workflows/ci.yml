@@ -72,6 +72,9 @@ jobs:
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: &linux_deps_install_cmd |
+          # Free pre-installed tool directories that the build does not use.
+          # Android SDK (~8 GB), .NET (~1.7 GB), GHC (~1.4 GB), CodeQL (~5 GB).
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo apt-get update
           sudo apt-get install -y \
             mold \
