@@ -74,6 +74,7 @@ jobs:
         run: &linux_deps_install_cmd |
           sudo apt-get update
           sudo apt-get install -y \
+            mold \
             libdbus-1-dev \
             pkg-config \
             libssl-dev \
@@ -384,7 +385,7 @@ jobs:
           ${SUMMARY}${EXTRAS}
 
           *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}
           *Author:* ${ACTOR}
 
           [View Run](${RUN_URL})"
