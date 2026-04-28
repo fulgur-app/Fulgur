@@ -1,13 +1,14 @@
 use crate::fulgur::{
-    Fulgur, settings::AppSettings, sync::synchronization::perform_initial_synchronization,
-    utils::crypto_helper,
+    Fulgur, settings::AppSettings,
+    sync::synchronization::perform_initial_synchronization_with_progress, utils::crypto_helper,
 };
-use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, div};
+use gpui::{App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div};
 use gpui_component::{
     ActiveTheme, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     setting::{SettingField, SettingGroup, SettingItem, SettingPage},
+    switch::Switch,
     v_flex,
 };
 
@@ -99,46 +100,69 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                         }
                     }
                 }));
-                sync_items.push(SettingItem::new(
-                    "Activate Synchronization",
-                    SettingField::switch(
-                        {
-                            let entity = entity.clone();
-                            move |cx: &App| {
-                                entity
-                                    .read(cx)
-                                    .settings
-                                    .app_settings
-                                    .synchronization_settings
-                                    .is_synchronization_activated
-                            }
-                        },
-                        {
-                            let entity = entity.clone();
-                            move |val: bool, cx: &mut App| {
-                                entity.update(cx, |this, cx| {
-                                        this.settings
-                                            .app_settings
-                                            .synchronization_settings
-                                            .is_synchronization_activated = val;
-                                        if val && let Err(e) =
-                                                crypto_helper::check_private_public_keys(&mut this.settings)
-                                        {
-                                                log::error!("Failed to check private/public keys: {}", e);
+                sync_items.push(SettingItem::render({
+                    let entity = entity.clone();
+                    move |_options, _window, cx| {
+                        let is_activated = entity
+                            .read(cx)
+                            .settings
+                            .app_settings
+                            .synchronization_settings
+                            .is_synchronization_activated;
+                        h_flex()
+                            .w_full()
+                            .justify_between()
+                            .items_start()
+                            .gap_3()
+                            .child(
+                                v_flex()
+                                    .flex_1()
+                                    .max_w_3_5()
+                                    .gap_1()
+                                    .child(div().text_sm().child("Activate Synchronization"))
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child("Activate synchronization with the server and saves the relevant keys in the system's keychain."),
+                                    ),
+                            )
+                            .child(
+                                Switch::new("activate-sync-switch")
+                                    .checked(is_activated)
+                                    .on_click({
+                                        let entity = entity.clone();
+                                        move |val: &bool, window: &mut Window, cx: &mut App| {
+                                            let val = *val;
+                                            entity.update(cx, |this, cx| {
+                                                this.settings
+                                                    .app_settings
+                                                    .synchronization_settings
+                                                    .is_synchronization_activated = val;
+                                                if val
+                                                    && let Err(e) = crypto_helper::check_private_public_keys(&mut this.settings)
+                                                {
+                                                    log::error!("Failed to check private/public keys: {}", e);
+                                                }
+                                                if let Err(e) = this.update_and_propagate_settings(cx) {
+                                                    log::error!("Failed to save settings: {}", e);
+                                                }
+                                            });
+                                            if val {
+                                                let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+                                                shared.sync_state.token_state.clear_token();
+                                                perform_initial_synchronization_with_progress(
+                                                    entity.clone(),
+                                                    window,
+                                                    cx,
+                                                );
+                                            }
                                         }
-                                        if let Err(e) = this.update_and_propagate_settings(cx) {
-                                            log::error!("Failed to save settings: {}", e);
-                                        }
-                                    });
-                                if val {
-                                    perform_initial_synchronization(entity.clone(), cx);
-                                }
-                            }
-                        },
-                    )
-                    .default_value(default_app_settings.synchronization_settings.is_synchronization_activated),
-                )
-                .description("Activate synchronization with the server and saves the relevant keys in the system's keychain."));
+                                    }),
+                            )
+                            .into_any_element()
+                    }
+                }));
                 sync_items.push(SettingItem::new(
                     "Deduplication",
                     SettingField::switch(
@@ -325,11 +349,12 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                 if !is_connecting {
                                     btn = btn.cursor_pointer().on_click({
                                         let entity = entity.clone();
-                                        move |_, _window, cx| {
+                                        move |_, window, cx| {
                                             let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
                                             shared.sync_state.token_state.clear_token();
-                                            perform_initial_synchronization(
+                                            perform_initial_synchronization_with_progress(
                                                 entity.clone(),
+                                                window,
                                                 cx,
                                             );
                                         }

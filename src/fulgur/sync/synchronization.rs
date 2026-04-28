@@ -13,7 +13,17 @@ use fulgur_common::api::sync::{BeginResponse, InitialSynchronizationPayload};
 use gpui::{App, Context, Entity, SharedString, Window};
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
-use std::{fmt, sync::Arc, thread, time::Duration, time::Instant};
+use std::{
+    fmt,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::{Duration, Instant},
+};
+
+use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress};
 
 /// Handle ureq errors and convert them to SynchronizationError with appropriate logging
 ///
@@ -360,6 +370,120 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
         *connecting_since.lock() = None;
         *pending_notification.lock() = Some(notification);
     });
+}
+
+/// Perform initial synchronization with a progress spinner notification.
+///
+/// ### Arguments
+/// - `entity`: The Fulgur entity
+/// - `window`: Target window for the notification
+/// - `cx`: The application context
+pub fn perform_initial_synchronization_with_progress(
+    entity: Entity<crate::fulgur::Fulgur>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let synchronization_settings = entity
+        .read(cx)
+        .settings
+        .app_settings
+        .synchronization_settings
+        .clone();
+    let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+    set_sync_server_connection_status(
+        shared.sync_state.connection_status.clone(),
+        SynchronizationStatus::Connecting,
+    );
+    *shared.sync_state.connecting_since.lock() = Some(Instant::now());
+    let token_state = Arc::clone(&shared.sync_state.token_state);
+    let http_agent = Arc::clone(&shared.http_agent);
+    let connection_status = shared.sync_state.connection_status.clone();
+    let connecting_since = shared.sync_state.connecting_since.clone();
+    let device_name = shared.sync_state.device_name.clone();
+    let pending_shared_files = shared.sync_state.pending_shared_files.clone();
+    let pending_notification = shared.sync_state.pending_notification.clone();
+    let max_file_size_bytes = shared.sync_state.max_file_size_bytes.clone();
+
+    let done = Arc::new(AtomicBool::new(false));
+    let done_for_thread = Arc::clone(&done);
+
+    let cancel_status = connection_status.clone();
+    let cancel_connecting_since = connecting_since.clone();
+    let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, _cx| {
+        set_sync_server_connection_status(cancel_status, SynchronizationStatus::Disconnected);
+        *cancel_connecting_since.lock() = None;
+    }));
+
+    let progress = start_progress(
+        window,
+        cx,
+        "Connecting to Fulgurant...".into(),
+        cancel_callback,
+    );
+    let cancel_flag = progress.cancel_flag();
+    let cancel_flag_for_thread = Arc::clone(&cancel_flag);
+
+    thread::spawn(move || {
+        let result = initial_synchronization(&synchronization_settings, token_state, &http_agent);
+
+        if cancel_flag_for_thread.load(Ordering::Acquire) {
+            done_for_thread.store(true, Ordering::Release);
+            return;
+        }
+
+        let (notification, status) = match result {
+            Ok(begin_response) => {
+                store_server_max_file_size(
+                    &max_file_size_bytes,
+                    begin_response.max_file_size_bytes,
+                );
+                {
+                    let mut name = device_name.lock();
+                    *name = Some(begin_response.device_name.clone());
+                }
+                {
+                    let mut files = pending_shared_files.lock();
+                    *files = begin_response.shares;
+                }
+                (
+                    (
+                        NotificationType::Success,
+                        SharedString::from(format!(
+                            "Connection successful as {}",
+                            begin_response.device_name
+                        )),
+                    ),
+                    SynchronizationStatus::Connected,
+                )
+            }
+            Err(e) => (
+                (
+                    NotificationType::Error,
+                    SharedString::from(format!("Connection failed: {}", e)),
+                ),
+                SynchronizationStatus::from_error(&e),
+            ),
+        };
+        set_sync_server_connection_status(connection_status, status);
+        *connecting_since.lock() = None;
+        *pending_notification.lock() = Some(notification);
+        done_for_thread.store(true, Ordering::Release);
+    });
+
+    window
+        .spawn(cx, async move |async_cx| {
+            let _progress = progress;
+            loop {
+                async_cx
+                    .background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+                if done.load(Ordering::Acquire) || cancel_flag.load(Ordering::Acquire) {
+                    break;
+                }
+            }
+        })
+        .detach();
 }
 
 #[derive(Debug)]
