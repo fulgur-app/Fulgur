@@ -10,7 +10,9 @@ use crate::fulgur::{
     Fulgur,
     files::file_operations::RemoteBrowseResult,
     sync::ssh::{REMOTE_ROOT_PATH, credentials::SshCredKey, url::parse_remote_url},
-    ui::dialogs::remote_path_browser::{RemotePathBrowser, RemotePathBrowserConnection},
+    ui::dialogs::remote_path_browser::{
+        BrowserDialogTitle, RemotePathBrowser, RemotePathBrowserConnection,
+    },
 };
 
 impl Fulgur {
@@ -121,6 +123,7 @@ impl Fulgur {
             )
         });
         let browser_input = browser.read(cx).input().clone();
+        let title = cx.new(|cx| BrowserDialogTitle::new(browser.clone(), cx));
         let entity = cx.entity().clone();
         let spec_for_ok = spec.clone();
 
@@ -133,7 +136,7 @@ impl Fulgur {
             let entity_for_ok = entity.clone();
 
             modal
-                .title(div().text_size(px(16.)).child("Browse remote files..."))
+                .title(title.clone())
                 .keyboard(true)
                 .button_props(
                     DialogButtonProps::default()

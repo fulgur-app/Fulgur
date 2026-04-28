@@ -7,13 +7,16 @@ use crate::fulgur::sync::ssh::{
 };
 use gpui::{
     AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
-    div,
+    div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
-    ActiveTheme,
+    ActiveTheme, Sizable, h_flex,
     input::{Input, InputEvent, InputState},
+    spinner::Spinner,
     v_flex,
 };
+
+use crate::fulgur::ui::icons::CustomIcon;
 
 use super::file_browser::{BrowserEntry, build_browser_entry, render_browser_list};
 use std::{
@@ -231,14 +234,7 @@ impl Render for RemotePathBrowser {
             );
         }
 
-        if self.is_loading {
-            container = container.child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child("Loading remote directory..."),
-            );
-        } else if let Some(message) = &self.error_message {
+        if let Some(message) = &self.error_message {
             container = container.child(
                 div()
                     .text_xs()
@@ -420,6 +416,53 @@ fn spawn_browser_worker(
         }
     });
     request_tx
+}
+
+/// Title component for the remote path browser dialog.
+///
+/// Observes the browser entity and re-renders whenever its loading state
+/// changes, showing a spinner aligned to the right while a listing is in
+/// flight.
+pub struct BrowserDialogTitle {
+    browser: Entity<RemotePathBrowser>,
+    _browser_subscription: Subscription,
+}
+
+impl BrowserDialogTitle {
+    /// Create a title that tracks the loading state of a remote browser.
+    ///
+    /// ### Arguments
+    /// - `browser`: Remote path browser entity to observe.
+    /// - `cx`: Component context.
+    ///
+    /// ### Returns
+    /// - `BrowserDialogTitle`: Initialized title component.
+    pub fn new(browser: Entity<RemotePathBrowser>, cx: &mut Context<Self>) -> Self {
+        let _browser_subscription = cx.observe(&browser, |_, _, cx| {
+            cx.notify();
+        });
+        Self {
+            browser,
+            _browser_subscription,
+        }
+    }
+}
+
+impl Render for BrowserDialogTitle {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let is_loading = self.browser.read(cx).is_loading;
+        h_flex()
+            .w_full()
+            .items_center()
+            .child(div().text_size(px(16.)).child("Browse remote files..."))
+            .when(is_loading, |this| {
+                this.child(
+                    div()
+                        .ml_auto()
+                        .child(Spinner::new().icon(CustomIcon::LoaderCircle).small()),
+                )
+            })
+    }
 }
 
 #[cfg(test)]
