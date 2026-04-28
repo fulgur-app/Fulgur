@@ -2,17 +2,15 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gpui::{
-    AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    Render, StatefulInteractiveElement, Styled, Subscription, Window, div, px,
+    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
 };
 use gpui_component::{
-    ActiveTheme, h_flex,
+    ActiveTheme,
     input::{Input, InputEvent, InputState},
-    scroll::ScrollableElement,
     v_flex,
 };
 
-use crate::fulgur::ui::icons::CustomIcon;
+use super::file_browser::{BrowserEntry, build_browser_entry, render_browser_list};
 
 const PATH_BROWSER_REFRESH_DEBOUNCE_MS: u64 = 150;
 const PATH_BROWSER_REFRESH_DEBOUNCE: Duration =
@@ -23,6 +21,19 @@ struct PathEntry {
     name: String,
     is_dir: bool,
     full_path: PathBuf,
+}
+
+impl From<&PathEntry> for BrowserEntry {
+    fn from(e: &PathEntry) -> Self {
+        let full_path = e.full_path.to_string_lossy().into_owned();
+        build_browser_entry(
+            gpui::SharedString::from(full_path.clone()),
+            e.is_dir,
+            &e.name,
+            &full_path,
+            std::path::MAIN_SEPARATOR,
+        )
+    }
 }
 
 /// A file browser widget that shows a live-updating directory listing
@@ -256,62 +267,12 @@ impl Render for PathBrowser {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let input_entity = self.input.clone();
         let mut container = v_flex().w_full().gap_1().child(Input::new(&self.input));
-        if !self.entries.is_empty() {
-            let mut list = v_flex()
-                .overflow_y_scrollbar()
-                .max_h(px(256.))
-                .w_full()
-                .border_1()
-                .border_color(cx.theme().border)
-                .rounded(px(4.));
-            for entry in &self.entries {
-                let full_path = entry.full_path.clone();
-                let is_dir = entry.is_dir;
-                let input_for_click = input_entity.clone();
-                let icon = if is_dir {
-                    CustomIcon::FolderOpen
-                } else {
-                    CustomIcon::File
-                };
-                let display_name = if is_dir {
-                    format!("{}{}", entry.name, std::path::MAIN_SEPARATOR)
-                } else {
-                    entry.name.clone()
-                };
-                let font_weight = if is_dir {
-                    FontWeight::SEMIBOLD
-                } else {
-                    FontWeight::NORMAL
-                };
-                let row = h_flex()
-                    .id(gpui::SharedString::from(
-                        entry.full_path.to_string_lossy().to_string(),
-                    ))
-                    .w_full()
-                    .px_2()
-                    .py_1()
-                    .gap_2()
-                    .items_center()
-                    .cursor_pointer()
-                    .hover(|h| h.bg(cx.theme().muted))
-                    .child(
-                        icon.icon()
-                            .size(px(14.))
-                            .text_color(cx.theme().muted_foreground),
-                    )
-                    .child(div().text_sm().font_weight(font_weight).child(display_name))
-                    .on_click(move |_, window, cx| {
-                        let new_value = if is_dir {
-                            format!("{}{}", full_path.display(), std::path::MAIN_SEPARATOR)
-                        } else {
-                            full_path.display().to_string()
-                        };
-                        input_for_click.update(cx, |state, cx| {
-                            state.set_value(&new_value, window, cx);
-                        });
-                    });
-                list = list.child(row);
-            }
+        if let Some(list) = render_browser_list(
+            self.entries.iter().map(BrowserEntry::from),
+            input_entity,
+            cx.theme().muted,
+            cx.theme().muted_foreground,
+        ) {
             container = container.child(list);
         }
         container
