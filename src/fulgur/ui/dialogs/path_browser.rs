@@ -164,7 +164,19 @@ impl PathBrowser {
     /// # Returns
     /// - `PathBrowser`: a new instance
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter a file path..."));
+        let default_path = home_dir()
+            .map(|p| {
+                let mut s = p.to_string_lossy().into_owned();
+                s.push(std::path::MAIN_SEPARATOR);
+                s
+            })
+            .unwrap_or_default();
+
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Enter a file path...")
+                .default_value(default_path)
+        });
         let _input_subscription =
             cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
                 if let InputEvent::Change = ev {
@@ -172,13 +184,15 @@ impl PathBrowser {
                 }
             });
 
-        Self {
+        let mut this = Self {
             input,
             entries: Vec::new(),
             debounce_generation: 0,
             refresh_generation: 0,
             _input_subscription,
-        }
+        };
+        this.dispatch_refresh(cx);
+        this
     }
 
     /// Get  a reference to the inner `InputState` entity.
