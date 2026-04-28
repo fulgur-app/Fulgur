@@ -120,7 +120,6 @@ pub fn backup_path_for(path: &Path) -> PathBuf {
 }
 
 /// Remove orphan temporary files left by previously crashed atomic writes.
-
 ///
 /// ### Arguments
 /// - `dir`: The directory to scan
