@@ -454,10 +454,11 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use std::path::PathBuf;
 
+    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+    use crate::fulgur::files::file_operations::test_helpers::invoke_process_pending_files_from_macos;
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::files::file_operations::test_helpers::{
-        invoke_process_pending_files_from_macos, open_window_with_fulgur, setup_fulgur,
-        setup_test_globals, temp_test_path,
+        open_window_with_fulgur, setup_fulgur, setup_test_globals, temp_test_path,
     };
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
     use gpui::BorrowAppContext;
