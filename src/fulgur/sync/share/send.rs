@@ -1,242 +1,23 @@
+use super::{
+    compression::compress_content,
+    devices::Device,
+    types::{ShareFileRequest, ShareResult},
+};
 use crate::fulgur::{
     settings::SynchronizationSettings,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
         synchronization::{SynchronizationError, handle_ureq_error},
     },
-    ui::icons::CustomIcon,
     utils::crypto_helper::{self, is_valid_public_key},
 };
-use flate2::{
-    Compression,
-    read::{GzDecoder, GzEncoder},
-};
-use fulgur_common::api::{
-    devices::{DeviceResponse, DevicesResponse},
-    shares::{ShareFilePayload, SharedFileResponse},
-};
-use gpui_component::Icon;
+use fulgur_common::api::shares::ShareFilePayload;
 use sha2::{Digest, Sha256};
-use std::{io::Read, path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
-pub type Device = DeviceResponse;
 pub const MAX_SYNC_SHARE_PAYLOAD_BYTES: usize = 1024 * 1024;
 
-/// Maximum allowed compression ratio (decompressed / compressed).
-///
-/// Calibrated from observed gzip behavior on realistic editor content: a
-/// short-phrase pattern repeated many times compresses around 380x, while
-/// pure-byte-repetition bombs exceed 1000x. 512x accommodates the former with
-/// headroom while still rejecting the latter, so a bomb's per-request cost is
-/// bounded by `compressed.len() * 512` regardless of the absolute size cap the
-/// server advertises.
-const MAX_COMPRESSION_RATIO: usize = 512;
-
-/// Minimum decompression buffer size, regardless of compressed input size.
-///
-/// A small compressed payload must still be able to decompress to a reasonable
-/// amount of content (the ratio cap alone would make 100 B inputs limited to
-/// 20 KB, which is too tight for legitimate use).
-const MIN_DECOMPRESSION_BUFFER_BYTES: usize = 64 * 1024;
-
-/// Initial buffer allocation ratio used to pre-size the decompression `Vec`.
-///
-/// Kept modest so an unlimited server cap (`u64::MAX`) does not translate into
-/// gigabyte-scale pre-allocations. The `Vec` will grow naturally if the actual
-/// content exceeds this estimate.
-const INITIAL_BUFFER_RATIO: usize = 16;
-
-/// Parameters for sharing a file
-pub struct ShareFileRequest {
-    /// Reference-counted snapshot of the file content.
-    pub content: Arc<str>,
-    pub file_name: String,
-    pub device_ids: Vec<String>,
-    pub file_path: Option<PathBuf>,
-}
-
-/// Compress content using gzip compression
-///
-/// ### Arguments
-/// - `content`: The content to compress
-///
-/// ### Returns
-/// - `Ok(Vec<u8>)`: The compressed content as bytes
-/// - `Err(anyhow::Error)`: If the content could not be compressed
-fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
-    let mut encoder = GzEncoder::new(content.as_bytes(), Compression::default());
-    let mut compressed = Vec::new();
-    encoder.read_to_end(&mut compressed)?;
-    let original_size_kb = content.len() as f64 / 1024.0;
-    let compressed_size_kb = compressed.len() as f64 / 1024.0;
-    let compression_ratio = (1.0 - (compressed.len() as f64 / content.len() as f64)) * 100.0;
-    log::debug!(
-        "Compression: {:.2} KB -> {:.2} KB ({:.1}% reduction)",
-        original_size_kb,
-        compressed_size_kb,
-        compression_ratio
-    );
-    Ok(compressed)
-}
-
-/// Decompress content that was compressed with gzip
-///
-/// ### Description
-///
-/// ### Arguments
-/// - `compressed`: The compressed content as bytes
-/// - `max_size`: The server-advertised maximum file size in bytes. `u64::MAX`
-///   means the user configured the server for no limit.
-///
-/// ### Returns
-/// - `Ok(String)`: The decompressed content as string
-/// - `Err(anyhow::Error)`: If the compressed payload is oversized for the
-///   advertised limit, the decompressed payload exceeds the ratio-bounded cap
-///   or the absolute limit, or the output is not valid UTF-8
-pub fn decompress_content(compressed: &[u8], max_size: u64) -> anyhow::Result<String> {
-    let max_size_usize = if max_size == u64::MAX {
-        usize::MAX
-    } else {
-        usize::try_from(max_size).unwrap_or(usize::MAX)
-    };
-    if max_size != u64::MAX && compressed.len() > max_size_usize {
-        return Err(anyhow::anyhow!(
-            "Compressed payload ({} bytes) exceeds server max file size ({} bytes)",
-            compressed.len(),
-            max_size_usize
-        ));
-    }
-    let effective_floor = MIN_DECOMPRESSION_BUFFER_BYTES.min(max_size_usize);
-    let decompressed_cap = compressed
-        .len()
-        .saturating_mul(MAX_COMPRESSION_RATIO)
-        .clamp(effective_floor, max_size_usize);
-    let initial_capacity = compressed
-        .len()
-        .saturating_mul(INITIAL_BUFFER_RATIO)
-        .clamp(effective_floor, decompressed_cap);
-    let decoder = GzDecoder::new(compressed);
-    let mut limited_reader = decoder.take((decompressed_cap as u64).saturating_add(1));
-    let mut decompressed_bytes = Vec::with_capacity(initial_capacity);
-    limited_reader.read_to_end(&mut decompressed_bytes)?;
-    if decompressed_bytes.len() > decompressed_cap {
-        return Err(anyhow::anyhow!(
-            "Decompressed payload exceeds {} bytes cap (ratio-bounded gzip bomb defense)",
-            decompressed_cap
-        ));
-    }
-    let decompressed = String::from_utf8(decompressed_bytes)
-        .map_err(|e| anyhow::anyhow!("Failed to decode decompressed content as UTF-8: {}", e))?;
-    Ok(decompressed)
-}
-
-/// Get the icon for the device
-///
-/// ### Arguments
-/// - `device`: The device
-///
-/// ### Returns
-/// - `Icon`: The icon for the device
-pub fn get_icon(device: &Device) -> Icon {
-    match device.device_type.to_lowercase().as_str() {
-        "desktop" => Icon::new(CustomIcon::Computer),
-        "laptop" => Icon::new(CustomIcon::Laptop),
-        "server" => Icon::new(CustomIcon::Server),
-        _ => Icon::new(CustomIcon::Computer),
-    }
-}
-
-/// Get the devices from the server
-///
-/// ### Arguments
-/// - `synchronization_settings`: The synchronization settings
-/// - `token_state`: Arc to the token state manager (thread-safe with condition variable)
-/// - `http_agent`: Shared HTTP agent for connection pooling
-///
-/// ### Returns
-/// - `Ok((Vec<Device>, Option<u64>))`: The devices and the server-reported maximum share file size (if advertised)
-/// - `Err(SynchronizationError)`: If the devices could not be retrieved
-pub fn get_devices(
-    synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<TokenStateManager>,
-    http_agent: &ureq::Agent,
-) -> Result<(Vec<Device>, Option<u64>), SynchronizationError> {
-    let Some(server_url) = synchronization_settings.server_url.clone() else {
-        return Err(SynchronizationError::ServerUrlMissing);
-    };
-    let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
-    let devices_url = format!("{}/api/devices", server_url);
-    let mut response = http_agent
-        .get(&devices_url)
-        .header("Authorization", &format!("Bearer {}", token))
-        .call()
-        .map_err(|e| handle_ureq_error(e, "Failed to get devices"))?;
-
-    let devices_response: DevicesResponse = response
-        .body_mut()
-        .read_json::<DevicesResponse>()
-        .map_err(|e| {
-            log::error!("Failed to read devices: {}", e);
-            SynchronizationError::InvalidResponse(e.to_string())
-        })?;
-
-    let devices = devices_response
-        .devices
-        .into_iter()
-        .map(|mut device| {
-            if let Some(ref key) = device.public_key
-                && !is_valid_public_key(key)
-            {
-                log::warn!(
-                    "Device '{}' has a malformed public key; ignoring it",
-                    device.name
-                );
-                device.public_key = None;
-            }
-            device
-        })
-        .collect::<Vec<_>>();
-    log::debug!("Retrieved {} devices from server", devices.len());
-    Ok((devices, devices_response.max_file_size_bytes))
-}
-
-/// Atomically fetch and delete all pending shares for the current device.
-///
-/// ### Arguments
-/// - `synchronization_settings`: The synchronization settings
-/// - `token_state`: Arc to the token state manager
-/// - `http_agent`: Shared HTTP agent for connection pooling
-///
-/// ### Returns
-/// - `Ok(Vec<SharedFileResponse>)`: The shares that were drained from the server
-/// - `Err(SynchronizationError)`: If the request failed or the response was invalid
-pub fn fetch_pending_shares(
-    synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<TokenStateManager>,
-    http_agent: &ureq::Agent,
-) -> Result<Vec<SharedFileResponse>, SynchronizationError> {
-    let Some(server_url) = synchronization_settings.server_url.clone() else {
-        return Err(SynchronizationError::ServerUrlMissing);
-    };
-    let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
-    let shares_url = format!("{}/api/shares", server_url);
-    let mut response = http_agent
-        .get(&shares_url)
-        .header("Authorization", &format!("Bearer {}", token))
-        .call()
-        .map_err(|e| handle_ureq_error(e, "Failed to fetch pending shares"))?;
-    let shares: Vec<SharedFileResponse> = response
-        .body_mut()
-        .read_json::<Vec<SharedFileResponse>>()
-        .map_err(|e| {
-            log::error!("Failed to read pending shares: {}", e);
-            SynchronizationError::InvalidResponse(e.to_string())
-        })?;
-    log::debug!("Fetched {} pending share(s) from server", shares.len());
-    Ok(shares)
-}
-
-/// Encrypt and compress content for a specific device
+/// Encrypt compressed content for a specific device
 ///
 /// ### Arguments
 /// - `compressed_content`: The content to encrypt
@@ -244,7 +25,7 @@ pub fn fetch_pending_shares(
 ///
 /// ### Returns
 /// - `Ok(String)`: The encrypted and compressed content (base64-encoded)
-/// - `Err(SynchronizationError)`: If encryption or compression failed
+/// - `Err(SynchronizationError)`: If encryption failed
 fn encrypt_content_for_device(
     compressed_content: &[u8],
     device_public_key: &str,
@@ -311,63 +92,15 @@ fn send_share_request(
     Ok(expiration_date.to_string())
 }
 
-/// Result of sharing a file with devices
-#[derive(Debug)]
-pub struct ShareResult {
-    pub successes: Vec<(String, String)>, // (device_id, expiration_date)
-    pub failures: Vec<(String, SynchronizationError)>, // (device_id, error)
-}
-
-impl ShareResult {
-    /// Check if all shares were successful
-    ///
-    /// ### Returns
-    /// - `true`: If all shares were successful, `false`` otherwise
-    pub fn is_complete_success(&self) -> bool {
-        self.failures.is_empty()
-    }
-
-    /// Get a summary message for the share operation
-    ///
-    /// ### Returns
-    /// - `String`: The message
-    pub fn summary_message(&self) -> String {
-        let total = self.successes.len() + self.failures.len();
-        if self.is_complete_success() {
-            if let Some((_, expiration)) = self.successes.first() {
-                format!(
-                    "File shared successfully to {} device(s) until {}.",
-                    total, expiration
-                )
-            } else if total == 0 {
-                "The file was not shared.".to_string()
-            } else {
-                "File shared successfully.".to_string()
-            }
-        } else if self.successes.is_empty() {
-            format!("Failed to share file to all {} device(s).", total)
-        } else {
-            format!(
-                "File shared to {}/{} device(s). {} failed.",
-                self.successes.len(),
-                total,
-                self.failures.len()
-            )
-        }
-    }
-}
-
 /// Share a file with multiple devices (per-device encryption)
 ///
 /// ### Arguments
 /// - `synchronization_settings`: The synchronization settings
-/// - `content`: The content of the file
-/// - `file_name`: The name of the file
-/// - `device_ids`: The ids of the devices to sent the file to
+/// - `request`: The share request (content, file name, target device IDs, optional path)
 /// - `devices`: The list of all devices (with their public keys)
 /// - `token_state`: Thread-safe token state manager (with condition variable)
-/// - `file_path`: Optional file path (used for deduplication hash)
 /// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `max_file_size_bytes`: Server-advertised maximum file size; `u64::MAX` means no limit
 ///
 /// ### Returns
 /// - `Ok(ShareResult)`: Results of sharing with each device
@@ -544,23 +277,14 @@ pub fn share_file(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Device, MAX_SYNC_SHARE_PAYLOAD_BYTES, ShareFileRequest, ShareResult, compress_content,
-        decompress_content, get_devices, share_file,
-    };
+    use super::{MAX_SYNC_SHARE_PAYLOAD_BYTES, share_file};
     use crate::fulgur::settings::SynchronizationSettings;
+    use crate::fulgur::sync::share::{Device, ShareFileRequest};
     use crate::fulgur::sync::{
         access_token::TokenStateManager, synchronization::SynchronizationError,
     };
     use crate::fulgur::utils::crypto_helper::generate_key_pair;
     use std::sync::Arc;
-
-    /// Default test cap used by roundtrip tests: no server-advertised limit.
-    const TEST_NO_LIMIT: u64 = u64::MAX;
-
-    // ---------------------------------------------------------------------------
-    // Test helpers
-    // ---------------------------------------------------------------------------
 
     fn make_http_agent() -> ureq::Agent {
         ureq::Agent::new_with_config(ureq::config::Config::builder().build())
@@ -601,167 +325,7 @@ mod tests {
         }
     }
 
-    // ========== Compression Tests ==========
-
-    #[test]
-    fn test_roundtrip_empty_string() {
-        let original = "";
-        let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_roundtrip_ascii_text() {
-        let original = "The quick brown fox jumps over the lazy dog.";
-        let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_roundtrip_unicode_text() {
-        let original = "Héllo Wörld! 你好世界 🌍 Привет";
-        let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_roundtrip_multiline_text() {
-        let original = "Line 1\nLine 2\r\nLine 3\n\tIndented\n\nEmpty line above";
-        let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_roundtrip_special_characters() {
-        let original = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~";
-        let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_roundtrip_large_repetitive_content() {
-        let original = "AAAA".repeat(5000);
-        let compressed = compress_content(&original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-        // Should compress very well
-        assert!(compressed.len() < original.len() / 10);
-    }
-
-    #[test]
-    fn test_roundtrip_json_like_content() {
-        let original = r#"{"name": "test", "value": 123, "nested": {"key": "value"}}"#;
-        let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_roundtrip_code_like_content() {
-        let original = r#"
-fn main() {
-    let x = 42;
-    println!("Hello, world! {}", x);
-}
-"#;
-        let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_roundtrip_mixed_unicode() {
-        let original = "English, 中文, 日本語, 한국어, العربية, עברית, Ελληνικά, Русский";
-        let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_roundtrip_emoji_heavy() {
-        let original = "🔥🎉🚀💻⚡️🌟✨🎯🌈🦄🐉🌸🍕🎮🎨🎭🎪🎬🎤🎧🎼";
-        let compressed = compress_content(original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_roundtrip_very_large_content() {
-        let original = "Lorem ipsum dolor sit amet. ".repeat(10000);
-        assert!(original.len() > 250000); // Over 250KB
-        let compressed = compress_content(&original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_decompress_rejects_compressed_payload_larger_than_server_max() {
-        // A server advertising a 1 MB limit must reject a compressed blob that
-        // already exceeds that on its own (decompressed can only be larger).
-        let oversized_payload = vec![0_u8; MAX_SYNC_SHARE_PAYLOAD_BYTES + 1];
-        let result = decompress_content(&oversized_payload, MAX_SYNC_SHARE_PAYLOAD_BYTES as u64);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_decompress_rejects_decompressed_payload_larger_than_server_max() {
-        // Server says 1 MB max. The original is 2 MB+1 of identical characters,
-        // which compresses small but decompresses well past the server limit.
-        let original = "A".repeat(2 * MAX_SYNC_SHARE_PAYLOAD_BYTES + 1);
-        let compressed = compress_content(&original).unwrap();
-        let result = decompress_content(&compressed, MAX_SYNC_SHARE_PAYLOAD_BYTES as u64);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_decompress_rejects_high_ratio_gzip_bomb_even_when_unlimited() {
-        // Even with `u64::MAX` (user's "no limit" config), a gzip bomb whose
-        // decompressed size exceeds `compressed.len() * MAX_COMPRESSION_RATIO`
-        // must be rejected by the ratio cap — it's the only defense when the
-        // server absolute cap is disabled.
-        let original = "A".repeat(1_000_000);
-        let compressed = compress_content(&original).unwrap();
-        assert!(
-            compressed.len() < 10_000,
-            "precondition: highly repetitive content should compress to a tiny payload, got {}",
-            compressed.len()
-        );
-        let err =
-            decompress_content(&compressed, TEST_NO_LIMIT).expect_err("bomb must be rejected");
-        let msg = err.to_string();
-        assert!(
-            msg.contains("ratio-bounded"),
-            "bomb rejection should cite the ratio cap, got: {}",
-            msg
-        );
-    }
-
-    #[test]
-    fn test_decompress_with_unlimited_max_size_accepts_large_content() {
-        // When the user configures their server for no limit, a genuinely
-        // large legitimate payload that stays within the ratio cap must be
-        // accepted rather than capped by any hard-coded ceiling.
-        let original = "Lorem ipsum dolor sit amet. ".repeat(100_000); // ~2.8 MB
-        let compressed = compress_content(&original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed.len(), original.len());
-    }
-
-    #[test]
-    fn test_decompress_allows_small_payload_up_to_min_buffer() {
-        // A short legitimate payload must still decompress even though the
-        // ratio cap (compressed.len() * 200) is smaller than what the minimum
-        // decompression buffer allows.
-        let original = "Hello, world!".repeat(100); // ~1.3 KB
-        let compressed = compress_content(&original).unwrap();
-        let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
-        assert_eq!(decompressed, original);
-    }
+    // ========== share_file content size guards ==========
 
     #[test]
     fn test_share_file_rejects_content_larger_than_limit() {
@@ -818,124 +382,6 @@ fn main() {
             !matches!(result, Err(SynchronizationError::ContentTooLarge { .. })),
             "Payload at exact limit should not be rejected as too large"
         );
-    }
-
-    // ========== ShareResult Tests ==========
-
-    #[test]
-    fn test_share_result_is_complete_success_all_successful() {
-        let result = ShareResult {
-            successes: vec![
-                ("device1".to_string(), "2025-01-01".to_string()),
-                ("device2".to_string(), "2025-01-01".to_string()),
-            ],
-            failures: vec![],
-        };
-        assert!(result.is_complete_success());
-    }
-
-    #[test]
-    fn test_share_result_is_complete_success_with_failures() {
-        let result = ShareResult {
-            successes: vec![("device1".to_string(), "2025-01-01".to_string())],
-            failures: vec![(
-                "device2".to_string(),
-                SynchronizationError::ConnectionFailed,
-            )],
-        };
-        assert!(!result.is_complete_success());
-    }
-
-    #[test]
-    fn test_share_result_is_complete_success_all_failed() {
-        let result = ShareResult {
-            successes: vec![],
-            failures: vec![
-                (
-                    "device1".to_string(),
-                    SynchronizationError::ConnectionFailed,
-                ),
-                (
-                    "device2".to_string(),
-                    SynchronizationError::AuthenticationFailed,
-                ),
-            ],
-        };
-        assert!(!result.is_complete_success());
-    }
-
-    #[test]
-    fn test_share_result_summary_message_complete_success() {
-        let result = ShareResult {
-            successes: vec![
-                ("device1".to_string(), "2025-12-31".to_string()),
-                ("device2".to_string(), "2025-12-31".to_string()),
-            ],
-            failures: vec![],
-        };
-        let message = result.summary_message();
-        assert!(message.contains("File shared successfully"));
-        assert!(message.contains("2 device(s)"));
-        assert!(message.contains("2025-12-31"));
-    }
-
-    #[test]
-    fn test_share_result_summary_message_all_failed() {
-        let result = ShareResult {
-            successes: vec![],
-            failures: vec![
-                (
-                    "device1".to_string(),
-                    SynchronizationError::ConnectionFailed,
-                ),
-                (
-                    "device2".to_string(),
-                    SynchronizationError::AuthenticationFailed,
-                ),
-            ],
-        };
-        let message = result.summary_message();
-        assert!(message.contains("Failed to share file to all"));
-        assert!(message.contains("2 device(s)"));
-    }
-
-    #[test]
-    fn test_share_result_summary_message_partial_success() {
-        let result = ShareResult {
-            successes: vec![
-                ("device1".to_string(), "2025-12-31".to_string()),
-                ("device2".to_string(), "2025-12-31".to_string()),
-            ],
-            failures: vec![(
-                "device3".to_string(),
-                SynchronizationError::ConnectionFailed,
-            )],
-        };
-        let message = result.summary_message();
-        assert!(message.contains("2/3 device(s)"));
-        assert!(message.contains("1 failed"));
-    }
-
-    #[test]
-    fn test_share_result_summary_message_empty() {
-        let result = ShareResult {
-            successes: vec![],
-            failures: vec![],
-        };
-        let message = result.summary_message();
-        assert_eq!(message, "The file was not shared.");
-    }
-
-    #[test]
-    fn test_share_result_summary_message_single_success() {
-        let result = ShareResult {
-            successes: vec![("device1".to_string(), "2025-06-30".to_string())],
-            failures: vec![],
-        };
-        let message = result.summary_message();
-        assert!(message.contains("File shared successfully"));
-        assert!(message.contains("1 device(s)"));
-        assert!(message.contains("2025-06-30"));
     }
 
     // ========== share_file validation guards ==========
@@ -1173,23 +619,6 @@ fn main() {
             matches!(err, SynchronizationError::Other(_)),
             "First unknown device should produce Other error, got: {:?}",
             err
-        );
-    }
-
-    // ========== get_devices validation ==========
-
-    #[test]
-    fn test_get_devices_fails_without_server_url() {
-        let settings = SynchronizationSettings::new(); // server_url = None
-        let result = get_devices(
-            &settings,
-            Arc::new(TokenStateManager::new()),
-            &make_http_agent(),
-        );
-        assert!(
-            matches!(result, Err(SynchronizationError::ServerUrlMissing)),
-            "Expected ServerUrlMissing, got: {:?}",
-            result.err()
         );
     }
 }
