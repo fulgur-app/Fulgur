@@ -2,7 +2,7 @@
 use crate::fulgur::{
     Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
 };
-#[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+#[cfg(feature = "gpui-test-support")]
 use gpui::WindowId;
 #[cfg(feature = "gpui-test-support")]
 use gpui::{
@@ -67,7 +67,7 @@ pub fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestConte
     (fulgur, visual_cx)
 }
 
-#[cfg(all(feature = "gpui-test-support"))]
+#[cfg(feature = "gpui-test-support")]
 pub fn setup_test_globals(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_component::init(cx);
@@ -79,7 +79,7 @@ pub fn setup_test_globals(cx: &mut TestAppContext) {
     });
 }
 
-#[cfg(all(feature = "gpui-test-support"))]
+#[cfg(feature = "gpui-test-support")]
 pub fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Fulgur>) {
     let window_id_slot: RefCell<Option<WindowId>> = RefCell::new(None);
     let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);

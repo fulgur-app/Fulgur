@@ -456,10 +456,12 @@ mod tests {
 
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
     use crate::fulgur::files::file_operations::test_helpers::invoke_process_pending_files_from_macos;
-    #[cfg(feature = "gpui-test-support")]
+    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
     use crate::fulgur::files::file_operations::test_helpers::{
-        open_window_with_fulgur, setup_fulgur, setup_test_globals, temp_test_path,
+        open_window_with_fulgur, setup_test_globals,
     };
+    #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::files::file_operations::test_helpers::{setup_fulgur, temp_test_path};
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
     use gpui::BorrowAppContext;
     #[cfg(feature = "gpui-test-support")]
