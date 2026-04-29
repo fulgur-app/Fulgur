@@ -29,6 +29,7 @@ jobs:
     permissions:
       contents: read
       checks: write
+      issues: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -54,7 +55,7 @@ jobs:
           No security vulnerabilities or license issues found
 
           *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}
           *Author:* ${ACTOR}
 
           [View Run](${RUN_URL})"
@@ -74,7 +75,7 @@ jobs:
           Security vulnerabilities or license issues detected
 
           *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}
           *Author:* ${ACTOR}
 
           [View Run](${RUN_URL})"
