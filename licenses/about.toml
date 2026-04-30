@@ -18,8 +18,87 @@ accepted = [
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "Unlicense",
-    "GPL-3.0-or-later" #temporary until GPUI is cleaned
+    "GPL-2.0-only",
+    "GPL-3.0-or-later", #temporary until GPUI is cleaned
 ]
 
 # Filter out certain crates (e.g., your own workspace crates)
 filter-noassertion = true
+
+# openssl-src bundles the entire OpenSSL C source tree (~8000 files), some of which
+# carry legacy GPL-1.0/GPL-2.0 notices in Perl scripts and assembly files.
+# The crate itself is Apache-2.0 OR MIT; clarify so cargo-about uses only the
+# root license files and skips scanning the bundled OpenSSL source.
+[openssl-src.clarify]
+license = "Apache-2.0 OR MIT"
+
+[[openssl-src.clarify.files]]
+path = "LICENSE-APACHE"
+license = "Apache-2.0"
+checksum = "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+
+[[openssl-src.clarify.files]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+
+# Zed repo crates: Cargo.toml says GPL-3.0-or-later, but the LICENSE-GPL file
+# text is detected as the deprecated identifier GPL-3.0 by cargo-about's scanner.
+# Clarify each crate so cargo-about uses GPL-3.0-or-later as the expression.
+[zlog.clarify]
+license = "GPL-3.0-or-later"
+
+[[zlog.clarify.files]]
+path = "LICENSE-GPL"
+license = "GPL-3.0-or-later"
+checksum = "0aa0322ea494da441088e4d9144c6720bf99d9e2e1eefcd29d1f58b19b5c4246"
+
+[ztracing.clarify]
+license = "GPL-3.0-or-later"
+
+[[ztracing.clarify.files]]
+path = "LICENSE-GPL"
+license = "GPL-3.0-or-later"
+checksum = "0aa0322ea494da441088e4d9144c6720bf99d9e2e1eefcd29d1f58b19b5c4246"
+
+[ztracing_macro.clarify]
+license = "GPL-3.0-or-later"
+
+[[ztracing_macro.clarify.files]]
+path = "LICENSE-GPL"
+license = "GPL-3.0-or-later"
+checksum = "0aa0322ea494da441088e4d9144c6720bf99d9e2e1eefcd29d1f58b19b5c4246"
+
+# self_cell: Cargo.toml says Apache-2.0 OR GPL-2.0-only, but the LICENSE-GPLv2
+# file is detected as the deprecated GPL-2.0 identifier by cargo-about's scanner.
+[self_cell.clarify]
+license = "Apache-2.0 OR GPL-2.0-only"
+
+[[self_cell.clarify.files]]
+path = "LICENSE-APACHE"
+license = "Apache-2.0"
+checksum = "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+
+[[self_cell.clarify.files]]
+path = "LICENSE-GPLv2"
+license = "GPL-2.0-only"
+checksum = "f9c375a1be4a41f7b70301dd83c91cb89e41567478859b77eef375a52d782505"
+
+# gpui_util: LICENSE-APACHE present but the license field is inherited from the
+# Zed workspace and cargo-about cannot resolve it from the package alone.
+[gpui_util.clarify]
+license = "Apache-2.0"
+
+[[gpui_util.clarify.files]]
+path = "LICENSE-APACHE"
+license = "Apache-2.0"
+checksum = "752daf2fb234ca4a1fa372c073fe127f44b7b90fd2529ae44273a64f9d53da7a"
+
+# tree-sitter-graphql: has a LICENSE file (MIT) but omits the license field in Cargo.toml.
+[tree-sitter-graphql.clarify]
+license = "MIT"
+
+[[tree-sitter-graphql.clarify.files]]
+path = "LICENSE"
+license = "MIT"
+checksum = "5ea7d9ec06cb21ca0a800b69cd954e346bafba94620eb115c4b1fead3f3b30f8"
