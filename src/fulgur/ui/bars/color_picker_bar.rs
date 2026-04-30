@@ -7,7 +7,7 @@ use crate::fulgur::{
 };
 
 use gpui::{
-    AppContext, Context, Corner, Div, Entity, EntityInputHandler, Hsla, InteractiveElement,
+    Anchor, AppContext, Context, Div, Entity, EntityInputHandler, Hsla, InteractiveElement,
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription,
     Window, div, hsla,
 };
@@ -521,7 +521,7 @@ impl Fulgur {
             .h(SEARCH_BAR_HEIGHT)
             .child(
                 gpui_component::color_picker::ColorPicker::new(color_picker_state)
-                    .anchor(Corner::BottomLeft),
+                    .anchor(Anchor::BottomLeft),
             )
     }
 

@@ -219,9 +219,9 @@ pub fn build_default_key_bindings() -> Vec<KeyBinding> {
 /// A single tab entry for the dock/taskbar menu, carrying the display name and the action to fire
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub enum DockMenuTab {
-    /// File-backed editor tab — use path for reliable cross-window lookup
+    /// File-backed editor tab, use path for reliable cross-window lookup
     File { name: SharedString, path: PathBuf },
-    /// Non-file tab (settings, untitled editor, markdown preview) — use title for lookup
+    /// Non-file tab (settings, untitled editor, markdown preview), use title for lookup
     Titled {
         name: SharedString,
         title: SharedString,
@@ -256,6 +256,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
     vec![
         Menu {
             name: "Fulgur".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("About Fulgur", About),
                 if update_link.is_some() {
@@ -274,6 +275,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
         },
         Menu {
             name: "File".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("New", NewFile),
                 MenuItem::action("New Window", NewWindow),
@@ -282,6 +284,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
                 MenuItem::action("Open remote file...", OpenRemote),
                 MenuItem::Submenu(Menu {
                     name: "Recent Files".into(),
+                    disabled: false,
                     items: recent_files_items,
                 }),
                 MenuItem::separator(),
@@ -296,6 +299,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
         },
         Menu {
             name: "Edit".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("Undo", gpui_component::input::Undo),
                 MenuItem::action("Redo", gpui_component::input::Redo),
@@ -309,6 +313,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
         },
         Menu {
             name: "View".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("Color picker", ToggleColorPicker),
                 MenuItem::separator(),
@@ -316,6 +321,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec
         },
         Menu {
             name: "Go".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("Next Tab", NextTab),
                 MenuItem::action("Previous Tab", PreviousTab),
@@ -352,6 +358,7 @@ pub fn build_dock_menu(windows: &[Vec<DockMenuTab>], recent_files: &[PathBuf]) -
             .collect();
         items.push(MenuItem::Submenu(Menu {
             name: "Recent Files".into(),
+            disabled: false,
             items: recent_items,
         }));
         items.push(MenuItem::Separator);

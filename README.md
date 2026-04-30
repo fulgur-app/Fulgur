@@ -96,6 +96,34 @@ Fulgur bundles OpenSSL for SSH remote file editing, which requires two additiona
 
 Both must be on your `PATH` before running `cargo build`.
 
+#### Linux
+
+Fulgur uses `mold` as the linker on Linux to reduce memory usage during compilation. You have two options:
+
+**Option 1: Install clang and mold**
+
+Install the required tools:
+- `clang`: required for the C compiler
+- `mold`: a faster linker that uses less memory
+
+On Ubuntu/Debian: `sudo apt install clang mold`
+
+On Fedora/RHEL: `sudo dnf install clang mold`
+
+On Arch: `sudo pacman -S clang mold`
+
+**Option 2: Use the default linker**
+
+If you prefer not to install additional tools, comment out lines 8–10 in `.cargo/config.toml`:
+
+```toml
+# [target.x86_64-unknown-linux-gnu]
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+```
+
+Note that builds may consume more memory with the default linker, especially on systems with limited RAM.
+
 ### Build Fulgur
 
 Once all the prerequisites installed and set up:
