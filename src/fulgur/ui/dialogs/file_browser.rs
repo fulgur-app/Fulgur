@@ -2,7 +2,12 @@ use gpui::{
     Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels, SharedString,
     StatefulInteractiveElement, Styled, div, px,
 };
-use gpui_component::{h_flex, input::InputState, scroll::ScrollableElement, v_flex};
+use gpui_component::{
+    h_flex,
+    input::{InputEvent, InputState},
+    scroll::ScrollableElement,
+    v_flex,
+};
 
 use crate::fulgur::ui::icons::CustomIcon;
 
@@ -142,6 +147,7 @@ pub fn render_browser_row(
         .on_click(move |_, window, cx| {
             input_entity.update(cx, |state, cx| {
                 state.set_value(&click_value, window, cx);
+                cx.emit(InputEvent::Change);
             });
         })
 }

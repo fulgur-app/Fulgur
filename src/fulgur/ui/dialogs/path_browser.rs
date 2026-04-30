@@ -304,7 +304,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
     #[cfg(feature = "gpui-test-support")]
-    use gpui_component::input::InputState;
+    use gpui_component::input::{InputEvent, InputState};
 
     #[test]
     fn test_empty_input() {
@@ -428,6 +428,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             input_entity.update(cx, |state, cx| {
                 state.set_value(&filter_input, window, cx);
+                cx.emit(InputEvent::Change);
             });
         });
         visual_cx
@@ -498,6 +499,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             input_entity.update(cx, |state, cx| {
                 state.set_value(&valid_input, window, cx);
+                cx.emit(InputEvent::Change);
             });
         });
         visual_cx
@@ -516,6 +518,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             input_entity.update(cx, |state, cx| {
                 state.set_value(&invalid_input, window, cx);
+                cx.emit(InputEvent::Change);
             });
         });
         visual_cx

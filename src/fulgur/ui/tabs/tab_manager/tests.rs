@@ -7,7 +7,7 @@ use gpui::{
     AppContext, Context, Entity, IntoElement, Render, SharedString, TestAppContext,
     VisualTestContext, Window, div,
 };
-use gpui_component::input::Position;
+use gpui_component::input::{InputEvent, Position};
 use parking_lot::Mutex;
 use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
@@ -431,6 +431,7 @@ fn test_markdown_preview_cache_updates_in_panel_mode(cx: &mut TestAppContext) {
             {
                 editor_tab.content.update(cx, |input_state, cx| {
                     input_state.set_value("# cached preview text", window, cx);
+                    cx.emit(InputEvent::Change);
                 });
             }
         });
@@ -559,7 +560,7 @@ fn test_maybe_open_markdown_preview_for_editor_skips_non_markdown(cx: &mut TestA
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
         fulgur.update(cx, |this, _cx| {
-            // Default language is Plain — no preview tab should be inserted
+            // Default language is Plain, no preview tab should be inserted
             let count_before = this.tabs.len();
             this.maybe_open_markdown_preview_for_editor(0);
             assert_eq!(this.tabs.len(), count_before);
@@ -690,6 +691,7 @@ fn test_update_modified_status_updates_tab_on_input_change(cx: &mut TestAppConte
     visual_cx.update(|window, cx| {
         editor_content.update(cx, |input_state, cx| {
             input_state.set_value("changed in active tab", window, cx);
+            cx.emit(InputEvent::Change);
         });
     });
     visual_cx.run_until_parked();

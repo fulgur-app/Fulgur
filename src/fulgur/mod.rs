@@ -24,7 +24,7 @@ use crate::fulgur::{
 };
 use crate::register_action;
 use gpui::{
-    AnyElement, App, AppContext, Context, Corner, DismissEvent, Entity, ExternalPaths, FocusHandle,
+    Anchor, AnyElement, App, AppContext, Context, DismissEvent, Entity, ExternalPaths, FocusHandle,
     Focusable, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels,
     Point, Render, ScrollHandle, SharedString, Styled, Subscription, Window, WindowId, div, px,
 };
@@ -130,7 +130,7 @@ pub struct Fulgur {
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
     pub sse_state: SseState,           // Server-Sent Events state for sync functionality
     pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
-    save_failed_once: bool, // Flag: save already failed once — allow force-close on next attempt
+    save_failed_once: bool, // Flag: save already failed once, allow force-close on next attempt
     pending_share_sheet: bool, // Flag to open share sheet when pending devices are ready
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
     _font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
@@ -471,7 +471,7 @@ impl Fulgur {
                     gpui::anchored()
                         .position(position)
                         .snap_to_window_with_margin(px(8.))
-                        .anchor(Corner::TopLeft)
+                        .anchor(Anchor::TopLeft)
                         .child(
                             div()
                                 .font_family(cx.theme().font_family.clone())
