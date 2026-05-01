@@ -6,7 +6,7 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme,
-    input::{Input, InputEvent, InputState},
+    input::{Input, InputEvent, InputState, RopeExt},
     v_flex,
 };
 
@@ -176,6 +176,10 @@ impl PathBrowser {
             InputState::new(window, cx)
                 .placeholder("Enter a file path...")
                 .default_value(default_path)
+        });
+        input.update(cx, |state, cx| {
+            let end = state.text().offset_to_position(state.text().len());
+            state.set_cursor_position(end, window, cx);
         });
         let _input_subscription =
             cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
