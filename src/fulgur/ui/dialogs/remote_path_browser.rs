@@ -92,12 +92,10 @@ impl RemotePathBrowser {
         notice: Option<String>,
         connection: RemotePathBrowserConnection,
     ) -> Self {
-        let input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("Enter a remote path...")
-                .default_value(initial_path)
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter a remote path..."));
+        input.update(cx, |state, cx| {
+            state.set_value(&initial_path, window, cx);
         });
-
         let _input_subscription =
             cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
                 if let InputEvent::Change = ev {
