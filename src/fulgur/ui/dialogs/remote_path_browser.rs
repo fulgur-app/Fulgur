@@ -11,7 +11,7 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, Sizable, h_flex,
-    input::{Input, InputEvent, InputState, RopeExt},
+    input::{Input, InputEvent, InputState},
     spinner::Spinner,
     v_flex,
 };
@@ -92,14 +92,9 @@ impl RemotePathBrowser {
         notice: Option<String>,
         connection: RemotePathBrowserConnection,
     ) -> Self {
-        let input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("Enter a remote path...")
-                .default_value(initial_path)
-        });
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter a remote path..."));
         input.update(cx, |state, cx| {
-            let end = state.text().offset_to_position(state.text().len());
-            state.set_cursor_position(end, window, cx);
+            state.set_value(&initial_path, window, cx);
         });
         let _input_subscription =
             cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
