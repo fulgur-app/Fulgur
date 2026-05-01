@@ -199,6 +199,7 @@ fn parse_hsla(s: &str) -> Option<Hsla> {
 /// State for the color picker bar.
 ///
 /// Groups the ColorPickerState entity, input states for each color format,
+/// cached format strings (kept in sync by the color-picker subscription),
 /// and the subscriptions for change events.
 pub struct ColorPickerBarState {
     pub color_picker_state: Entity<ColorPickerState>,
@@ -206,6 +207,9 @@ pub struct ColorPickerBarState {
     pub hex_input: Entity<InputState>,
     pub oklch_input: Entity<InputState>,
     pub hsla_input: Entity<InputState>,
+    cached_hex: String,
+    cached_oklch: String,
+    cached_hsla: String,
     _color_picker_subscription: Subscription,
     _hex_input_subscription: Subscription,
     _oklch_input_subscription: Subscription,
@@ -225,13 +229,14 @@ impl ColorPickerBarState {
         let color_picker_state =
             cx.new(|cx| ColorPickerState::new(window, cx).default_value(gpui::white()));
         let initial = gpui::white();
-        let hex_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(gpui_component::Colorize::to_hex(&initial))
-        });
+        let initial_hex = gpui_component::Colorize::to_hex(&initial).to_string();
+        let initial_oklch = format_oklch(initial);
+        let initial_hsla = format_hsla(initial);
+        let hex_input = cx.new(|cx| InputState::new(window, cx).default_value(initial_hex.clone()));
         let oklch_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(format_oklch(initial)));
+            cx.new(|cx| InputState::new(window, cx).default_value(initial_oklch.clone()));
         let hsla_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(format_hsla(initial)));
+            cx.new(|cx| InputState::new(window, cx).default_value(initial_hsla.clone()));
         let _color_picker_subscription = cx.subscribe_in(
             &color_picker_state,
             window,
@@ -241,6 +246,9 @@ impl ColorPickerBarState {
                     let hex = gpui_component::Colorize::to_hex(&color);
                     let oklch = format_oklch(color);
                     let hsla_str = format_hsla(color);
+                    this.color_picker_bar_state.cached_hex = hex.to_string();
+                    this.color_picker_bar_state.cached_oklch = oklch.clone();
+                    this.color_picker_bar_state.cached_hsla = hsla_str.clone();
                     this.color_picker_bar_state
                         .hex_input
                         .update(cx, |state, cx| {
@@ -388,6 +396,9 @@ impl ColorPickerBarState {
             hex_input,
             oklch_input,
             hsla_input,
+            cached_hex: initial_hex,
+            cached_oklch: initial_oklch,
+            cached_hsla: initial_hsla,
             _color_picker_subscription,
             _hex_input_subscription,
             _oklch_input_subscription,
@@ -448,15 +459,9 @@ impl Fulgur {
         if !self.color_picker_bar_state.show_color_picker {
             return None;
         }
-        let current_color = self
-            .color_picker_bar_state
-            .color_picker_state
-            .read(cx)
-            .value()
-            .unwrap_or(gpui::white());
-        let hex_value = gpui_component::Colorize::to_hex(&current_color);
-        let oklch_value = format_oklch(current_color);
-        let hsla_value = format_hsla(current_color);
+        let hex_value = &self.color_picker_bar_state.cached_hex;
+        let oklch_value = &self.color_picker_bar_state.cached_oklch;
+        let hsla_value = &self.color_picker_bar_state.cached_hsla;
         Some(
             div()
                 .flex()
@@ -484,19 +489,19 @@ impl Fulgur {
                                 .child(self.render_color_picker_section(cx))
                                 .child(self.render_color_value_section(
                                     "Hex",
-                                    &hex_value,
+                                    hex_value,
                                     &self.color_picker_bar_state.hex_input,
                                     cx,
                                 ))
                                 .child(self.render_color_value_section(
                                     "OkLCH",
-                                    &oklch_value,
+                                    oklch_value,
                                     &self.color_picker_bar_state.oklch_input,
                                     cx,
                                 ))
                                 .child(self.render_color_value_section(
                                     "HSLA",
-                                    &hsla_value,
+                                    hsla_value,
                                     &self.color_picker_bar_state.hsla_input,
                                     cx,
                                 ))
