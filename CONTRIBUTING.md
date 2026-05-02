@@ -117,7 +117,7 @@ Wrap errors with context using `anyhow`. Always include the underlying error to 
 // Correct
 serde_json::from_str(&raw).map_err(|e| anyhow!("failed to parse settings: {}", e))?;
 
-// Wrong — loses the underlying error message
+// Wrong: loses the underlying error message
 serde_json::from_str(&raw).map_err(|_| anyhow!("failed to parse settings"))?;
 ```
 
@@ -130,9 +130,9 @@ This applies to all JSON parsing, I/O, and external library calls.
 Use the `log` crate macros exclusively. Never use `println!` or `eprintln!` in application code.
 
 ```rust
-log::info!("settings loaded from {}", path.display());
-log::warn!("file watcher event ignored: {:?}", event);
-log::error!("failed to save state: {}", err);
+log::info!("settings loaded from { path.display()}");
+log::warn!("file watcher event ignored: {event:?}");
+log::error!("failed to save state: {err}");
 ```
 
 The only exception is bootstrap code that runs before the logger is initialized (e.g., in `main.rs` before `init_logger()` is called), where `eprintln!` is acceptable.
