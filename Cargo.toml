@@ -12,6 +12,57 @@ homepage = "https://fulgur.app"
 default = []
 gpui-test-support = ["gpui/test-support"]
 
+[lints.clippy]
+# Pedantic mode is always on. Rules below are allowed because they are not yet addressed.
+# To burn down the list: remove one allow entry, fix all its violations, repeat.
+pedantic = { level = "deny", priority = -1 }
+
+# --- Burn-down list: allowed until fixed one by one ---
+assigning_clones = "allow"
+bool_to_int_with_if = "allow"
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+default_trait_access = "allow"
+doc_markdown = "allow"
+explicit_deref_methods = "allow"
+explicit_iter_loop = "allow"
+float_cmp = "allow"
+format_push_string = "allow"
+if_not_else = "allow"
+ignored_unit_patterns = "allow"
+implicit_clone = "allow"
+items_after_statements = "allow"
+manual_let_else = "allow"
+map_unwrap_or = "allow"
+match_same_arms = "allow"
+match_wildcard_for_single_variants = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+needless_continue = "allow"
+needless_pass_by_value = "allow"
+needless_raw_string_hashes = "allow"
+redundant_closure_for_method_calls = "allow"
+redundant_else = "allow"
+semicolon_if_nothing_returned = "allow"
+uninlined_format_args = "allow"
+unreadable_literal = "allow"
+single_char_pattern = "allow"
+single_match_else = "allow"
+struct_excessive_bools = "allow"
+too_many_lines = "allow"
+trivially_copy_pass_by_ref = "allow"
+unchecked_time_subtraction = "allow"
+unnecessary_debug_formatting = "allow"
+unsafe_derive_deserialize = "allow"
+unused_async = "allow"
+unused_self = "allow"
+used_underscore_binding = "allow"
+wildcard_imports = "allow"
+
 [lib]
 name = "fulgur"
 path = "src/lib.rs"
