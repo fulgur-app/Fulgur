@@ -282,9 +282,8 @@ impl Fulgur {
                     }
                 });
                 return;
-            } else {
-                self.remove_tab_by_id(tab_id, window, cx);
             }
+            self.remove_tab_by_id(tab_id, window, cx);
         }
         if self.tabs.is_empty() {
             self.active_tab_index = None;
@@ -342,9 +341,8 @@ impl Fulgur {
                     cx.notify();
                 });
                 return;
-            } else {
-                self.remove_tab_by_id(tab_id, window, cx);
             }
+            self.remove_tab_by_id(tab_id, window, cx);
         }
         if let Some(active_idx) = self.active_tab_index
             && active_idx >= self.tabs.len()
@@ -408,9 +406,8 @@ impl Fulgur {
                     cx.notify();
                 });
                 return;
-            } else {
-                self.remove_tab_by_id(tab_id, window, cx);
             }
+            self.remove_tab_by_id(tab_id, window, cx);
         }
         if let Some(active_idx) = self.active_tab_index
             && active_idx >= self.tabs.len()
@@ -472,9 +469,8 @@ impl Fulgur {
                     this.close_other_tabs(window, cx);
                 });
                 return;
-            } else {
-                self.remove_tab_by_id(tab_id, window, cx);
             }
+            self.remove_tab_by_id(tab_id, window, cx);
         }
         if let Some(remaining_active_id) = active_tab_id
             && let Some(new_active_pos) =

@@ -62,9 +62,8 @@ fn read_line_with_timeout<R: Read>(
             Ok(0) => {
                 if line.is_empty() {
                     return Ok(None);
-                } else {
-                    return Ok(Some(line));
                 }
+                return Ok(Some(line));
             }
             Ok(_) => {
                 if byte[0] == b'\n' {
@@ -72,9 +71,8 @@ fn read_line_with_timeout<R: Read>(
                         line.pop();
                     }
                     return Ok(Some(line));
-                } else {
-                    line.push(byte[0] as char);
                 }
+                line.push(byte[0] as char);
             }
             Err(e)
                 if e.kind() == std::io::ErrorKind::WouldBlock
