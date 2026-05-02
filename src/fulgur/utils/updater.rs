@@ -106,7 +106,7 @@ pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<Updat
     let current = parse_version(current_version.as_str())?;
     let latest = parse_version(&release.tag_name)?;
     if latest > current {
-        log::info!("New version available: {} -> {}", current, latest);
+        log::info!("New version available: {current} -> {latest}");
         let download_url = release_page_url(&release)?;
         Ok(Some(UpdateInfo {
             current_version: current.to_string(),
@@ -116,7 +116,7 @@ pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<Updat
             release_notes: release.body.unwrap_or_default(),
         }))
     } else {
-        log::info!("Already on latest version: {}", current);
+        log::info!("Already on latest version: {current}");
         Ok(None)
     }
 }

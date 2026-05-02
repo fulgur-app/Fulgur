@@ -23,10 +23,10 @@ impl Fulgur {
 
         // Save settings to disk
         if let Err(e) = self.settings.save() {
-            log::error!("Failed to save settings: {}", e);
+            log::error!("Failed to save settings: {e}");
             self.pending_notification = Some((
                 NotificationType::Error,
-                format!("Failed to save settings: {}", e).into(),
+                format!("Failed to save settings: {e}").into(),
             ));
             return Err(e);
         }

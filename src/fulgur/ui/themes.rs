@@ -25,12 +25,12 @@ pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut Ap
     let themes_directory = match themes_directory_path() {
         Ok(path) => {
             if let Err(e) = extract_bundled_themes(&path) {
-                log::error!("Failed to extract bundled themes: {}", e);
+                log::error!("Failed to extract bundled themes: {e}");
             }
             path
         }
         Err(e) => {
-            log::error!("Failed to get themes directory: {}", e);
+            log::error!("Failed to get themes directory: {e}");
             return;
         }
     };
@@ -40,7 +40,7 @@ pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut Ap
         }
         on_themes_loaded(cx);
     }) {
-        log::error!("Failed to watch themes directory: {}", err);
+        log::error!("Failed to watch themes directory: {err}");
     }
     if let Some(scrollbar_show) = scrollbar_show {
         Theme::global_mut(cx).scrollbar_show = scrollbar_show;
@@ -95,7 +95,7 @@ pub fn reload_themes_and_update(settings: &Settings, entity: Entity<Fulgur>, cx:
         let themes = match Themes::load() {
             Ok(themes) => Some(themes),
             Err(e) => {
-                log::error!("Failed to load themes: {}", e);
+                log::error!("Failed to load themes: {e}");
                 None
             }
         };

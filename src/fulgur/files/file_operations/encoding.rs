@@ -32,7 +32,7 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     } else {
         encoding.name().to_string()
     };
-    log::debug!("File encoding detected as: {}", encoding_name);
+    log::debug!("File encoding detected as: {encoding_name}");
     (encoding_name, decoded.to_string())
 }
 

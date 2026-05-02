@@ -37,7 +37,7 @@ fn make_select_theme_item(
     current_theme_shared: Arc<Mutex<String>>,
     cx: &mut App,
 ) -> Stateful<Div> {
-    let id = SharedString::from(format!("Select_{}", theme_name));
+    let id = SharedString::from(format!("Select_{theme_name}"));
     h_flex()
         .id(id)
         .cursor_pointer()
@@ -133,9 +133,7 @@ impl Fulgur {
             self.settings.app_settings.theme = theme_name.to_string().into();
             if let Err(error) = self.update_and_propagate_settings(cx) {
                 log::error!(
-                    "Failed to propagate settings after theme '{}' selection: {}",
-                    theme_name,
-                    error
+                    "Failed to propagate settings after theme '{theme_name}' selection: {error}"
                 );
             }
             *current_theme_shared.lock() = theme_name.to_string();
@@ -177,12 +175,11 @@ impl Fulgur {
             let themes_dir = match themes_directory_path() {
                 Ok(path) => path,
                 Err(e) => {
-                    log::error!("Failed to get themes directory: {}", e);
+                    log::error!("Failed to get themes directory: {e}");
                     window
                         .update(|window, cx| {
                             let notification = SharedString::from(format!(
-                                "Failed to access themes directory: {}",
-                                e
+                                "Failed to access themes directory: {e}"
                             ));
                             window.push_notification((NotificationType::Error, notification), cx);
                         })
@@ -205,7 +202,7 @@ impl Fulgur {
             let dest_path = themes_dir.join(filename);
             match fs::copy(&theme_path, &dest_path) {
                 Ok(_) => {
-                    log::info!("Theme file copied to: {:?}", dest_path);
+                    log::info!("Theme file copied to: {dest_path:?}");
                     window
                         .update(|window, cx| {
                             let notification = SharedString::from(format!(
@@ -218,11 +215,11 @@ impl Fulgur {
                         .ok()?;
                 }
                 Err(e) => {
-                    log::error!("Failed to copy theme file: {}", e);
+                    log::error!("Failed to copy theme file: {e}");
                     window
                         .update(|window, cx| {
                             let notification =
-                                SharedString::from(format!("Failed to add theme: {}", e));
+                                SharedString::from(format!("Failed to add theme: {e}"));
                             window.push_notification((NotificationType::Error, notification), cx);
                         })
                         .ok()?;

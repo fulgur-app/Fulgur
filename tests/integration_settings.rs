@@ -92,33 +92,27 @@ fn temp_settings_path(temp_dir: &TempDir) -> PathBuf {
 fn assert_settings_equal(original: &Settings, loaded: &Settings, context: &str) {
     assert_eq!(
         original.editor_settings.show_line_numbers, loaded.editor_settings.show_line_numbers,
-        "{}: show_line_numbers mismatch",
-        context
+        "{context}: show_line_numbers mismatch"
     );
     assert_eq!(
         original.editor_settings.show_indent_guides, loaded.editor_settings.show_indent_guides,
-        "{}: show_indent_guides mismatch",
-        context
+        "{context}: show_indent_guides mismatch"
     );
     assert_eq!(
         original.editor_settings.soft_wrap, loaded.editor_settings.soft_wrap,
-        "{}: soft_wrap mismatch",
-        context
+        "{context}: soft_wrap mismatch"
     );
     assert_eq!(
         original.editor_settings.font_size, loaded.editor_settings.font_size,
-        "{}: font_size mismatch",
-        context
+        "{context}: font_size mismatch"
     );
     assert_eq!(
         original.editor_settings.tab_size, loaded.editor_settings.tab_size,
-        "{}: tab_size mismatch",
-        context
+        "{context}: tab_size mismatch"
     );
     assert_eq!(
         original.editor_settings.watch_files, loaded.editor_settings.watch_files,
-        "{}: watch_files mismatch",
-        context
+        "{context}: watch_files mismatch"
     );
     assert_eq!(
         original
@@ -129,8 +123,7 @@ fn assert_settings_equal(original: &Settings, loaded: &Settings, context: &str) 
             .editor_settings
             .markdown_settings
             .show_markdown_preview,
-        "{}: show_markdown_preview mismatch",
-        context
+        "{context}: show_markdown_preview mismatch"
     );
     assert_eq!(
         original
@@ -141,23 +134,19 @@ fn assert_settings_equal(original: &Settings, loaded: &Settings, context: &str) 
             .editor_settings
             .markdown_settings
             .show_markdown_toolbar,
-        "{}: show_markdown_toolbar mismatch",
-        context
+        "{context}: show_markdown_toolbar mismatch"
     );
     assert_eq!(
         original.app_settings.confirm_exit, loaded.app_settings.confirm_exit,
-        "{}: confirm_exit mismatch",
-        context
+        "{context}: confirm_exit mismatch"
     );
     assert_eq!(
         original.app_settings.theme, loaded.app_settings.theme,
-        "{}: theme mismatch",
-        context
+        "{context}: theme mismatch"
     );
     assert_eq!(
         original.app_settings.scrollbar_show, loaded.app_settings.scrollbar_show,
-        "{}: scrollbar_show mismatch",
-        context
+        "{context}: scrollbar_show mismatch"
     );
     assert_eq!(
         original
@@ -168,26 +157,22 @@ fn assert_settings_equal(original: &Settings, loaded: &Settings, context: &str) 
             .app_settings
             .synchronization_settings
             .is_synchronization_activated,
-        "{}: is_synchronization_activated mismatch",
-        context
+        "{context}: is_synchronization_activated mismatch"
     );
     assert_eq!(
         original.app_settings.synchronization_settings.server_url,
         loaded.app_settings.synchronization_settings.server_url,
-        "{}: server_url mismatch",
-        context
+        "{context}: server_url mismatch"
     );
     assert_eq!(
         original.app_settings.synchronization_settings.email,
         loaded.app_settings.synchronization_settings.email,
-        "{}: email mismatch",
-        context
+        "{context}: email mismatch"
     );
     assert_eq!(
         original.app_settings.synchronization_settings.public_key,
         loaded.app_settings.synchronization_settings.public_key,
-        "{}: public_key mismatch",
-        context
+        "{context}: public_key mismatch"
     );
     assert_eq!(
         original
@@ -198,14 +183,12 @@ fn assert_settings_equal(original: &Settings, loaded: &Settings, context: &str) 
             .app_settings
             .synchronization_settings
             .is_deduplication,
-        "{}: is_deduplication mismatch",
-        context
+        "{context}: is_deduplication mismatch"
     );
     assert_eq!(
         original.recent_files.get_files(),
         loaded.recent_files.get_files(),
-        "{}: recent_files mismatch",
-        context
+        "{context}: recent_files mismatch"
     );
 }
 
@@ -345,7 +328,7 @@ fn test_settings_recent_files_respects_max_limit() {
     for i in 0..12 {
         original
             .recent_files
-            .add_file(temp_test_path(&format!("file{}.txt", i)));
+            .add_file(temp_test_path(&format!("file{i}.txt")));
     }
     original
         .save_to_path(&settings_path)
@@ -439,10 +422,10 @@ fn test_settings_multiple_save_load_cycles() {
     for i in 0..5 {
         settings
             .save_to_path(&settings_path)
-            .unwrap_or_else(|_| panic!("Failed to save on iteration {}", i));
+            .unwrap_or_else(|_| panic!("Failed to save on iteration {i}"));
         let loaded = Settings::load_from_path(&settings_path)
-            .unwrap_or_else(|_| panic!("Failed to load on iteration {}", i));
-        assert_settings_equal(&settings, &loaded, &format!("Iteration {} roundtrip", i));
+            .unwrap_or_else(|_| panic!("Failed to load on iteration {i}"));
+        assert_settings_equal(&settings, &loaded, &format!("Iteration {i} roundtrip"));
         settings.editor_settings.font_size += 0.5;
         settings = loaded;
     }

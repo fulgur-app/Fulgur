@@ -115,7 +115,7 @@ pub fn backup_path_for(path: &Path) -> PathBuf {
         .to_string_lossy()
         .to_string();
     let mut backup = path.to_path_buf();
-    backup.set_file_name(format!("{}.bak", name));
+    backup.set_file_name(format!("{name}.bak"));
     backup
 }
 

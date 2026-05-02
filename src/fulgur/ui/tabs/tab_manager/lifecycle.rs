@@ -36,10 +36,10 @@ impl Fulgur {
         self.next_tab_id += 1;
         self.focus_active_tab(window, cx);
         if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after creating tab: {}", e);
+            log::error!("Failed to save app state after creating tab: {e}");
             self.pending_notification = Some((
                 gpui_component::notification::NotificationType::Warning,
-                format!("Tab created but failed to save state: {}", e).into(),
+                format!("Tab created but failed to save state: {e}").into(),
             ));
         }
         cx.notify();
@@ -79,10 +79,10 @@ impl Fulgur {
             self.pending_tab_scroll = Some(self.tabs.len() - 1);
             self.next_tab_id += 1;
             if let Err(e) = self.save_state(cx, window) {
-                log::error!("Failed to save app state after opening settings: {}", e);
+                log::error!("Failed to save app state after opening settings: {e}");
                 self.pending_notification = Some((
                     gpui_component::notification::NotificationType::Warning,
-                    format!("Settings opened but failed to save state: {}", e).into(),
+                    format!("Settings opened but failed to save state: {e}").into(),
                 ));
             }
             cx.notify();
@@ -104,10 +104,10 @@ impl Fulgur {
             self.show_unsaved_changes_dialog(window, cx, move |this, window, cx| {
                 this.remove_tab_by_id(tab_id, window, cx);
                 if let Err(e) = this.save_state(cx, window) {
-                    log::error!("Failed to save app state after closing tab: {}", e);
+                    log::error!("Failed to save app state after closing tab: {e}");
                     this.pending_notification = Some((
                         gpui_component::notification::NotificationType::Warning,
-                        format!("Tab closed but failed to save state: {}", e).into(),
+                        format!("Tab closed but failed to save state: {e}").into(),
                     ));
                 }
             });
@@ -115,10 +115,10 @@ impl Fulgur {
             self.remove_tab_by_id(tab_id, window, cx);
             self.focus_active_tab(window, cx);
             if let Err(e) = self.save_state(cx, window) {
-                log::error!("Failed to save app state after closing tab: {}", e);
+                log::error!("Failed to save app state after closing tab: {e}");
                 self.pending_notification = Some((
                     gpui_component::notification::NotificationType::Warning,
-                    format!("Tab closed but failed to save state: {}", e).into(),
+                    format!("Tab closed but failed to save state: {e}").into(),
                 ));
             }
         }
@@ -272,10 +272,10 @@ impl Fulgur {
                     } else {
                         this.active_tab_index = None;
                         if let Err(e) = this.save_state(cx, window) {
-                            log::error!("Failed to save state after closing all tabs: {}", e);
+                            log::error!("Failed to save state after closing all tabs: {e}");
                             this.pending_notification = Some((
                                 gpui_component::notification::NotificationType::Warning,
-                                format!("Tabs closed but failed to save state: {}", e).into(),
+                                format!("Tabs closed but failed to save state: {e}").into(),
                             ));
                         }
                         cx.notify();
@@ -290,10 +290,10 @@ impl Fulgur {
             self.active_tab_index = None;
         }
         if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after closing all tabs: {}", e);
+            log::error!("Failed to save app state after closing all tabs: {e}");
             self.pending_notification = Some((
                 gpui_component::notification::NotificationType::Warning,
-                format!("Tabs closed but failed to save state: {}", e).into(),
+                format!("Tabs closed but failed to save state: {e}").into(),
             ));
         }
         cx.notify();
@@ -333,10 +333,10 @@ impl Fulgur {
                         }
                     }
                     if let Err(e) = this.save_state(cx, window) {
-                        log::error!("Failed to save state after closing tabs to left: {}", e);
+                        log::error!("Failed to save state after closing tabs to left: {e}");
                         this.pending_notification = Some((
                             gpui_component::notification::NotificationType::Warning,
-                            format!("Tabs closed but failed to save state: {}", e).into(),
+                            format!("Tabs closed but failed to save state: {e}").into(),
                         ));
                     }
                     cx.notify();
@@ -352,10 +352,10 @@ impl Fulgur {
             self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
         }
         if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after closing tabs to left: {}", e);
+            log::error!("Failed to save app state after closing tabs to left: {e}");
             self.pending_notification = Some((
                 gpui_component::notification::NotificationType::Warning,
-                format!("Tabs closed but failed to save state: {}", e).into(),
+                format!("Tabs closed but failed to save state: {e}").into(),
             ));
         }
         self.focus_active_tab(window, cx);
@@ -399,10 +399,10 @@ impl Fulgur {
                         }
                     }
                     if let Err(e) = this.save_state(cx, window) {
-                        log::error!("Failed to save state after closing tabs to right: {}", e);
+                        log::error!("Failed to save state after closing tabs to right: {e}");
                         this.pending_notification = Some((
                             gpui_component::notification::NotificationType::Warning,
-                            format!("Tabs closed but failed to save state: {}", e).into(),
+                            format!("Tabs closed but failed to save state: {e}").into(),
                         ));
                     }
                     cx.notify();
@@ -418,13 +418,10 @@ impl Fulgur {
             self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
         }
         if let Err(e) = self.save_state(cx, window) {
-            log::error!(
-                "Failed to save app state after closing tabs to right: {}",
-                e
-            );
+            log::error!("Failed to save app state after closing tabs to right: {e}");
             self.pending_notification = Some((
                 gpui_component::notification::NotificationType::Warning,
-                format!("Tabs closed but failed to save state: {}", e).into(),
+                format!("Tabs closed but failed to save state: {e}").into(),
             ));
         }
         self.focus_active_tab(window, cx);
@@ -487,10 +484,10 @@ impl Fulgur {
         }
         self.focus_active_tab(window, cx);
         if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after closing other tabs: {}", e);
+            log::error!("Failed to save app state after closing other tabs: {e}");
             self.pending_notification = Some((
                 gpui_component::notification::NotificationType::Warning,
-                format!("Tabs closed but failed to save state: {}", e).into(),
+                format!("Tabs closed but failed to save state: {e}").into(),
             ));
         }
         cx.notify();
@@ -535,10 +532,10 @@ impl Fulgur {
         self.next_tab_id += 1;
         self.focus_active_tab(window, cx);
         if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after duplicating tab: {}", e);
+            log::error!("Failed to save app state after duplicating tab: {e}");
             self.pending_notification = Some((
                 gpui_component::notification::NotificationType::Warning,
-                format!("Tab duplicated but failed to save state: {}", e).into(),
+                format!("Tab duplicated but failed to save state: {e}").into(),
             ));
         }
         cx.notify();
@@ -718,15 +715,12 @@ impl Fulgur {
                         let save_result =
                             entity_ok_footer.update(cx, |this, cx| this.save_state(cx, window));
                         if let Err(e) = save_result {
-                            log::error!("Failed to save app state on quit: {}", e);
+                            log::error!("Failed to save app state on quit: {e}");
                             entity_ok_footer.update(cx, |this, _cx| {
                                 this.pending_notification = Some((
                                     gpui_component::notification::NotificationType::Error,
-                                    format!(
-                                        "Failed to save application state: {}. Quit anyway?",
-                                        e
-                                    )
-                                    .into(),
+                                    format!("Failed to save application state: {e}. Quit anyway?")
+                                        .into(),
                                 ));
                             });
                             cx.refresh_windows();
@@ -747,10 +741,10 @@ impl Fulgur {
             return;
         }
         if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state on quit: {}", e);
+            log::error!("Failed to save app state on quit: {e}");
             self.pending_notification = Some((
                 gpui_component::notification::NotificationType::Error,
-                format!("Failed to save application state: {}. Try again or close the app to quit without saving.", e).into(),
+                format!("Failed to save application state: {e}. Try again or close the app to quit without saving.").into(),
             ));
             cx.notify();
             return; // Don't quit, show notification and let user try again

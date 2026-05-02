@@ -416,7 +416,7 @@ impl Fulgur {
         if let Some(update_info) = self.shared_state(cx).update_info.lock().as_ref() {
             let url = update_info.download_url.clone();
             if !is_valid_release_page_url(&url) {
-                log::error!("Refusing to open non-canonical update URL: {}", url);
+                log::error!("Refusing to open non-canonical update URL: {url}");
                 return;
             }
             match open::that(url) {
@@ -424,7 +424,7 @@ impl Fulgur {
                     log::debug!("Successfully opened browser");
                 }
                 Err(e) => {
-                    log::error!("Failed to open browser: {}", e);
+                    log::error!("Failed to open browser: {e}");
                 }
             }
             return;
@@ -433,7 +433,7 @@ impl Fulgur {
         cx.spawn_in(window, async move |view, window| {
             log::debug!("Checking for updates");
             let current_version = env!("CARGO_PKG_VERSION");
-            log::debug!("Current version: {}", current_version);
+            log::debug!("Current version: {current_version}");
             let update_info = bg
                 .spawn(async move {
                     check_for_updates(current_version.to_string())
@@ -459,7 +459,7 @@ impl Fulgur {
                             this.update_menus(menus, cx);
                             cx.notify();
                         });
-                        log::info!("Update available: {} -> {}", current_ver, latest_ver);
+                        log::info!("Update available: {current_ver} -> {latest_ver}");
                     } else {
                         let notification = SharedString::from("No update found");
                         window.push_notification((NotificationType::Info, notification), cx);

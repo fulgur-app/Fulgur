@@ -176,7 +176,7 @@ fn test_get_valid_token_returns_cached_valid_token() {
     // without hitting the network (fast path: returns before checking credentials).
     let manager = Arc::new(TokenStateManager::new());
     let expected_token = inject_valid_token(&manager);
-    let settings = SynchronizationSettings::new(); // empty — no server_url/email
+    let settings = SynchronizationSettings::new(); // empty, no server_url/email
     let result = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
     assert!(
         result.is_ok(),
@@ -195,8 +195,7 @@ fn test_get_valid_token_fails_when_no_server_url() {
     let result = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
     assert!(
         matches!(result, Err(SynchronizationError::ServerUrlMissing)),
-        "Expected ServerUrlMissing, got: {:?}",
-        result
+        "Expected ServerUrlMissing, got: {result:?}"
     );
 }
 
@@ -209,8 +208,7 @@ fn test_get_valid_token_fails_when_no_email() {
     let result = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
     assert!(
         matches!(result, Err(SynchronizationError::EmailMissing)),
-        "Expected EmailMissing, got: {:?}",
-        result
+        "Expected EmailMissing, got: {result:?}"
     );
 }
 
@@ -230,8 +228,7 @@ fn test_get_valid_token_after_clear_requires_refresh() {
     let second = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
     assert!(
         matches!(second, Err(SynchronizationError::ServerUrlMissing)),
-        "Post-clear call should require refresh and fail with ServerUrlMissing, got: {:?}",
-        second
+        "Post-clear call should require refresh and fail with ServerUrlMissing, got: {second:?}"
     );
 }
 
@@ -239,7 +236,7 @@ fn test_get_valid_token_after_clear_requires_refresh() {
 fn test_get_valid_token_resets_refreshing_flag_on_error() {
     // When a refresh fails, is_refreshing_token must be reset to false and
     // refresh_notify must be signalled. A second call on the same manager must
-    // not deadlock — it should see the same error rather than waiting forever.
+    // not deadlock: it should see the same error rather than waiting forever.
     let manager = Arc::new(TokenStateManager::new());
     let settings = SynchronizationSettings::new(); // no server_url → fast error
     let first = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
@@ -248,15 +245,14 @@ fn test_get_valid_token_resets_refreshing_flag_on_error() {
     let second = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
     assert!(
         matches!(second, Err(SynchronizationError::ServerUrlMissing)),
-        "Second call should fail cleanly, not deadlock: {:?}",
-        second
+        "Second call should fail cleanly, not deadlock: {second:?}"
     );
 }
 
 #[test]
 fn test_concurrent_get_valid_token_with_cached_token() {
     // Multiple threads calling get_valid_token with a valid cached token must
-    // all receive the same token value — verifying the fast path is race-free.
+    // all receive the same token value: verifying the fast path is race-free.
     let manager = Arc::new(TokenStateManager::new());
     let expected_token = inject_valid_token(&manager);
     let settings = Arc::new(SynchronizationSettings::new());
@@ -288,8 +284,7 @@ fn test_get_valid_token_with_expired_token_falls_through_to_refresh() {
     let result = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
     assert!(
         matches!(result, Err(SynchronizationError::ServerUrlMissing)),
-        "Expired token must trigger refresh and fail with ServerUrlMissing, got: {:?}",
-        result
+        "Expired token must trigger refresh and fail with ServerUrlMissing, got: {result:?}"
     );
 }
 
@@ -303,7 +298,6 @@ fn test_get_valid_token_with_near_expiry_token_falls_through_to_refresh() {
     let result = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
     assert!(
         matches!(result, Err(SynchronizationError::ServerUrlMissing)),
-        "Near-expiry token must trigger refresh, got: {:?}",
-        result
+        "Near-expiry token must trigger refresh, got: {result:?}"
     );
 }

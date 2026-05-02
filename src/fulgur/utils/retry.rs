@@ -83,13 +83,13 @@ where
         match operation() {
             Ok(result) => {
                 if attempt > 1 {
-                    log::info!("Operation succeeded after {} attempts", attempt);
+                    log::info!("Operation succeeded after {attempt} attempts");
                 }
                 return Ok(result);
             }
             Err(error) => {
                 if attempt >= config.max_attempts {
-                    log::error!("Operation failed after {} attempts, giving up", attempt);
+                    log::error!("Operation failed after {attempt} attempts, giving up");
                     return Err(error);
                 }
 

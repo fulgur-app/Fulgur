@@ -29,10 +29,7 @@ pub(super) fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
     let compressed_size_kb = compressed.len() as f64 / 1024.0;
     let compression_ratio = (1.0 - (compressed.len() as f64 / content.len() as f64)) * 100.0;
     log::debug!(
-        "Compression: {:.2} KB -> {:.2} KB ({:.1}% reduction)",
-        original_size_kb,
-        compressed_size_kb,
-        compression_ratio
+        "Compression: {original_size_kb:.2} KB -> {compressed_size_kb:.2} KB ({compression_ratio:.1}% reduction)"
     );
     Ok(compressed)
 }
@@ -77,12 +74,11 @@ pub fn decompress_content(compressed: &[u8], max_size: u64) -> anyhow::Result<St
     limited_reader.read_to_end(&mut decompressed_bytes)?;
     if decompressed_bytes.len() > decompressed_cap {
         return Err(anyhow::anyhow!(
-            "Decompressed payload exceeds {} bytes cap (ratio-bounded gzip bomb defense)",
-            decompressed_cap
+            "Decompressed payload exceeds {decompressed_cap} bytes cap (ratio-bounded gzip bomb defense)"
         ));
     }
     let decompressed = String::from_utf8(decompressed_bytes)
-        .map_err(|e| anyhow::anyhow!("Failed to decode decompressed content as UTF-8: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to decode decompressed content as UTF-8: {e}"))?;
     Ok(decompressed)
 }
 
@@ -227,8 +223,7 @@ fn main() {
         let msg = err.to_string();
         assert!(
             msg.contains("ratio-bounded"),
-            "bomb rejection should cite the ratio cap, got: {}",
-            msg
+            "bomb rejection should cite the ratio cap, got: {msg}"
         );
     }
 

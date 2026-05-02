@@ -82,12 +82,11 @@ pub fn connect(
     let addr_str = format!("{}:{}", spec.host, spec.port);
     let addrs: Vec<_> = addr_str
         .to_socket_addrs()
-        .map_err(|e| SshError::ConnectionFailed(format!("Cannot resolve {}: {}", addr_str, e)))?
+        .map_err(|e| SshError::ConnectionFailed(format!("Cannot resolve {addr_str}: {e}")))?
         .collect();
     if addrs.is_empty() {
         return Err(SshError::ConnectionFailed(format!(
-            "No addresses found for {}",
-            addr_str
+            "No addresses found for {addr_str}"
         )));
     }
     // Try each resolved address in order (DNS may return IPv6 before IPv4; fall through on

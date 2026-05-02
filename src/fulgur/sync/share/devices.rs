@@ -48,10 +48,10 @@ pub fn get_devices(
         return Err(SynchronizationError::ServerUrlMissing);
     };
     let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
-    let devices_url = format!("{}/api/devices", server_url);
+    let devices_url = format!("{server_url}/api/devices");
     let mut response = http_agent
         .get(&devices_url)
-        .header("Authorization", &format!("Bearer {}", token))
+        .header("Authorization", &format!("Bearer {token}"))
         .call()
         .map_err(|e| handle_ureq_error(e, "Failed to get devices"))?;
 
@@ -59,7 +59,7 @@ pub fn get_devices(
         .body_mut()
         .read_json::<DevicesResponse>()
         .map_err(|e| {
-            log::error!("Failed to read devices: {}", e);
+            log::error!("Failed to read devices: {e}");
             SynchronizationError::InvalidResponse(e.to_string())
         })?;
 

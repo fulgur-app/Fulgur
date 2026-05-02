@@ -161,10 +161,9 @@ impl SharedAppState {
                 Ok(_) => None,
                 Err(e) => {
                     let error_msg = format!(
-                        "Failed to initialize encryption keys. Synchronization has been disabled. Error: {}",
-                        e
+                        "Failed to initialize encryption keys. Synchronization has been disabled. Error: {e}"
                     );
-                    log::error!("{}", error_msg);
+                    log::error!("{error_msg}");
                     settings
                         .app_settings
                         .synchronization_settings

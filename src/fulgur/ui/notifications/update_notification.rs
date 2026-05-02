@@ -30,11 +30,11 @@ pub fn make_update_notification(update_info: &UpdateInfo) -> Notification {
                                 log::debug!("Successfully opened browser for update");
                             }
                             Err(e) => {
-                                log::error!("Failed to open browser: {}", e);
+                                log::error!("Failed to open browser: {e}");
                             }
                         }
                     } else {
-                        log::error!("Refusing to open non-canonical update URL: {}", url);
+                        log::error!("Refusing to open non-canonical update URL: {url}");
                     }
                     this.dismiss(window, cx);
                 }))

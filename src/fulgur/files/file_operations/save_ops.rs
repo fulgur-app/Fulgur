@@ -37,18 +37,18 @@ impl Fulgur {
             TabLocation::Local(path) => {
                 log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
                 if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
-                    log::error!("Failed to save file {:?}: {}", path, e);
+                    log::error!("Failed to save file {path:?}: {e}");
                     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
                     window.push_notification(
                         (
                             NotificationType::Error,
-                            SharedString::from(format!("Failed to save '{}': {}", file_name, e)),
+                            SharedString::from(format!("Failed to save '{file_name}': {e}")),
                         ),
                         cx,
                     );
                     return;
                 }
-                log::debug!("File saved successfully: {:?}", path);
+                log::debug!("File saved successfully: {path:?}");
                 self.file_watch_state
                     .last_file_saves
                     .insert(path.clone(), std::time::Instant::now());
@@ -99,9 +99,9 @@ impl Fulgur {
                 .ok()?;
             log::debug!("Saving file as: {:?} ({} bytes)", path, contents.len());
             if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
-                log::error!("Failed to save file {:?}: {}", path, e);
+                log::error!("Failed to save file {path:?}: {e}");
                 let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-                let message = SharedString::from(format!("Failed to save '{}': {}", file_name, e));
+                let message = SharedString::from(format!("Failed to save '{file_name}': {e}"));
                 window
                     .update(|_, cx| {
                         _ = view.update(cx, |this, cx| {
@@ -112,7 +112,7 @@ impl Fulgur {
                     .ok()?;
                 return None;
             }
-            log::debug!("File saved successfully as: {:?}", path);
+            log::debug!("File saved successfully as: {path:?}");
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
@@ -164,7 +164,7 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-        let message = SharedString::from(format!("File {} has been updated externally", filename));
+        let message = SharedString::from(format!("File {filename} has been updated externally"));
         window.push_notification((NotificationType::Info, message), cx);
     }
 
@@ -181,7 +181,7 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-        let message = SharedString::from(format!("File '{}' deleted externally", filename));
+        let message = SharedString::from(format!("File '{filename}' deleted externally"));
         window.push_notification((NotificationType::Warning, message), cx);
     }
 
@@ -201,7 +201,7 @@ impl Fulgur {
     ) {
         let old_name = from.file_name().and_then(|n| n.to_str()).unwrap_or("file");
         let new_name = to.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-        let message = SharedString::from(format!("File renamed: {} → {}", old_name, new_name));
+        let message = SharedString::from(format!("File renamed: {old_name} → {new_name}"));
         window.push_notification((NotificationType::Info, message), cx);
     }
 
@@ -256,37 +256,35 @@ impl Fulgur {
 <html>
 <head>
 <meta charset="utf-8">
-<title>{title}</title>
+<title>{escaped_title}</title>
 <style>
   body {{ margin: 0; padding: 1em; font-family: monospace; white-space: pre-wrap; word-wrap: break-word; }}
   @media print {{ body {{ margin: 0; }} }}
 </style>
 </head>
-<body>{content}</body>
+<body>{escaped_content}</body>
 <script>window.onload = function() {{ window.print(); }};</script>
 </html>"#,
-            title = escaped_title,
-            content = escaped_content,
         );
         let temp_path =
             std::env::temp_dir().join(format!("fulgur_print_{}.html", std::process::id()));
         if let Err(e) = std::fs::write(&temp_path, html.as_bytes()) {
-            log::error!("Failed to write print temp file: {}", e);
+            log::error!("Failed to write print temp file: {e}");
             window.push_notification(
                 (
                     NotificationType::Error,
-                    SharedString::from(format!("Failed to prepare print: {}", e)),
+                    SharedString::from(format!("Failed to prepare print: {e}")),
                 ),
                 cx,
             );
             return;
         }
         if let Err(e) = open::that(&temp_path) {
-            log::error!("Failed to open print file: {}", e);
+            log::error!("Failed to open print file: {e}");
             window.push_notification(
                 (
                     NotificationType::Error,
-                    SharedString::from(format!("Failed to open print dialog: {}", e)),
+                    SharedString::from(format!("Failed to open print dialog: {e}")),
                 ),
                 cx,
             );

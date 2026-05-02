@@ -115,7 +115,7 @@ fn fetch_pending_shares_into(
     ) {
         Ok(shares) => {
             if shares.is_empty() {
-                log::debug!("Fetch ({}): no pending shares", reason);
+                log::debug!("Fetch ({reason}): no pending shares");
                 return;
             }
             let count = shares.len();
@@ -133,10 +133,10 @@ fn fetch_pending_shares_into(
                 share.file_name = sanitize_filename(&share.file_name);
                 queue.push(share);
             }
-            log::info!("Fetch ({}): queued {} pending share(s)", reason, count);
+            log::info!("Fetch ({reason}): queued {count} pending share(s)");
         }
         Err(e) => {
-            log::warn!("Fetch ({}) failed: {}", reason, e);
+            log::warn!("Fetch ({reason}) failed: {e}");
         }
     }
 }
@@ -175,7 +175,7 @@ pub fn connect_sse(
         .server_url
         .clone()
         .ok_or(SynchronizationError::ServerUrlMissing)?;
-    let sse_url = format!("{}/api/sse", server_url);
+    let sse_url = format!("{server_url}/api/sse");
     let settings_clone = synchronization_settings.clone();
     let token_state_clone = Arc::clone(&token_state);
     let http_agent_clone = Arc::clone(&http_agent);
@@ -195,21 +195,21 @@ pub fn connect_sse(
             ) {
                 Ok(t) => t,
                 Err(e) => {
-                    log::error!("Failed to get valid token for SSE: {}", e);
+                    log::error!("Failed to get valid token for SSE: {e}");
                     set_sync_server_connection_status(
                         sync_server_connection_status.clone(),
                         SynchronizationStatus::AuthenticationFailed,
                     );
                     let delay = backoff.record_failure();
-                    log::info!("Retrying SSE connection after {:?}", delay);
+                    log::info!("Retrying SSE connection after {delay:?}");
                     thread::sleep(delay);
                     continue;
                 }
             };
-            log::info!("Connecting to SSE endpoint: {}", sse_url);
+            log::info!("Connecting to SSE endpoint: {sse_url}");
             let response = match http_agent_clone
                 .get(&sse_url)
-                .header("Authorization", &format!("Bearer {}", token))
+                .header("Authorization", &format!("Bearer {token}"))
                 .header("Accept", "text/event-stream")
                 .call()
             {
@@ -230,7 +230,7 @@ pub fn connect_sse(
                     resp
                 }
                 Err(e) => {
-                    log::error!("SSE connection failed: {}", e);
+                    log::error!("SSE connection failed: {e}");
                     set_sync_server_connection_status(
                         sync_server_connection_status.clone(),
                         SynchronizationStatus::Disconnected,
@@ -241,7 +241,7 @@ pub fn connect_sse(
                         break;
                     }
                     let delay = backoff.record_failure();
-                    log::info!("Retrying SSE connection after {:?}", delay);
+                    log::info!("Retrying SSE connection after {delay:?}");
                     thread::sleep(delay);
                     continue;
                 }
@@ -269,8 +269,7 @@ pub fn connect_sse(
                             let fragment = line.trim_start_matches("data:").trim();
                             if current_data.len() + fragment.len() > MAX_SSE_EVENT_DATA_BYTES {
                                 log::warn!(
-                                    "SSE event data exceeds size limit ({} bytes), discarding",
-                                    MAX_SSE_EVENT_DATA_BYTES
+                                    "SSE event data exceeds size limit ({MAX_SSE_EVENT_DATA_BYTES} bytes), discarding"
                                 );
                                 current_data.clear();
                                 current_event_type.clear();
@@ -278,7 +277,7 @@ pub fn connect_sse(
                             }
                             current_data.push_str(fragment);
                         } else if line.is_empty() && !current_data.is_empty() {
-                            log::info!("SSE event type: {}", current_event_type);
+                            log::info!("SSE event type: {current_event_type}");
                             log::debug!("SSE event received ({} bytes)", current_data.len());
                             let event = SseEvent::parse(&current_event_type, &current_data);
                             if let SseEvent::ShareAvailable(ref notification) = event {
@@ -295,7 +294,7 @@ pub fn connect_sse(
                                 );
                             }
                             if let Err(e) = event_tx.send(event) {
-                                log::error!("Failed to send SSE event: {}", e);
+                                log::error!("Failed to send SSE event: {e}");
                                 break;
                             }
                             current_event_type.clear();
@@ -311,7 +310,7 @@ pub fn connect_sse(
                         break;
                     }
                     Err(ReadError::Io(e)) => {
-                        log::error!("SSE stream error: {}", e);
+                        log::error!("SSE stream error: {e}");
                         set_sync_server_connection_status(
                             sync_server_connection_status.clone(),
                             SynchronizationStatus::Disconnected,
@@ -326,7 +325,7 @@ pub fn connect_sse(
                 break;
             }
             let delay = backoff.record_failure();
-            log::warn!("SSE connection closed, reconnecting after {:?}", delay);
+            log::warn!("SSE connection closed, reconnecting after {delay:?}");
             set_sync_server_connection_status(
                 sync_server_connection_status.clone(),
                 SynchronizationStatus::Disconnected,

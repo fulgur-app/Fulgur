@@ -951,7 +951,7 @@ impl Fulgur {
                         self.next_tab_id += 1;
                         self.focus_active_tab(window, cx);
                         if let Err(e) = self.settings.add_file(PathBuf::from(recent_remote_url)) {
-                            log::error!("Failed to add remote file to recent files: {}", e);
+                            log::error!("Failed to add remote file to recent files: {e}");
                         }
                         let update_link = self
                             .shared_state(cx)
@@ -962,10 +962,7 @@ impl Fulgur {
                         let menus = build_menus(&self.settings.get_recent_files(), update_link);
                         self.update_menus(menus, cx);
                         if let Err(e) = self.save_state(cx, window) {
-                            log::error!(
-                                "Failed to save app state after opening remote file: {}",
-                                e
-                            );
+                            log::error!("Failed to save app state after opening remote file: {e}");
                             self.pending_notification = Some((
                                 NotificationType::Warning,
                                 format!("Remote file opened but failed to save state: {e}").into(),

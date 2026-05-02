@@ -47,7 +47,7 @@ impl StateWriter {
         while let Ok(req) = receiver.recv() {
             let result = req.state.save_to_path(&req.path);
             if let Err(ref e) = result {
-                log::error!("State writer failed to save state: {}", e);
+                log::error!("State writer failed to save state: {e}");
             }
             if req.reply.send(result).is_err() {
                 log::warn!("State writer reply channel dropped before result was read");
@@ -138,8 +138,8 @@ mod tests {
         let mut handles = Vec::new();
         for i in 0..16 {
             let writer = Arc::clone(&writer);
-            let path = dir.path().join(format!("state-{}.json", i));
-            let label = format!("thread-{}", i);
+            let path = dir.path().join(format!("state-{i}.json"));
+            let label = format!("thread-{i}");
             handles.push(thread::spawn(move || {
                 writer.save_blocking(sample_state(&label), path)
             }));
@@ -148,9 +148,9 @@ mod tests {
             assert!(h.join().unwrap().is_ok());
         }
         for i in 0..16 {
-            let path = dir.path().join(format!("state-{}.json", i));
+            let path = dir.path().join(format!("state-{i}.json"));
             let reloaded = WindowsState::load_from_path(&path).unwrap();
-            assert_eq!(reloaded.windows[0].tabs[0].title, format!("thread-{}", i));
+            assert_eq!(reloaded.windows[0].tabs[0].title, format!("thread-{i}"));
         }
     }
 
@@ -163,7 +163,7 @@ mod tests {
         for i in 0..32 {
             let writer = Arc::clone(&writer);
             let path = path.clone();
-            let label = format!("contender-{}", i);
+            let label = format!("contender-{i}");
             handles.push(thread::spawn(move || {
                 writer.save_blocking(sample_state(&label), path)
             }));
@@ -171,7 +171,7 @@ mod tests {
         for h in handles {
             assert!(h.join().unwrap().is_ok());
         }
-        // The file must be parseable — no torn write, no interleaved JSON.
+        // The file must be parseable, no torn write, no interleaved JSON.
         let reloaded = WindowsState::load_from_path(&path).unwrap();
         assert_eq!(reloaded.windows.len(), 1);
         assert!(reloaded.windows[0].tabs[0].title.starts_with("contender-"));

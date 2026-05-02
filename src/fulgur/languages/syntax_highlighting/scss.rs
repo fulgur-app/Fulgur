@@ -120,7 +120,7 @@ static SCSS_HIGHLIGHTS_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock:
         .map(|pos| &full[..pos])
         .unwrap_or(full);
 
-    format!("{}\n{}", css_base, SCSS_HIGHLIGHTS_QUERY_SCSS_LAYER)
+    format!("{css_base}\n{SCSS_HIGHLIGHTS_QUERY_SCSS_LAYER}")
 });
 
 #[cfg(test)]

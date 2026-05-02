@@ -238,7 +238,7 @@ impl WindowsState {
     /// - `Err(anyhow::Error)`: If the windows state could not be loaded
     pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
         let json = fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("Failed to read state file: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read state file: {e}"))?;
         match serde_json::from_str::<WindowsState>(&json) {
             Ok(state) => Ok(state),
             Err(primary_err) => {
@@ -249,12 +249,10 @@ impl WindowsState {
                     backup.display()
                 );
                 let bak_json = fs::read_to_string(&backup)
-                    .map_err(|_| anyhow::anyhow!("Failed to parse state: {}", primary_err))?;
+                    .map_err(|_| anyhow::anyhow!("Failed to parse state: {primary_err}"))?;
                 let state = serde_json::from_str::<WindowsState>(&bak_json).map_err(|bak_err| {
                     anyhow::anyhow!(
-                        "State and backup are both corrupted: primary={}, backup={}",
-                        primary_err,
-                        bak_err
+                        "State and backup are both corrupted: primary={primary_err}, backup={bak_err}"
                     )
                 })?;
                 log::warn!("State recovered from backup '{}'", backup.display());
@@ -645,10 +643,7 @@ mod tests {
                 ("Windowed", WindowBounds::Windowed(_))
                 | ("Maximized", WindowBounds::Maximized(_))
                 | ("Fullscreen", WindowBounds::Fullscreen(_)) => {}
-                _ => panic!(
-                    "unexpected WindowBounds variant for state {}",
-                    expected_state
-                ),
+                _ => panic!("unexpected WindowBounds variant for state {expected_state}"),
             }
             assert_gpui_bounds_geometry(
                 &gpui_bounds,

@@ -66,7 +66,7 @@ impl Settings {
     /// - `Err(anyhow::Error)`: If there was an error loading the settings
     pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
         let json = fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("Failed to read settings file: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read settings file: {e}"))?;
         match serde_json::from_str::<Settings>(&json) {
             Ok(mut settings) => {
                 settings.validate();
@@ -80,13 +80,11 @@ impl Settings {
                     backup.display()
                 );
                 let bak_json = fs::read_to_string(&backup)
-                    .map_err(|_| anyhow::anyhow!("Failed to parse settings: {}", primary_err))?;
+                    .map_err(|_| anyhow::anyhow!("Failed to parse settings: {primary_err}"))?;
                 let mut settings =
                     serde_json::from_str::<Settings>(&bak_json).map_err(|bak_err| {
                         anyhow::anyhow!(
-                            "Settings and backup are both corrupted: primary={}, backup={}",
-                            primary_err,
-                            bak_err
+                            "Settings and backup are both corrupted: primary={primary_err}, backup={bak_err}"
                         )
                     })?;
                 settings.validate();

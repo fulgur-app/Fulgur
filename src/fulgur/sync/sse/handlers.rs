@@ -78,8 +78,7 @@ impl Fulgur {
                         log::info!("Previous SSE thread exited");
                     } else {
                         log::warn!(
-                            "Previous SSE thread still running after {:?}, proceeding with new connection",
-                            SSE_THREAD_SHUTDOWN_TIMEOUT
+                            "Previous SSE thread still running after {SSE_THREAD_SHUTDOWN_TIMEOUT:?}, proceeding with new connection"
                         );
                     }
                 }
@@ -104,12 +103,12 @@ impl Fulgur {
                                 *handle_storage.lock() = Some(new_handle);
                             }
                             Err(e) => {
-                                log::error!("Failed to start new SSE connection: {}", e);
+                                log::error!("Failed to start new SSE connection: {e}");
                             }
                         }
                     }
                     Err(e) => {
-                        log::error!("Initial sync failed, not starting SSE: {}", e);
+                        log::error!("Initial sync failed, not starting SSE: {e}");
                     }
                 }
             });
@@ -139,7 +138,7 @@ impl Fulgur {
         self.sse_state.last_sse_event = Some(now);
         match event {
             SseEvent::Heartbeat { timestamp } => {
-                log::debug!("SSE heartbeat received: {}", timestamp);
+                log::debug!("SSE heartbeat received: {timestamp}");
                 let was_disconnected = !self
                     .shared_state(cx)
                     .sync_state
@@ -165,7 +164,7 @@ impl Fulgur {
                 window.push_notification((NotificationType::Info, message), cx);
             }
             SseEvent::Error(err) => {
-                log::error!("SSE error: {}", err);
+                log::error!("SSE error: {err}");
             }
         }
     }

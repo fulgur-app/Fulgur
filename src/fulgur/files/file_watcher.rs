@@ -139,13 +139,13 @@ impl FileWatcher {
                 } else if event.paths.len() == 1 {
                     match rename_mode {
                         RenameMode::From => {
-                            // Linux inotify: first half — store and wait for the To event
+                            // Linux inotify: first half - store and wait for the To event
                             if let Ok(mut pending) = pending_rename_from.lock() {
                                 *pending = Some(event.paths[0].clone());
                             }
                         }
                         RenameMode::To => {
-                            // Linux inotify: second half — pair with the stored From path
+                            // Linux inotify: second half - pair with the stored From path
                             let from = pending_rename_from.lock().ok().and_then(|mut p| p.take());
                             match from {
                                 Some(from) => {
@@ -347,7 +347,7 @@ impl Fulgur {
                 }
             }
             FileWatchEvent::Error(msg) => {
-                log::error!("File watcher error: {}", msg);
+                log::error!("File watcher error: {msg}");
             }
         }
     }
@@ -356,7 +356,7 @@ impl Fulgur {
     pub fn start_file_watcher(&mut self) {
         let (mut watcher, receiver) = FileWatcher::new();
         if let Err(e) = watcher.start() {
-            log::error!("Failed to start file watcher: {}", e);
+            log::error!("Failed to start file watcher: {e}");
             return;
         }
         for tab in &self.tabs {

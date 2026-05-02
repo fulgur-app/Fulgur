@@ -80,7 +80,7 @@ fn url_to_path(url_string: &str) -> Option<PathBuf> {
             }
         }
         Err(e) => {
-            log::error!("Failed to decode URL: {}", e);
+            log::error!("Failed to decode URL: {e}");
             None
         }
     }
@@ -93,7 +93,7 @@ fn main() {
     fulgur::utils::jump_list::set_app_user_model_id();
 
     if let Err(e) = fulgur::utils::logger::init() {
-        eprintln!("Failed to initialize logger: {}", e);
+        eprintln!("Failed to initialize logger: {e}");
     }
     if let Ok(config_dir) = fulgur::utils::paths::config_dir() {
         fulgur::utils::atomic_write::cleanup_orphan_temp_files(&config_dir);
@@ -101,17 +101,17 @@ fn main() {
     let settings_load_result = fulgur::settings::Settings::load();
     let is_first_run = settings_load_result.is_err();
     let mut settings = settings_load_result.unwrap_or_else(|e| {
-        eprintln!("Failed to load settings, using defaults: {}", e);
+        eprintln!("Failed to load settings, using defaults: {e}");
         fulgur::settings::Settings::new()
     });
     let debug_mode = settings.app_settings.debug_mode;
     fulgur::utils::logger::set_debug_mode(debug_mode);
     let current_version = env!("CARGO_PKG_VERSION");
-    log::info!("=== Fulgur v{} Starting ===", current_version);
+    log::info!("=== Fulgur v{current_version} Starting ===");
     log::info!("Platform: {}", std::env::consts::OS);
     log::info!("Architecture: {}", std::env::consts::ARCH);
     let args: Vec<String> = std::env::args().collect();
-    log::info!("Command-line arguments: {:?}", args);
+    log::info!("Command-line arguments: {args:?}");
     if args.len() > 1 {
         log::debug!("File to open from command-line: {}", args[1]);
     }
@@ -153,7 +153,7 @@ fn main() {
         .collect();
 
     // On Windows, if we have file paths AND another Fulgur is already running,
-    // forward the paths to it and exit — that instance will open/focus the files.
+    // forward the paths to it and exit, that instance will open/focus the files.
     #[cfg(target_os = "windows")]
     if !cli_file_paths.is_empty()
         && fulgur::utils::single_instance::try_forward_to_existing_instance(&cli_file_paths)
@@ -329,7 +329,7 @@ async fn create_window(
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    log::warn!("Failed to check for updates: {}", e);
+                    log::warn!("Failed to check for updates: {e}");
                 }
             }
         });

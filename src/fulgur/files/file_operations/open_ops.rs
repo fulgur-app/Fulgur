@@ -73,7 +73,7 @@ impl Fulgur {
             None
         };
         if let Some(path) = path {
-            log::debug!("Reloading tab content from disk: {:?}", path);
+            log::debug!("Reloading tab content from disk: {path:?}");
             match std::fs::read(&path) {
                 Ok(bytes) => {
                     let (encoding, contents) = detect_encoding_and_decode(&bytes);
@@ -86,11 +86,11 @@ impl Fulgur {
                         editor_tab.modified = false;
                         editor_tab.update_file_tooltip_cache(bytes.len());
                         editor_tab.update_language(window, cx, &self.settings.editor_settings);
-                        log::debug!("Tab reloaded successfully from disk: {:?}", path);
+                        log::debug!("Tab reloaded successfully from disk: {path:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to reload file {:?}: {}", path, e);
+                    log::error!("Failed to reload file {path:?}: {e}");
                 }
             }
         }
@@ -111,14 +111,14 @@ impl Fulgur {
         window: &mut AsyncWindowContext,
         path: PathBuf,
     ) -> Option<()> {
-        log::debug!("Attempting to open file: {:?}", path);
+        log::debug!("Attempting to open file: {path:?}");
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => {
                 log::debug!("Successfully read file: {:?} ({} bytes)", path, bytes.len());
                 bytes
             }
             Err(e) => {
-                log::error!("Failed to read file {:?}: {}", path, e);
+                log::error!("Failed to read file {path:?}: {e}");
                 return None;
             }
         };
@@ -147,7 +147,7 @@ impl Fulgur {
                     this.watch_file(&path);
                     this.focus_active_tab(window, cx);
                     if let Err(e) = this.settings.add_file(path.clone()) {
-                        log::error!("Failed to add file to recent files: {}", e);
+                        log::error!("Failed to add file to recent files: {e}");
                     }
                     let shared = this.shared_state(cx);
                     let update_info = shared.update_info.lock().clone();
@@ -162,12 +162,12 @@ impl Fulgur {
                         .file_name()
                         .map(|file_name| file_name.to_string_lossy().to_string());
                     this.set_title(title, cx);
-                    log::debug!("File opened successfully in new tab: {:?}", path);
+                    log::debug!("File opened successfully in new tab: {path:?}");
                     if let Err(e) = this.save_state(cx, window) {
-                        log::error!("Failed to save app state after opening file: {}", e);
+                        log::error!("Failed to save app state after opening file: {e}");
                         this.pending_notification = Some((
                             NotificationType::Warning,
-                            format!("File opened but failed to save state: {}", e).into(),
+                            format!("File opened but failed to save state: {e}").into(),
                         ));
                     }
                     cx.notify();
@@ -199,9 +199,7 @@ impl Fulgur {
                     view.update(cx, |this, cx| {
                         if let Some(tab_index) = this.find_tab_by_path(&path) {
                             log::debug!(
-                                "Tab already exists for {:?} at index {}, focusing and reloading",
-                                path,
-                                tab_index
+                                "Tab already exists for {path:?} at index {tab_index}, focusing and reloading"
                             );
                             if let Some(Tab::Editor(editor_tab)) = this.tabs.get(tab_index) {
                                 if editor_tab.modified {
@@ -244,9 +242,7 @@ impl Fulgur {
     pub fn do_open_file(&mut self, window: &mut Window, cx: &mut Context<Self>, path: PathBuf) {
         if let Some(tab_index) = self.find_tab_by_path(&path) {
             log::debug!(
-                "Tab already exists for {:?} at index {}, focusing and reloading if modified",
-                path,
-                tab_index
+                "Tab already exists for {path:?} at index {tab_index}, focusing and reloading if modified"
             );
             if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
                 if editor_tab.modified {
@@ -269,13 +265,9 @@ impl Fulgur {
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("Unknown file");
-            let message = format!("File '{}' is already open in another window", file_name);
+            let message = format!("File '{file_name}' is already open in another window");
             window.push_notification((NotificationType::Info, SharedString::from(message)), cx);
-            log::debug!(
-                "File {:?} is already open in window {:?}",
-                path,
-                existing_window_id
-            );
+            log::debug!("File {path:?} is already open in window {existing_window_id:?}");
             return;
         }
         cx.spawn_in(window, async move |view, window| {
@@ -334,7 +326,7 @@ impl Fulgur {
         cx: &mut Context<Self>,
         path: PathBuf,
     ) {
-        log::debug!("Handling file open from CLI: {:?}", path);
+        log::debug!("Handling file open from CLI: {path:?}");
         self.do_open_file(window, cx, path);
     }
 
@@ -392,8 +384,7 @@ impl Fulgur {
                 (
                     NotificationType::Info,
                     SharedString::from(format!(
-                        "Ignored {} dropped item(s) that are not files",
-                        skipped_non_files
+                        "Ignored {skipped_non_files} dropped item(s) that are not files"
                     )),
                 ),
                 cx,

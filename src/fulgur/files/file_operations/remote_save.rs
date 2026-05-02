@@ -234,8 +234,7 @@ impl Fulgur {
                 .map_err(|e| e.user_message());
             if host_key_decision_timed_out_for_thread.load(Ordering::Acquire) {
                 outcome = Err(format!(
-                    "{} ({} s)",
-                    SSH_SAVE_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                    "{SSH_SAVE_TIMEOUT_LABEL} ({SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS} s)"
                 ));
             }
             Self::publish_remote_save_outcome(
@@ -292,8 +291,7 @@ impl Fulgur {
                         &save_finished_for_task,
                         &pending_save_for_task,
                         Err(format!(
-                            "{} ({} s)",
-                            SSH_SAVE_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                            "{SSH_SAVE_TIMEOUT_LABEL} ({SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS} s)"
                         )),
                     );
                 }

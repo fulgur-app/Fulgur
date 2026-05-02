@@ -30,16 +30,15 @@ impl Fulgur {
                 false
             } else {
                 if let Err(e) = self.save_state(cx, window) {
-                    log::error!("Failed to save app state on window close: {}", e);
+                    log::error!("Failed to save app state on window close: {e}");
                     if self.save_failed_once {
-                        log::warn!("Save failed again — allowing force-close");
+                        log::warn!("Save failed again - allowing force-close");
                     } else {
                         self.save_failed_once = true;
                         self.pending_notification = Some((
                             NotificationType::Error,
                             format!(
-                                "Failed to save application state: {}. Close again to force-close.",
-                                e
+                                "Failed to save application state: {e}. Close again to force-close."
                             )
                             .into(),
                         ));
@@ -59,16 +58,15 @@ impl Fulgur {
                 window_count - 1
             );
             if let Err(e) = self.save_state(cx, window) {
-                log::error!("Failed to save app state on window close: {}", e);
+                log::error!("Failed to save app state on window close: {e}");
                 if self.save_failed_once {
-                    log::warn!("Save failed again — allowing force-close");
+                    log::warn!("Save failed again, allowing force-close");
                 } else {
                     self.save_failed_once = true;
                     self.pending_notification = Some((
                         NotificationType::Error,
                         format!(
-                            "Failed to save application state: {}. Close again to force-close.",
-                            e
+                            "Failed to save application state: {e}. Close again to force-close."
                         )
                         .into(),
                     ));

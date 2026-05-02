@@ -50,10 +50,10 @@ impl CustomTitleBar {
     /// - `title`: The file or tab title to display; `None` shows only the app name
     /// - `window_name`: The window identifier to append; `None` omits it
     pub fn set_title(&mut self, title: Option<String>, window_name: Option<&str>) {
-        let suffix = window_name.map(|n| format!(" ({})", n)).unwrap_or_default();
+        let suffix = window_name.map(|n| format!(" ({n})")).unwrap_or_default();
         self.title = match title {
-            Some(t) => format!("{} - Fulgur{}", t, suffix),
-            None => format!("{}{}", DEFAULT_TITLE, suffix),
+            Some(t) => format!("{t} - Fulgur{suffix}"),
+            None => format!("{DEFAULT_TITLE}{suffix}"),
         };
     }
 }

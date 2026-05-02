@@ -68,7 +68,7 @@ where
     while start.elapsed() < timeout {
         if let Ok(event) = rx.try_recv() {
             // Debug: collect events seen
-            events_seen.push(format!("{:?}", event));
+            events_seen.push(format!("{event:?}"));
 
             if predicate(&event) {
                 return Some(event);
@@ -77,7 +77,7 @@ where
         thread::sleep(Duration::from_millis(50));
     }
     if !events_seen.is_empty() {
-        eprintln!("Events received but didn't match: {:?}", events_seen);
+        eprintln!("Events received but didn't match: {events_seen:?}");
     }
     None
 }
@@ -224,7 +224,7 @@ fn test_detect_file_rename() {
     }
 
     let event = event.unwrap();
-    eprintln!("Received event for rename: {:?}", event);
+    eprintln!("Received event for rename: {event:?}");
     match event {
         FileWatchEvent::Renamed { from, to } => {
             assert!(
@@ -243,8 +243,7 @@ fn test_detect_file_rename() {
             // Some systems report rename as modify on the old or new path
             assert!(
                 paths_equal(&path, &from_path) || paths_equal(&path, &to_path),
-                "Modified path should be one of the rename paths, got {:?}",
-                path
+                "Modified path should be one of the rename paths, got {path:?}"
             );
         }
         FileWatchEvent::Error(_) => {
@@ -336,5 +335,5 @@ fn test_watcher_drop_cleanup() {
     let event = rx.try_recv();
     // We don't assert on the result - both getting events and not getting events are acceptable
     // The important thing is that we didn't crash
-    eprintln!("Event after drop: {:?}", event);
+    eprintln!("Event after drop: {event:?}");
 }

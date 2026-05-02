@@ -75,11 +75,7 @@ fn make_device_item(
                         .gap_2()
                         .child(get_icon(device_for_icon))
                         .child(div().child(device_name))
-                        .child(
-                            div()
-                                .text_xs()
-                                .child(format!("Expires: {}", device_expires)),
-                        ),
+                        .child(div().text_xs().child(format!("Expires: {device_expires}"))),
                 )
                 .when(!has_public_key, |this| {
                     this.child(
@@ -216,7 +212,7 @@ fn handle_share_file(
             max_file_size_bytes,
         );
         if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
-            // User cancelled — drop the result silently.
+            // User cancelled, drop the result silently.
             return;
         }
         let notification = match result {
@@ -239,10 +235,10 @@ fn handle_share_file(
                 }
             }
             Err(e) => {
-                log::error!("Failed to share file: {}", e);
+                log::error!("Failed to share file: {e}");
                 (
                     NotificationType::Error,
-                    SharedString::from(format!("Failed to share file: {}", e)),
+                    SharedString::from(format!("Failed to share file: {e}")),
                 )
             }
         };
@@ -321,7 +317,7 @@ impl Fulgur {
                             status,
                         );
                         *connecting_since.lock() = None;
-                        *pending_devices.lock() = Some((Err(format!("{}", e)), false));
+                        *pending_devices.lock() = Some((Err(format!("{e}")), false));
                         return;
                     }
                 }
@@ -341,7 +337,7 @@ impl Fulgur {
                     *pending_devices.lock() = Some((Ok(devices), needs_reconnect));
                 }
                 Err(e) => {
-                    *pending_devices.lock() = Some((Err(format!("{}", e)), false));
+                    *pending_devices.lock() = Some((Err(format!("{e}")), false));
                 }
             }
         });
@@ -378,7 +374,7 @@ impl Fulgur {
                 self.show_share_sheet(devices, window, cx);
             }
             Err(e) => {
-                log::error!("Failed to prepare share: {}", e);
+                log::error!("Failed to prepare share: {e}");
                 let status = *self.shared_state(cx).sync_state.connection_status.lock();
                 let dialog_message = match status {
                     SynchronizationStatus::AuthenticationFailed => {

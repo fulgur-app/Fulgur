@@ -156,7 +156,7 @@ impl Fulgur {
     pub fn clear_recent_files(&mut self, cx: &mut Context<Self>) {
         self.settings.recent_files.clear();
         if let Err(e) = self.update_and_propagate_settings(cx) {
-            log::error!("Failed to save settings: {}", e);
+            log::error!("Failed to save settings: {e}");
         }
         let menus = crate::fulgur::ui::menus::build_menus(
             self.settings.recent_files.get_files(),

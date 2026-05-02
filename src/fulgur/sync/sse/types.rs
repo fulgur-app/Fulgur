@@ -85,7 +85,7 @@ impl SseEvent {
                     timestamp: hb.timestamp,
                 },
                 Err(e) => {
-                    log::warn!("Failed to parse heartbeat: {}", e);
+                    log::warn!("Failed to parse heartbeat: {e}");
                     SseEvent::Heartbeat {
                         timestamp: String::new(),
                     }
@@ -94,8 +94,8 @@ impl SseEvent {
             "share_available" => match serde_json::from_str::<ShareNotification>(data) {
                 Ok(notification) => SseEvent::ShareAvailable(notification),
                 Err(e) => {
-                    log::error!("Failed to parse share notification: {}", e);
-                    SseEvent::Error(format!("Invalid share notification: {}", e))
+                    log::error!("Failed to parse share notification: {e}");
+                    SseEvent::Error(format!("Invalid share notification: {e}"))
                 }
             },
             "" => {
@@ -103,8 +103,8 @@ impl SseEvent {
                 SseEvent::Error("Unknown event with no event type".to_string())
             }
             _ => {
-                log::warn!("Unknown SSE event type: {}", event_type);
-                SseEvent::Error(format!("Unknown event type: {}", event_type))
+                log::warn!("Unknown SSE event type: {event_type}");
+                SseEvent::Error(format!("Unknown event type: {event_type}"))
             }
         }
     }

@@ -196,9 +196,7 @@ fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> anyhow::Result
     match entry.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(anyhow::anyhow!(
-            "Failed to remove '{}' from keychain: {}",
-            user,
-            e
+            "Failed to remove '{user}' from keychain: {e}"
         )),
     }
 }
@@ -240,24 +238,19 @@ fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
             // Legacy behavior stored empty strings instead of deleting credentials.
             // TODO: remove this in further version.
             log::warn!(
-                "Keychain entry '{}' is empty; treating as missing and removing stale credential",
-                user
+                "Keychain entry '{user}' is empty; treating as missing and removing stale credential"
             );
             match entry.delete_credential() {
                 Ok(()) | Err(keyring::Error::NoEntry) => Ok(None),
                 Err(e) => Err(anyhow::anyhow!(
-                    "Failed to clean up empty '{}' keychain entry: {}",
-                    user,
-                    e
+                    "Failed to clean up empty '{user}' keychain entry: {e}"
                 )),
             }
         }
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(anyhow::anyhow!(
-            "Failed to load '{}' from keychain: {}",
-            user,
-            e
+            "Failed to load '{user}' from keychain: {e}"
         )),
     }
 }
@@ -334,19 +327,19 @@ pub fn is_valid_public_key(key: &str) -> bool {
 pub fn encrypt_bytes(content_bytes: &[u8], recipient_public_key: &str) -> anyhow::Result<String> {
     let recipient: Recipient = recipient_public_key
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse recipient public key: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse recipient public key: {e}"))?;
     let recipients: Vec<Box<dyn age::Recipient>> = vec![Box::new(recipient)];
     let encryptor = age::Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref()))
-        .map_err(|e| anyhow::anyhow!("Failed to create encryptor: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create encryptor: {e}"))?;
     let mut encrypted = vec![];
     let mut writer = encryptor
         .wrap_output(&mut encrypted)
-        .map_err(|e| anyhow::anyhow!("Failed to create encryption writer: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create encryption writer: {e}"))?;
     std::io::Write::write_all(&mut writer, content_bytes)
-        .map_err(|e| anyhow::anyhow!("Failed to write encrypted data: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to write encrypted data: {e}"))?;
     writer
         .finish()
-        .map_err(|e| anyhow::anyhow!("Failed to finish encryption: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to finish encryption: {e}"))?;
     // Encode to base64 for transmission
     Ok(BASE64.encode(encrypted))
 }
@@ -363,18 +356,18 @@ pub fn encrypt_bytes(content_bytes: &[u8], recipient_public_key: &str) -> anyhow
 pub fn decrypt_bytes(encrypted_b64: &str, private_key_str: &str) -> anyhow::Result<Vec<u8>> {
     let encrypted = BASE64
         .decode(encrypted_b64)
-        .map_err(|e| anyhow::anyhow!("Failed to decode base64: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to decode base64: {e}"))?;
     let identity: Identity = private_key_str
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse private key: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse private key: {e}"))?;
     let decryptor = age::Decryptor::new(&encrypted[..])
-        .map_err(|e| anyhow::anyhow!("Failed to create decryptor: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create decryptor: {e}"))?;
     let mut decrypted = vec![];
     let mut reader = decryptor
         .decrypt(std::iter::once(&identity as &dyn age::Identity))
-        .map_err(|e| anyhow::anyhow!("Failed to decrypt: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to decrypt: {e}"))?;
     std::io::Read::read_to_end(&mut reader, &mut decrypted)
-        .map_err(|e| anyhow::anyhow!("Failed to read decrypted data: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to read decrypted data: {e}"))?;
     Ok(decrypted)
 }
 

@@ -76,7 +76,7 @@ fn test_sse_state_thread_handle_is_arc_shared() {
 }
 
 // ---------------------------------------------------------------------------
-// SynchronizationStatus — is_connected
+// SynchronizationStatus - is_connected
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -115,7 +115,7 @@ fn test_sync_status_not_activated_is_not_connected() {
 }
 
 // ---------------------------------------------------------------------------
-// SynchronizationStatus — from_error
+// SynchronizationStatus - from_error
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -216,7 +216,7 @@ fn test_set_sync_server_connection_status_thread_safe() {
 }
 
 // ---------------------------------------------------------------------------
-// connect_sse — error path (no server URL)
+// connect_sse - error path (no server URL)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -247,7 +247,7 @@ fn test_connect_sse_fails_without_server_url() {
 }
 
 // ---------------------------------------------------------------------------
-// connect_sse — shutdown-flag-first exit
+// connect_sse - shutdown-flag-first exit
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -273,7 +273,7 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
     )
     .expect("connect_sse should succeed with a server URL");
 
-    // The thread should exit in the first iteration — no sleep, no network.
+    // The thread should exit in the first iteration - no sleep, no network.
     // Give it a generous deadline to avoid flakiness on slow CI runners.
     let deadline = Instant::now() + Duration::from_secs(2);
     while !handle.is_finished() && Instant::now() < deadline {
@@ -320,7 +320,7 @@ fn test_connect_sse_returns_ok_handle_with_valid_settings() {
 }
 
 // ---------------------------------------------------------------------------
-// SseEvent — Debug / Clone sanity checks
+// SseEvent - Debug / Clone sanity checks
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -347,6 +347,6 @@ fn test_sse_event_debug_output_non_empty() {
     let event = SseEvent::Heartbeat {
         timestamp: "ts".to_string(),
     };
-    let debug = format!("{:?}", event);
+    let debug = format!("{event:?}");
     assert!(!debug.is_empty());
 }

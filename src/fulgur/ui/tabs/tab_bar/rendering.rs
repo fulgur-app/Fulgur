@@ -115,7 +115,7 @@ impl Fulgur {
                 && let Some(parent) = path.parent()
                 && let Some(parent_name) = parent.file_name().and_then(|n| n.to_str())
             {
-                return (filename.to_string(), Some(format!("../{}", parent_name)));
+                return (filename.to_string(), Some(format!("../{parent_name}")));
             }
 
             return (filename.to_string(), None);
@@ -413,7 +413,7 @@ impl Fulgur {
                     if let Some(ref size) = file_size {
                         details = details.child(
                             div()
-                                .child(format!("Size: {}", size))
+                                .child(format!("Size: {size}"))
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground),
                         );
@@ -421,7 +421,7 @@ impl Fulgur {
                     if let Some(ref last_modified) = last_modified {
                         details = details.child(
                             div()
-                                .child(format!("Last Modified: {}", last_modified))
+                                .child(format!("Last Modified: {last_modified}"))
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground),
                         );
@@ -456,7 +456,7 @@ impl Fulgur {
                 } else {
                     cx.theme().tab_foreground
                 })
-                .child(format!("{}{}", filename, modified_indicator)),
+                .child(format!("{filename}{modified_indicator}")),
         );
         if let Some(folder_path) = folder {
             title_container = title_container.child(
@@ -557,7 +557,7 @@ impl Fulgur {
                 this.submenu("Send to...", window, cx, move |sub, _window, _cx| {
                     let mut sub = sub;
                     for (name, weak_tgt) in &other_windows_clone {
-                        let label = format!("Window {}", name);
+                        let label = format!("Window {name}");
                         let src = source_entity_clone.clone();
                         let tgt = weak_tgt.clone();
                         sub = sub.item(PopupMenuItem::new(label).on_click(move |_, _, cx| {

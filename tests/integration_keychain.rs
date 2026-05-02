@@ -64,7 +64,7 @@ fn load_from_test_keychain(entry_name: &str) -> anyhow::Result<Option<String>> {
     match entry.get_password() {
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(anyhow::anyhow!("Failed to load from keychain: {}", e)),
+        Err(e) => Err(anyhow::anyhow!("Failed to load from keychain: {e}")),
     }
 }
 
@@ -205,19 +205,18 @@ fn test_keychain_persistence_across_multiple_operations() {
     let public_str = public_key.to_string();
     save_to_test_keychain(entry_name, &private_str).expect("Failed to save to keychain");
     for i in 0..10 {
-        let original = format!("Test message number {}", i);
+        let original = format!("Test message number {i}");
         let encrypted = encrypt_bytes(original.as_bytes(), &public_str)
-            .unwrap_or_else(|_| panic!("Encryption {} should succeed", i));
+            .unwrap_or_else(|_| panic!("Encryption {i} should succeed"));
         let loaded_private = load_from_test_keychain(entry_name)
             .expect("Load should succeed")
             .expect("Key should exist");
         let decrypted = decrypt_bytes(&encrypted, &loaded_private)
-            .unwrap_or_else(|_| panic!("Decryption {} should succeed", i));
+            .unwrap_or_else(|_| panic!("Decryption {i} should succeed"));
         assert_eq!(
             String::from_utf8(decrypted).unwrap(),
             original,
-            "Iteration {} should succeed",
-            i
+            "Iteration {i} should succeed"
         );
     }
     cleanup_keychain_entry(entry_name);

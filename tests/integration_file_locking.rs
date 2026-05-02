@@ -65,9 +65,9 @@ fn test_state_concurrent_writes_no_corruption() {
                 let mut state = WindowsState { windows: vec![] };
                 let window = WindowState {
                     tabs: vec![TabState {
-                        title: format!("Thread {}", i),
+                        title: format!("Thread {i}"),
                         file_path: None,
-                        content: Some(format!("Content from thread {}", i)),
+                        content: Some(format!("Content from thread {i}")),
                         last_saved: None,
                         remote: None,
                     }],
@@ -180,11 +180,8 @@ fn test_state_concurrent_writes_large_data() {
                     let mut tabs = vec![];
                     for t in 0..5 {
                         tabs.push(TabState {
-                            title: format!("Thread {} Window {} Tab {}", i, w, t),
-                            file_path: Some(temp_test_path(&format!(
-                                "thread_{}_file_{}.txt",
-                                i, t
-                            ))),
+                            title: format!("Thread {i} Window {w} Tab {t}"),
+                            file_path: Some(temp_test_path(&format!("thread_{i}_file_{t}.txt"))),
                             content: Some("x".repeat(1000)), // 1KB of content per tab
                             last_saved: Some("2026-02-13T10:00:00Z".to_string()),
                             remote: None,

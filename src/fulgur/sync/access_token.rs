@@ -108,25 +108,25 @@ fn request_access_token(
     }) else {
         return Err(SynchronizationError::DeviceKeyMissing);
     };
-    let token_url = format!("{}/api/token", server_url);
+    let token_url = format!("{server_url}/api/token");
     log::debug!("Requesting JWT access token from server");
     let mut response = http_agent
         .post(&token_url)
-        .header("Authorization", &format!("Bearer {}", device_api_key))
+        .header("Authorization", &format!("Bearer {device_api_key}"))
         .header("X-User-Email", email)
         .send("")
         .map_err(|e| handle_ureq_error(e, "Failed to obtain access token"))?;
     let body = match response.body_mut().read_to_string() {
         Ok(body) => body,
         Err(e) => {
-            log::error!("Failed to read access token response body: {}", e);
+            log::error!("Failed to read access token response body: {e}");
             return Err(SynchronizationError::Other(e.to_string()));
         }
     };
     let token_response: AccessTokenResponse = match serde_json::from_str(&body) {
         Ok(response) => response,
         Err(e) => {
-            log::error!("Failed to parse access token response: {}", e);
+            log::error!("Failed to parse access token response: {e}");
             return Err(SynchronizationError::Other(e.to_string()));
         }
     };
@@ -234,7 +234,7 @@ pub fn get_valid_token(
     ) {
         Ok(t) => t,
         Err(e) => {
-            log::error!("Failed to parse token expiration time: {}", e);
+            log::error!("Failed to parse token expiration time: {e}");
             let mut state = token_manager.state.lock();
             state.is_refreshing_token = false;
             token_manager.refresh_notify.notify_all();

@@ -126,7 +126,7 @@ fn oklch_to_hsla(l: f32, c: f32, h: f32) -> Hsla {
 /// `String`: The OkLCH CSS string (e.g. "oklch(0.63 0.26 29.2)")
 fn format_oklch(color: Hsla) -> String {
     let (l, c, h) = hsla_to_oklch(color);
-    format!("oklch({:.2} {:.4} {:.1})", l, c, h)
+    format!("oklch({l:.2} {c:.4} {h:.1})")
 }
 
 /// Format an HSLA color as an HSLA CSS string.
@@ -569,7 +569,7 @@ impl Fulgur {
                     .px_0(),
             )
             .child(
-                InsertButton::new(SharedString::from(format!("color-insert-{}", label))).on_click(
+                InsertButton::new(SharedString::from(format!("color-insert-{label}"))).on_click(
                     cx.listener({
                         let value = value.to_string();
                         move |this, _, window, cx| {
@@ -579,7 +579,7 @@ impl Fulgur {
                 ),
             )
             .child(
-                CopyButton::new(SharedString::from(format!("color-copy-{}", label)))
+                CopyButton::new(SharedString::from(format!("color-copy-{label}")))
                     .value(SharedString::from(value.to_string())),
             )
     }

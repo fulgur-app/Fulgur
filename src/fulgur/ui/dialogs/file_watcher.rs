@@ -46,8 +46,7 @@ impl Fulgur {
                     v_flex()
                         .gap_2()
                         .child(format!(
-                            "The file \"{}\" has been modified externally.",
-                            filename
+                            "The file \"{filename}\" has been modified externally."
                         ))
                         .child("You have unsaved changes in this file. Do you want to load the changes from the file?"),
                 )

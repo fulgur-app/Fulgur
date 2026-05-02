@@ -31,7 +31,7 @@ fn encrypt_content_for_device(
     device_public_key: &str,
 ) -> Result<String, SynchronizationError> {
     crypto_helper::encrypt_bytes(compressed_content, device_public_key).map_err(|e| {
-        log::error!("Failed to encrypt content: {}", e);
+        log::error!("Failed to encrypt content: {e}");
         SynchronizationError::EncryptionFailed
     })
 }
@@ -67,28 +67,24 @@ fn send_share_request(
     };
     let mut response = http_agent
         .post(share_url)
-        .header("Authorization", &format!("Bearer {}", token))
+        .header("Authorization", &format!("Bearer {token}"))
         .header("Content-Type", "application/json")
         .send_json(encrypted_payload)
         .map_err(|e| {
-            handle_ureq_error(e, &format!("Failed to share file to device {}", device_id))
+            handle_ureq_error(e, &format!("Failed to share file to device {device_id}"))
         })?;
     let body = response.body_mut().read_to_string().map_err(|e| {
-        log::error!("Failed to read response body: {}", e);
+        log::error!("Failed to read response body: {e}");
         SynchronizationError::InvalidResponse(e.to_string())
     })?;
     let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
-        log::error!("Failed to parse response body: {}", e);
+        log::error!("Failed to parse response body: {e}");
         SynchronizationError::InvalidResponse(e.to_string())
     })?;
     let expiration_date = json["expiration_date"]
         .as_str()
         .ok_or(SynchronizationError::MissingExpirationDate)?;
-    log::info!(
-        "File shared successfully to device {} until {}",
-        device_id,
-        expiration_date
-    );
+    log::info!("File shared successfully to device {device_id} until {expiration_date}");
     Ok(expiration_date.to_string())
 }
 
@@ -136,9 +132,10 @@ pub fn share_file(
         return Err(SynchronizationError::DeviceIdsMissing);
     }
     for device_id in &request.device_ids {
-        let device = devices.iter().find(|d| d.id == *device_id).ok_or_else(|| {
-            SynchronizationError::Other(format!("Device {} not found", device_id))
-        })?;
+        let device = devices
+            .iter()
+            .find(|d| d.id == *device_id)
+            .ok_or_else(|| SynchronizationError::Other(format!("Device {device_id} not found")))?;
         match &device.public_key {
             None => return Err(SynchronizationError::MissingPublicKey(device.name.clone())),
             Some(key) if !is_valid_public_key(key) => {
@@ -152,11 +149,11 @@ pub fn share_file(
         Arc::clone(&token_state),
         http_agent,
     )?;
-    let share_url = format!("{}/api/share", server_url);
+    let share_url = format!("{server_url}/api/share");
     let deduplication_hash = if synchronization_settings.is_deduplication {
         request.file_path.as_ref().map(|path| {
             let hash = Sha256::digest(path.to_string_lossy().as_bytes());
-            format!("{:x}", hash)
+            format!("{hash:x}")
         })
     } else {
         None
@@ -164,7 +161,7 @@ pub fn share_file(
     let compressed_content = match compress_content(&request.content) {
         Ok(c) => c,
         Err(e) => {
-            log::error!("Failed to compress content: {}", e);
+            log::error!("Failed to compress content: {e}");
             return Err(SynchronizationError::CompressionFailed);
         }
     };
@@ -185,12 +182,11 @@ pub fn share_file(
                         let device = match devices.iter().find(|d| d.id == device_id) {
                             Some(d) => d,
                             None => {
-                                log::warn!("Device {} not found, skipping", device_id);
+                                log::warn!("Device {device_id} not found, skipping");
                                 return (
                                     device_id.clone(),
                                     Err(SynchronizationError::Other(format!(
-                                        "Device {} not found",
-                                        device_id
+                                        "Device {device_id} not found"
                                     ))),
                                 );
                             }
@@ -198,7 +194,7 @@ pub fn share_file(
                         let public_key = match &device.public_key {
                             Some(key) => key,
                             None => {
-                                log::warn!("Device {} has no public key, skipping", device_id);
+                                log::warn!("Device {device_id} has no public key, skipping");
                                 return (
                                     device_id.clone(),
                                     Err(SynchronizationError::MissingPublicKey(
@@ -212,9 +208,7 @@ pub fn share_file(
                                 Ok(content) => content,
                                 Err(e) => {
                                     log::error!(
-                                        "Failed to encrypt content for device {}: {}",
-                                        device_id,
-                                        e
+                                        "Failed to encrypt content for device {device_id}: {e}"
                                     );
                                     return (device_id.clone(), Err(e));
                                 }
@@ -231,7 +225,7 @@ pub fn share_file(
                         match &result {
                             Ok(_) => {}
                             Err(e) => {
-                                log::error!("Failed to share file to device {}: {}", device_id, e);
+                                log::error!("Failed to share file to device {device_id}: {e}");
                             }
                         }
                         (device_id.clone(), result)
@@ -242,7 +236,7 @@ pub fn share_file(
                 .into_iter()
                 .map(|h| {
                     h.join().unwrap_or_else(|e| {
-                        log::error!("Share thread panicked: {:?}", e);
+                        log::error!("Share thread panicked: {e:?}");
                         (
                             String::new(),
                             Err(SynchronizationError::Other("Internal issue".to_string())),
@@ -308,7 +302,7 @@ mod tests {
     fn make_device(id: &str, device_type: &str, public_key: Option<&str>) -> Device {
         Device {
             id: id.to_string(),
-            name: format!("{}-name", id),
+            name: format!("{id}-name"),
             device_type: device_type.to_string(),
             public_key: public_key.map(str::to_string),
             created_at: "2024-01-01T00:00:00Z".to_string(),
@@ -505,8 +499,7 @@ mod tests {
         .expect_err("share_file should fail for unknown device ID");
         assert!(
             matches!(err, SynchronizationError::Other(_)),
-            "Unknown device should produce Other error, got: {:?}",
-            err
+            "Unknown device should produce Other error, got: {err:?}"
         );
     }
 
@@ -527,8 +520,7 @@ mod tests {
         .expect_err("share_file should fail when device has no public key");
         assert!(
             matches!(err, SynchronizationError::MissingPublicKey(_)),
-            "Device without public key should produce MissingPublicKey, got: {:?}",
-            err
+            "Device without public key should produce MissingPublicKey, got: {err:?}"
         );
     }
 
@@ -553,8 +545,7 @@ mod tests {
         .expect_err("share_file should fail for a device with an invalid public key");
         assert!(
             matches!(err, SynchronizationError::InvalidPublicKey(_)),
-            "Invalid public key should produce InvalidPublicKey, got: {:?}",
-            err
+            "Invalid public key should produce InvalidPublicKey, got: {err:?}"
         );
     }
 
@@ -617,8 +608,7 @@ mod tests {
         .expect_err("share_file should fail on the first invalid device");
         assert!(
             matches!(err, SynchronizationError::Other(_)),
-            "First unknown device should produce Other error, got: {:?}",
-            err
+            "First unknown device should produce Other error, got: {err:?}"
         );
     }
 }
