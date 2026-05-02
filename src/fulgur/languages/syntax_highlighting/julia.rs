@@ -15,7 +15,7 @@ pub fn add_julia_support() {
     );
 }
 
-/// Highlights query for Julia, remapped from the arborium_julia nvim-treesitter naming
+/// Highlights query for Julia, remapped from the `arborium_julia` nvim-treesitter naming
 /// conventions to the gpui-component recognized names
 const JULIA_HIGHLIGHTS_QUERY: &str = r#"
 (identifier) @variable

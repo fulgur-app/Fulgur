@@ -12,7 +12,7 @@ mod tests;
 
 /// Window manager tracks all open Fulgur windows and provides cross-window operations
 pub struct WindowManager {
-    /// All open windows mapped by their window_id
+    /// All open windows mapped by their `window_id`
     windows: HashMap<WindowId, WeakEntity<Fulgur>>,
     /// The last focused window for file opening
     last_focused: Option<WindowId>,

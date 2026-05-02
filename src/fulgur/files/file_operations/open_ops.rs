@@ -99,7 +99,7 @@ impl Fulgur {
     /// Internal helper function to open a file from a path. This function handles reading the file, detecting encoding, and creating the editor tab
     ///
     /// ### Arguments
-    /// - `view`: The view entity (WeakEntity)
+    /// - `view`: The view entity (`WeakEntity`)
     /// - `window`: The async window context
     /// - `path`: The path to the file to open
     ///

@@ -23,13 +23,13 @@ pub struct CopyButton {
 }
 
 impl CopyButton {
-    /// Create a new CopyButton with the given element ID.
+    /// Create a new `CopyButton` with the given element ID.
     ///
     /// ### Arguments
     /// - `id`: A unique element ID for this button
     ///
     /// ### Returns
-    /// - `Self`: A new CopyButton with an empty clipboard value
+    /// - `Self`: A new `CopyButton` with an empty clipboard value
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
@@ -58,7 +58,7 @@ struct CopyButtonState {
 impl RenderOnce for CopyButton {
     /// Render the copy button as a styled ghost bar button.
     ///
-    /// Shows a Copy icon normally and a CircleCheck icon for 2 seconds after
+    /// Shows a Copy icon normally and a `CircleCheck` icon for 2 seconds after
     /// the value has been written to the clipboard.
     ///
     /// ### Arguments

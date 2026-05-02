@@ -62,10 +62,10 @@ impl Default for TokenStateManager {
     }
 }
 
-/// Create a new empty TokenState
+/// Create a new empty `TokenState`
 ///
 /// ### Returns
-/// - `TokenState`: A new TokenState with all fields initialized to default/empty values
+/// - `TokenState`: A new `TokenState` with all fields initialized to default/empty values
 impl Default for TokenState {
     fn default() -> Self {
         Self::new()
@@ -73,7 +73,7 @@ impl Default for TokenState {
 }
 
 impl TokenState {
-    /// Create a new empty TokenState
+    /// Create a new empty `TokenState`
     pub fn new() -> Self {
         Self {
             access_token: None,

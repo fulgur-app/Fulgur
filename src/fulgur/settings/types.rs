@@ -104,7 +104,7 @@ pub struct AppSettings {
     pub synchronization_settings: SynchronizationSettings,
 }
 
-/// Default value for debug_mode setting
+/// Default value for `debug_mode` setting
 ///
 /// ### Returns
 /// - `false`: disable debug mode by default
@@ -112,7 +112,7 @@ fn default_debug_mode() -> bool {
     false
 }
 
-/// Default value for watch_files setting
+/// Default value for `watch_files` setting
 ///
 /// ### Returns
 /// - `true`: enable file watcher by default
@@ -120,7 +120,7 @@ fn default_watch_files() -> bool {
     true
 }
 
-/// Default value for use_spaces setting
+/// Default value for `use_spaces` setting
 ///
 /// ### Returns
 /// - `true`: use spaces instead of hard tabs by default
@@ -128,12 +128,12 @@ fn default_use_spaces() -> bool {
     true
 }
 
-/// Default value for font_family setting
+/// Default value for `font_family` setting
 fn default_font_family() -> String {
     "Monaco".to_string()
 }
 
-/// Default value for highlight_colors setting
+/// Default value for `highlight_colors` setting
 ///
 /// ### Returns
 /// - `true`: enable hex color highlighting by default
@@ -141,7 +141,7 @@ fn default_highlight_colors() -> bool {
     true
 }
 
-/// Default value for is_deduplication setting
+/// Default value for `is_deduplication` setting
 ///
 /// ### Returns
 /// - `true`: enable deduplication by default

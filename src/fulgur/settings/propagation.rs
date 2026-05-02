@@ -7,9 +7,9 @@ impl Fulgur {
     ///
     /// This method should be called whenever settings are changed. It will:
     /// 1. Save settings to disk
-    /// 2. Update shared settings in SharedAppState
+    /// 2. Update shared settings in `SharedAppState`
     /// 3. Increment the shared settings version (so other windows detect the change)
-    /// 4. Set settings_changed flag for this window
+    /// 4. Set `settings_changed` flag for this window
     /// 5. Force all windows to re-render immediately
     ///
     /// ### Arguments

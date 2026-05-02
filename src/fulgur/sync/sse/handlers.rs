@@ -171,7 +171,7 @@ impl Fulgur {
 
     /// Collect and process Server-Sent Events from the sync server:
     /// - Heartbeat: Periodic keepalive messages to detect connection timeouts
-    /// - ShareAvailable: Another device has shared a file (triggers file download and decryption)
+    /// - `ShareAvailable`: Another device has shared a file (triggers file download and decryption)
     /// - Error: Connection or server errors (updates connection status in UI)
     ///
     /// ### Arguments

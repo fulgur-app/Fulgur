@@ -439,13 +439,13 @@ impl Fulgur {
         None
     }
 
-    /// Build WindowState for this window without window bounds (for cross-window saves)
+    /// Build `WindowState` for this window without window bounds (for cross-window saves)
     ///
     /// ### Arguments
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `WindowState`: The WindowState for this window (with cached bounds)
+    /// - `WindowState`: The `WindowState` for this window (with cached bounds)
     pub fn build_window_state_without_bounds(&self, cx: &App) -> WindowState {
         let window_bounds = self.cached_window_bounds.clone().unwrap_or_default();
         WindowState {
@@ -455,14 +455,14 @@ impl Fulgur {
         }
     }
 
-    /// Build WindowState for this window (with window bounds)
+    /// Build `WindowState` for this window (with window bounds)
     ///
     /// ### Arguments
     /// - `cx`: The application context
     /// - `window`: The window (needed for bounds)
     ///
     /// ### Returns
-    /// - `WindowState`: The WindowState for this window
+    /// - `WindowState`: The `WindowState` for this window
     pub fn build_window_state(&self, cx: &App, window: &Window) -> WindowState {
         let display_id = window.display(cx).map(|d| d.id().into());
         let window_bounds =

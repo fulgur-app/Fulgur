@@ -73,7 +73,7 @@ pub struct SearchState {
 }
 
 impl SearchState {
-    /// Create a new SearchState
+    /// Create a new `SearchState`
     ///
     /// ### Arguments
     /// - `search_input`: The search input entity
@@ -81,7 +81,7 @@ impl SearchState {
     /// - `search_subscription`: The subscription to search input changes
     ///
     /// ### Returns
-    /// `Self`: A new SearchState instance with default values
+    /// `Self`: A new `SearchState` instance with default values
     pub fn new(
         search_input: Entity<InputState>,
         replace_input: Entity<InputState>,
@@ -203,7 +203,7 @@ impl Fulgur {
     /// - `window`: The window to create the Fulgur instance in
     /// - `cx`: The application context
     /// - `window_id`: The window ID for this instance, obtained from `window.window_handle().window_id()`
-    /// - `window_index`: Index of this window in saved state (0 = first window, etc.). Use usize::MAX for new empty windows.
+    /// - `window_index`: Index of this window in saved state (0 = first window, etc.). Use `usize::MAX` for new empty windows.
     ///
     /// ### Returns
     /// - `Entity<Self>`: The new Fulgur instance
@@ -577,7 +577,7 @@ impl Fulgur {
 
     /// Process a deferred scroll-to-tab request
     ///
-    /// GPUI's ScrollHandle needs one render cycle to populate child bounds and overflow
+    /// GPUI's `ScrollHandle` needs one render cycle to populate child bounds and overflow
     /// state before `scroll_to_item` can work. On the first frame, layout hasn't happened
     /// yet so the scroll is silently dropped. This method waits until child bounds are
     /// available (meaning layout has completed at least once), then issues the scroll.
@@ -668,7 +668,7 @@ impl Fulgur {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `AnyElement`: The rendered content area element (wrapped in AnyElement)
+    /// - `AnyElement`: The rendered content area element (wrapped in `AnyElement`)
     fn render_content_area(
         &mut self,
         active_tab_index: Option<usize>,

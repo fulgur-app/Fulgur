@@ -15,7 +15,7 @@ pub fn add_jinja2_support() {
     );
 }
 
-/// Highlights query for Jinja2, remapped from the arborium_jinja2 nvim-treesitter naming
+/// Highlights query for Jinja2, remapped from the `arborium_jinja2` nvim-treesitter naming
 /// conventions to the gpui-component recognized names.
 ///
 /// Key points:

@@ -390,7 +390,7 @@ pub fn build_dock_menu(windows: &[Vec<DockMenuTab>], recent_files: &[PathBuf]) -
 }
 
 impl Fulgur {
-    /// Set the application menus and sync them to the AppMenuBar on non-macOS platforms.
+    /// Set the application menus and sync them to the `AppMenuBar` on non-macOS platforms.
     ///
     /// ### Arguments
     /// - `menus`: The menus to set

@@ -1,6 +1,6 @@
 //! Integration tests for State Persistence (save/load roundtrip)
 //!
-//! These tests verify that WindowsState and its nested structures can be
+//! These tests verify that `WindowsState` and its nested structures can be
 //! serialized to JSON, saved to disk, and deserialized back with full fidelity.
 //! They run in CI/CD environments using temporary directories for isolation.
 //!
@@ -29,7 +29,7 @@ fn temp_state_path(temp_dir: &TempDir) -> PathBuf {
     temp_dir.path().join("state.json")
 }
 
-/// Create a TabState for a file-backed tab (unmodified)
+/// Create a `TabState` for a file-backed tab (unmodified)
 ///
 /// ### Returns
 /// - `TabState`: A tab state with a file path and no modified content
@@ -48,7 +48,7 @@ fn create_file_tab_unmodified() -> TabState {
     }
 }
 
-/// Create a TabState for a file-backed tab (modified)
+/// Create a `TabState` for a file-backed tab (modified)
 ///
 /// ### Returns
 /// - `TabState`: A tab state with a file path and modified content
@@ -67,7 +67,7 @@ fn create_file_tab_modified() -> TabState {
     }
 }
 
-/// Create a TabState for an unsaved tab
+/// Create a `TabState` for an unsaved tab
 ///
 /// ### Returns
 /// - `TabState`: A tab state with no file path (unsaved)
@@ -81,7 +81,7 @@ fn create_unsaved_tab() -> TabState {
     }
 }
 
-/// Assert two TabState instances are equal
+/// Assert two `TabState` instances are equal
 ///
 /// ### Arguments
 /// - `original`: The original tab state
@@ -103,7 +103,7 @@ fn assert_tab_state_equal(original: &TabState, loaded: &TabState, context: &str)
     );
 }
 
-/// Assert two WindowState instances are equal
+/// Assert two `WindowState` instances are equal
 ///
 /// ### Arguments
 /// - `original`: The original window state

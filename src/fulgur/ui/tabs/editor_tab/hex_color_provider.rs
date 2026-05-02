@@ -69,7 +69,7 @@ impl DocumentColorProvider for ColorHighlightProvider {
 
 #[cfg(test)]
 mod tests {
-    /// Helper: run color_lsp::parse with our post-filter and return matched strings
+    /// Helper: run `color_lsp::parse` with our post-filter and return matched strings
     fn extract_colors(text: &str) -> Vec<String> {
         let lines: Vec<&str> = text.lines().collect();
         color_lsp::parse(text)

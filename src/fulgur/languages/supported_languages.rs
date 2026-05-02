@@ -70,13 +70,13 @@ pub enum SupportedLanguage {
     Zig,
 }
 
-/// Convert a Language to a SupportedLanguage
+/// Convert a Language to a `SupportedLanguage`
 ///
 /// ### Arguments
 /// - `language`: The Language enum
 ///
 /// ### Returns
-/// - `SupportedLanguage`: The corresponding SupportedLanguage
+/// - `SupportedLanguage`: The corresponding `SupportedLanguage`
 pub fn from_language(language: Language) -> SupportedLanguage {
     match language {
         Language::Astro => SupportedLanguage::Astro,
@@ -198,10 +198,10 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
     }
 }
 
-/// Get the pretty name (human-readable) of a SupportedLanguage
+/// Get the pretty name (human-readable) of a `SupportedLanguage`
 ///
 /// ### Arguments
-/// - `language`: The SupportedLanguage enum
+/// - `language`: The `SupportedLanguage` enum
 ///
 /// ### Returns
 /// - `String`: The human-readable name of the language
@@ -274,7 +274,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
     }
 }
 
-/// Get the language registry name for a SupportedLanguage.
+/// Get the language registry name for a `SupportedLanguage`.
 /// For languages built into gpui-component, this delegates to `to_language().name()`.
 /// For custom-registered languages (e.g. Perl), this returns the registered name directly.
 ///
@@ -282,7 +282,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
 /// - `supported_language`: The supported language to convert
 ///
 /// ### Returns
-/// - `&'static str`: The language name as registered in the LanguageRegistry
+/// - `&'static str`: The language name as registered in the `LanguageRegistry`
 pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'static str {
     match supported_language {
         SupportedLanguage::Ada => "ada",

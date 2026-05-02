@@ -161,7 +161,7 @@ impl Fulgur {
     /// Applies the selected theme, updates settings, refreshes windows, and rebuilds menus.
     ///
     /// ### Arguments
-    /// - `theme_name`: The name of the theme to switch to (as SharedString from action)
+    /// - `theme_name`: The name of the theme to switch to (as `SharedString` from action)
     /// - `cx`: The application context
     pub fn switch_to_theme(&mut self, theme_name: gpui::SharedString, cx: &mut Context<Self>) {
         if let Some(theme_config) = ThemeRegistry::global(cx)

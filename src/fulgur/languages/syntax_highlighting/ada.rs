@@ -15,7 +15,7 @@ pub fn add_ada_support() {
     );
 }
 
-/// Highlights query for Ada, remapped from the arborium_ada nvim-treesitter naming conventions
+/// Highlights query for Ada, remapped from the `arborium_ada` nvim-treesitter naming conventions
 /// (`@include`, `@repeat`, `@conditional`, `@exception`, `@storageclass`) to the gpui-component
 /// recognized names (`keyword`, `type`, `operator`, etc.).
 const ADA_HIGHLIGHTS_QUERY: &str = r#"

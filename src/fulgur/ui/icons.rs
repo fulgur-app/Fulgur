@@ -122,7 +122,7 @@ impl CustomIcon {
         .into()
     }
 
-    /// Create an Icon from this CustomIcon
+    /// Create an Icon from this `CustomIcon`
     ///
     /// ### Returns
     /// - `Icon`: The Icon
@@ -143,10 +143,10 @@ impl CustomIcon {
 }
 
 impl From<CustomIcon> for Icon {
-    /// Convert a CustomIcon to an Icon
+    /// Convert a `CustomIcon` to an Icon
     ///
     /// ### Arguments
-    /// - `val`: The CustomIcon to convert
+    /// - `val`: The `CustomIcon` to convert
     ///
     /// ### Returns
     /// - `Self`: The Icon
@@ -156,10 +156,10 @@ impl From<CustomIcon> for Icon {
 }
 
 impl From<CustomIcon> for AnyElement {
-    /// Convert a CustomIcon to an AnyElement
+    /// Convert a `CustomIcon` to an `AnyElement`
     ///
     /// ### Arguments
-    /// - `val`: The CustomIcon to convert
+    /// - `val`: The `CustomIcon` to convert
     ///
     /// ### Returns
     /// - `Self`: The Icon as anAnyElement

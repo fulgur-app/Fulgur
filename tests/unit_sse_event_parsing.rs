@@ -7,7 +7,7 @@ use fulgur::fulgur::sync::sse::SseEvent;
 
 // Helper functions
 
-/// Check if an SseEvent is a Heartbeat with the expected timestamp
+/// Check if an `SseEvent` is a Heartbeat with the expected timestamp
 fn assert_heartbeat(event: &SseEvent, expected_timestamp: &str) {
     match event {
         SseEvent::Heartbeat { timestamp } => {
@@ -20,7 +20,7 @@ fn assert_heartbeat(event: &SseEvent, expected_timestamp: &str) {
     }
 }
 
-/// Check if an SseEvent is a ShareAvailable with the expected share_id
+/// Check if an `SseEvent` is a `ShareAvailable` with the expected `share_id`
 fn assert_share_available(event: &SseEvent, expected_share_id: &str) {
     match event {
         SseEvent::ShareAvailable(notification) => {
@@ -33,7 +33,7 @@ fn assert_share_available(event: &SseEvent, expected_share_id: &str) {
     }
 }
 
-/// Check if an SseEvent is an Error
+/// Check if an `SseEvent` is an Error
 fn assert_error(event: &SseEvent) {
     match event {
         SseEvent::Error(_) => {} // Success

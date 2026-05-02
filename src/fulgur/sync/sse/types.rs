@@ -21,20 +21,20 @@ pub struct SseState {
 }
 
 impl Default for SseState {
-    /// Create a new SseState with all fields initialized to default/empty values
+    /// Create a new `SseState` with all fields initialized to default/empty values
     ///
     /// ### Returns
-    /// `Self`: A new SseState
+    /// `Self`: A new `SseState`
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl SseState {
-    /// Create a new SseState with all fields initialized to None
+    /// Create a new `SseState` with all fields initialized to None
     ///
     /// ### Returns
-    /// `Self`: a new SseState
+    /// `Self`: a new `SseState`
     pub fn new() -> Self {
         Self {
             sse_events: None,
@@ -73,7 +73,7 @@ impl SseEvent {
     /// Parse an SSE event from the event type and data
     ///
     /// ### Arguments
-    /// - `event_type`: The SSE event type (e.g., "heartbeat", "share_available")
+    /// - `event_type`: The SSE event type (e.g., "heartbeat", "`share_available`")
     /// - `data`: The JSON data for the event
     ///
     /// ### Returns

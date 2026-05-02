@@ -59,13 +59,13 @@ impl AssetSource for Assets {
     }
 }
 
-/// Convert a file:// URL string to a PathBuf
+/// Convert a file:// URL string to a `PathBuf`
 ///
 /// ### Arguments
-/// - `url_string`: The URL string to convert (e.g., "file:///Users/user/file.txt")
+/// - `url_string`: The URL string to convert (e.g., "<file:///Users/user/file.txt>")
 ///
 /// ### Returns
-/// - `Some(PathBuf)`: The PathBuf if successful
+/// - `Some(PathBuf)`: The `PathBuf` if successful
 /// - `None`: If the URL could not be converted to a path
 fn url_to_path(url_string: &str) -> Option<PathBuf> {
     let path_str = url_string.strip_prefix("file://").unwrap_or(url_string);

@@ -20,20 +20,20 @@ pub struct FileWatchState {
 }
 
 impl Default for FileWatchState {
-    /// Create a new FileWatchState with all fields initialized to default/empty values
+    /// Create a new `FileWatchState` with all fields initialized to default/empty values
     ///
     /// ### Returns
-    /// `Self`: A new FileWatchState
+    /// `Self`: A new `FileWatchState`
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl FileWatchState {
-    /// Create a new FileWatchState with all fields initialized to default/empty values
+    /// Create a new `FileWatchState` with all fields initialized to default/empty values
     ///
     /// ### Returns
-    /// `Self: a new FileWatchState
+    /// `Self`: A new `FileWatchState`
     pub fn new() -> Self {
         Self {
             file_watcher: None,
@@ -104,7 +104,7 @@ impl FileWatcher {
         Ok(())
     }
 
-    /// Handles a notify event and converts it to a FileWatchEvent
+    /// Handles a notify event and converts it to a `FileWatchEvent`
     ///
     /// ### Description
     /// - If the event is a modification, it sends a Modified event to the event sender
@@ -250,7 +250,7 @@ impl FileWatcher {
 }
 
 impl Drop for FileWatcher {
-    /// Stops the file watcher when the FileWatcher instance is dropped
+    /// Stops the file watcher when the `FileWatcher` instance is dropped
     fn drop(&mut self) {
         self.stop();
     }

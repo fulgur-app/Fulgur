@@ -66,7 +66,7 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `from`: The current index of the tab to move
-    /// - `to`: The insertion slot index (0..=tabs.len())
+    /// - `to`: The insertion slot index (`0..=tabs.len()`)
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn reorder_tab(

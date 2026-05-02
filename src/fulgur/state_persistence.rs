@@ -105,10 +105,10 @@ impl Default for SerializedWindowBounds {
 }
 
 impl SerializedWindowBounds {
-    /// Convert GPUI WindowBounds to SerializedWindowBounds
+    /// Convert GPUI `WindowBounds` to `SerializedWindowBounds`
     ///
     /// ### Arguments
-    /// - `bounds`: The GPUI WindowBounds to convert
+    /// - `bounds`: The GPUI `WindowBounds` to convert
     /// - `display_id`: Optional display ID (monitor) for the window
     ///
     /// ### Returns
@@ -143,7 +143,7 @@ impl SerializedWindowBounds {
         }
     }
 
-    /// Convert SerializedWindowBounds to GPUI WindowBounds
+    /// Convert `SerializedWindowBounds` to GPUI `WindowBounds`
     ///
     /// ### Returns
     /// - `gpui::WindowBounds`: The GPUI window bounds
@@ -163,7 +163,7 @@ impl SerializedWindowBounds {
 
 /// Persisted state of a single application window
 ///
-/// Tab IDs are assigned at runtime, so next_tab_id is not persisted.
+/// Tab IDs are assigned at runtime, so `next_tab_id` is not persisted.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WindowState {
     /// All tabs in this window, in display order

@@ -15,17 +15,17 @@ pub fn add_asm_support() {
     );
 }
 
-/// Highlights query for Assembly, adapted from the arborium_asm bundled query.
+/// Highlights query for Assembly, adapted from the `arborium_asm` bundled query.
 ///
 /// Key mapping choices vs. the upstream tree-sitter-asm highlights.scm:
-/// - `@variable.builtin` is used for registers — this capture is defined in all
+/// - `@variable.builtin` is used for registers - this capture is defined in all
 ///   bundled themes, giving registers a distinct color (typically blue).
 /// - `@function.builtin` is used for instruction mnemonics (e.g. `mov`, `push`) and
-///   assembler directives (e.g. `.section`, `.global`) — both use the `kind` field.
-/// - `@label` is used for labels (e.g. `_start:`, `main:`) — this capture exists in
+///   assembler directives (e.g. `.section`, `.global`) - both use the `kind` field.
+/// - `@label` is used for labels (e.g. `_start:`, `main:`) - this capture exists in
 ///   all bundled themes.
 /// - `@number.float` is kept separate from `@number` so themes can color them differently.
-/// - `@spell` from the upstream query is omitted — it is neovim-specific and has no
+/// - `@spell` from the upstream query is omitted - it is neovim-specific and has no
 ///   equivalent in gpui-component.
 const ASM_HIGHLIGHTS_QUERY: &str = r#"
 ; Labels (e.g. _start:, .loop:, main:)

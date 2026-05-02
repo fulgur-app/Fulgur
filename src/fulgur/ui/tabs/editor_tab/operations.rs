@@ -18,7 +18,7 @@ impl EditorTab {
         self.file_last_modified = Some(SystemTime::now());
     }
 
-    /// Update the editor's display settings. Tab size cannot be changed after InputState creation.
+    /// Update the editor's display settings. Tab size cannot be changed after `InputState` creation.
     ///
     /// ### Arguments
     /// - `window`: The window context
@@ -46,11 +46,11 @@ impl EditorTab {
         });
     }
 
-    /// Rebuild the InputState to apply highlight_colors changes.
+    /// Rebuild the `InputState` to apply `highlight_colors` changes.
     ///
-    /// The document_color_provider can only be set at creation time (Lsp internal
+    /// The `document_color_provider` can only be set at creation time (Lsp internal
     /// state is not publicly clearable), so toggling the setting requires
-    /// recreating the InputState while preserving cursor position.
+    /// recreating the `InputState` while preserving cursor position.
     ///
     /// ### Arguments
     /// - `window`: The window context

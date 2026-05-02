@@ -264,7 +264,7 @@ const OBJC_HIGHLIGHTS_QUERY_LAYER: &str = r##"
 [ "<" ">" ] @punctuation.bracket
 "##;
 
-/// The full highlights query: the C base from arborium_c followed by our remapped Objective-C layer.
+/// The full highlights query: the C base from `arborium_c` followed by our remapped Objective-C layer.
 static OBJC_HIGHLIGHTS_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     format!(
         "{}\n{}",

@@ -192,7 +192,7 @@ impl SharedAppState {
     /// - `settings`: The application settings
     ///
     /// ### Returns
-    /// - `SynchronizationStatus`: Connecting if sync is activated, NotActivated otherwise
+    /// - `SynchronizationStatus`: Connecting if sync is activated, `NotActivated` otherwise
     fn determine_initial_sync_status(settings: &Settings) -> SynchronizationStatus {
         if settings
             .app_settings

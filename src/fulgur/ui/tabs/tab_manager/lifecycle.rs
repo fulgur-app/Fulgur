@@ -126,7 +126,7 @@ impl Fulgur {
 
     /// Close the currently active tab
     ///
-    /// This is a convenience method for the CloseFile action that closes
+    /// This is a convenience method for the `CloseFile` action that closes
     /// whichever tab is currently active.
     ///
     /// ### Arguments
@@ -692,7 +692,7 @@ impl Fulgur {
         });
     }
 
-    /// Quit the application. If confirm_exit is enabled, a modal will be shown to confirm the action.
+    /// Quit the application. If `confirm_exit` is enabled, a modal will be shown to confirm the action.
     ///
     /// ### Arguments
     /// - `window`: The window to quit the application in

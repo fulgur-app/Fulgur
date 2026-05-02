@@ -1,6 +1,6 @@
 //! Integration tests for File Watching functionality
 //!
-//! These tests verify that the FileWatcher can detect real file system changes
+//! These tests verify that the `FileWatcher` can detect real file system changes
 //! and properly handle events. They run in CI/CD environments using temporary
 //! directories for isolation.
 

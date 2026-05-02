@@ -25,11 +25,11 @@ use std::{
 
 use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress};
 
-/// Handle ureq errors and convert them to SynchronizationError with appropriate logging
+/// Handle ureq errors and convert them to `SynchronizationError` with appropriate logging
 ///
 /// ### Description
 /// Centralizes ureq error handling logic that was duplicated across sync modules.
-/// Maps all ureq error variants to appropriate SynchronizationError types and logs
+/// Maps all ureq error variants to appropriate `SynchronizationError` types and logs
 /// the error with context.
 ///
 /// ### Arguments
