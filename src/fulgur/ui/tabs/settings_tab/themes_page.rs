@@ -21,7 +21,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `SettingPage`: The Themes settings page
-    pub fn create_themes_page(entity: Entity<Self>, themes: &Themes) -> SettingPage {
+    pub fn create_themes_page(entity: &Entity<Self>, themes: &Themes) -> SettingPage {
         let mut user_theme_items = Vec::new();
         let mut default_theme_items = Vec::new();
         for theme in &themes.user_themes {
@@ -78,7 +78,7 @@ impl Fulgur {
                                     entity_clone.update(cx, |this, cx| {
                                         themes::reload_themes_and_update(
                                             &this.settings,
-                                            entity_for_update,
+                                            &entity_for_update,
                                             cx,
                                         );
                                     });

@@ -88,7 +88,7 @@ pub fn is_valid_release_page_url(url: &str) -> bool {
 /// - `Ok(Some(UpdateInfo))`: The update information if an update is available
 /// - `Ok(None)`: If no update is available
 /// - `Err(anyhow::Error)`: If the update check could not be performed
-pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<UpdateInfo>> {
+pub fn check_for_updates(current_version: &str) -> anyhow::Result<Option<UpdateInfo>> {
     let agent = ureq::Agent::new_with_config(
         ureq::config::Config::builder()
             .timeout_connect(Some(std::time::Duration::from_secs(5)))
@@ -103,7 +103,7 @@ pub fn check_for_updates(current_version: String) -> anyhow::Result<Option<Updat
         return Err(anyhow::anyhow!("GitHub API error: {}", response.status()));
     }
     let release: GitHubRelease = response.body_mut().read_json()?;
-    let current = parse_version(current_version.as_str())?;
+    let current = parse_version(current_version)?;
     let latest = parse_version(&release.tag_name)?;
     if latest > current {
         log::info!("New version available: {current} -> {latest}");

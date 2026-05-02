@@ -111,7 +111,7 @@ impl Fulgur {
         self.show_ssh_password_dialog(
             window,
             cx,
-            host,
+            &host,
             port,
             user,
             move |resolved_user, password, window, cx| {
@@ -325,7 +325,7 @@ impl Fulgur {
                         port,
                         decision_tx: tx,
                     });
-                    wait_for_host_key_decision(rx, &host_key_decision_timed_out_for_callback)
+                    wait_for_host_key_decision(&rx, &host_key_decision_timed_out_for_callback)
                 },
             );
             if let Err(ssh::error::SshError::AuthFailed) = &session_result {

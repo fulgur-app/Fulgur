@@ -15,7 +15,7 @@ use fulgur::fulgur::utils::crypto_helper::{
 #[test]
 fn test_generate_key_pair_produces_valid_keys() {
     let (private_key, public_key) = generate_key_pair();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     let public_str = public_key.to_string();
     assert!(
         private_str.starts_with("AGE-SECRET-KEY-"),
@@ -32,8 +32,8 @@ fn test_generate_key_pair_produces_unique_keys() {
     let (private1, public1) = generate_key_pair();
     let (private2, public2) = generate_key_pair();
     assert_ne!(
-        serialize(private1),
-        serialize(private2),
+        serialize(&private1),
+        serialize(&private2),
         "Each generation should produce unique private keys"
     );
     assert_ne!(
@@ -47,7 +47,7 @@ fn test_generate_key_pair_produces_unique_keys() {
 fn test_encrypt_decrypt_roundtrip_simple_text() {
     let (private_key, public_key) = generate_key_pair();
     let public_str = public_key.to_string();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     let original = b"Hello, World!";
     let encrypted = encrypt_bytes(original, &public_str).expect("Encryption should succeed");
     let decrypted = decrypt_bytes(&encrypted, &private_str).expect("Decryption should succeed");
@@ -61,7 +61,7 @@ fn test_encrypt_decrypt_roundtrip_simple_text() {
 fn test_encrypt_decrypt_roundtrip_large_data() {
     let (private_key, public_key) = generate_key_pair();
     let public_str = public_key.to_string();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     let original: Vec<u8> = (0..1_000_000).map(|i| (i % 256) as u8).collect();
     let encrypted = encrypt_bytes(&original, &public_str).expect("Encryption should succeed");
     let decrypted = decrypt_bytes(&encrypted, &private_str).expect("Decryption should succeed");
@@ -72,7 +72,7 @@ fn test_encrypt_decrypt_roundtrip_large_data() {
 fn test_encrypt_decrypt_roundtrip_unicode_content() {
     let (private_key, public_key) = generate_key_pair();
     let public_str = public_key.to_string();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     let original = "Hello 世界 🦀 Здравствуй مرحبا";
     let original_bytes = original.as_bytes();
     let encrypted = encrypt_bytes(original_bytes, &public_str).expect("Encryption should succeed");
@@ -88,7 +88,7 @@ fn test_encrypt_decrypt_roundtrip_unicode_content() {
 fn test_encrypt_decrypt_roundtrip_binary_data() {
     let (private_key, public_key) = generate_key_pair();
     let public_str = public_key.to_string();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     let original: Vec<u8> = vec![0x00, 0xFF, 0x7F, 0x80, 0xAA, 0x55, 0xDE, 0xAD, 0xBE, 0xEF];
     let encrypted = encrypt_bytes(&original, &public_str).expect("Encryption should succeed");
     let decrypted = decrypt_bytes(&encrypted, &private_str).expect("Decryption should succeed");
@@ -102,7 +102,7 @@ fn test_encrypt_decrypt_roundtrip_binary_data() {
 fn test_encrypt_decrypt_roundtrip_empty_data() {
     let (private_key, public_key) = generate_key_pair();
     let public_str = public_key.to_string();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     let original: Vec<u8> = vec![];
     let encrypted = encrypt_bytes(&original, &public_str).expect("Encryption should succeed");
     let decrypted = decrypt_bytes(&encrypted, &private_str).expect("Decryption should succeed");
@@ -113,7 +113,7 @@ fn test_encrypt_decrypt_roundtrip_empty_data() {
 fn test_encrypt_produces_different_ciphertext_each_time() {
     let (private_key, public_key) = generate_key_pair();
     let public_str = public_key.to_string();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     let original = b"Same content every time";
     let encrypted1 = encrypt_bytes(original, &public_str).expect("Encryption 1 should succeed");
     let encrypted2 = encrypt_bytes(original, &public_str).expect("Encryption 2 should succeed");
@@ -132,7 +132,7 @@ fn test_decrypt_with_wrong_private_key_fails() {
     let (_private_key1, public_key1) = generate_key_pair();
     let (private_key2, _public_key2) = generate_key_pair();
     let public_str1 = public_key1.to_string();
-    let private_str2 = serialize(private_key2);
+    let private_str2 = serialize(&private_key2);
     let original = b"Secret message";
     let encrypted = encrypt_bytes(original, &public_str1).expect("Encryption should succeed");
     let result = decrypt_bytes(&encrypted, &private_str2);
@@ -146,7 +146,7 @@ fn test_decrypt_with_wrong_private_key_fails() {
 fn test_decrypt_with_corrupted_ciphertext_fails() {
     let (private_key, public_key) = generate_key_pair();
     let public_str = public_key.to_string();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     let original = b"Test data";
     let mut encrypted = encrypt_bytes(original, &public_str).expect("Encryption should succeed");
     if encrypted.len() > 10 {

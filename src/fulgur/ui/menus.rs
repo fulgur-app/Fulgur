@@ -236,7 +236,7 @@ pub enum DockMenuTab {
 ///
 /// ### Returns
 /// - `Vec<Menu>`: The menus for the Fulgur instance
-pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec<Menu> {
+pub fn build_menus(recent_files: &[PathBuf], update_link: Option<&str>) -> Vec<Menu> {
     let recent_files_items = if recent_files.is_empty() {
         vec![MenuItem::action("No recent files", NoneAction)]
     } else {
@@ -435,11 +435,7 @@ impl Fulgur {
             let current_version = env!("CARGO_PKG_VERSION");
             log::debug!("Current version: {current_version}");
             let update_info = bg
-                .spawn(async move {
-                    check_for_updates(current_version.to_string())
-                        .ok()
-                        .flatten()
-                })
+                .spawn(async move { check_for_updates(current_version).ok().flatten() })
                 .await;
             window
                 .update(|window, cx| {
@@ -454,7 +450,7 @@ impl Fulgur {
                             }
                             let menus = build_menus(
                                 this.settings.recent_files.get_files(),
-                                Some(download_url),
+                                Some(download_url.as_str()),
                             );
                             this.update_menus(menus, cx);
                             cx.notify();

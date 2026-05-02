@@ -108,11 +108,7 @@ fn fetch_pending_shares_into(
     pending_shared_files: &Arc<Mutex<Vec<SharedFileResponse>>>,
     reason: &str,
 ) {
-    match fetch_pending_shares(
-        synchronization_settings,
-        Arc::clone(token_state),
-        http_agent,
-    ) {
+    match fetch_pending_shares(synchronization_settings, token_state, http_agent) {
         Ok(shares) => {
             if shares.is_empty() {
                 log::debug!("Fetch ({reason}): no pending shares");
@@ -167,9 +163,9 @@ pub fn connect_sse(
     event_tx: Sender<SseEvent>,
     shutdown_flag: Arc<AtomicBool>,
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
-    token_state: Arc<TokenStateManager>,
-    http_agent: Arc<ureq::Agent>,
-    pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &Arc<ureq::Agent>,
+    pending_shared_files: &Arc<Mutex<Vec<SharedFileResponse>>>,
 ) -> Result<thread::JoinHandle<()>, SynchronizationError> {
     let server_url = synchronization_settings
         .server_url
@@ -177,9 +173,9 @@ pub fn connect_sse(
         .ok_or(SynchronizationError::ServerUrlMissing)?;
     let sse_url = format!("{server_url}/api/sse");
     let settings_clone = synchronization_settings.clone();
-    let token_state_clone = Arc::clone(&token_state);
-    let http_agent_clone = Arc::clone(&http_agent);
-    let pending_shared_files_clone = Arc::clone(&pending_shared_files);
+    let token_state_clone = Arc::clone(token_state);
+    let http_agent_clone = Arc::clone(http_agent);
+    let pending_shared_files_clone = Arc::clone(pending_shared_files);
     let handle = thread::spawn(move || {
         let mut backoff = BackoffCalculator::default_settings();
 
@@ -188,24 +184,21 @@ pub fn connect_sse(
                 log::info!("SSE connection shutdown requested, stopping...");
                 break;
             }
-            let token = match get_valid_token(
-                &settings_clone,
-                Arc::clone(&token_state_clone),
-                &http_agent_clone,
-            ) {
-                Ok(t) => t,
-                Err(e) => {
-                    log::error!("Failed to get valid token for SSE: {e}");
-                    set_sync_server_connection_status(
-                        sync_server_connection_status.clone(),
-                        SynchronizationStatus::AuthenticationFailed,
-                    );
-                    let delay = backoff.record_failure();
-                    log::info!("Retrying SSE connection after {delay:?}");
-                    thread::sleep(delay);
-                    continue;
-                }
-            };
+            let token =
+                match get_valid_token(&settings_clone, &token_state_clone, &http_agent_clone) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        log::error!("Failed to get valid token for SSE: {e}");
+                        set_sync_server_connection_status(
+                            &sync_server_connection_status,
+                            SynchronizationStatus::AuthenticationFailed,
+                        );
+                        let delay = backoff.record_failure();
+                        log::info!("Retrying SSE connection after {delay:?}");
+                        thread::sleep(delay);
+                        continue;
+                    }
+                };
             log::info!("Connecting to SSE endpoint: {sse_url}");
             let response = match http_agent_clone
                 .get(&sse_url)
@@ -215,7 +208,7 @@ pub fn connect_sse(
             {
                 Ok(resp) => {
                     set_sync_server_connection_status(
-                        sync_server_connection_status.clone(),
+                        &sync_server_connection_status,
                         SynchronizationStatus::Connected,
                     );
                     log::info!("SSE connection established");
@@ -232,7 +225,7 @@ pub fn connect_sse(
                 Err(e) => {
                     log::error!("SSE connection failed: {e}");
                     set_sync_server_connection_status(
-                        sync_server_connection_status.clone(),
+                        &sync_server_connection_status,
                         SynchronizationStatus::Disconnected,
                     );
                     event_tx.send(SseEvent::Error(e.to_string())).ok();
@@ -312,7 +305,7 @@ pub fn connect_sse(
                     Err(ReadError::Io(e)) => {
                         log::error!("SSE stream error: {e}");
                         set_sync_server_connection_status(
-                            sync_server_connection_status.clone(),
+                            &sync_server_connection_status,
                             SynchronizationStatus::Disconnected,
                         );
                         event_tx.send(SseEvent::Error(e.to_string())).ok();
@@ -327,7 +320,7 @@ pub fn connect_sse(
             let delay = backoff.record_failure();
             log::warn!("SSE connection closed, reconnecting after {delay:?}");
             set_sync_server_connection_status(
-                sync_server_connection_status.clone(),
+                &sync_server_connection_status,
                 SynchronizationStatus::Disconnected,
             );
             thread::sleep(delay);

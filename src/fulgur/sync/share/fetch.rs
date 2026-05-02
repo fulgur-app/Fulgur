@@ -20,7 +20,7 @@ use std::sync::Arc;
 /// - `Err(SynchronizationError)`: If the request failed or the response was invalid
 pub fn fetch_pending_shares(
     synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<TokenStateManager>,
+    token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<Vec<SharedFileResponse>, SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {

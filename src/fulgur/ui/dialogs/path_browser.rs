@@ -278,11 +278,10 @@ impl Render for PathBrowser {
     /// ### Returns
     /// - `impl IntoElement`: The rendered path browser.
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let input_entity = self.input.clone();
         let mut container = v_flex().w_full().gap_1().child(Input::new(&self.input));
         if let Some(list) = render_browser_list(
             self.entries.iter().map(BrowserEntry::from),
-            input_entity,
+            &self.input,
             cx.theme().muted,
             cx.theme().muted_foreground,
         ) {

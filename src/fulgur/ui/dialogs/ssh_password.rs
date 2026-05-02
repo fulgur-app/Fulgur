@@ -29,7 +29,7 @@ impl Fulgur {
         &self,
         window: &mut Window,
         cx: &mut Context<Self>,
-        host: String,
+        host: &str,
         port: u16,
         user: Option<String>,
         on_confirm: impl Fn(String, Zeroizing<String>, &mut Window, &mut App) + 'static,

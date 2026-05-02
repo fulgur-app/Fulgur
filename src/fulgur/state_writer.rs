@@ -34,7 +34,7 @@ impl StateWriter {
         let (sender, receiver) = mpsc::sync_channel::<WriteRequest>(CHANNEL_CAPACITY);
         thread::Builder::new()
             .name("fulgur-state-writer".to_string())
-            .spawn(move || Self::run(receiver))
+            .spawn(move || Self::run(&receiver))
             .expect("failed to spawn state writer thread");
         Self { sender }
     }
@@ -43,7 +43,7 @@ impl StateWriter {
     ///
     /// ### Arguments
     /// - `receiver`: Channel of pending write requests.
-    fn run(receiver: mpsc::Receiver<WriteRequest>) {
+    fn run(receiver: &mpsc::Receiver<WriteRequest>) {
         while let Ok(req) = receiver.recv() {
             let result = req.state.save_to_path(&req.path);
             if let Err(ref e) = result {

@@ -130,9 +130,9 @@ fn test_watch_single_file() {
     let file_path = create_test_file(&temp_dir, "test.txt", "initial content");
     let (mut watcher, _rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
-    let result = watcher.watch_file(file_path.clone());
+    let result = watcher.watch_file(&file_path);
     assert!(result.is_ok(), "Should successfully watch file");
-    let result2 = watcher.watch_file(file_path);
+    let result2 = watcher.watch_file(&file_path);
     assert!(result2.is_ok(), "Watching same file again should succeed");
 }
 
@@ -143,7 +143,7 @@ fn test_unwatch_file() {
     let (mut watcher, _rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
     watcher
-        .watch_file(file_path.clone())
+        .watch_file(&file_path)
         .expect("Failed to watch file");
     watcher.unwatch_file(&file_path);
     // Unwatching again should be safe (idempotent)
@@ -157,7 +157,7 @@ fn test_detect_file_modification() {
     let (mut watcher, rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
     watcher
-        .watch_file(file_path.clone())
+        .watch_file(&file_path)
         .expect("Failed to watch file");
     // Give watcher more time to initialize (file watchers can be slow)
     thread::sleep(Duration::from_millis(500));
@@ -181,7 +181,7 @@ fn test_detect_file_deletion() {
     let (mut watcher, rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
     watcher
-        .watch_file(file_path.clone())
+        .watch_file(&file_path)
         .expect("Failed to watch file");
     // Give watcher more time to initialize
     thread::sleep(Duration::from_millis(500));
@@ -206,7 +206,7 @@ fn test_detect_file_rename() {
     let (mut watcher, rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
     watcher
-        .watch_file(from_path.clone())
+        .watch_file(&from_path)
         .expect("Failed to watch file");
     // Give watcher more time to initialize
     thread::sleep(Duration::from_millis(500));
@@ -260,15 +260,9 @@ fn test_watch_multiple_files() {
     let file3 = create_test_file(&temp_dir, "file3.txt", "content3");
     let (mut watcher, rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
-    watcher
-        .watch_file(file1.clone())
-        .expect("Failed to watch file1");
-    watcher
-        .watch_file(file2.clone())
-        .expect("Failed to watch file2");
-    watcher
-        .watch_file(file3.clone())
-        .expect("Failed to watch file3");
+    watcher.watch_file(&file1).expect("Failed to watch file1");
+    watcher.watch_file(&file2).expect("Failed to watch file2");
+    watcher.watch_file(&file3).expect("Failed to watch file3");
     // Give watcher more time to initialize
     thread::sleep(Duration::from_millis(500));
     fs::write(&file2, "modified content2").expect("Failed to modify file2");
@@ -291,7 +285,7 @@ fn test_stop_watcher() {
     let (mut watcher, rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
     watcher
-        .watch_file(file_path.clone())
+        .watch_file(&file_path)
         .expect("Failed to watch file");
     // Give watcher time to initialize
     thread::sleep(Duration::from_millis(100));
@@ -322,7 +316,7 @@ fn test_watcher_drop_cleanup() {
         let (mut watcher, rx) = FileWatcher::new();
         watcher.start().expect("Failed to start watcher");
         watcher
-            .watch_file(file_path.clone())
+            .watch_file(&file_path)
             .expect("Failed to watch file");
         thread::sleep(Duration::from_millis(100));
         // watcher is dropped here, should trigger cleanup

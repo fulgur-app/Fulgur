@@ -87,8 +87,8 @@ fn is_current_theme(theme_name: &str, current_theme: &str) -> bool {
 /// ### Returns:
 /// `Div`: Represents the rendered theme list.
 fn make_select_theme_list(
-    entity: Entity<Fulgur>,
-    themes: Vec<String>,
+    entity: &Entity<Fulgur>,
+    themes: &[String],
     current_theme: String,
     current_theme_shared: Arc<Mutex<String>>,
     cx: &mut App,
@@ -96,7 +96,6 @@ fn make_select_theme_list(
     let entity = entity.clone();
     div().rounded_md().children(
         themes
-            .clone()
             .iter()
             .map(move |theme| {
                 make_select_theme_item(
@@ -210,7 +209,7 @@ impl Fulgur {
                                 filename.to_string_lossy()
                             ));
                             window.push_notification((NotificationType::Success, notification), cx);
-                            reload_themes_and_update(&settings, entity, cx);
+                            reload_themes_and_update(&settings, &entity, cx);
                         })
                         .ok()?;
                 }
@@ -272,16 +271,16 @@ impl Fulgur {
                         .h(max_height)
                         .child(div().text_lg().child("Dark themes"))
                         .child(make_select_theme_list(
-                            entity_dark,
-                            dark_themes.clone(),
+                            &entity_dark,
+                            &dark_themes,
                             current_theme_display.clone(),
                             current_theme_shared_dark,
                             cx,
                         ))
                         .child(div().text_lg().mt_4().child("Light themes"))
                         .child(make_select_theme_list(
-                            entity_light,
-                            light_themes.clone(),
+                            &entity_light,
+                            &light_themes,
                             current_theme_display.clone(),
                             current_theme_shared_light,
                             cx,

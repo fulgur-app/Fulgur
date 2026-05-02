@@ -167,7 +167,7 @@ fn is_token_valid(expires_at: &OffsetDateTime) -> bool {
 /// - `Err(SynchronizationError)`: If token refresh failed
 pub fn get_valid_token(
     synchronization_settings: &SynchronizationSettings,
-    token_manager: Arc<TokenStateManager>,
+    token_manager: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<String, SynchronizationError> {
     // Fast path: check if current token is valid without acquiring write lock

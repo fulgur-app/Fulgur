@@ -1,4 +1,4 @@
-use std::{ops::DerefMut, path::PathBuf};
+use std::{ops::DerefMut, path::Path};
 
 use gpui::{Context, ParentElement, Styled, Window, div, px};
 use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, v_flex};
@@ -15,7 +15,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn show_file_conflict_dialog(
         &self,
-        path: PathBuf,
+        path: &Path,
         tab_index: usize,
         window: &mut Window,
         cx: &mut Context<Self>,

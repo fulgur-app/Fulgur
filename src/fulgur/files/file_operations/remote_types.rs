@@ -68,7 +68,7 @@ pub struct RemoteOpenTaskParams {
 /// - `HostKeyDecision::Accept`: The user accepted the presented host key
 /// - `HostKeyDecision::Reject`: The user rejected the key, the channel closed, or timeout elapsed
 pub fn wait_for_host_key_decision(
-    decision_rx: std::sync::mpsc::Receiver<HostKeyDecision>,
+    decision_rx: &std::sync::mpsc::Receiver<HostKeyDecision>,
     timed_out: &AtomicBool,
 ) -> HostKeyDecision {
     match decision_rx.recv_timeout(SSH_HOST_KEY_APPROVAL_TIMEOUT) {

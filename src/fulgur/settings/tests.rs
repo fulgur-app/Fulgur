@@ -96,7 +96,7 @@ fn recent_files_remove_existing_file() {
     recent_files.add_file(file3.clone());
     assert_eq!(recent_files.get_files().len(), 3);
 
-    recent_files.remove_file(file2.clone());
+    recent_files.remove_file(&file2);
     assert_eq!(recent_files.get_files().len(), 2);
     assert!(!recent_files.get_files().contains(&file2));
     assert_eq!(recent_files.get_files()[0], file1);
@@ -115,7 +115,7 @@ fn recent_files_remove_non_existing_file() {
     assert_eq!(recent_files.get_files().len(), 2);
 
     // Should not change anything
-    recent_files.remove_file(non_existing);
+    recent_files.remove_file(&non_existing);
     assert_eq!(recent_files.get_files().len(), 2);
     assert_eq!(recent_files.get_files()[0], file1);
     assert_eq!(recent_files.get_files()[1], file2);
@@ -127,7 +127,7 @@ fn recent_files_remove_from_empty_list() {
     let file1 = PathBuf::from("/path/to/file1.txt");
 
     // Should not panic
-    recent_files.remove_file(file1);
+    recent_files.remove_file(&file1);
     assert_eq!(recent_files.get_files().len(), 0);
 }
 

@@ -85,7 +85,7 @@ impl Fulgur {
                 thread::sleep(Duration::from_millis(200));
                 match initial_synchronization(
                     &settings.app_settings.synchronization_settings,
-                    Arc::clone(&token_state),
+                    &token_state,
                     &http_agent,
                 ) {
                     Ok(_) => {
@@ -95,9 +95,9 @@ impl Fulgur {
                             sse_tx,
                             sse_shutdown_flag,
                             sync_status,
-                            token_state,
-                            http_agent,
-                            pending_shared_files,
+                            &token_state,
+                            &http_agent,
+                            &pending_shared_files,
                         ) {
                             Ok(new_handle) => {
                                 *handle_storage.lock() = Some(new_handle);

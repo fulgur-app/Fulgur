@@ -71,20 +71,20 @@ impl EditorTab {
     /// - `EditorTab`: The new tab
     pub fn from_content(
         id: usize,
-        contents: String,
+        contents: &str,
         file_name: String,
         window: &mut Window,
         cx: &mut App,
         settings: &EditorSettings,
     ) -> Self {
-        let language = language_from_content(&file_name, &contents);
+        let language = language_from_content(&file_name, contents);
         let (original_content_hash, original_content_len) = super::content_fingerprint_from_str("");
         let content = cx.new(|cx| {
             super::make_input_state(
                 window,
                 cx,
                 language_registry_name(&language),
-                Some(contents.clone()),
+                Some(contents.to_string()),
                 settings,
             )
         });

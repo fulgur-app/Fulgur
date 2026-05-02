@@ -151,12 +151,11 @@ impl Fulgur {
                     }
                     let shared = this.shared_state(cx);
                     let update_info = shared.update_info.lock().clone();
-                    let update_link = if let Some(info) = update_info {
-                        Some(info.download_url.clone())
-                    } else {
-                        None
-                    };
-                    let menus = menus::build_menus(&this.settings.get_recent_files(), update_link);
+                    let update_link = update_info.as_ref().map(|info| info.download_url.clone());
+                    let menus = menus::build_menus(
+                        &this.settings.get_recent_files(),
+                        update_link.as_deref(),
+                    );
                     this.update_menus(menus, cx);
                     let title = path
                         .file_name()

@@ -21,7 +21,7 @@ const DEVICE_KEY_PLACEHOLDER: &str = "<Device Key>";
 ///
 /// ### Returns
 /// - `SettingPage`: The Application settings page
-pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
+pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
     let default_app_settings = AppSettings::new();
 
     SettingPage::new("Application")
@@ -152,7 +152,7 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                                 let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
                                                 shared.sync_state.token_state.clear_token();
                                                 perform_initial_synchronization_with_progress(
-                                                    entity.clone(),
+                                                    &entity,
                                                     window,
                                                     cx,
                                                 );
@@ -302,7 +302,7 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                     } else if val == DEVICE_KEY_PLACEHOLDER {
                                         return;
                                     } else {
-                                        Some(val.to_string())
+                                        Some(val.as_str())
                                     };
                                     if let Err(e) =
                                         crypto_helper::save_device_api_key_to_keychain(key)
@@ -353,7 +353,7 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                             let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
                                             shared.sync_state.token_state.clear_token();
                                             perform_initial_synchronization_with_progress(
-                                                entity.clone(),
+                                                &entity,
                                                 window,
                                                 cx,
                                             );

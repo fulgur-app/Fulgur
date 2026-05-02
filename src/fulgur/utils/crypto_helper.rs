@@ -157,8 +157,8 @@ pub fn generate_key_pair() -> (Identity, Recipient) {
 /// ### Returns
 /// - `Ok()`: The private key has been succesfully saved in the keychain
 /// - `Err(anyhow::Error)`: If the private key could not be saved
-pub fn save_private_key_to_keychain(private_key: Option<Zeroizing<String>>) -> anyhow::Result<()> {
-    save_or_remove_to_keychain(PRIVATE_KEY_NAME, private_key.as_ref().map(|k| k.as_str()))
+pub fn save_private_key_to_keychain(private_key: Option<&Zeroizing<String>>) -> anyhow::Result<()> {
+    save_or_remove_to_keychain(PRIVATE_KEY_NAME, private_key.map(|k| k.as_str()))
 }
 
 /// Saves the device API key in the keychain
@@ -169,8 +169,8 @@ pub fn save_private_key_to_keychain(private_key: Option<Zeroizing<String>>) -> a
 /// ### Returns
 /// - `Ok()`: The device API key has been succesfully saved in the keychain
 /// - `Err(anyhow::Error)`: If the device API key could not be saved
-pub fn save_device_api_key_to_keychain(device_api_key: Option<String>) -> anyhow::Result<()> {
-    save_or_remove_to_keychain(DEVICE_API_KEY, device_api_key.as_deref())
+pub fn save_device_api_key_to_keychain(device_api_key: Option<&str>) -> anyhow::Result<()> {
+    save_or_remove_to_keychain(DEVICE_API_KEY, device_api_key)
 }
 
 /// Saves or removes a value from the keychain. If the value is `None`, the entry is removed from the keychain.
@@ -263,7 +263,7 @@ fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
 ///
 /// ### Returns
 /// - `Zeroizing<String>`: The serialized private key, zeroed on drop
-pub fn serialize(private_key: Identity) -> Zeroizing<String> {
+pub fn serialize(private_key: &Identity) -> Zeroizing<String> {
     let secret = private_key.to_string();
     Zeroizing::new(secret.expose_secret().to_string())
 }
@@ -292,7 +292,7 @@ pub fn check_private_public_keys(settings: &mut Settings) -> anyhow::Result<()> 
         {
             log::debug!("No private key, need to generate keys.");
             let (new_private_key, new_public_key) = generate_key_pair();
-            save_private_key_to_keychain(Some(serialize(new_private_key)))?;
+            save_private_key_to_keychain(Some(&serialize(&new_private_key)))?;
             settings.app_settings.synchronization_settings.public_key =
                 Some(new_public_key.to_string());
             log::debug!("Saving keys");
@@ -380,7 +380,7 @@ mod tests {
         // Generate a key pair for testing
         let (private_key, public_key) = generate_key_pair();
         let public_key_str = public_key.to_string();
-        let private_key_str = serialize(private_key);
+        let private_key_str = serialize(&private_key);
 
         let original_bytes = b"This is a test file content with some data!";
         let encrypted =
@@ -396,7 +396,7 @@ mod tests {
         // Generate a key pair for testing
         let (private_key, public_key) = generate_key_pair();
         let public_key_str = public_key.to_string();
-        let private_key_str = serialize(private_key);
+        let private_key_str = serialize(&private_key);
 
         let content_bytes = b"Same content";
         let encrypted1 = encrypt_bytes(content_bytes, &public_key_str).unwrap();
@@ -419,7 +419,7 @@ mod tests {
         let (_private_key1, public_key1) = generate_key_pair();
         let (private_key2, _public_key2) = generate_key_pair();
         let public_key1_str = public_key1.to_string();
-        let private_key2_str = serialize(private_key2);
+        let private_key2_str = serialize(&private_key2);
 
         let content_bytes = b"Secret data";
         // Encrypt with public_key1
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn test_is_valid_public_key_rejects_private_key() {
         let (private_key, _) = generate_key_pair();
-        let private_str = serialize(private_key);
+        let private_str = serialize(&private_key);
         assert!(!is_valid_public_key(&private_str));
     }
 }

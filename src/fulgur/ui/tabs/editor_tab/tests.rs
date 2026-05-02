@@ -93,7 +93,7 @@ fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
         cx.open_window(Default::default(), |window, cx| {
             let tab = EditorTab::from_content(
                 9,
-                contents.clone(),
+                &contents,
                 "shared.rs".to_string(),
                 window,
                 cx,

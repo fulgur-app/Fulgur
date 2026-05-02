@@ -41,7 +41,7 @@ impl Fulgur {
                 .child(Input::new(&jump_to_line_input))
                 .on_ok(move |_, _window, cx| {
                     let text = jump_to_line_input_clone.read(cx).value();
-                    let jump_result = editor_tab::extract_line_number(text);
+                    let jump_result = editor_tab::extract_line_number(&text);
                     let is_ok = jump_result.is_ok();
                     entity_for_ok.update(cx, |this, cx| {
                         if let Ok(jump) = jump_result {
@@ -181,7 +181,7 @@ mod tests {
     #[gpui::test]
     fn test_handle_pending_jump_is_noop_without_pending_jump(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        // No pending_jump set — handler should do nothing
+        // No pending_jump set, handler should do nothing
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.handle_pending_jump_to_line(window, cx);
@@ -213,7 +213,7 @@ mod tests {
                 this.handle_pending_jump_to_line(window, cx);
             });
         });
-        // pending_jump was set but there was no active tab — it should have been consumed (taken) but not applied
+        // pending_jump was set but there was no active tab, it should have been consumed (taken) but not applied
         let pending = fulgur.read_with(&visual_cx, |this, _| this.pending_jump.is_some());
         assert!(
             !pending,

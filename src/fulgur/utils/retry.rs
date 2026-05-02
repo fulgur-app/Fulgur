@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 /// Configuration for retry behavior
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct RetryConfig {
     /// Maximum number of retry attempts (0 = no retries, just one attempt)
     pub max_attempts: u32,

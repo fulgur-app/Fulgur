@@ -124,7 +124,7 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
 /// - `Err(SynchronizationError)`: If the synchronization could not be performed
 pub fn initial_synchronization(
     synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<TokenStateManager>,
+    token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<BeginResponse, SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {
@@ -211,7 +211,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             Err(e) => {
                 log::error!("Failed to load device API key from keychain: {e}");
                 set_sync_server_connection_status(
-                    sync_server_connection_status.clone(),
+                    &sync_server_connection_status,
                     SynchronizationStatus::Disconnected,
                 );
                 return;
@@ -219,20 +219,20 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         };
         if server_url.is_none() || email.is_none() || key.is_none() {
             set_sync_server_connection_status(
-                sync_server_connection_status.clone(),
+                &sync_server_connection_status,
                 SynchronizationStatus::Disconnected,
             );
             return;
         }
         match initial_synchronization(
             &settings.app_settings.synchronization_settings,
-            Arc::clone(&token_state),
+            &token_state,
             &http_agent,
         ) {
             Ok(begin_response) => {
                 log::info!("Successfully connected to sync server");
                 set_sync_server_connection_status(
-                    sync_server_connection_status.clone(),
+                    &sync_server_connection_status,
                     SynchronizationStatus::Connected,
                 );
                 store_server_max_file_size(
@@ -261,9 +261,9 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                         tx,
                         shutdown,
                         sync_server_connection_status.clone(),
-                        Arc::clone(&token_state),
-                        Arc::clone(&http_agent),
-                        Arc::clone(&pending_shared_files),
+                        &token_state,
+                        &http_agent,
+                        &pending_shared_files,
                     ) {
                         Ok(handle) => {
                             *sse_thread_handle.lock() = Some(handle);
@@ -281,7 +281,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             Err(e) => {
                 log::error!("Failed to fetch shared files: {e}");
                 set_sync_server_connection_status(
-                    sync_server_connection_status,
+                    &sync_server_connection_status,
                     SynchronizationStatus::Disconnected,
                 );
             }
@@ -295,7 +295,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
 /// - `sync_server_connection_status`: The synchronization status of the sync server
 /// - `status`: The new synchronization status
 pub fn set_sync_server_connection_status(
-    sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
+    sync_server_connection_status: &Arc<Mutex<SynchronizationStatus>>,
     new_status: SynchronizationStatus,
 ) {
     *sync_server_connection_status.lock() = new_status;
@@ -310,7 +310,7 @@ pub fn set_sync_server_connection_status(
 /// ### Arguments
 /// - `entity`: The Fulgur entity
 /// - `cx`: The context
-pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx: &mut App) {
+pub fn perform_initial_synchronization(entity: &Entity<crate::fulgur::Fulgur>, cx: &mut App) {
     let synchronization_settings = entity
         .read(cx)
         .settings
@@ -319,7 +319,7 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
         .clone();
     let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
     set_sync_server_connection_status(
-        shared.sync_state.connection_status.clone(),
+        &shared.sync_state.connection_status,
         SynchronizationStatus::Connecting,
     );
     *shared.sync_state.connecting_since.lock() = Some(Instant::now());
@@ -332,7 +332,7 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
     let pending_notification = shared.sync_state.pending_notification.clone();
     let max_file_size_bytes = shared.sync_state.max_file_size_bytes.clone();
     thread::spawn(move || {
-        let result = initial_synchronization(&synchronization_settings, token_state, &http_agent);
+        let result = initial_synchronization(&synchronization_settings, &token_state, &http_agent);
         let (notification, status) = match result {
             Ok(begin_response) => {
                 store_server_max_file_size(
@@ -366,7 +366,7 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
                 SynchronizationStatus::from_error(&e),
             ),
         };
-        set_sync_server_connection_status(connection_status, status);
+        set_sync_server_connection_status(&connection_status, status);
         *connecting_since.lock() = None;
         *pending_notification.lock() = Some(notification);
     });
@@ -379,7 +379,7 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
 /// - `window`: Target window for the notification
 /// - `cx`: The application context
 pub fn perform_initial_synchronization_with_progress(
-    entity: Entity<crate::fulgur::Fulgur>,
+    entity: &Entity<crate::fulgur::Fulgur>,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -391,7 +391,7 @@ pub fn perform_initial_synchronization_with_progress(
         .clone();
     let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
     set_sync_server_connection_status(
-        shared.sync_state.connection_status.clone(),
+        &shared.sync_state.connection_status,
         SynchronizationStatus::Connecting,
     );
     *shared.sync_state.connecting_since.lock() = Some(Instant::now());
@@ -410,7 +410,7 @@ pub fn perform_initial_synchronization_with_progress(
     let cancel_status = connection_status.clone();
     let cancel_connecting_since = connecting_since.clone();
     let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, _cx| {
-        set_sync_server_connection_status(cancel_status, SynchronizationStatus::Disconnected);
+        set_sync_server_connection_status(&cancel_status, SynchronizationStatus::Disconnected);
         *cancel_connecting_since.lock() = None;
     }));
 
@@ -424,7 +424,7 @@ pub fn perform_initial_synchronization_with_progress(
     let cancel_flag_for_thread = Arc::clone(&cancel_flag);
 
     thread::spawn(move || {
-        let result = initial_synchronization(&synchronization_settings, token_state, &http_agent);
+        let result = initial_synchronization(&synchronization_settings, &token_state, &http_agent);
 
         if cancel_flag_for_thread.load(Ordering::Acquire) {
             done_for_thread.store(true, Ordering::Release);
@@ -464,7 +464,7 @@ pub fn perform_initial_synchronization_with_progress(
                 SynchronizationStatus::from_error(&e),
             ),
         };
-        set_sync_server_connection_status(connection_status, status);
+        set_sync_server_connection_status(&connection_status, status);
         *connecting_since.lock() = None;
         *pending_notification.lock() = Some(notification);
         done_for_thread.store(true, Ordering::Release);
@@ -674,7 +674,7 @@ impl Fulgur {
                             self.next_tab_id += 1;
                             let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
                                 tab_id,
-                                decrypted_content,
+                                &decrypted_content,
                                 shared_file.file_name.clone(),
                                 window,
                                 cx,

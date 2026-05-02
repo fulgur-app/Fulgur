@@ -235,8 +235,8 @@ impl RecentFiles {
     ///
     /// ### Arguments
     /// - `file`: The file to remove
-    pub fn remove_file(&mut self, file: PathBuf) {
-        self.files.retain(|f| f != &file);
+    pub fn remove_file(&mut self, file: &PathBuf) {
+        self.files.retain(|f| f != file);
     }
 
     /// Get the recent files

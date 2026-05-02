@@ -181,7 +181,7 @@ fn test_set_sync_server_connection_status_updates_value() {
     let status = make_connection_status(SynchronizationStatus::Disconnected);
     assert!(!status.lock().is_connected());
 
-    set_sync_server_connection_status(Arc::clone(&status), SynchronizationStatus::Connected);
+    set_sync_server_connection_status(&status, SynchronizationStatus::Connected);
 
     assert!(status.lock().is_connected());
 }
@@ -190,10 +190,10 @@ fn test_set_sync_server_connection_status_updates_value() {
 fn test_set_sync_server_connection_status_can_cycle() {
     let status = make_connection_status(SynchronizationStatus::Connected);
 
-    set_sync_server_connection_status(Arc::clone(&status), SynchronizationStatus::Disconnected);
+    set_sync_server_connection_status(&status, SynchronizationStatus::Disconnected);
     assert!(!status.lock().is_connected());
 
-    set_sync_server_connection_status(Arc::clone(&status), SynchronizationStatus::Connected);
+    set_sync_server_connection_status(&status, SynchronizationStatus::Connected);
     assert!(status.lock().is_connected());
 }
 
@@ -206,7 +206,7 @@ fn test_set_sync_server_connection_status_thread_safe() {
     for _ in 0..5 {
         let s = Arc::clone(&status);
         handles.push(thread::spawn(move || {
-            set_sync_server_connection_status(s, SynchronizationStatus::Connected);
+            set_sync_server_connection_status(&s, SynchronizationStatus::Connected);
         }));
     }
     for h in handles {
@@ -234,9 +234,9 @@ fn test_connect_sse_fails_without_server_url() {
         tx,
         shutdown_flag,
         status,
-        token_manager,
-        http_agent,
-        make_pending_shared_files(),
+        &token_manager,
+        &http_agent,
+        &make_pending_shared_files(),
     );
 
     assert!(
@@ -267,9 +267,9 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
         tx,
         shutdown_flag,
         status,
-        token_manager,
-        http_agent,
-        make_pending_shared_files(),
+        &token_manager,
+        &http_agent,
+        &make_pending_shared_files(),
     )
     .expect("connect_sse should succeed with a server URL");
 
@@ -303,9 +303,9 @@ fn test_connect_sse_returns_ok_handle_with_valid_settings() {
         tx,
         shutdown_flag,
         status,
-        token_manager,
-        http_agent,
-        make_pending_shared_files(),
+        &token_manager,
+        &http_agent,
+        &make_pending_shared_files(),
     );
 
     assert!(

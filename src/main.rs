@@ -323,7 +323,7 @@ async fn create_window(
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(5));
             log::info!("Checking for updates...");
-            match fulgur::utils::updater::check_for_updates(current_version) {
+            match fulgur::utils::updater::check_for_updates(&current_version) {
                 Ok(Some(new_update_info)) => {
                     *update_info.lock() = Some(new_update_info);
                 }

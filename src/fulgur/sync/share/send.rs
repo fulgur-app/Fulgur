@@ -103,9 +103,9 @@ fn send_share_request(
 /// - `Err(SynchronizationError)`: If validation or setup failed
 pub fn share_file(
     synchronization_settings: &SynchronizationSettings,
-    request: ShareFileRequest,
+    request: &ShareFileRequest,
     devices: &[Device],
-    token_state: Arc<TokenStateManager>,
+    token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
     max_file_size_bytes: u64,
 ) -> Result<ShareResult, SynchronizationError> {
@@ -144,11 +144,7 @@ pub fn share_file(
             _ => {}
         }
     }
-    let token = get_valid_token(
-        synchronization_settings,
-        Arc::clone(&token_state),
-        http_agent,
-    )?;
+    let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
     let share_url = format!("{server_url}/api/share");
     let deduplication_hash = if synchronization_settings.is_deduplication {
         request.file_path.as_ref().map(|path| {
@@ -335,9 +331,9 @@ mod tests {
 
         let result = share_file(
             &settings,
-            request,
+            &request,
             &[],
-            Arc::new(TokenStateManager::new()),
+            &Arc::new(TokenStateManager::new()),
             &ureq::Agent::new_with_config(ureq::config::Config::default()),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
@@ -365,9 +361,9 @@ mod tests {
 
         let result = share_file(
             &settings,
-            request,
+            &request,
             &[],
-            Arc::new(TokenStateManager::new()),
+            &Arc::new(TokenStateManager::new()),
             &ureq::Agent::new_with_config(ureq::config::Config::default()),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
@@ -391,9 +387,9 @@ mod tests {
         };
         let result = share_file(
             &settings,
-            request,
+            &request,
             &[],
-            Arc::new(TokenStateManager::new()),
+            &Arc::new(TokenStateManager::new()),
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
@@ -416,9 +412,9 @@ mod tests {
         };
         let result = share_file(
             &settings,
-            request,
+            &request,
             &[],
-            Arc::new(TokenStateManager::new()),
+            &Arc::new(TokenStateManager::new()),
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
@@ -441,9 +437,9 @@ mod tests {
         };
         let result = share_file(
             &settings,
-            request,
+            &request,
             &[],
-            Arc::new(TokenStateManager::new()),
+            &Arc::new(TokenStateManager::new()),
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
@@ -466,9 +462,9 @@ mod tests {
         };
         let result = share_file(
             &settings,
-            request,
+            &request,
             &[],
-            Arc::new(TokenStateManager::new()),
+            &Arc::new(TokenStateManager::new()),
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         );
@@ -490,9 +486,9 @@ mod tests {
         let token_manager = make_token_manager_with_valid_token();
         let err = share_file(
             &settings,
-            make_basic_request("nonexistent-device"),
+            &make_basic_request("nonexistent-device"),
             &[], // no devices provided
-            token_manager,
+            &token_manager,
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
@@ -511,9 +507,9 @@ mod tests {
         let device = make_device("device-no-key", "desktop", None);
         let err = share_file(
             &settings,
-            make_basic_request("device-no-key"),
+            &make_basic_request("device-no-key"),
             &[device],
-            token_manager,
+            &token_manager,
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
@@ -536,9 +532,9 @@ mod tests {
         );
         let err = share_file(
             &settings,
-            make_basic_request("device-bad-key"),
+            &make_basic_request("device-bad-key"),
             &[device],
-            token_manager,
+            &token_manager,
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
@@ -559,9 +555,9 @@ mod tests {
         let device = make_device("device-valid-key", "server", Some(&public_key.to_string()));
         let result = share_file(
             &settings,
-            make_basic_request("device-valid-key"),
+            &make_basic_request("device-valid-key"),
             &[device],
-            token_manager,
+            &token_manager,
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )
@@ -599,9 +595,9 @@ mod tests {
         };
         let err = share_file(
             &settings,
-            request,
+            &request,
             &[device_no_key],
-            token_manager,
+            &token_manager,
             &make_http_agent(),
             MAX_SYNC_SHARE_PAYLOAD_BYTES as u64,
         )

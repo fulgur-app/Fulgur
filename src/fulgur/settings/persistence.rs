@@ -189,7 +189,7 @@ impl Settings {
     /// - `Err(anyhow::Error)`: If there was an error adding the file
     pub fn add_file(&mut self, file: PathBuf) -> anyhow::Result<()> {
         if self.recent_files.get_files().contains(&file) {
-            self.recent_files.remove_file(file.clone());
+            self.recent_files.remove_file(&file);
         }
         self.recent_files.add_file(file);
         self.save()

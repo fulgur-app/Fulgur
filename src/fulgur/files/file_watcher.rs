@@ -199,19 +199,19 @@ impl FileWatcher {
     /// ### Returns
     /// - `Ok(())`: If the file was watched successfully
     /// - `Err(String)`: If the file could not be watched
-    pub fn watch_file(&mut self, path: PathBuf) -> Result<(), String> {
-        if self.watched_paths.contains_key(&path) {
+    pub fn watch_file(&mut self, path: &PathBuf) -> Result<(), String> {
+        if self.watched_paths.contains_key(path) {
             return Ok(());
         }
         if self.watcher.is_none() {
             self.start().map_err(|e| e.to_string())?;
         }
-        let modified_time = std::fs::metadata(&path)
+        let modified_time = std::fs::metadata(path)
             .and_then(|m| m.modified())
             .unwrap_or(SystemTime::UNIX_EPOCH);
         if let Some(watcher) = &mut self.watcher {
             watcher
-                .watch(&path, RecursiveMode::NonRecursive)
+                .watch(path, RecursiveMode::NonRecursive)
                 .map_err(|e| format!("Failed to watch file {}: {}", path.display(), e))?;
         }
         self.watched_paths.insert(path.clone(), modified_time);
@@ -315,7 +315,7 @@ impl Fulgur {
                         let is_active = self.active_tab_index == Some(tab_index);
 
                         if is_active {
-                            self.show_file_conflict_dialog(path, tab_index, window, cx);
+                            self.show_file_conflict_dialog(&path, tab_index, window, cx);
                         } else {
                             self.file_watch_state
                                 .pending_conflicts
@@ -362,7 +362,7 @@ impl Fulgur {
         for tab in &self.tabs {
             if let Tab::Editor(editor_tab) = tab
                 && let Some(path) = editor_tab.file_path()
-                && let Err(e) = watcher.watch_file(path.clone())
+                && let Err(e) = watcher.watch_file(path)
             {
                 log::warn!("Failed to watch file {}: {}", path.display(), e);
             }
@@ -386,7 +386,7 @@ impl Fulgur {
     /// - `path`: The path to the file to watch
     pub fn watch_file(&mut self, path: &std::path::Path) {
         if let Some(watcher) = &mut self.file_watch_state.file_watcher
-            && let Err(e) = watcher.watch_file(path.to_path_buf())
+            && let Err(e) = watcher.watch_file(&path.to_path_buf())
         {
             log::warn!("Failed to watch file {}: {}", path.display(), e);
         }

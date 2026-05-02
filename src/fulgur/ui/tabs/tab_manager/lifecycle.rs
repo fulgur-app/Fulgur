@@ -194,7 +194,7 @@ impl Fulgur {
             };
             if let Some(path) = pending_path {
                 self.file_watch_state.pending_conflicts.remove(&path);
-                self.show_file_conflict_dialog(path, index, window, cx);
+                self.show_file_conflict_dialog(&path, index, window, cx);
             }
             let pending_remote_reload = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index)
             {

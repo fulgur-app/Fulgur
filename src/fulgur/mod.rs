@@ -959,7 +959,8 @@ impl Fulgur {
                             .lock()
                             .as_ref()
                             .map(|info| info.download_url.clone());
-                        let menus = build_menus(&self.settings.get_recent_files(), update_link);
+                        let menus =
+                            build_menus(&self.settings.get_recent_files(), update_link.as_deref());
                         self.update_menus(menus, cx);
                         if let Err(e) = self.save_state(cx, window) {
                             log::error!("Failed to save app state after opening remote file: {e}");
@@ -979,7 +980,7 @@ impl Fulgur {
                             "Restored remote tab path is no longer a file".into(),
                         ));
                     } else {
-                        self.show_remote_path_browser_dialog(window, cx, browse);
+                        self.show_remote_path_browser_dialog(window, cx, &browse);
                     }
                 }
                 Err(msg) => {

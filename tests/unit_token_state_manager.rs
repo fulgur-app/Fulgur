@@ -177,7 +177,7 @@ fn test_get_valid_token_returns_cached_valid_token() {
     let manager = Arc::new(TokenStateManager::new());
     let expected_token = inject_valid_token(&manager);
     let settings = SynchronizationSettings::new(); // empty, no server_url/email
-    let result = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
+    let result = get_valid_token(&settings, &manager, &make_http_agent());
     assert!(
         result.is_ok(),
         "Expected cached token, got: {:?}",
@@ -192,7 +192,7 @@ fn test_get_valid_token_fails_when_no_server_url() {
     // before attempting any network I/O.
     let manager = Arc::new(TokenStateManager::new()); // no cached token
     let settings = SynchronizationSettings::new(); // server_url = None
-    let result = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
+    let result = get_valid_token(&settings, &manager, &make_http_agent());
     assert!(
         matches!(result, Err(SynchronizationError::ServerUrlMissing)),
         "Expected ServerUrlMissing, got: {result:?}"
@@ -205,7 +205,7 @@ fn test_get_valid_token_fails_when_no_email() {
     let manager = Arc::new(TokenStateManager::new());
     let mut settings = SynchronizationSettings::new();
     settings.server_url = Some("https://example.com".to_string());
-    let result = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
+    let result = get_valid_token(&settings, &manager, &make_http_agent());
     assert!(
         matches!(result, Err(SynchronizationError::EmailMissing)),
         "Expected EmailMissing, got: {result:?}"
@@ -220,12 +220,12 @@ fn test_get_valid_token_after_clear_requires_refresh() {
     inject_valid_token(&manager);
     // First call should succeed using the cache.
     let settings = SynchronizationSettings::new();
-    let first = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
+    let first = get_valid_token(&settings, &manager, &make_http_agent());
     assert!(first.is_ok(), "Pre-clear call should succeed");
     // Clear invalidates the cache.
     manager.clear_token();
     // Second call must now try to refresh and fail (no server_url).
-    let second = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
+    let second = get_valid_token(&settings, &manager, &make_http_agent());
     assert!(
         matches!(second, Err(SynchronizationError::ServerUrlMissing)),
         "Post-clear call should require refresh and fail with ServerUrlMissing, got: {second:?}"
@@ -239,10 +239,10 @@ fn test_get_valid_token_resets_refreshing_flag_on_error() {
     // not deadlock: it should see the same error rather than waiting forever.
     let manager = Arc::new(TokenStateManager::new());
     let settings = SynchronizationSettings::new(); // no server_url → fast error
-    let first = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
+    let first = get_valid_token(&settings, &manager, &make_http_agent());
     assert!(matches!(first, Err(SynchronizationError::ServerUrlMissing)));
     // A second call must not deadlock (flag was properly reset).
-    let second = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
+    let second = get_valid_token(&settings, &manager, &make_http_agent());
     assert!(
         matches!(second, Err(SynchronizationError::ServerUrlMissing)),
         "Second call should fail cleanly, not deadlock: {second:?}"
@@ -262,7 +262,7 @@ fn test_concurrent_get_valid_token_with_cached_token() {
         let s = Arc::clone(&settings);
         let expected = expected_token.clone();
         let handle = thread::spawn(move || {
-            let result = get_valid_token(&s, m, &make_http_agent());
+            let result = get_valid_token(&s, &m, &make_http_agent());
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), expected);
         });
@@ -281,7 +281,7 @@ fn test_get_valid_token_with_expired_token_falls_through_to_refresh() {
     let expired_at = OffsetDateTime::now_utc() - time::Duration::minutes(10);
     manager.inject_token_for_test("old-expired-token".to_string(), expired_at);
     let settings = SynchronizationSettings::new();
-    let result = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
+    let result = get_valid_token(&settings, &manager, &make_http_agent());
     assert!(
         matches!(result, Err(SynchronizationError::ServerUrlMissing)),
         "Expired token must trigger refresh and fail with ServerUrlMissing, got: {result:?}"
@@ -295,7 +295,7 @@ fn test_get_valid_token_with_near_expiry_token_falls_through_to_refresh() {
     let near_expiry = OffsetDateTime::now_utc() + time::Duration::minutes(3);
     manager.inject_token_for_test("near-expiry-token".to_string(), near_expiry);
     let settings = SynchronizationSettings::new();
-    let result = get_valid_token(&settings, Arc::clone(&manager), &make_http_agent());
+    let result = get_valid_token(&settings, &manager, &make_http_agent());
     assert!(
         matches!(result, Err(SynchronizationError::ServerUrlMissing)),
         "Near-expiry token must trigger refresh, got: {result:?}"
