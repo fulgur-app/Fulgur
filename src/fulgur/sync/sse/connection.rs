@@ -76,13 +76,10 @@ fn read_line_with_timeout<R: Read>(
             }
             Err(e)
                 if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut =>
+                    || e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::Interrupted =>
             {
                 thread::sleep(Duration::from_millis(10));
-                continue;
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
-                continue;
             }
             Err(e) => {
                 return Err(ReadError::Io(e));
