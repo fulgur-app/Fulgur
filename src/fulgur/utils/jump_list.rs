@@ -28,7 +28,7 @@ use windows::{
     core::{GUID, HSTRING, Interface, PCWSTR, PWSTR},
 };
 
-/// PKEY_Title: {F29F85E0-4FF9-1068-AB91-08002B27B3D9}, PID 2
+/// `PKEY_Title`: {F29F85E0-4FF9-1068-AB91-08002B27B3D9}, PID 2
 /// Sets the visible label of a jump-list item.
 const PKEY_TITLE: PROPERTYKEY = PROPERTYKEY {
     fmtid: GUID::from_u128(0xf29f85e0_4ff9_1068_ab91_08002b27b3d9),
@@ -54,7 +54,7 @@ pub fn set_app_user_model_id() {
 /// Build and apply the Windows taskbar Jump List
 ///
 /// Delegates to the unsafe COM implementation. Any error is logged and
-/// swallowed — a broken jump list must never crash the app.
+/// swallowed - a broken jump list must never crash the app.
 ///
 /// ### Arguments
 /// - `windows_data`: Tab lists for every open window; only file-backed tabs are shown
@@ -97,7 +97,7 @@ unsafe fn try_update_jump_list(
 
     // ── Tasks ────────────────────────────────────────────────────────────────
     // Both "New Tab" and "New Window" launch the executable without arguments,
-    // which opens a new Fulgur instance with an empty tab — the closest Windows
+    // which opens a new Fulgur instance with an empty tab - the closest Windows
     // equivalent to the macOS in-process actions.
     let tasks: IObjectCollection =
         CoCreateInstance(&EnumerableObjectCollection, None, CLSCTX_INPROC_SERVER)?;

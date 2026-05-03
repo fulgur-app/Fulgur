@@ -276,7 +276,7 @@ impl Fulgur {
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
             {
-                return SharedString::from(format!("{} (../{})", filename, parent_name));
+                return SharedString::from(format!("{filename} (../{parent_name})"));
             }
             SharedString::from(filename.to_string())
         };
