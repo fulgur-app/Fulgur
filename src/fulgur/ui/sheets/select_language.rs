@@ -58,10 +58,10 @@ fn make_select_language_item(
 /// ### Returns:
 /// `true` if the given language is the current language, otherwise `false`.
 fn is_current_language(
-    language: &SupportedLanguage,
+    language: SupportedLanguage,
     current_language: Option<SupportedLanguage>,
 ) -> bool {
-    current_language == Some(*language)
+    current_language == Some(language)
 }
 
 /// Create a select language list.
@@ -85,7 +85,7 @@ fn make_select_language_list(
                 make_select_language_item(
                     entity.clone(),
                     language,
-                    is_current_language(&language, current_language),
+                    is_current_language(language, current_language),
                     cx,
                 )
             })
@@ -175,14 +175,14 @@ mod tests {
     #[test]
     fn test_is_current_language_matches_expected_language() {
         assert!(is_current_language(
-            &SupportedLanguage::Rust,
+            SupportedLanguage::Rust,
             Some(SupportedLanguage::Rust)
         ));
         assert!(!is_current_language(
-            &SupportedLanguage::Rust,
+            SupportedLanguage::Rust,
             Some(SupportedLanguage::Python)
         ));
-        assert!(!is_current_language(&SupportedLanguage::Rust, None));
+        assert!(!is_current_language(SupportedLanguage::Rust, None));
     }
 
     #[cfg(feature = "gpui-test-support")]
