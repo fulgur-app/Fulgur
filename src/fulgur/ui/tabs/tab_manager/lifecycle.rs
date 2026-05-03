@@ -267,9 +267,7 @@ impl Fulgur {
                 }
                 self.show_unsaved_changes_dialog(window, cx, move |this, window, cx| {
                     this.remove_tab_by_id(tab_id, window, cx);
-                    if !this.tabs.is_empty() {
-                        this.close_all_tabs(window, cx);
-                    } else {
+                    if this.tabs.is_empty() {
                         this.active_tab_index = None;
                         if let Err(e) = this.save_state(cx, window) {
                             log::error!("Failed to save state after closing all tabs: {e}");
@@ -279,6 +277,8 @@ impl Fulgur {
                             ));
                         }
                         cx.notify();
+                    } else {
+                        this.close_all_tabs(window, cx);
                     }
                 });
                 return;
@@ -443,10 +443,10 @@ impl Fulgur {
             .iter()
             .enumerate()
             .filter_map(|(idx, tab)| {
-                if idx != active_index {
-                    Some(tab.id())
-                } else {
+                if idx == active_index {
                     None
+                } else {
+                    Some(tab.id())
                 }
             })
             .collect();

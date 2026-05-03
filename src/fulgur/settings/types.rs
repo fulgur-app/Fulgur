@@ -308,10 +308,10 @@ impl Themes {
             .filter_map(|entry| {
                 entry.ok().and_then(|entry| {
                     let filename = entry.file_name().to_string_lossy().to_string();
-                    if !default_themes_names.contains(&filename) {
-                        Some(entry)
-                    } else {
+                    if default_themes_names.contains(&filename) {
                         None
+                    } else {
+                        Some(entry)
                     }
                 })
             })

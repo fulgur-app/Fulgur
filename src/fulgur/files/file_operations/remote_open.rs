@@ -451,15 +451,15 @@ impl Fulgur {
         target_request_id: Option<u64>,
         outcome: Result<RemoteOpenResult, String>,
     ) -> bool {
-        if !open_finished.swap(true, Ordering::AcqRel) {
+        if open_finished.swap(true, Ordering::AcqRel) {
+            false
+        } else {
             pending_remote.lock().push(PendingRemoteOpenOutcome {
                 target_tab_id,
                 target_request_id,
                 result: outcome,
             });
             true
-        } else {
-            false
         }
     }
 }

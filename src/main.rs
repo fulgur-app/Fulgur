@@ -293,7 +293,9 @@ async fn create_window(
                 fulgur.on_window_close_requested(window, cx)
             })
         });
-        if !cli_file_paths.is_empty() {
+        if cli_file_paths.is_empty() {
+            view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
+        } else {
             log::debug!(
                 "Processing {} command-line file arguments",
                 cli_file_paths.len()
@@ -303,8 +305,6 @@ async fn create_window(
                     fulgur.handle_open_file_from_cli(window, cx, file_path.clone());
                 });
             }
-        } else {
-            view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
         }
         cx.new(|cx| gpui_component::Root::new(view, window, cx))
     })?;
