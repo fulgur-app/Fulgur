@@ -35,9 +35,9 @@ impl Fulgur {
         let contents = content_entity.read(cx).text().to_string();
         match location {
             TabLocation::Local(path) => {
-                log::debug!("Saving file: {:?} ({} bytes)", path, contents.len());
+                log::debug!("Saving file: {} ({} bytes)", path.display(), contents.len());
                 if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
-                    log::error!("Failed to save file {path:?}: {e}");
+                    log::error!("Failed to save file {}: {e}", path.display());
                     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
                     window.push_notification(
                         (
@@ -48,7 +48,7 @@ impl Fulgur {
                     );
                     return;
                 }
-                log::debug!("File saved successfully: {path:?}");
+                log::debug!("File saved successfully: {}", path.display());
                 self.file_watch_state
                     .last_file_saves
                     .insert(path.clone(), std::time::Instant::now());
@@ -97,9 +97,13 @@ impl Fulgur {
             let contents = window
                 .update(|_, cx| content_entity.read(cx).text().to_string())
                 .ok()?;
-            log::debug!("Saving file as: {:?} ({} bytes)", path, contents.len());
+            log::debug!(
+                "Saving file as: {} ({} bytes)",
+                path.display(),
+                contents.len()
+            );
             if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
-                log::error!("Failed to save file {path:?}: {e}");
+                log::error!("Failed to save file {}: {e}", path.display());
                 let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
                 let message = SharedString::from(format!("Failed to save '{file_name}': {e}"));
                 window
@@ -112,7 +116,7 @@ impl Fulgur {
                     .ok()?;
                 return None;
             }
-            log::debug!("File saved successfully as: {path:?}");
+            log::debug!("File saved successfully as: {}", path.display());
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {

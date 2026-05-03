@@ -201,7 +201,7 @@ impl Fulgur {
             let dest_path = themes_dir.join(filename);
             match fs::copy(&theme_path, &dest_path) {
                 Ok(_) => {
-                    log::info!("Theme file copied to: {dest_path:?}");
+                    log::info!("Theme file copied to: {}", dest_path.display());
                     window
                         .update(|window, cx| {
                             let notification = SharedString::from(format!(
