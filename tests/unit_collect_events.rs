@@ -1,7 +1,7 @@
-/// Unit tests for the collect_events utility function
+/// Unit tests for the `collect_events` utility function
 ///
-/// The collect_events function is a generic utility that drains all pending events
-/// from an mpsc::Receiver without blocking, returning them as a Vec.
+/// The `collect_events` function is a generic utility that drains all pending events
+/// from an `mpsc::Receiver` without blocking, returning them as a Vec.
 use fulgur::fulgur::utils::utilities::collect_events;
 use std::sync::mpsc;
 

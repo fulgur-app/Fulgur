@@ -66,7 +66,7 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `from`: The current index of the tab to move
-    /// - `to`: The insertion slot index (0..=tabs.len())
+    /// - `to`: The insertion slot index (`0..=tabs.len()`)
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn reorder_tab(
@@ -99,10 +99,10 @@ impl Fulgur {
             });
         }
         if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after reordering tab: {}", e);
+            log::error!("Failed to save app state after reordering tab: {e}");
             self.pending_notification = Some((
                 gpui_component::notification::NotificationType::Warning,
-                format!("Tab reordered but failed to save state: {}", e).into(),
+                format!("Tab reordered but failed to save state: {e}").into(),
             ));
         }
         cx.notify();

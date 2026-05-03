@@ -25,15 +25,11 @@ fn validate_open_path(path_str: &str) -> Result<PathBuf, SharedString> {
     let path = PathBuf::from(trimmed);
     if !path.exists() {
         return Err(SharedString::from(format!(
-            "Path does not exist: {}",
-            trimmed
+            "Path does not exist: {trimmed}"
         )));
     }
     if !path.is_file() {
-        return Err(SharedString::from(format!(
-            "Path is not a file: {}",
-            trimmed
-        )));
+        return Err(SharedString::from(format!("Path is not a file: {trimmed}")));
     }
     Ok(path)
 }

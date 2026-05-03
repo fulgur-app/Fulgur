@@ -62,10 +62,10 @@ impl Default for TokenStateManager {
     }
 }
 
-/// Create a new empty TokenState
+/// Create a new empty `TokenState`
 ///
 /// ### Returns
-/// - `TokenState`: A new TokenState with all fields initialized to default/empty values
+/// - `TokenState`: A new `TokenState` with all fields initialized to default/empty values
 impl Default for TokenState {
     fn default() -> Self {
         Self::new()
@@ -73,7 +73,7 @@ impl Default for TokenState {
 }
 
 impl TokenState {
-    /// Create a new empty TokenState
+    /// Create a new empty `TokenState`
     pub fn new() -> Self {
         Self {
             access_token: None,
@@ -108,25 +108,25 @@ fn request_access_token(
     }) else {
         return Err(SynchronizationError::DeviceKeyMissing);
     };
-    let token_url = format!("{}/api/token", server_url);
+    let token_url = format!("{server_url}/api/token");
     log::debug!("Requesting JWT access token from server");
     let mut response = http_agent
         .post(&token_url)
-        .header("Authorization", &format!("Bearer {}", device_api_key))
+        .header("Authorization", &format!("Bearer {device_api_key}"))
         .header("X-User-Email", email)
         .send("")
         .map_err(|e| handle_ureq_error(e, "Failed to obtain access token"))?;
     let body = match response.body_mut().read_to_string() {
         Ok(body) => body,
         Err(e) => {
-            log::error!("Failed to read access token response body: {}", e);
+            log::error!("Failed to read access token response body: {e}");
             return Err(SynchronizationError::Other(e.to_string()));
         }
     };
     let token_response: AccessTokenResponse = match serde_json::from_str(&body) {
         Ok(response) => response,
         Err(e) => {
-            log::error!("Failed to parse access token response: {}", e);
+            log::error!("Failed to parse access token response: {e}");
             return Err(SynchronizationError::Other(e.to_string()));
         }
     };
@@ -167,7 +167,7 @@ fn is_token_valid(expires_at: &OffsetDateTime) -> bool {
 /// - `Err(SynchronizationError)`: If token refresh failed
 pub fn get_valid_token(
     synchronization_settings: &SynchronizationSettings,
-    token_manager: Arc<TokenStateManager>,
+    token_manager: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<String, SynchronizationError> {
     // Fast path: check if current token is valid without acquiring write lock
@@ -234,7 +234,7 @@ pub fn get_valid_token(
     ) {
         Ok(t) => t,
         Err(e) => {
-            log::error!("Failed to parse token expiration time: {}", e);
+            log::error!("Failed to parse token expiration time: {e}");
             let mut state = token_manager.state.lock();
             state.is_refreshing_token = false;
             token_manager.refresh_notify.notify_all();

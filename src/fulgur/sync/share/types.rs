@@ -34,17 +34,14 @@ impl ShareResult {
         let total = self.successes.len() + self.failures.len();
         if self.is_complete_success() {
             if let Some((_, expiration)) = self.successes.first() {
-                format!(
-                    "File shared successfully to {} device(s) until {}.",
-                    total, expiration
-                )
+                format!("File shared successfully to {total} device(s) until {expiration}.")
             } else if total == 0 {
                 "The file was not shared.".to_string()
             } else {
                 "File shared successfully.".to_string()
             }
         } else if self.successes.is_empty() {
-            format!("Failed to share file to all {} device(s).", total)
+            format!("Failed to share file to all {total} device(s).")
         } else {
             format!(
                 "File shared to {}/{} device(s). {} failed.",

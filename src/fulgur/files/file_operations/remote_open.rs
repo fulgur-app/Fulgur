@@ -111,7 +111,7 @@ impl Fulgur {
         self.show_ssh_password_dialog(
             window,
             cx,
-            host,
+            &host,
             port,
             user,
             move |resolved_user, password, window, cx| {
@@ -325,7 +325,7 @@ impl Fulgur {
                         port,
                         decision_tx: tx,
                     });
-                    wait_for_host_key_decision(rx, &host_key_decision_timed_out_for_callback)
+                    wait_for_host_key_decision(&rx, &host_key_decision_timed_out_for_callback)
                 },
             );
             if let Err(ssh::error::SshError::AuthFailed) = &session_result {
@@ -356,8 +356,7 @@ impl Fulgur {
                 .map_err(|e| e.user_message());
             if host_key_decision_timed_out_for_thread.load(Ordering::Acquire) {
                 outcome = Err(format!(
-                    "{} ({} s)",
-                    SSH_CONNECTION_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                    "{SSH_CONNECTION_TIMEOUT_LABEL} ({SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS} s)"
                 ));
             }
 
@@ -417,8 +416,7 @@ impl Fulgur {
                             target_tab_id,
                             target_request_id,
                             Err(format!(
-                                "{} ({} s)",
-                                SSH_CONNECTION_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS
+                                "{SSH_CONNECTION_TIMEOUT_LABEL} ({SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS} s)"
                             )),
                         );
                     }

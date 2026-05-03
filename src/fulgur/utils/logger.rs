@@ -90,13 +90,13 @@ pub fn init() -> anyhow::Result<()> {
         .map_err(|_| anyhow!("logger already initialized"))?;
     #[cfg(not(debug_assertions))]
     log::set_max_level(LevelFilter::Info);
-    log::info!("Logger initialized in: {:?}", log_dir);
+    log::info!("Logger initialized in: {log_dir:?}");
     Ok(())
 }
 
 /// Update the effective log level based on the `debug_mode` setting.
 ///
-/// In debug builds this is a no-op — the level is always `Debug`.
+/// In debug builds this is a no-op: the level is always `Debug`.
 /// In release builds, `debug_mode = true` enables `Debug`-level output;
 /// `false` restores `Info`.
 ///

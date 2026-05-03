@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 /// Configuration for retry behavior
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct RetryConfig {
     /// Maximum number of retry attempts (0 = no retries, just one attempt)
     pub max_attempts: u32,
@@ -19,7 +19,7 @@ pub struct RetryConfig {
 }
 
 impl Default for RetryConfig {
-    /// Creates a default RetryConfig
+    /// Creates a default `RetryConfig`
     ///
     /// ### Returns
     /// `Self`: a default configuration
@@ -83,13 +83,13 @@ where
         match operation() {
             Ok(result) => {
                 if attempt > 1 {
-                    log::info!("Operation succeeded after {} attempts", attempt);
+                    log::info!("Operation succeeded after {attempt} attempts");
                 }
                 return Ok(result);
             }
             Err(error) => {
                 if attempt >= config.max_attempts {
-                    log::error!("Operation failed after {} attempts, giving up", attempt);
+                    log::error!("Operation failed after {attempt} attempts, giving up");
                     return Err(error);
                 }
 
@@ -132,7 +132,7 @@ impl BackoffCalculator {
     /// - `multiplier`: Backoff multiplier (typically 2.0)
     ///
     /// ### Returns
-    /// `Self`: a new BackoffCalculator
+    /// `Self`: a new `BackoffCalculator`
     pub fn new(initial_delay: Duration, max_delay: Duration, multiplier: f64) -> Self {
         Self {
             consecutive_failures: 0,
@@ -145,7 +145,7 @@ impl BackoffCalculator {
     /// Create with default settings (1s initial, 5min max, 2x multiplier)
     ///
     /// ### Returns
-    /// `Self`: A BackoffCalculator with default settings
+    /// `Self`: A `BackoffCalculator` with default settings
     pub fn default_settings() -> Self {
         Self::new(
             Duration::from_secs(1),
@@ -182,7 +182,7 @@ impl BackoffCalculator {
     /// Get the number of consecutive failures
     ///
     /// ### Returns
-    /// ù32`: the number of consecutive failures
+    /// `u32`: the number of consecutive failures
     pub fn consecutive_failures(&self) -> u32 {
         self.consecutive_failures
     }

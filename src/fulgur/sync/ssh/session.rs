@@ -82,12 +82,11 @@ pub fn connect(
     let addr_str = format!("{}:{}", spec.host, spec.port);
     let addrs: Vec<_> = addr_str
         .to_socket_addrs()
-        .map_err(|e| SshError::ConnectionFailed(format!("Cannot resolve {}: {}", addr_str, e)))?
+        .map_err(|e| SshError::ConnectionFailed(format!("Cannot resolve {addr_str}: {e}")))?
         .collect();
     if addrs.is_empty() {
         return Err(SshError::ConnectionFailed(format!(
-            "No addresses found for {}",
-            addr_str
+            "No addresses found for {addr_str}"
         )));
     }
     // Try each resolved address in order (DNS may return IPv6 before IPv4; fall through on
@@ -127,7 +126,7 @@ pub fn connect(
 
     session
         .userauth_password(user, password.as_str())
-        .map_err(map_password_auth_error)?;
+        .map_err(|e| map_password_auth_error(&e))?;
 
     if !session.authenticated() {
         return Err(SshError::AuthFailed);
@@ -148,7 +147,7 @@ pub fn connect(
 /// ### Returns
 /// - `SshError::AuthFailed`: Password authentication was explicitly rejected by the server.
 /// - `SshError::ConnectionFailed`: Any non-auth failure during the authentication request.
-fn map_password_auth_error(error: ssh2::Error) -> SshError {
+fn map_password_auth_error(error: &ssh2::Error) -> SshError {
     match error.code() {
         ssh2::ErrorCode::Session(code) if code == LIBSSH2_AUTHENTICATION_FAILED_CODE => {
             SshError::AuthFailed
@@ -911,7 +910,7 @@ example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA6rWI3G1sz07DnfFlrouTcysQlj2P+j
     fn map_password_auth_error_maps_authentication_rejection() {
         let error = ssh2::Error::from_errno(ssh2::ErrorCode::Session(-18));
         assert!(matches!(
-            map_password_auth_error(error),
+            map_password_auth_error(&error),
             SshError::AuthFailed
         ));
     }
@@ -919,7 +918,7 @@ example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA6rWI3G1sz07DnfFlrouTcysQlj2P+j
     #[test]
     fn map_password_auth_error_maps_non_auth_errors_to_connection_failed() {
         let error = ssh2::Error::from_errno(ssh2::ErrorCode::Session(-7));
-        match map_password_auth_error(error) {
+        match map_password_auth_error(&error) {
             SshError::ConnectionFailed(message) => {
                 assert!(message.contains("SSH authentication request failed"));
             }

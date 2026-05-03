@@ -18,10 +18,10 @@ pub fn add_clojure_support() {
 
 /// Custom highlights query for Clojure.
 ///
-/// The upstream arborium_clojure query only covers literals (numbers, strings,
+/// The upstream `arborium_clojure` query only covers literals (numbers, strings,
 /// booleans, keywords, comments). Because Clojure is homoiconic, special forms
 /// such as `defn`, `let`, `fn`, and `if` are indistinguishable from ordinary
-/// function calls at the grammar level — both are a `list_lit` whose first
+/// function calls at the grammar level - both are a `list_lit` whose first
 /// child is a `sym_lit`. A `#match?` predicate on the symbol text is required
 /// to recognise them as keywords.
 ///
@@ -44,7 +44,7 @@ const CLOJURE_HIGHLIGHTS_QUERY: &str = r##"
 
 (nil_lit) @constant
 
-;; Keywords are symbols prefixed with `:` — highlight as string.special.symbol
+;; Keywords are symbols prefixed with `:` -  highlight as string.special.symbol
 ;; so they stand out from regular identifiers without using the type colour.
 (kwd_lit) @string.special.symbol
 

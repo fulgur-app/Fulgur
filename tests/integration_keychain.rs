@@ -64,7 +64,7 @@ fn load_from_test_keychain(entry_name: &str) -> anyhow::Result<Option<String>> {
     match entry.get_password() {
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(anyhow::anyhow!("Failed to load from keychain: {}", e)),
+        Err(e) => Err(anyhow::anyhow!("Failed to load from keychain: {e}")),
     }
 }
 
@@ -74,7 +74,7 @@ fn test_keychain_save_and_load_private_key() {
     let entry_name = "test_keychain_save_and_load";
     cleanup_keychain_entry(entry_name);
     let (private_key, _) = generate_key_pair();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     save_to_test_keychain(entry_name, &private_str).expect("Failed to save to keychain");
     let loaded = load_from_test_keychain(entry_name)
         .expect("Failed to load from keychain")
@@ -130,7 +130,7 @@ fn test_full_integration_keychain_and_encryption() {
     cleanup_keychain_entry(entry_name);
     let (private_key, public_key) = generate_key_pair();
     let public_str = public_key.to_string();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     save_to_test_keychain(entry_name, &private_str)
         .expect("Failed to save private key to keychain");
     let original = b"Sensitive data to be encrypted";
@@ -158,11 +158,11 @@ fn test_multi_device_simulation() {
     let (device1_private, device1_public) = generate_key_pair();
     let (device2_private, device2_public) = generate_key_pair();
     let (device3_private, device3_public) = generate_key_pair();
-    save_to_test_keychain("device1_private", &serialize(device1_private))
+    save_to_test_keychain("device1_private", &serialize(&device1_private))
         .expect("Save device1 key");
-    save_to_test_keychain("device2_private", &serialize(device2_private))
+    save_to_test_keychain("device2_private", &serialize(&device2_private))
         .expect("Save device2 key");
-    save_to_test_keychain("device3_private", &serialize(device3_private))
+    save_to_test_keychain("device3_private", &serialize(&device3_private))
         .expect("Save device3 key");
     let original = b"Shared file content across devices";
     let encrypted_for_device1 =
@@ -201,23 +201,22 @@ fn test_keychain_persistence_across_multiple_operations() {
     let entry_name = "test_keychain_persistence";
     cleanup_keychain_entry(entry_name);
     let (private_key, public_key) = generate_key_pair();
-    let private_str = serialize(private_key);
+    let private_str = serialize(&private_key);
     let public_str = public_key.to_string();
     save_to_test_keychain(entry_name, &private_str).expect("Failed to save to keychain");
     for i in 0..10 {
-        let original = format!("Test message number {}", i);
+        let original = format!("Test message number {i}");
         let encrypted = encrypt_bytes(original.as_bytes(), &public_str)
-            .unwrap_or_else(|_| panic!("Encryption {} should succeed", i));
+            .unwrap_or_else(|_| panic!("Encryption {i} should succeed"));
         let loaded_private = load_from_test_keychain(entry_name)
             .expect("Load should succeed")
             .expect("Key should exist");
         let decrypted = decrypt_bytes(&encrypted, &loaded_private)
-            .unwrap_or_else(|_| panic!("Decryption {} should succeed", i));
+            .unwrap_or_else(|_| panic!("Decryption {i} should succeed"));
         assert_eq!(
             String::from_utf8(decrypted).unwrap(),
             original,
-            "Iteration {} should succeed",
-            i
+            "Iteration {i} should succeed"
         );
     }
     cleanup_keychain_entry(entry_name);

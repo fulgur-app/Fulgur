@@ -24,13 +24,13 @@ pub struct InsertButton {
 }
 
 impl InsertButton {
-    /// Create a new InsertButton with the given element ID.
+    /// Create a new `InsertButton` with the given element ID.
     ///
     /// ### Arguments
     /// - `id`: A unique element ID for this button
     ///
     /// ### Returns
-    /// - `Self`: A new InsertButton with no click handler set
+    /// - `Self`: A new `InsertButton` with no click handler set
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),

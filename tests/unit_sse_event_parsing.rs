@@ -7,7 +7,7 @@ use fulgur::fulgur::sync::sse::SseEvent;
 
 // Helper functions
 
-/// Check if an SseEvent is a Heartbeat with the expected timestamp
+/// Check if an `SseEvent` is a Heartbeat with the expected timestamp
 fn assert_heartbeat(event: &SseEvent, expected_timestamp: &str) {
     match event {
         SseEvent::Heartbeat { timestamp } => {
@@ -16,11 +16,11 @@ fn assert_heartbeat(event: &SseEvent, expected_timestamp: &str) {
                 "Heartbeat timestamp mismatch"
             );
         }
-        _ => panic!("Expected Heartbeat event, got: {:?}", event),
+        _ => panic!("Expected Heartbeat event, got: {event:?}"),
     }
 }
 
-/// Check if an SseEvent is a ShareAvailable with the expected share_id
+/// Check if an `SseEvent` is a `ShareAvailable` with the expected `share_id`
 fn assert_share_available(event: &SseEvent, expected_share_id: &str) {
     match event {
         SseEvent::ShareAvailable(notification) => {
@@ -29,15 +29,15 @@ fn assert_share_available(event: &SseEvent, expected_share_id: &str) {
                 "Share share_id mismatch"
             );
         }
-        _ => panic!("Expected ShareAvailable event, got: {:?}", event),
+        _ => panic!("Expected ShareAvailable event, got: {event:?}"),
     }
 }
 
-/// Check if an SseEvent is an Error
+/// Check if an `SseEvent` is an Error
 fn assert_error(event: &SseEvent) {
     match event {
         SseEvent::Error(_) => {} // Success
-        _ => panic!("Expected Error event, got: {:?}", event),
+        _ => panic!("Expected Error event, got: {event:?}"),
     }
 }
 
@@ -184,10 +184,7 @@ fn test_parse_unknown_event_type_custom() {
 fn test_parse_very_long_data() {
     // Test with a very long JSON string
     let long_content = "a".repeat(10000);
-    let data = format!(
-        r#"{{"timestamp":"2024-01-15T12:00:00Z","long_field":"{}"}}"#,
-        long_content
-    );
+    let data = format!(r#"{{"timestamp":"2024-01-15T12:00:00Z","long_field":"{long_content}"}}"#);
     let event = SseEvent::parse("heartbeat", &data);
     // Should parse successfully even with extra fields
     assert_heartbeat(&event, "2024-01-15T12:00:00Z");

@@ -16,7 +16,7 @@ use gpui_component::{
 /// ### Returns
 /// - `SettingPage`: The Editor settings page
 pub fn create_editor_page(
-    entity: Entity<Fulgur>,
+    entity: &Entity<Fulgur>,
     font_family_select: Entity<SelectState<SearchableVec<SharedString>>>,
 ) -> SettingPage {
     let default_editor_settings = EditorSettings::new();

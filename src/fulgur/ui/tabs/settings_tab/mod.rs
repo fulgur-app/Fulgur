@@ -103,12 +103,12 @@ impl Fulgur {
             })
             .expect("create_settings_pages called without a settings tab in self.tabs");
         let mut pages = vec![
-            editor_page::create_editor_page(entity.clone(), font_family_select),
-            application_page::create_application_page(entity.clone()),
+            editor_page::create_editor_page(&entity, font_family_select),
+            application_page::create_application_page(&entity),
         ];
         let themes = self.shared_state(cx).themes.lock().clone();
         if let Some(ref themes) = themes {
-            pages.push(Self::create_themes_page(entity, themes));
+            pages.push(Self::create_themes_page(&entity, themes));
         }
         pages
     }
@@ -156,15 +156,15 @@ impl Fulgur {
     pub fn clear_recent_files(&mut self, cx: &mut Context<Self>) {
         self.settings.recent_files.clear();
         if let Err(e) = self.update_and_propagate_settings(cx) {
-            log::error!("Failed to save settings: {}", e);
+            log::error!("Failed to save settings: {e}");
         }
         let menus = crate::fulgur::ui::menus::build_menus(
             self.settings.recent_files.get_files(),
-            if let Some(info) = self.shared_state(cx).update_info.lock().clone() {
-                Some(info.download_url)
-            } else {
-                None
-            },
+            self.shared_state(cx)
+                .update_info
+                .lock()
+                .as_ref()
+                .map(|info| info.download_url.as_str()),
         );
         self.update_menus(menus, cx);
     }

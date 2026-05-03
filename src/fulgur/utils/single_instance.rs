@@ -5,7 +5,7 @@
 //! path to it over a loopback TCP connection, and lets the caller exit early.
 //!
 //! The listening instance receives the path, appends it to the shared
-//! `pending_files` queue, and the next render frame opens / focuses the file —
+//! `pending_files` queue, and the next render frame opens / focuses the file -
 //! the same mechanism used by the macOS "Open With" handler.
 //!
 //! Jump list Tasks ("New Tab", "New Window") send a `CMD:new-tab` /
@@ -37,8 +37,8 @@ const CMD_PREFIX: &str = "CMD:";
 /// - `paths`: The file paths to forward to the running instance
 ///
 /// ### Returns
-/// - `true`: Another instance was found and the paths were forwarded — caller should exit
-/// - `false`: No existing instance is running — caller should continue
+/// - `true`: Another instance was found and the paths were forwarded - caller should exit
+/// - `false`: No existing instance is running - caller should continue
 pub fn try_forward_to_existing_instance(paths: &[PathBuf]) -> bool {
     match TcpStream::connect(("127.0.0.1", IPC_PORT)) {
         Ok(mut stream) => {
@@ -66,16 +66,13 @@ pub fn try_forward_to_existing_instance(paths: &[PathBuf]) -> bool {
 /// - `cmd`: The command identifier to send (e.g. `"new-tab"`, `"new-window"`)
 ///
 /// ### Returns
-/// - `true`: Another instance was found and the command was forwarded — caller should exit
-/// - `false`: No existing instance is running — caller should continue
+/// - `true`: Another instance was found and the command was forwarded - caller should exit
+/// - `false`: No existing instance is running - caller should continue
 pub fn try_send_command_to_existing_instance(cmd: &str) -> bool {
     match TcpStream::connect(("127.0.0.1", IPC_PORT)) {
         Ok(mut stream) => {
-            let _ = writeln!(stream, "{}{}", CMD_PREFIX, cmd);
-            log::info!(
-                "Single-instance: forwarded command '{}' to running instance",
-                cmd
-            );
+            let _ = writeln!(stream, "{CMD_PREFIX}{cmd}");
+            log::info!("Single-instance: forwarded command '{cmd}' to running instance");
             true
         }
         Err(_) => false,

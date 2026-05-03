@@ -37,7 +37,7 @@ fn make_select_theme_item(
     current_theme_shared: Arc<Mutex<String>>,
     cx: &mut App,
 ) -> Stateful<Div> {
-    let id = SharedString::from(format!("Select_{}", theme_name));
+    let id = SharedString::from(format!("Select_{theme_name}"));
     h_flex()
         .id(id)
         .cursor_pointer()
@@ -87,8 +87,8 @@ fn is_current_theme(theme_name: &str, current_theme: &str) -> bool {
 /// ### Returns:
 /// `Div`: Represents the rendered theme list.
 fn make_select_theme_list(
-    entity: Entity<Fulgur>,
-    themes: Vec<String>,
+    entity: &Entity<Fulgur>,
+    themes: &[String],
     current_theme: String,
     current_theme_shared: Arc<Mutex<String>>,
     cx: &mut App,
@@ -96,7 +96,6 @@ fn make_select_theme_list(
     let entity = entity.clone();
     div().rounded_md().children(
         themes
-            .clone()
             .iter()
             .map(move |theme| {
                 make_select_theme_item(
@@ -133,9 +132,7 @@ impl Fulgur {
             self.settings.app_settings.theme = theme_name.to_string().into();
             if let Err(error) = self.update_and_propagate_settings(cx) {
                 log::error!(
-                    "Failed to propagate settings after theme '{}' selection: {}",
-                    theme_name,
-                    error
+                    "Failed to propagate settings after theme '{theme_name}' selection: {error}"
                 );
             }
             *current_theme_shared.lock() = theme_name.to_string();
@@ -177,12 +174,11 @@ impl Fulgur {
             let themes_dir = match themes_directory_path() {
                 Ok(path) => path,
                 Err(e) => {
-                    log::error!("Failed to get themes directory: {}", e);
+                    log::error!("Failed to get themes directory: {e}");
                     window
                         .update(|window, cx| {
                             let notification = SharedString::from(format!(
-                                "Failed to access themes directory: {}",
-                                e
+                                "Failed to access themes directory: {e}"
                             ));
                             window.push_notification((NotificationType::Error, notification), cx);
                         })
@@ -205,7 +201,7 @@ impl Fulgur {
             let dest_path = themes_dir.join(filename);
             match fs::copy(&theme_path, &dest_path) {
                 Ok(_) => {
-                    log::info!("Theme file copied to: {:?}", dest_path);
+                    log::info!("Theme file copied to: {dest_path:?}");
                     window
                         .update(|window, cx| {
                             let notification = SharedString::from(format!(
@@ -213,16 +209,16 @@ impl Fulgur {
                                 filename.to_string_lossy()
                             ));
                             window.push_notification((NotificationType::Success, notification), cx);
-                            reload_themes_and_update(&settings, entity, cx);
+                            reload_themes_and_update(&settings, &entity, cx);
                         })
                         .ok()?;
                 }
                 Err(e) => {
-                    log::error!("Failed to copy theme file: {}", e);
+                    log::error!("Failed to copy theme file: {e}");
                     window
                         .update(|window, cx| {
                             let notification =
-                                SharedString::from(format!("Failed to add theme: {}", e));
+                                SharedString::from(format!("Failed to add theme: {e}"));
                             window.push_notification((NotificationType::Error, notification), cx);
                         })
                         .ok()?;
@@ -275,16 +271,16 @@ impl Fulgur {
                         .h(max_height)
                         .child(div().text_lg().child("Dark themes"))
                         .child(make_select_theme_list(
-                            entity_dark,
-                            dark_themes.clone(),
+                            &entity_dark,
+                            &dark_themes,
                             current_theme_display.clone(),
                             current_theme_shared_dark,
                             cx,
                         ))
                         .child(div().text_lg().mt_4().child("Light themes"))
                         .child(make_select_theme_list(
-                            entity_light,
-                            light_themes.clone(),
+                            &entity_light,
+                            &light_themes,
                             current_theme_display.clone(),
                             current_theme_shared_light,
                             cx,

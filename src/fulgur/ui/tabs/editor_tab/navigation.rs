@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 static LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+|\d+:\d+)$").unwrap());
 
 /// A line and optional character position for cursor navigation
+#[derive(Copy, Clone)]
 pub struct Jump {
     pub line: u32,
     pub character: Option<u32>,
@@ -19,7 +20,7 @@ pub struct Jump {
 /// ### Returns
 /// - `Ok(Jump)`: The jump struct
 /// - `Err(anyhow::Error)`: If the destination string is not a valid jump
-pub fn extract_line_number(destination: SharedString) -> anyhow::Result<Jump> {
+pub fn extract_line_number(destination: &SharedString) -> anyhow::Result<Jump> {
     let mut jump = Jump {
         line: 0,
         character: None,
@@ -70,7 +71,7 @@ mod tests {
     #[test]
     fn test_extract_line_number_simple() {
         let destination = SharedString::from("23");
-        let result = extract_line_number(destination).unwrap();
+        let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, 22);
         assert_eq!(result.character, None);
     }
@@ -78,7 +79,7 @@ mod tests {
     #[test]
     fn test_extract_line_number_with_character() {
         let destination = SharedString::from("23:17");
-        let result = extract_line_number(destination).unwrap();
+        let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, 22);
         assert_eq!(result.character, Some(17));
     }
@@ -86,7 +87,7 @@ mod tests {
     #[test]
     fn test_extract_line_number_invalid() {
         let destination = SharedString::from("azerty");
-        let result = extract_line_number(destination);
+        let result = extract_line_number(&destination);
         assert!(result.is_err());
     }
 
@@ -94,7 +95,7 @@ mod tests {
     fn test_extract_line_number_line_1() {
         // Line 1 should convert to index 0
         let destination = SharedString::from("1");
-        let result = extract_line_number(destination).unwrap();
+        let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, 0);
         assert_eq!(result.character, None);
     }
@@ -103,7 +104,7 @@ mod tests {
     fn test_extract_line_number_line_0() {
         // Line 0 should lead to the first line
         let destination = SharedString::from("0");
-        let result = extract_line_number(destination).unwrap();
+        let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, 0);
         assert_eq!(result.character, None);
     }
@@ -112,7 +113,7 @@ mod tests {
     fn test_extract_line_number_negative() {
         // Negative numbers should fail regex validation
         let destination = SharedString::from("-5");
-        let result = extract_line_number(destination);
+        let result = extract_line_number(&destination);
         assert!(result.is_err());
     }
 
@@ -120,7 +121,7 @@ mod tests {
     fn test_extract_line_number_very_large() {
         // Very large valid number
         let destination = SharedString::from("999999999");
-        let result = extract_line_number(destination).unwrap();
+        let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, 999999998);
         assert_eq!(result.character, None);
     }
@@ -129,7 +130,7 @@ mod tests {
     fn test_extract_line_number_overflow() {
         // Number larger than u32::MAX should cause parse to fail, returning 0
         let destination = SharedString::from("99999999999999999999");
-        let result = extract_line_number(destination).unwrap();
+        let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, u32::MAX - 1);
         assert_eq!(result.character, None);
     }
@@ -138,7 +139,7 @@ mod tests {
     fn test_extract_line_number_non_numeric() {
         // Non-numeric input should fail regex validation
         let destination = SharedString::from("abc");
-        let result = extract_line_number(destination);
+        let result = extract_line_number(&destination);
         assert!(result.is_err());
     }
 
@@ -146,7 +147,7 @@ mod tests {
     fn test_extract_line_number_partial_numeric() {
         // Partially numeric input should fail regex validation
         let destination = SharedString::from("123abc");
-        let result = extract_line_number(destination);
+        let result = extract_line_number(&destination);
         assert!(result.is_err());
     }
 
@@ -154,7 +155,7 @@ mod tests {
     fn test_extract_line_number_malformed_colon() {
         // Malformed input with double colon should fail regex validation
         let destination = SharedString::from("file.txt::");
-        let result = extract_line_number(destination);
+        let result = extract_line_number(&destination);
         assert!(result.is_err());
     }
 
@@ -162,7 +163,7 @@ mod tests {
     fn test_extract_line_number_missing_number_after_colon() {
         // "line:" without number should fail regex validation
         let destination = SharedString::from("23:");
-        let result = extract_line_number(destination);
+        let result = extract_line_number(&destination);
         assert!(result.is_err());
     }
 
@@ -170,7 +171,7 @@ mod tests {
     fn test_extract_line_number_missing_number_before_colon() {
         // ":23" without line number should fail regex validation
         let destination = SharedString::from(":23");
-        let result = extract_line_number(destination);
+        let result = extract_line_number(&destination);
         assert!(result.is_err());
     }
 
@@ -178,7 +179,7 @@ mod tests {
     fn test_extract_line_number_empty_string() {
         // Empty string should fail regex validation
         let destination = SharedString::from("");
-        let result = extract_line_number(destination);
+        let result = extract_line_number(&destination);
         assert!(result.is_err());
     }
 
@@ -186,7 +187,7 @@ mod tests {
     fn test_extract_line_number_with_whitespace() {
         // Whitespace should fail regex validation
         let destination = SharedString::from(" 23 ");
-        let result = extract_line_number(destination);
+        let result = extract_line_number(&destination);
         assert!(result.is_err());
     }
 
@@ -194,7 +195,7 @@ mod tests {
     fn test_extract_line_number_zero_character() {
         // Line with character 0
         let destination = SharedString::from("10:0");
-        let result = extract_line_number(destination).unwrap();
+        let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, 9);
         assert_eq!(result.character, Some(0));
     }
@@ -203,7 +204,7 @@ mod tests {
     fn test_extract_line_number_three_parts() {
         // Three parts separated by colons should fail regex validation
         let destination = SharedString::from("10:5:2");
-        let result = extract_line_number(destination);
+        let result = extract_line_number(&destination);
         assert!(result.is_err());
     }
 
@@ -211,7 +212,7 @@ mod tests {
     fn test_extract_line_number_with_character_overflow() {
         // Very large character position
         let destination = SharedString::from("10:99999999999999999999");
-        let result = extract_line_number(destination).unwrap();
+        let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, 9);
         // Overflow causes parse to fail, string_to_u32 returns 0
         assert_eq!(result.character, Some(u32::MAX));

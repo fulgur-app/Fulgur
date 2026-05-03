@@ -88,12 +88,8 @@ fn test_detect_encoding_with_various_newlines() {
     ] {
         let bytes = content.as_bytes();
         let (encoding, decoded) = detect_encoding_and_decode(bytes);
-        assert_eq!(encoding, "UTF-8", "{} newlines should be UTF-8", name);
-        assert_eq!(
-            decoded, content,
-            "{} newlines should decode correctly",
-            name
-        );
+        assert_eq!(encoding, "UTF-8", "{name} newlines should be UTF-8");
+        assert_eq!(decoded, content, "{name} newlines should decode correctly");
     }
 }
 
@@ -101,7 +97,7 @@ fn test_detect_encoding_with_various_newlines() {
 fn test_detect_encoding_large_file() {
     let mut content = String::new();
     for i in 0..1000 {
-        content.push_str(&format!("Line {} with some content\n", i));
+        content.push_str(&format!("Line {i} with some content\n"));
     }
     let bytes = content.as_bytes();
     let (encoding, decoded) = detect_encoding_and_decode(bytes);

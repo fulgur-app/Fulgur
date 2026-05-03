@@ -113,7 +113,7 @@ impl Fulgur {
 
         let result = reveal_file_in_file_manager(file_path);
         if let Err(e) = result {
-            log::error!("Failed to open file manager: {}", e);
+            log::error!("Failed to open file manager: {e}");
         }
     }
 
@@ -161,7 +161,7 @@ impl Fulgur {
     /// Applies the selected theme, updates settings, refreshes windows, and rebuilds menus.
     ///
     /// ### Arguments
-    /// - `theme_name`: The name of the theme to switch to (as SharedString from action)
+    /// - `theme_name`: The name of the theme to switch to (as `SharedString` from action)
     /// - `cx`: The application context
     pub fn switch_to_theme(&mut self, theme_name: gpui::SharedString, cx: &mut Context<Self>) {
         if let Some(theme_config) = ThemeRegistry::global(cx)
@@ -183,8 +183,8 @@ impl Fulgur {
 
 /// Reveals a file in the platform's native file manager with the file selected.
 ///
-/// - **macOS**: `open -R <path>` — reveals and selects the file in Finder
-/// - **Windows**: `explorer /select,<path>` — selects the file in Explorer
+/// - **macOS**: `open -R <path>`: reveals and selects the file in Finder
+/// - **Windows**: `explorer /select,<path>`: selects the file in Explorer
 /// - **Linux**: falls back to opening the parent directory via the `open` crate,
 ///   as there is no universal "reveal" command across desktop environments
 ///

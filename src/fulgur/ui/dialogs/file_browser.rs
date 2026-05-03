@@ -78,7 +78,7 @@ pub fn browser_list_height() -> Pixels {
 /// - `None`: When the iterator is empty, so callers can skip appending.
 pub fn render_browser_list(
     entries: impl IntoIterator<Item = BrowserEntry>,
-    input_entity: Entity<InputState>,
+    input_entity: &Entity<InputState>,
     hover_bg: Hsla,
     icon_color: Hsla,
 ) -> Option<impl IntoElement> {

@@ -6,7 +6,7 @@ use gpui_component::WindowExt;
 impl Fulgur {
     /// Process window state updates during the render cycle:
     /// 1. Cache the current window bounds and display ID for state persistence
-    /// 2. Update the global WindowManager to track this window as focused
+    /// 2. Update the global `WindowManager` to track this window as focused
     /// 3. Display any pending notifications that were queued during event processing
     ///
     /// ### Arguments

@@ -21,20 +21,20 @@ pub struct SseState {
 }
 
 impl Default for SseState {
-    /// Create a new SseState with all fields initialized to default/empty values
+    /// Create a new `SseState` with all fields initialized to default/empty values
     ///
     /// ### Returns
-    /// `Self`: A new SseState
+    /// `Self`: A new `SseState`
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl SseState {
-    /// Create a new SseState with all fields initialized to None
+    /// Create a new `SseState` with all fields initialized to None
     ///
     /// ### Returns
-    /// `Self`: a new SseState
+    /// `Self`: a new `SseState`
     pub fn new() -> Self {
         Self {
             sse_events: None,
@@ -73,7 +73,7 @@ impl SseEvent {
     /// Parse an SSE event from the event type and data
     ///
     /// ### Arguments
-    /// - `event_type`: The SSE event type (e.g., "heartbeat", "share_available")
+    /// - `event_type`: The SSE event type (e.g., "heartbeat", "`share_available`")
     /// - `data`: The JSON data for the event
     ///
     /// ### Returns
@@ -85,7 +85,7 @@ impl SseEvent {
                     timestamp: hb.timestamp,
                 },
                 Err(e) => {
-                    log::warn!("Failed to parse heartbeat: {}", e);
+                    log::warn!("Failed to parse heartbeat: {e}");
                     SseEvent::Heartbeat {
                         timestamp: String::new(),
                     }
@@ -94,8 +94,8 @@ impl SseEvent {
             "share_available" => match serde_json::from_str::<ShareNotification>(data) {
                 Ok(notification) => SseEvent::ShareAvailable(notification),
                 Err(e) => {
-                    log::error!("Failed to parse share notification: {}", e);
-                    SseEvent::Error(format!("Invalid share notification: {}", e))
+                    log::error!("Failed to parse share notification: {e}");
+                    SseEvent::Error(format!("Invalid share notification: {e}"))
                 }
             },
             "" => {
@@ -103,8 +103,8 @@ impl SseEvent {
                 SseEvent::Error("Unknown event with no event type".to_string())
             }
             _ => {
-                log::warn!("Unknown SSE event type: {}", event_type);
-                SseEvent::Error(format!("Unknown event type: {}", event_type))
+                log::warn!("Unknown SSE event type: {event_type}");
+                SseEvent::Error(format!("Unknown event type: {event_type}"))
             }
         }
     }

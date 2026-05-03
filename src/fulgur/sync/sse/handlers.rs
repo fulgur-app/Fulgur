@@ -78,15 +78,14 @@ impl Fulgur {
                         log::info!("Previous SSE thread exited");
                     } else {
                         log::warn!(
-                            "Previous SSE thread still running after {:?}, proceeding with new connection",
-                            SSE_THREAD_SHUTDOWN_TIMEOUT
+                            "Previous SSE thread still running after {SSE_THREAD_SHUTDOWN_TIMEOUT:?}, proceeding with new connection"
                         );
                     }
                 }
                 thread::sleep(Duration::from_millis(200));
                 match initial_synchronization(
                     &settings.app_settings.synchronization_settings,
-                    Arc::clone(&token_state),
+                    &token_state,
                     &http_agent,
                 ) {
                     Ok(_) => {
@@ -96,20 +95,20 @@ impl Fulgur {
                             sse_tx,
                             sse_shutdown_flag,
                             sync_status,
-                            token_state,
-                            http_agent,
-                            pending_shared_files,
+                            &token_state,
+                            &http_agent,
+                            &pending_shared_files,
                         ) {
                             Ok(new_handle) => {
                                 *handle_storage.lock() = Some(new_handle);
                             }
                             Err(e) => {
-                                log::error!("Failed to start new SSE connection: {}", e);
+                                log::error!("Failed to start new SSE connection: {e}");
                             }
                         }
                     }
                     Err(e) => {
-                        log::error!("Initial sync failed, not starting SSE: {}", e);
+                        log::error!("Initial sync failed, not starting SSE: {e}");
                     }
                 }
             });
@@ -139,7 +138,7 @@ impl Fulgur {
         self.sse_state.last_sse_event = Some(now);
         match event {
             SseEvent::Heartbeat { timestamp } => {
-                log::debug!("SSE heartbeat received: {}", timestamp);
+                log::debug!("SSE heartbeat received: {timestamp}");
                 let was_disconnected = !self
                     .shared_state(cx)
                     .sync_state
@@ -165,14 +164,14 @@ impl Fulgur {
                 window.push_notification((NotificationType::Info, message), cx);
             }
             SseEvent::Error(err) => {
-                log::error!("SSE error: {}", err);
+                log::error!("SSE error: {err}");
             }
         }
     }
 
     /// Collect and process Server-Sent Events from the sync server:
     /// - Heartbeat: Periodic keepalive messages to detect connection timeouts
-    /// - ShareAvailable: Another device has shared a file (triggers file download and decryption)
+    /// - `ShareAvailable`: Another device has shared a file (triggers file download and decryption)
     /// - Error: Connection or server errors (updates connection status in UI)
     ///
     /// ### Arguments

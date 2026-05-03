@@ -157,8 +157,8 @@ pub fn generate_key_pair() -> (Identity, Recipient) {
 /// ### Returns
 /// - `Ok()`: The private key has been succesfully saved in the keychain
 /// - `Err(anyhow::Error)`: If the private key could not be saved
-pub fn save_private_key_to_keychain(private_key: Option<Zeroizing<String>>) -> anyhow::Result<()> {
-    save_or_remove_to_keychain(PRIVATE_KEY_NAME, private_key.as_ref().map(|k| k.as_str()))
+pub fn save_private_key_to_keychain(private_key: Option<&Zeroizing<String>>) -> anyhow::Result<()> {
+    save_or_remove_to_keychain(PRIVATE_KEY_NAME, private_key.map(|k| k.as_str()))
 }
 
 /// Saves the device API key in the keychain
@@ -169,8 +169,8 @@ pub fn save_private_key_to_keychain(private_key: Option<Zeroizing<String>>) -> a
 /// ### Returns
 /// - `Ok()`: The device API key has been succesfully saved in the keychain
 /// - `Err(anyhow::Error)`: If the device API key could not be saved
-pub fn save_device_api_key_to_keychain(device_api_key: Option<String>) -> anyhow::Result<()> {
-    save_or_remove_to_keychain(DEVICE_API_KEY, device_api_key.as_deref())
+pub fn save_device_api_key_to_keychain(device_api_key: Option<&str>) -> anyhow::Result<()> {
+    save_or_remove_to_keychain(DEVICE_API_KEY, device_api_key)
 }
 
 /// Saves or removes a value from the keychain. If the value is `None`, the entry is removed from the keychain.
@@ -196,9 +196,7 @@ fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> anyhow::Result
     match entry.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(anyhow::anyhow!(
-            "Failed to remove '{}' from keychain: {}",
-            user,
-            e
+            "Failed to remove '{user}' from keychain: {e}"
         )),
     }
 }
@@ -240,24 +238,19 @@ fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
             // Legacy behavior stored empty strings instead of deleting credentials.
             // TODO: remove this in further version.
             log::warn!(
-                "Keychain entry '{}' is empty; treating as missing and removing stale credential",
-                user
+                "Keychain entry '{user}' is empty; treating as missing and removing stale credential"
             );
             match entry.delete_credential() {
                 Ok(()) | Err(keyring::Error::NoEntry) => Ok(None),
                 Err(e) => Err(anyhow::anyhow!(
-                    "Failed to clean up empty '{}' keychain entry: {}",
-                    user,
-                    e
+                    "Failed to clean up empty '{user}' keychain entry: {e}"
                 )),
             }
         }
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(anyhow::anyhow!(
-            "Failed to load '{}' from keychain: {}",
-            user,
-            e
+            "Failed to load '{user}' from keychain: {e}"
         )),
     }
 }
@@ -270,7 +263,7 @@ fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
 ///
 /// ### Returns
 /// - `Zeroizing<String>`: The serialized private key, zeroed on drop
-pub fn serialize(private_key: Identity) -> Zeroizing<String> {
+pub fn serialize(private_key: &Identity) -> Zeroizing<String> {
     let secret = private_key.to_string();
     Zeroizing::new(secret.expose_secret().to_string())
 }
@@ -299,7 +292,7 @@ pub fn check_private_public_keys(settings: &mut Settings) -> anyhow::Result<()> 
         {
             log::debug!("No private key, need to generate keys.");
             let (new_private_key, new_public_key) = generate_key_pair();
-            save_private_key_to_keychain(Some(serialize(new_private_key)))?;
+            save_private_key_to_keychain(Some(&serialize(&new_private_key)))?;
             settings.app_settings.synchronization_settings.public_key =
                 Some(new_public_key.to_string());
             log::debug!("Saving keys");
@@ -334,19 +327,19 @@ pub fn is_valid_public_key(key: &str) -> bool {
 pub fn encrypt_bytes(content_bytes: &[u8], recipient_public_key: &str) -> anyhow::Result<String> {
     let recipient: Recipient = recipient_public_key
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse recipient public key: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse recipient public key: {e}"))?;
     let recipients: Vec<Box<dyn age::Recipient>> = vec![Box::new(recipient)];
     let encryptor = age::Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref()))
-        .map_err(|e| anyhow::anyhow!("Failed to create encryptor: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create encryptor: {e}"))?;
     let mut encrypted = vec![];
     let mut writer = encryptor
         .wrap_output(&mut encrypted)
-        .map_err(|e| anyhow::anyhow!("Failed to create encryption writer: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create encryption writer: {e}"))?;
     std::io::Write::write_all(&mut writer, content_bytes)
-        .map_err(|e| anyhow::anyhow!("Failed to write encrypted data: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to write encrypted data: {e}"))?;
     writer
         .finish()
-        .map_err(|e| anyhow::anyhow!("Failed to finish encryption: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to finish encryption: {e}"))?;
     // Encode to base64 for transmission
     Ok(BASE64.encode(encrypted))
 }
@@ -363,18 +356,18 @@ pub fn encrypt_bytes(content_bytes: &[u8], recipient_public_key: &str) -> anyhow
 pub fn decrypt_bytes(encrypted_b64: &str, private_key_str: &str) -> anyhow::Result<Vec<u8>> {
     let encrypted = BASE64
         .decode(encrypted_b64)
-        .map_err(|e| anyhow::anyhow!("Failed to decode base64: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to decode base64: {e}"))?;
     let identity: Identity = private_key_str
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse private key: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse private key: {e}"))?;
     let decryptor = age::Decryptor::new(&encrypted[..])
-        .map_err(|e| anyhow::anyhow!("Failed to create decryptor: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create decryptor: {e}"))?;
     let mut decrypted = vec![];
     let mut reader = decryptor
         .decrypt(std::iter::once(&identity as &dyn age::Identity))
-        .map_err(|e| anyhow::anyhow!("Failed to decrypt: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to decrypt: {e}"))?;
     std::io::Read::read_to_end(&mut reader, &mut decrypted)
-        .map_err(|e| anyhow::anyhow!("Failed to read decrypted data: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to read decrypted data: {e}"))?;
     Ok(decrypted)
 }
 
@@ -387,7 +380,7 @@ mod tests {
         // Generate a key pair for testing
         let (private_key, public_key) = generate_key_pair();
         let public_key_str = public_key.to_string();
-        let private_key_str = serialize(private_key);
+        let private_key_str = serialize(&private_key);
 
         let original_bytes = b"This is a test file content with some data!";
         let encrypted =
@@ -403,7 +396,7 @@ mod tests {
         // Generate a key pair for testing
         let (private_key, public_key) = generate_key_pair();
         let public_key_str = public_key.to_string();
-        let private_key_str = serialize(private_key);
+        let private_key_str = serialize(&private_key);
 
         let content_bytes = b"Same content";
         let encrypted1 = encrypt_bytes(content_bytes, &public_key_str).unwrap();
@@ -426,7 +419,7 @@ mod tests {
         let (_private_key1, public_key1) = generate_key_pair();
         let (private_key2, _public_key2) = generate_key_pair();
         let public_key1_str = public_key1.to_string();
-        let private_key2_str = serialize(private_key2);
+        let private_key2_str = serialize(&private_key2);
 
         let content_bytes = b"Secret data";
         // Encrypt with public_key1
@@ -452,7 +445,7 @@ mod tests {
     #[test]
     fn test_is_valid_public_key_rejects_private_key() {
         let (private_key, _) = generate_key_pair();
-        let private_str = serialize(private_key);
+        let private_str = serialize(&private_key);
         assert!(!is_valid_public_key(&private_str));
     }
 }

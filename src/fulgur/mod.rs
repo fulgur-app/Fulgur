@@ -10,7 +10,6 @@ mod ui;
 pub mod utils;
 pub mod window_manager;
 use crate::fulgur::{
-    editor_tab::EditorTab,
     files::{
         file_operations::{PendingRemoteOpenOutcome, RemoteFileResult, RemoteOpenResult},
         file_watcher::FileWatchState,
@@ -18,8 +17,11 @@ use crate::fulgur::{
     languages::supported_languages::SupportedLanguage,
     sync::sse::SseState,
     ui::{
-        bars::color_picker_bar::ColorPickerBarState, dialogs::about::about,
+        bars::color_picker_bar::ColorPickerBarState,
+        dialogs::about::about,
+        menus::{build_default_key_bindings, build_menus},
         notifications::update_notification::make_update_notification,
+        tabs::{editor_tab, tab},
     },
 };
 use crate::register_action;
@@ -45,7 +47,7 @@ use std::{
 use tab::Tab;
 use ui::{
     bars::search_bar::SearchMatch, bars::status_bar::StatusBarCache,
-    bars::titlebar::CustomTitleBar, menus::*, tabs::*, themes,
+    bars::titlebar::CustomTitleBar, themes,
 };
 
 /// Search and replace functionality state
@@ -71,7 +73,7 @@ pub struct SearchState {
 }
 
 impl SearchState {
-    /// Create a new SearchState
+    /// Create a new `SearchState`
     ///
     /// ### Arguments
     /// - `search_input`: The search input entity
@@ -79,7 +81,7 @@ impl SearchState {
     /// - `search_subscription`: The subscription to search input changes
     ///
     /// ### Returns
-    /// `Self`: A new SearchState instance with default values
+    /// `Self`: A new `SearchState` instance with default values
     pub fn new(
         search_input: Entity<InputState>,
         replace_input: Entity<InputState>,
@@ -201,7 +203,7 @@ impl Fulgur {
     /// - `window`: The window to create the Fulgur instance in
     /// - `cx`: The application context
     /// - `window_id`: The window ID for this instance, obtained from `window.window_handle().window_id()`
-    /// - `window_index`: Index of this window in saved state (0 = first window, etc.). Use usize::MAX for new empty windows.
+    /// - `window_index`: Index of this window in saved state (0 = first window, etc.). Use `usize::MAX` for new empty windows.
     ///
     /// ### Returns
     /// - `Entity<Self>`: The new Fulgur instance
@@ -299,7 +301,7 @@ impl Fulgur {
                     Some((NotificationType::Error, error_msg.clone().into()));
             }
             if window_index == usize::MAX {
-                let initial_tab = Tab::Editor(EditorTab::new(
+                let initial_tab = Tab::Editor(editor_tab::EditorTab::new(
                     0,
                     crate::fulgur::ui::components_utils::UNTITLED,
                     window,
@@ -382,39 +384,39 @@ impl Fulgur {
             .flex_col()
             .gap_0()
             .track_focus(&self.focus_handle);
-        register_action!(app_content, cx, NewFile => new_tab);
-        register_action!(app_content, cx, OpenFile => open_file);
-        register_action!(app_content, cx, OpenPath => show_open_from_path_dialog);
-        register_action!(app_content, cx, OpenRemote => show_open_remote_dialog);
-        register_action!(app_content, cx, CloseAllFiles => close_all_tabs);
-        register_action!(app_content, cx, SaveFile => save_file);
-        register_action!(app_content, cx, SaveFileAs => save_file_as);
-        register_action!(app_content, cx, Quit => quit);
-        register_action!(app_content, cx, SettingsTab => open_settings);
-        register_action!(app_content, cx, FindInFile => find_in_file);
-        register_action!(app_content, cx, ToggleColorPicker => toggle_color_picker);
-        register_action!(app_content, cx, NextTab => on_next_tab);
-        register_action!(app_content, cx, PreviousTab => on_previous_tab);
-        register_action!(app_content, cx, JumpToLine => show_jump_to_line_dialog);
-        register_action!(app_content, cx, SelectTheme => select_theme_sheet);
-        register_action!(app_content, cx, About => call about);
-        register_action!(app_content, cx, SwitchTheme => switch_to_theme(.0, no_window));
-        register_action!(app_content, cx, tab_bar::CloseTabAction => on_close_tab_action(&action));
-        register_action!(app_content, cx, tab_bar::CloseTabsToLeft => on_close_tabs_to_left(&action));
-        register_action!(app_content, cx, tab_bar::CloseTabsToRight => on_close_tabs_to_right(&action));
-        register_action!(app_content, cx, tab_bar::CloseAllTabsAction => on_close_all_tabs_action(&action));
-        register_action!(app_content, cx, tab_bar::CloseAllOtherTabs => on_close_all_other_tabs_action(&action));
-        register_action!(app_content, cx, tab_bar::ShowInFileManager => on_show_in_file_manager(&action));
-        register_action!(app_content, cx, tab_bar::DuplicateTab => on_duplicate_tab(&action));
-        register_action!(app_content, cx, OpenRecentFile => do_open_recent_file(.0));
-        register_action!(app_content, cx, CheckForUpdates => check_for_updates);
-        register_action!(app_content, cx, GetTheme => call_no_args tab_bar::open_theme_repository);
-        register_action!(app_content, cx, NewWindow => open_new_window(cx_only));
-        register_action!(app_content, cx, ClearRecentFiles => clear_recent_files(cx_only));
-        register_action!(app_content, cx, CloseFile => close_active_tab);
-        register_action!(app_content, cx, PrintFile => print_file);
-        register_action!(app_content, cx, DockActivateTab => handle_dock_activate_tab(&action));
-        register_action!(app_content, cx, DockActivateTabByTitle => handle_dock_activate_tab_by_title(&action));
+        register_action!(app_content, cx, ui::menus::NewFile => new_tab);
+        register_action!(app_content, cx, ui::menus::OpenFile => open_file);
+        register_action!(app_content, cx, ui::menus::OpenPath => show_open_from_path_dialog);
+        register_action!(app_content, cx, ui::menus::OpenRemote => show_open_remote_dialog);
+        register_action!(app_content, cx, ui::menus::CloseAllFiles => close_all_tabs);
+        register_action!(app_content, cx, ui::menus::SaveFile => save_file);
+        register_action!(app_content, cx, ui::menus::SaveFileAs => save_file_as);
+        register_action!(app_content, cx, ui::menus::Quit => quit);
+        register_action!(app_content, cx, ui::menus::SettingsTab => open_settings);
+        register_action!(app_content, cx, ui::menus::FindInFile => find_in_file);
+        register_action!(app_content, cx, ui::menus::ToggleColorPicker => toggle_color_picker);
+        register_action!(app_content, cx, ui::menus::NextTab => on_next_tab);
+        register_action!(app_content, cx, ui::menus::PreviousTab => on_previous_tab);
+        register_action!(app_content, cx, ui::menus::JumpToLine => show_jump_to_line_dialog);
+        register_action!(app_content, cx, ui::menus::SelectTheme => select_theme_sheet);
+        register_action!(app_content, cx, ui::menus::About => call about);
+        register_action!(app_content, cx, ui::menus::SwitchTheme => switch_to_theme(.0, no_window));
+        register_action!(app_content, cx, ui::tabs::tab_bar::CloseTabAction => on_close_tab_action(&action));
+        register_action!(app_content, cx, ui::tabs::tab_bar::CloseTabsToLeft => on_close_tabs_to_left(&action));
+        register_action!(app_content, cx, ui::tabs::tab_bar::CloseTabsToRight => on_close_tabs_to_right(&action));
+        register_action!(app_content, cx, ui::tabs::tab_bar::CloseAllTabsAction => on_close_all_tabs_action(&action));
+        register_action!(app_content, cx, ui::tabs::tab_bar::CloseAllOtherTabs => on_close_all_other_tabs_action(&action));
+        register_action!(app_content, cx, ui::tabs::tab_bar::ShowInFileManager => on_show_in_file_manager(&action));
+        register_action!(app_content, cx, ui::tabs::tab_bar::DuplicateTab => on_duplicate_tab(&action));
+        register_action!(app_content, cx, ui::menus::OpenRecentFile => do_open_recent_file(.0));
+        register_action!(app_content, cx, ui::menus::CheckForUpdates => check_for_updates);
+        register_action!(app_content, cx, ui::menus::GetTheme => call_no_args ui::tabs::tab_bar::open_theme_repository);
+        register_action!(app_content, cx, ui::menus::NewWindow => open_new_window(cx_only));
+        register_action!(app_content, cx, ui::menus::ClearRecentFiles => clear_recent_files(cx_only));
+        register_action!(app_content, cx, ui::menus::CloseFile => close_active_tab);
+        register_action!(app_content, cx, ui::menus::PrintFile => print_file);
+        register_action!(app_content, cx, ui::menus::DockActivateTab => handle_dock_activate_tab(&action));
+        register_action!(app_content, cx, ui::menus::DockActivateTabByTitle => handle_dock_activate_tab_by_title(&action));
         app_content =
             app_content.on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                 this.handle_external_paths_drop(paths, window, cx);
@@ -575,7 +577,7 @@ impl Fulgur {
 
     /// Process a deferred scroll-to-tab request
     ///
-    /// GPUI's ScrollHandle needs one render cycle to populate child bounds and overflow
+    /// GPUI's `ScrollHandle` needs one render cycle to populate child bounds and overflow
     /// state before `scroll_to_item` can work. On the first frame, layout hasn't happened
     /// yet so the scroll is silently dropped. This method waits until child bounds are
     /// available (meaning layout has completed at least once), then issues the scroll.
@@ -631,7 +633,7 @@ impl Fulgur {
                     menu = menu
                         .menu(
                             crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
-                            Box::new(tab_bar::ShowInFileManager(active_index)),
+                            Box::new(ui::tabs::tab_bar::ShowInFileManager(active_index)),
                         )
                         .separator();
                 }
@@ -666,7 +668,7 @@ impl Fulgur {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `AnyElement`: The rendered content area element (wrapped in AnyElement)
+    /// - `AnyElement`: The rendered content area element (wrapped in `AnyElement`)
     fn render_content_area(
         &mut self,
         active_tab_index: Option<usize>,
@@ -937,7 +939,7 @@ impl Fulgur {
                             remote_file.spec.host,
                             remote_file.spec.path
                         );
-                        let editor_tab = EditorTab::from_remote_loaded(
+                        let editor_tab = editor_tab::EditorTab::from_remote_loaded(
                             self.next_tab_id,
                             remote_file,
                             window,
@@ -951,7 +953,7 @@ impl Fulgur {
                         self.next_tab_id += 1;
                         self.focus_active_tab(window, cx);
                         if let Err(e) = self.settings.add_file(PathBuf::from(recent_remote_url)) {
-                            log::error!("Failed to add remote file to recent files: {}", e);
+                            log::error!("Failed to add remote file to recent files: {e}");
                         }
                         let update_link = self
                             .shared_state(cx)
@@ -959,13 +961,11 @@ impl Fulgur {
                             .lock()
                             .as_ref()
                             .map(|info| info.download_url.clone());
-                        let menus = build_menus(&self.settings.get_recent_files(), update_link);
+                        let menus =
+                            build_menus(&self.settings.get_recent_files(), update_link.as_deref());
                         self.update_menus(menus, cx);
                         if let Err(e) = self.save_state(cx, window) {
-                            log::error!(
-                                "Failed to save app state after opening remote file: {}",
-                                e
-                            );
+                            log::error!("Failed to save app state after opening remote file: {e}");
                             self.pending_notification = Some((
                                 NotificationType::Warning,
                                 format!("Remote file opened but failed to save state: {e}").into(),
@@ -982,7 +982,7 @@ impl Fulgur {
                             "Restored remote tab path is no longer a file".into(),
                         ));
                     } else {
-                        self.show_remote_path_browser_dialog(window, cx, browse);
+                        self.show_remote_path_browser_dialog(window, cx, &browse);
                     }
                 }
                 Err(msg) => {

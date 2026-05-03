@@ -25,11 +25,11 @@ use std::{
 
 use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress};
 
-/// Handle ureq errors and convert them to SynchronizationError with appropriate logging
+/// Handle ureq errors and convert them to `SynchronizationError` with appropriate logging
 ///
 /// ### Description
 /// Centralizes ureq error handling logic that was duplicated across sync modules.
-/// Maps all ureq error variants to appropriate SynchronizationError types and logs
+/// Maps all ureq error variants to appropriate `SynchronizationError` types and logs
 /// the error with context.
 ///
 /// ### Arguments
@@ -41,7 +41,7 @@ use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress}
 pub fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationError {
     match error {
         ureq::Error::StatusCode(code) => {
-            log::error!("{}: HTTP status {}", context, code);
+            log::error!("{context}: HTTP status {code}");
             if code == 401 || code == 403 {
                 SynchronizationError::AuthenticationFailed
             } else if code == 400 {
@@ -56,7 +56,7 @@ pub fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationEr
             }
         }
         ureq::Error::Io(io_error) => {
-            log::error!("{} (IO): {}", context, io_error);
+            log::error!("{context} (IO): {io_error}");
             match io_error.kind() {
                 std::io::ErrorKind::ConnectionRefused => SynchronizationError::ConnectionFailed,
                 std::io::ErrorKind::TimedOut => SynchronizationError::Timeout(io_error.to_string()),
@@ -68,19 +68,19 @@ pub fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationEr
             }
         }
         ureq::Error::ConnectionFailed => {
-            log::error!("{}: Connection failed", context);
+            log::error!("{context}: Connection failed");
             SynchronizationError::ConnectionFailed
         }
         ureq::Error::HostNotFound => {
-            log::error!("{}: Host not found", context);
+            log::error!("{context}: Host not found");
             SynchronizationError::HostNotFound
         }
         ureq::Error::Timeout(timeout) => {
-            log::error!("{}: Timeout ({})", context, timeout);
+            log::error!("{context}: Timeout ({timeout})");
             SynchronizationError::Timeout(timeout.to_string())
         }
         e => {
-            log::error!("{}: {}", context, e);
+            log::error!("{context}: {e}");
             SynchronizationError::Other(e.to_string())
         }
     }
@@ -105,7 +105,7 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
             share::MAX_SYNC_SHARE_PAYLOAD_BYTES as u64
         }
         Some(n) => {
-            log::info!("Server max file size: {} bytes", n);
+            log::info!("Server max file size: {n} bytes");
             n
         }
     };
@@ -124,7 +124,7 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
 /// - `Err(SynchronizationError)`: If the synchronization could not be performed
 pub fn initial_synchronization(
     synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<TokenStateManager>,
+    token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<BeginResponse, SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {
@@ -134,24 +134,24 @@ pub fn initial_synchronization(
         return Err(SynchronizationError::MissingEncryptionKey); //TODO
     };
     let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
-    let begin_url = format!("{}/api/begin", server_url);
+    let begin_url = format!("{server_url}/api/begin");
     let payload = InitialSynchronizationPayload { public_key };
     let mut response = http_agent
         .post(begin_url)
-        .header("Authorization", &format!("Bearer {}", token))
+        .header("Authorization", &format!("Bearer {token}"))
         .send_json(payload)
         .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization"))?;
     let body = match response.body_mut().read_to_string() {
         Ok(body) => body,
         Err(e) => {
-            log::error!("Failed to read response body: {}", e);
+            log::error!("Failed to read response body: {e}");
             return Err(SynchronizationError::Other(e.to_string()));
         }
     };
     let begin_response: BeginResponse = match serde_json::from_str(&body) {
         Ok(response) => response,
         Err(e) => {
-            log::error!("Failed to parse response body: {}", e);
+            log::error!("Failed to parse response body: {e}");
             return Err(SynchronizationError::InvalidResponse(e.to_string()));
         }
     };
@@ -209,9 +209,9 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         let key = match load_device_api_key_from_keychain() {
             Ok(value) => value,
             Err(e) => {
-                log::error!("Failed to load device API key from keychain: {}", e);
+                log::error!("Failed to load device API key from keychain: {e}");
                 set_sync_server_connection_status(
-                    sync_server_connection_status.clone(),
+                    &sync_server_connection_status,
                     SynchronizationStatus::Disconnected,
                 );
                 return;
@@ -219,20 +219,20 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         };
         if server_url.is_none() || email.is_none() || key.is_none() {
             set_sync_server_connection_status(
-                sync_server_connection_status.clone(),
+                &sync_server_connection_status,
                 SynchronizationStatus::Disconnected,
             );
             return;
         }
         match initial_synchronization(
             &settings.app_settings.synchronization_settings,
-            Arc::clone(&token_state),
+            &token_state,
             &http_agent,
         ) {
             Ok(begin_response) => {
                 log::info!("Successfully connected to sync server");
                 set_sync_server_connection_status(
-                    sync_server_connection_status.clone(),
+                    &sync_server_connection_status,
                     SynchronizationStatus::Connected,
                 );
                 store_server_max_file_size(
@@ -261,15 +261,15 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                         tx,
                         shutdown,
                         sync_server_connection_status.clone(),
-                        Arc::clone(&token_state),
-                        Arc::clone(&http_agent),
-                        Arc::clone(&pending_shared_files),
+                        &token_state,
+                        &http_agent,
+                        &pending_shared_files,
                     ) {
                         Ok(handle) => {
                             *sse_thread_handle.lock() = Some(handle);
                         }
                         Err(e) => {
-                            log::error!("Failed to start SSE connection: {}", e);
+                            log::error!("Failed to start SSE connection: {e}");
                         }
                     }
                 } else {
@@ -279,9 +279,9 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                 }
             }
             Err(e) => {
-                log::error!("Failed to fetch shared files: {}", e);
+                log::error!("Failed to fetch shared files: {e}");
                 set_sync_server_connection_status(
-                    sync_server_connection_status,
+                    &sync_server_connection_status,
                     SynchronizationStatus::Disconnected,
                 );
             }
@@ -295,7 +295,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
 /// - `sync_server_connection_status`: The synchronization status of the sync server
 /// - `status`: The new synchronization status
 pub fn set_sync_server_connection_status(
-    sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
+    sync_server_connection_status: &Arc<Mutex<SynchronizationStatus>>,
     new_status: SynchronizationStatus,
 ) {
     *sync_server_connection_status.lock() = new_status;
@@ -310,7 +310,7 @@ pub fn set_sync_server_connection_status(
 /// ### Arguments
 /// - `entity`: The Fulgur entity
 /// - `cx`: The context
-pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx: &mut App) {
+pub fn perform_initial_synchronization(entity: &Entity<crate::fulgur::Fulgur>, cx: &mut App) {
     let synchronization_settings = entity
         .read(cx)
         .settings
@@ -319,7 +319,7 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
         .clone();
     let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
     set_sync_server_connection_status(
-        shared.sync_state.connection_status.clone(),
+        &shared.sync_state.connection_status,
         SynchronizationStatus::Connecting,
     );
     *shared.sync_state.connecting_since.lock() = Some(Instant::now());
@@ -332,7 +332,7 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
     let pending_notification = shared.sync_state.pending_notification.clone();
     let max_file_size_bytes = shared.sync_state.max_file_size_bytes.clone();
     thread::spawn(move || {
-        let result = initial_synchronization(&synchronization_settings, token_state, &http_agent);
+        let result = initial_synchronization(&synchronization_settings, &token_state, &http_agent);
         let (notification, status) = match result {
             Ok(begin_response) => {
                 store_server_max_file_size(
@@ -361,12 +361,12 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
             Err(e) => (
                 (
                     NotificationType::Error,
-                    SharedString::from(format!("Connection failed: {}", e)),
+                    SharedString::from(format!("Connection failed: {e}")),
                 ),
                 SynchronizationStatus::from_error(&e),
             ),
         };
-        set_sync_server_connection_status(connection_status, status);
+        set_sync_server_connection_status(&connection_status, status);
         *connecting_since.lock() = None;
         *pending_notification.lock() = Some(notification);
     });
@@ -379,7 +379,7 @@ pub fn perform_initial_synchronization(entity: Entity<crate::fulgur::Fulgur>, cx
 /// - `window`: Target window for the notification
 /// - `cx`: The application context
 pub fn perform_initial_synchronization_with_progress(
-    entity: Entity<crate::fulgur::Fulgur>,
+    entity: &Entity<crate::fulgur::Fulgur>,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -391,7 +391,7 @@ pub fn perform_initial_synchronization_with_progress(
         .clone();
     let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
     set_sync_server_connection_status(
-        shared.sync_state.connection_status.clone(),
+        &shared.sync_state.connection_status,
         SynchronizationStatus::Connecting,
     );
     *shared.sync_state.connecting_since.lock() = Some(Instant::now());
@@ -410,7 +410,7 @@ pub fn perform_initial_synchronization_with_progress(
     let cancel_status = connection_status.clone();
     let cancel_connecting_since = connecting_since.clone();
     let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, _cx| {
-        set_sync_server_connection_status(cancel_status, SynchronizationStatus::Disconnected);
+        set_sync_server_connection_status(&cancel_status, SynchronizationStatus::Disconnected);
         *cancel_connecting_since.lock() = None;
     }));
 
@@ -424,7 +424,7 @@ pub fn perform_initial_synchronization_with_progress(
     let cancel_flag_for_thread = Arc::clone(&cancel_flag);
 
     thread::spawn(move || {
-        let result = initial_synchronization(&synchronization_settings, token_state, &http_agent);
+        let result = initial_synchronization(&synchronization_settings, &token_state, &http_agent);
 
         if cancel_flag_for_thread.load(Ordering::Acquire) {
             done_for_thread.store(true, Ordering::Release);
@@ -459,12 +459,12 @@ pub fn perform_initial_synchronization_with_progress(
             Err(e) => (
                 (
                     NotificationType::Error,
-                    SharedString::from(format!("Connection failed: {}", e)),
+                    SharedString::from(format!("Connection failed: {e}")),
                 ),
                 SynchronizationStatus::from_error(&e),
             ),
         };
-        set_sync_server_connection_status(connection_status, status);
+        set_sync_server_connection_status(&connection_status, status);
         *connecting_since.lock() = None;
         *pending_notification.lock() = Some(notification);
         done_for_thread.store(true, Ordering::Release);
@@ -539,18 +539,18 @@ impl fmt::Display for SynchronizationError {
             SynchronizationError::FileNameMissing => write!(f, "File name is missing"),
             SynchronizationError::HostNotFound => write!(f, "Host not found"),
             SynchronizationError::InvalidPublicKey(name) => {
-                write!(f, "Invalid public key for device: {}", name)
+                write!(f, "Invalid public key for device: {name}")
             }
-            SynchronizationError::InvalidResponse(e) => write!(f, "{}", e),
+            SynchronizationError::InvalidResponse(e) => write!(f, "{e}"),
             SynchronizationError::MissingEncryptionKey => write!(f, "Missing encryption key"),
             SynchronizationError::MissingExpirationDate => write!(f, "Missing expiration date"),
             SynchronizationError::MissingPublicKey(e) => {
-                write!(f, "Missing public key for device: {}", e)
+                write!(f, "Missing public key for device: {e}")
             }
-            SynchronizationError::Other(e) => write!(f, "{}", e),
-            SynchronizationError::ServerError(e) => write!(f, "{}", e),
+            SynchronizationError::Other(e) => write!(f, "{e}"),
+            SynchronizationError::ServerError(e) => write!(f, "{e}"),
             SynchronizationError::ServerUrlMissing => write!(f, "Server URL is missing"),
-            SynchronizationError::Timeout(timeout) => write!(f, "Timeout: {}", timeout),
+            SynchronizationError::Timeout(timeout) => write!(f, "Timeout: {timeout}"),
         }
     }
 }
@@ -674,7 +674,7 @@ impl Fulgur {
                             self.next_tab_id += 1;
                             let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
                                 tab_id,
-                                decrypted_content,
+                                &decrypted_content,
                                 shared_file.file_name.clone(),
                                 window,
                                 cx,

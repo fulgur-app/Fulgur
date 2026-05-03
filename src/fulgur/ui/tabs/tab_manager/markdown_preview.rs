@@ -71,7 +71,7 @@ impl Fulgur {
             if let Some((editor_id, title, content)) = info {
                 let preview_tab = Tab::MarkdownPreview(MarkdownPreviewTab {
                     id: self.next_tab_id,
-                    title: SharedString::from(format!("Preview - {}", title)),
+                    title: SharedString::from(format!("Preview - {title}")),
                     source_tab_id: editor_id,
                     content,
                 });
@@ -105,7 +105,7 @@ impl Fulgur {
         if let Some((editor_id, title, content)) = info {
             let preview_tab = Tab::MarkdownPreview(MarkdownPreviewTab {
                 id: self.next_tab_id,
-                title: SharedString::from(format!("Preview - {}", title)),
+                title: SharedString::from(format!("Preview - {title}")),
                 source_tab_id: editor_id,
                 content,
             });

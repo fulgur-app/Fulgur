@@ -53,7 +53,7 @@ impl Fulgur {
                         .text()
                         .slice(selection.range.start..selection.range.end)
                         .to_string();
-                    let bold_text = format!("{}{}{}", prefix, selected_text, suffix);
+                    let bold_text = format!("{prefix}{selected_text}{suffix}");
                     input_state.replace(bold_text, window, cx);
                 } else {
                     let bold_text = format!("{}{}{}", prefix, " ", suffix);

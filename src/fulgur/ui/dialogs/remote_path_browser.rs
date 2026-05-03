@@ -87,14 +87,14 @@ impl RemotePathBrowser {
     pub fn new(
         window: &mut Window,
         cx: &mut Context<Self>,
-        initial_path: String,
+        initial_path: &str,
         initial_entries: Vec<RemoteDirectoryEntry>,
         notice: Option<String>,
-        connection: RemotePathBrowserConnection,
+        connection: &RemotePathBrowserConnection,
     ) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter a remote path..."));
         input.update(cx, |state, cx| {
-            state.set_value(&initial_path, window, cx);
+            state.set_value(initial_path, window, cx);
         });
         let _input_subscription =
             cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
@@ -220,7 +220,6 @@ impl Render for RemotePathBrowser {
     /// ### Returns
     /// - `impl IntoElement`: Rendered browser UI.
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let input_entity = self.input.clone();
         let mut container = v_flex().w_full().gap_1().child(Input::new(&self.input));
 
         if let Some(notice) = &self.notice {
@@ -243,7 +242,7 @@ impl Render for RemotePathBrowser {
 
         if let Some(list) = render_browser_list(
             self.entries.iter().map(BrowserEntry::from),
-            input_entity,
+            &self.input,
             cx.theme().muted,
             cx.theme().muted_foreground,
         ) {

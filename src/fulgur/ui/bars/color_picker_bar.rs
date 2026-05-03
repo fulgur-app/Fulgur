@@ -20,7 +20,7 @@ use gpui_component::{
 
 use super::search_bar::{search_bar_button_factory, search_bar_toggle_button_factory};
 
-/// Convert an HSLA color to OkLCH (Lightness, Chroma, Hue) components.
+/// Convert an HSLA color to `OkLCH` (Lightness, Chroma, Hue) components.
 ///
 /// ### Arguments
 /// - `color`: The HSLA color to convert
@@ -66,7 +66,7 @@ fn hsla_to_oklch(color: Hsla) -> (f32, f32, f32) {
     (ok_l, chroma, hue)
 }
 
-/// Convert OkLCH (Lightness, Chroma, Hue) components back to an HSLA color.
+/// Convert `OkLCH` (Lightness, Chroma, Hue) components back to an HSLA color.
 ///
 /// ### Arguments
 /// - `l`: Lightness in 0..1
@@ -117,16 +117,16 @@ fn oklch_to_hsla(l: f32, c: f32, h: f32) -> Hsla {
     .into()
 }
 
-/// Format an HSLA color as an OkLCH CSS string.
+/// Format an HSLA color as an `OkLCH` CSS string.
 ///
 /// ### Arguments
 /// - `color`: The HSLA color to format
 ///
 /// ### Returns
-/// `String`: The OkLCH CSS string (e.g. "oklch(0.63 0.26 29.2)")
+/// `String`: The `OkLCH` CSS string (e.g. "oklch(0.63 0.26 29.2)")
 fn format_oklch(color: Hsla) -> String {
     let (l, c, h) = hsla_to_oklch(color);
-    format!("oklch({:.2} {:.4} {:.1})", l, c, h)
+    format!("oklch({l:.2} {c:.4} {h:.1})")
 }
 
 /// Format an HSLA color as an HSLA CSS string.
@@ -158,10 +158,10 @@ fn parse_hex(s: &str) -> Option<Hsla> {
     gpui_component::Colorize::parse_hex(s).ok()
 }
 
-/// Parse an OkLCH CSS string into an HSLA color.
+/// Parse an `OkLCH` CSS string into an HSLA color.
 ///
 /// ### Arguments
-/// - `s`: An OkLCH string in the form "oklch(L C H)" (e.g. "oklch(0.63 0.26 29.2)")
+/// - `s`: An `OkLCH` string in the form "oklch(L C H)" (e.g. "oklch(0.63 0.26 29.2)")
 ///
 /// ### Returns
 /// - `Some<Hsla>`: The parsed color
@@ -198,7 +198,7 @@ fn parse_hsla(s: &str) -> Option<Hsla> {
 
 /// State for the color picker bar.
 ///
-/// Groups the ColorPickerState entity, input states for each color format,
+/// Groups the `ColorPickerState` entity, input states for each color format,
 /// cached format strings (kept in sync by the color-picker subscription),
 /// and the subscriptions for change events.
 pub struct ColorPickerBarState {
@@ -217,14 +217,14 @@ pub struct ColorPickerBarState {
 }
 
 impl ColorPickerBarState {
-    /// Create a new ColorPickerBarState.
+    /// Create a new `ColorPickerBarState`.
     ///
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Self`: A new ColorPickerBarState initialized to white
+    /// - `Self`: A new `ColorPickerBarState` initialized to white
     pub fn new(window: &mut Window, cx: &mut Context<Fulgur>) -> Self {
         let color_picker_state =
             cx.new(|cx| ColorPickerState::new(window, cx).default_value(gpui::white()));
@@ -533,7 +533,7 @@ impl Fulgur {
     /// Render a color value section with an editable input and a clipboard copy button.
     ///
     /// ### Arguments
-    /// - `label`: The label for the color format (e.g. "Hex", "OkLCH", "HSLA")
+    /// - `label`: The label for the color format (e.g. "Hex", "`OkLCH`", "HSLA")
     /// - `value`: The current formatted color value string (used for the clipboard button)
     /// - `input_state`: The input state entity for this field
     /// - `cx`: The application context
@@ -569,7 +569,7 @@ impl Fulgur {
                     .px_0(),
             )
             .child(
-                InsertButton::new(SharedString::from(format!("color-insert-{}", label))).on_click(
+                InsertButton::new(SharedString::from(format!("color-insert-{label}"))).on_click(
                     cx.listener({
                         let value = value.to_string();
                         move |this, _, window, cx| {
@@ -579,7 +579,7 @@ impl Fulgur {
                 ),
             )
             .child(
-                CopyButton::new(SharedString::from(format!("color-copy-{}", label)))
+                CopyButton::new(SharedString::from(format!("color-copy-{label}")))
                     .value(SharedString::from(value.to_string())),
             )
     }

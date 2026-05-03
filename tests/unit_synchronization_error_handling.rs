@@ -171,8 +171,7 @@ fn test_sync_status_from_error_other_variants() {
         let status = SynchronizationStatus::from_error(&error);
         assert!(
             matches!(status, SynchronizationStatus::Other),
-            "Error {:?} should map to SynchronizationStatus::Other",
-            error
+            "Error {error:?} should map to SynchronizationStatus::Other"
         );
     }
 }

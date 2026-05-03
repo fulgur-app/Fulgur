@@ -41,17 +41,17 @@ pub fn get_icon(device: &Device) -> Icon {
 /// - `Err(SynchronizationError)`: If the devices could not be retrieved
 pub fn get_devices(
     synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<TokenStateManager>,
+    token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<(Vec<Device>, Option<u64>), SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
     let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
-    let devices_url = format!("{}/api/devices", server_url);
+    let devices_url = format!("{server_url}/api/devices");
     let mut response = http_agent
         .get(&devices_url)
-        .header("Authorization", &format!("Bearer {}", token))
+        .header("Authorization", &format!("Bearer {token}"))
         .call()
         .map_err(|e| handle_ureq_error(e, "Failed to get devices"))?;
 
@@ -59,7 +59,7 @@ pub fn get_devices(
         .body_mut()
         .read_json::<DevicesResponse>()
         .map_err(|e| {
-            log::error!("Failed to read devices: {}", e);
+            log::error!("Failed to read devices: {e}");
             SynchronizationError::InvalidResponse(e.to_string())
         })?;
 
@@ -101,7 +101,7 @@ mod tests {
         let settings = SynchronizationSettings::new(); // server_url = None
         let result = get_devices(
             &settings,
-            Arc::new(TokenStateManager::new()),
+            &Arc::new(TokenStateManager::new()),
             &make_http_agent(),
         );
         assert!(

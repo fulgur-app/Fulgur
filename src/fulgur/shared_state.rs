@@ -161,10 +161,9 @@ impl SharedAppState {
                 Ok(_) => None,
                 Err(e) => {
                     let error_msg = format!(
-                        "Failed to initialize encryption keys. Synchronization has been disabled. Error: {}",
-                        e
+                        "Failed to initialize encryption keys. Synchronization has been disabled. Error: {e}"
                     );
-                    log::error!("{}", error_msg);
+                    log::error!("{error_msg}");
                     settings
                         .app_settings
                         .synchronization_settings
@@ -193,7 +192,7 @@ impl SharedAppState {
     /// - `settings`: The application settings
     ///
     /// ### Returns
-    /// - `SynchronizationStatus`: Connecting if sync is activated, NotActivated otherwise
+    /// - `SynchronizationStatus`: Connecting if sync is activated, `NotActivated` otherwise
     fn determine_initial_sync_status(settings: &Settings) -> SynchronizationStatus {
         if settings
             .app_settings

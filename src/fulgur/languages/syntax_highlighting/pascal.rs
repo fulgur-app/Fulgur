@@ -3,7 +3,7 @@ use tree_sitter_pascal;
 
 const HIGHLIGHTS_QUERY: &str = include_str!("queries/pascal_highlights.scm");
 
-/// Add Pascal / Delphi / FreePascal syntax highlighting support.
+/// Add Pascal / Delphi / `FreePascal` syntax highlighting support.
 pub fn add_pascal_support() {
     LanguageRegistry::singleton().register(
         "pascal",

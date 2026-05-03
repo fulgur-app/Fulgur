@@ -21,7 +21,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `SettingPage`: The Themes settings page
-    pub fn create_themes_page(entity: Entity<Self>, themes: &Themes) -> SettingPage {
+    pub fn create_themes_page(entity: &Entity<Self>, themes: &Themes) -> SettingPage {
         let mut user_theme_items = Vec::new();
         let mut default_theme_items = Vec::new();
         for theme in &themes.user_themes {
@@ -34,7 +34,7 @@ impl Fulgur {
                 .map(|t| format!("{} ({})", t.name, t.mode))
                 .collect::<Vec<String>>()
                 .join(", ");
-            let button_id = SharedString::from(format!("delete-theme-{}", theme_name));
+            let button_id = SharedString::from(format!("delete-theme-{theme_name}"));
             user_theme_items.push(SettingItem::render({
                 let entity = entity.clone();
                 move |_options, _window, cx| {
@@ -50,7 +50,7 @@ impl Fulgur {
                                 .child(
                                     div()
                                         .font_semibold()
-                                        .child(format!("{} by {}", theme_name, theme_author)),
+                                        .child(format!("{theme_name} by {theme_author}")),
                                 )
                                 .child(
                                     div()
@@ -72,13 +72,13 @@ impl Fulgur {
                                             e
                                         );
                                     } else {
-                                        log::info!("Deleted theme file: {:?}", theme_path);
+                                        log::info!("Deleted theme file: {theme_path:?}");
                                     }
                                     let entity_for_update = entity_clone.clone();
                                     entity_clone.update(cx, |this, cx| {
                                         themes::reload_themes_and_update(
                                             &this.settings,
-                                            entity_for_update,
+                                            &entity_for_update,
                                             cx,
                                         );
                                     });
@@ -104,7 +104,7 @@ impl Fulgur {
                     .child(
                         div()
                             .font_semibold()
-                            .child(format!("{} by {} (Default)", theme_name, theme_author)),
+                            .child(format!("{theme_name} by {theme_author} (Default)")),
                     )
                     .child(
                         div()

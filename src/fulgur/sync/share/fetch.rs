@@ -20,24 +20,24 @@ use std::sync::Arc;
 /// - `Err(SynchronizationError)`: If the request failed or the response was invalid
 pub fn fetch_pending_shares(
     synchronization_settings: &SynchronizationSettings,
-    token_state: Arc<TokenStateManager>,
+    token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<Vec<SharedFileResponse>, SynchronizationError> {
     let Some(server_url) = synchronization_settings.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
     let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
-    let shares_url = format!("{}/api/shares", server_url);
+    let shares_url = format!("{server_url}/api/shares");
     let mut response = http_agent
         .get(&shares_url)
-        .header("Authorization", &format!("Bearer {}", token))
+        .header("Authorization", &format!("Bearer {token}"))
         .call()
         .map_err(|e| handle_ureq_error(e, "Failed to fetch pending shares"))?;
     let shares: Vec<SharedFileResponse> = response
         .body_mut()
         .read_json::<Vec<SharedFileResponse>>()
         .map_err(|e| {
-            log::error!("Failed to read pending shares: {}", e);
+            log::error!("Failed to read pending shares: {e}");
             SynchronizationError::InvalidResponse(e.to_string())
         })?;
     log::debug!("Fetched {} pending share(s) from server", shares.len());

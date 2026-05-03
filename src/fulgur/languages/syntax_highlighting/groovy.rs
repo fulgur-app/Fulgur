@@ -3,7 +3,7 @@ use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Custom highlights query for Groovy.
 ///
-/// Extends the upstream arborium_groovy query with missing keywords
+/// Extends the upstream `arborium_groovy` query with missing keywords
 /// (`new`, `interface`, `do`) that are in the grammar but absent from
 /// the default query.
 const GROOVY_HIGHLIGHTS_QUERY: &str = r#"

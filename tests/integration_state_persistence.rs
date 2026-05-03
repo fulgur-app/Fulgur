@@ -1,6 +1,6 @@
 //! Integration tests for State Persistence (save/load roundtrip)
 //!
-//! These tests verify that WindowsState and its nested structures can be
+//! These tests verify that `WindowsState` and its nested structures can be
 //! serialized to JSON, saved to disk, and deserialized back with full fidelity.
 //! They run in CI/CD environments using temporary directories for isolation.
 //!
@@ -29,7 +29,7 @@ fn temp_state_path(temp_dir: &TempDir) -> PathBuf {
     temp_dir.path().join("state.json")
 }
 
-/// Create a TabState for a file-backed tab (unmodified)
+/// Create a `TabState` for a file-backed tab (unmodified)
 ///
 /// ### Returns
 /// - `TabState`: A tab state with a file path and no modified content
@@ -48,7 +48,7 @@ fn create_file_tab_unmodified() -> TabState {
     }
 }
 
-/// Create a TabState for a file-backed tab (modified)
+/// Create a `TabState` for a file-backed tab (modified)
 ///
 /// ### Returns
 /// - `TabState`: A tab state with a file path and modified content
@@ -67,7 +67,7 @@ fn create_file_tab_modified() -> TabState {
     }
 }
 
-/// Create a TabState for an unsaved tab
+/// Create a `TabState` for an unsaved tab
 ///
 /// ### Returns
 /// - `TabState`: A tab state with no file path (unsaved)
@@ -81,32 +81,29 @@ fn create_unsaved_tab() -> TabState {
     }
 }
 
-/// Assert two TabState instances are equal
+/// Assert two `TabState` instances are equal
 ///
 /// ### Arguments
 /// - `original`: The original tab state
 /// - `loaded`: The loaded tab state
 /// - `context`: Description of what's being tested
 fn assert_tab_state_equal(original: &TabState, loaded: &TabState, context: &str) {
-    assert_eq!(original.title, loaded.title, "{}: title mismatch", context);
+    assert_eq!(original.title, loaded.title, "{context}: title mismatch");
     assert_eq!(
         original.file_path, loaded.file_path,
-        "{}: file_path mismatch",
-        context
+        "{context}: file_path mismatch"
     );
     assert_eq!(
         original.content, loaded.content,
-        "{}: content mismatch",
-        context
+        "{context}: content mismatch"
     );
     assert_eq!(
         original.last_saved, loaded.last_saved,
-        "{}: last_saved mismatch",
-        context
+        "{context}: last_saved mismatch"
     );
 }
 
-/// Assert two WindowState instances are equal
+/// Assert two `WindowState` instances are equal
 ///
 /// ### Arguments
 /// - `original`: The original window state
@@ -116,46 +113,38 @@ fn assert_window_state_equal(original: &WindowState, loaded: &WindowState, conte
     assert_eq!(
         original.tabs.len(),
         loaded.tabs.len(),
-        "{}: tab count mismatch",
-        context
+        "{context}: tab count mismatch"
     );
     for (i, (orig_tab, loaded_tab)) in original.tabs.iter().zip(loaded.tabs.iter()).enumerate() {
-        assert_tab_state_equal(orig_tab, loaded_tab, &format!("{} - tab {}", context, i));
+        assert_tab_state_equal(orig_tab, loaded_tab, &format!("{context} - tab {i}"));
     }
     assert_eq!(
         original.active_tab_index, loaded.active_tab_index,
-        "{}: active_tab_index mismatch",
-        context
+        "{context}: active_tab_index mismatch"
     );
     assert_eq!(
         original.window_bounds.state, loaded.window_bounds.state,
-        "{}: window_bounds.state mismatch",
-        context
+        "{context}: window_bounds.state mismatch"
     );
     assert_eq!(
         original.window_bounds.x, loaded.window_bounds.x,
-        "{}: window_bounds.x mismatch",
-        context
+        "{context}: window_bounds.x mismatch"
     );
     assert_eq!(
         original.window_bounds.y, loaded.window_bounds.y,
-        "{}: window_bounds.y mismatch",
-        context
+        "{context}: window_bounds.y mismatch"
     );
     assert_eq!(
         original.window_bounds.width, loaded.window_bounds.width,
-        "{}: window_bounds.width mismatch",
-        context
+        "{context}: window_bounds.width mismatch"
     );
     assert_eq!(
         original.window_bounds.height, loaded.window_bounds.height,
-        "{}: window_bounds.height mismatch",
-        context
+        "{context}: window_bounds.height mismatch"
     );
     assert_eq!(
         original.window_bounds.display_id, loaded.window_bounds.display_id,
-        "{}: window_bounds.display_id mismatch",
-        context
+        "{context}: window_bounds.display_id mismatch"
     );
 }
 
@@ -260,7 +249,7 @@ fn test_state_roundtrip_multiple_windows() {
         .zip(loaded.windows.iter())
         .enumerate()
     {
-        assert_window_state_equal(orig_window, loaded_window, &format!("Window {}", i));
+        assert_window_state_equal(orig_window, loaded_window, &format!("Window {i}"));
     }
 }
 
@@ -342,9 +331,9 @@ fn test_window_bounds_variants() {
         };
         original
             .save_to_path(&state_path)
-            .unwrap_or_else(|_| panic!("Failed to save {} state", label));
+            .unwrap_or_else(|_| panic!("Failed to save {label} state"));
         let loaded = WindowsState::load_from_path(&state_path)
-            .unwrap_or_else(|_| panic!("Failed to load {}", label));
+            .unwrap_or_else(|_| panic!("Failed to load {label}"));
         assert_eq!(loaded.windows[0].window_bounds.state, bounds.state);
         assert_eq!(loaded.windows[0].window_bounds.x, bounds.x);
         assert_eq!(loaded.windows[0].window_bounds.y, bounds.y);
@@ -464,7 +453,7 @@ fn test_state_backward_compatibility_missing_window_bounds() {
                 "tabs": [
                     {{
                         "title": "test.txt",
-                        "file_path": "{}",
+                        "file_path": "{file_path_json}",
                         "content": null,
                         "last_saved": null
                     }}
@@ -472,8 +461,7 @@ fn test_state_backward_compatibility_missing_window_bounds() {
                 "active_tab_index": 0
             }}
         ]
-    }}"#,
-        file_path_json
+    }}"#
     );
 
     fs::write(&state_path, &minimal_json).expect("Failed to write minimal JSON");
@@ -500,15 +488,11 @@ fn test_state_multiple_save_load_cycles() {
     for i in 0..5 {
         state
             .save_to_path(&state_path)
-            .unwrap_or_else(|_| panic!("Failed to save on iteration {}", i));
+            .unwrap_or_else(|_| panic!("Failed to save on iteration {i}"));
         let loaded = WindowsState::load_from_path(&state_path)
-            .unwrap_or_else(|_| panic!("Failed to load on iteration {}", i));
+            .unwrap_or_else(|_| panic!("Failed to load on iteration {i}"));
         assert_eq!(state.windows.len(), loaded.windows.len());
-        assert_window_state_equal(
-            &state.windows[0],
-            &loaded.windows[0],
-            &format!("Cycle {}", i),
-        );
+        assert_window_state_equal(&state.windows[0], &loaded.windows[0], &format!("Cycle {i}"));
         state.windows[0].tabs.push(create_unsaved_tab());
         state.windows[0].window_bounds.x += 10.0;
         state = loaded;
@@ -637,9 +621,9 @@ fn test_state_preserves_window_order() {
     for i in 0..5 {
         windows.push(WindowState {
             tabs: vec![TabState {
-                title: format!("Window {} Marker", i),
+                title: format!("Window {i} Marker"),
                 file_path: None,
-                content: Some(format!("This is window number {}", i)),
+                content: Some(format!("This is window number {i}")),
                 last_saved: None,
                 remote: None,
             }],
@@ -663,7 +647,7 @@ fn test_state_preserves_window_order() {
     for i in 0..5 {
         assert_eq!(
             loaded.windows[i].tabs[0].title,
-            format!("Window {} Marker", i),
+            format!("Window {i} Marker"),
             "Window order should be preserved"
         );
         assert_eq!(

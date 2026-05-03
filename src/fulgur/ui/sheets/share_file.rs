@@ -75,11 +75,7 @@ fn make_device_item(
                         .gap_2()
                         .child(get_icon(device_for_icon))
                         .child(div().child(device_name))
-                        .child(
-                            div()
-                                .text_xs()
-                                .child(format!("Expires: {}", device_expires)),
-                        ),
+                        .child(div().text_xs().child(format!("Expires: {device_expires}"))),
                 )
                 .when(!has_public_key, |this| {
                     this.child(
@@ -115,8 +111,8 @@ fn make_device_item(
 /// ### Returns
 /// - `Div`: The list of devices
 fn make_device_list(
-    devices: Arc<Vec<Device>>,
-    selected_ids: Arc<parking_lot::Mutex<Vec<String>>>,
+    devices: &Arc<Vec<Device>>,
+    selected_ids: &Arc<parking_lot::Mutex<Vec<String>>>,
     cx: &App,
 ) -> Div {
     div().gap_2().children(
@@ -143,9 +139,9 @@ fn make_device_list(
 /// - `window`: The window context
 /// - `cx`: The application context
 fn handle_share_file(
-    selected_ids: Arc<parking_lot::Mutex<Vec<String>>>,
-    devices: Arc<Vec<Device>>,
-    entity: Entity<Fulgur>,
+    selected_ids: &Arc<parking_lot::Mutex<Vec<String>>>,
+    devices: &Arc<Vec<Device>>,
+    entity: &Entity<Fulgur>,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -205,18 +201,19 @@ fn handle_share_file(
     let cancel_callback: Option<CancelCallback> = Some(Box::new(|_, _| {}));
     let progress = start_progress(window, cx, progress_label.into(), cancel_callback);
     let cancel_flag = progress.cancel_flag();
+    let devices = Arc::clone(devices);
     std::thread::spawn(move || {
         let _progress = progress;
         let result = share_file(
             &sync_settings,
-            request,
+            &request,
             &devices,
-            token_state,
+            &token_state,
             &http_agent,
             max_file_size_bytes,
         );
         if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
-            // User cancelled — drop the result silently.
+            // User cancelled, drop the result silently.
             return;
         }
         let notification = match result {
@@ -239,10 +236,10 @@ fn handle_share_file(
                 }
             }
             Err(e) => {
-                log::error!("Failed to share file: {}", e);
+                log::error!("Failed to share file: {e}");
                 (
                     NotificationType::Error,
-                    SharedString::from(format!("Failed to share file: {}", e)),
+                    SharedString::from(format!("Failed to share file: {e}")),
                 )
             }
         };
@@ -281,7 +278,7 @@ impl Fulgur {
         }
         let shared = self.shared_state(cx);
         crate::fulgur::sync::synchronization::set_sync_server_connection_status(
-            shared.sync_state.connection_status.clone(),
+            &shared.sync_state.connection_status,
             SynchronizationStatus::Connecting,
         );
         *shared.sync_state.connecting_since.lock() = Some(std::time::Instant::now());
@@ -299,7 +296,7 @@ impl Fulgur {
             if needs_reconnect {
                 match crate::fulgur::sync::synchronization::initial_synchronization(
                     &synchronization_settings,
-                    Arc::clone(&token_state),
+                    &token_state,
                     &http_agent,
                 ) {
                     Ok(begin_response) => {
@@ -310,23 +307,23 @@ impl Fulgur {
                             begin_response.max_file_size_bytes,
                         );
                         crate::fulgur::sync::synchronization::set_sync_server_connection_status(
-                            connection_status.clone(),
+                            &connection_status,
                             SynchronizationStatus::Connected,
                         );
                     }
                     Err(e) => {
                         let status = SynchronizationStatus::from_error(&e);
                         crate::fulgur::sync::synchronization::set_sync_server_connection_status(
-                            connection_status,
+                            &connection_status,
                             status,
                         );
                         *connecting_since.lock() = None;
-                        *pending_devices.lock() = Some((Err(format!("{}", e)), false));
+                        *pending_devices.lock() = Some((Err(format!("{e}")), false));
                         return;
                     }
                 }
             }
-            let result = get_devices(&synchronization_settings, token_state, &http_agent);
+            let result = get_devices(&synchronization_settings, &token_state, &http_agent);
             *connecting_since.lock() = None;
             match result {
                 Ok((devices, server_max_size)) => {
@@ -335,13 +332,13 @@ impl Fulgur {
                         server_max_size,
                     );
                     crate::fulgur::sync::synchronization::set_sync_server_connection_status(
-                        connection_status,
+                        &connection_status,
                         SynchronizationStatus::Connected,
                     );
                     *pending_devices.lock() = Some((Ok(devices), needs_reconnect));
                 }
                 Err(e) => {
-                    *pending_devices.lock() = Some((Err(format!("{}", e)), false));
+                    *pending_devices.lock() = Some((Err(format!("{e}")), false));
                 }
             }
         });
@@ -378,7 +375,7 @@ impl Fulgur {
                 self.show_share_sheet(devices, window, cx);
             }
             Err(e) => {
-                log::error!("Failed to prepare share: {}", e);
+                log::error!("Failed to prepare share: {e}");
                 let status = *self.shared_state(cx).sync_state.connection_status.lock();
                 let dialog_message = match status {
                     SynchronizationStatus::AuthenticationFailed => {
@@ -443,7 +440,7 @@ impl Fulgur {
                         .overflow_y_scrollbar()
                         .gap_2()
                         .h(max_height)
-                        .child(make_device_list(devices_ref, selected_ids_for_list, cx)),
+                        .child(make_device_list(&devices_ref, &selected_ids_for_list, cx)),
                 )
                 .footer(
                     h_flex()
@@ -467,9 +464,9 @@ impl Fulgur {
                                 .cursor_pointer()
                                 .on_click(move |_, window, cx| {
                                     handle_share_file(
-                                        selected_ids_for_ok.clone(),
-                                        devices_button.clone(),
-                                        entity_for_ok.clone(),
+                                        &selected_ids_for_ok,
+                                        &devices_button,
+                                        &entity_for_ok,
                                         window,
                                         cx,
                                     );

@@ -63,9 +63,9 @@ pub fn tab_bar_button_factory(
 
 /// Opens the theme repository in the default browser
 ///
-/// This is a standalone helper function for the GetTheme action.
+/// This is a standalone helper function for the `GetTheme` action.
 pub fn open_theme_repository() {
     if let Err(e) = open::that("https://github.com/longbridge/gpui-component/tree/main/themes") {
-        log::error!("Failed to open browser: {}", e);
+        log::error!("Failed to open browser: {e}");
     }
 }

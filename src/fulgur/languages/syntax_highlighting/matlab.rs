@@ -15,12 +15,12 @@ pub fn add_matlab_support() {
     );
 }
 
-/// Highlights query for MATLAB, remapped from the arborium_matlab nvim-treesitter naming
+/// Highlights query for MATLAB, remapped from the `arborium_matlab` nvim-treesitter naming
 /// conventions to the gpui-component recognized names.
 ///
-/// Key corrections vs. the bundled arborium_matlab highlights.scm:
+/// Key corrections vs. the bundled `arborium_matlab` highlights.scm:
 /// - Uses `name:` field selectors on `function_call`, `function_definition`, and
-///   `class_definition` instead of bare child patterns — the grammar exposes these as
+///   `class_definition` instead of bare child patterns - the grammar exposes these as
 ///   named fields, so field-qualified selectors are more reliable.
 /// - `break_statement`, `continue_statement`, and `return_statement` are **named leaf
 ///   nodes** (the entire node IS the keyword token); they must be captured by node type,
@@ -28,7 +28,7 @@ pub fn add_matlab_support() {
 /// - `field_expression` uses the `field:` selector to capture only the accessed property,
 ///   not the object expression.
 const MATLAB_HIGHLIGHTS_QUERY: &str = r#"
-; Comments — covers both % and %% styles
+; Comments - covers both % and %% styles
 (comment) @comment
 
 ; Strings
@@ -40,11 +40,11 @@ const MATLAB_HIGHLIGHTS_QUERY: &str = r#"
 ; Numbers
 (number) @number
 
-; Function definitions — name: field holds the function identifier
+; Function definitions - name: field holds the function identifier
 (function_definition
   name: (identifier) @function)
 
-; Function calls — name: field holds the callee identifier
+; Function calls - name: field holds the callee identifier
 (function_call
   name: (identifier) @function)
 
@@ -57,7 +57,7 @@ const MATLAB_HIGHLIGHTS_QUERY: &str = r#"
 (command
   (command_name) @function)
 
-; Class definitions — name: field holds the class identifier
+; Class definitions - name: field holds the class identifier
 (class_definition
   name: (identifier) @type)
 
@@ -81,12 +81,12 @@ const MATLAB_HIGHLIGHTS_QUERY: &str = r#"
 ; Ignored argument (~) used as output placeholder
 (ignored_argument) @comment
 
-; Keywords — named leaf nodes (the whole node IS the keyword token)
+; Keywords - named leaf nodes (the whole node IS the keyword token)
 (break_statement) @keyword
 (continue_statement) @keyword
 (return_statement) @keyword
 
-; Keywords — anonymous tokens inside statement nodes
+; Keywords - anonymous tokens inside statement nodes
 [
   "function"
   "end"

@@ -35,7 +35,7 @@ impl CustomTitleBar {
         })
     }
 
-    /// Reload the app menu bar from the current GlobalState menus (non-macOS only)
+    /// Reload the app menu bar from the current `GlobalState` menus (non-macOS only)
     #[cfg(not(target_os = "macos"))]
     pub fn reload_app_menu_bar(&mut self, cx: &mut Context<Self>) {
         self.app_menu_bar.update(cx, |bar, cx| bar.reload(cx));
@@ -50,10 +50,10 @@ impl CustomTitleBar {
     /// - `title`: The file or tab title to display; `None` shows only the app name
     /// - `window_name`: The window identifier to append; `None` omits it
     pub fn set_title(&mut self, title: Option<String>, window_name: Option<&str>) {
-        let suffix = window_name.map(|n| format!(" ({})", n)).unwrap_or_default();
+        let suffix = window_name.map(|n| format!(" ({n})")).unwrap_or_default();
         self.title = match title {
-            Some(t) => format!("{} - Fulgur{}", t, suffix),
-            None => format!("{}{}", DEFAULT_TITLE, suffix),
+            Some(t) => format!("{t} - Fulgur{suffix}"),
+            None => format!("{DEFAULT_TITLE}{suffix}"),
         };
     }
 }

@@ -12,7 +12,7 @@ mod tests;
 
 /// Window manager tracks all open Fulgur windows and provides cross-window operations
 pub struct WindowManager {
-    /// All open windows mapped by their window_id
+    /// All open windows mapped by their `window_id`
     windows: HashMap<WindowId, WeakEntity<Fulgur>>,
     /// The last focused window for file opening
     last_focused: Option<WindowId>,
@@ -80,7 +80,7 @@ impl WindowManager {
     /// - `window_id`: The ID of the window to register
     /// - `entity`: The entity of the window to register
     pub fn register(&mut self, window_id: WindowId, entity: WeakEntity<Fulgur>) {
-        log::debug!("Registering window {:?}", window_id);
+        log::debug!("Registering window {window_id:?}");
         self.windows.insert(window_id, entity);
         self.last_focused = Some(window_id);
         let name = index_to_name(self.next_name_index);
@@ -94,7 +94,7 @@ impl WindowManager {
     /// ### Arguments
     /// - `window_id`: The ID of the window to unregister
     pub fn unregister(&mut self, window_id: WindowId) {
-        log::debug!("Unregistering window {:?}", window_id);
+        log::debug!("Unregistering window {window_id:?}");
         self.windows.remove(&window_id);
         self.window_names.remove(&window_id);
         self.window_menu_fingerprints.remove(&window_id);

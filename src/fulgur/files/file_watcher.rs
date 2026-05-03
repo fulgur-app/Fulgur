@@ -20,20 +20,20 @@ pub struct FileWatchState {
 }
 
 impl Default for FileWatchState {
-    /// Create a new FileWatchState with all fields initialized to default/empty values
+    /// Create a new `FileWatchState` with all fields initialized to default/empty values
     ///
     /// ### Returns
-    /// `Self`: A new FileWatchState
+    /// `Self`: A new `FileWatchState`
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl FileWatchState {
-    /// Create a new FileWatchState with all fields initialized to default/empty values
+    /// Create a new `FileWatchState` with all fields initialized to default/empty values
     ///
     /// ### Returns
-    /// `Self: a new FileWatchState
+    /// `Self`: A new `FileWatchState`
     pub fn new() -> Self {
         Self {
             file_watcher: None,
@@ -104,7 +104,7 @@ impl FileWatcher {
         Ok(())
     }
 
-    /// Handles a notify event and converts it to a FileWatchEvent
+    /// Handles a notify event and converts it to a `FileWatchEvent`
     ///
     /// ### Description
     /// - If the event is a modification, it sends a Modified event to the event sender
@@ -139,13 +139,13 @@ impl FileWatcher {
                 } else if event.paths.len() == 1 {
                     match rename_mode {
                         RenameMode::From => {
-                            // Linux inotify: first half — store and wait for the To event
+                            // Linux inotify: first half - store and wait for the To event
                             if let Ok(mut pending) = pending_rename_from.lock() {
                                 *pending = Some(event.paths[0].clone());
                             }
                         }
                         RenameMode::To => {
-                            // Linux inotify: second half — pair with the stored From path
+                            // Linux inotify: second half - pair with the stored From path
                             let from = pending_rename_from.lock().ok().and_then(|mut p| p.take());
                             match from {
                                 Some(from) => {
@@ -199,19 +199,19 @@ impl FileWatcher {
     /// ### Returns
     /// - `Ok(())`: If the file was watched successfully
     /// - `Err(String)`: If the file could not be watched
-    pub fn watch_file(&mut self, path: PathBuf) -> Result<(), String> {
-        if self.watched_paths.contains_key(&path) {
+    pub fn watch_file(&mut self, path: &PathBuf) -> Result<(), String> {
+        if self.watched_paths.contains_key(path) {
             return Ok(());
         }
         if self.watcher.is_none() {
             self.start().map_err(|e| e.to_string())?;
         }
-        let modified_time = std::fs::metadata(&path)
+        let modified_time = std::fs::metadata(path)
             .and_then(|m| m.modified())
             .unwrap_or(SystemTime::UNIX_EPOCH);
         if let Some(watcher) = &mut self.watcher {
             watcher
-                .watch(&path, RecursiveMode::NonRecursive)
+                .watch(path, RecursiveMode::NonRecursive)
                 .map_err(|e| format!("Failed to watch file {}: {}", path.display(), e))?;
         }
         self.watched_paths.insert(path.clone(), modified_time);
@@ -250,7 +250,7 @@ impl FileWatcher {
 }
 
 impl Drop for FileWatcher {
-    /// Stops the file watcher when the FileWatcher instance is dropped
+    /// Stops the file watcher when the `FileWatcher` instance is dropped
     fn drop(&mut self) {
         self.stop();
     }
@@ -315,7 +315,7 @@ impl Fulgur {
                         let is_active = self.active_tab_index == Some(tab_index);
 
                         if is_active {
-                            self.show_file_conflict_dialog(path, tab_index, window, cx);
+                            self.show_file_conflict_dialog(&path, tab_index, window, cx);
                         } else {
                             self.file_watch_state
                                 .pending_conflicts
@@ -347,7 +347,7 @@ impl Fulgur {
                 }
             }
             FileWatchEvent::Error(msg) => {
-                log::error!("File watcher error: {}", msg);
+                log::error!("File watcher error: {msg}");
             }
         }
     }
@@ -356,13 +356,13 @@ impl Fulgur {
     pub fn start_file_watcher(&mut self) {
         let (mut watcher, receiver) = FileWatcher::new();
         if let Err(e) = watcher.start() {
-            log::error!("Failed to start file watcher: {}", e);
+            log::error!("Failed to start file watcher: {e}");
             return;
         }
         for tab in &self.tabs {
             if let Tab::Editor(editor_tab) = tab
                 && let Some(path) = editor_tab.file_path()
-                && let Err(e) = watcher.watch_file(path.clone())
+                && let Err(e) = watcher.watch_file(path)
             {
                 log::warn!("Failed to watch file {}: {}", path.display(), e);
             }
@@ -386,7 +386,7 @@ impl Fulgur {
     /// - `path`: The path to the file to watch
     pub fn watch_file(&mut self, path: &std::path::Path) {
         if let Some(watcher) = &mut self.file_watch_state.file_watcher
-            && let Err(e) = watcher.watch_file(path.to_path_buf())
+            && let Err(e) = watcher.watch_file(&path.to_path_buf())
         {
             log::warn!("Failed to watch file {}: {}", path.display(), e);
         }

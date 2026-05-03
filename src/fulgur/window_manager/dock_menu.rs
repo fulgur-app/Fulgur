@@ -152,7 +152,7 @@ impl Fulgur {
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
             {
-                return SharedString::from(format!("{} (../{})", filename, parent_name));
+                return SharedString::from(format!("{filename} (../{parent_name})"));
             }
             SharedString::from(filename.to_string())
         };
@@ -276,7 +276,7 @@ impl Fulgur {
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
             {
-                return SharedString::from(format!("{} (../{})", filename, parent_name));
+                return SharedString::from(format!("{filename} (../{parent_name})"));
             }
             SharedString::from(filename.to_string())
         };
@@ -301,11 +301,11 @@ impl Fulgur {
         update_windows_jump_list(&windows_data, &recent_files);
     }
 
-    /// Handle the DockActivateTab action: focus the tab with the given file path,
+    /// Handle the `DockActivateTab` action: focus the tab with the given file path,
     /// switching to the correct window if necessary.
     ///
     /// ### Arguments
-    /// - `action`: The DockActivateTab action containing the file path
+    /// - `action`: The `DockActivateTab` action containing the file path
     /// - `window`: The current window
     /// - `cx`: The application context
     pub fn handle_dock_activate_tab(
@@ -369,11 +369,11 @@ impl Fulgur {
         }
     }
 
-    /// Handle the DockActivateTabByTitle action: focus the tab with the given title,
+    /// Handle the `DockActivateTabByTitle` action: focus the tab with the given title,
     /// switching to the correct window if necessary.
     ///
     /// ### Arguments
-    /// - `action`: The DockActivateTabByTitle action containing the tab title
+    /// - `action`: The `DockActivateTabByTitle` action containing the tab title
     /// - `window`: The current window
     /// - `cx`: The application context
     pub fn handle_dock_activate_tab_by_title(

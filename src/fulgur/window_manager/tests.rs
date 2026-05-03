@@ -5,7 +5,11 @@ use crate::fulgur::{
 use gpui::{AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId};
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
-use std::{cell::RefCell, path::PathBuf, sync::Arc};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 /// Initialize test globals required by `Fulgur::new`.
 ///
@@ -120,14 +124,16 @@ fn invoke_do_open_file(
     cx: &mut TestAppContext,
     window_id: WindowId,
     fulgur: &Entity<Fulgur>,
-    path: PathBuf,
+    path: &Path,
 ) {
     cx.update(|cx| {
         for handle in cx.windows() {
             if handle.window_id() == window_id {
                 handle
                     .update(cx, |_, window, cx| {
-                        fulgur.update(cx, |this, cx| this.do_open_file(window, cx, path.clone()));
+                        fulgur.update(cx, |this, cx| {
+                            this.do_open_file(window, cx, path.to_path_buf())
+                        });
                     })
                     .expect("failed to run do_open_file on test window");
                 return;
@@ -176,7 +182,7 @@ fn invoke_dock_activate_tab(
     cx: &mut TestAppContext,
     window_id: WindowId,
     fulgur: &Entity<Fulgur>,
-    path: PathBuf,
+    path: &Path,
 ) {
     cx.update(|cx| {
         for handle in cx.windows() {
@@ -184,7 +190,8 @@ fn invoke_dock_activate_tab(
                 handle
                     .update(cx, |_, window, cx| {
                         fulgur.update(cx, |this, cx| {
-                            let action = crate::fulgur::ui::menus::DockActivateTab(path.clone());
+                            let action =
+                                crate::fulgur::ui::menus::DockActivateTab(path.to_path_buf());
                             this.handle_dock_activate_tab(&action, window, cx);
                         });
                     })
@@ -207,7 +214,7 @@ fn invoke_dock_activate_tab_by_title(
     cx: &mut TestAppContext,
     window_id: WindowId,
     fulgur: &Entity<Fulgur>,
-    title: SharedString,
+    title: &SharedString,
 ) {
     cx.update(|cx| {
         for handle in cx.windows() {
@@ -467,7 +474,7 @@ fn test_do_open_file_does_not_open_duplicate_when_file_exists_in_another_window(
         });
     });
     let tab_count_before = cx.update(|cx| current_fulgur.read(cx).tabs.len());
-    invoke_do_open_file(cx, current_window_id, &current_fulgur, shared_path.clone());
+    invoke_do_open_file(cx, current_window_id, &current_fulgur, &shared_path);
     cx.run_until_parked();
     let tab_count_after = cx.update(|cx| current_fulgur.read(cx).tabs.len());
     assert_eq!(
@@ -506,7 +513,7 @@ fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppC
         }
     });
 
-    invoke_dock_activate_tab(cx, current_window_id, &current_fulgur, target_path.clone());
+    invoke_dock_activate_tab(cx, current_window_id, &current_fulgur, &target_path);
     cx.run_until_parked();
 
     cx.update(|cx| {
@@ -547,7 +554,7 @@ fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut
             }
         }
     });
-    invoke_dock_activate_tab_by_title(cx, current_window_id, &current_fulgur, target_title.clone());
+    invoke_dock_activate_tab_by_title(cx, current_window_id, &current_fulgur, &target_title);
     cx.run_until_parked();
 
     cx.update(|cx| {

@@ -112,7 +112,7 @@ const SCSS_HIGHLIGHTS_QUERY_SCSS_LAYER: &str = r#"
 ] @punctuation.bracket
 "#;
 
-/// The full highlights query: the unmodified CSS base from arborium_css followed by our rewritten SCSS layer.
+/// The full highlights query: the unmodified CSS base from `arborium_css` followed by our rewritten SCSS layer.
 static SCSS_HIGHLIGHTS_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     let full = &*arborium_scss::HIGHLIGHTS_QUERY;
     let css_base = full
@@ -120,7 +120,7 @@ static SCSS_HIGHLIGHTS_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock:
         .map(|pos| &full[..pos])
         .unwrap_or(full);
 
-    format!("{}\n{}", css_base, SCSS_HIGHLIGHTS_QUERY_SCSS_LAYER)
+    format!("{css_base}\n{SCSS_HIGHLIGHTS_QUERY_SCSS_LAYER}")
 });
 
 #[cfg(test)]

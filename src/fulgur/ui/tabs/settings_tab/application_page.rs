@@ -21,7 +21,7 @@ const DEVICE_KEY_PLACEHOLDER: &str = "<Device Key>";
 ///
 /// ### Returns
 /// - `SettingPage`: The Application settings page
-pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
+pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
     let default_app_settings = AppSettings::new();
 
     SettingPage::new("Application")
@@ -41,7 +41,7 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                 entity.update(cx, |this, cx| {
                                     this.settings.app_settings.confirm_exit = val;
                                     if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
+                                        log::error!("Failed to save settings: {e}");
                                     }
                                 });
                             }
@@ -63,7 +63,7 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                 entity.update(cx, |this, cx| {
                                     this.settings.app_settings.debug_mode = val;
                                     if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
+                                        log::error!("Failed to save settings: {e}");
                                     }
                                 });
                             }
@@ -142,17 +142,17 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                                 if val
                                                     && let Err(e) = crypto_helper::check_private_public_keys(&mut this.settings)
                                                 {
-                                                    log::error!("Failed to check private/public keys: {}", e);
+                                                    log::error!("Failed to check private/public keys: {e}");
                                                 }
                                                 if let Err(e) = this.update_and_propagate_settings(cx) {
-                                                    log::error!("Failed to save settings: {}", e);
+                                                    log::error!("Failed to save settings: {e}");
                                                 }
                                             });
                                             if val {
                                                 let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
                                                 shared.sync_state.token_state.clear_token();
                                                 perform_initial_synchronization_with_progress(
-                                                    entity.clone(),
+                                                    &entity,
                                                     window,
                                                     cx,
                                                 );
@@ -186,7 +186,7 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                         .synchronization_settings
                                         .is_deduplication = val;
                                     if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
+                                        log::error!("Failed to save settings: {e}");
                                     }
                                 });
                             }
@@ -226,7 +226,7 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                         .synchronization_settings
                                         .server_url = url;
                                     if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
+                                        log::error!("Failed to save settings: {e}");
                                     }
                                     this.restart_sse_connection(cx);
                                 });
@@ -272,7 +272,7 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                     this.settings.app_settings.synchronization_settings.email =
                                         email;
                                     if let Err(e) = this.update_and_propagate_settings(cx) {
-                                        log::error!("Failed to save settings: {}", e);
+                                        log::error!("Failed to save settings: {e}");
                                     }
                                     this.restart_sse_connection(cx);
                                 });
@@ -302,12 +302,12 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                     } else if val == DEVICE_KEY_PLACEHOLDER {
                                         return;
                                     } else {
-                                        Some(val.to_string())
+                                        Some(val.as_str())
                                     };
                                     if let Err(e) =
                                         crypto_helper::save_device_api_key_to_keychain(key)
                                     {
-                                        log::error!("Failed to save device API key: {}", e);
+                                        log::error!("Failed to save device API key: {e}");
                                     } else {
                                         log::info!("Device API key saved successfully");
                                         // Clear cached token to force re-authentication with new device key
@@ -353,7 +353,7 @@ pub fn create_application_page(entity: Entity<Fulgur>) -> SettingPage {
                                             let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
                                             shared.sync_state.token_state.clear_token();
                                             perform_initial_synchronization_with_progress(
-                                                entity.clone(),
+                                                &entity,
                                                 window,
                                                 cx,
                                             );

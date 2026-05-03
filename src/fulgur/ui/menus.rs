@@ -236,7 +236,7 @@ pub enum DockMenuTab {
 ///
 /// ### Returns
 /// - `Vec<Menu>`: The menus for the Fulgur instance
-pub fn build_menus(recent_files: &[PathBuf], update_link: Option<String>) -> Vec<Menu> {
+pub fn build_menus(recent_files: &[PathBuf], update_link: Option<&str>) -> Vec<Menu> {
     let recent_files_items = if recent_files.is_empty() {
         vec![MenuItem::action("No recent files", NoneAction)]
     } else {
@@ -390,7 +390,7 @@ pub fn build_dock_menu(windows: &[Vec<DockMenuTab>], recent_files: &[PathBuf]) -
 }
 
 impl Fulgur {
-    /// Set the application menus and sync them to the AppMenuBar on non-macOS platforms.
+    /// Set the application menus and sync them to the `AppMenuBar` on non-macOS platforms.
     ///
     /// ### Arguments
     /// - `menus`: The menus to set
@@ -416,7 +416,7 @@ impl Fulgur {
         if let Some(update_info) = self.shared_state(cx).update_info.lock().as_ref() {
             let url = update_info.download_url.clone();
             if !is_valid_release_page_url(&url) {
-                log::error!("Refusing to open non-canonical update URL: {}", url);
+                log::error!("Refusing to open non-canonical update URL: {url}");
                 return;
             }
             match open::that(url) {
@@ -424,7 +424,7 @@ impl Fulgur {
                     log::debug!("Successfully opened browser");
                 }
                 Err(e) => {
-                    log::error!("Failed to open browser: {}", e);
+                    log::error!("Failed to open browser: {e}");
                 }
             }
             return;
@@ -433,13 +433,9 @@ impl Fulgur {
         cx.spawn_in(window, async move |view, window| {
             log::debug!("Checking for updates");
             let current_version = env!("CARGO_PKG_VERSION");
-            log::debug!("Current version: {}", current_version);
+            log::debug!("Current version: {current_version}");
             let update_info = bg
-                .spawn(async move {
-                    check_for_updates(current_version.to_string())
-                        .ok()
-                        .flatten()
-                })
+                .spawn(async move { check_for_updates(current_version).ok().flatten() })
                 .await;
             window
                 .update(|window, cx| {
@@ -454,12 +450,12 @@ impl Fulgur {
                             }
                             let menus = build_menus(
                                 this.settings.recent_files.get_files(),
-                                Some(download_url),
+                                Some(download_url.as_str()),
                             );
                             this.update_menus(menus, cx);
                             cx.notify();
                         });
-                        log::info!("Update available: {} -> {}", current_ver, latest_ver);
+                        log::info!("Update available: {current_ver} -> {latest_ver}");
                     } else {
                         let notification = SharedString::from("No update found");
                         window.push_notification((NotificationType::Info, notification), cx);

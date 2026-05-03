@@ -87,7 +87,7 @@ impl Fulgur {
         &self,
         window: &mut Window,
         cx: &mut Context<Self>,
-        browse: RemoteBrowseResult,
+        browse: &RemoteBrowseResult,
     ) {
         let spec = browse.directory_spec.clone();
         let Some(user) = spec.user.clone() else {
@@ -116,10 +116,10 @@ impl Fulgur {
             RemotePathBrowser::new(
                 window,
                 cx,
-                initial_path,
+                &initial_path,
                 initial_entries,
                 notice,
-                connection,
+                &connection,
             )
         });
         let browser_input = browser.read(cx).input().clone();

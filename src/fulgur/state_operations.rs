@@ -132,9 +132,7 @@ impl Fulgur {
         let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
         shared.state_writer.save_blocking(windows_state, path)?;
         log::debug!(
-            "Application state saved successfully ({} windows, {} tabs in this window)",
-            window_count,
-            tab_count
+            "Application state saved successfully ({window_count} windows, {tab_count} tabs in this window)"
         );
         Ok(())
     }
@@ -146,7 +144,7 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `window_index`: Index of the window state to restore (0 = first window, etc.)
     pub fn load_state(&mut self, window: &mut Window, cx: &mut Context<Self>, window_index: usize) {
-        log::debug!("Loading application state for window {}...", window_index);
+        log::debug!("Loading application state for window {window_index}...");
         // Temporarily disable indent guides during restoration to prevent crash
         let original_indent_guides = self.settings.editor_settings.show_indent_guides;
         self.settings.editor_settings.show_indent_guides = false;
@@ -441,13 +439,13 @@ impl Fulgur {
         None
     }
 
-    /// Build WindowState for this window without window bounds (for cross-window saves)
+    /// Build `WindowState` for this window without window bounds (for cross-window saves)
     ///
     /// ### Arguments
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `WindowState`: The WindowState for this window (with cached bounds)
+    /// - `WindowState`: The `WindowState` for this window (with cached bounds)
     pub fn build_window_state_without_bounds(&self, cx: &App) -> WindowState {
         let window_bounds = self.cached_window_bounds.clone().unwrap_or_default();
         WindowState {
@@ -457,14 +455,14 @@ impl Fulgur {
         }
     }
 
-    /// Build WindowState for this window (with window bounds)
+    /// Build `WindowState` for this window (with window bounds)
     ///
     /// ### Arguments
     /// - `cx`: The application context
     /// - `window`: The window (needed for bounds)
     ///
     /// ### Returns
-    /// - `WindowState`: The WindowState for this window
+    /// - `WindowState`: The `WindowState` for this window
     pub fn build_window_state(&self, cx: &App, window: &Window) -> WindowState {
         let display_id = window.display(cx).map(|d| d.id().into());
         let window_bounds =
