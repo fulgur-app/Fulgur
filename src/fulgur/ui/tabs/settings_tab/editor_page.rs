@@ -2,11 +2,22 @@ use crate::fulgur::{
     Fulgur,
     settings::{EditorSettings, MarkdownPreviewMode},
 };
-use gpui::{App, Entity, SharedString, Styled, px};
+use gpui::prelude::FluentBuilder as _;
+use gpui::{App, AppContext as _, Context, Entity, SharedString, Styled, Subscription, px};
 use gpui_component::{
+    AxisExt, Sizable,
+    input::{InputEvent, InputState, NumberInput, NumberInputEvent, StepAction},
     select::{SearchableVec, Select, SelectState},
     setting::{NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage},
 };
+use std::rc::Rc;
+
+type SetValFn = Rc<dyn Fn(f64, &mut App)>;
+
+struct NumberInputState {
+    input: Entity<InputState>,
+    _subs: Vec<Subscription>,
+}
 
 /// Convert a slider `f64` value to a `f32` font size.
 ///
@@ -25,6 +36,99 @@ fn slider_val_to_font_size(val: f64) -> f32 {
 #[allow(clippy::cast_sign_loss)]
 fn slider_val_to_tab_size(val: f64) -> usize {
     val as usize
+}
+
+/// Create a number input setting field that correctly propagates both step-button
+/// clicks and manual text edits to the entity.
+///
+/// gpui-component's built-in `SettingField::number_input` suppresses
+/// `InputEvent::Change` when step buttons are clicked (via `InputState::set_value`
+/// which sets `emit_events = false`), so the entity setter is never called for
+/// step interactions. This helper replicates the field while explicitly calling the
+/// setter on each step.
+///
+/// ### Arguments
+/// - `state_key`: Unique key for `use_keyed_state`
+/// - `options`: Step / min / max configuration
+/// - `get_val`: Reads the current value from the application state
+/// - `set_val`: Writes an updated value into the application state
+///
+/// ### Returns
+/// - `SettingField<SharedString>`: A correctly-wired number input field
+fn make_number_field(
+    state_key: SharedString,
+    options: &NumberFieldOptions,
+    get_val: impl Fn(&App) -> f64 + 'static,
+    set_val: impl Fn(f64, &mut App) + 'static,
+) -> SettingField<SharedString> {
+    let options = options.clone();
+    let get_val = Rc::new(get_val);
+    let set_val: SetValFn = Rc::new(set_val);
+
+    SettingField::render(move |options_render, window, cx| {
+        let current_value = (get_val)(cx);
+        let min = options.min;
+        let max = options.max;
+        let step = options.step;
+        let set_val_step = set_val.clone();
+        let set_val_change = set_val.clone();
+
+        let state = window.use_keyed_state(
+            state_key.clone(),
+            cx,
+            |window, cx: &mut Context<NumberInputState>| {
+                let input = cx
+                    .new(|cx| InputState::new(window, cx).default_value(current_value.to_string()));
+                let subs = vec![
+                    cx.subscribe_in(&input, window, {
+                        let setter = set_val_step.clone();
+                        move |_, inp, event: &NumberInputEvent, window, cx| {
+                            let NumberInputEvent::Step(action) = event;
+                            inp.update(cx, |inp: &mut InputState, cx| {
+                                if let Ok(v) = inp.value().parse::<f64>() {
+                                    let new_v = (if *action == StepAction::Increment {
+                                        v + step
+                                    } else {
+                                        v - step
+                                    })
+                                    .clamp(min, max);
+                                    inp.set_value(
+                                        SharedString::from(new_v.to_string()),
+                                        window,
+                                        cx,
+                                    );
+                                    setter(new_v, cx);
+                                }
+                            });
+                        }
+                    }),
+                    cx.subscribe_in(&input, window, {
+                        move |_, inp, event: &InputEvent, _, cx| {
+                            if let InputEvent::Change = event {
+                                inp.update(cx, |inp: &mut InputState, cx| {
+                                    if let Ok(v) = inp.value().parse::<f64>() {
+                                        set_val_change(v.clamp(min, max), cx);
+                                    }
+                                });
+                            }
+                        }
+                    }),
+                ];
+                NumberInputState { input, _subs: subs }
+            },
+        );
+
+        let size = options_render.size;
+        let is_horizontal = options_render.layout.is_horizontal();
+        let input_entity = state.read(cx).input.clone();
+        NumberInput::new(&input_entity).with_size(size).map(|this| {
+            if is_horizontal {
+                this.w_32()
+            } else {
+                this.w_full()
+            }
+        })
+    })
 }
 
 /// Create the Editor settings page
@@ -50,8 +154,9 @@ pub fn create_editor_page(
             .description("Select the font family for the editor."),
             SettingItem::new(
                 "Font Size",
-                SettingField::number_input(
-                    NumberFieldOptions {
+                make_number_field(
+                    "editor-font-size".into(),
+                    &NumberFieldOptions {
                         min: 8.0,
                         max: 24.0,
                         step: 2.0,
@@ -66,40 +171,43 @@ pub fn create_editor_page(
                         let entity = entity.clone();
                         move |val: f64, cx: &mut App| {
                             entity.update(cx, |this, cx| {
-                                this.settings.editor_settings.font_size = slider_val_to_font_size(val);
+                                this.settings.editor_settings.font_size =
+                                    slider_val_to_font_size(val);
                                 let _ = this.update_and_propagate_settings(cx);
                             });
                         }
                     },
-                )
-                .default_value(f64::from(default_editor_settings.font_size)),
+                ),
             )
             .description("Adjust the font size for the editor (8-24)."),
         ]),
         SettingGroup::new().title("Indentation").items(vec![
             SettingItem::new(
                 "Tab Size",
-                SettingField::number_input(
-                    NumberFieldOptions {
+                make_number_field(
+                    "editor-tab-size".into(),
+                    &NumberFieldOptions {
                         min: 2.0,
                         max: 12.0,
                         step: 2.0,
                     },
                     {
                         let entity = entity.clone();
-                        move |cx: &App| entity.read(cx).settings.editor_settings.tab_size as f64
+                        move |cx: &App| {
+                            entity.read(cx).settings.editor_settings.tab_size as f64
+                        }
                     },
                     {
                         let entity = entity.clone();
                         move |val: f64, cx: &mut App| {
                             entity.update(cx, |this, cx| {
-                                this.settings.editor_settings.tab_size = slider_val_to_tab_size(val);
+                                this.settings.editor_settings.tab_size =
+                                    slider_val_to_tab_size(val);
                                 let _ = this.update_and_propagate_settings(cx);
                             });
                         }
                     },
-                )
-                .default_value(default_editor_settings.tab_size as f64),
+                ),
             )
             .description("Number of spaces for indentation. Takes effect on new tabs."),
             SettingItem::new(
