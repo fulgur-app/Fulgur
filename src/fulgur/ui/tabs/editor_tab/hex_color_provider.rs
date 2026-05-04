@@ -49,7 +49,8 @@ impl DocumentColorProvider for ColorHighlightProvider {
                 let start = Position::new(node.position.line, node.position.character);
                 let end = Position::new(
                     node.position.line,
-                    node.position.character + node.matched.chars().count() as u32,
+                    node.position.character
+                        + u32::try_from(node.matched.chars().count()).unwrap_or(0),
                 );
                 let lsp_color = node.lsp_color();
                 ColorInformation {

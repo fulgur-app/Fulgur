@@ -8,6 +8,25 @@ use gpui_component::{
     setting::{NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage},
 };
 
+/// Convert a slider `f64` value to a `f32` font size.
+///
+/// The slider API always provides `f64`; font sizes in the UI range (8–24) are
+/// well within `f32` range, so the narrowing cast is safe at this boundary.
+#[allow(clippy::cast_possible_truncation)]
+fn slider_val_to_font_size(val: f64) -> f32 {
+    val as f32
+}
+
+/// Convert a slider `f64` value to a `usize` tab size.
+///
+/// The slider API always provides `f64`; tab sizes in the UI range (2–12) are
+/// non-negative integers well within `usize` range, so the cast is safe here.
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)]
+fn slider_val_to_tab_size(val: f64) -> usize {
+    val as usize
+}
+
 /// Create the Editor settings page
 ///
 /// ### Arguments
@@ -47,7 +66,7 @@ pub fn create_editor_page(
                         let entity = entity.clone();
                         move |val: f64, cx: &mut App| {
                             entity.update(cx, |this, cx| {
-                                this.settings.editor_settings.font_size = val as f32;
+                                this.settings.editor_settings.font_size = slider_val_to_font_size(val);
                                 let _ = this.update_and_propagate_settings(cx);
                             });
                         }
@@ -74,7 +93,7 @@ pub fn create_editor_page(
                         let entity = entity.clone();
                         move |val: f64, cx: &mut App| {
                             entity.update(cx, |this, cx| {
-                                this.settings.editor_settings.tab_size = val as usize;
+                                this.settings.editor_settings.tab_size = slider_val_to_tab_size(val);
                                 let _ = this.update_and_propagate_settings(cx);
                             });
                         }

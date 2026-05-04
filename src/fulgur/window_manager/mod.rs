@@ -39,7 +39,10 @@ pub struct WindowManager {
 fn index_to_name(mut index: usize) -> String {
     let mut name = String::new();
     loop {
-        name.insert(0, (b'A' + (index % 26) as u8) as char);
+        name.insert(
+            0,
+            (b'A' + u8::try_from(index % 26).expect("index % 26 is always < 26")) as char,
+        );
         if index < 26 {
             break;
         }
