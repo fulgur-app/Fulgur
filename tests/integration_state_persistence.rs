@@ -126,20 +126,20 @@ fn assert_window_state_equal(original: &WindowState, loaded: &WindowState, conte
         original.window_bounds.state, loaded.window_bounds.state,
         "{context}: window_bounds.state mismatch"
     );
-    assert_eq!(
-        original.window_bounds.x, loaded.window_bounds.x,
+    assert!(
+        (original.window_bounds.x - loaded.window_bounds.x).abs() < f32::EPSILON,
         "{context}: window_bounds.x mismatch"
     );
-    assert_eq!(
-        original.window_bounds.y, loaded.window_bounds.y,
+    assert!(
+        (original.window_bounds.y - loaded.window_bounds.y).abs() < f32::EPSILON,
         "{context}: window_bounds.y mismatch"
     );
-    assert_eq!(
-        original.window_bounds.width, loaded.window_bounds.width,
+    assert!(
+        (original.window_bounds.width - loaded.window_bounds.width).abs() < f32::EPSILON,
         "{context}: window_bounds.width mismatch"
     );
-    assert_eq!(
-        original.window_bounds.height, loaded.window_bounds.height,
+    assert!(
+        (original.window_bounds.height - loaded.window_bounds.height).abs() < f32::EPSILON,
         "{context}: window_bounds.height mismatch"
     );
     assert_eq!(
@@ -335,10 +335,10 @@ fn test_window_bounds_variants() {
         let loaded = WindowsState::load_from_path(&state_path)
             .unwrap_or_else(|_| panic!("Failed to load {label}"));
         assert_eq!(loaded.windows[0].window_bounds.state, bounds.state);
-        assert_eq!(loaded.windows[0].window_bounds.x, bounds.x);
-        assert_eq!(loaded.windows[0].window_bounds.y, bounds.y);
-        assert_eq!(loaded.windows[0].window_bounds.width, bounds.width);
-        assert_eq!(loaded.windows[0].window_bounds.height, bounds.height);
+        assert!((loaded.windows[0].window_bounds.x - bounds.x).abs() < f32::EPSILON);
+        assert!((loaded.windows[0].window_bounds.y - bounds.y).abs() < f32::EPSILON);
+        assert!((loaded.windows[0].window_bounds.width - bounds.width).abs() < f32::EPSILON);
+        assert!((loaded.windows[0].window_bounds.height - bounds.height).abs() < f32::EPSILON);
         assert_eq!(
             loaded.windows[0].window_bounds.display_id,
             bounds.display_id
@@ -350,10 +350,10 @@ fn test_window_bounds_variants() {
 fn test_window_bounds_default_values() {
     let default_bounds = SerializedWindowBounds::default();
     assert_eq!(default_bounds.state, "Windowed");
-    assert_eq!(default_bounds.x, 100.0);
-    assert_eq!(default_bounds.y, 100.0);
-    assert_eq!(default_bounds.width, 1200.0);
-    assert_eq!(default_bounds.height, 800.0);
+    assert!((default_bounds.x - 100.0_f32).abs() < f32::EPSILON);
+    assert!((default_bounds.y - 100.0_f32).abs() < f32::EPSILON);
+    assert!((default_bounds.width - 1200.0_f32).abs() < f32::EPSILON);
+    assert!((default_bounds.height - 800.0_f32).abs() < f32::EPSILON);
     assert_eq!(default_bounds.display_id, None);
 }
 
@@ -471,7 +471,7 @@ fn test_state_backward_compatibility_missing_window_bounds() {
     assert_eq!(loaded.windows[0].tabs.len(), 1);
     // Window bounds should have default values
     assert_eq!(loaded.windows[0].window_bounds.state, "Windowed");
-    assert_eq!(loaded.windows[0].window_bounds.width, 1200.0);
+    assert!((loaded.windows[0].window_bounds.width - 1200.0_f32).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -650,9 +650,8 @@ fn test_state_preserves_window_order() {
             format!("Window {i} Marker"),
             "Window order should be preserved"
         );
-        assert_eq!(
-            loaded.windows[i].window_bounds.x,
-            (i as f32) * 100.0,
+        assert!(
+            (loaded.windows[i].window_bounds.x - (i as f32) * 100.0).abs() < f32::EPSILON,
             "Window position should match index"
         );
     }
@@ -765,9 +764,9 @@ fn test_state_windows_on_different_displays() {
     assert_eq!(loaded.windows[0].window_bounds.display_id, Some(1));
     assert_eq!(loaded.windows[1].window_bounds.display_id, Some(2));
     assert_eq!(loaded.windows[2].window_bounds.display_id, Some(3));
-    assert_eq!(loaded.windows[0].window_bounds.x, 100.0);
-    assert_eq!(loaded.windows[1].window_bounds.x, 1920.0);
-    assert_eq!(loaded.windows[2].window_bounds.x, 3840.0);
+    assert!((loaded.windows[0].window_bounds.x - 100.0_f32).abs() < f32::EPSILON);
+    assert!((loaded.windows[1].window_bounds.x - 1920.0_f32).abs() < f32::EPSILON);
+    assert!((loaded.windows[2].window_bounds.x - 3840.0_f32).abs() < f32::EPSILON);
 }
 
 #[test]

@@ -218,7 +218,7 @@ fn validate_clamps_font_size_below_minimum() {
     let mut settings = Settings::new();
     settings.editor_settings.font_size = 2.0;
     settings.validate();
-    assert_eq!(settings.editor_settings.font_size, 6.0);
+    assert!((settings.editor_settings.font_size - 6.0_f32).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -226,7 +226,7 @@ fn validate_clamps_font_size_above_maximum() {
     let mut settings = Settings::new();
     settings.editor_settings.font_size = 200.0;
     settings.validate();
-    assert_eq!(settings.editor_settings.font_size, 72.0);
+    assert!((settings.editor_settings.font_size - 72.0_f32).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn validate_leaves_font_size_unchanged_when_valid() {
     let mut settings = Settings::new();
     settings.editor_settings.font_size = 16.0;
     settings.validate();
-    assert_eq!(settings.editor_settings.font_size, 16.0);
+    assert!((settings.editor_settings.font_size - 16.0_f32).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -242,7 +242,7 @@ fn validate_replaces_non_finite_font_size_with_default() {
     let mut settings = Settings::new();
     settings.editor_settings.font_size = f32::NAN;
     settings.validate();
-    assert_eq!(settings.editor_settings.font_size, 14.0);
+    assert!((settings.editor_settings.font_size - 14.0_f32).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -378,7 +378,7 @@ fn save_to_path_creates_backup_of_previous_file() {
     assert!(backup.exists(), "backup created on second save");
 
     let backup_settings = Settings::load_from_path(&backup).unwrap();
-    assert_eq!(backup_settings.editor_settings.font_size, 16.0);
+    assert!((backup_settings.editor_settings.font_size - 16.0_f32).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -394,7 +394,7 @@ fn load_from_path_recovers_settings_from_backup_when_primary_is_corrupted() {
     std::fs::write(&path, b"not valid json").unwrap();
 
     let recovered = Settings::load_from_path(&path).unwrap();
-    assert_eq!(recovered.editor_settings.font_size, 18.0);
+    assert!((recovered.editor_settings.font_size - 18.0_f32).abs() < f32::EPSILON);
 }
 
 #[test]

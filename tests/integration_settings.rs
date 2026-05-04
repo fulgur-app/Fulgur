@@ -102,8 +102,9 @@ fn assert_settings_equal(original: &Settings, loaded: &Settings, context: &str) 
         original.editor_settings.soft_wrap, loaded.editor_settings.soft_wrap,
         "{context}: soft_wrap mismatch"
     );
-    assert_eq!(
-        original.editor_settings.font_size, loaded.editor_settings.font_size,
+    assert!(
+        (original.editor_settings.font_size - loaded.editor_settings.font_size).abs()
+            < f32::EPSILON,
         "{context}: font_size mismatch"
     );
     assert_eq!(
