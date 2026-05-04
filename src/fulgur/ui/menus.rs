@@ -420,7 +420,7 @@ impl Fulgur {
                 return;
             }
             match open::that(url) {
-                Ok(_) => {
+                Ok(()) => {
                     log::debug!("Successfully opened browser");
                 }
                 Err(e) => {
