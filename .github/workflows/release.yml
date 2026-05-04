@@ -79,6 +79,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            mold \
             libdbus-1-dev \
             pkg-config \
             libssl-dev \
@@ -411,7 +412,7 @@ jobs:
           Artifacts: ${ARTIFACT_COUNT} files (macOS, Windows, Linux)
 
           *Tag:* \`v${VERSION}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}
           *Author:* ${ACTOR}
 
           [View Release](https://github.com/${REPOSITORY}/releases/tag/v${VERSION})
@@ -432,7 +433,7 @@ jobs:
           Release workflow failed
 
           *Tag:* \`v${VERSION}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}
           *Author:* ${ACTOR}
 
           [View Run](${RUN_URL})"
