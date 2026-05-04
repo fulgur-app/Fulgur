@@ -92,16 +92,17 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev
 
-      # ssh2 vendored-openssl requires NASM and Perl to compile OpenSSL from source on Windows
+      # ssh2 vendored-openssl requires NASM and Perl to compile OpenSSL from source on Windows.
+      # We pin OPENSSL_SRC_PERL to the runner's pre-installed Strawberry Perl because Git Bash's
+      # MSYS2 perl resolves first on PATH and is missing modules like Locale::Maketext::Simple.
       - name: Install NASM (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/setup-nasm@v1
 
-      - name: Install Perl (Windows)
+      - name: Pin OpenSSL build to Strawberry Perl (Windows)
         if: runner.os == 'Windows'
-        uses: shogo82148/actions-setup-perl@v1
-        with:
-          perl-version: '5.38'
+        shell: pwsh
+        run: echo "OPENSSL_SRC_PERL=C:\Strawberry\perl\bin\perl.exe" >> $env:GITHUB_ENV
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
