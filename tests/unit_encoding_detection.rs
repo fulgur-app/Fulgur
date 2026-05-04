@@ -4,6 +4,7 @@
 //! for various character encodings and edge cases.
 
 use fulgur::fulgur::files::file_operations::detect_encoding_and_decode;
+use std::fmt::Write;
 
 #[test]
 fn test_detect_encoding_utf8() {
@@ -97,7 +98,7 @@ fn test_detect_encoding_with_various_newlines() {
 fn test_detect_encoding_large_file() {
     let mut content = String::new();
     for i in 0..1000 {
-        content.push_str(&format!("Line {i} with some content\n"));
+        let _ = writeln!(content, "Line {i} with some content");
     }
     let bytes = content.as_bytes();
     let (encoding, decoded) = detect_encoding_and_decode(bytes);

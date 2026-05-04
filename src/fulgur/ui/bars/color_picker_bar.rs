@@ -247,8 +247,10 @@ impl ColorPickerBarState {
                     let oklch = format_oklch(color);
                     let hsla_str = format_hsla(color);
                     this.color_picker_bar_state.cached_hex = hex.to_string();
-                    this.color_picker_bar_state.cached_oklch = oklch.clone();
-                    this.color_picker_bar_state.cached_hsla = hsla_str.clone();
+                    this.color_picker_bar_state.cached_oklch.clone_from(&oklch);
+                    this.color_picker_bar_state
+                        .cached_hsla
+                        .clone_from(&hsla_str);
                     this.color_picker_bar_state
                         .hex_input
                         .update(cx, |state, cx| {
@@ -750,7 +752,8 @@ mod gpui_tests {
         settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
     use gpui::{
-        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext, Window,
+        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
+        Window, WindowOptions,
     };
     use gpui_component::input::Position;
     use parking_lot::Mutex;
@@ -777,7 +780,7 @@ mod gpui_tests {
         let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
         let window = cx
             .update(|cx| {
-                cx.open_window(Default::default(), |window, cx| {
+                cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                     *fulgur_slot.borrow_mut() = Some(fulgur);

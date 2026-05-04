@@ -139,7 +139,7 @@ fn test_settings_sequential_writes_same_thread() {
         settings.save_to_path(&settings_path).unwrap();
     }
     let final_settings = Settings::load_from_path(&settings_path).unwrap();
-    assert_eq!(final_settings.editor_settings.font_size, 19.0);
+    assert!((final_settings.editor_settings.font_size - 19.0_f32).abs() < f32::EPSILON);
 }
 
 /// Test sequential writes succeed
@@ -156,7 +156,7 @@ fn test_settings_lock_released_after_write() {
     settings.editor_settings.font_size = 16.0;
     settings.save_to_path(&settings_path).unwrap();
     let loaded = Settings::load_from_path(&settings_path).unwrap();
-    assert_eq!(loaded.editor_settings.font_size, 16.0);
+    assert!((loaded.editor_settings.font_size - 16.0_f32).abs() < f32::EPSILON);
 }
 
 /// Test concurrent writes with larger data

@@ -232,7 +232,7 @@ impl Fulgur {
         {
             return;
         }
-        self.search_state.last_search_query = query.clone();
+        self.search_state.last_search_query.clone_from(&query);
         self.search_state.last_search_match_case = match_case;
         self.search_state.last_search_match_whole_word = match_whole_word;
         self.search_state.search_matches.clear();
@@ -278,14 +278,15 @@ impl Fulgur {
                         let diagnostic = Diagnostic {
                             range: lsp_types::Range {
                                 start: Position {
-                                    line: search_match.line as u32,
-                                    character: search_match.col as u32,
+                                    line: u32::try_from(search_match.line).unwrap_or(u32::MAX),
+                                    character: u32::try_from(search_match.col).unwrap_or(u32::MAX),
                                 },
                                 end: Position {
-                                    line: search_match.line as u32,
-                                    character: (search_match.col
-                                        + (search_match.end - search_match.start))
-                                        as u32,
+                                    line: u32::try_from(search_match.line).unwrap_or(u32::MAX),
+                                    character: u32::try_from(
+                                        search_match.col + (search_match.end - search_match.start),
+                                    )
+                                    .unwrap_or(u32::MAX),
                                 },
                             },
                             severity: Some(DiagnosticSeverity::WARNING),
@@ -377,8 +378,8 @@ impl Fulgur {
             editor_tab.content.update(cx, |content, cx| {
                 content.set_cursor_position(
                     Position {
-                        line: search_match.line as u32,
-                        character: search_match.col as u32,
+                        line: u32::try_from(search_match.line).unwrap_or(u32::MAX),
+                        character: u32::try_from(search_match.col).unwrap_or(u32::MAX),
                     },
                     window,
                     cx,

@@ -7,7 +7,7 @@ use gpui::WindowId;
 #[cfg(feature = "gpui-test-support")]
 use gpui::{
     AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext, Window,
-    div,
+    WindowOptions, div,
 };
 #[cfg(feature = "gpui-test-support")]
 use parking_lot::Mutex;
@@ -50,7 +50,7 @@ pub fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestConte
     let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
     let window = cx
         .update(|cx| {
-            cx.open_window(Default::default(), |window, cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
                 let window_id = window.window_handle().window_id();
                 let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                 *fulgur_slot.borrow_mut() = Some(fulgur);
@@ -84,7 +84,7 @@ pub fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Ful
     let window_id_slot: RefCell<Option<WindowId>> = RefCell::new(None);
     let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let window_id = window.window_handle().window_id();
             let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
             *window_id_slot.borrow_mut() = Some(window_id);

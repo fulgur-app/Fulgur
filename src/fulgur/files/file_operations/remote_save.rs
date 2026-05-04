@@ -315,11 +315,11 @@ impl Fulgur {
         pending_save: &Mutex<Option<Result<(), String>>>,
         outcome: Result<(), String>,
     ) -> bool {
-        if !save_finished.swap(true, Ordering::AcqRel) {
+        if save_finished.swap(true, Ordering::AcqRel) {
+            false
+        } else {
             *pending_save.lock() = Some(outcome);
             true
-        } else {
-            false
         }
     }
 

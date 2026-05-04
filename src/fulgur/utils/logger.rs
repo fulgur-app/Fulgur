@@ -90,7 +90,7 @@ pub fn init() -> anyhow::Result<()> {
         .map_err(|_| anyhow!("logger already initialized"))?;
     #[cfg(not(debug_assertions))]
     log::set_max_level(LevelFilter::Info);
-    log::info!("Logger initialized in: {log_dir:?}");
+    log::info!("Logger initialized in: {}", log_dir.display());
     Ok(())
 }
 

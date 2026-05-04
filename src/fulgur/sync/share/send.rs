@@ -117,7 +117,7 @@ pub fn share_file(
         return Err(SynchronizationError::ContentMissing);
     }
     if max_file_size_bytes != u64::MAX {
-        let max_size = max_file_size_bytes as usize;
+        let max_size = usize::try_from(max_file_size_bytes).unwrap_or(usize::MAX);
         if request.content.len() > max_size {
             return Err(SynchronizationError::ContentTooLarge {
                 file_size: request.content.len(),

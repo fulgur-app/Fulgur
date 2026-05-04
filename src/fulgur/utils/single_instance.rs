@@ -116,7 +116,7 @@ pub fn start_ipc_listener(
                         } else {
                             let path = PathBuf::from(&line);
                             if path.exists() {
-                                log::info!("IPC: queuing file from jump list: {path:?}");
+                                log::info!("IPC: queuing file from jump list: {}", path.display());
                                 pending_files.lock().push(path);
                             }
                         }

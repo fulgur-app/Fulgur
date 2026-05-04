@@ -351,10 +351,10 @@ mod tests {
             | WindowBounds::Maximized(rect)
             | WindowBounds::Fullscreen(rect) => rect,
         };
-        assert_eq!(f32::from(rect.origin.x), expected_x);
-        assert_eq!(f32::from(rect.origin.y), expected_y);
-        assert_eq!(f32::from(rect.size.width), expected_width);
-        assert_eq!(f32::from(rect.size.height), expected_height);
+        assert!((f32::from(rect.origin.x) - expected_x).abs() < f32::EPSILON);
+        assert!((f32::from(rect.origin.y) - expected_y).abs() < f32::EPSILON);
+        assert!((f32::from(rect.size.width) - expected_width).abs() < f32::EPSILON);
+        assert!((f32::from(rect.size.height) - expected_height).abs() < f32::EPSILON);
     }
 
     /// Build a simple file-backed tab state for persistence tests.
@@ -560,10 +560,10 @@ mod tests {
         });
         let serialized = SerializedWindowBounds::from_gpui_bounds(gpui_bounds, Some(7));
         assert_eq!(serialized.state, "Windowed");
-        assert_eq!(serialized.x, 120.0);
-        assert_eq!(serialized.y, 80.0);
-        assert_eq!(serialized.width, 1440.0);
-        assert_eq!(serialized.height, 900.0);
+        assert!((serialized.x - 120.0_f32).abs() < f32::EPSILON);
+        assert!((serialized.y - 80.0_f32).abs() < f32::EPSILON);
+        assert!((serialized.width - 1440.0_f32).abs() < f32::EPSILON);
+        assert!((serialized.height - 900.0_f32).abs() < f32::EPSILON);
         assert_eq!(serialized.display_id, Some(7));
     }
 
@@ -576,10 +576,10 @@ mod tests {
         });
         let serialized = SerializedWindowBounds::from_gpui_bounds(gpui_bounds, Some(2));
         assert_eq!(serialized.state, "Maximized");
-        assert_eq!(serialized.x, 0.0);
-        assert_eq!(serialized.y, 0.0);
-        assert_eq!(serialized.width, 1920.0);
-        assert_eq!(serialized.height, 1080.0);
+        assert!((serialized.x - 0.0_f32).abs() < f32::EPSILON);
+        assert!((serialized.y - 0.0_f32).abs() < f32::EPSILON);
+        assert!((serialized.width - 1920.0_f32).abs() < f32::EPSILON);
+        assert!((serialized.height - 1080.0_f32).abs() < f32::EPSILON);
         assert_eq!(serialized.display_id, Some(2));
     }
 
@@ -592,10 +592,10 @@ mod tests {
         });
         let serialized = SerializedWindowBounds::from_gpui_bounds(gpui_bounds, None);
         assert_eq!(serialized.state, "Fullscreen");
-        assert_eq!(serialized.x, 10.0);
-        assert_eq!(serialized.y, 20.0);
-        assert_eq!(serialized.width, 2560.0);
-        assert_eq!(serialized.height, 1440.0);
+        assert!((serialized.x - 10.0_f32).abs() < f32::EPSILON);
+        assert!((serialized.y - 20.0_f32).abs() < f32::EPSILON);
+        assert!((serialized.width - 2560.0_f32).abs() < f32::EPSILON);
+        assert!((serialized.height - 1440.0_f32).abs() < f32::EPSILON);
         assert_eq!(serialized.display_id, None);
     }
 

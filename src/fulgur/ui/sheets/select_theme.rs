@@ -201,7 +201,7 @@ impl Fulgur {
             let dest_path = themes_dir.join(filename);
             match fs::copy(&theme_path, &dest_path) {
                 Ok(_) => {
-                    log::info!("Theme file copied to: {dest_path:?}");
+                    log::info!("Theme file copied to: {}", dest_path.display());
                     window
                         .update(|window, cx| {
                             let notification = SharedString::from(format!(
@@ -331,7 +331,7 @@ mod tests {
     };
     use core::prelude::v1::test;
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
+    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     #[cfg(feature = "gpui-test-support")]
     use gpui_component::ThemeRegistry;
     #[cfg(feature = "gpui-test-support")]
@@ -360,7 +360,7 @@ mod tests {
         let slot = Rc::clone(&fulgur_slot);
         let window = cx
             .update(|cx| {
-                cx.open_window(Default::default(), |window, cx| {
+                cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                     *slot.borrow_mut() = Some(fulgur.clone());

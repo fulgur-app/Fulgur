@@ -62,7 +62,9 @@ fn test_encrypt_decrypt_roundtrip_large_data() {
     let (private_key, public_key) = generate_key_pair();
     let public_str = public_key.to_string();
     let private_str = serialize(&private_key);
-    let original: Vec<u8> = (0..1_000_000).map(|i| (i % 256) as u8).collect();
+    let original: Vec<u8> = (0..1_000_000)
+        .map(|i| u8::try_from(i % 256).expect("i % 256 is always in 0..=255"))
+        .collect();
     let encrypted = encrypt_bytes(&original, &public_str).expect("Encryption should succeed");
     let decrypted = decrypt_bytes(&encrypted, &private_str).expect("Decryption should succeed");
     assert_eq!(decrypted, original, "Large data should roundtrip correctly");

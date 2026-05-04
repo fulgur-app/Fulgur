@@ -158,7 +158,7 @@ impl SharedAppState {
             .is_synchronization_activated
         {
             match check_private_public_keys(&mut settings) {
-                Ok(_) => None,
+                Ok(()) => None,
                 Err(e) => {
                     let error_msg = format!(
                         "Failed to initialize encryption keys. Synchronization has been disabled. Error: {e}"

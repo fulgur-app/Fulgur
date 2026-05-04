@@ -176,7 +176,7 @@ impl Fulgur {
                     self.tabs
                         .iter()
                         .position(|t| t.id() == target_id)
-                        .or(if !self.tabs.is_empty() { Some(0) } else { None })
+                        .or(if self.tabs.is_empty() { None } else { Some(0) })
                 } else if !self.tabs.is_empty() {
                     Some(0)
                 } else {

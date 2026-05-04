@@ -26,7 +26,7 @@ pub fn make_update_notification(update_info: &UpdateInfo) -> Notification {
                 .on_click(cx.listener(move |this, _, window, cx| {
                     if is_valid_release_page_url(&url) {
                         match open::that(&url) {
-                            Ok(_) => {
+                            Ok(()) => {
                                 log::debug!("Successfully opened browser for update");
                             }
                             Err(e) => {

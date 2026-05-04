@@ -309,7 +309,7 @@ mod tests {
         assert_eq!(config.max_attempts, 3);
         assert_eq!(config.initial_delay, Duration::from_secs(1));
         assert_eq!(config.max_delay, Duration::from_secs(30));
-        assert_eq!(config.backoff_multiplier, 2.0);
+        assert!((config.backoff_multiplier - 2.0_f64).abs() < f64::EPSILON);
     }
 
     #[test]

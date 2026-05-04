@@ -39,7 +39,7 @@ impl Fulgur {
                 for byte in path.as_os_str().as_encoded_bytes() {
                     hash = hash
                         .wrapping_mul(0x0000_0100_0000_01b3)
-                        .wrapping_add(*byte as u64);
+                        .wrapping_add(u64::from(*byte));
                 }
             }
             hash ^= tab.id() as u64;
@@ -293,7 +293,7 @@ impl Fulgur {
             None
         };
         let filename_counts = &self.cached_tab_filename_counts;
-        let capacity = self.tabs.len() + if ghost.is_some() { 1 } else { 0 };
+        let capacity = self.tabs.len() + usize::from(ghost.is_some());
         let mut elements: Vec<AnyElement> = Vec::with_capacity(capacity);
         if let Some((0, dragged)) = ghost {
             elements.push(self.render_ghost_tab(0, dragged, cx));

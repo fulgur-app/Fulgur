@@ -58,10 +58,10 @@ fn make_select_language_item(
 /// ### Returns:
 /// `true` if the given language is the current language, otherwise `false`.
 fn is_current_language(
-    language: &SupportedLanguage,
+    language: SupportedLanguage,
     current_language: Option<SupportedLanguage>,
 ) -> bool {
-    current_language == Some(*language)
+    current_language == Some(language)
 }
 
 /// Create a select language list.
@@ -85,7 +85,7 @@ fn make_select_language_list(
                 make_select_language_item(
                     entity.clone(),
                     language,
-                    is_current_language(&language, current_language),
+                    is_current_language(language, current_language),
                     cx,
                 )
             })
@@ -166,7 +166,7 @@ mod tests {
     };
     use core::prelude::v1::test;
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
+    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
     #[cfg(feature = "gpui-test-support")]
@@ -175,14 +175,14 @@ mod tests {
     #[test]
     fn test_is_current_language_matches_expected_language() {
         assert!(is_current_language(
-            &SupportedLanguage::Rust,
+            SupportedLanguage::Rust,
             Some(SupportedLanguage::Rust)
         ));
         assert!(!is_current_language(
-            &SupportedLanguage::Rust,
+            SupportedLanguage::Rust,
             Some(SupportedLanguage::Python)
         ));
-        assert!(!is_current_language(&SupportedLanguage::Rust, None));
+        assert!(!is_current_language(SupportedLanguage::Rust, None));
     }
 
     #[cfg(feature = "gpui-test-support")]
@@ -200,7 +200,7 @@ mod tests {
         let slot = Rc::clone(&fulgur_slot);
         let window = cx
             .update(|cx| {
-                cx.open_window(Default::default(), |window, cx| {
+                cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                     *slot.borrow_mut() = Some(fulgur.clone());

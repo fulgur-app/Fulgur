@@ -99,7 +99,7 @@ impl Fulgur {
                     titlebar: Some(gpui_component::TitleBar::title_bar_options()),
                     #[cfg(target_os = "linux")]
                     window_decorations: Some(gpui::WindowDecorations::Client),
-                    ..Default::default()
+                    ..WindowOptions::default()
                 };
                 let window = cx.open_window(window_options, |window, cx| {
                     window.set_window_title("Fulgur");
@@ -148,7 +148,7 @@ impl Fulgur {
                     titlebar: Some(gpui_component::TitleBar::title_bar_options()),
                     #[cfg(target_os = "linux")]
                     window_decorations: Some(gpui::WindowDecorations::Client),
-                    ..Default::default()
+                    ..WindowOptions::default()
                 };
                 let window = cx.open_window(window_options, move |window, cx| {
                     window.set_window_title("Fulgur");
