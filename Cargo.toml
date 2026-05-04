@@ -18,7 +18,6 @@ gpui-test-support = ["gpui/test-support"]
 pedantic = { level = "deny", priority = -1 }
 
 # --- Burn-down list: allowed until fixed one by one ---
-assigning_clones = "allow"
 bool_to_int_with_if = "allow"
 borrow_as_ptr = "allow"
 cast_lossless = "allow"

@@ -228,7 +228,7 @@ impl Fulgur {
             directory_path.to_string()
         };
         let mut directory_spec = base_spec.clone();
-        directory_spec.path = directory.clone();
+        directory_spec.path.clone_from(&directory);
 
         let mut entries: Vec<ssh::sftp::RemoteDirectoryEntry> = Vec::new();
         if directory != ssh::REMOTE_ROOT_PATH {

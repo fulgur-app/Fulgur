@@ -247,8 +247,10 @@ impl ColorPickerBarState {
                     let oklch = format_oklch(color);
                     let hsla_str = format_hsla(color);
                     this.color_picker_bar_state.cached_hex = hex.to_string();
-                    this.color_picker_bar_state.cached_oklch = oklch.clone();
-                    this.color_picker_bar_state.cached_hsla = hsla_str.clone();
+                    this.color_picker_bar_state.cached_oklch.clone_from(&oklch);
+                    this.color_picker_bar_state
+                        .cached_hsla
+                        .clone_from(&hsla_str);
                     this.color_picker_bar_state
                         .hex_input
                         .update(cx, |state, cx| {

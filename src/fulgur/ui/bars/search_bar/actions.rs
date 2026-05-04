@@ -232,7 +232,7 @@ impl Fulgur {
         {
             return;
         }
-        self.search_state.last_search_query = query.clone();
+        self.search_state.last_search_query.clone_from(&query);
         self.search_state.last_search_match_case = match_case;
         self.search_state.last_search_match_whole_word = match_whole_word;
         self.search_state.search_matches.clear();
