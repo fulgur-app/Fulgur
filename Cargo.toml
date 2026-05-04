@@ -18,6 +18,7 @@ gpui-test-support = ["gpui/test-support"]
 pedantic = { level = "deny", priority = -1 }
 
 # --- Burn-down list: allowed until fixed one by one ---
+borrow_as_ptr = "allow" # Windows only
 cast_possible_wrap = "allow"
 cast_precision_loss = "allow"
 cast_sign_loss = "allow"
