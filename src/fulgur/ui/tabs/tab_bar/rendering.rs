@@ -293,7 +293,7 @@ impl Fulgur {
             None
         };
         let filename_counts = &self.cached_tab_filename_counts;
-        let capacity = self.tabs.len() + if ghost.is_some() { 1 } else { 0 };
+        let capacity = self.tabs.len() + usize::from(ghost.is_some());
         let mut elements: Vec<AnyElement> = Vec::with_capacity(capacity);
         if let Some((0, dragged)) = ghost {
             elements.push(self.render_ghost_tab(0, dragged, cx));
