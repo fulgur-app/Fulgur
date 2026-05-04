@@ -5,7 +5,7 @@ use crate::fulgur::{
 };
 use gpui::{
     AppContext, Context, Entity, IntoElement, Render, SharedString, TestAppContext,
-    VisualTestContext, Window, div,
+    VisualTestContext, Window, WindowOptions, div,
 };
 use gpui_component::input::{InputEvent, Position};
 use parking_lot::Mutex;
@@ -32,7 +32,7 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
     let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
     let window = cx
         .update(|cx| {
-            cx.open_window(Default::default(), |window, cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
                 let window_id = window.window_handle().window_id();
                 let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                 *fulgur_slot.borrow_mut() = Some(fulgur);

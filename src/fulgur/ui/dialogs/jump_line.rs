@@ -75,7 +75,7 @@ mod tests {
         ui::tabs::{editor_tab::Jump, tab::Tab},
         window_manager::WindowManager,
     };
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
+    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     use parking_lot::Mutex;
     use std::{cell::RefCell, rc::Rc, sync::Arc};
 
@@ -92,7 +92,7 @@ mod tests {
         let slot = Rc::clone(&fulgur_slot);
         let window = cx
             .update(|cx| {
-                cx.open_window(Default::default(), |window, cx| {
+                cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                     *slot.borrow_mut() = Some(fulgur.clone());

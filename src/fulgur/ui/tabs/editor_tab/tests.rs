@@ -4,7 +4,10 @@ use super::{
 };
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
 use crate::fulgur::settings::EditorSettings;
-use gpui::{AppContext, Context, IntoElement, Render, SharedString, TestAppContext, Window, div};
+use gpui::{
+    AppContext, Context, IntoElement, Render, SharedString, TestAppContext, Window, WindowOptions,
+    div,
+};
 use gpui_component::input::Position;
 use std::path::PathBuf;
 
@@ -51,7 +54,7 @@ fn test_editor_tab_new_construction(cx: &mut TestAppContext) {
     let settings = EditorSettings::new();
 
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::new(7, "Scratch", window, cx, &settings);
             assert_eq!(tab.id, 7);
             assert_eq!(tab.title, SharedString::from("Scratch"));
@@ -90,7 +93,7 @@ fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
 
     let contents = "fn main() {\n    println!(\"hi\");\n}".to_string();
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_content(
                 9,
                 &contents,
@@ -136,7 +139,7 @@ fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
     };
 
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_file(params, window, cx, &settings);
             assert_eq!(tab.id, 13);
             assert_eq!(tab.title, SharedString::from("test_file.md •"));
@@ -171,7 +174,7 @@ fn test_editor_tab_from_duplicate_construction(cx: &mut TestAppContext) {
     };
 
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_duplicate(params, window, cx, &settings);
             assert_eq!(tab.id, 22);
             assert_eq!(tab.title, SharedString::from("copy.rs"));
@@ -206,7 +209,7 @@ fn test_editor_tab_check_modified_and_mark_as_saved(cx: &mut TestAppContext) {
     };
 
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let mut tab = EditorTab::from_file(params, window, cx, &settings);
             assert!(!tab.modified);
             assert_eq!(
@@ -249,7 +252,7 @@ fn test_editor_tab_check_modified_detects_same_length_content_change(cx: &mut Te
         is_modified: false,
     };
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let mut tab = EditorTab::from_file(params, window, cx, &settings);
             tab.content.update(cx, |content, cx| {
                 content.set_value("abce", window, cx);
@@ -274,7 +277,7 @@ fn test_editor_tab_check_modified_handles_multibyte_utf8_content(cx: &mut TestAp
         is_modified: false,
     };
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let mut tab = EditorTab::from_file(params, window, cx, &settings);
             assert!(
                 !tab.check_modified(cx),
@@ -314,7 +317,7 @@ fn test_editor_tab_from_file_title_indicator_clean_and_dirty(cx: &mut TestAppCon
     };
 
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let clean_tab = EditorTab::from_file(clean, window, cx, &settings);
             let dirty_tab = EditorTab::from_file(dirty, window, cx, &settings);
 
@@ -340,7 +343,7 @@ fn test_editor_tab_get_suggested_filename_trims_modified_indicator(cx: &mut Test
     };
 
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_file(params, window, cx, &settings);
             assert_eq!(tab.title, SharedString::from("suggested_name.md •"));
             assert_eq!(
@@ -361,7 +364,7 @@ fn test_from_transfer_preserves_all_fields(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_transfer(99, make_transfer_data(), window, cx, &settings);
             assert_eq!(tab.id, 99);
             assert_eq!(tab.title, SharedString::from("transfer.rs"));
@@ -393,7 +396,7 @@ fn test_from_transfer_assigns_new_id(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_transfer(77, make_transfer_data(), window, cx, &settings);
             assert_eq!(
                 tab.id, 77,
@@ -425,7 +428,7 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
         cursor_position: Position::default(),
     };
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_transfer(1, data, window, cx, &settings);
             assert!(tab.file_path().is_none());
             assert!(tab.file_size_bytes.is_none());
@@ -457,7 +460,7 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
         cursor_position: Position::default(),
     };
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_transfer(2, data, window, cx, &settings);
             assert!(tab.modified, "modified flag must be preserved");
             assert_eq!(
@@ -492,7 +495,7 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
         cursor_position: Position::default(),
     };
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_transfer(3, data, window, cx, &settings);
             assert_eq!(tab.language, SupportedLanguage::Python);
             cx.new(|_| EmptyView)
@@ -521,7 +524,7 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
         cursor_position: Position::default(),
     };
     cx.update(|cx| {
-        cx.open_window(Default::default(), |window, cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_transfer(4, data, window, cx, &settings);
             assert!(tab.show_markdown_toolbar);
             assert!(tab.show_markdown_preview);

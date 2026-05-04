@@ -750,7 +750,8 @@ mod gpui_tests {
         settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
     use gpui::{
-        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext, Window,
+        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
+        Window, WindowOptions,
     };
     use gpui_component::input::Position;
     use parking_lot::Mutex;
@@ -777,7 +778,7 @@ mod gpui_tests {
         let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
         let window = cx
             .update(|cx| {
-                cx.open_window(Default::default(), |window, cx| {
+                cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                     *fulgur_slot.borrow_mut() = Some(fulgur);

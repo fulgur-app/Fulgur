@@ -300,7 +300,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
+    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     #[cfg(feature = "gpui-test-support")]
     use gpui_component::input::{InputEvent, InputState};
 
@@ -410,7 +410,7 @@ mod tests {
             .expect("failed to create beta.txt fixture");
 
         let window = cx.update(|cx| {
-            cx.open_window(Default::default(), |window, cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
                 cx.new(|cx| super::PathBrowser::new(window, cx))
             })
             .expect("failed to open test window")
@@ -481,7 +481,7 @@ mod tests {
             .expect("failed to create alpha.txt fixture");
 
         let window = cx.update(|cx| {
-            cx.open_window(Default::default(), |window, cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
                 cx.new(|cx| super::PathBrowser::new(window, cx))
             })
             .expect("failed to open test window")

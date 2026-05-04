@@ -11,7 +11,7 @@ use crate::fulgur::{
 #[cfg(feature = "gpui-test-support")]
 use gpui::{
     AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext, Window,
-    div,
+    WindowOptions, div,
 };
 #[cfg(feature = "gpui-test-support")]
 use parking_lot::Mutex;
@@ -65,7 +65,7 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
     let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
     let window = cx
         .update(|cx| {
-            cx.open_window(Default::default(), |window, cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
                 let window_id = window.window_handle().window_id();
                 let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                 *fulgur_slot.borrow_mut() = Some(fulgur);
@@ -230,7 +230,7 @@ fn test_get_line_col_mixed_line_endings() {
 
 #[test]
 fn test_get_line_col_unicode_characters() {
-    // "hello 世界\nworld" — '世' starts at byte 6, '界' at byte 9, '\n' at byte 12, 'w' at byte 13
+    // "hello 世界\nworld": '世' starts at byte 6, '界' at byte 9, '\n' at byte 12, 'w' at byte 13
     let text = "hello 世界\nworld";
     assert_eq!(get_line_col(text, 6), (0, 6)); // '世' at byte 6: line 0, col 6
     assert_eq!(get_line_col(text, 9), (0, 7)); // '界' at byte 9: line 0, col 7

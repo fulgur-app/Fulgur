@@ -368,7 +368,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use core::prelude::v1::test;
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Entity, Focusable, TestAppContext, VisualTestContext};
+    use gpui::{AppContext, Entity, Focusable, TestAppContext, VisualTestContext, WindowOptions};
     #[cfg(feature = "gpui-test-support")]
     use gpui_component::{Root, input::Position, input::SelectAll};
     #[cfg(feature = "gpui-test-support")]
@@ -390,7 +390,7 @@ mod tests {
         let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
         let window = cx
             .update(|cx| {
-                cx.open_window(Default::default(), |window, cx| {
+                cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                     *fulgur_slot.borrow_mut() = Some(fulgur.clone());

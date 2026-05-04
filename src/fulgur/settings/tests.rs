@@ -415,7 +415,7 @@ mod gpui_settings_versioning_tests {
     use crate::fulgur::{
         Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
-    use gpui::{AppContext, BorrowAppContext, Entity, TestAppContext, WindowId};
+    use gpui::{AppContext, BorrowAppContext, Entity, TestAppContext, WindowId, WindowOptions};
     use parking_lot::Mutex;
     use std::{cell::RefCell, path::PathBuf, sync::Arc, sync::atomic::Ordering};
 
@@ -445,7 +445,7 @@ mod gpui_settings_versioning_tests {
         let window_id_slot: RefCell<Option<WindowId>> = RefCell::new(None);
         let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
         cx.update(|cx| {
-            cx.open_window(Default::default(), |window, cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
                 let window_id = window.window_handle().window_id();
                 let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
                 *window_id_slot.borrow_mut() = Some(window_id);
