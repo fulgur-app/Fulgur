@@ -40,7 +40,7 @@ pub fn create_editor_page(
                     {
                         let entity = entity.clone();
                         move |cx: &App| {
-                            entity.read(cx).settings.editor_settings.font_size as f64
+                            f64::from(entity.read(cx).settings.editor_settings.font_size)
                         }
                     },
                     {
@@ -53,7 +53,7 @@ pub fn create_editor_page(
                         }
                     },
                 )
-                .default_value(default_editor_settings.font_size as f64),
+                .default_value(f64::from(default_editor_settings.font_size)),
             )
             .description("Adjust the font size for the editor (8-24)."),
         ]),

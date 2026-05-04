@@ -39,7 +39,7 @@ impl Fulgur {
                 for byte in path.as_os_str().as_encoded_bytes() {
                     hash = hash
                         .wrapping_mul(0x0000_0100_0000_01b3)
-                        .wrapping_add(*byte as u64);
+                        .wrapping_add(u64::from(*byte));
                 }
             }
             hash ^= tab.id() as u64;
