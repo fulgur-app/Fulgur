@@ -58,7 +58,6 @@ jobs:
             platform: linux
             arch: x86_64
             formats: deb,appimage
-            check_fmt: true
           - name: Linux ARM64
             runner: ubuntu-24.04-arm
             platform: linux
@@ -110,19 +109,11 @@ jobs:
           shared-key: release-${{ matrix.runner }}
 
       # -- Test phase --
-
-      - name: Check build
-        run: cargo check --all-features --quiet
+      # cargo check, clippy, and fmt already run on every merge to main via ci.yml,
+      # so we skip them here and only re-run tests against the release commit.
 
       - name: Run tests
         run: cargo test --all-features
-
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Check formatting
-        if: matrix.check_fmt == true
-        run: cargo fmt --all -- --check
 
       # -- Package phase --
 
