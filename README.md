@@ -26,6 +26,8 @@ Version 0.5.0 introduces the support of **syntax highlighting for 13 new languag
 
 Version 0.6.0 finally introduces **drag and drop**! Open your files by just dragging and dropping them in Fulgur. **Tabs are also now reorderable** within the same window with drag and drop. Due to a current limitation of GPUI, drag and drop between windows is not supported but a new submenu in a tab's context menu allow to **send the tab to another window**. Colors are now first class citizen with **a powerful color picker and color converter bar** available for all tabs from the status bar, as well as a switchable **color preview within your files**. Last but not least, many improvements such as much nicer icons on Windows and Linux, a Windows taskbar menu and various performance improvements are part of this build.
 
+Version 0.7.0 introduces a much anticipated feature, the **direct remote edition of files via SSH**. You can now edit files on a remote server directly from Fulgur, without needing to download them first. An **integrated file browser** allows you to navigate and edit files on the remote server if you don't know its path. The settings and state files now support **corruption recovery** by backing up their last known good state. And, as a preparation for the support of multiple Fulgurant servers, the **maximum size of a shared file is now directly obtained from the server** (Fulgurant 0.6.0+). Besides the many performance & security improvements, the **linter has been hardened** to `pedantic` to increase even more the code quality.
+
 ### Screenshots
 
 ![](assets/readme/fulgur_1.webp)
@@ -57,10 +59,12 @@ Version 0.6.0 finally introduces **drag and drop**! Open your files by just drag
 Fulgur is currently in alpha development. While it has been stable in testing, several features are still being implemented and issues remain to be resolved:
 
 * DONE in 0.6.0 ~~Drag and drop support~~
-* Profiles support
+* Multi Fulgurant sync server support
 * DONE in 0.3.0 ~~Multi-windows support~~
 * CONTINUED in 0.5.0 Syntax highlighting for additional languages
 * DONE in 0.2.0 ~~Sync mode functionality~~
+* Embedded terminal
+* Drag and drop of tabs between windows
 * Various edge cases
 
 **Note that breaking changes may occur in future releases until v1.0.0.**
