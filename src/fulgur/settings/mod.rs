@@ -3,8 +3,9 @@ mod propagation;
 mod types;
 
 pub use types::{
-    AppSettings, EditorSettings, MarkdownPreviewMode, MarkdownSettings, RecentFiles, Settings,
-    SynchronizationSettings, ThemeFile, ThemeInfo, Themes,
+    AppSettings, DEFAULT_LEGACY_PROFILE_NAME, EditorSettings, MAX_PROFILES, MarkdownPreviewMode,
+    MarkdownSettings, ProfileId, RecentFiles, ServerProfile, Settings, SynchronizationSettings,
+    ThemeFile, ThemeInfo, Themes, new_profile_id,
 };
 
 #[cfg(test)]

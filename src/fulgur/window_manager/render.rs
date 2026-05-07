@@ -25,14 +25,18 @@ impl Fulgur {
         if let Some((notification_type, message)) = self.pending_notification.take() {
             window.push_notification((notification_type, message), cx);
         }
-        // Check for notifications from background sync operations
-        let sync_notification = self
-            .shared_state(cx)
-            .sync_state
-            .pending_notification
-            .lock()
-            .take();
-        if let Some((notification_type, message)) = sync_notification {
+        // Drain pending notifications from every profile's sync state.
+        let pending_notifications: Vec<(
+            gpui_component::notification::NotificationType,
+            gpui::SharedString,
+        )> = {
+            let states = self.shared_state(cx).sync_states.read();
+            states
+                .values()
+                .filter_map(|state| state.pending_notification.lock().take())
+                .collect()
+        };
+        for (notification_type, message) in pending_notifications {
             window.push_notification((notification_type, message), cx);
         }
         #[cfg(any(target_os = "macos", target_os = "windows"))]

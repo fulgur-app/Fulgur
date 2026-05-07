@@ -12,10 +12,33 @@ use std::{
 };
 use zeroize::Zeroizing;
 
-// Names of the entries in the keychain
-const PRIVATE_KEY_NAME: &str = "private_key";
-const DEVICE_API_KEY: &str = "device_api_key";
+// Prefixes used to namespace per-profile entries inside the keychain.
+const PRIVATE_KEY_PREFIX: &str = "private_key";
+const DEVICE_API_KEY_PREFIX: &str = "device_api_key";
+
 const SERVICE_NAME: &str = "Fulgur";
+
+/// Build the keychain user string for a profile's private key entry.
+///
+/// ### Arguments
+/// - `profile_id`: The profile's stable id.
+///
+/// ### Returns
+/// - `String`: Namespaced user string, e.g. `private_key:<id>`.
+fn private_key_user(profile_id: &str) -> String {
+    format!("{PRIVATE_KEY_PREFIX}:{profile_id}")
+}
+
+/// Build the keychain user string for a profile's device API key entry.
+///
+/// ### Arguments
+/// - `profile_id`: The profile's stable id.
+///
+/// ### Returns
+/// - `String`: Namespaced user string, e.g. `device_api_key:<id>`.
+fn device_api_key_user(profile_id: &str) -> String {
+    format!("{DEVICE_API_KEY_PREFIX}:{profile_id}")
+}
 
 /// Checks whether an environment variable contains a truthy value.
 ///
@@ -148,29 +171,41 @@ pub fn generate_key_pair() -> (Identity, Recipient) {
     (private_key, public_key)
 }
 
-/// Saves the private key in the keychain. Accepts `Zeroizing<String>` to ensure
-/// the key material is zeroed on drop.
+/// Saves a profile's private key in the keychain. Accepts `Zeroizing<String>`
+/// to ensure the key material is zeroed on drop.
 ///
 /// ### Arguments
-/// - `private_key`: the key to save, wrapped in `Zeroizing` for secure memory handling
+/// - `profile_id`: The profile id used to namespace the keychain entry.
+/// - `private_key`: The key to save, wrapped in `Zeroizing` for secure memory
+///   handling. `None` deletes the entry.
 ///
 /// ### Returns
-/// - `Ok()`: The private key has been succesfully saved in the keychain
-/// - `Err(anyhow::Error)`: If the private key could not be saved
-pub fn save_private_key_to_keychain(private_key: Option<&Zeroizing<String>>) -> anyhow::Result<()> {
-    save_or_remove_to_keychain(PRIVATE_KEY_NAME, private_key.map(|k| k.as_str()))
+/// - `Ok(())`: The private key was saved (or removed) successfully.
+/// - `Err(anyhow::Error)`: If the keychain operation failed.
+pub fn save_private_key_to_keychain(
+    profile_id: &str,
+    private_key: Option<&Zeroizing<String>>,
+) -> anyhow::Result<()> {
+    save_or_remove_to_keychain(
+        &private_key_user(profile_id),
+        private_key.map(|k| k.as_str()),
+    )
 }
 
-/// Saves the device API key in the keychain
+/// Saves a profile's device API key in the keychain.
 ///
 /// ### Arguments
-/// - `device_api_key`: the key to save
+/// - `profile_id`: The profile id used to namespace the keychain entry.
+/// - `device_api_key`: The key to save. `None` or empty deletes the entry.
 ///
 /// ### Returns
-/// - `Ok()`: The device API key has been succesfully saved in the keychain
-/// - `Err(anyhow::Error)`: If the device API key could not be saved
-pub fn save_device_api_key_to_keychain(device_api_key: Option<&str>) -> anyhow::Result<()> {
-    save_or_remove_to_keychain(DEVICE_API_KEY, device_api_key)
+/// - `Ok(())`: The device API key was saved (or removed) successfully.
+/// - `Err(anyhow::Error)`: If the keychain operation failed.
+pub fn save_device_api_key_to_keychain(
+    profile_id: &str,
+    device_api_key: Option<&str>,
+) -> anyhow::Result<()> {
+    save_or_remove_to_keychain(&device_api_key_user(profile_id), device_api_key)
 }
 
 /// Saves or removes a value from the keychain. If the value is `None`, the entry is removed from the keychain.
@@ -201,23 +236,64 @@ fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> anyhow::Result
     }
 }
 
-/// Loads the private key from the keychain, wrapped in `Zeroizing` to ensure
-/// the key material is zeroed when dropped.
+/// Loads a profile's private key from the keychain, wrapped in `Zeroizing`
+/// to ensure the key material is zeroed when dropped.
+///
+/// ### Arguments
+/// - `profile_id`: The profile id used to namespace the keychain entry.
 ///
 /// ### Returns
-/// - `Ok(Option<Zeroizing<String>>)`: The private key if it exists, otherwise `None`
-/// - `Err(anyhow::Error)`: If the private key could not be loaded
-pub fn load_private_key_from_keychain() -> anyhow::Result<Option<Zeroizing<String>>> {
-    load_from_keychain(PRIVATE_KEY_NAME).map(|opt| opt.map(Zeroizing::new))
+/// - `Ok(Some(Zeroizing<String>))`: The private key when present.
+/// - `Ok(None)`: The keychain has no entry for this profile.
+/// - `Err(anyhow::Error)`: If the keychain access failed.
+pub fn load_private_key_from_keychain(
+    profile_id: &str,
+) -> anyhow::Result<Option<Zeroizing<String>>> {
+    load_from_keychain(&private_key_user(profile_id)).map(|opt| opt.map(Zeroizing::new))
 }
 
-/// Loads the device API key from the keychain
+/// Loads a profile's device API key from the keychain.
+///
+/// ### Arguments
+/// - `profile_id`: The profile id used to namespace the keychain entry.
 ///
 /// ### Returns
-/// - `Ok(Option<String>)`: The device API key if it exists, otherwise `None`
-/// - `Err(anyhow::Error)`: If the device API key could not be loaded
-pub fn load_device_api_key_from_keychain() -> anyhow::Result<Option<String>> {
-    load_from_keychain(DEVICE_API_KEY)
+/// - `Ok(Some(String))`: The device API key when present.
+/// - `Ok(None)`: The keychain has no entry for this profile.
+/// - `Err(anyhow::Error)`: If the keychain access failed.
+pub fn load_device_api_key_from_keychain(profile_id: &str) -> anyhow::Result<Option<String>> {
+    load_from_keychain(&device_api_key_user(profile_id))
+}
+
+/// Migrate legacy single-server keychain entries into per-profile entries
+/// for the given profile id.
+///
+/// ### Arguments
+/// - `profile_id`: The id of the profile that should receive the migrated
+///   credentials (typically the migrated "Fulgurant" profile).
+///
+/// ### Returns
+/// - `Ok(())`: Migration completed (or had nothing to migrate).
+/// - `Err(anyhow::Error)`: If a keychain operation failed; the legacy entries
+///   are left in place so a future startup can retry.
+pub fn migrate_legacy_keychain_to_profile(profile_id: &str) -> anyhow::Result<()> {
+    if let Some(legacy_private) = load_from_keychain(PRIVATE_KEY_PREFIX)? {
+        let target_user = private_key_user(profile_id);
+        if load_from_keychain(&target_user)?.is_none() {
+            log::info!("Migrating legacy private key to profile '{profile_id}'");
+            save_or_remove_to_keychain(&target_user, Some(&legacy_private))?;
+        }
+        save_or_remove_to_keychain(PRIVATE_KEY_PREFIX, None)?;
+    }
+    if let Some(legacy_api) = load_from_keychain(DEVICE_API_KEY_PREFIX)? {
+        let target_user = device_api_key_user(profile_id);
+        if load_from_keychain(&target_user)?.is_none() {
+            log::info!("Migrating legacy device API key to profile '{profile_id}'");
+            save_or_remove_to_keychain(&target_user, Some(&legacy_api))?;
+        }
+        save_or_remove_to_keychain(DEVICE_API_KEY_PREFIX, None)?;
+    }
+    Ok(())
 }
 
 /// Loads a value from the keychain
@@ -268,38 +344,79 @@ pub fn serialize(private_key: &Identity) -> Zeroizing<String> {
     Zeroizing::new(secret.expose_secret().to_string())
 }
 
-/// Checks if the private/public keys exist in the keychain. If not, generates a new pair and saves them to the keychain.
+/// Ensure each active profile has a valid X25519 keypair available in the
+/// keychain and a paired public key in settings.
+///
+/// ### Description
+/// Iterates the configured profiles and, when the master switch is on, for
+/// each profile whose `is_active` flag is true:
+/// 1. Migrates any legacy single-server keychain entries into the per-profile
+///    naming scheme (no-op after the first run).
+/// 2. Loads the per-profile private key and verifies the profile carries a
+///    matching `public_key`. If either is missing, generates a new keypair,
+///    saves the private half in the keychain and the public half in the
+///    profile.
+///
+/// When any profile required key generation, the settings are saved at the
+/// end so the freshly minted public keys are persisted.
 ///
 /// ### Arguments
-/// - `settings`: the settings to check
+/// - `settings`: The application settings; profiles whose keys had to be
+///   generated will be mutated to carry the new public key.
 ///
 /// ### Returns
-/// - `Ok()`: The private/public keys have been succesfully checked/generated and saved to the keychain
-/// - `Err(anyhow::Error)`: If the private/public keys could not be checked/generated or saved
+/// - `Ok(())`: All active profiles have valid keys.
+/// - `Err(anyhow::Error)`: If keychain access or key generation failed for
+///   any profile (the operation stops at the first failure).
 pub fn check_private_public_keys(settings: &mut Settings) -> anyhow::Result<()> {
-    if settings
+    if !settings
         .app_settings
         .synchronization_settings
         .is_synchronization_activated
     {
-        let private_key = load_private_key_from_keychain()?;
-        if private_key.is_none()
-            || settings
-                .app_settings
-                .synchronization_settings
-                .public_key
-                .is_none()
-        {
-            log::debug!("No private key, need to generate keys.");
-            let (new_private_key, new_public_key) = generate_key_pair();
-            save_private_key_to_keychain(Some(&serialize(&new_private_key)))?;
-            settings.app_settings.synchronization_settings.public_key =
-                Some(new_public_key.to_string());
-            log::debug!("Saving keys");
-            settings.save()?;
-        } else {
-            log::debug!("Private  key exists, no generation needed.")
+        return Ok(());
+    }
+    let mut settings_changed = false;
+    let profile_ids: Vec<String> = settings
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .iter()
+        .filter(|p| p.is_active)
+        .map(|p| p.id.clone())
+        .collect();
+    for profile_id in profile_ids {
+        // First-run migration of legacy keychain entries into per-profile naming.
+        if let Err(e) = migrate_legacy_keychain_to_profile(&profile_id) {
+            log::warn!("Failed to migrate legacy keychain entries to profile '{profile_id}': {e}");
         }
+        let private_key = load_private_key_from_keychain(&profile_id)?;
+        let profile = match settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .iter_mut()
+            .find(|p| p.id == profile_id)
+        {
+            Some(p) => p,
+            None => continue,
+        };
+        if private_key.is_none() || profile.public_key.is_none() {
+            log::debug!(
+                "Profile '{}' has no keypair, generating a new one",
+                profile.name
+            );
+            let (new_private_key, new_public_key) = generate_key_pair();
+            save_private_key_to_keychain(&profile_id, Some(&serialize(&new_private_key)))?;
+            profile.public_key = Some(new_public_key.to_string());
+            settings_changed = true;
+        } else {
+            log::debug!("Profile '{}' already has a keypair", profile.name);
+        }
+    }
+    if settings_changed {
+        log::debug!("Saving updated settings after key generation");
+        settings.save()?;
     }
     Ok(())
 }

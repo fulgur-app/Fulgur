@@ -1,4 +1,4 @@
-use crate::fulgur::settings::{RecentFiles, Settings};
+use crate::fulgur::settings::{RecentFiles, ServerProfile, Settings};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -158,7 +158,8 @@ fn recent_files_clear_empty_list() {
 }
 
 #[test]
-fn settings_load_without_is_deduplication_field() {
+fn settings_load_without_is_deduplication_field_migrates_legacy_to_profile() {
+    // For legacy single-server JSON (Fulgur <= 0.7.0).
     let json = r#"{
         "editor_settings": {
             "show_line_numbers": true,
@@ -188,14 +189,6 @@ fn settings_load_without_is_deduplication_field() {
         }
     }"#;
     let settings: Settings = serde_json::from_str(json).unwrap();
-    // is_deduplication should default to true when missing from JSON
-    assert!(
-        settings
-            .app_settings
-            .synchronization_settings
-            .is_deduplication
-    );
-    // Other settings should be preserved
     assert_eq!(settings.app_settings.theme, "Catppuccin Frappe");
     assert!(
         settings
@@ -203,13 +196,130 @@ fn settings_load_without_is_deduplication_field() {
             .synchronization_settings
             .is_synchronization_activated
     );
+    let profiles = &settings.app_settings.synchronization_settings.profiles;
     assert_eq!(
-        settings.app_settings.synchronization_settings.server_url,
-        Some("http://localhost:3000".to_string())
+        profiles.len(),
+        1,
+        "legacy JSON should migrate to a single profile"
+    );
+    let profile = &profiles[0];
+    assert_eq!(profile.name, "Fulgurant");
+    assert!(profile.is_active);
+    assert!(
+        profile.is_deduplication,
+        "is_deduplication should default to true when missing from legacy JSON"
     );
     assert_eq!(
-        settings.app_settings.synchronization_settings.email,
-        Some("test@example.com".to_string())
+        profile.server_url,
+        Some("http://localhost:3000".to_string())
+    );
+    assert_eq!(profile.email, Some("test@example.com".to_string()));
+    assert_eq!(profile.public_key, Some("age1abc123".to_string()));
+}
+
+#[test]
+fn settings_load_with_new_profiles_shape() {
+    // New shape with explicit profiles array round-trips without migration.
+    let json = r#"{
+        "editor_settings": {
+            "show_line_numbers": true,
+            "show_indent_guides": true,
+            "soft_wrap": false,
+            "font_size": 14.0,
+            "tab_size": 4,
+            "markdown_settings": {
+                "show_markdown_preview": true,
+                "show_markdown_toolbar": false
+            },
+            "watch_files": true
+        },
+        "app_settings": {
+            "confirm_exit": true,
+            "theme": "Default Light",
+            "synchronization_settings": {
+                "is_synchronization_activated": true,
+                "profiles": [
+                    {
+                        "id": "abc-123",
+                        "name": "Home",
+                        "is_active": true,
+                        "server_url": "https://home.example",
+                        "email": "me@home.example",
+                        "public_key": "age1home",
+                        "is_deduplication": false
+                    },
+                    {
+                        "id": "def-456",
+                        "name": "Work",
+                        "is_active": false,
+                        "server_url": null,
+                        "email": null,
+                        "is_deduplication": true
+                    }
+                ]
+            }
+        },
+        "recent_files": {
+            "files": [],
+            "max_files": 10
+        }
+    }"#;
+    let settings: Settings = serde_json::from_str(json).unwrap();
+    let profiles = &settings.app_settings.synchronization_settings.profiles;
+    assert_eq!(profiles.len(), 2);
+    assert_eq!(profiles[0].id, "abc-123");
+    assert_eq!(profiles[0].name, "Home");
+    assert!(profiles[0].is_active);
+    assert!(!profiles[0].is_deduplication);
+    assert_eq!(profiles[1].id, "def-456");
+    assert_eq!(profiles[1].name, "Work");
+    assert!(!profiles[1].is_active);
+    assert!(profiles[1].is_deduplication);
+}
+
+#[test]
+fn settings_load_with_no_legacy_data_yields_empty_profiles() {
+    // Legacy JSON with `is_synchronization_activated: false` and no other
+    // legacy fields produces an empty profiles list (no profile to migrate).
+    let json = r#"{
+        "editor_settings": {
+            "show_line_numbers": true,
+            "show_indent_guides": true,
+            "soft_wrap": false,
+            "font_size": 14.0,
+            "tab_size": 4,
+            "markdown_settings": {
+                "show_markdown_preview": true,
+                "show_markdown_toolbar": false
+            },
+            "watch_files": true
+        },
+        "app_settings": {
+            "confirm_exit": true,
+            "theme": "Default Light",
+            "synchronization_settings": {
+                "is_synchronization_activated": false
+            }
+        },
+        "recent_files": {
+            "files": [],
+            "max_files": 10
+        }
+    }"#;
+    let settings: Settings = serde_json::from_str(json).unwrap();
+    assert!(
+        settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .is_empty(),
+        "no legacy data should produce empty profiles"
+    );
+    assert!(
+        !settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated
     );
 }
 
@@ -285,13 +395,23 @@ fn validate_leaves_max_recent_files_unchanged_when_within_range() {
     assert_eq!(settings.recent_files.max_files, 10);
 }
 
+/// Helper: insert a single profile into the settings and return a mutable reference.
+fn push_profile(settings: &mut Settings) -> &mut ServerProfile {
+    settings
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .push(ServerProfile::new("Fulgurant"));
+    &mut settings.app_settings.synchronization_settings.profiles[0]
+}
+
 #[test]
 fn validate_clears_malformed_server_url() {
     let mut settings = Settings::new();
-    settings.app_settings.synchronization_settings.server_url = Some("not a url".to_string());
+    push_profile(&mut settings).server_url = Some("not a url".to_string());
     settings.validate();
     assert_eq!(
-        settings.app_settings.synchronization_settings.server_url,
+        settings.app_settings.synchronization_settings.profiles[0].server_url,
         None
     );
 }
@@ -299,11 +419,10 @@ fn validate_clears_malformed_server_url() {
 #[test]
 fn validate_keeps_valid_server_url() {
     let mut settings = Settings::new();
-    settings.app_settings.synchronization_settings.server_url =
-        Some("https://sync.example.com".to_string());
+    push_profile(&mut settings).server_url = Some("https://sync.example.com".to_string());
     settings.validate();
     assert_eq!(
-        settings.app_settings.synchronization_settings.server_url,
+        settings.app_settings.synchronization_settings.profiles[0].server_url,
         Some("https://sync.example.com".to_string())
     );
 }
@@ -311,10 +430,10 @@ fn validate_keeps_valid_server_url() {
 #[test]
 fn validate_keeps_none_server_url_unchanged() {
     let mut settings = Settings::new();
-    settings.app_settings.synchronization_settings.server_url = None;
+    push_profile(&mut settings).server_url = None;
     settings.validate();
     assert_eq!(
-        settings.app_settings.synchronization_settings.server_url,
+        settings.app_settings.synchronization_settings.profiles[0].server_url,
         None
     );
 }
@@ -322,34 +441,43 @@ fn validate_keeps_none_server_url_unchanged() {
 #[test]
 fn validate_clears_email_without_at_sign() {
     let mut settings = Settings::new();
-    settings.app_settings.synchronization_settings.email = Some("notanemail".to_string());
+    push_profile(&mut settings).email = Some("notanemail".to_string());
     settings.validate();
-    assert_eq!(settings.app_settings.synchronization_settings.email, None);
+    assert_eq!(
+        settings.app_settings.synchronization_settings.profiles[0].email,
+        None
+    );
 }
 
 #[test]
 fn validate_clears_email_with_at_at_start() {
     let mut settings = Settings::new();
-    settings.app_settings.synchronization_settings.email = Some("@nodomain".to_string());
+    push_profile(&mut settings).email = Some("@nodomain".to_string());
     settings.validate();
-    assert_eq!(settings.app_settings.synchronization_settings.email, None);
+    assert_eq!(
+        settings.app_settings.synchronization_settings.profiles[0].email,
+        None
+    );
 }
 
 #[test]
 fn validate_clears_email_missing_tld() {
     let mut settings = Settings::new();
-    settings.app_settings.synchronization_settings.email = Some("user@nodot".to_string());
+    push_profile(&mut settings).email = Some("user@nodot".to_string());
     settings.validate();
-    assert_eq!(settings.app_settings.synchronization_settings.email, None);
+    assert_eq!(
+        settings.app_settings.synchronization_settings.profiles[0].email,
+        None
+    );
 }
 
 #[test]
 fn validate_keeps_valid_email() {
     let mut settings = Settings::new();
-    settings.app_settings.synchronization_settings.email = Some("user@example.com".to_string());
+    push_profile(&mut settings).email = Some("user@example.com".to_string());
     settings.validate();
     assert_eq!(
-        settings.app_settings.synchronization_settings.email,
+        settings.app_settings.synchronization_settings.profiles[0].email,
         Some("user@example.com".to_string())
     );
 }
@@ -357,9 +485,35 @@ fn validate_keeps_valid_email() {
 #[test]
 fn validate_keeps_none_email_unchanged() {
     let mut settings = Settings::new();
-    settings.app_settings.synchronization_settings.email = None;
+    push_profile(&mut settings).email = None;
     settings.validate();
-    assert_eq!(settings.app_settings.synchronization_settings.email, None);
+    assert_eq!(
+        settings.app_settings.synchronization_settings.profiles[0].email,
+        None
+    );
+}
+
+#[test]
+fn validate_truncates_profiles_above_max() {
+    use crate::fulgur::settings::MAX_PROFILES;
+    let mut settings = Settings::new();
+    for i in 0..(MAX_PROFILES + 5) {
+        settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .push(ServerProfile::new(format!("Profile{i}")));
+    }
+    settings.validate();
+    assert_eq!(
+        settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .len(),
+        MAX_PROFILES,
+        "validate must truncate profile vector to the maximum allowed"
+    );
 }
 
 #[test]

@@ -156,14 +156,7 @@ fn handle_share_file(
         );
         return;
     }
-    let (
-        sync_settings,
-        request,
-        token_state,
-        http_agent,
-        pending_notification,
-        max_file_size_bytes,
-    ) = entity.update(cx, |this, cx| {
+    let bundle = entity.update(cx, |this, cx| {
         let active_tab = this.get_active_editor_tab();
         let content: Arc<str> = active_tab
             .as_ref()
@@ -176,26 +169,42 @@ fn handle_share_file(
             .and_then(|name| name.to_str())
             .unwrap_or("Untitled")
             .to_string();
-        (
-            this.settings.app_settings.synchronization_settings.clone(),
+        let profile = this
+            .settings
+            .app_settings
+            .synchronization_settings
+            .primary_profile()
+            .cloned()?;
+        let sync_state = this.shared_state(cx).sync_state_for(&profile.id);
+        Some((
+            profile,
             ShareFileRequest {
                 content,
                 file_name,
                 device_ids: ids,
                 file_path,
             },
-            Arc::clone(&this.shared_state(cx).sync_state.token_state),
+            Arc::clone(&sync_state.token_state),
             Arc::clone(&this.shared_state(cx).http_agent),
-            this.shared_state(cx)
-                .sync_state
-                .pending_notification
-                .clone(),
-            this.shared_state(cx)
-                .sync_state
+            sync_state.pending_notification.clone(),
+            sync_state
                 .max_file_size_bytes
                 .load(std::sync::atomic::Ordering::Acquire),
-        )
+        ))
     });
+    let Some((
+        profile,
+        request,
+        token_state,
+        http_agent,
+        pending_notification,
+        max_file_size_bytes,
+    )) = bundle
+    else {
+        log::warn!("Share aborted: no primary profile configured");
+        window.close_sheet(cx);
+        return;
+    };
     window.close_sheet(cx);
     let progress_label = format!("Sharing {}...", request.file_name);
     let cancel_callback: Option<CancelCallback> = Some(Box::new(|_, _| {}));
@@ -205,7 +214,7 @@ fn handle_share_file(
     std::thread::spawn(move || {
         let _progress = progress;
         let result = share_file(
-            &sync_settings,
+            &profile,
             &request,
             &devices,
             &token_state,
@@ -267,8 +276,22 @@ impl Fulgur {
             log::warn!("Synchronization is not activated");
             return;
         }
+        let profile = match self
+            .settings
+            .app_settings
+            .synchronization_settings
+            .primary_profile()
+            .cloned()
+        {
+            Some(p) => p,
+            None => {
+                log::warn!("Share sheet aborted: no profile configured");
+                return;
+            }
+        };
         let shared = self.shared_state(cx);
-        if shared.sync_state.connection_status.lock().is_connecting() {
+        let sync_state = shared.sync_state_for(&profile.id);
+        if sync_state.connection_status.lock().is_connecting() {
             log::debug!("Already connecting, ignoring share button click");
             return;
         }
@@ -277,25 +300,25 @@ impl Fulgur {
             log::info!("Not connected to sync server, attempting reconnection...");
         }
         let shared = self.shared_state(cx);
+        let sync_state = shared.sync_state_for(&profile.id);
         crate::fulgur::sync::synchronization::set_sync_server_connection_status(
-            &shared.sync_state.connection_status,
+            &sync_state.connection_status,
             SynchronizationStatus::Connecting,
         );
-        *shared.sync_state.connecting_since.lock() = Some(std::time::Instant::now());
-        let synchronization_settings = self.settings.app_settings.synchronization_settings.clone();
-        let token_state = Arc::clone(&shared.sync_state.token_state);
+        *sync_state.connecting_since.lock() = Some(std::time::Instant::now());
+        let token_state = Arc::clone(&sync_state.token_state);
         let http_agent = Arc::clone(&shared.http_agent);
-        let connection_status = shared.sync_state.connection_status.clone();
-        let connecting_since = shared.sync_state.connecting_since.clone();
-        let device_name_shared = shared.sync_state.device_name.clone();
-        let pending_shared_files = shared.sync_state.pending_shared_files.clone();
-        let pending_devices = shared.sync_state.pending_devices.clone();
-        let max_file_size_bytes = shared.sync_state.max_file_size_bytes.clone();
+        let connection_status = sync_state.connection_status.clone();
+        let connecting_since = sync_state.connecting_since.clone();
+        let device_name_shared = sync_state.device_name.clone();
+        let pending_shared_files = sync_state.pending_shared_files.clone();
+        let pending_devices = sync_state.pending_devices.clone();
+        let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
         self.pending_share_sheet = true;
         std::thread::spawn(move || {
             if needs_reconnect {
                 match crate::fulgur::sync::synchronization::initial_synchronization(
-                    &synchronization_settings,
+                    &profile,
                     &token_state,
                     &http_agent,
                 ) {
@@ -323,7 +346,7 @@ impl Fulgur {
                     }
                 }
             }
-            let result = get_devices(&synchronization_settings, &token_state, &http_agent);
+            let result = get_devices(&profile, &token_state, &http_agent);
             *connecting_since.lock() = None;
             match result {
                 Ok((devices, server_max_size)) => {
@@ -356,12 +379,17 @@ impl Fulgur {
         if !self.pending_share_sheet {
             return;
         }
-        let pending = self
-            .shared_state(cx)
-            .sync_state
-            .pending_devices
-            .lock()
-            .take();
+        let primary_id = self
+            .settings
+            .app_settings
+            .synchronization_settings
+            .primary_profile()
+            .map(|p| p.id.clone());
+        let primary_sync_state = match primary_id {
+            Some(id) => self.shared_state(cx).sync_state_for(&id),
+            None => self.shared_state(cx).primary_sync_state(),
+        };
+        let pending = primary_sync_state.pending_devices.lock().take();
         let (result, needs_sse_restart) = match pending {
             Some(pending) => pending,
             None => return,
@@ -376,7 +404,7 @@ impl Fulgur {
             }
             Err(e) => {
                 log::error!("Failed to prepare share: {e}");
-                let status = *self.shared_state(cx).sync_state.connection_status.lock();
+                let status = *primary_sync_state.connection_status.lock();
                 let dialog_message = match status {
                     SynchronizationStatus::AuthenticationFailed => {
                         "Authentication failed. Check your e-mail and device API key in the synchronization settings."
@@ -535,12 +563,15 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.pending_share_sheet = false;
-                *this.shared_state(cx).sync_state.pending_devices.lock() =
-                    Some((Err("device fetch failed".to_string()), false));
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .pending_devices
+                    .lock() = Some((Err("device fetch failed".to_string()), false));
                 this.process_pending_share_sheet(window, cx);
                 assert!(
                     this.shared_state(cx)
-                        .sync_state
+                        .primary_sync_state()
                         .pending_devices
                         .lock()
                         .is_some(),
@@ -558,7 +589,11 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.pending_share_sheet = true;
-                *this.shared_state(cx).sync_state.pending_devices.lock() = None;
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .pending_devices
+                    .lock() = None;
                 this.process_pending_share_sheet(window, cx);
                 assert!(
                     this.pending_share_sheet,
@@ -576,8 +611,11 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.pending_share_sheet = true;
-                *this.shared_state(cx).sync_state.pending_devices.lock() =
-                    Some((Err("authentication failed".to_string()), false));
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .pending_devices
+                    .lock() = Some((Err("authentication failed".to_string()), false));
                 this.process_pending_share_sheet(window, cx);
                 assert!(
                     !this.pending_share_sheet,
@@ -585,7 +623,7 @@ mod tests {
                 );
                 assert!(
                     this.shared_state(cx)
-                        .sync_state
+                        .primary_sync_state()
                         .pending_devices
                         .lock()
                         .is_none(),
@@ -603,8 +641,11 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.pending_share_sheet = true;
-                *this.shared_state(cx).sync_state.pending_devices.lock() =
-                    Some((Ok(vec![make_device("device-1")]), false));
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .pending_devices
+                    .lock() = Some((Ok(vec![make_device("device-1")]), false));
                 this.process_pending_share_sheet(window, cx);
                 assert!(
                     !this.pending_share_sheet,
@@ -612,7 +653,7 @@ mod tests {
                 );
                 assert!(
                     this.shared_state(cx)
-                        .sync_state
+                        .primary_sync_state()
                         .pending_devices
                         .lock()
                         .is_none(),

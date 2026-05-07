@@ -268,13 +268,12 @@ impl Fulgur {
     /// ### Returns:
     /// - `(SyncButtonState, bool)`: The sync button state and whether the spinner should be shown.
     fn status_bar_sync_button_state(&self, cx: &Context<Self>) -> (SyncButtonState, bool) {
-        let sync_status = *self.shared_state(cx).sync_state.connection_status.lock();
+        let primary_sync_state = self.shared_state(cx).primary_sync_state();
+        let sync_status = *primary_sync_state.connection_status.lock();
         match sync_status {
             SynchronizationStatus::Connected => (SyncButtonState::Connected, false),
             SynchronizationStatus::Connecting => {
-                let show = self
-                    .shared_state(cx)
-                    .sync_state
+                let show = primary_sync_state
                     .connecting_since
                     .lock()
                     .map(|since| since.elapsed() >= CONNECTING_SPINNER_DELAY)
@@ -562,9 +561,16 @@ mod tests {
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                *this.shared_state(cx).sync_state.connection_status.lock() =
-                    SynchronizationStatus::Connected;
-                *this.shared_state(cx).sync_state.connecting_since.lock() = None;
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .connection_status
+                    .lock() = SynchronizationStatus::Connected;
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .connecting_since
+                    .lock() = None;
 
                 let (state, show_spinner) = this.status_bar_sync_button_state(cx);
                 assert_eq!(state, SyncButtonState::Connected);
@@ -579,10 +585,16 @@ mod tests {
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                *this.shared_state(cx).sync_state.connection_status.lock() =
-                    SynchronizationStatus::Connecting;
-                *this.shared_state(cx).sync_state.connecting_since.lock() =
-                    Some(Instant::now() - Duration::from_millis(600));
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .connection_status
+                    .lock() = SynchronizationStatus::Connecting;
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .connecting_since
+                    .lock() = Some(Instant::now() - Duration::from_millis(600));
 
                 let (state, show_spinner) = this.status_bar_sync_button_state(cx);
                 assert_eq!(state, SyncButtonState::Connecting);
@@ -597,10 +609,16 @@ mod tests {
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                *this.shared_state(cx).sync_state.connection_status.lock() =
-                    SynchronizationStatus::Connecting;
-                *this.shared_state(cx).sync_state.connecting_since.lock() =
-                    Some(Instant::now() - Duration::from_millis(100));
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .connection_status
+                    .lock() = SynchronizationStatus::Connecting;
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .connecting_since
+                    .lock() = Some(Instant::now() - Duration::from_millis(100));
 
                 let (state, show_spinner) = this.status_bar_sync_button_state(cx);
                 assert_eq!(state, SyncButtonState::Connecting);
@@ -615,10 +633,16 @@ mod tests {
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                *this.shared_state(cx).sync_state.connection_status.lock() =
-                    SynchronizationStatus::AuthenticationFailed;
-                *this.shared_state(cx).sync_state.connecting_since.lock() =
-                    Some(Instant::now() - Duration::from_secs(2));
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .connection_status
+                    .lock() = SynchronizationStatus::AuthenticationFailed;
+                *this
+                    .shared_state(cx)
+                    .primary_sync_state()
+                    .connecting_since
+                    .lock() = Some(Instant::now() - Duration::from_secs(2));
 
                 let (state, show_spinner) = this.status_bar_sync_button_state(cx);
                 assert_eq!(state, SyncButtonState::Disconnected);

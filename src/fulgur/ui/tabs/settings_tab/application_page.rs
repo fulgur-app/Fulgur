@@ -13,6 +13,7 @@ use gpui_component::{
 };
 
 const DEVICE_KEY_PLACEHOLDER: &str = "<Device Key>";
+const DEFAULT_IS_DEDUPLICATION: bool = true;
 
 /// Create the Application settings page
 ///
@@ -134,11 +135,16 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                                         let entity = entity.clone();
                                         move |val: &bool, window: &mut Window, cx: &mut App| {
                                             let val = *val;
-                                            entity.update(cx, |this, cx| {
+                                            let primary_profile = entity.update(cx, |this, cx| {
                                                 this.settings
                                                     .app_settings
                                                     .synchronization_settings
                                                     .is_synchronization_activated = val;
+                                                this.settings
+                                                    .app_settings
+                                                    .synchronization_settings
+                                                    .ensure_primary_profile_mut()
+                                                    .is_active = val;
                                                 if val
                                                     && let Err(e) = crypto_helper::check_private_public_keys(&mut this.settings)
                                                 {
@@ -147,12 +153,21 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                                                 if let Err(e) = this.update_and_propagate_settings(cx) {
                                                     log::error!("Failed to save settings: {e}");
                                                 }
+                                                this.settings
+                                                    .app_settings
+                                                    .synchronization_settings
+                                                    .primary_profile()
+                                                    .cloned()
                                             });
-                                            if val {
+                                            if val
+                                                && let Some(profile) = primary_profile
+                                            {
                                                 let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-                                                shared.sync_state.token_state.clear_token();
+                                                shared.sync_state_for(&profile.id)
+                                                    .token_state
+                                                    .clear_token();
                                                 perform_initial_synchronization_with_progress(
-                                                    &entity,
+                                                    profile,
                                                     window,
                                                     cx,
                                                 );
@@ -174,7 +189,9 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                                     .settings
                                     .app_settings
                                     .synchronization_settings
-                                    .is_deduplication
+                                    .primary_profile()
+                                    .map(|p| p.is_deduplication)
+                                    .unwrap_or(DEFAULT_IS_DEDUPLICATION)
                             }
                         },
                         {
@@ -184,6 +201,7 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                                     this.settings
                                         .app_settings
                                         .synchronization_settings
+                                        .ensure_primary_profile_mut()
                                         .is_deduplication = val;
                                     if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {e}");
@@ -192,7 +210,7 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                             }
                         },
                     )
-                    .default_value(default_app_settings.synchronization_settings.is_deduplication),
+                    .default_value(DEFAULT_IS_DEDUPLICATION),
                 )
                 .description("Avoid duplicate shares of the same file on the server."));
                 sync_items.push(SettingItem::new(
@@ -206,9 +224,8 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                                     .settings
                                     .app_settings
                                     .synchronization_settings
-                                    .server_url
-                                    .as_ref()
-                                    .map(|s| SharedString::from(s.clone()))
+                                    .primary_profile()
+                                    .and_then(|p| p.server_url.as_ref().map(|s| SharedString::from(s.clone())))
                                     .unwrap_or_default()
                             }
                         },
@@ -224,6 +241,7 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                                     this.settings
                                         .app_settings
                                         .synchronization_settings
+                                        .ensure_primary_profile_mut()
                                         .server_url = url;
                                     if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {e}");
@@ -233,14 +251,7 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                             }
                         },
                     )
-                    .default_value(
-                        default_app_settings
-                            .synchronization_settings
-                            .server_url
-                            .clone()
-                            .map(SharedString::from)
-                            .unwrap_or_default(),
-                    ),
+                    .default_value(SharedString::from("")),
                 )
                 .description("URL of the synchronization server."));
                 sync_items.push(SettingItem::new(
@@ -254,9 +265,8 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                                     .settings
                                     .app_settings
                                     .synchronization_settings
-                                    .email
-                                    .as_ref()
-                                    .map(|s| SharedString::from(s.clone()))
+                                    .primary_profile()
+                                    .and_then(|p| p.email.as_ref().map(|s| SharedString::from(s.clone())))
                                     .unwrap_or_default()
                             }
                         },
@@ -269,8 +279,11 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                                     } else {
                                         Some(val.to_string())
                                     };
-                                    this.settings.app_settings.synchronization_settings.email =
-                                        email;
+                                    this.settings
+                                        .app_settings
+                                        .synchronization_settings
+                                        .ensure_primary_profile_mut()
+                                        .email = email;
                                     if let Err(e) = this.update_and_propagate_settings(cx) {
                                         log::error!("Failed to save settings: {e}");
                                     }
@@ -279,14 +292,7 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                             }
                         },
                     )
-                    .default_value(
-                        default_app_settings
-                            .synchronization_settings
-                            .email
-                            .clone()
-                            .map(SharedString::from)
-                            .unwrap_or_default(),
-                    ),
+                    .default_value(SharedString::from("")),
                 )
                 .description("Email for synchronization."));
                 sync_items.push(SettingItem::new(
@@ -304,14 +310,24 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                                     } else {
                                         Some(val.as_str())
                                     };
+                                    let profile_id = this
+                                        .settings
+                                        .app_settings
+                                        .synchronization_settings
+                                        .ensure_primary_profile_mut()
+                                        .id
+                                        .clone();
                                     if let Err(e) =
-                                        crypto_helper::save_device_api_key_to_keychain(key)
+                                        crypto_helper::save_device_api_key_to_keychain(&profile_id, key)
                                     {
                                         log::error!("Failed to save device API key: {e}");
                                     } else {
                                         log::info!("Device API key saved successfully");
                                         // Clear cached token to force re-authentication with new device key
-                                        this.shared_state(cx).sync_state.token_state.clear_token();
+                                        this.shared_state(cx)
+                                            .sync_state_for(&profile_id)
+                                            .token_state
+                                            .clear_token();
                                     }
                                     this.restart_sse_connection(cx);
                                 });
@@ -325,9 +341,9 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                 sync_items.push(SettingItem::render({
                     let entity = entity.clone();
                     move |_options, _window, cx| {
-                        let is_connecting = cx
-                            .global::<crate::fulgur::shared_state::SharedAppState>()
-                            .sync_state
+                        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+                        let is_connecting = shared
+                            .primary_sync_state()
                             .connection_status
                             .lock()
                             .is_connecting();
@@ -350,13 +366,25 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                                     btn = btn.cursor_pointer().on_click({
                                         let entity = entity.clone();
                                         move |_, window, cx| {
-                                            let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-                                            shared.sync_state.token_state.clear_token();
-                                            perform_initial_synchronization_with_progress(
-                                                &entity,
-                                                window,
-                                                cx,
-                                            );
+                                            let primary_profile = entity
+                                                .read(cx)
+                                                .settings
+                                                .app_settings
+                                                .synchronization_settings
+                                                .primary_profile()
+                                                .cloned();
+                                            if let Some(profile) = primary_profile {
+                                                let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+                                                shared
+                                                    .sync_state_for(&profile.id)
+                                                    .token_state
+                                                    .clear_token();
+                                                perform_initial_synchronization_with_progress(
+                                                    profile,
+                                                    window,
+                                                    cx,
+                                                );
+                                            }
                                         }
                                     });
                                 }

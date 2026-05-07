@@ -4,7 +4,7 @@ use super::{
     types::{ShareFileRequest, ShareResult},
 };
 use crate::fulgur::{
-    settings::SynchronizationSettings,
+    settings::ServerProfile,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
         synchronization::{SynchronizationError, handle_ureq_error},
@@ -91,10 +91,10 @@ fn send_share_request(
 /// Share a file with multiple devices (per-device encryption)
 ///
 /// ### Arguments
-/// - `synchronization_settings`: The synchronization settings
+/// - `profile`: The server profile to share through (URL, deduplication flag)
 /// - `request`: The share request (content, file name, target device IDs, optional path)
 /// - `devices`: The list of all devices (with their public keys)
-/// - `token_state`: Thread-safe token state manager (with condition variable)
+/// - `token_state`: Per-profile token state manager (with condition variable)
 /// - `http_agent`: Shared HTTP agent for connection pooling
 /// - `max_file_size_bytes`: Server-advertised maximum file size; `u64::MAX` means no limit
 ///
@@ -102,14 +102,14 @@ fn send_share_request(
 /// - `Ok(ShareResult)`: Results of sharing with each device
 /// - `Err(SynchronizationError)`: If validation or setup failed
 pub fn share_file(
-    synchronization_settings: &SynchronizationSettings,
+    profile: &ServerProfile,
     request: &ShareFileRequest,
     devices: &[Device],
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
     max_file_size_bytes: u64,
 ) -> Result<ShareResult, SynchronizationError> {
-    let server_url = synchronization_settings
+    let server_url = profile
         .server_url
         .as_ref()
         .ok_or(SynchronizationError::ServerUrlMissing)?;
@@ -144,9 +144,9 @@ pub fn share_file(
             _ => {}
         }
     }
-    let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
+    let token = get_valid_token(profile, token_state, http_agent)?;
     let share_url = format!("{server_url}/api/share");
-    let deduplication_hash = if synchronization_settings.is_deduplication {
+    let deduplication_hash = if profile.is_deduplication {
         request.file_path.as_ref().map(|path| {
             let hash = Sha256::digest(path.to_string_lossy().as_bytes());
             format!("{hash:x}")
@@ -268,7 +268,7 @@ pub fn share_file(
 #[cfg(test)]
 mod tests {
     use super::{MAX_SYNC_SHARE_PAYLOAD_BYTES, share_file};
-    use crate::fulgur::settings::SynchronizationSettings;
+    use crate::fulgur::settings::ServerProfile;
     use crate::fulgur::sync::share::{Device, ShareFileRequest};
     use crate::fulgur::sync::{
         access_token::TokenStateManager, synchronization::SynchronizationError,
@@ -280,12 +280,12 @@ mod tests {
         ureq::Agent::new_with_config(ureq::config::Config::builder().build())
     }
 
-    /// Build a `SynchronizationSettings` whose server URL points at a port that
+    /// Build a `ServerProfile` whose server URL points at a port that
     /// is guaranteed to refuse connections immediately (no real network needed).
-    fn make_settings_with_server_url() -> SynchronizationSettings {
-        let mut s = SynchronizationSettings::new();
-        s.server_url = Some("http://127.0.0.1:19999".to_string());
-        s
+    fn make_profile_with_server_url() -> ServerProfile {
+        let mut p = ServerProfile::new("Test");
+        p.server_url = Some("http://127.0.0.1:19999".to_string());
+        p
     }
 
     fn make_token_manager_with_valid_token() -> Arc<TokenStateManager> {
@@ -319,8 +319,8 @@ mod tests {
 
     #[test]
     fn test_share_file_rejects_content_larger_than_limit() {
-        let mut settings = SynchronizationSettings::new();
-        settings.server_url = Some("https://example.com".to_string());
+        let mut profile = ServerProfile::new("Test");
+        profile.server_url = Some("https://example.com".to_string());
 
         let request = ShareFileRequest {
             content: Arc::from("A".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES + 1)),
@@ -330,7 +330,7 @@ mod tests {
         };
 
         let result = share_file(
-            &settings,
+            &profile,
             &request,
             &[],
             &Arc::new(TokenStateManager::new()),
@@ -346,11 +346,11 @@ mod tests {
 
     #[test]
     fn test_share_file_accepts_content_at_exact_limit() {
-        let mut settings = SynchronizationSettings::new();
-        settings.server_url = Some("https://example.com".to_string());
+        let mut profile = ServerProfile::new("Test");
+        profile.server_url = Some("https://example.com".to_string());
         // Keep email unset so the flow fails deterministically at validation/network setup,
         // after content-size checks have already passed.
-        settings.email = None;
+        profile.email = None;
 
         let request = ShareFileRequest {
             content: Arc::from("A".repeat(MAX_SYNC_SHARE_PAYLOAD_BYTES)),
@@ -360,7 +360,7 @@ mod tests {
         };
 
         let result = share_file(
-            &settings,
+            &profile,
             &request,
             &[],
             &Arc::new(TokenStateManager::new()),
@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn test_share_file_rejects_missing_server_url() {
-        let settings = SynchronizationSettings::new(); // server_url = None
+        let profile = ServerProfile::new("Test"); // server_url = None
         let request = ShareFileRequest {
             content: Arc::from("hello"),
             file_name: "test.txt".to_string(),
@@ -386,7 +386,7 @@ mod tests {
             file_path: None,
         };
         let result = share_file(
-            &settings,
+            &profile,
             &request,
             &[],
             &Arc::new(TokenStateManager::new()),
@@ -402,8 +402,8 @@ mod tests {
 
     #[test]
     fn test_share_file_rejects_empty_content() {
-        let mut settings = SynchronizationSettings::new();
-        settings.server_url = Some("https://example.com".to_string());
+        let mut profile = ServerProfile::new("Test");
+        profile.server_url = Some("https://example.com".to_string());
         let request = ShareFileRequest {
             content: Arc::from(""),
             file_name: "test.txt".to_string(),
@@ -411,7 +411,7 @@ mod tests {
             file_path: None,
         };
         let result = share_file(
-            &settings,
+            &profile,
             &request,
             &[],
             &Arc::new(TokenStateManager::new()),
@@ -427,8 +427,8 @@ mod tests {
 
     #[test]
     fn test_share_file_rejects_empty_file_name() {
-        let mut settings = SynchronizationSettings::new();
-        settings.server_url = Some("https://example.com".to_string());
+        let mut profile = ServerProfile::new("Test");
+        profile.server_url = Some("https://example.com".to_string());
         let request = ShareFileRequest {
             content: Arc::from("hello"),
             file_name: String::new(),
@@ -436,7 +436,7 @@ mod tests {
             file_path: None,
         };
         let result = share_file(
-            &settings,
+            &profile,
             &request,
             &[],
             &Arc::new(TokenStateManager::new()),
@@ -452,8 +452,8 @@ mod tests {
 
     #[test]
     fn test_share_file_rejects_empty_device_ids() {
-        let mut settings = SynchronizationSettings::new();
-        settings.server_url = Some("https://example.com".to_string());
+        let mut profile = ServerProfile::new("Test");
+        profile.server_url = Some("https://example.com".to_string());
         let request = ShareFileRequest {
             content: Arc::from("hello"),
             file_name: "test.txt".to_string(),
@@ -461,7 +461,7 @@ mod tests {
             file_path: None,
         };
         let result = share_file(
-            &settings,
+            &profile,
             &request,
             &[],
             &Arc::new(TokenStateManager::new()),
@@ -482,10 +482,10 @@ mod tests {
     #[test]
     fn test_share_file_fails_for_unknown_device_id() {
         // Upfront validation: an unknown device ID must fail the whole request.
-        let settings = make_settings_with_server_url();
+        let profile = make_profile_with_server_url();
         let token_manager = make_token_manager_with_valid_token();
         let err = share_file(
-            &settings,
+            &profile,
             &make_basic_request("nonexistent-device"),
             &[], // no devices provided
             &token_manager,
@@ -502,11 +502,11 @@ mod tests {
     #[test]
     fn test_share_file_fails_when_device_has_no_public_key() {
         // Upfront validation: a device with no public key must fail before any work.
-        let settings = make_settings_with_server_url();
+        let profile = make_profile_with_server_url();
         let token_manager = make_token_manager_with_valid_token();
         let device = make_device("device-no-key", "desktop", None);
         let err = share_file(
-            &settings,
+            &profile,
             &make_basic_request("device-no-key"),
             &[device],
             &token_manager,
@@ -523,7 +523,7 @@ mod tests {
     #[test]
     fn test_share_file_fails_when_device_has_invalid_public_key() {
         // Upfront validation: a malformed key must fail before encryption is attempted.
-        let settings = make_settings_with_server_url();
+        let profile = make_profile_with_server_url();
         let token_manager = make_token_manager_with_valid_token();
         let device = make_device(
             "device-bad-key",
@@ -531,7 +531,7 @@ mod tests {
             Some("not-a-valid-age-public-key"),
         );
         let err = share_file(
-            &settings,
+            &profile,
             &make_basic_request("device-bad-key"),
             &[device],
             &token_manager,
@@ -549,12 +549,12 @@ mod tests {
     fn test_share_file_with_valid_device_key_fails_at_network() {
         // Encryption succeeds; the failure comes from the network call to a
         // non-listening port (ConnectionRefused, immediate).
-        let settings = make_settings_with_server_url(); // 127.0.0.1:19999
+        let profile = make_profile_with_server_url(); // 127.0.0.1:19999
         let token_manager = make_token_manager_with_valid_token();
         let (_, public_key) = generate_key_pair();
         let device = make_device("device-valid-key", "server", Some(&public_key.to_string()));
         let result = share_file(
-            &settings,
+            &profile,
             &make_basic_request("device-valid-key"),
             &[device],
             &token_manager,
@@ -584,7 +584,7 @@ mod tests {
     fn test_share_file_fails_fast_on_first_invalid_device() {
         // Upfront validation iterates device_ids in order; the first invalid one
         // fails the whole request before any compression or encryption occurs.
-        let settings = make_settings_with_server_url();
+        let profile = make_profile_with_server_url();
         let token_manager = make_token_manager_with_valid_token();
         let device_no_key = make_device("device-no-key", "desktop", None);
         let request = ShareFileRequest {
@@ -594,7 +594,7 @@ mod tests {
             file_path: None,
         };
         let err = share_file(
-            &settings,
+            &profile,
             &request,
             &[device_no_key],
             &token_manager,

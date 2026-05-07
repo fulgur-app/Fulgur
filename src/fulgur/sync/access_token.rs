@@ -1,4 +1,4 @@
-use crate::fulgur::settings::SynchronizationSettings;
+use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::sync::synchronization::{SynchronizationError, handle_ureq_error};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use fulgur_common::api::sync::AccessTokenResponse;
@@ -86,23 +86,23 @@ impl TokenState {
 /// Request a JWT access token from the server using the device key
 ///
 /// ### Arguments
-/// - `synchronization_settings`: The synchronization settings containing device key
+/// - `profile`: The server profile to authenticate against (URL, email, id used to look up the device key)
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(AccessTokenResponse)`: The JWT access token and expiration info
 /// - `Err(SynchronizationError)`: If the token request failed
 fn request_access_token(
-    synchronization_settings: &SynchronizationSettings,
+    profile: &ServerProfile,
     http_agent: &ureq::Agent,
 ) -> Result<AccessTokenResponse, SynchronizationError> {
-    let Some(server_url) = synchronization_settings.server_url.clone() else {
+    let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
-    let Some(email) = synchronization_settings.email.clone() else {
+    let Some(email) = profile.email.clone() else {
         return Err(SynchronizationError::EmailMissing);
     };
-    let Some(device_api_key) = (match load_device_api_key_from_keychain() {
+    let Some(device_api_key) = (match load_device_api_key_from_keychain(&profile.id) {
         Ok(value) => value,
         Err(_) => return Err(SynchronizationError::DeviceKeyMissing),
     }) else {
@@ -158,7 +158,7 @@ fn is_token_valid(expires_at: &OffsetDateTime) -> bool {
 /// the refresh while others wait efficiently on the condition variable.
 ///
 /// ### Arguments
-/// - `synchronization_settings`: The synchronization settings
+/// - `profile`: The server profile to authenticate against
 /// - `token_manager`: Arc to the token state manager (thread-safe)
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
@@ -166,7 +166,7 @@ fn is_token_valid(expires_at: &OffsetDateTime) -> bool {
 /// - `Ok(String)`: A valid JWT access token
 /// - `Err(SynchronizationError)`: If token refresh failed
 pub fn get_valid_token(
-    synchronization_settings: &SynchronizationSettings,
+    profile: &ServerProfile,
     token_manager: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<String, SynchronizationError> {
@@ -219,7 +219,7 @@ pub fn get_valid_token(
     drop(state);
 
     log::debug!("Access token expired or missing, requesting new token");
-    let token_response = match request_access_token(synchronization_settings, http_agent) {
+    let token_response = match request_access_token(profile, http_agent) {
         Ok(r) => r,
         Err(e) => {
             let mut state = token_manager.state.lock();

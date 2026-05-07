@@ -1,7 +1,8 @@
 use super::access_token::{TokenStateManager, get_valid_token};
 use super::sse::connect_sse;
 use crate::fulgur::Fulgur;
-use crate::fulgur::settings::SynchronizationSettings;
+use crate::fulgur::settings::ServerProfile;
+use crate::fulgur::shared_state::SyncState;
 use crate::fulgur::sync::share;
 use crate::fulgur::ui::tabs::editor_tab;
 use crate::fulgur::ui::tabs::tab::Tab;
@@ -10,7 +11,7 @@ use crate::fulgur::utils::crypto_helper::{
 };
 use crate::fulgur::utils::sanitize::sanitize_filename;
 use fulgur_common::api::sync::{BeginResponse, InitialSynchronizationPayload};
-use gpui::{App, Context, Entity, SharedString, Window};
+use gpui::{App, Context, SharedString, Window};
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
 use std::{
@@ -115,25 +116,25 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
 /// Initial synchronization with the server. This endpoint returns both the encryption key and any shared files waiting for this device.
 ///
 /// ### Arguments
-/// - `server_url`: The server URL
-/// - `email`: The email
-/// - `key`: The encrypted device authentication key
+/// - `profile`: The server profile to synchronize with
+/// - `token_state`: Per-profile JWT token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(BeginResponse)`: The begin response containing encryption key and shared files
 /// - `Err(SynchronizationError)`: If the synchronization could not be performed
 pub fn initial_synchronization(
-    synchronization_settings: &SynchronizationSettings,
+    profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<BeginResponse, SynchronizationError> {
-    let Some(server_url) = synchronization_settings.server_url.clone() else {
+    let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
-    let Some(public_key) = synchronization_settings.public_key.clone() else {
-        return Err(SynchronizationError::MissingEncryptionKey); //TODO
+    let Some(public_key) = profile.public_key.clone() else {
+        return Err(SynchronizationError::MissingEncryptionKey);
     };
-    let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
+    let token = get_valid_token(profile, token_state, http_agent)?;
     let begin_url = format!("{server_url}/api/begin");
     let payload = InitialSynchronizationPayload { public_key };
     let mut response = http_agent
@@ -162,11 +163,12 @@ pub fn initial_synchronization(
     Ok(begin_response)
 }
 
-/// Fetches shared files from the server and stores them for processing without blocking app startup
+/// Fetches shared files from each active profile's server and starts SSE
+/// connections for real-time updates.
 ///
 /// ### Arguments
 /// - `entity`: The Fulgur entity
-/// - `cx`: The application context
+/// - `cx`: The application context.
 pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &gpui::App) {
     if !entity
         .read(cx)
@@ -179,114 +181,162 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     }
     let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
     if shared
-        .sync_state
-        .initialized
+        .sync_initialized
         .swap(true, std::sync::atomic::Ordering::SeqCst)
     {
         log::debug!("Sync already initialized by another window");
         return;
     }
     log::info!("Initializing sync system");
-    let settings = entity.read(cx).settings.clone();
-    let sync_server_connection_status = shared.sync_state.connection_status.clone();
-    let pending_shared_files = shared.sync_state.pending_shared_files.clone();
-    let device_name = shared.sync_state.device_name.clone();
-    let sse_tx = entity.read(cx).sse_state.sse_event_tx.clone();
-    let sse_shutdown_flag = entity.read(cx).sse_state.sse_shutdown_flag.clone();
-    let sse_thread_handle = entity.read(cx).sse_state.sse_thread_handle.clone();
-    let token_state = shared.sync_state.token_state.clone();
+    let active_profiles: Vec<ServerProfile> = entity
+        .read(cx)
+        .settings
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .iter()
+        .filter(|p| p.is_active)
+        .cloned()
+        .collect();
     let http_agent = Arc::clone(&shared.http_agent);
-    let max_file_size_bytes = shared.sync_state.max_file_size_bytes.clone();
-    thread::spawn(move || {
-        // Small delay to ensure app initialization doesn't block
-        thread::sleep(Duration::from_millis(100));
-        let server_url = settings
-            .app_settings
-            .synchronization_settings
-            .server_url
-            .clone();
-        let email = settings.app_settings.synchronization_settings.email.clone();
-        let key = match load_device_api_key_from_keychain() {
-            Ok(value) => value,
-            Err(e) => {
-                log::error!("Failed to load device API key from keychain: {e}");
-                set_sync_server_connection_status(
-                    &sync_server_connection_status,
-                    SynchronizationStatus::Disconnected,
-                );
-                return;
-            }
-        };
-        if server_url.is_none() || email.is_none() || key.is_none() {
+    for profile in active_profiles {
+        let sync_state = shared.sync_state_for(&profile.id);
+        let sse_tx = entity
+            .read(cx)
+            .sse_states
+            .get(&profile.id)
+            .and_then(|s| s.sse_event_tx.clone());
+        let sse_shutdown_flag = entity
+            .read(cx)
+            .sse_states
+            .get(&profile.id)
+            .and_then(|s| s.sse_shutdown_flag.clone());
+        let sse_thread_handle = entity
+            .read(cx)
+            .sse_states
+            .get(&profile.id)
+            .map(|s| s.sse_thread_handle.clone());
+        let http_agent_clone = Arc::clone(&http_agent);
+        thread::spawn(move || {
+            run_profile_bootstrap(
+                &profile,
+                &sync_state,
+                sse_tx,
+                sse_shutdown_flag,
+                sse_thread_handle,
+                &http_agent_clone,
+            );
+        });
+    }
+}
+
+/// Run the bootstrap sequence for a single profile in a background thread.
+///
+/// ### Arguments
+/// - `profile`: The profile being bootstrapped.
+/// - `sync_state`: Shared per-profile sync state.
+/// - `sse_tx`: Optional SSE event sender; `None` skips the SSE step.
+/// - `sse_shutdown_flag`: Shutdown flag signalled by `restart_sse_connection`.
+/// - `sse_thread_handle`: Slot for the SSE worker thread handle.
+/// - `http_agent`: Shared HTTP agent.
+fn run_profile_bootstrap(
+    profile: &ServerProfile,
+    sync_state: &Arc<SyncState>,
+    sse_tx: Option<std::sync::mpsc::Sender<crate::fulgur::sync::sse::SseEvent>>,
+    sse_shutdown_flag: Option<Arc<AtomicBool>>,
+    sse_thread_handle: Option<Arc<Mutex<Option<thread::JoinHandle<()>>>>>,
+    http_agent: &Arc<ureq::Agent>,
+) {
+    // Small delay to ensure app initialization doesn't block
+    thread::sleep(Duration::from_millis(100));
+    let key = match load_device_api_key_from_keychain(&profile.id) {
+        Ok(value) => value,
+        Err(e) => {
+            log::error!(
+                "Profile '{}': failed to load device API key from keychain: {e}",
+                profile.name
+            );
             set_sync_server_connection_status(
-                &sync_server_connection_status,
+                &sync_state.connection_status,
                 SynchronizationStatus::Disconnected,
             );
             return;
         }
-        match initial_synchronization(
-            &settings.app_settings.synchronization_settings,
-            &token_state,
-            &http_agent,
-        ) {
-            Ok(begin_response) => {
-                log::info!("Successfully connected to sync server");
-                set_sync_server_connection_status(
-                    &sync_server_connection_status,
-                    SynchronizationStatus::Connected,
-                );
-                store_server_max_file_size(
-                    &max_file_size_bytes,
-                    begin_response.max_file_size_bytes,
-                );
-                {
-                    let mut device_name = device_name.lock();
-                    *device_name = Some(begin_response.device_name);
-                }
-                {
-                    let mut files = pending_shared_files.lock();
-                    *files = begin_response
-                        .shares
-                        .into_iter()
-                        .map(|mut share| {
-                            share.file_name = sanitize_filename(&share.file_name);
-                            share
-                        })
-                        .collect();
-                }
-                if let (Some(tx), Some(shutdown)) = (sse_tx, sse_shutdown_flag) {
-                    log::info!("Starting SSE connection for real-time updates");
-                    match connect_sse(
-                        &settings.app_settings.synchronization_settings,
-                        tx,
-                        shutdown,
-                        sync_server_connection_status.clone(),
-                        &token_state,
-                        &http_agent,
-                        &pending_shared_files,
-                    ) {
-                        Ok(handle) => {
-                            *sse_thread_handle.lock() = Some(handle);
-                        }
-                        Err(e) => {
-                            log::error!("Failed to start SSE connection: {e}");
-                        }
-                    }
-                } else {
-                    log::warn!(
-                        "SSE event sender or shutdown flag not available, cannot start SSE connection"
-                    );
-                }
+    };
+    if profile.server_url.is_none() || profile.email.is_none() || key.is_none() {
+        set_sync_server_connection_status(
+            &sync_state.connection_status,
+            SynchronizationStatus::Disconnected,
+        );
+        return;
+    }
+    match initial_synchronization(profile, &sync_state.token_state, http_agent) {
+        Ok(begin_response) => {
+            log::info!("Profile '{}': connected to sync server", profile.name);
+            set_sync_server_connection_status(
+                &sync_state.connection_status,
+                SynchronizationStatus::Connected,
+            );
+            store_server_max_file_size(
+                &sync_state.max_file_size_bytes,
+                begin_response.max_file_size_bytes,
+            );
+            {
+                let mut device_name = sync_state.device_name.lock();
+                *device_name = Some(begin_response.device_name);
             }
-            Err(e) => {
-                log::error!("Failed to fetch shared files: {e}");
-                set_sync_server_connection_status(
-                    &sync_server_connection_status,
-                    SynchronizationStatus::Disconnected,
+            {
+                let mut files = sync_state.pending_shared_files.lock();
+                *files = begin_response
+                    .shares
+                    .into_iter()
+                    .map(|mut share| {
+                        share.file_name = sanitize_filename(&share.file_name);
+                        share
+                    })
+                    .collect();
+            }
+            if let (Some(tx), Some(shutdown), Some(handle_storage)) =
+                (sse_tx, sse_shutdown_flag, sse_thread_handle)
+            {
+                log::info!(
+                    "Profile '{}': starting SSE connection for real-time updates",
+                    profile.name
+                );
+                match connect_sse(
+                    profile,
+                    tx,
+                    shutdown,
+                    sync_state.connection_status.clone(),
+                    &sync_state.token_state,
+                    http_agent,
+                    &sync_state.pending_shared_files,
+                ) {
+                    Ok(handle) => {
+                        *handle_storage.lock() = Some(handle);
+                    }
+                    Err(e) => {
+                        log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
+                    }
+                }
+            } else {
+                log::warn!(
+                    "Profile '{}': SSE channels not available, skipping SSE start",
+                    profile.name
                 );
             }
         }
-    });
+        Err(e) => {
+            log::error!(
+                "Profile '{}': initial synchronization failed: {e}",
+                profile.name
+            );
+            set_sync_server_connection_status(
+                &sync_state.connection_status,
+                SynchronizationStatus::Disconnected,
+            );
+        }
+    }
 }
 
 /// Set the synchronization status of the sync server
@@ -301,38 +351,35 @@ pub fn set_sync_server_connection_status(
     *sync_server_connection_status.lock() = new_status;
 }
 
-/// Perform initial synchronization with the server in a background thread
+/// Perform initial synchronization with a single profile's server in a
+/// background thread.
 ///
 /// Sets the connection status to `Connecting` immediately, then spawns a background
 /// thread to perform the actual network call. The UI remains responsive while the
 /// connection is in progress.
 ///
 /// ### Arguments
-/// - `entity`: The Fulgur entity
-/// - `cx`: The context
-pub fn perform_initial_synchronization(entity: &Entity<crate::fulgur::Fulgur>, cx: &mut App) {
-    let synchronization_settings = entity
-        .read(cx)
-        .settings
-        .app_settings
-        .synchronization_settings
-        .clone();
+/// - `profile`: The server profile to synchronize with.
+/// - `cx`: The application context (used to obtain shared state).
+pub fn perform_initial_synchronization(profile: ServerProfile, cx: &mut App) {
     let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+    let sync_state = shared.sync_state_for(&profile.id);
     set_sync_server_connection_status(
-        &shared.sync_state.connection_status,
+        &sync_state.connection_status,
         SynchronizationStatus::Connecting,
     );
-    *shared.sync_state.connecting_since.lock() = Some(Instant::now());
-    let token_state = Arc::clone(&shared.sync_state.token_state);
+    *sync_state.connecting_since.lock() = Some(Instant::now());
+    let token_state = Arc::clone(&sync_state.token_state);
     let http_agent = Arc::clone(&shared.http_agent);
-    let connection_status = shared.sync_state.connection_status.clone();
-    let connecting_since = shared.sync_state.connecting_since.clone();
-    let device_name = shared.sync_state.device_name.clone();
-    let pending_shared_files = shared.sync_state.pending_shared_files.clone();
-    let pending_notification = shared.sync_state.pending_notification.clone();
-    let max_file_size_bytes = shared.sync_state.max_file_size_bytes.clone();
+    let profile_name = profile.name.clone();
+    let connection_status = sync_state.connection_status.clone();
+    let connecting_since = sync_state.connecting_since.clone();
+    let device_name = sync_state.device_name.clone();
+    let pending_shared_files = sync_state.pending_shared_files.clone();
+    let pending_notification = sync_state.pending_notification.clone();
+    let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
     thread::spawn(move || {
-        let result = initial_synchronization(&synchronization_settings, &token_state, &http_agent);
+        let result = initial_synchronization(&profile, &token_state, &http_agent);
         let (notification, status) = match result {
             Ok(begin_response) => {
                 store_server_max_file_size(
@@ -351,7 +398,7 @@ pub fn perform_initial_synchronization(entity: &Entity<crate::fulgur::Fulgur>, c
                     (
                         NotificationType::Success,
                         SharedString::from(format!(
-                            "Connection successful as {}",
+                            "{profile_name}: Connection successful as {}",
                             begin_response.device_name
                         )),
                     ),
@@ -361,7 +408,7 @@ pub fn perform_initial_synchronization(entity: &Entity<crate::fulgur::Fulgur>, c
             Err(e) => (
                 (
                     NotificationType::Error,
-                    SharedString::from(format!("Connection failed: {e}")),
+                    SharedString::from(format!("{profile_name}: Connection failed: {e}")),
                 ),
                 SynchronizationStatus::from_error(&e),
             ),
@@ -372,37 +419,34 @@ pub fn perform_initial_synchronization(entity: &Entity<crate::fulgur::Fulgur>, c
     });
 }
 
-/// Perform initial synchronization with a progress spinner notification.
+/// Perform initial synchronization with a single profile's server, showing
+/// a progress spinner.
 ///
 /// ### Arguments
-/// - `entity`: The Fulgur entity
-/// - `window`: Target window for the notification
-/// - `cx`: The application context
+/// - `profile`: The server profile to synchronize with.
+/// - `window`: Target window for the progress notification.
+/// - `cx`: The application context.
 pub fn perform_initial_synchronization_with_progress(
-    entity: &Entity<crate::fulgur::Fulgur>,
+    profile: ServerProfile,
     window: &mut Window,
     cx: &mut App,
 ) {
-    let synchronization_settings = entity
-        .read(cx)
-        .settings
-        .app_settings
-        .synchronization_settings
-        .clone();
     let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+    let sync_state = shared.sync_state_for(&profile.id);
     set_sync_server_connection_status(
-        &shared.sync_state.connection_status,
+        &sync_state.connection_status,
         SynchronizationStatus::Connecting,
     );
-    *shared.sync_state.connecting_since.lock() = Some(Instant::now());
-    let token_state = Arc::clone(&shared.sync_state.token_state);
+    *sync_state.connecting_since.lock() = Some(Instant::now());
+    let token_state = Arc::clone(&sync_state.token_state);
     let http_agent = Arc::clone(&shared.http_agent);
-    let connection_status = shared.sync_state.connection_status.clone();
-    let connecting_since = shared.sync_state.connecting_since.clone();
-    let device_name = shared.sync_state.device_name.clone();
-    let pending_shared_files = shared.sync_state.pending_shared_files.clone();
-    let pending_notification = shared.sync_state.pending_notification.clone();
-    let max_file_size_bytes = shared.sync_state.max_file_size_bytes.clone();
+    let profile_name = profile.name.clone();
+    let connection_status = sync_state.connection_status.clone();
+    let connecting_since = sync_state.connecting_since.clone();
+    let device_name = sync_state.device_name.clone();
+    let pending_shared_files = sync_state.pending_shared_files.clone();
+    let pending_notification = sync_state.pending_notification.clone();
+    let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
 
     let done = Arc::new(AtomicBool::new(false));
     let done_for_thread = Arc::clone(&done);
@@ -417,14 +461,14 @@ pub fn perform_initial_synchronization_with_progress(
     let progress = start_progress(
         window,
         cx,
-        "Connecting to Fulgurant...".into(),
+        format!("Connecting to {profile_name}...").into(),
         cancel_callback,
     );
     let cancel_flag = progress.cancel_flag();
     let cancel_flag_for_thread = Arc::clone(&cancel_flag);
 
     thread::spawn(move || {
-        let result = initial_synchronization(&synchronization_settings, &token_state, &http_agent);
+        let result = initial_synchronization(&profile, &token_state, &http_agent);
 
         if cancel_flag_for_thread.load(Ordering::Acquire) {
             done_for_thread.store(true, Ordering::Release);
@@ -449,7 +493,7 @@ pub fn perform_initial_synchronization_with_progress(
                     (
                         NotificationType::Success,
                         SharedString::from(format!(
-                            "Connection successful as {}",
+                            "{profile_name}: Connection successful as {}",
                             begin_response.device_name
                         )),
                     ),
@@ -459,7 +503,7 @@ pub fn perform_initial_synchronization_with_progress(
             Err(e) => (
                 (
                     NotificationType::Error,
-                    SharedString::from(format!("Connection failed: {e}")),
+                    SharedString::from(format!("{profile_name}: Connection failed: {e}")),
                 ),
                 SynchronizationStatus::from_error(&e),
             ),
@@ -618,35 +662,39 @@ impl Fulgur {
     /// - `window`: The window to create new tabs in
     /// - `cx`: The application context
     pub fn process_shared_files_from_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let shared_files_to_open = if let Some(mut pending) = self
-            .shared_state(cx)
-            .sync_state
-            .pending_shared_files
-            .try_lock()
-        {
-            if pending.is_empty() {
-                Vec::new()
-            } else {
-                log::info!(
-                    "Processing {} shared file(s) from sync server",
-                    pending.len()
-                );
-                pending.drain(..).collect()
-            }
-        } else {
-            Vec::new()
+        let primary_profile_id = self
+            .settings
+            .app_settings
+            .synchronization_settings
+            .primary_profile()
+            .map(|p| p.id.clone());
+        let Some(primary_profile_id) = primary_profile_id else {
+            return;
         };
+        let primary_sync_state = self.shared_state(cx).sync_state_for(&primary_profile_id);
+        let shared_files_to_open =
+            if let Some(mut pending) = primary_sync_state.pending_shared_files.try_lock() {
+                if pending.is_empty() {
+                    Vec::new()
+                } else {
+                    log::info!(
+                        "Processing {} shared file(s) from sync server",
+                        pending.len()
+                    );
+                    pending.drain(..).collect()
+                }
+            } else {
+                Vec::new()
+            };
         if !shared_files_to_open.is_empty() {
-            let encryption_key_opt = match load_private_key_from_keychain() {
+            let encryption_key_opt = match load_private_key_from_keychain(&primary_profile_id) {
                 Ok(key) => key,
                 Err(_) => {
                     log::error!("Cannot decrypt shared files: encryption key not available");
                     None
                 }
             };
-            let server_max_size = self
-                .shared_state(cx)
-                .sync_state
+            let server_max_size = primary_sync_state
                 .max_file_size_bytes
                 .load(std::sync::atomic::Ordering::Acquire);
             if let Some(encryption_key) = encryption_key_opt {

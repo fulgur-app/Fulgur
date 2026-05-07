@@ -421,7 +421,11 @@ fn test_process_window_state_updates_drains_local_and_sync_pending_notifications
                 NotificationType::Warning,
                 "pending from current window".into(),
             ));
-            *this.shared_state(cx).sync_state.pending_notification.lock() = Some((
+            *this
+                .shared_state(cx)
+                .primary_sync_state()
+                .pending_notification
+                .lock() = Some((
                 NotificationType::Success,
                 "pending from sync background task".into(),
             ));
@@ -438,7 +442,7 @@ fn test_process_window_state_updates_drains_local_and_sync_pending_notifications
             );
             assert!(
                 this.shared_state(cx)
-                    .sync_state
+                    .primary_sync_state()
                     .pending_notification
                     .lock()
                     .is_none(),

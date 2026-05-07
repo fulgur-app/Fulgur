@@ -1,5 +1,5 @@
 use crate::fulgur::{
-    settings::SynchronizationSettings,
+    settings::ServerProfile,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
         share::{MAX_SYNC_SHARE_PAYLOAD_BYTES, fetch_pending_shares},
@@ -91,19 +91,19 @@ fn read_line_with_timeout<R: Read>(
 /// Fetch pending shares from the server into the shared queue.
 ///
 /// ### Arguments
-/// - `synchronization_settings`: The synchronization settings
-/// - `token_state`: Arc to the token state manager
+/// - `profile`: The server profile to fetch from
+/// - `token_state`: Arc to the per-profile token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
 /// - `pending_shared_files`: Shared queue that the UI tick drains
 /// - `reason`: Short tag for logging ("reconnect" or "doorbell")
 fn fetch_pending_shares_into(
-    synchronization_settings: &SynchronizationSettings,
+    profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &Arc<ureq::Agent>,
     pending_shared_files: &Arc<Mutex<Vec<SharedFileResponse>>>,
     reason: &str,
 ) {
-    match fetch_pending_shares(synchronization_settings, token_state, http_agent) {
+    match fetch_pending_shares(profile, token_state, http_agent) {
         Ok(shares) => {
             if shares.is_empty() {
                 log::debug!("Fetch ({reason}): no pending shares");
@@ -142,19 +142,19 @@ fn fetch_pending_shares_into(
 /// The connection runs in a background thread and automatically reconnects on failure.
 ///
 /// ### Arguments
-/// - `synchronization_settings`: The synchronization settings containing server URL, email, and key
+/// - `profile`: The server profile (URL, email, id) to connect to
 /// - `event_tx`: Channel sender for sending SSE events to the main thread
 /// - `shutdown_flag`: Atomic boolean flag to signal the SSE thread to shutdown
 /// - `sync_server_connection_status`: Arc-wrapped connection status to update on connection/disconnection
-/// - `token_state`: Arc to the token state manager for authentication
+/// - `token_state`: Arc to the per-profile token state manager for authentication
 /// - `http_agent`: Shared HTTP agent for connection pooling
-/// - `pending_shared_files`: Shared queue for incoming file shares
+/// - `pending_shared_files`: Per-profile queue for incoming file shares
 ///
 /// ### Returns
 /// - `Ok(thread::JoinHandle<()>)`: If the SSE connection thread was spawned successfully
-/// - `Err(SynchronizationError)`: If required settings are missing
+/// - `Err(SynchronizationError)`: If required profile fields are missing
 pub fn connect_sse(
-    synchronization_settings: &SynchronizationSettings,
+    profile: &ServerProfile,
     event_tx: Sender<SseEvent>,
     shutdown_flag: Arc<AtomicBool>,
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
@@ -162,12 +162,12 @@ pub fn connect_sse(
     http_agent: &Arc<ureq::Agent>,
     pending_shared_files: &Arc<Mutex<Vec<SharedFileResponse>>>,
 ) -> Result<thread::JoinHandle<()>, SynchronizationError> {
-    let server_url = synchronization_settings
+    let server_url = profile
         .server_url
         .clone()
         .ok_or(SynchronizationError::ServerUrlMissing)?;
     let sse_url = format!("{server_url}/api/sse");
-    let settings_clone = synchronization_settings.clone();
+    let profile_clone = profile.clone();
     let token_state_clone = Arc::clone(token_state);
     let http_agent_clone = Arc::clone(http_agent);
     let pending_shared_files_clone = Arc::clone(pending_shared_files);
@@ -179,21 +179,21 @@ pub fn connect_sse(
                 log::info!("SSE connection shutdown requested, stopping...");
                 break;
             }
-            let token =
-                match get_valid_token(&settings_clone, &token_state_clone, &http_agent_clone) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        log::error!("Failed to get valid token for SSE: {e}");
-                        set_sync_server_connection_status(
-                            &sync_server_connection_status,
-                            SynchronizationStatus::AuthenticationFailed,
-                        );
-                        let delay = backoff.record_failure();
-                        log::info!("Retrying SSE connection after {delay:?}");
-                        thread::sleep(delay);
-                        continue;
-                    }
-                };
+            let token = match get_valid_token(&profile_clone, &token_state_clone, &http_agent_clone)
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    log::error!("Failed to get valid token for SSE: {e}");
+                    set_sync_server_connection_status(
+                        &sync_server_connection_status,
+                        SynchronizationStatus::AuthenticationFailed,
+                    );
+                    let delay = backoff.record_failure();
+                    log::info!("Retrying SSE connection after {delay:?}");
+                    thread::sleep(delay);
+                    continue;
+                }
+            };
             log::info!("Connecting to SSE endpoint: {sse_url}");
             let response = match http_agent_clone
                 .get(&sse_url)
@@ -209,7 +209,7 @@ pub fn connect_sse(
                     log::info!("SSE connection established");
                     backoff.record_success();
                     fetch_pending_shares_into(
-                        &settings_clone,
+                        &profile_clone,
                         &token_state_clone,
                         &http_agent_clone,
                         &pending_shared_files_clone,
@@ -274,7 +274,7 @@ pub fn connect_sse(
                                     notification.share_id
                                 );
                                 fetch_pending_shares_into(
-                                    &settings_clone,
+                                    &profile_clone,
                                     &token_state_clone,
                                     &http_agent_clone,
                                     &pending_shared_files_clone,

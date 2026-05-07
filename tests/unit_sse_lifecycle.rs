@@ -8,7 +8,7 @@
 //! - `connect_sse` immediate error when server URL is missing
 //! - Shutdown-flag-first exit: thread exits in the first loop iteration
 
-use fulgur::fulgur::settings::SynchronizationSettings;
+use fulgur::fulgur::settings::ServerProfile;
 use fulgur::fulgur::sync::access_token::TokenStateManager;
 use fulgur::fulgur::sync::sse::{SseEvent, SseState, connect_sse};
 use fulgur::fulgur::sync::synchronization::{
@@ -35,10 +35,10 @@ fn make_connection_status(initial: SynchronizationStatus) -> Arc<Mutex<Synchroni
     Arc::new(Mutex::new(initial))
 }
 
-fn settings_with_server_url() -> SynchronizationSettings {
-    let mut s = SynchronizationSettings::new();
-    s.server_url = Some("https://example.com".to_string());
-    s
+fn profile_with_server_url() -> ServerProfile {
+    let mut p = ServerProfile::new("Test");
+    p.server_url = Some("https://example.com".to_string());
+    p
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +222,7 @@ fn test_set_sync_server_connection_status_thread_safe() {
 #[test]
 fn test_connect_sse_fails_without_server_url() {
     // connect_sse must return Err(ServerUrlMissing) immediately and not spawn a thread.
-    let settings = SynchronizationSettings::new(); // server_url = None
+    let profile = ServerProfile::new("Test"); // server_url = None
     let (tx, _rx) = std::sync::mpsc::channel();
     let shutdown_flag = Arc::new(AtomicBool::new(false));
     let status = make_connection_status(SynchronizationStatus::Disconnected);
@@ -230,7 +230,7 @@ fn test_connect_sse_fails_without_server_url() {
     let http_agent = Arc::new(make_http_agent());
 
     let result = connect_sse(
-        &settings,
+        &profile,
         tx,
         shutdown_flag,
         status,
@@ -255,7 +255,7 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
     // Setting the shutdown flag to true before calling connect_sse means the
     // spawned thread checks the flag at the top of its loop and exits without
     // performing any network I/O or sleeping.
-    let settings = settings_with_server_url();
+    let profile = profile_with_server_url();
     let (tx, _rx) = std::sync::mpsc::channel();
     let shutdown_flag = Arc::new(AtomicBool::new(true)); // pre-set
     let status = make_connection_status(SynchronizationStatus::Disconnected);
@@ -263,7 +263,7 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
     let http_agent = Arc::new(make_http_agent());
 
     let handle = connect_sse(
-        &settings,
+        &profile,
         tx,
         shutdown_flag,
         status,
@@ -291,7 +291,7 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
 fn test_connect_sse_returns_ok_handle_with_valid_settings() {
     // Verify that connect_sse returns Ok(JoinHandle) when the server URL is present,
     // regardless of whether the connection succeeds later.
-    let settings = settings_with_server_url();
+    let profile = profile_with_server_url();
     let (tx, _rx) = std::sync::mpsc::channel();
     let shutdown_flag = Arc::new(AtomicBool::new(true)); // shut down immediately
     let status = make_connection_status(SynchronizationStatus::Disconnected);
@@ -299,7 +299,7 @@ fn test_connect_sse_returns_ok_handle_with_valid_settings() {
     let http_agent = Arc::new(make_http_agent());
 
     let result = connect_sse(
-        &settings,
+        &profile,
         tx,
         shutdown_flag,
         status,

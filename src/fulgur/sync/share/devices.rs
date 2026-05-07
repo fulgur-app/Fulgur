@@ -1,5 +1,5 @@
 use crate::fulgur::{
-    settings::SynchronizationSettings,
+    settings::ServerProfile,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
         synchronization::{SynchronizationError, handle_ureq_error},
@@ -32,22 +32,22 @@ pub fn get_icon(device: &Device) -> Icon {
 /// Get the devices from the server
 ///
 /// ### Arguments
-/// - `synchronization_settings`: The synchronization settings
-/// - `token_state`: Arc to the token state manager (thread-safe with condition variable)
+/// - `profile`: The server profile to query
+/// - `token_state`: Arc to the per-profile token state manager (thread-safe with condition variable)
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok((Vec<Device>, Option<u64>))`: The devices and the server-reported maximum share file size (if advertised)
 /// - `Err(SynchronizationError)`: If the devices could not be retrieved
 pub fn get_devices(
-    synchronization_settings: &SynchronizationSettings,
+    profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<(Vec<Device>, Option<u64>), SynchronizationError> {
-    let Some(server_url) = synchronization_settings.server_url.clone() else {
+    let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
-    let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
+    let token = get_valid_token(profile, token_state, http_agent)?;
     let devices_url = format!("{server_url}/api/devices");
     let mut response = http_agent
         .get(&devices_url)
@@ -86,7 +86,7 @@ pub fn get_devices(
 #[cfg(test)]
 mod tests {
     use super::get_devices;
-    use crate::fulgur::settings::SynchronizationSettings;
+    use crate::fulgur::settings::ServerProfile;
     use crate::fulgur::sync::{
         access_token::TokenStateManager, synchronization::SynchronizationError,
     };
@@ -98,9 +98,9 @@ mod tests {
 
     #[test]
     fn test_get_devices_fails_without_server_url() {
-        let settings = SynchronizationSettings::new(); // server_url = None
+        let profile = ServerProfile::new("Test"); // server_url = None
         let result = get_devices(
-            &settings,
+            &profile,
             &Arc::new(TokenStateManager::new()),
             &make_http_agent(),
         );
