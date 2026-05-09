@@ -137,6 +137,49 @@ impl SynchronizationSettings {
         }
         &mut self.profiles[0]
     }
+
+    /// Look up a profile by id.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The id to search for.
+    ///
+    /// ### Returns
+    /// - `Some(&ServerProfile)`: The matching profile.
+    /// - `None`: When no profile with that id exists.
+    pub fn find_profile(&self, profile_id: &str) -> Option<&ServerProfile> {
+        self.profiles.iter().find(|p| p.id == profile_id)
+    }
+
+    /// Look up a profile by id with mutable access.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The id to search for.
+    ///
+    /// ### Returns
+    /// - `Some(&mut ServerProfile)`: The matching profile.
+    /// - `None`: When no profile with that id exists.
+    pub fn find_profile_mut(&mut self, profile_id: &str) -> Option<&mut ServerProfile> {
+        self.profiles.iter_mut().find(|p| p.id == profile_id)
+    }
+
+    /// Check whether a name is already used by another profile.
+    ///
+    /// ### Arguments
+    /// - `candidate`: The candidate display name.
+    /// - `exclude_id`: Profile id to skip during the comparison.
+    ///
+    /// ### Returns
+    /// - `true`: At least one other profile carries the same normalized name.
+    /// - `false`: The name is unique among the other profiles.
+    pub fn name_collides(&self, candidate: &str, exclude_id: Option<&str>) -> bool {
+        let normalized = candidate.trim().to_lowercase();
+        self.profiles.iter().any(|profile| {
+            if exclude_id == Some(profile.id.as_str()) {
+                return false;
+            }
+            profile.name.trim().to_lowercase() == normalized
+        })
+    }
 }
 
 /// Custom deserializer that accepts both the legacy single-server JSON shape

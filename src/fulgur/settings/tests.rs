@@ -517,6 +517,206 @@ fn validate_truncates_profiles_above_max() {
 }
 
 #[test]
+fn synchronization_settings_find_profile_returns_match() {
+    let mut settings = Settings::new();
+    let profile = ServerProfile::new("Server A");
+    let id = profile.id.clone();
+    settings
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .push(profile);
+    let found = settings
+        .app_settings
+        .synchronization_settings
+        .find_profile(&id);
+    assert!(
+        found.is_some(),
+        "lookup by id must find the inserted profile"
+    );
+    let missing = settings
+        .app_settings
+        .synchronization_settings
+        .find_profile("does-not-exist");
+    assert!(missing.is_none(), "unknown id must return None");
+}
+
+#[test]
+fn synchronization_settings_find_profile_mut_allows_mutation() {
+    let mut settings = Settings::new();
+    let profile = ServerProfile::new("Original");
+    let id = profile.id.clone();
+    settings
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .push(profile);
+    let found = settings
+        .app_settings
+        .synchronization_settings
+        .find_profile_mut(&id)
+        .expect("profile should be present");
+    found.name = "Renamed".into();
+    let stored = settings
+        .app_settings
+        .synchronization_settings
+        .find_profile(&id)
+        .expect("profile should still be present after mutation");
+    assert_eq!(stored.name, "Renamed");
+}
+
+#[test]
+fn synchronization_settings_name_collides_is_case_insensitive_and_trimmed() {
+    let mut settings = Settings::new();
+    settings
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .push(ServerProfile::new("Fulgurant"));
+    assert!(
+        settings
+            .app_settings
+            .synchronization_settings
+            .name_collides("  fulgurant  ", None),
+        "case-insensitive comparison must match after trimming"
+    );
+    assert!(
+        !settings
+            .app_settings
+            .synchronization_settings
+            .name_collides("home", None),
+        "different name must not collide"
+    );
+}
+
+#[test]
+fn synchronization_settings_name_collides_excludes_self() {
+    let mut settings = Settings::new();
+    let profile = ServerProfile::new("Office");
+    let id = profile.id.clone();
+    settings
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .push(profile);
+    assert!(
+        !settings
+            .app_settings
+            .synchronization_settings
+            .name_collides("Office", Some(&id)),
+        "exclude_id must skip the profile being edited"
+    );
+    assert!(
+        settings
+            .app_settings
+            .synchronization_settings
+            .name_collides("Office", Some("other-id")),
+        "non-matching exclude_id must still detect the collision"
+    );
+}
+
+#[test]
+fn load_from_path_persists_legacy_synchronization_migration() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    let legacy_json = r#"{
+        "editor_settings": {
+            "show_line_numbers": true,
+            "show_indent_guides": true,
+            "soft_wrap": false,
+            "font_size": 14.0,
+            "tab_size": 4,
+            "markdown_settings": {
+                "show_markdown_preview": true,
+                "show_markdown_toolbar": false
+            },
+            "watch_files": true
+        },
+        "app_settings": {
+            "confirm_exit": true,
+            "theme": "Default Light",
+            "synchronization_settings": {
+                "is_synchronization_activated": true,
+                "server_url": "https://example.com",
+                "email": "user@example.com",
+                "public_key": "age1abc"
+            }
+        },
+        "recent_files": {
+            "files": [],
+            "max_files": 10
+        }
+    }"#;
+    std::fs::write(&path, legacy_json).unwrap();
+
+    let first = Settings::load_from_path(&path).unwrap();
+    let migrated_id = first
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .first()
+        .expect("legacy load should produce one profile")
+        .id
+        .clone();
+
+    let on_disk_value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let sync = on_disk_value
+        .get("app_settings")
+        .and_then(|v| v.get("synchronization_settings"))
+        .expect("synchronization_settings should still exist");
+    assert!(
+        sync.get("profiles").is_some(),
+        "settings file must be rewritten with the new `profiles` shape"
+    );
+    assert!(
+        sync.get("server_url").is_none(),
+        "legacy `server_url` must be gone after migration"
+    );
+
+    let second = Settings::load_from_path(&path).unwrap();
+    let second_id = second
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .first()
+        .expect("second load should still find the profile")
+        .id
+        .clone();
+    assert_eq!(
+        migrated_id, second_id,
+        "profile id must be stable across reloads once the new shape is on disk"
+    );
+}
+
+#[test]
+fn load_from_path_does_not_rewrite_new_shape_settings() {
+    // Sanity check: the migration-rewrite path must not touch settings files
+    // that are already in the new `profiles` shape.
+    use crate::fulgur::settings::ServerProfile;
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    let mut settings = Settings::new();
+    settings
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .push(ServerProfile::new("Already Migrated"));
+    settings.save_to_path(&path).unwrap();
+    let backup_path = crate::fulgur::utils::atomic_write::backup_path_for(&path);
+    assert!(
+        !backup_path.exists(),
+        "no backup expected before any rewrite occurs"
+    );
+
+    let _loaded = Settings::load_from_path(&path).unwrap();
+    assert!(
+        !backup_path.exists(),
+        "loading new-shape settings must not trigger a rewrite (which would create a backup)"
+    );
+}
+
+#[test]
 fn save_to_path_creates_backup_of_previous_file() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("settings.json");
