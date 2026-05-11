@@ -147,7 +147,7 @@ fn render_master_switch(entity: &Entity<Fulgur>) -> SettingItem {
                         div()
                             .text_sm()
                             .text_color(cx.theme().muted_foreground)
-                            .child("Master switch for synchronization. When off, no server profile connects."),
+                            .child("Master switch for synchronization. When off, all connections to Fulgurant instances are disabled."),
                     ),
             )
             .child(
@@ -428,7 +428,7 @@ fn render_add_server_button(entity: &Entity<Fulgur>) -> SettingItem {
             .mt_2()
             .child(
                 Button::new("add-server-profile")
-                    .child("Add server")
+                    .child("Add Fulgurant instance")
                     .small()
                     .primary()
                     .cursor_pointer()
@@ -446,7 +446,7 @@ fn render_add_server_button(entity: &Entity<Fulgur>) -> SettingItem {
                                 (
                                     gpui_component::notification::NotificationType::Error,
                                     SharedString::from(format!(
-                                        "Maximum of {MAX_PROFILES} server profiles reached."
+                                        "Maximum of {MAX_PROFILES} Fulgurant instances reached."
                                     )),
                                 ),
                                 cx,

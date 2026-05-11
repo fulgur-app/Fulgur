@@ -203,7 +203,7 @@ impl Fulgur {
                 (
                     NotificationType::Error,
                     SharedString::from(format!(
-                        "Maximum of {MAX_PROFILES} server profiles reached."
+                        "Maximum of {MAX_PROFILES} Fulgurant instances reached."
                     )),
                 ),
                 cx,
@@ -284,7 +284,12 @@ impl Fulgur {
 
         let entity = cx.entity();
         let viewport_height = window.viewport_size().height;
-        let title: SharedString = if is_new { "Add Server" } else { "Edit Server" }.into();
+        let title: SharedString = if is_new {
+            "Add Fulgurant instance"
+        } else {
+            "Edit Fulgurant instance"
+        }
+        .into();
 
         window.open_sheet(cx, move |sheet, _window, cx| {
             let state_for_body = Arc::clone(&state);
