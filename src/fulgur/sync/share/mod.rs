@@ -8,4 +8,4 @@ pub use compression::decompress_content;
 pub use devices::{Device, get_devices, get_icon};
 pub use fetch::fetch_pending_shares;
 pub use send::{MAX_SYNC_SHARE_PAYLOAD_BYTES, share_file};
-pub use types::{ShareFileRequest, ShareResult};
+pub use types::{ProfileShareOutcome, ShareFileRequest, ShareResult, format_multi_profile_summary};
