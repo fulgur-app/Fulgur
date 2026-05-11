@@ -360,9 +360,8 @@ fn render_profile_row(
 /// - `impl IntoElement`: The pill element.
 fn render_status_pill(profile: &ServerProfile, master_on: bool, cx: &App) -> impl IntoElement {
     let status = get_profile_status(profile, master_on, cx);
-    let label = profile_status_label(status);
     let (bg, fg) = pill_colors(status, cx);
-    Label::new(label)
+    Label::new(status.label())
         .rounded_lg()
         .border_1()
         .border_color(bg)
@@ -390,25 +389,6 @@ fn get_profile_status(profile: &ServerProfile, master_on: bool, cx: &App) -> Syn
         .get(&profile.id)
         .map(|state| *state.connection_status.lock())
         .unwrap_or(SynchronizationStatus::NotActivated)
-}
-
-/// Resolve the status label for a profile.
-///
-/// ### Arguments
-/// - `connection_status`: The profile's status enum value.
-///
-/// ### Returns
-/// - `&'static str`: The displayed status label.
-fn profile_status_label(connection_status: SynchronizationStatus) -> &'static str {
-    match connection_status {
-        SynchronizationStatus::Connected => "Connected",
-        SynchronizationStatus::Connecting => "Connecting",
-        SynchronizationStatus::Disconnected => "Disconnected",
-        SynchronizationStatus::AuthenticationFailed
-        | SynchronizationStatus::ConnectionFailed
-        | SynchronizationStatus::Other => "Error",
-        SynchronizationStatus::NotActivated => "Inactive",
-    }
 }
 
 /// Resolve the foreground/background colors for a status pill.
