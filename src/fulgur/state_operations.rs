@@ -2,7 +2,7 @@ use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
     files::file_operations::{RemoteFileResult, detect_encoding_and_decode},
-    languages::supported_languages::SupportedLanguage,
+    languages::supported_languages::{language_from_content, language_registry_name},
     state_persistence::{
         SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
         get_file_modified_time, is_file_newer,
@@ -11,7 +11,7 @@ use crate::fulgur::{
     ui::components_utils::{UNTITLED, UTF_8},
 };
 use gpui::{App, AppContext, Context, Window};
-use gpui_component::{highlighter::Language, input::TabSize};
+use gpui_component::input::TabSize;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
@@ -304,9 +304,10 @@ impl Fulgur {
                 &self.settings.editor_settings,
             )
         } else {
+            let language = language_from_content(&tab_state.title, &content);
             let content_entity = cx.new(|cx| {
                 gpui_component::input::InputState::new(window, cx)
-                    .code_editor(Language::Plain.name())
+                    .code_editor(language_registry_name(&language))
                     .line_number(self.settings.editor_settings.show_line_numbers)
                     .indent_guides(self.settings.editor_settings.show_indent_guides)
                     .tab_size(TabSize {
@@ -327,7 +328,7 @@ impl Fulgur {
                     crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str("").0,
                 original_content_len: 0,
                 encoding: "UTF-8".to_string(),
-                language: SupportedLanguage::Plain,
+                language,
                 show_markdown_toolbar: self
                     .settings
                     .editor_settings
