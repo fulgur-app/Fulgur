@@ -1,18 +1,91 @@
 use crate::fulgur::themes::{BundledThemes, themes_directory_path};
 use gpui::SharedString;
 use gpui_component::scroll::ScrollbarShow;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{fs, path::PathBuf};
 
+/// Stable identifier for a server profile. Generated as a UUID v4 string
+/// at profile creation and never reused.
+pub type ProfileId = String;
+
+/// Maximum number of server profiles a user can configure.
+pub const MAX_PROFILES: usize = 16;
+
+/// Default profile name used when creating a new profile through migration
+/// of legacy single-server config.
+pub const DEFAULT_LEGACY_PROFILE_NAME: &str = "Fulgurant";
+
+/// Generate a new unique profile id.
+///
+/// ### Returns
+/// - `ProfileId`: A freshly generated UUID v4 string.
+pub fn new_profile_id() -> ProfileId {
+    uuid::Uuid::new_v4().to_string()
+}
+
+/// Default name used when a profile is deserialized without a name field
+/// (only happens with hand-edited config files).
+///
+/// ### Returns
+/// - `String`: The default legacy profile name.
+fn default_profile_name() -> String {
+    DEFAULT_LEGACY_PROFILE_NAME.to_string()
+}
+
+/// Configuration for a single Fulgurant sync server.
+///
+/// ### Fields
+/// - `id`: Stable UUID v4 string assigned at creation.
+/// - `name`: Human-readable label shown in the settings UI.
+/// - `is_active`: Per-profile activation flag (independent of the master switch).
+/// - `server_url`: Sync server URL, or `None` if not yet configured.
+/// - `email`: Login email for the sync server, or `None`.
+/// - `public_key`: X25519 public key advertised to the server. Paired with
+///   the per-profile private key stored in the system keychain.
+/// - `is_deduplication`: When true, the server deduplicates shares of the
+///   same file path.
 #[derive(Clone, Serialize, Deserialize)]
-pub struct SynchronizationSettings {
-    pub is_synchronization_activated: bool,
+pub struct ServerProfile {
+    pub id: ProfileId,
+    #[serde(default = "default_profile_name")]
+    pub name: String,
+    #[serde(default)]
+    pub is_active: bool,
     pub server_url: Option<String>,
     pub email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_key: Option<String>,
     #[serde(default = "default_is_deduplication")]
     pub is_deduplication: bool,
+}
+
+impl ServerProfile {
+    /// Create a new empty profile with a freshly generated id.
+    ///
+    /// ### Arguments
+    /// - `name`: The display name to assign to the new profile.
+    ///
+    /// ### Returns
+    /// - `Self`: A new profile with default values.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            id: new_profile_id(),
+            name: name.into(),
+            is_active: false,
+            server_url: None,
+            email: None,
+            public_key: None,
+            is_deduplication: default_is_deduplication(),
+        }
+    }
+}
+
+/// Top-level synchronization configuration.
+#[derive(Clone, Serialize)]
+pub struct SynchronizationSettings {
+    pub is_synchronization_activated: bool,
+    #[serde(default)]
+    pub profiles: Vec<ServerProfile>,
 }
 
 impl Default for SynchronizationSettings {
@@ -22,18 +95,155 @@ impl Default for SynchronizationSettings {
 }
 
 impl SynchronizationSettings {
-    /// Create a new synchronization settings instance
+    /// Create a new empty synchronization settings instance.
     ///
     /// ### Returns
-    /// - `SynchronizationSettings`: The new synchronization settings instance
+    /// - `SynchronizationSettings`: An empty configuration with sync disabled
+    ///   and no profiles.
     pub fn new() -> Self {
         Self {
             is_synchronization_activated: false,
-            server_url: None,
-            email: None,
-            public_key: None,
-            is_deduplication: true,
+            profiles: Vec::new(),
         }
+    }
+
+    /// Get a reference to the first profile, if any.
+    ///
+    /// ### Returns
+    /// - `Some(&ServerProfile)`: The first profile when at least one is configured.
+    /// - `None`: When no profiles are configured.
+    pub fn primary_profile(&self) -> Option<&ServerProfile> {
+        self.profiles.first()
+    }
+
+    /// Get a mutable reference to the first profile, if any.
+    ///
+    /// ### Returns
+    /// - `Some(&mut ServerProfile)`: The first profile when at least one is configured.
+    /// - `None`: When no profiles are configured.
+    pub fn primary_profile_mut(&mut self) -> Option<&mut ServerProfile> {
+        self.profiles.first_mut()
+    }
+
+    /// Get a mutable reference to the first profile, creating one if needed.
+    ///
+    /// ### Returns
+    /// - `&mut ServerProfile`: The first profile, creating a new "Fulgurant"
+    ///   profile if the list was empty.
+    pub fn ensure_primary_profile_mut(&mut self) -> &mut ServerProfile {
+        if self.profiles.is_empty() {
+            self.profiles
+                .push(ServerProfile::new(DEFAULT_LEGACY_PROFILE_NAME));
+        }
+        &mut self.profiles[0]
+    }
+
+    /// Look up a profile by id.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The id to search for.
+    ///
+    /// ### Returns
+    /// - `Some(&ServerProfile)`: The matching profile.
+    /// - `None`: When no profile with that id exists.
+    pub fn find_profile(&self, profile_id: &str) -> Option<&ServerProfile> {
+        self.profiles.iter().find(|p| p.id == profile_id)
+    }
+
+    /// Look up a profile by id with mutable access.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The id to search for.
+    ///
+    /// ### Returns
+    /// - `Some(&mut ServerProfile)`: The matching profile.
+    /// - `None`: When no profile with that id exists.
+    pub fn find_profile_mut(&mut self, profile_id: &str) -> Option<&mut ServerProfile> {
+        self.profiles.iter_mut().find(|p| p.id == profile_id)
+    }
+
+    /// Check whether a name is already used by another profile.
+    ///
+    /// ### Arguments
+    /// - `candidate`: The candidate display name.
+    /// - `exclude_id`: Profile id to skip during the comparison.
+    ///
+    /// ### Returns
+    /// - `true`: At least one other profile carries the same normalized name.
+    /// - `false`: The name is unique among the other profiles.
+    pub fn name_collides(&self, candidate: &str, exclude_id: Option<&str>) -> bool {
+        let normalized = candidate.trim().to_lowercase();
+        self.profiles.iter().any(|profile| {
+            if exclude_id == Some(profile.id.as_str()) {
+                return false;
+            }
+            profile.name.trim().to_lowercase() == normalized
+        })
+    }
+}
+
+/// Custom deserializer that accepts both the legacy single-server JSON shape
+/// and the new multi-profile shape.
+///
+/// ### Description
+/// When the `profiles` field is present, the new shape is used as-is. When
+/// it is absent, the legacy fields are migrated into a single profile named
+/// `"Fulgurant"` if any of them carry data; otherwise an empty `profiles`
+/// list is produced.
+impl<'de> Deserialize<'de> for SynchronizationSettings {
+    //TODO: remove legacy support in 0.10.0
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            #[serde(default)]
+            is_synchronization_activated: bool,
+            // New shape
+            profiles: Option<Vec<ServerProfile>>,
+            // Legacy fields (single-server shape)
+            #[serde(default)]
+            server_url: Option<String>,
+            #[serde(default)]
+            email: Option<String>,
+            #[serde(default)]
+            public_key: Option<String>,
+            #[serde(default)]
+            is_deduplication: Option<bool>,
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+        if let Some(profiles) = helper.profiles {
+            return Ok(Self {
+                is_synchronization_activated: helper.is_synchronization_activated,
+                profiles,
+            });
+        }
+
+        let has_legacy_data = helper.server_url.is_some()
+            || helper.email.is_some()
+            || helper.public_key.is_some()
+            || helper.is_deduplication.is_some();
+        let profiles = if has_legacy_data {
+            vec![ServerProfile {
+                id: new_profile_id(),
+                name: DEFAULT_LEGACY_PROFILE_NAME.to_string(),
+                is_active: helper.is_synchronization_activated,
+                server_url: helper.server_url,
+                email: helper.email,
+                public_key: helper.public_key,
+                is_deduplication: helper
+                    .is_deduplication
+                    .unwrap_or_else(default_is_deduplication),
+            }]
+        } else {
+            Vec::new()
+        };
+        Ok(Self {
+            is_synchronization_activated: helper.is_synchronization_activated,
+            profiles,
+        })
     }
 }
 

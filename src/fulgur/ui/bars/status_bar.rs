@@ -11,11 +11,13 @@ use crate::fulgur::{
 };
 use gpui::{
     Animation, AnimationExt, Context, Div, Hsla, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Styled, div, prelude::FluentBuilder,
+    MouseDownEvent, ParentElement, StatefulInteractiveElement, Styled, div, prelude::FluentBuilder,
 };
-use gpui_component::{ActiveTheme, Icon, h_flex, input::Position};
+use gpui_component::{
+    ActiveTheme, Icon, StyledExt, h_flex, input::Position, tooltip::Tooltip, v_flex,
+};
 use std::f32::consts::PI;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Create a status bar item
 ///
@@ -260,29 +262,84 @@ impl Fulgur {
         cache.encoding_label = encoding_label;
     }
 
-    /// Resolve the sync indicator visual state reflected by the status bar.
+    /// Aggregate sync button state across all active profiles.
+    ///
+    /// Priority order: Connected beats Connecting beats Disconnected. The spinner is
+    /// shown once the earliest connecting-since timestamp has exceeded
+    /// `CONNECTING_SPINNER_DELAY`.
     ///
     /// ### Parameters:
     /// - `cx`: The application context.
     ///
     /// ### Returns:
-    /// - `(SyncButtonState, bool)`: The sync button state and whether the spinner should be shown.
+    /// - `(SyncButtonState, bool)`: The aggregated state and whether to show the spinner.
     fn status_bar_sync_button_state(&self, cx: &Context<Self>) -> (SyncButtonState, bool) {
-        let sync_status = *self.shared_state(cx).sync_state.connection_status.lock();
-        match sync_status {
-            SynchronizationStatus::Connected => (SyncButtonState::Connected, false),
-            SynchronizationStatus::Connecting => {
-                let show = self
-                    .shared_state(cx)
-                    .sync_state
-                    .connecting_since
-                    .lock()
-                    .map(|since| since.elapsed() >= CONNECTING_SPINNER_DELAY)
-                    .unwrap_or(false);
-                (SyncButtonState::Connecting, show)
+        let profiles = &self.settings.app_settings.synchronization_settings.profiles;
+        let shared = self.shared_state(cx);
+        let sync_states = shared.sync_states.read();
+
+        let mut any_connected = false;
+        let mut any_connecting = false;
+        let mut earliest_connecting_since: Option<Instant> = None;
+
+        for profile in profiles.iter().filter(|p| p.is_active) {
+            let Some(state) = sync_states.get(&profile.id) else {
+                continue;
+            };
+            match *state.connection_status.lock() {
+                SynchronizationStatus::Connected => any_connected = true,
+                SynchronizationStatus::Connecting => {
+                    any_connecting = true;
+                    if let Some(since) = *state.connecting_since.lock() {
+                        earliest_connecting_since = Some(match earliest_connecting_since {
+                            None => since,
+                            Some(existing) if since < existing => since,
+                            Some(existing) => existing,
+                        });
+                    }
+                }
+                _ => {}
             }
-            _ => (SyncButtonState::Disconnected, false),
         }
+
+        if any_connected {
+            (SyncButtonState::Connected, false)
+        } else if any_connecting {
+            let show = earliest_connecting_since
+                .map(|since| since.elapsed() >= CONNECTING_SPINNER_DELAY)
+                .unwrap_or(false);
+            (SyncButtonState::Connecting, show)
+        } else {
+            (SyncButtonState::Disconnected, false)
+        }
+    }
+
+    /// Collect per-profile tooltip data for all active profiles.
+    ///
+    /// Returns one `(name, label)` pair per profile whose `is_active` flag is set.
+    /// An empty vec is returned when there are no active profiles.
+    ///
+    /// ### Parameters:
+    /// - `cx`: The application context.
+    ///
+    /// ### Returns:
+    /// - `Vec<(String, String)>`: Profile name and its human-readable status label.
+    fn sync_profiles_tooltip_data(&self, cx: &Context<Self>) -> Vec<(String, String)> {
+        let profiles = &self.settings.app_settings.synchronization_settings.profiles;
+        let shared = self.shared_state(cx);
+        let sync_states = shared.sync_states.read();
+
+        profiles
+            .iter()
+            .filter(|p| p.is_active)
+            .map(|profile| {
+                let label = sync_states
+                    .get(&profile.id)
+                    .map(|state| state.connection_status.lock().label())
+                    .unwrap_or("Inactive");
+                (profile.name.clone(), label.to_string())
+            })
+            .collect()
     }
 
     /// Render the status bar
@@ -372,6 +429,7 @@ impl Fulgur {
         };
         let is_markdown = self.is_markdown();
         let (sync_button_state, show_spinner) = self.status_bar_sync_button_state(cx);
+        let profile_statuses = self.sync_profiles_tooltip_data(cx);
         let sync_button = status_bar_sync_button(
             SyncButtonStyle {
                 connected_icon: Icon::new(CustomIcon::Zap),
@@ -389,12 +447,36 @@ impl Fulgur {
             sync_button_state,
             show_spinner,
         )
+        .id("sync-status-button")
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(|this, _event, window, cx| {
                 this.open_share_file_sheet(window, cx);
             }),
-        );
+        )
+        .when(!profile_statuses.is_empty(), move |this| {
+            this.tooltip(move |window, cx| {
+                let rows = profile_statuses.clone();
+                Tooltip::element(move |_, cx| {
+                    let mut container = v_flex().gap_1().py_1().px_1();
+                    for (name, label) in &rows {
+                        container = container.child(
+                            h_flex()
+                                .gap_2()
+                                .child(div().text_sm().font_semibold().child(format!("{name}:")))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(label.clone()),
+                                ),
+                        );
+                    }
+                    container
+                })
+                .build(window, cx)
+            })
+        });
         h_flex()
             .justify_between()
             .bg(cx.theme().tab_bar)
@@ -448,9 +530,12 @@ impl Fulgur {
 mod tests {
     use super::{Fulgur, SyncButtonState};
     use crate::fulgur::{
-        languages::supported_languages::SupportedLanguage, settings::Settings,
-        shared_state::SharedAppState, sync::synchronization::SynchronizationStatus,
-        ui::components_utils::UTF_8, window_manager::WindowManager,
+        languages::supported_languages::SupportedLanguage,
+        settings::{ServerProfile, Settings},
+        shared_state::SharedAppState,
+        sync::synchronization::SynchronizationStatus,
+        ui::components_utils::UTF_8,
+        window_manager::WindowManager,
     };
     use gpui::{
         AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
@@ -501,6 +586,55 @@ mod tests {
             .into_inner()
             .expect("failed to capture Fulgur entity");
         (fulgur, visual_cx)
+    }
+
+    /// Set up a `Fulgur` instance with one active sync profile seeded into settings.
+    ///
+    /// Returns the entity, the visual context, and the profile id so tests can
+    /// address the correct per-profile `SyncState` via `sync_state_for`.
+    fn setup_fulgur_with_active_profile(
+        cx: &mut TestAppContext,
+    ) -> (Entity<Fulgur>, VisualTestContext, String) {
+        let mut profile = ServerProfile::new("Test");
+        profile.is_active = true;
+        let profile_id = profile.id.clone();
+
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            let mut settings = Settings::new();
+            settings.editor_settings.watch_files = false;
+            settings
+                .app_settings
+                .synchronization_settings
+                .is_synchronization_activated = true;
+            settings
+                .app_settings
+                .synchronization_settings
+                .profiles
+                .push(profile);
+            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(WindowManager::new());
+        });
+
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        let window = cx
+            .update(|cx| {
+                cx.open_window(WindowOptions::default(), |window, cx| {
+                    let window_id = window.window_handle().window_id();
+                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    *fulgur_slot.borrow_mut() = Some(fulgur);
+                    cx.new(|_| EmptyView)
+                })
+            })
+            .expect("failed to open test window");
+
+        let visual_cx = VisualTestContext::from_window(window.into(), cx);
+        visual_cx.run_until_parked();
+        let fulgur = fulgur_slot
+            .into_inner()
+            .expect("failed to capture Fulgur entity");
+        (fulgur, visual_cx, profile_id)
     }
 
     #[gpui::test]
@@ -558,13 +692,13 @@ mod tests {
 
     #[gpui::test]
     fn test_status_bar_sync_indicator_connected(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let (fulgur, mut visual_cx, profile_id) = setup_fulgur_with_active_profile(cx);
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                *this.shared_state(cx).sync_state.connection_status.lock() =
-                    SynchronizationStatus::Connected;
-                *this.shared_state(cx).sync_state.connecting_since.lock() = None;
+                let state = this.shared_state(cx).sync_state_for(&profile_id);
+                *state.connection_status.lock() = SynchronizationStatus::Connected;
+                *state.connecting_since.lock() = None;
 
                 let (state, show_spinner) = this.status_bar_sync_button_state(cx);
                 assert_eq!(state, SyncButtonState::Connected);
@@ -575,17 +709,16 @@ mod tests {
 
     #[gpui::test]
     fn test_status_bar_sync_indicator_connecting_with_elapsed_delay(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let (fulgur, mut visual_cx, profile_id) = setup_fulgur_with_active_profile(cx);
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                *this.shared_state(cx).sync_state.connection_status.lock() =
-                    SynchronizationStatus::Connecting;
-                *this.shared_state(cx).sync_state.connecting_since.lock() =
-                    Some(Instant::now() - Duration::from_millis(600));
+                let state = this.shared_state(cx).sync_state_for(&profile_id);
+                *state.connection_status.lock() = SynchronizationStatus::Connecting;
+                *state.connecting_since.lock() = Some(Instant::now() - Duration::from_millis(600));
 
-                let (state, show_spinner) = this.status_bar_sync_button_state(cx);
-                assert_eq!(state, SyncButtonState::Connecting);
+                let (btn_state, show_spinner) = this.status_bar_sync_button_state(cx);
+                assert_eq!(btn_state, SyncButtonState::Connecting);
                 assert!(show_spinner);
             });
         });
@@ -593,17 +726,16 @@ mod tests {
 
     #[gpui::test]
     fn test_status_bar_sync_indicator_connecting_before_delay(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let (fulgur, mut visual_cx, profile_id) = setup_fulgur_with_active_profile(cx);
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                *this.shared_state(cx).sync_state.connection_status.lock() =
-                    SynchronizationStatus::Connecting;
-                *this.shared_state(cx).sync_state.connecting_since.lock() =
-                    Some(Instant::now() - Duration::from_millis(100));
+                let state = this.shared_state(cx).sync_state_for(&profile_id);
+                *state.connection_status.lock() = SynchronizationStatus::Connecting;
+                *state.connecting_since.lock() = Some(Instant::now() - Duration::from_millis(100));
 
-                let (state, show_spinner) = this.status_bar_sync_button_state(cx);
-                assert_eq!(state, SyncButtonState::Connecting);
+                let (btn_state, show_spinner) = this.status_bar_sync_button_state(cx);
+                assert_eq!(btn_state, SyncButtonState::Connecting);
                 assert!(!show_spinner);
             });
         });
@@ -611,18 +743,79 @@ mod tests {
 
     #[gpui::test]
     fn test_status_bar_sync_indicator_non_connected_maps_to_disconnected(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let (fulgur, mut visual_cx, profile_id) = setup_fulgur_with_active_profile(cx);
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                *this.shared_state(cx).sync_state.connection_status.lock() =
-                    SynchronizationStatus::AuthenticationFailed;
-                *this.shared_state(cx).sync_state.connecting_since.lock() =
-                    Some(Instant::now() - Duration::from_secs(2));
+                let state = this.shared_state(cx).sync_state_for(&profile_id);
+                *state.connection_status.lock() = SynchronizationStatus::AuthenticationFailed;
+                *state.connecting_since.lock() = Some(Instant::now() - Duration::from_secs(2));
 
-                let (state, show_spinner) = this.status_bar_sync_button_state(cx);
-                assert_eq!(state, SyncButtonState::Disconnected);
+                let (btn_state, show_spinner) = this.status_bar_sync_button_state(cx);
+                assert_eq!(btn_state, SyncButtonState::Disconnected);
                 assert!(!show_spinner);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_status_bar_sync_aggregates_connected_wins_over_connecting(cx: &mut TestAppContext) {
+        let mut profile_a = ServerProfile::new("Server A");
+        profile_a.is_active = true;
+        let id_a = profile_a.id.clone();
+        let mut profile_b = ServerProfile::new("Server B");
+        profile_b.is_active = true;
+        let id_b = profile_b.id.clone();
+
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            let mut settings = Settings::new();
+            settings.editor_settings.watch_files = false;
+            settings
+                .app_settings
+                .synchronization_settings
+                .is_synchronization_activated = true;
+            settings
+                .app_settings
+                .synchronization_settings
+                .profiles
+                .push(profile_a);
+            settings
+                .app_settings
+                .synchronization_settings
+                .profiles
+                .push(profile_b);
+            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(WindowManager::new());
+        });
+
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        let window = cx
+            .update(|cx| {
+                cx.open_window(WindowOptions::default(), |window, cx| {
+                    let window_id = window.window_handle().window_id();
+                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    *fulgur_slot.borrow_mut() = Some(fulgur);
+                    cx.new(|_| EmptyView)
+                })
+            })
+            .expect("failed to open test window");
+
+        let mut visual_cx = VisualTestContext::from_window(window.into(), cx);
+        visual_cx.run_until_parked();
+        let fulgur = fulgur_slot.into_inner().expect("failed to capture Fulgur");
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let shared = this.shared_state(cx);
+                *shared.sync_state_for(&id_a).connection_status.lock() =
+                    SynchronizationStatus::Connected;
+                *shared.sync_state_for(&id_b).connection_status.lock() =
+                    SynchronizationStatus::Connecting;
+
+                let (btn_state, _) = this.status_bar_sync_button_state(cx);
+                assert_eq!(btn_state, SyncButtonState::Connected);
             });
         });
     }

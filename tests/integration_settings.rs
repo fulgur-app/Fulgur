@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 // Import from the main crate
-use fulgur::fulgur::settings::Settings;
+use fulgur::fulgur::settings::{ServerProfile, Settings};
 
 /// Create a Settings instance with all non-default values for thorough testing
 ///
@@ -37,15 +37,17 @@ fn create_custom_settings() -> Settings {
         .app_settings
         .synchronization_settings
         .is_synchronization_activated = true;
-    settings.app_settings.synchronization_settings.server_url =
-        Some("https://sync.example.com".to_string());
-    settings.app_settings.synchronization_settings.email = Some("user@example.com".to_string());
-    settings.app_settings.synchronization_settings.public_key =
-        Some("test_public_key_base64".to_string());
+    let mut profile = ServerProfile::new("Fulgurant");
+    profile.is_active = true;
+    profile.server_url = Some("https://sync.example.com".to_string());
+    profile.email = Some("user@example.com".to_string());
+    profile.public_key = Some("test_public_key_base64".to_string());
+    profile.is_deduplication = false;
     settings
         .app_settings
         .synchronization_settings
-        .is_deduplication = false;
+        .profiles
+        .push(profile);
     settings
         .recent_files
         .add_file(PathBuf::from("samples/file1.txt"));
@@ -160,32 +162,38 @@ fn assert_settings_equal(original: &Settings, loaded: &Settings, context: &str) 
             .is_synchronization_activated,
         "{context}: is_synchronization_activated mismatch"
     );
+    let original_profiles = &original.app_settings.synchronization_settings.profiles;
+    let loaded_profiles = &loaded.app_settings.synchronization_settings.profiles;
     assert_eq!(
-        original.app_settings.synchronization_settings.server_url,
-        loaded.app_settings.synchronization_settings.server_url,
-        "{context}: server_url mismatch"
+        original_profiles.len(),
+        loaded_profiles.len(),
+        "{context}: profile count mismatch"
     );
-    assert_eq!(
-        original.app_settings.synchronization_settings.email,
-        loaded.app_settings.synchronization_settings.email,
-        "{context}: email mismatch"
-    );
-    assert_eq!(
-        original.app_settings.synchronization_settings.public_key,
-        loaded.app_settings.synchronization_settings.public_key,
-        "{context}: public_key mismatch"
-    );
-    assert_eq!(
-        original
-            .app_settings
-            .synchronization_settings
-            .is_deduplication,
-        loaded
-            .app_settings
-            .synchronization_settings
-            .is_deduplication,
-        "{context}: is_deduplication mismatch"
-    );
+    for (i, (op, lp)) in original_profiles
+        .iter()
+        .zip(loaded_profiles.iter())
+        .enumerate()
+    {
+        assert_eq!(op.id, lp.id, "{context}: profile[{i}].id mismatch");
+        assert_eq!(op.name, lp.name, "{context}: profile[{i}].name mismatch");
+        assert_eq!(
+            op.is_active, lp.is_active,
+            "{context}: profile[{i}].is_active mismatch"
+        );
+        assert_eq!(
+            op.server_url, lp.server_url,
+            "{context}: profile[{i}].server_url mismatch"
+        );
+        assert_eq!(op.email, lp.email, "{context}: profile[{i}].email mismatch");
+        assert_eq!(
+            op.public_key, lp.public_key,
+            "{context}: profile[{i}].public_key mismatch"
+        );
+        assert_eq!(
+            op.is_deduplication, lp.is_deduplication,
+            "{context}: profile[{i}].is_deduplication mismatch"
+        );
+    }
     assert_eq!(
         original.recent_files.get_files(),
         loaded.recent_files.get_files(),
@@ -227,9 +235,15 @@ fn test_settings_optional_fields_none() {
     let settings_path = temp_settings_path(&temp_dir);
     let mut original = Settings::new();
     original.app_settings.scrollbar_show = None;
-    original.app_settings.synchronization_settings.server_url = None;
-    original.app_settings.synchronization_settings.email = None;
-    original.app_settings.synchronization_settings.public_key = None;
+    let mut profile = ServerProfile::new("Profile");
+    profile.server_url = None;
+    profile.email = None;
+    profile.public_key = None;
+    original
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .push(profile);
     original
         .save_to_path(&settings_path)
         .expect("Failed to save settings");
@@ -238,18 +252,14 @@ fn test_settings_optional_fields_none() {
         loaded.app_settings.scrollbar_show, None,
         "scrollbar_show should be None"
     );
-    assert_eq!(
-        loaded.app_settings.synchronization_settings.server_url, None,
-        "server_url should be None"
-    );
-    assert_eq!(
-        loaded.app_settings.synchronization_settings.email, None,
-        "email should be None"
-    );
-    assert_eq!(
-        loaded.app_settings.synchronization_settings.public_key, None,
-        "public_key should be None"
-    );
+    let profile = loaded
+        .app_settings
+        .synchronization_settings
+        .primary_profile()
+        .expect("primary profile should be present");
+    assert_eq!(profile.server_url, None, "server_url should be None");
+    assert_eq!(profile.email, None, "email should be None");
+    assert_eq!(profile.public_key, None, "public_key should be None");
 }
 
 #[test]
@@ -258,10 +268,15 @@ fn test_settings_optional_fields_some() {
     let settings_path = temp_settings_path(&temp_dir);
     let mut original = Settings::new();
     original.app_settings.scrollbar_show = Some(gpui_component::scroll::ScrollbarShow::Hover);
-    original.app_settings.synchronization_settings.server_url =
-        Some("https://test.server".to_string());
-    original.app_settings.synchronization_settings.email = Some("test@test.com".to_string());
-    original.app_settings.synchronization_settings.public_key = Some("pubkey123".to_string());
+    let mut profile = ServerProfile::new("Profile");
+    profile.server_url = Some("https://test.server".to_string());
+    profile.email = Some("test@test.com".to_string());
+    profile.public_key = Some("pubkey123".to_string());
+    original
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .push(profile);
     original
         .save_to_path(&settings_path)
         .expect("Failed to save settings");
@@ -270,18 +285,14 @@ fn test_settings_optional_fields_some() {
         loaded.app_settings.scrollbar_show,
         Some(gpui_component::scroll::ScrollbarShow::Hover)
     );
-    assert_eq!(
-        loaded.app_settings.synchronization_settings.server_url,
-        Some("https://test.server".to_string())
-    );
-    assert_eq!(
-        loaded.app_settings.synchronization_settings.email,
-        Some("test@test.com".to_string())
-    );
-    assert_eq!(
-        loaded.app_settings.synchronization_settings.public_key,
-        Some("pubkey123".to_string())
-    );
+    let profile = loaded
+        .app_settings
+        .synchronization_settings
+        .primary_profile()
+        .expect("primary profile should be present");
+    assert_eq!(profile.server_url, Some("https://test.server".to_string()));
+    assert_eq!(profile.email, Some("test@test.com".to_string()));
+    assert_eq!(profile.public_key, Some("pubkey123".to_string()));
 }
 
 #[test]
@@ -361,6 +372,7 @@ fn test_settings_json_format_is_valid() {
     assert!(parsed["app_settings"].is_object());
     assert!(parsed["recent_files"].is_object());
     assert!(parsed["app_settings"]["synchronization_settings"].is_object());
+    assert!(parsed["app_settings"]["synchronization_settings"]["profiles"].is_array());
     assert!(parsed["editor_settings"]["markdown_settings"].is_object());
 }
 
@@ -402,16 +414,74 @@ fn test_settings_backward_compatibility_with_missing_fields() {
         loaded
             .app_settings
             .synchronization_settings
-            .is_deduplication,
-        "is_deduplication should default to true"
-    );
-    assert_eq!(
-        loaded.app_settings.synchronization_settings.server_url, None,
-        "server_url should default to None"
+            .profiles
+            .is_empty(),
+        "no legacy data + no profiles array means profiles is empty"
     );
     assert_eq!(
         loaded.app_settings.scrollbar_show, None,
         "scrollbar_show should default to None"
+    );
+}
+
+#[test]
+fn test_settings_backward_compatibility_migrates_legacy_single_server() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let settings_path = temp_settings_path(&temp_dir);
+    let legacy_json = r#"{
+        "editor_settings": {
+            "show_line_numbers": true,
+            "show_indent_guides": true,
+            "soft_wrap": false,
+            "font_size": 14.0,
+            "tab_size": 4,
+            "markdown_settings": {
+                "show_markdown_preview": true,
+                "show_markdown_toolbar": false
+            }
+        },
+        "app_settings": {
+            "confirm_exit": true,
+            "theme": "Default Light",
+            "synchronization_settings": {
+                "is_synchronization_activated": true,
+                "server_url": "https://legacy.example.com",
+                "email": "legacy@example.com",
+                "public_key": "age1legacypublickey"
+            }
+        },
+        "recent_files": {
+            "files": [],
+            "max_files": 10
+        }
+    }"#;
+    std::fs::write(&settings_path, legacy_json).expect("Failed to write legacy JSON");
+    let loaded = Settings::load_from_path(&settings_path).expect("Failed to load settings");
+    assert!(
+        loaded
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated,
+        "master switch should be carried over from legacy"
+    );
+    let profiles = &loaded.app_settings.synchronization_settings.profiles;
+    assert_eq!(
+        profiles.len(),
+        1,
+        "legacy single-server config migrates to one profile"
+    );
+    let profile = &profiles[0];
+    assert_eq!(profile.name, "Fulgurant");
+    assert!(profile.is_active);
+    assert_eq!(
+        profile.server_url,
+        Some("https://legacy.example.com".to_string())
+    );
+    assert_eq!(profile.email, Some("legacy@example.com".to_string()));
+    assert_eq!(profile.public_key, Some("age1legacypublickey".to_string()));
+    assert!(
+        profile.is_deduplication,
+        "is_deduplication defaults to true when absent from legacy JSON"
     );
 }
 

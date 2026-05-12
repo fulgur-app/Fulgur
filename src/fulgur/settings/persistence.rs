@@ -1,4 +1,4 @@
-use super::Settings;
+use super::{MAX_PROFILES, Settings};
 use crate::fulgur::utils::atomic_write::atomic_write_file;
 use std::{
     fs,
@@ -70,6 +70,7 @@ impl Settings {
         match serde_json::from_str::<Settings>(&json) {
             Ok(mut settings) => {
                 settings.validate();
+                Self::persist_after_legacy_migration(&settings, &json, path);
                 Ok(settings)
             }
             Err(primary_err) => {
@@ -89,8 +90,29 @@ impl Settings {
                     })?;
                 settings.validate();
                 log::warn!("Settings recovered from backup '{}'", backup.display());
+                Self::persist_after_legacy_migration(&settings, &bak_json, path);
                 Ok(settings)
             }
+        }
+    }
+
+    /// Rewrite the settings file when the loaded JSON used the legacy
+    /// single-server `synchronization_settings` shape.
+    ///
+    /// ### Arguments
+    /// - `settings`: The freshly migrated settings ready to be saved.
+    /// - `source_json`: The raw JSON that was just deserialized.
+    /// - `path`: The file the settings should be written back to.
+    fn persist_after_legacy_migration(settings: &Settings, source_json: &str, path: &Path) {
+        if !json_has_legacy_synchronization_shape(source_json) {
+            return;
+        }
+        log::info!(
+            "Persisting settings after legacy synchronization migration to '{}'",
+            path.display()
+        );
+        if let Err(e) = settings.save_to_path(path) {
+            log::warn!("Failed to persist settings after legacy synchronization migration: {e}");
         }
     }
 
@@ -130,21 +152,41 @@ impl Settings {
         }
 
         let sync = &mut self.app_settings.synchronization_settings;
-        if let Some(ref url_str) = sync.server_url.clone()
-            && url::Url::parse(url_str).is_err()
-        {
-            log::warn!("Invalid server_url in settings, clearing: {url_str}");
-            sync.server_url = None;
+        if sync.profiles.len() > MAX_PROFILES {
+            log::warn!(
+                "synchronization_settings.profiles count {} exceeds maximum {}, truncating",
+                sync.profiles.len(),
+                MAX_PROFILES
+            );
+            sync.profiles.truncate(MAX_PROFILES);
         }
-        if let Some(ref email) = sync.email.clone() {
-            let trimmed = email.trim();
-            let at_pos = trimmed.find('@');
-            let is_valid = at_pos
-                .map(|pos| pos > 0 && pos < trimmed.len() - 1 && trimmed[pos + 1..].contains('.'))
-                .unwrap_or(false);
-            if !is_valid {
-                log::warn!("Invalid email in settings, clearing: {email}");
-                sync.email = None;
+        for profile in &mut sync.profiles {
+            if let Some(ref url_str) = profile.server_url.clone()
+                && url::Url::parse(url_str).is_err()
+            {
+                log::warn!(
+                    "Invalid server_url for profile '{}', clearing: {}",
+                    profile.name,
+                    url_str
+                );
+                profile.server_url = None;
+            }
+            if let Some(ref email) = profile.email.clone() {
+                let trimmed = email.trim();
+                let at_pos = trimmed.find('@');
+                let is_valid = at_pos
+                    .map(|pos| {
+                        pos > 0 && pos < trimmed.len() - 1 && trimmed[pos + 1..].contains('.')
+                    })
+                    .unwrap_or(false);
+                if !is_valid {
+                    log::warn!(
+                        "Invalid email for profile '{}', clearing: {}",
+                        profile.name,
+                        email
+                    );
+                    profile.email = None;
+                }
             }
         }
     }
@@ -194,4 +236,34 @@ impl Settings {
         self.recent_files.add_file(file);
         self.save()
     }
+}
+
+/// Detect whether a settings JSON document still uses the legacy
+/// `synchronization_settings` shape (single-server fields, no `profiles`).
+///
+/// ### Arguments
+/// - `json`: Raw JSON contents of the settings file.
+///
+/// ### Returns
+/// - `true`: The document has legacy single-server fields and no `profiles`.
+/// - `false`: The document is in the new multi-profile shape, has no
+///   synchronization configuration, or could not be parsed as JSON.
+fn json_has_legacy_synchronization_shape(json: &str) -> bool {
+    let value: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let Some(sync) = value
+        .get("app_settings")
+        .and_then(|v| v.get("synchronization_settings"))
+    else {
+        return false;
+    };
+    if sync.get("profiles").is_some() {
+        return false;
+    }
+    sync.get("server_url").is_some()
+        || sync.get("email").is_some()
+        || sync.get("public_key").is_some()
+        || sync.get("is_deduplication").is_some()
 }

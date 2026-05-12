@@ -1,7 +1,10 @@
+use crate::fulgur::settings::ProfileId;
 use crate::fulgur::state_writer::StateWriter;
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::sync::ssh::pool::SshSessionPool;
-use crate::fulgur::utils::crypto_helper::check_private_public_keys;
+use crate::fulgur::utils::crypto_helper::{
+    check_private_public_keys, migrate_legacy_keychain_entries_if_present,
+};
 use crate::fulgur::utils::updater::UpdateInfo;
 use crate::fulgur::{
     settings::Settings, settings::Themes, sync::synchronization::SynchronizationStatus,
@@ -9,7 +12,8 @@ use crate::fulgur::{
 use fulgur_common::api::shares::SharedFileResponse;
 use gpui::SharedString;
 use gpui_component::notification::NotificationType;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -21,38 +25,37 @@ pub type PendingDevicesResult = (
     bool,
 );
 
-/// Sync-related state that is shared across all windows
+/// Sync-related state for a single profile, shared across all windows.
 pub struct SyncState {
-    /// Sync server connection status
+    /// Sync server connection status for this profile.
     pub connection_status: Arc<Mutex<SynchronizationStatus>>,
-    /// Timestamp when the connection attempt started (for delayed spinner display)
+    /// Timestamp when the connection attempt started (for delayed spinner display).
     pub connecting_since: Arc<Mutex<Option<std::time::Instant>>>,
-    /// Device name from server
+    /// Device name reported by the server for this profile.
     pub device_name: Arc<Mutex<Option<String>>>,
-    /// Pending shared files from sync server
+    /// Pending shared files arrived from this profile's server.
     pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
-    /// JWT token state manager with condition variable for efficient token refresh coordination
+    /// JWT token state manager with condition variable for efficient token
+    /// refresh coordination, scoped to this profile.
     pub token_state: Arc<crate::fulgur::sync::access_token::TokenStateManager>,
-    /// Last heartbeat time for sync connection
+    /// Last heartbeat time received from this profile's SSE stream.
     pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
-    /// Flag to track if sync has been initialized (to prevent multiple initializations)
-    pub initialized: Arc<AtomicBool>,
-    /// Pending notification from background sync operations (checked in render loop)
+    /// Pending notification from background sync operations (checked in render loop).
     pub pending_notification: Arc<Mutex<Option<(NotificationType, SharedString)>>>,
-    /// Pending devices list from background fetch (checked in render loop to open share sheet)
+    /// Pending devices list from background fetch (checked in render loop to open share sheet).
     pub pending_devices: Arc<Mutex<Option<PendingDevicesResult>>>,
-    /// Maximum file size for sharing (bytes), as reported by the server.
+    /// Maximum file size for sharing (bytes), as reported by this profile's server.
     pub max_file_size_bytes: Arc<AtomicU64>,
 }
 
 impl SyncState {
-    /// Create a new sync state with the given connection status
+    /// Create a new per-profile sync state with the given connection status.
     ///
     /// ### Arguments
-    /// - `connection_status`: The initial sync server connection status
+    /// - `connection_status`: The initial sync server connection status.
     ///
     /// ### Returns
-    /// - `Self`: The new sync state
+    /// - `Self`: The new sync state.
     pub fn new(connection_status: SynchronizationStatus) -> Self {
         Self {
             connection_status: Arc::new(Mutex::new(connection_status)),
@@ -61,7 +64,6 @@ impl SyncState {
             pending_shared_files: Arc::new(Mutex::new(Vec::new())),
             token_state: Arc::new(crate::fulgur::sync::access_token::TokenStateManager::new()),
             last_heartbeat: Arc::new(Mutex::new(None)),
-            initialized: Arc::new(AtomicBool::new(false)),
             pending_notification: Arc::new(Mutex::new(None)),
             pending_devices: Arc::new(Mutex::new(None)),
             max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),
@@ -77,8 +79,10 @@ pub struct SharedAppState {
     pub settings_version: Arc<AtomicU64>,
     /// Available themes
     pub themes: Arc<Mutex<Option<Themes>>>,
-    /// Sync-related state (connection status, device name, pending files, token state, heartbeat, initialization flag)
-    pub sync_state: SyncState,
+    /// Per-profile sync states keyed by profile id.
+    pub sync_states: Arc<RwLock<HashMap<ProfileId, Arc<SyncState>>>>,
+    /// Global flag to ensure sync bootstrap runs only once across all windows.
+    pub sync_initialized: Arc<AtomicBool>,
     /// Synchronization initialization error (if key generation failed)
     pub sync_error: Arc<Mutex<Option<String>>>,
     /// Update info if available
@@ -117,12 +121,14 @@ impl SharedAppState {
         let (settings, sync_error) = Self::validate_settings(settings);
         let themes = Self::load_themes();
         let synchronization_status = Self::determine_initial_sync_status(&settings);
+        let sync_states = Self::seed_sync_states(&settings, synchronization_status);
 
         Self {
             settings: Arc::new(Mutex::new(settings)),
             settings_version: Arc::new(AtomicU64::new(0)),
             themes: Arc::new(Mutex::new(themes)),
-            sync_state: SyncState::new(synchronization_status),
+            sync_states: Arc::new(RwLock::new(sync_states)),
+            sync_initialized: Arc::new(AtomicBool::new(false)),
             sync_error: Arc::new(Mutex::new(sync_error)),
             update_info: Arc::new(Mutex::new(None)),
             pending_files_from_macos,
@@ -152,6 +158,10 @@ impl SharedAppState {
     /// - `(Settings, Option<String>)`: The validated settings and an optional error message
     ///   if key validation failed
     fn validate_settings(mut settings: Settings) -> (Settings, Option<String>) {
+        if let Err(e) = migrate_legacy_keychain_entries_if_present(&settings) {
+            //TODO: remove in 0.10.0
+            log::warn!("Legacy keychain migration failed: {e}");
+        }
         let sync_error = if settings
             .app_settings
             .synchronization_settings
@@ -203,5 +213,87 @@ impl SharedAppState {
         } else {
             SynchronizationStatus::NotActivated
         }
+    }
+
+    /// Build the initial per-profile `SyncState` map from settings.
+    ///
+    /// ### Arguments
+    /// - `settings`: The application settings.
+    /// - `default_status`: The status assigned to profiles flagged as active
+    ///   when the master switch is on; ignored otherwise.
+    ///
+    /// ### Returns
+    /// - `HashMap<ProfileId, Arc<SyncState>>`: Map keyed by profile id.
+    fn seed_sync_states(
+        settings: &Settings,
+        default_status: SynchronizationStatus,
+    ) -> HashMap<ProfileId, Arc<SyncState>> {
+        let master_on = settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated;
+        settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .iter()
+            .map(|profile| {
+                let status = if master_on && profile.is_active {
+                    default_status
+                } else {
+                    SynchronizationStatus::NotActivated
+                };
+                (profile.id.clone(), Arc::new(SyncState::new(status)))
+            })
+            .collect()
+    }
+
+    /// Get the `SyncState` for a specific profile, creating it on demand.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The profile id.
+    ///
+    /// ### Returns
+    /// - `Arc<SyncState>`: The shared sync state for the profile. A fresh
+    ///   `NotActivated` state is inserted when the profile is unknown.
+    pub fn sync_state_for(&self, profile_id: &str) -> Arc<SyncState> {
+        if let Some(existing) = self.sync_states.read().get(profile_id) {
+            return Arc::clone(existing);
+        }
+        let mut map = self.sync_states.write();
+        Arc::clone(
+            map.entry(profile_id.to_string())
+                .or_insert_with(|| Arc::new(SyncState::new(SynchronizationStatus::NotActivated))),
+        )
+    }
+
+    /// Get the `SyncState` for the first configured profile.
+    ///
+    /// ### Returns
+    /// - `Arc<SyncState>`: The first profile's sync state, or the
+    ///   empty-id-keyed fallback state when there are no profiles.
+    pub fn primary_sync_state(&self) -> Arc<SyncState> {
+        let primary_id = self
+            .settings
+            .lock()
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .first()
+            .map(|p| p.id.clone())
+            .unwrap_or_default();
+        self.sync_state_for(&primary_id)
+    }
+
+    /// Remove the `SyncState` entry for a profile and return it.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The profile id whose state should be dropped.
+    ///
+    /// ### Returns
+    /// - `Some(Arc<SyncState>)`: The removed state if it existed.
+    /// - `None`: When no entry exists for the profile.
+    pub fn remove_sync_state(&self, profile_id: &str) -> Option<Arc<SyncState>> {
+        self.sync_states.write().remove(profile_id)
     }
 }

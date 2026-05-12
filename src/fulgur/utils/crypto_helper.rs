@@ -1,4 +1,4 @@
-use crate::fulgur::settings::Settings;
+use crate::fulgur::settings::{ServerProfile, Settings};
 use age::{
     secrecy::ExposeSecret,
     x25519::{Identity, Recipient},
@@ -12,10 +12,33 @@ use std::{
 };
 use zeroize::Zeroizing;
 
-// Names of the entries in the keychain
-const PRIVATE_KEY_NAME: &str = "private_key";
-const DEVICE_API_KEY: &str = "device_api_key";
+// Prefixes used to namespace per-profile entries inside the keychain.
+const PRIVATE_KEY_PREFIX: &str = "private_key";
+const DEVICE_API_KEY_PREFIX: &str = "device_api_key";
+
 const SERVICE_NAME: &str = "Fulgur";
+
+/// Build the keychain user string for a profile's private key entry.
+///
+/// ### Arguments
+/// - `profile_id`: The profile's stable id.
+///
+/// ### Returns
+/// - `String`: Namespaced user string, e.g. `private_key:<id>`.
+fn private_key_user(profile_id: &str) -> String {
+    format!("{PRIVATE_KEY_PREFIX}:{profile_id}")
+}
+
+/// Build the keychain user string for a profile's device API key entry.
+///
+/// ### Arguments
+/// - `profile_id`: The profile's stable id.
+///
+/// ### Returns
+/// - `String`: Namespaced user string, e.g. `device_api_key:<id>`.
+fn device_api_key_user(profile_id: &str) -> String {
+    format!("{DEVICE_API_KEY_PREFIX}:{profile_id}")
+}
 
 /// Checks whether an environment variable contains a truthy value.
 ///
@@ -148,29 +171,41 @@ pub fn generate_key_pair() -> (Identity, Recipient) {
     (private_key, public_key)
 }
 
-/// Saves the private key in the keychain. Accepts `Zeroizing<String>` to ensure
-/// the key material is zeroed on drop.
+/// Saves a profile's private key in the keychain. Accepts `Zeroizing<String>`
+/// to ensure the key material is zeroed on drop.
 ///
 /// ### Arguments
-/// - `private_key`: the key to save, wrapped in `Zeroizing` for secure memory handling
+/// - `profile_id`: The profile id used to namespace the keychain entry.
+/// - `private_key`: The key to save, wrapped in `Zeroizing` for secure memory
+///   handling. `None` deletes the entry.
 ///
 /// ### Returns
-/// - `Ok()`: The private key has been succesfully saved in the keychain
-/// - `Err(anyhow::Error)`: If the private key could not be saved
-pub fn save_private_key_to_keychain(private_key: Option<&Zeroizing<String>>) -> anyhow::Result<()> {
-    save_or_remove_to_keychain(PRIVATE_KEY_NAME, private_key.map(|k| k.as_str()))
+/// - `Ok(())`: The private key was saved (or removed) successfully.
+/// - `Err(anyhow::Error)`: If the keychain operation failed.
+pub fn save_private_key_to_keychain(
+    profile_id: &str,
+    private_key: Option<&Zeroizing<String>>,
+) -> anyhow::Result<()> {
+    save_or_remove_to_keychain(
+        &private_key_user(profile_id),
+        private_key.map(|k| k.as_str()),
+    )
 }
 
-/// Saves the device API key in the keychain
+/// Saves a profile's device API key in the keychain.
 ///
 /// ### Arguments
-/// - `device_api_key`: the key to save
+/// - `profile_id`: The profile id used to namespace the keychain entry.
+/// - `device_api_key`: The key to save. `None` or empty deletes the entry.
 ///
 /// ### Returns
-/// - `Ok()`: The device API key has been succesfully saved in the keychain
-/// - `Err(anyhow::Error)`: If the device API key could not be saved
-pub fn save_device_api_key_to_keychain(device_api_key: Option<&str>) -> anyhow::Result<()> {
-    save_or_remove_to_keychain(DEVICE_API_KEY, device_api_key)
+/// - `Ok(())`: The device API key was saved (or removed) successfully.
+/// - `Err(anyhow::Error)`: If the keychain operation failed.
+pub fn save_device_api_key_to_keychain(
+    profile_id: &str,
+    device_api_key: Option<&str>,
+) -> anyhow::Result<()> {
+    save_or_remove_to_keychain(&device_api_key_user(profile_id), device_api_key)
 }
 
 /// Saves or removes a value from the keychain. If the value is `None`, the entry is removed from the keychain.
@@ -201,23 +236,105 @@ fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> anyhow::Result
     }
 }
 
-/// Loads the private key from the keychain, wrapped in `Zeroizing` to ensure
-/// the key material is zeroed when dropped.
+/// Loads a profile's private key from the keychain, wrapped in `Zeroizing`
+/// to ensure the key material is zeroed when dropped.
+///
+/// ### Arguments
+/// - `profile_id`: The profile id used to namespace the keychain entry.
 ///
 /// ### Returns
-/// - `Ok(Option<Zeroizing<String>>)`: The private key if it exists, otherwise `None`
-/// - `Err(anyhow::Error)`: If the private key could not be loaded
-pub fn load_private_key_from_keychain() -> anyhow::Result<Option<Zeroizing<String>>> {
-    load_from_keychain(PRIVATE_KEY_NAME).map(|opt| opt.map(Zeroizing::new))
+/// - `Ok(Some(Zeroizing<String>))`: The private key when present.
+/// - `Ok(None)`: The keychain has no entry for this profile.
+/// - `Err(anyhow::Error)`: If the keychain access failed.
+pub fn load_private_key_from_keychain(
+    profile_id: &str,
+) -> anyhow::Result<Option<Zeroizing<String>>> {
+    load_from_keychain(&private_key_user(profile_id)).map(|opt| opt.map(Zeroizing::new))
 }
 
-/// Loads the device API key from the keychain
+/// Loads a profile's device API key from the keychain.
+///
+/// ### Arguments
+/// - `profile_id`: The profile id used to namespace the keychain entry.
 ///
 /// ### Returns
-/// - `Ok(Option<String>)`: The device API key if it exists, otherwise `None`
-/// - `Err(anyhow::Error)`: If the device API key could not be loaded
-pub fn load_device_api_key_from_keychain() -> anyhow::Result<Option<String>> {
-    load_from_keychain(DEVICE_API_KEY)
+/// - `Ok(Some(String))`: The device API key when present.
+/// - `Ok(None)`: The keychain has no entry for this profile.
+/// - `Err(anyhow::Error)`: If the keychain access failed.
+pub fn load_device_api_key_from_keychain(profile_id: &str) -> anyhow::Result<Option<String>> {
+    load_from_keychain(&device_api_key_user(profile_id))
+}
+
+/// Migrate legacy single-server keychain entries into per-profile entries
+/// for the given profile id.
+///
+/// ### Arguments
+/// - `profile_id`: The id of the profile that should receive the migrated
+///   credentials (typically the migrated "Fulgurant" profile).
+///
+/// ### Returns
+/// - `Ok(())`: Migration completed (or had nothing to migrate).
+/// - `Err(anyhow::Error)`: If a keychain operation failed; the legacy entries
+///   are left in place so a future startup can retry.
+pub fn migrate_legacy_keychain_to_profile(profile_id: &str) -> anyhow::Result<()> {
+    if let Some(legacy_private) = load_from_keychain(PRIVATE_KEY_PREFIX)? {
+        let target_user = private_key_user(profile_id);
+        if load_from_keychain(&target_user)?.is_none() {
+            log::info!("Migrating legacy private key to profile '{profile_id}'");
+            save_or_remove_to_keychain(&target_user, Some(&legacy_private))?;
+        }
+        save_or_remove_to_keychain(PRIVATE_KEY_PREFIX, None)?;
+    }
+    if let Some(legacy_api) = load_from_keychain(DEVICE_API_KEY_PREFIX)? {
+        let target_user = device_api_key_user(profile_id);
+        if load_from_keychain(&target_user)?.is_none() {
+            log::info!("Migrating legacy device API key to profile '{profile_id}'");
+            save_or_remove_to_keychain(&target_user, Some(&legacy_api))?;
+        }
+        save_or_remove_to_keychain(DEVICE_API_KEY_PREFIX, None)?;
+    }
+    Ok(())
+}
+
+/// Detect whether legacy single-server keychain entries (`Fulgur:private_key` and/or `Fulgur:device_api_key`) are still present.
+///
+/// ### Returns
+/// - `Ok(true)`: At least one legacy entry exists.
+/// - `Ok(false)`: No legacy entries are present.
+/// - `Err(anyhow::Error)`: A keychain access failed.
+fn legacy_keychain_entries_present() -> anyhow::Result<bool> {
+    Ok(load_from_keychain(PRIVATE_KEY_PREFIX)?.is_some()
+        || load_from_keychain(DEVICE_API_KEY_PREFIX)?.is_some())
+}
+
+/// Migrate legacy single-server keychain entries into the first configured profile, regardless of whether sync is currently activated.
+///
+/// ### Arguments
+/// - `settings`: Application settings used to locate the target profile.
+///
+/// ### Returns
+/// - `Ok(())`: Migration completed or there was nothing to migrate.
+/// - `Err(anyhow::Error)`: A keychain operation failed.
+pub fn migrate_legacy_keychain_entries_if_present(settings: &Settings) -> anyhow::Result<()> {
+    if !legacy_keychain_entries_present()? {
+        return Ok(());
+    }
+    let Some(target_profile_id) = settings
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .first()
+        .map(|profile| profile.id.clone())
+    else {
+        log::warn!(
+            "Legacy keychain entries detected but no profiles are configured; leaving entries in place"
+        );
+        return Ok(());
+    };
+    log::info!(
+        "Migrating legacy keychain entries to profile '{target_profile_id}' (first configured profile)"
+    );
+    migrate_legacy_keychain_to_profile(&target_profile_id)
 }
 
 /// Loads a value from the keychain
@@ -268,38 +385,93 @@ pub fn serialize(private_key: &Identity) -> Zeroizing<String> {
     Zeroizing::new(secret.expose_secret().to_string())
 }
 
-/// Checks if the private/public keys exist in the keychain. If not, generates a new pair and saves them to the keychain.
+/// Ensure a single profile has a valid X25519 keypair in the keychain and a paired `public_key` set on the profile struct.
+///
+/// The function does not save settings:  the caller is responsible for
+/// persistence so the new public key is broadcast atomically with any
+/// other change.
 ///
 /// ### Arguments
-/// - `settings`: the settings to check
+/// - `profile`: The profile that may need a keypair.
 ///
 /// ### Returns
-/// - `Ok()`: The private/public keys have been succesfully checked/generated and saved to the keychain
-/// - `Err(anyhow::Error)`: If the private/public keys could not be checked/generated or saved
+/// - `Ok(true)`: The profile's `public_key` was updated (either generated or
+///   recovered); the caller must persist settings.
+/// - `Ok(false)`: The keypair already exists in full; no change was made.
+/// - `Err(anyhow::Error)`: A keychain operation or key parsing/generation
+///   failed.
+pub fn ensure_profile_keypair(profile: &mut ServerProfile) -> anyhow::Result<bool> {
+    let private_key = load_private_key_from_keychain(&profile.id)?;
+    if let Some(private_key_str) = private_key {
+        if profile.public_key.is_some() {
+            log::debug!("Profile '{}' already has a keypair", profile.name);
+            return Ok(false);
+        }
+        log::info!(
+            "Profile '{}' has a stored private key but no public key; recovering public key",
+            profile.name
+        );
+        let identity: Identity = private_key_str
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Failed to parse stored private key: {e}"))?;
+        profile.public_key = Some(identity.to_public().to_string());
+        return Ok(true);
+    }
+    log::debug!(
+        "Profile '{}' has no keypair, generating a new one",
+        profile.name
+    );
+    let (new_private_key, new_public_key) = generate_key_pair();
+    save_private_key_to_keychain(&profile.id, Some(&serialize(&new_private_key)))?;
+    profile.public_key = Some(new_public_key.to_string());
+    Ok(true)
+}
+
+/// Ensure each active profile has a valid X25519 keypair available in the
+/// keychain and a paired public key in settings.
+///
+/// ### Arguments
+/// - `settings`: The application settings; profiles whose keys had to be
+///   generated will be mutated to carry the new public key.
+///
+/// ### Returns
+/// - `Ok(())`: All active profiles have valid keys.
+/// - `Err(anyhow::Error)`: If keychain access or key generation failed for
+///   any profile (the operation stops at the first failure).
 pub fn check_private_public_keys(settings: &mut Settings) -> anyhow::Result<()> {
-    if settings
+    if !settings
         .app_settings
         .synchronization_settings
         .is_synchronization_activated
     {
-        let private_key = load_private_key_from_keychain()?;
-        if private_key.is_none()
-            || settings
-                .app_settings
-                .synchronization_settings
-                .public_key
-                .is_none()
-        {
-            log::debug!("No private key, need to generate keys.");
-            let (new_private_key, new_public_key) = generate_key_pair();
-            save_private_key_to_keychain(Some(&serialize(&new_private_key)))?;
-            settings.app_settings.synchronization_settings.public_key =
-                Some(new_public_key.to_string());
-            log::debug!("Saving keys");
-            settings.save()?;
-        } else {
-            log::debug!("Private  key exists, no generation needed.")
+        return Ok(());
+    }
+    let mut settings_changed = false;
+    let profile_ids: Vec<String> = settings
+        .app_settings
+        .synchronization_settings
+        .profiles
+        .iter()
+        .filter(|p| p.is_active)
+        .map(|p| p.id.clone())
+        .collect();
+    for profile_id in profile_ids {
+        let Some(profile) = settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .iter_mut()
+            .find(|p| p.id == profile_id)
+        else {
+            continue;
+        };
+        if ensure_profile_keypair(profile)? {
+            settings_changed = true;
         }
+    }
+    if settings_changed {
+        log::debug!("Saving updated settings after key generation");
+        settings.save()?;
     }
     Ok(())
 }
@@ -373,7 +545,14 @@ pub fn decrypt_bytes(encrypted_b64: &str, private_key_str: &str) -> anyhow::Resu
 
 #[cfg(test)]
 mod tests {
-    use super::{decrypt_bytes, encrypt_bytes, generate_key_pair, is_valid_public_key, serialize};
+    use super::{
+        DEVICE_API_KEY_PREFIX, PRIVATE_KEY_PREFIX, decrypt_bytes, device_api_key_user,
+        encrypt_bytes, ensure_profile_keypair, generate_key_pair, is_valid_public_key,
+        load_device_api_key_from_keychain, load_from_keychain, load_private_key_from_keychain,
+        migrate_legacy_keychain_entries_if_present, private_key_user, save_or_remove_to_keychain,
+        save_private_key_to_keychain, serialize,
+    };
+    use crate::fulgur::settings::{ServerProfile, Settings};
 
     #[test]
     fn test_encrypt_decrypt_bytes() {
@@ -447,5 +626,222 @@ mod tests {
         let (private_key, _) = generate_key_pair();
         let private_str = serialize(&private_key);
         assert!(!is_valid_public_key(&private_str));
+    }
+
+    /// Serialize migration-related tests so concurrent runs cannot stomp on the
+    /// shared legacy keychain entry names.
+    fn migration_test_lock() -> &'static std::sync::Mutex<()> {
+        use std::sync::OnceLock;
+        static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    fn clear_legacy_keychain_entries() {
+        let _ = save_or_remove_to_keychain(PRIVATE_KEY_PREFIX, None);
+        let _ = save_or_remove_to_keychain(DEVICE_API_KEY_PREFIX, None);
+    }
+
+    #[test]
+    fn test_migrate_legacy_keychain_entries_copies_to_first_profile_and_deletes_legacy() {
+        let _guard = migration_test_lock().lock().unwrap();
+        clear_legacy_keychain_entries();
+
+        save_or_remove_to_keychain(PRIVATE_KEY_PREFIX, Some("legacy-private")).unwrap();
+        save_or_remove_to_keychain(DEVICE_API_KEY_PREFIX, Some("legacy-device-key")).unwrap();
+
+        let mut settings = Settings::new();
+        let profile = ServerProfile::new("Fulgurant");
+        let target_id = profile.id.clone();
+        settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .push(profile);
+
+        migrate_legacy_keychain_entries_if_present(&settings)
+            .expect("migration should succeed when legacy entries exist");
+
+        // Legacy entries are gone.
+        assert!(
+            load_from_keychain(PRIVATE_KEY_PREFIX).unwrap().is_none(),
+            "legacy private key entry must be deleted"
+        );
+        assert!(
+            load_from_keychain(DEVICE_API_KEY_PREFIX).unwrap().is_none(),
+            "legacy device API key entry must be deleted"
+        );
+        // Per-profile entries carry the migrated values.
+        let migrated_private = load_from_keychain(&private_key_user(&target_id))
+            .unwrap()
+            .expect("private key must be migrated under the new profile");
+        assert_eq!(migrated_private, "legacy-private");
+        let migrated_api = load_from_keychain(&device_api_key_user(&target_id))
+            .unwrap()
+            .expect("device API key must be migrated under the new profile");
+        assert_eq!(migrated_api, "legacy-device-key");
+
+        // Cleanup.
+        let _ = save_or_remove_to_keychain(&private_key_user(&target_id), None);
+        let _ = save_or_remove_to_keychain(&device_api_key_user(&target_id), None);
+    }
+
+    #[test]
+    fn test_migrate_legacy_keychain_entries_is_noop_when_no_legacy_entries() {
+        let _guard = migration_test_lock().lock().unwrap();
+        clear_legacy_keychain_entries();
+
+        let mut settings = Settings::new();
+        let profile = ServerProfile::new("Fulgurant");
+        let target_id = profile.id.clone();
+        settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .push(profile);
+
+        // Pre-state: no entries anywhere for this profile.
+        assert!(
+            load_private_key_from_keychain(&target_id)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            load_device_api_key_from_keychain(&target_id)
+                .unwrap()
+                .is_none()
+        );
+
+        migrate_legacy_keychain_entries_if_present(&settings)
+            .expect("migration without legacy entries must be a no-op");
+
+        // No new entries should have been created.
+        assert!(
+            load_private_key_from_keychain(&target_id)
+                .unwrap()
+                .is_none(),
+            "no per-profile private key should be created when legacy is absent"
+        );
+        assert!(
+            load_device_api_key_from_keychain(&target_id)
+                .unwrap()
+                .is_none(),
+            "no per-profile device API key should be created when legacy is absent"
+        );
+    }
+
+    #[test]
+    fn test_migrate_legacy_keychain_entries_warns_and_skips_when_no_profiles() {
+        let _guard = migration_test_lock().lock().unwrap();
+        clear_legacy_keychain_entries();
+
+        save_or_remove_to_keychain(PRIVATE_KEY_PREFIX, Some("orphan-private")).unwrap();
+        save_or_remove_to_keychain(DEVICE_API_KEY_PREFIX, Some("orphan-device-key")).unwrap();
+
+        let settings = Settings::new(); // no profiles configured
+        migrate_legacy_keychain_entries_if_present(&settings)
+            .expect("migration must succeed even when there are no profiles");
+
+        // Legacy entries must be left in place so a later activation can recover them.
+        assert_eq!(
+            load_from_keychain(PRIVATE_KEY_PREFIX).unwrap().as_deref(),
+            Some("orphan-private"),
+            "legacy private key must be preserved when no profile exists to receive it"
+        );
+        assert_eq!(
+            load_from_keychain(DEVICE_API_KEY_PREFIX)
+                .unwrap()
+                .as_deref(),
+            Some("orphan-device-key"),
+            "legacy device API key must be preserved when no profile exists to receive it"
+        );
+
+        // Cleanup so other tests start fresh.
+        clear_legacy_keychain_entries();
+    }
+
+    #[test]
+    fn test_ensure_profile_keypair_generates_when_keychain_is_empty() {
+        let mut profile = ServerProfile::new("Fresh");
+        assert!(profile.public_key.is_none());
+        let generated = ensure_profile_keypair(&mut profile)
+            .expect("keypair generation should succeed when keychain is empty");
+        assert!(generated, "must report that a keypair was created");
+        let public_key = profile
+            .public_key
+            .as_deref()
+            .expect("public_key should be set after generation");
+        assert!(
+            is_valid_public_key(public_key),
+            "generated public_key should parse as a valid age recipient"
+        );
+        assert!(
+            load_private_key_from_keychain(&profile.id)
+                .unwrap()
+                .is_some(),
+            "private key must be persisted in the keychain after generation"
+        );
+        // Cleanup.
+        let _ = save_or_remove_to_keychain(&private_key_user(&profile.id), None);
+    }
+
+    #[test]
+    fn test_ensure_profile_keypair_is_noop_when_both_halves_present() {
+        let mut profile = ServerProfile::new("Already-Has-Keys");
+        // Seed both halves.
+        let (private_key, public_key) = generate_key_pair();
+        save_private_key_to_keychain(&profile.id, Some(&serialize(&private_key))).unwrap();
+        let original_public = public_key.to_string();
+        profile.public_key = Some(original_public.clone());
+
+        let generated = ensure_profile_keypair(&mut profile)
+            .expect("noop path should succeed when both halves are present");
+        assert!(
+            !generated,
+            "no generation should happen when keypair is already set"
+        );
+        assert_eq!(
+            profile.public_key.as_deref(),
+            Some(original_public.as_str()),
+            "public_key must remain unchanged"
+        );
+        // Cleanup.
+        let _ = save_or_remove_to_keychain(&private_key_user(&profile.id), None);
+    }
+
+    #[test]
+    fn test_ensure_profile_keypair_recovers_public_key_from_existing_private_key() {
+        // Reproduces the Begin-Synchronization-then-Save flow: a prior call
+        // wrote the private key to the keychain but the in-memory profile
+        // does not carry a public_key. ensure_profile_keypair must recover
+        // (not regenerate) so the originally registered public key is
+        // preserved.
+        let mut profile = ServerProfile::new("Recovery");
+        let (private_key, public_key) = generate_key_pair();
+        let expected_public = public_key.to_string();
+        save_private_key_to_keychain(&profile.id, Some(&serialize(&private_key))).unwrap();
+        assert!(profile.public_key.is_none());
+
+        let updated = ensure_profile_keypair(&mut profile)
+            .expect("recovery path should succeed when private key exists");
+        assert!(updated, "must report that the profile was updated");
+        assert_eq!(
+            profile.public_key.as_deref(),
+            Some(expected_public.as_str()),
+            "public_key must be derived from the existing private key, not regenerated"
+        );
+
+        // Verify the keychain still holds the same private key (it was not
+        // overwritten by a fresh generation).
+        let stored = load_private_key_from_keychain(&profile.id)
+            .unwrap()
+            .expect("private key should still be in keychain");
+        let stored_identity: super::Identity = stored.parse().unwrap();
+        assert_eq!(
+            stored_identity.to_public().to_string(),
+            expected_public,
+            "stored private key must still match the recovered public key"
+        );
+        // Cleanup.
+        let _ = save_or_remove_to_keychain(&private_key_user(&profile.id), None);
     }
 }

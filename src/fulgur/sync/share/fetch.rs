@@ -1,5 +1,5 @@
 use crate::fulgur::{
-    settings::SynchronizationSettings,
+    settings::ServerProfile,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
         synchronization::{SynchronizationError, handle_ureq_error},
@@ -8,25 +8,26 @@ use crate::fulgur::{
 use fulgur_common::api::shares::SharedFileResponse;
 use std::sync::Arc;
 
-/// Atomically fetch and delete all pending shares for the current device.
+/// Atomically fetch and delete all pending shares for the current device on
+/// a single profile's server.
 ///
 /// ### Arguments
-/// - `synchronization_settings`: The synchronization settings
-/// - `token_state`: Arc to the token state manager
+/// - `profile`: The server profile to fetch from
+/// - `token_state`: Per-profile token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
 /// - `Ok(Vec<SharedFileResponse>)`: The shares that were drained from the server
 /// - `Err(SynchronizationError)`: If the request failed or the response was invalid
 pub fn fetch_pending_shares(
-    synchronization_settings: &SynchronizationSettings,
+    profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<Vec<SharedFileResponse>, SynchronizationError> {
-    let Some(server_url) = synchronization_settings.server_url.clone() else {
+    let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
-    let token = get_valid_token(synchronization_settings, token_state, http_agent)?;
+    let token = get_valid_token(profile, token_state, http_agent)?;
     let shares_url = format!("{server_url}/api/shares");
     let mut response = http_agent
         .get(&shares_url)
