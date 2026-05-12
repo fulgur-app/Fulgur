@@ -1,8 +1,8 @@
 use crate::fulgur::{
     Fulgur,
     settings::{MAX_PROFILES, ProfileId, ServerProfile, new_profile_id},
-    sync::synchronization::perform_initial_synchronization_with_progress,
-    utils::crypto_helper::{ensure_profile_keypair, save_device_api_key_to_keychain},
+    sync::synchronization::perform_ping_with_progress,
+    utils::crypto_helper::save_device_api_key_to_keychain,
 };
 use gpui::{
     App, AppContext, Context, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled,
@@ -26,7 +26,7 @@ use std::sync::{
 
 const DEVICE_KEY_PLACEHOLDER: &str = "<Device Key>";
 
-/// Form state shared between the sheet body, the inline Begin Synchronization button, and the Save handler.
+/// Form state shared between the sheet body, the Test connection button, and the Save handler.
 struct ProfileFormState {
     profile_id: ProfileId, //Identifier of the profile being edited (or freshly minted for Add mode)
     is_new: bool,          //True when this sheet is creating a new profile
@@ -349,12 +349,12 @@ impl Fulgur {
                         h_flex()
                             .gap_2()
                             .child(
-                                Button::new("begin-sync-from-sheet")
-                                    .child("Begin Synchronization")
+                                Button::new("test-connection-from-sheet")
+                                    .child("Test connection")
                                     .small()
                                     .cursor_pointer()
                                     .on_click(move |_, window, cx| {
-                                        handle_begin_synchronization(
+                                        handle_test_connection(
                                             &entity_begin_inner,
                                             &state_begin_inner,
                                             window,
@@ -479,36 +479,42 @@ fn field_label(label: &str, cx: &App) -> impl IntoElement {
         .child(label.to_string())
 }
 
-/// Handle the inline Begin Synchronization button.
+/// Handle the Test connection button.
+///
+/// ### Description
+/// Saves the device key from the form to the keychain (if changed), then
+/// pings the Fulgurant server with a fresh JWT token. The result is shown
+/// as a success or error notification. No profile changes are persisted.
 ///
 /// ### Arguments
-/// - `entity`: The Fulgur entity (used to access settings + shared state).
+/// - `entity`: The Fulgur entity (used to look up the existing public key).
 /// - `state`: The shared form state.
-/// - `window`: The window to attach progress notifications to.
+/// - `window`: The window to attach the progress notification to.
 /// - `cx`: The application context.
-fn handle_begin_synchronization(
+fn handle_test_connection(
     entity: &Entity<Fulgur>,
     state: &Arc<ProfileFormState>,
     window: &mut Window,
     cx: &mut App,
 ) {
-    if !*state.is_active.lock() {
+    let url_raw = state.server_url_input.read(cx).value().trim().to_string();
+    let Some(server_url) = optional_text(&url_raw) else {
         window.push_notification(
             (
                 NotificationType::Error,
-                SharedString::from("Enable the profile before beginning synchronization."),
+                SharedString::from("Enter a server URL to test the connection."),
             ),
             cx,
         );
         return;
-    }
-    if let Err(message) = validate_form(state, entity, cx) {
-        window.push_notification((NotificationType::Error, message), cx);
+    };
+    if let Err(msg) = validate_url(&server_url) {
+        window.push_notification((NotificationType::Error, msg), cx);
         return;
     }
     let device_key_edit = read_device_key_edit(state, cx);
     if let Err(e) = apply_device_key_edit(&state.profile_id, &device_key_edit) {
-        log::error!("Failed to save device API key: {e}");
+        log::error!("Failed to save device API key for ping: {e}");
         window.push_notification(
             (
                 NotificationType::Error,
@@ -530,24 +536,17 @@ fn handle_begin_synchronization(
         .synchronization_settings
         .find_profile(&state.profile_id)
         .and_then(|p| p.public_key.clone());
-    let mut profile = build_profile_from_form(state, existing_public_key, cx);
-    // Generate a keypair for the in-sheet draft so the test connection can
-    // send a valid `public_key` to the server. For Add mode this is the only
-    // moment the keypair could be created before any persistence happens.
-    if let Err(e) = ensure_profile_keypair(&mut profile) {
-        log::error!("Failed to ensure keypair before test connection: {e}");
-        window.push_notification(
-            (
-                NotificationType::Error,
-                SharedString::from(format!("Failed to prepare encryption key: {e}")),
-            ),
-            cx,
-        );
-        return;
-    }
-    let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-    shared.sync_state_for(&profile.id).token_state.clear_token();
-    perform_initial_synchronization_with_progress(profile, window, cx);
+    let profile = build_profile_from_form(state, existing_public_key, cx);
+    cx.global::<crate::fulgur::shared_state::SharedAppState>()
+        .sync_state_for(&profile.id)
+        .token_state
+        .clear_token();
+    let display_name = if profile.name.is_empty() {
+        server_url
+    } else {
+        profile.name.clone()
+    };
+    perform_ping_with_progress(profile, display_name, window, cx);
 }
 
 /// Handle the Save button.
@@ -614,7 +613,7 @@ fn handle_save(
                 .token_state
                 .clear_token();
             entity.update(cx, |this, cx| {
-                this.restart_sse_connection_for(&profile_id, cx);
+                this.restart_sse_connection_for_with_progress(&profile_id, window, cx);
             });
             window.close_sheet(cx);
         }

@@ -1,15 +1,21 @@
+use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress};
 use crate::fulgur::{
     Fulgur,
-    settings::ProfileId,
-    sync::synchronization::{SynchronizationStatus, initial_synchronization},
+    settings::{ProfileId, ServerProfile},
+    sync::synchronization::{
+        SynchronizationStatus, initial_synchronization, set_sync_server_connection_status,
+        store_server_max_file_size,
+    },
     utils::utilities::collect_events,
 };
 use gpui::{App, Context, SharedString, Window};
 use gpui_component::{WindowExt, notification::NotificationType};
+use parking_lot::Mutex;
 use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
+        mpsc::Sender,
     },
     thread,
     time::{Duration, Instant},
@@ -19,6 +25,35 @@ use super::{connection::connect_sse, types::SseEvent, types::SseState};
 
 /// Maximum time to wait for the previous SSE thread to exit before starting a new one
 const SSE_THREAD_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Resources produced by the common SSE restart setup phase.
+struct SseRestartSetup {
+    old_handle: Option<thread::JoinHandle<()>>,
+    sse_tx: Sender<SseEvent>,
+    sse_shutdown_flag: Arc<AtomicBool>,
+    handle_storage: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+    profile: ServerProfile,
+}
+
+/// Wait for a previous SSE background thread to stop before proceeding.
+///
+/// ### Arguments
+/// - `old_handle`: The join handle from the previous SSE thread, if any.
+fn wait_for_previous_sse_thread(old_handle: Option<thread::JoinHandle<()>>) {
+    let Some(handle) = old_handle else { return };
+    let deadline = Instant::now() + SSE_THREAD_SHUTDOWN_TIMEOUT;
+    while !handle.is_finished() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(100));
+    }
+    if handle.is_finished() {
+        let _ = handle.join();
+        log::info!("Previous SSE thread exited");
+    } else {
+        log::warn!(
+            "Previous SSE thread still running after {SSE_THREAD_SHUTDOWN_TIMEOUT:?}, proceeding with new connection"
+        );
+    }
+}
 
 impl Fulgur {
     /// Check if any profile is currently connected to its sync server.
@@ -34,35 +69,16 @@ impl Fulgur {
             .any(|s| s.connection_status.lock().is_connected())
     }
 
-    /// Ensure the per-window SSE state slot exists for a profile.
-    ///
-    /// Allocates the channel + shutdown flag if they have not been set up yet
-    /// (e.g. when a profile was added after `Fulgur::new` ran).
+    /// Signal the old SSE worker's shutdown flag, allocate a fresh SSE state
+    /// slot, and validate that the profile is ready to connect.
     ///
     /// ### Arguments
-    /// - `profile_id`: The profile to ensure has an SSE slot.
-    fn ensure_sse_slot(&mut self, profile_id: &str) {
-        let needs_init = match self.sse_states.get(profile_id) {
-            None => true,
-            Some(state) => state.sse_event_tx.is_none(),
-        };
-        if needs_init {
-            let (sse_tx, sse_rx) = std::sync::mpsc::channel();
-            let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
-            let mut state = SseState::new();
-            state.sse_events = Some(sse_rx);
-            state.sse_event_tx = Some(sse_tx);
-            state.sse_shutdown_flag = Some(sse_shutdown_flag);
-            self.sse_states.insert(profile_id.to_string(), state);
-        }
-    }
-
-    /// Restart the SSE connection for a single profile.
+    /// - `profile_id`: The profile to restart.
     ///
-    /// ### Arguments
-    /// - `profile_id`: The profile whose SSE worker should be restarted.
-    /// - `cx`: The context of the application.
-    pub fn restart_sse_connection_for(&mut self, profile_id: &str, cx: &mut Context<Self>) {
+    /// ### Returns
+    /// - `Some(SseRestartSetup)`: Setup resources ready for the caller to spawn a thread.
+    /// - `None`: The profile was not found, is inactive, or the master switch is off.
+    fn prepare_sse_restart(&mut self, profile_id: &str) -> Option<SseRestartSetup> {
         if let Some(state) = self.sse_states.get(profile_id)
             && let Some(ref shutdown_flag) = state.sse_shutdown_flag
         {
@@ -93,10 +109,8 @@ impl Fulgur {
         {
             Some(p) => p.clone(),
             None => {
-                log::warn!(
-                    "restart_sse_connection_for: profile id '{profile_id}' not found in settings"
-                );
-                return;
+                log::warn!("prepare_sse_restart: profile id '{profile_id}' not found in settings");
+                return None;
             }
         };
         let master_on = self
@@ -109,8 +123,33 @@ impl Fulgur {
                 "Profile '{}' not active or master switch off, SSE connection not started",
                 profile.name
             );
-            return;
+            return None;
         }
+        Some(SseRestartSetup {
+            old_handle,
+            sse_tx,
+            sse_shutdown_flag,
+            handle_storage,
+            profile,
+        })
+    }
+
+    /// Restart the SSE connection for a single profile.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The profile whose SSE worker should be restarted.
+    /// - `cx`: The context of the application.
+    pub fn restart_sse_connection_for(&mut self, profile_id: &str, cx: &mut Context<Self>) {
+        let Some(SseRestartSetup {
+            old_handle,
+            sse_tx,
+            sse_shutdown_flag,
+            handle_storage,
+            profile,
+        }) = self.prepare_sse_restart(profile_id)
+        else {
+            return;
+        };
         let shared = self.shared_state(cx);
         let sync_state = shared.sync_state_for(&profile.id);
         let sync_status = sync_state.connection_status.clone();
@@ -118,20 +157,7 @@ impl Fulgur {
         let http_agent = Arc::clone(&shared.http_agent);
         let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
         thread::spawn(move || {
-            if let Some(handle) = old_handle {
-                let deadline = Instant::now() + SSE_THREAD_SHUTDOWN_TIMEOUT;
-                while !handle.is_finished() && Instant::now() < deadline {
-                    thread::sleep(Duration::from_millis(100));
-                }
-                if handle.is_finished() {
-                    let _ = handle.join();
-                    log::info!("Previous SSE thread exited");
-                } else {
-                    log::warn!(
-                        "Previous SSE thread still running after {SSE_THREAD_SHUTDOWN_TIMEOUT:?}, proceeding with new connection"
-                    );
-                }
-            }
+            wait_for_previous_sse_thread(old_handle);
             thread::sleep(Duration::from_millis(200));
             match initial_synchronization(&profile, &token_state, &http_agent) {
                 Ok(_) => {
@@ -166,23 +192,135 @@ impl Fulgur {
         });
     }
 
-    /// Restart the SSE connection for the primary (first) profile.
+    /// Restart the SSE connection for a single profile, showing a progress
+    /// indicator and a success/error notification when the connection attempt
+    /// completes.
     ///
     /// ### Arguments
+    /// - `profile_id`: The profile whose SSE worker should be restarted.
+    /// - `window`: The window to attach the progress indicator to.
     /// - `cx`: The context of the application.
-    pub fn restart_sse_connection(&mut self, cx: &mut Context<Self>) {
-        let primary_id = self
-            .settings
-            .app_settings
-            .synchronization_settings
-            .primary_profile()
-            .map(|p| p.id.clone());
-        if let Some(profile_id) = primary_id {
-            self.ensure_sse_slot(&profile_id);
-            self.restart_sse_connection_for(&profile_id, cx);
-        } else {
-            log::debug!("restart_sse_connection: no primary profile configured");
-        }
+    pub fn restart_sse_connection_for_with_progress(
+        &mut self,
+        profile_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(SseRestartSetup {
+            old_handle,
+            sse_tx,
+            sse_shutdown_flag,
+            handle_storage,
+            profile,
+        }) = self.prepare_sse_restart(profile_id)
+        else {
+            return;
+        };
+        let shared = self.shared_state(cx);
+        let sync_state = shared.sync_state_for(&profile.id);
+        let connection_status = sync_state.connection_status.clone();
+        let connecting_since = sync_state.connecting_since.clone();
+        let token_state = Arc::clone(&sync_state.token_state);
+        let http_agent = Arc::clone(&shared.http_agent);
+        let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
+        let pending_notification = Arc::clone(&sync_state.pending_notification);
+        let device_name = sync_state.device_name.clone();
+        let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
+        let profile_name = profile.name.clone();
+
+        set_sync_server_connection_status(&connection_status, SynchronizationStatus::Connecting);
+        *connecting_since.lock() = Some(Instant::now());
+
+        let done = Arc::new(AtomicBool::new(false));
+        let done_for_thread = Arc::clone(&done);
+
+        let cancel_status = connection_status.clone();
+        let cancel_connecting_since = connecting_since.clone();
+        let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, _cx| {
+            set_sync_server_connection_status(&cancel_status, SynchronizationStatus::Disconnected);
+            *cancel_connecting_since.lock() = None;
+        }));
+
+        let progress = start_progress(
+            window,
+            cx,
+            format!("Connecting to {profile_name}...").into(),
+            cancel_callback,
+        );
+        let cancel_flag = progress.cancel_flag();
+        let cancel_flag_for_thread = Arc::clone(&cancel_flag);
+
+        thread::spawn(move || {
+            wait_for_previous_sse_thread(old_handle);
+            thread::sleep(Duration::from_millis(200));
+
+            if cancel_flag_for_thread.load(Ordering::Acquire) {
+                done_for_thread.store(true, Ordering::Release);
+                return;
+            }
+
+            let (notification, status) =
+                match initial_synchronization(&profile, &token_state, &http_agent) {
+                    Ok(begin_response) => {
+                        store_server_max_file_size(
+                            &max_file_size_bytes,
+                            begin_response.max_file_size_bytes,
+                        );
+                        *device_name.lock() = Some(begin_response.device_name.clone());
+                        *pending_shared_files.lock() = begin_response.shares;
+                        let msg = format!(
+                            "{profile_name}: Connection successful as {}",
+                            begin_response.device_name
+                        );
+                        match connect_sse(
+                            &profile,
+                            sse_tx,
+                            sse_shutdown_flag,
+                            connection_status.clone(),
+                            &token_state,
+                            &http_agent,
+                            &pending_shared_files,
+                        ) {
+                            Ok(new_handle) => {
+                                *handle_storage.lock() = Some(new_handle);
+                            }
+                            Err(e) => {
+                                log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
+                            }
+                        }
+                        (
+                            (NotificationType::Success, SharedString::from(msg)),
+                            SynchronizationStatus::Connected,
+                        )
+                    }
+                    Err(e) => {
+                        let msg = format!("{profile_name}: Connection failed: {e}");
+                        (
+                            (NotificationType::Error, SharedString::from(msg)),
+                            SynchronizationStatus::from_error(&e),
+                        )
+                    }
+                };
+            set_sync_server_connection_status(&connection_status, status);
+            *connecting_since.lock() = None;
+            *pending_notification.lock() = Some(notification);
+            done_for_thread.store(true, Ordering::Release);
+        });
+
+        window
+            .spawn(cx, async move |async_cx| {
+                let _progress = progress;
+                loop {
+                    async_cx
+                        .background_executor()
+                        .timer(Duration::from_millis(100))
+                        .await;
+                    if done.load(Ordering::Acquire) || cancel_flag.load(Ordering::Acquire) {
+                        break;
+                    }
+                }
+            })
+            .detach();
     }
 
     /// Handle a single SSE event for a specific profile.
