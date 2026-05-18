@@ -92,6 +92,19 @@ fn main() {
     #[cfg(target_os = "windows")]
     fulgur::utils::jump_list::set_app_user_model_id();
 
+    // Collect CLI args once so we can strip the dev-only `-d <path>` flag
+    // before the rest of main() interprets them as file paths.
+    let mut args: Vec<String> = std::env::args().collect();
+
+    // Dev-only `-d <path>` flag for development only
+    if let Some(pos) = args.iter().position(|a| a == "-d")
+        && pos + 1 < args.len()
+    {
+        let dev_dir = PathBuf::from(args.remove(pos + 1));
+        args.remove(pos);
+        fulgur::utils::paths::set_config_dir_override(dev_dir);
+    }
+
     if let Err(e) = fulgur::utils::logger::init() {
         eprintln!("Failed to initialize logger: {e}");
     }
@@ -110,7 +123,6 @@ fn main() {
     log::info!("=== Fulgur v{current_version} Starting ===");
     log::info!("Platform: {}", std::env::consts::OS);
     log::info!("Architecture: {}", std::env::consts::ARCH);
-    let args: Vec<String> = std::env::args().collect();
     log::info!("Command-line arguments: {args:?}");
     if args.len() > 1 {
         log::debug!("File to open from command-line: {}", args[1]);
