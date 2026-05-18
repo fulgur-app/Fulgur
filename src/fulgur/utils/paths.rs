@@ -8,6 +8,19 @@
 use anyhow::Result;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+#[cfg(debug_assertions)]
+static CONFIG_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Override the configuration directory for the lifetime of the process. Intended for development use only (e.g. the `-d` CLI flag).
+///
+/// ### Arguments
+/// - `path`: Directory to use as the Fulgur configuration root
+#[cfg(debug_assertions)]
+pub fn set_config_dir_override(path: PathBuf) {
+    let _ = CONFIG_DIR_OVERRIDE.set(path);
+}
 
 /// Get the Fulgur configuration directory path with platform-specific configuration directory and ensures
 /// it exists by creating it if necessary.
@@ -25,6 +38,12 @@ use std::path::PathBuf;
 /// - On Unix: Returns error if `HOME` environment variable is not set
 /// - Returns error if directory creation fails (permissions, disk full, etc.)
 pub fn config_dir() -> Result<PathBuf> {
+    #[cfg(debug_assertions)]
+    if let Some(override_path) = CONFIG_DIR_OVERRIDE.get() {
+        fs::create_dir_all(override_path)?;
+        return Ok(override_path.clone());
+    }
+
     #[cfg(target_os = "windows")]
     let path = {
         let app_data = std::env::var("APPDATA")?;
