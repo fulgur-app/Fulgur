@@ -94,9 +94,11 @@ fn main() {
 
     // Collect CLI args once so we can strip the dev-only `-d <path>` flag
     // before the rest of main() interprets them as file paths.
+    #[cfg_attr(not(debug_assertions), allow(unused_mut))]
     let mut args: Vec<String> = std::env::args().collect();
 
     // Dev-only `-d <path>` flag for development only
+    #[cfg(debug_assertions)]
     if let Some(pos) = args.iter().position(|a| a == "-d")
         && pos + 1 < args.len()
     {

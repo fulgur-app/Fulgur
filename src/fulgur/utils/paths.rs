@@ -8,6 +8,7 @@
 use anyhow::Result;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(debug_assertions)]
 use std::sync::OnceLock;
 
 #[cfg(debug_assertions)]
