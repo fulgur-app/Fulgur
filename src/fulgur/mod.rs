@@ -699,6 +699,7 @@ impl Fulgur {
             MarkdownPreview {
                 source_tab_id: usize,
                 content: Entity<InputState>,
+                view_state: Entity<gpui_component::text::TextViewState>,
             },
         }
 
@@ -714,6 +715,7 @@ impl Fulgur {
                 Tab::MarkdownPreview(preview_tab) => ActiveTabRenderData::MarkdownPreview {
                     source_tab_id: preview_tab.source_tab_id,
                     content: preview_tab.content.clone(),
+                    view_state: preview_tab.view_state.clone(),
                 },
             })
         });
@@ -790,13 +792,17 @@ impl Fulgur {
                 ActiveTabRenderData::MarkdownPreview {
                     source_tab_id,
                     content,
+                    view_state,
                 } => {
                     let preview_text = self.markdown_preview_text_for(source_tab_id, &content, cx);
+                    view_state.update(cx, |state, cx| {
+                        state.set_text(preview_text.as_ref(), cx);
+                    });
                     return v_flex()
                         .w_full()
                         .flex_1()
                         .child(
-                            TextView::markdown("markdown-preview-tab", preview_text)
+                            TextView::new(&view_state)
                                 .py_2()
                                 .px_4()
                                 .scrollable(true)

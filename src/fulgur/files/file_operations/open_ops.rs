@@ -147,7 +147,7 @@ impl Fulgur {
                     this.active_tab_index = Some(editor_tab_index);
                     this.pending_tab_scroll = Some(editor_tab_index);
                     this.next_tab_id += 1;
-                    this.maybe_open_markdown_preview_for_editor(editor_tab_index);
+                    this.maybe_open_markdown_preview_for_editor(editor_tab_index, cx);
                     this.watch_file(&path);
                     this.focus_active_tab(window, cx);
                     if let Err(e) = this.settings.add_file(path.clone()) {

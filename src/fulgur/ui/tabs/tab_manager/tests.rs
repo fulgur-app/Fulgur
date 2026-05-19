@@ -543,12 +543,12 @@ fn test_maybe_open_markdown_preview_for_editor_inserts_preview_for_markdown(
 ) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
-        fulgur.update(cx, |this, _cx| {
+        fulgur.update(cx, |this, cx| {
             if let Some(Tab::Editor(editor)) = this.tabs.first_mut() {
                 editor.language = SupportedLanguage::Markdown;
             }
             let count_before = this.tabs.len();
-            this.maybe_open_markdown_preview_for_editor(0);
+            this.maybe_open_markdown_preview_for_editor(0, cx);
             assert_eq!(this.tabs.len(), count_before + 1);
             assert!(matches!(this.tabs.get(1), Some(Tab::MarkdownPreview(_))));
         });
@@ -559,10 +559,10 @@ fn test_maybe_open_markdown_preview_for_editor_inserts_preview_for_markdown(
 fn test_maybe_open_markdown_preview_for_editor_skips_non_markdown(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
-        fulgur.update(cx, |this, _cx| {
+        fulgur.update(cx, |this, cx| {
             // Default language is Plain, no preview tab should be inserted
             let count_before = this.tabs.len();
-            this.maybe_open_markdown_preview_for_editor(0);
+            this.maybe_open_markdown_preview_for_editor(0, cx);
             assert_eq!(this.tabs.len(), count_before);
         });
     });
@@ -572,7 +572,7 @@ fn test_maybe_open_markdown_preview_for_editor_skips_non_markdown(cx: &mut TestA
 fn test_maybe_open_markdown_preview_for_editor_is_noop_when_disabled(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
-        fulgur.update(cx, |this, _cx| {
+        fulgur.update(cx, |this, cx| {
             this.settings
                 .editor_settings
                 .markdown_settings
@@ -581,7 +581,7 @@ fn test_maybe_open_markdown_preview_for_editor_is_noop_when_disabled(cx: &mut Te
                 editor.language = SupportedLanguage::Markdown;
             }
             let count_before = this.tabs.len();
-            this.maybe_open_markdown_preview_for_editor(0);
+            this.maybe_open_markdown_preview_for_editor(0, cx);
             assert_eq!(this.tabs.len(), count_before);
         });
     });
@@ -604,7 +604,7 @@ fn test_insert_preview_tabs_for_markdown_adds_preview_tabs_for_all_markdown_edit
                 editor.language = SupportedLanguage::Markdown;
             }
             assert_eq!(this.tabs.len(), 2);
-            this.insert_preview_tabs_for_markdown();
+            this.insert_preview_tabs_for_markdown(cx);
             assert_eq!(this.tabs.len(), 4);
             assert_eq!(
                 this.tabs
@@ -621,7 +621,7 @@ fn test_insert_preview_tabs_for_markdown_adds_preview_tabs_for_all_markdown_edit
 fn test_insert_preview_tabs_for_markdown_is_noop_when_disabled(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
-        fulgur.update(cx, |this, _cx| {
+        fulgur.update(cx, |this, cx| {
             this.settings
                 .editor_settings
                 .markdown_settings
@@ -630,7 +630,7 @@ fn test_insert_preview_tabs_for_markdown_is_noop_when_disabled(cx: &mut TestAppC
                 editor.language = SupportedLanguage::Markdown;
             }
             let count_before = this.tabs.len();
-            this.insert_preview_tabs_for_markdown();
+            this.insert_preview_tabs_for_markdown(cx);
             assert_eq!(this.tabs.len(), count_before);
         });
     });
