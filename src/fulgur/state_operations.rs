@@ -171,7 +171,7 @@ impl Fulgur {
                     .and_then(|t| t.as_editor())
                     .map(|et| et.id);
                 self.next_tab_id = tab_id;
-                self.insert_preview_tabs_for_markdown();
+                self.insert_preview_tabs_for_markdown(cx);
                 self.active_tab_index = if let Some(target_id) = saved_active_editor_id {
                     self.tabs
                         .iter()
