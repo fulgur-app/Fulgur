@@ -2,7 +2,9 @@ use crate::fulgur::{
     settings::ServerProfile,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
-        synchronization::{SynchronizationError, handle_ureq_error},
+        synchronization::{
+            MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES, SynchronizationError, handle_ureq_error,
+        },
     },
 };
 use fulgur_common::api::shares::SharedFileResponse;
@@ -43,4 +45,47 @@ pub fn fetch_pending_shares(
         })?;
     log::debug!("Fetched {} pending share(s) from server", shares.len());
     Ok(shares)
+}
+
+/// Fetch a single pending share by ID and remove it from the server.
+///
+/// ### Arguments
+/// - `profile`: The server profile to fetch from
+/// - `token_state`: Per-profile token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `id`: The share identifier returned by the v2 begin endpoint
+///
+/// ### Returns
+/// - `Ok(SharedFileResponse)`: The share content
+/// - `Err(SynchronizationError)`: If the request failed, the share is gone,
+///   or the response was invalid or too large
+pub fn fetch_share_by_id(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+    id: &str,
+) -> Result<SharedFileResponse, SynchronizationError> {
+    let Some(server_url) = profile.server_url.clone() else {
+        return Err(SynchronizationError::ServerUrlMissing);
+    };
+    let token = get_valid_token(profile, token_state, http_agent)?;
+    let share_url = format!("{server_url}/api/shares/{id}");
+    let mut response = http_agent
+        .get(&share_url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .call()
+        .map_err(|e| handle_ureq_error(e, "Failed to fetch share by id"))?;
+    let body = response
+        .body_mut()
+        .with_config()
+        .limit(MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES)
+        .read_to_string()
+        .map_err(|e| {
+            log::error!("Failed to read share response body for id {id}: {e}");
+            SynchronizationError::Other(e.to_string())
+        })?;
+    serde_json::from_str::<SharedFileResponse>(&body).map_err(|e| {
+        log::error!("Failed to parse share response body for id {id}: {e}");
+        SynchronizationError::InvalidResponse(e.to_string())
+    })
 }

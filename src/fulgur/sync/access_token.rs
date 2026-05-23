@@ -116,7 +116,12 @@ fn request_access_token(
         .header("X-User-Email", email)
         .send("")
         .map_err(|e| handle_ureq_error(e, "Failed to obtain access token"))?;
-    let body = match response.body_mut().read_to_string() {
+    let body = match response
+        .body_mut()
+        .with_config()
+        .limit(crate::fulgur::sync::synchronization::MAX_HTTP_SMALL_RESPONSE_BYTES)
+        .read_to_string()
+    {
         Ok(body) => body,
         Err(e) => {
             log::error!("Failed to read access token response body: {e}");

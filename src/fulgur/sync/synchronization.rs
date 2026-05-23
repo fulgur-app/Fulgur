@@ -10,7 +10,9 @@ use crate::fulgur::utils::crypto_helper::{
     self, load_device_api_key_from_keychain, load_private_key_from_keychain,
 };
 use crate::fulgur::utils::sanitize::sanitize_filename;
-use fulgur_common::api::sync::{BeginResponse, InitialSynchronizationPayload, PingResponse};
+use fulgur_common::api::sync::{
+    BeginResponse, BeginV2Response, InitialSynchronizationPayload, PingResponse,
+};
 use gpui::{App, Context, SharedString, Window};
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
@@ -25,6 +27,19 @@ use std::{
 };
 
 use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress};
+
+/// Maximum number of bytes accepted from small JSON HTTP responses (token, ping).
+pub const MAX_HTTP_SMALL_RESPONSE_BYTES: u64 = 64 * 1024;
+
+/// Top-level JSON framing overhead allowance for a single-share response
+/// (object braces, sibling fields like `id`, `file_name`, timestamps).
+const SHARE_RESPONSE_FRAMING_BYTES: u64 = 4 * 1024;
+
+/// Maximum number of bytes accepted from a single-share HTTP response
+/// (`GET /api/shares/:id`).
+pub const MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES: u64 = (share::MAX_SYNC_SHARE_PAYLOAD_BYTES as u64)
+    + (share::JSON_OVERHEAD_PER_SHARE_BYTES as u64)
+    + SHARE_RESPONSE_FRAMING_BYTES;
 
 /// Handle ureq errors and convert them to `SynchronizationError` with appropriate logging
 ///
@@ -113,7 +128,12 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
     atomic.store(value, std::sync::atomic::Ordering::Release);
 }
 
-/// Initial synchronization with the server. This endpoint returns both the encryption key and any shared files waiting for this device.
+/// Initial synchronization with the server.
+///
+/// ### Description
+/// Calls `POST /api/v2/begin` to update the device's encryption key and obtain
+/// the list of pending share IDs, then fetches each share individually via
+/// `GET /api/shares/:id`.
 ///
 /// ### Arguments
 /// - `profile`: The server profile to synchronize with
@@ -121,8 +141,8 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
-/// - `Ok(BeginResponse)`: The begin response containing encryption key and shared files
-/// - `Err(SynchronizationError)`: If the synchronization could not be performed
+/// - `Ok(BeginResponse)`: Device name, max file size, and successfully fetched pending shares
+/// - `Err(SynchronizationError)`: If the v2 begin call failed or returned an invalid response
 pub fn initial_synchronization(
     profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
@@ -135,32 +155,63 @@ pub fn initial_synchronization(
         return Err(SynchronizationError::MissingEncryptionKey);
     };
     let token = get_valid_token(profile, token_state, http_agent)?;
-    let begin_url = format!("{server_url}/api/begin");
+    let begin_url = format!("{server_url}/api/v2/begin");
     let payload = InitialSynchronizationPayload { public_key };
     let mut response = http_agent
         .post(begin_url)
         .header("Authorization", &format!("Bearer {token}"))
         .send_json(payload)
         .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization"))?;
-    let body = match response.body_mut().read_to_string() {
+    let body = match response
+        .body_mut()
+        .with_config()
+        .limit(MAX_HTTP_SMALL_RESPONSE_BYTES)
+        .read_to_string()
+    {
         Ok(body) => body,
         Err(e) => {
-            log::error!("Failed to read response body: {e}");
+            log::error!("Failed to read v2 begin response body: {e}");
             return Err(SynchronizationError::Other(e.to_string()));
         }
     };
-    let begin_response: BeginResponse = match serde_json::from_str(&body) {
+    let begin_v2: BeginV2Response = match serde_json::from_str(&body) {
         Ok(response) => response,
         Err(e) => {
-            log::error!("Failed to parse response body: {e}");
+            log::error!("Failed to parse v2 begin response body: {e}");
             return Err(SynchronizationError::InvalidResponse(e.to_string()));
         }
     };
+    if begin_v2.share_ids.len() > share::MAX_PENDING_SHARES_PER_RESPONSE {
+        log::error!(
+            "Server returned {} pending share ids, exceeding the client limit of {}",
+            begin_v2.share_ids.len(),
+            share::MAX_PENDING_SHARES_PER_RESPONSE
+        );
+        return Err(SynchronizationError::InvalidResponse(format!(
+            "Server returned too many pending share ids ({} > {})",
+            begin_v2.share_ids.len(),
+            share::MAX_PENDING_SHARES_PER_RESPONSE
+        )));
+    }
+    let mut shares = Vec::with_capacity(begin_v2.share_ids.len());
+    for id in &begin_v2.share_ids {
+        match share::fetch_share_by_id(profile, token_state, http_agent, id) {
+            Ok(s) => shares.push(s),
+            Err(e) => {
+                log::warn!("Skipping share id {id}: {e}");
+            }
+        }
+    }
     log::info!(
-        "Initial synchronization successful with {} shared files",
-        begin_response.shares.len()
+        "Initial synchronization successful: {} announced, {} retrieved",
+        begin_v2.share_ids.len(),
+        shares.len()
     );
-    Ok(begin_response)
+    Ok(BeginResponse {
+        device_name: begin_v2.device_name,
+        shares,
+        max_file_size_bytes: begin_v2.max_file_size_bytes,
+    })
 }
 
 /// Ping an authenticated Fulgurant server endpoint to test connectivity and credentials.
@@ -186,6 +237,8 @@ pub fn ping_server(
         .map_err(|e| handle_ureq_error(e, "Ping failed"))?;
     let body = response
         .body_mut()
+        .with_config()
+        .limit(MAX_HTTP_SMALL_RESPONSE_BYTES)
         .read_to_string()
         .map_err(|e| SynchronizationError::Other(e.to_string()))?;
     let ping_response: PingResponse = serde_json::from_str(&body)
@@ -774,45 +827,50 @@ impl SynchronizationStatus {
 }
 
 impl Fulgur {
-    /// Process shared files from the sync server
+    /// Process shared files received from every active sync profile.
     ///
     /// ### Arguments
     /// - `window`: The window to create new tabs in
     /// - `cx`: The application context
     pub fn process_shared_files_from_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let primary_profile_id = self
+        let profile_ids: Vec<crate::fulgur::settings::ProfileId> = self
             .settings
             .app_settings
             .synchronization_settings
-            .primary_profile()
-            .map(|p| p.id.clone());
-        let Some(primary_profile_id) = primary_profile_id else {
-            return;
-        };
-        let primary_sync_state = self.shared_state(cx).sync_state_for(&primary_profile_id);
-        let shared_files_to_open =
-            if let Some(mut pending) = primary_sync_state.pending_shared_files.try_lock() {
-                if pending.is_empty() {
-                    Vec::new()
+            .profiles
+            .iter()
+            .filter(|p| p.is_active)
+            .map(|p| p.id.clone())
+            .collect();
+        for profile_id in profile_ids {
+            let sync_state = self.shared_state(cx).sync_state_for(&profile_id);
+            let shared_files_to_open =
+                if let Some(mut pending) = sync_state.pending_shared_files.try_lock() {
+                    if pending.is_empty() {
+                        Vec::new()
+                    } else {
+                        log::info!(
+                            "Processing {} shared file(s) for profile {profile_id}",
+                            pending.len()
+                        );
+                        pending.drain(..).collect()
+                    }
                 } else {
-                    log::info!(
-                        "Processing {} shared file(s) from sync server",
-                        pending.len()
-                    );
-                    pending.drain(..).collect()
-                }
-            } else {
-                Vec::new()
-            };
-        if !shared_files_to_open.is_empty() {
-            let encryption_key_opt = match load_private_key_from_keychain(&primary_profile_id) {
+                    Vec::new()
+                };
+            if shared_files_to_open.is_empty() {
+                continue;
+            }
+            let encryption_key_opt = match load_private_key_from_keychain(&profile_id) {
                 Ok(key) => key,
                 Err(_) => {
-                    log::error!("Cannot decrypt shared files: encryption key not available");
+                    log::error!(
+                        "Cannot decrypt shared files for profile {profile_id}: encryption key not available"
+                    );
                     None
                 }
             };
-            let server_max_size = primary_sync_state
+            let server_max_size = sync_state
                 .max_file_size_bytes
                 .load(std::sync::atomic::Ordering::Acquire);
             if let Some(encryption_key) = encryption_key_opt {
