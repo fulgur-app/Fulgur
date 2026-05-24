@@ -41,6 +41,14 @@ pub const MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES: u64 = (share::MAX_SYNC_SHARE_PAY
     + (share::JSON_OVERHEAD_PER_SHARE_BYTES as u64)
     + SHARE_RESPONSE_FRAMING_BYTES;
 
+/// Maximum number of bytes accepted from the legacy `POST /api/begin` response,
+/// which inlines every pending share. Sized to fit the worst-case bundle:
+/// `MAX_PENDING_SHARES_PER_RESPONSE` shares each at the single-share cap.
+const MAX_HTTP_V1_BEGIN_RESPONSE_BYTES: u64 = (share::MAX_PENDING_SHARES_PER_RESPONSE as u64)
+    * ((share::MAX_SYNC_SHARE_PAYLOAD_BYTES as u64)
+        + (share::JSON_OVERHEAD_PER_SHARE_BYTES as u64))
+    + SHARE_RESPONSE_FRAMING_BYTES;
+
 /// Handle ureq errors and convert them to `SynchronizationError` with appropriate logging
 ///
 /// ### Description
@@ -131,6 +139,39 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
 /// Initial synchronization with the server.
 ///
 /// ### Description
+/// Attempts the v2 begin flow first (`POST /api/v2/begin` + per-share fetch).
+/// If the server returns HTTP 404 (endpoint not deployed yet), falls back to
+/// the legacy v1 flow (`POST /api/begin`) for compatibility with Fulgurant
+/// servers that have not been upgraded.
+///
+/// ### Arguments
+/// - `profile`: The server profile to synchronize with
+/// - `token_state`: Per-profile JWT token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+///
+/// ### Returns
+/// - `Ok(BeginResponse)`: Device name, max file size, and pending shares
+/// - `Err(SynchronizationError)`: If both v2 and v1 begin calls failed
+pub fn initial_synchronization(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+) -> Result<BeginResponse, SynchronizationError> {
+    match initial_synchronization_v2(profile, token_state, http_agent) {
+        Ok(response) => Ok(response),
+        Err(SynchronizationError::ServerError(404)) => {
+            log::warn!(
+                "Server does not support /api/v2/begin (404); falling back to legacy /api/begin"
+            );
+            initial_synchronization_v1(profile, token_state, http_agent)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Initial synchronization via the v2 begin flow.
+///
+/// ### Description
 /// Calls `POST /api/v2/begin` to update the device's encryption key and obtain
 /// the list of pending share IDs, then fetches each share individually via
 /// `GET /api/shares/:id`.
@@ -143,7 +184,7 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
 /// ### Returns
 /// - `Ok(BeginResponse)`: Device name, max file size, and successfully fetched pending shares
 /// - `Err(SynchronizationError)`: If the v2 begin call failed or returned an invalid response
-pub fn initial_synchronization(
+fn initial_synchronization_v2(
     profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
@@ -161,7 +202,7 @@ pub fn initial_synchronization(
         .post(begin_url)
         .header("Authorization", &format!("Bearer {token}"))
         .send_json(payload)
-        .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization"))?;
+        .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization (v2)"))?;
     let body = match response
         .body_mut()
         .with_config()
@@ -203,7 +244,7 @@ pub fn initial_synchronization(
         }
     }
     log::info!(
-        "Initial synchronization successful: {} announced, {} retrieved",
+        "Initial synchronization (v2) successful: {} announced, {} retrieved",
         begin_v2.share_ids.len(),
         shares.len()
     );
@@ -212,6 +253,66 @@ pub fn initial_synchronization(
         shares,
         max_file_size_bytes: begin_v2.max_file_size_bytes,
     })
+}
+
+/// Initial synchronization via the legacy v1 begin flow.
+///
+/// ### Description
+/// Calls `POST /api/begin`, which returns the device name, max file size and
+/// pending shares inline. Used as a fallback when the server does not yet
+/// expose `/api/v2/begin`.
+///
+/// ### Arguments
+/// - `profile`: The server profile to synchronize with
+/// - `token_state`: Per-profile JWT token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+///
+/// ### Returns
+/// - `Ok(BeginResponse)`: Device name, max file size, and pending shares
+/// - `Err(SynchronizationError)`: If the v1 begin call failed or returned an invalid response
+fn initial_synchronization_v1(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+) -> Result<BeginResponse, SynchronizationError> {
+    let Some(server_url) = profile.server_url.clone() else {
+        return Err(SynchronizationError::ServerUrlMissing);
+    };
+    let Some(public_key) = profile.public_key.clone() else {
+        return Err(SynchronizationError::MissingEncryptionKey);
+    };
+    let token = get_valid_token(profile, token_state, http_agent)?;
+    let begin_url = format!("{server_url}/api/begin");
+    let payload = InitialSynchronizationPayload { public_key };
+    let mut response = http_agent
+        .post(begin_url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send_json(payload)
+        .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization (v1)"))?;
+    let body = match response
+        .body_mut()
+        .with_config()
+        .limit(MAX_HTTP_V1_BEGIN_RESPONSE_BYTES)
+        .read_to_string()
+    {
+        Ok(body) => body,
+        Err(e) => {
+            log::error!("Failed to read v1 begin response body: {e}");
+            return Err(SynchronizationError::Other(e.to_string()));
+        }
+    };
+    let begin_response: BeginResponse = match serde_json::from_str(&body) {
+        Ok(response) => response,
+        Err(e) => {
+            log::error!("Failed to parse v1 begin response body: {e}");
+            return Err(SynchronizationError::InvalidResponse(e.to_string()));
+        }
+    };
+    log::info!(
+        "Initial synchronization (v1) successful with {} shared files",
+        begin_response.shares.len()
+    );
+    Ok(begin_response)
 }
 
 /// Ping an authenticated Fulgurant server endpoint to test connectivity and credentials.
