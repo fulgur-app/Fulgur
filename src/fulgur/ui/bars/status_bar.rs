@@ -333,11 +333,18 @@ impl Fulgur {
             .iter()
             .filter(|p| p.is_active)
             .map(|profile| {
-                let label = sync_states
-                    .get(&profile.id)
-                    .map(|state| state.connection_status.lock().label())
+                let state = sync_states.get(&profile.id);
+                let label = state
+                    .map(|s| s.connection_status.lock().label())
                     .unwrap_or("Inactive");
-                (profile.name.clone(), label.to_string())
+                let device_name = state.and_then(|s| s.device_name.lock().clone());
+                let name = match device_name {
+                    Some(device) if !device.is_empty() => {
+                        format!("{} @ {}", device, profile.name)
+                    }
+                    _ => profile.name.clone(),
+                };
+                (name, label.to_string())
             })
             .collect()
     }
