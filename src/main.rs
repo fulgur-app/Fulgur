@@ -243,12 +243,14 @@ fn main() {
                     vec![]
                 };
                 let saved_bounds = Some(window_state.window_bounds);
-                cx.spawn(async move |cx| create_window(cx, index, saved_bounds, cli_files).await)
-                    .detach();
+                cx.spawn(async move |cx| {
+                    create_window(cx, index, saved_bounds.as_ref(), &cli_files)
+                })
+                .detach();
             }
         } else {
             log::info!("No saved state, creating initial window");
-            cx.spawn(async move |cx| create_window(cx, 0, None, cli_file_paths).await)
+            cx.spawn(async move |cx| create_window(cx, 0, None, &cli_file_paths))
                 .detach();
         }
     });
@@ -261,14 +263,14 @@ fn main() {
 /// * `window_index` - The index of the window to create
 /// * `saved_bounds` - Previously loaded window bounds for this window, if any
 /// * `cli_file_paths` - The paths of the files to open in the window
-async fn create_window(
+fn create_window(
     cx: &mut gpui::AsyncApp,
     window_index: usize,
-    saved_bounds: Option<fulgur::state_persistence::SerializedWindowBounds>,
-    cli_file_paths: Vec<std::path::PathBuf>,
+    saved_bounds: Option<&fulgur::state_persistence::SerializedWindowBounds>,
+    cli_file_paths: &[std::path::PathBuf],
 ) -> anyhow::Result<()> {
     let (window_bounds, saved_display_id) = match saved_bounds {
-        Some(ref b) => (Some(b.to_gpui_bounds()), b.display_id),
+        Some(b) => (Some(b.to_gpui_bounds()), b.display_id),
         None => (None, None),
     };
     let display_id = if let Some(saved_id) = saved_display_id {
@@ -314,7 +316,7 @@ async fn create_window(
                 "Processing {} command-line file arguments",
                 cli_file_paths.len()
             );
-            for file_path in &cli_file_paths {
+            for file_path in cli_file_paths {
                 view.update(cx, |fulgur, cx| {
                     fulgur.handle_open_file_from_cli(window, cx, file_path.clone());
                 });

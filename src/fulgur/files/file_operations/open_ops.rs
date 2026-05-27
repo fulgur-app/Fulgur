@@ -11,7 +11,10 @@ use gpui::{
     AsyncWindowContext, Context, ExternalPaths, PathPromptOptions, SharedString, WeakEntity, Window,
 };
 use gpui_component::{WindowExt, notification::NotificationType};
-use std::{collections::HashSet, path::PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 impl Fulgur {
     /// Find the index of a tab with the given file path
@@ -106,13 +109,13 @@ impl Fulgur {
     /// ### Returns
     /// - `None`: If the file could not be opened
     /// - `Some(())`: If the file was opened successfully
-    async fn open_file_from_path(
-        view: WeakEntity<Self>,
+    fn open_file_from_path(
+        view: &WeakEntity<Self>,
         window: &mut AsyncWindowContext,
-        path: PathBuf,
+        path: &Path,
     ) -> Option<()> {
         log::debug!("Attempting to open file: {}", path.display());
-        let bytes = match std::fs::read(&path) {
+        let bytes = match std::fs::read(path) {
             Ok(bytes) => {
                 log::debug!(
                     "Successfully read file: {} ({} bytes)",
@@ -133,7 +136,7 @@ impl Fulgur {
                     let editor_tab = EditorTab::from_file(
                         FromFileParams {
                             id: this.next_tab_id,
-                            path: path.clone(),
+                            path: path.to_path_buf(),
                             contents,
                             encoding,
                             is_modified: false,
@@ -148,9 +151,9 @@ impl Fulgur {
                     this.pending_tab_scroll = Some(editor_tab_index);
                     this.next_tab_id += 1;
                     this.maybe_open_markdown_preview_for_editor(editor_tab_index, cx);
-                    this.watch_file(&path);
+                    this.watch_file(path);
                     this.focus_active_tab(window, cx);
-                    if let Err(e) = this.settings.add_file(path.clone()) {
+                    if let Err(e) = this.settings.add_file(path.to_path_buf()) {
                         log::error!("Failed to add file to recent files: {e}");
                     }
                     let shared = this.shared_state(cx);
@@ -225,7 +228,7 @@ impl Fulgur {
                 .ok()??;
 
             if should_open_new {
-                Self::open_file_from_path(view, window, path).await
+                Self::open_file_from_path(&view, window, &path)
             } else {
                 Some(())
             }
@@ -278,7 +281,7 @@ impl Fulgur {
             return;
         }
         cx.spawn_in(window, async move |view, window| {
-            Self::open_file_from_path(view, window, path).await
+            Self::open_file_from_path(&view, window, &path)
         })
         .detach();
     }
