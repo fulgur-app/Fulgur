@@ -229,7 +229,7 @@ impl ColorPickerBarState {
         let color_picker_state =
             cx.new(|cx| ColorPickerState::new(window, cx).default_value(gpui::white()));
         let initial = gpui::white();
-        let initial_hex = gpui_component::Colorize::to_hex(&initial).to_string();
+        let initial_hex = gpui_component::Colorize::to_hex(&initial).clone();
         let initial_oklch = format_oklch(initial);
         let initial_hsla = format_hsla(initial);
         let hex_input = cx.new(|cx| InputState::new(window, cx).default_value(initial_hex.clone()));
@@ -246,7 +246,7 @@ impl ColorPickerBarState {
                     let hex = gpui_component::Colorize::to_hex(&color);
                     let oklch = format_oklch(color);
                     let hsla_str = format_hsla(color);
-                    this.color_picker_bar_state.cached_hex = hex.to_string();
+                    this.color_picker_bar_state.cached_hex.clone_from(&hex);
                     this.color_picker_bar_state.cached_oklch.clone_from(&oklch);
                     this.color_picker_bar_state
                         .cached_hsla

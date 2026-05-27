@@ -242,12 +242,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<&str>) -> Vec<M
     } else {
         let mut items: Vec<MenuItem> = recent_files
             .iter()
-            .map(|file| {
-                MenuItem::action(
-                    file.display().to_string(),
-                    OpenRecentFile(file.to_path_buf()),
-                )
-            })
+            .map(|file| MenuItem::action(file.display().to_string(), OpenRecentFile(file.clone())))
             .collect();
         items.push(MenuItem::Separator);
         items.push(MenuItem::action("Clear recent files", ClearRecentFiles));
@@ -349,12 +344,7 @@ pub fn build_dock_menu(windows: &[Vec<DockMenuTab>], recent_files: &[PathBuf]) -
     if !recent_files.is_empty() {
         let recent_items: Vec<MenuItem> = recent_files
             .iter()
-            .map(|file| {
-                MenuItem::action(
-                    file.display().to_string(),
-                    OpenRecentFile(file.to_path_buf()),
-                )
-            })
+            .map(|file| MenuItem::action(file.display().to_string(), OpenRecentFile(file.clone())))
             .collect();
         items.push(MenuItem::Submenu(Menu {
             name: "Recent Files".into(),
