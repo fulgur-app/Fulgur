@@ -158,9 +158,8 @@ mod tests {
 
     #[test]
     fn test_button_factory_builds_button() {
-        let button = button_factory("test-button", "Tooltip", CustomIcon::Search, red());
-
         fn takes_button(_: Button) {}
+        let button = button_factory("test-button", "Tooltip", CustomIcon::Search, red());
         takes_button(button);
     }
 

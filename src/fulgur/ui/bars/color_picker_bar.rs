@@ -28,6 +28,18 @@ use super::search_bar::{search_bar_button_factory, search_bar_toggle_button_fact
 /// ### Returns
 /// `(f32, f32, f32)` where L is 0..1, C is chroma, and H is hue in degrees 0..360.
 fn hsla_to_oklch(color: Hsla) -> (f32, f32, f32) {
+    #[allow(clippy::excessive_precision)]
+    const LMS: [[f32; 3]; 3] = [
+        [0.4122214708, 0.5363325363, 0.0514459929],
+        [0.2119034982, 0.6806995451, 0.1073969566],
+        [0.0883024619, 0.2817188376, 0.6299787005],
+    ];
+    #[allow(clippy::excessive_precision)]
+    const OKLAB: [[f32; 3]; 3] = [
+        [0.2104542553, 0.7936177850, -0.0040720468],
+        [1.9779984951, -2.4285922050, 0.4505937099],
+        [0.0259040371, 0.7827717662, -0.8086757660],
+    ];
     let rgb = color.to_rgb();
     let to_linear = |c: f32| -> f32 {
         if c <= 0.04045 {
@@ -39,24 +51,12 @@ fn hsla_to_oklch(color: Hsla) -> (f32, f32, f32) {
     let lr = to_linear(rgb.r);
     let lg = to_linear(rgb.g);
     let lb = to_linear(rgb.b);
-    #[allow(clippy::excessive_precision)]
-    const LMS: [[f32; 3]; 3] = [
-        [0.4122214708, 0.5363325363, 0.0514459929],
-        [0.2119034982, 0.6806995451, 0.1073969566],
-        [0.0883024619, 0.2817188376, 0.6299787005],
-    ];
     let l = LMS[0][0] * lr + LMS[0][1] * lg + LMS[0][2] * lb;
     let m = LMS[1][0] * lr + LMS[1][1] * lg + LMS[1][2] * lb;
     let s = LMS[2][0] * lr + LMS[2][1] * lg + LMS[2][2] * lb;
     let l_ = l.cbrt();
     let m_ = m.cbrt();
     let s_ = s.cbrt();
-    #[allow(clippy::excessive_precision)]
-    const OKLAB: [[f32; 3]; 3] = [
-        [0.2104542553, 0.7936177850, -0.0040720468],
-        [1.9779984951, -2.4285922050, 0.4505937099],
-        [0.0259040371, 0.7827717662, -0.8086757660],
-    ];
     let ok_l = OKLAB[0][0] * l_ + OKLAB[0][1] * m_ + OKLAB[0][2] * s_;
     let ok_a = OKLAB[1][0] * l_ + OKLAB[1][1] * m_ + OKLAB[1][2] * s_;
     let ok_b = OKLAB[2][0] * l_ + OKLAB[2][1] * m_ + OKLAB[2][2] * s_;
@@ -76,27 +76,27 @@ fn hsla_to_oklch(color: Hsla) -> (f32, f32, f32) {
 /// ### Returns
 /// `Hsla`: The resulting color
 fn oklch_to_hsla(l: f32, c: f32, h: f32) -> Hsla {
-    let h_rad = h.to_radians();
-    let ok_a = c * h_rad.cos();
-    let ok_b = c * h_rad.sin();
     #[allow(clippy::excessive_precision)]
     const INV_OKLAB: [[f32; 3]; 3] = [
         [1.0000000000, 0.3963377774, 0.2158037573],
         [1.0000000000, -0.1055613458, -0.0638541728],
         [1.0000000000, -0.0894841775, -1.2914855480],
     ];
-    let l_ = INV_OKLAB[0][0] * l + INV_OKLAB[0][1] * ok_a + INV_OKLAB[0][2] * ok_b;
-    let m_ = INV_OKLAB[1][0] * l + INV_OKLAB[1][1] * ok_a + INV_OKLAB[1][2] * ok_b;
-    let s_ = INV_OKLAB[2][0] * l + INV_OKLAB[2][1] * ok_a + INV_OKLAB[2][2] * ok_b;
-    let lms_l = l_ * l_ * l_;
-    let lms_m = m_ * m_ * m_;
-    let lms_s = s_ * s_ * s_;
     #[allow(clippy::excessive_precision)]
     const INV_LMS: [[f32; 3]; 3] = [
         [4.0767416621, -3.3077115913, 0.2309699292],
         [-1.2684380046, 2.6097574011, -0.3413193965],
         [-0.0041960863, -0.7034186147, 1.7076147010],
     ];
+    let h_rad = h.to_radians();
+    let ok_a = c * h_rad.cos();
+    let ok_b = c * h_rad.sin();
+    let l_ = INV_OKLAB[0][0] * l + INV_OKLAB[0][1] * ok_a + INV_OKLAB[0][2] * ok_b;
+    let m_ = INV_OKLAB[1][0] * l + INV_OKLAB[1][1] * ok_a + INV_OKLAB[1][2] * ok_b;
+    let s_ = INV_OKLAB[2][0] * l + INV_OKLAB[2][1] * ok_a + INV_OKLAB[2][2] * ok_b;
+    let lms_l = l_ * l_ * l_;
+    let lms_m = m_ * m_ * m_;
+    let lms_s = s_ * s_ * s_;
     let lin_r = INV_LMS[0][0] * lms_l + INV_LMS[0][1] * lms_m + INV_LMS[0][2] * lms_s;
     let lin_g = INV_LMS[1][0] * lms_l + INV_LMS[1][1] * lms_m + INV_LMS[1][2] * lms_s;
     let lin_b = INV_LMS[2][0] * lms_l + INV_LMS[2][1] * lms_m + INV_LMS[2][2] * lms_s;

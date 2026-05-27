@@ -64,12 +64,6 @@ impl Fulgur {
         use gpui::{SharedString, WeakEntity};
 
         use crate::fulgur::ui::menus::{DockMenuTab, build_dock_menu};
-        let menu_state_revision = cx.global::<WindowManager>().menu_state_revision();
-        if menu_state_revision == self.last_dock_menu_revision {
-            return;
-        }
-        self.last_dock_menu_revision = menu_state_revision;
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
         // Collect raw tab data from all windows: (file_path_or_none, title, window_group_index)
         // We need all file paths upfront to compute cross-window duplicate filenames.
@@ -77,6 +71,13 @@ impl Fulgur {
             path: Option<PathBuf>,
             title: SharedString,
         }
+
+        let menu_state_revision = cx.global::<WindowManager>().menu_state_revision();
+        if menu_state_revision == self.last_dock_menu_revision {
+            return;
+        }
+        self.last_dock_menu_revision = menu_state_revision;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
         let mut all_windows_raw: Vec<Vec<RawTab>> = Vec::new();
         let current_window_raw: Vec<RawTab> = self
