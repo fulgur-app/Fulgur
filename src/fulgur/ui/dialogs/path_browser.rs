@@ -379,7 +379,7 @@ mod tests {
     fn test_read_and_filter_entries_with_filter() {
         let entries = read_and_filter_entries(Path::new("/"), "t");
         for entry in &entries {
-            assert!(entry.name.to_lowercase().starts_with("t"));
+            assert!(entry.name.to_lowercase().starts_with('t'));
         }
     }
 
