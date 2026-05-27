@@ -860,13 +860,14 @@ impl fmt::Display for SynchronizationError {
             SynchronizationError::InvalidPublicKey(name) => {
                 write!(f, "Invalid public key for device: {name}")
             }
-            SynchronizationError::InvalidResponse(e) => write!(f, "{e}"),
+            SynchronizationError::InvalidResponse(e) | SynchronizationError::Other(e) => {
+                write!(f, "{e}")
+            }
             SynchronizationError::MissingEncryptionKey => write!(f, "Missing encryption key"),
             SynchronizationError::MissingExpirationDate => write!(f, "Missing expiration date"),
             SynchronizationError::MissingPublicKey(e) => {
                 write!(f, "Missing public key for device: {e}")
             }
-            SynchronizationError::Other(e) => write!(f, "{e}"),
             SynchronizationError::ServerError(e) => write!(f, "{e}"),
             SynchronizationError::ServerUrlMissing => write!(f, "Server URL is missing"),
             SynchronizationError::Timeout(timeout) => write!(f, "Timeout: {timeout}"),
@@ -898,9 +899,9 @@ impl SynchronizationStatus {
             SynchronizationError::AuthenticationFailed => {
                 SynchronizationStatus::AuthenticationFailed
             }
-            SynchronizationError::HostNotFound => SynchronizationStatus::ConnectionFailed,
-            SynchronizationError::ConnectionFailed => SynchronizationStatus::ConnectionFailed,
-            SynchronizationError::Timeout(_) => SynchronizationStatus::ConnectionFailed,
+            SynchronizationError::HostNotFound
+            | SynchronizationError::ConnectionFailed
+            | SynchronizationError::Timeout(_) => SynchronizationStatus::ConnectionFailed,
             _ => SynchronizationStatus::Other,
         }
     }
@@ -912,12 +913,12 @@ impl SynchronizationStatus {
     pub fn is_connected(&self) -> bool {
         match self {
             SynchronizationStatus::Connected => true,
-            SynchronizationStatus::Connecting => false,
-            SynchronizationStatus::Disconnected => false,
-            SynchronizationStatus::AuthenticationFailed => false,
-            SynchronizationStatus::ConnectionFailed => false,
-            SynchronizationStatus::Other => false,
-            SynchronizationStatus::NotActivated => false,
+            SynchronizationStatus::Connecting
+            | SynchronizationStatus::Disconnected
+            | SynchronizationStatus::AuthenticationFailed
+            | SynchronizationStatus::ConnectionFailed
+            | SynchronizationStatus::Other
+            | SynchronizationStatus::NotActivated => false,
         }
     }
 

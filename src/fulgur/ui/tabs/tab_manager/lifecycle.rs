@@ -237,10 +237,8 @@ impl Fulgur {
                     let focus_handle = editor_tab.content.read(cx).focus_handle(cx);
                     window.focus(&focus_handle, cx);
                 }
-                Tab::Settings(_) => {
+                Tab::Settings(_) | Tab::MarkdownPreview(_) => {
                     // Settings don't have focusable content, just keep window focus
-                }
-                Tab::MarkdownPreview(_) => {
                     // Preview tabs are read-only, no focusable input content
                 }
             }

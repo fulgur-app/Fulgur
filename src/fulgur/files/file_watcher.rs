@@ -172,7 +172,7 @@ impl FileWatcher {
                     }
                 }
             }
-            EventKind::Modify(_) => {
+            EventKind::Modify(_) | EventKind::Create(_) => {
                 for path in event.paths {
                     let _ = event_tx.send(FileWatchEvent::Modified(path));
                 }
@@ -180,11 +180,6 @@ impl FileWatcher {
             EventKind::Remove(_) => {
                 for path in event.paths {
                     let _ = event_tx.send(FileWatchEvent::Deleted(path));
-                }
-            }
-            EventKind::Create(_) => {
-                for path in event.paths {
-                    let _ = event_tx.send(FileWatchEvent::Modified(path));
                 }
             }
             _ => {}

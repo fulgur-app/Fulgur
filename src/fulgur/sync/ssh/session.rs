@@ -671,13 +671,12 @@ fn sha256_fingerprint(key: &[u8]) -> String {
 /// - `ssh2::KnownHostKeyFormat`: Corresponding format constant; `Unknown` falls back to `SshRsa`.
 fn host_key_type_to_format(key_type: ssh2::HostKeyType) -> ssh2::KnownHostKeyFormat {
     match key_type {
-        ssh2::HostKeyType::Rsa => ssh2::KnownHostKeyFormat::SshRsa,
         ssh2::HostKeyType::Dss => ssh2::KnownHostKeyFormat::SshDss,
         ssh2::HostKeyType::Ecdsa256 => ssh2::KnownHostKeyFormat::Ecdsa256,
         ssh2::HostKeyType::Ecdsa384 => ssh2::KnownHostKeyFormat::Ecdsa384,
         ssh2::HostKeyType::Ecdsa521 => ssh2::KnownHostKeyFormat::Ecdsa521,
         ssh2::HostKeyType::Ed25519 => ssh2::KnownHostKeyFormat::Ed25519,
-        ssh2::HostKeyType::Unknown => ssh2::KnownHostKeyFormat::SshRsa,
+        ssh2::HostKeyType::Rsa | ssh2::HostKeyType::Unknown => ssh2::KnownHostKeyFormat::SshRsa,
     }
 }
 
