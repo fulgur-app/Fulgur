@@ -67,7 +67,7 @@ pub fn classify_remote_path(
         Ok(stat) => {
             if let Some(perm) = stat.perm {
                 // POSIX mode bits where 0o040000 indicates a directory.
-                if perm & 0o170000 == 0o040000 {
+                if perm & 0o170_000 == 0o040_000 {
                     return Ok(RemotePathKind::Directory);
                 }
                 return Ok(RemotePathKind::File);
@@ -145,7 +145,7 @@ pub fn list_remote_directory(
             if name == "." || name == ".." {
                 return None;
             }
-            let is_dir = stat.perm.is_some_and(|perm| perm & 0o170000 == 0o040000);
+            let is_dir = stat.perm.is_some_and(|perm| perm & 0o170_000 == 0o040_000);
             let full_path = join_remote_path(&directory, &name);
             Some(RemoteDirectoryEntry {
                 name,

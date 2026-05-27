@@ -28,13 +28,13 @@ use super::search_bar::{search_bar_button_factory, search_bar_toggle_button_fact
 /// ### Returns
 /// `(f32, f32, f32)` where L is 0..1, C is chroma, and H is hue in degrees 0..360.
 fn hsla_to_oklch(color: Hsla) -> (f32, f32, f32) {
-    #[allow(clippy::excessive_precision)]
+    #[allow(clippy::excessive_precision, clippy::unreadable_literal)]
     const LMS: [[f32; 3]; 3] = [
         [0.4122214708, 0.5363325363, 0.0514459929],
         [0.2119034982, 0.6806995451, 0.1073969566],
         [0.0883024619, 0.2817188376, 0.6299787005],
     ];
-    #[allow(clippy::excessive_precision)]
+    #[allow(clippy::excessive_precision, clippy::unreadable_literal)]
     const OKLAB: [[f32; 3]; 3] = [
         [0.2104542553, 0.7936177850, -0.0040720468],
         [1.9779984951, -2.4285922050, 0.4505937099],
@@ -76,13 +76,13 @@ fn hsla_to_oklch(color: Hsla) -> (f32, f32, f32) {
 /// ### Returns
 /// `Hsla`: The resulting color
 fn oklch_to_hsla(l: f32, c: f32, h: f32) -> Hsla {
-    #[allow(clippy::excessive_precision)]
+    #[allow(clippy::excessive_precision, clippy::unreadable_literal)]
     const INV_OKLAB: [[f32; 3]; 3] = [
         [1.0000000000, 0.3963377774, 0.2158037573],
         [1.0000000000, -0.1055613458, -0.0638541728],
         [1.0000000000, -0.0894841775, -1.2914855480],
     ];
-    #[allow(clippy::excessive_precision)]
+    #[allow(clippy::excessive_precision, clippy::unreadable_literal)]
     const INV_LMS: [[f32; 3]; 3] = [
         [4.0767416621, -3.3077115913, 0.2309699292],
         [-1.2684380046, 2.6097574011, -0.3413193965],
@@ -102,7 +102,7 @@ fn oklch_to_hsla(l: f32, c: f32, h: f32) -> Hsla {
     let lin_b = INV_LMS[2][0] * lms_l + INV_LMS[2][1] * lms_m + INV_LMS[2][2] * lms_s;
     let from_linear = |c: f32| -> f32 {
         let c = c.clamp(0.0, 1.0);
-        if c <= 0.0031308 {
+        if c <= 0.003_130_8 {
             c * 12.92
         } else {
             1.055 * c.powf(1.0 / 2.4) - 0.055

@@ -180,7 +180,7 @@ fn main() {
     #[test]
     fn test_roundtrip_very_large_content() {
         let original = "Lorem ipsum dolor sit amet. ".repeat(10000);
-        assert!(original.len() > 250000); // Over 250KB
+        assert!(original.len() > 250_000); // Over 250KB
         let compressed = compress_content(&original).unwrap();
         let decompressed = decompress_content(&compressed, TEST_NO_LIMIT).unwrap();
         assert_eq!(decompressed, original);

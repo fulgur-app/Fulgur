@@ -122,7 +122,7 @@ mod tests {
         // Very large valid number
         let destination = SharedString::from("999999999");
         let result = extract_line_number(&destination).unwrap();
-        assert_eq!(result.line, 999999998);
+        assert_eq!(result.line, 999_999_998);
         assert_eq!(result.character, None);
     }
 
