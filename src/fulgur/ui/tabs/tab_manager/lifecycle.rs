@@ -72,7 +72,7 @@ impl Fulgur {
                     }
                 },
             );
-            self._font_select_subscription = Some(font_select_subscription);
+            self.font_select_subscription = Some(font_select_subscription);
             let settings_tab = Tab::Settings(tab);
             self.tabs.push(settings_tab);
             self.active_tab_index = Some(self.tabs.len() - 1);

@@ -24,11 +24,11 @@ impl CustomTitleBar {
     ///
     /// ### Returns
     /// - `Entity<CustomTitleBar>`: The new custom title bar
-    pub fn new(_window: &mut Window, _cx: &mut App) -> Entity<Self> {
+    pub fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
         #[cfg(not(target_os = "macos"))]
         let app_menu_bar = AppMenuBar::new(_cx);
 
-        _cx.new(|_cx| Self {
+        cx.new(|_cx| Self {
             #[cfg(not(target_os = "macos"))]
             app_menu_bar,
             title: DEFAULT_TITLE.to_string(),

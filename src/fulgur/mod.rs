@@ -136,9 +136,9 @@ pub struct Fulgur {
     save_failed_once: bool, // Flag: save already failed once, allow force-close on next attempt
     pub share_sheet_state: Option<Arc<ui::sheets::share_file::ShareSheetState>>, // When Some, a share sheet is open and devices are being fetched per profile
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
-    _font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
+    font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
-    _editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
+    editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
     drag_ghost: Option<(usize, ui::tabs::tab_drag::DraggedTab)>, // Ghost tab shown at insertion point during tab drag
     status_bar_cache: StatusBarCache, // Cached status bar label strings (refreshed each render)
     cached_tab_filename_counts: HashMap<String, usize>, // Cached tab filename frequency map (refreshed when tabs change)
@@ -259,9 +259,9 @@ impl Fulgur {
                 save_failed_once: false,
                 share_sheet_state: None,
                 cached_window_bounds: None,
-                _font_select_subscription: None,
+                font_select_subscription: None,
                 editor_context_menu: None,
-                _editor_context_menu_subscription: None,
+                editor_context_menu_subscription: None,
                 drag_ghost: None,
                 status_bar_cache: StatusBarCache::default(),
                 cached_tab_filename_counts: HashMap::new(),
@@ -663,13 +663,13 @@ impl Fulgur {
             window,
             |this: &mut Self, _, _: &DismissEvent, _, cx| {
                 this.editor_context_menu = None;
-                this._editor_context_menu_subscription = None;
+                this.editor_context_menu_subscription = None;
                 cx.notify();
             },
         );
 
         self.editor_context_menu = Some((position, menu));
-        self._editor_context_menu_subscription = Some(subscription);
+        self.editor_context_menu_subscription = Some(subscription);
         cx.notify();
     }
 

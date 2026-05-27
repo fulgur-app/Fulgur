@@ -50,7 +50,8 @@ pub struct RemotePathBrowser {
     refresh_generation: u64,
     is_loading: bool,
     error_message: Option<String>,
-    _input_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    input_subscription: Subscription,
 }
 
 /// Background-worker request for one remote browser listing.
@@ -96,12 +97,11 @@ impl RemotePathBrowser {
         input.update(cx, |state, cx| {
             state.set_value(initial_path, window, cx);
         });
-        let _input_subscription =
-            cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
-                if let InputEvent::Change = ev {
-                    this.schedule_refresh(cx);
-                }
-            });
+        let input_subscription = cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
+            if let InputEvent::Change = ev {
+                this.schedule_refresh(cx);
+            }
+        });
         let worker_tx = spawn_browser_worker(connection.clone());
 
         let mut this = Self {
@@ -113,7 +113,7 @@ impl RemotePathBrowser {
             refresh_generation: 0,
             is_loading: false,
             error_message: None,
-            _input_subscription,
+            input_subscription,
         };
         if this.entries.is_empty() {
             this.dispatch_refresh(cx);
@@ -422,7 +422,8 @@ fn spawn_browser_worker(
 /// flight.
 pub struct BrowserDialogTitle {
     browser: Entity<RemotePathBrowser>,
-    _browser_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    browser_subscription: Subscription,
 }
 
 impl BrowserDialogTitle {
@@ -435,12 +436,12 @@ impl BrowserDialogTitle {
     /// ### Returns
     /// - `BrowserDialogTitle`: Initialized title component.
     pub fn new(browser: Entity<RemotePathBrowser>, cx: &mut Context<Self>) -> Self {
-        let _browser_subscription = cx.observe(&browser, |_, _, cx| {
+        let browser_subscription = cx.observe(&browser, |_, _, cx| {
             cx.notify();
         });
         Self {
             browser,
-            _browser_subscription,
+            browser_subscription,
         }
     }
 }

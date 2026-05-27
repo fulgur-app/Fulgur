@@ -210,10 +210,14 @@ pub struct ColorPickerBarState {
     cached_hex: String,
     cached_oklch: String,
     cached_hsla: String,
-    _color_picker_subscription: Subscription,
-    _hex_input_subscription: Subscription,
-    _oklch_input_subscription: Subscription,
-    _hsla_input_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    color_picker_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    hex_input_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    oklch_input_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    hsla_input_subscription: Subscription,
 }
 
 impl ColorPickerBarState {
@@ -237,7 +241,7 @@ impl ColorPickerBarState {
             cx.new(|cx| InputState::new(window, cx).default_value(initial_oklch.clone()));
         let hsla_input =
             cx.new(|cx| InputState::new(window, cx).default_value(initial_hsla.clone()));
-        let _color_picker_subscription = cx.subscribe_in(
+        let color_picker_subscription = cx.subscribe_in(
             &color_picker_state,
             window,
             |this: &mut Fulgur, _, event: &ColorPickerEvent, window, cx| {
@@ -273,7 +277,7 @@ impl ColorPickerBarState {
         // On Change: update the color picker preview only (no cross-input sync, which
         // would loop since InputState::set_value always emits InputEvent::Change).
         // On PressEnter / Blur: parse and sync all three inputs + the color picker.
-        let _hex_input_subscription = cx.subscribe_in(
+        let hex_input_subscription = cx.subscribe_in(
             &hex_input,
             window,
             |this: &mut Fulgur, _, event: &InputEvent, window, cx| {
@@ -310,7 +314,7 @@ impl ColorPickerBarState {
                 }
             },
         );
-        let _oklch_input_subscription = cx.subscribe_in(
+        let oklch_input_subscription = cx.subscribe_in(
             &oklch_input,
             window,
             |this: &mut Fulgur, _, event: &InputEvent, window, cx| {
@@ -351,7 +355,7 @@ impl ColorPickerBarState {
                 }
             },
         );
-        let _hsla_input_subscription = cx.subscribe_in(
+        let hsla_input_subscription = cx.subscribe_in(
             &hsla_input,
             window,
             |this: &mut Fulgur, _, event: &InputEvent, window, cx| {
@@ -401,10 +405,10 @@ impl ColorPickerBarState {
             cached_hex: initial_hex,
             cached_oklch: initial_oklch,
             cached_hsla: initial_hsla,
-            _color_picker_subscription,
-            _hex_input_subscription,
-            _oklch_input_subscription,
-            _hsla_input_subscription,
+            color_picker_subscription,
+            hex_input_subscription,
+            oklch_input_subscription,
+            hsla_input_subscription,
         }
     }
 }

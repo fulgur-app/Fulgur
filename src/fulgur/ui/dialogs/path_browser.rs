@@ -44,7 +44,8 @@ pub struct PathBrowser {
     entries: Vec<PathEntry>,
     debounce_generation: u64,
     refresh_generation: u64,
-    _input_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    input_subscription: Subscription,
 }
 
 /// Parse the raw input string into a `(parent_directory, filter_prefix)` pair.
@@ -175,19 +176,18 @@ impl PathBrowser {
         input.update(cx, |state, cx| {
             state.set_value(&default_path, window, cx);
         });
-        let _input_subscription =
-            cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
-                if let InputEvent::Change = ev {
-                    this.schedule_refresh(cx);
-                }
-            });
+        let input_subscription = cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
+            if let InputEvent::Change = ev {
+                this.schedule_refresh(cx);
+            }
+        });
 
         let mut this = Self {
             input,
             entries: Vec::new(),
             debounce_generation: 0,
             refresh_generation: 0,
-            _input_subscription,
+            input_subscription,
         };
         this.dispatch_refresh(cx);
         this
