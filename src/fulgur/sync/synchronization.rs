@@ -982,14 +982,13 @@ impl Fulgur {
             if shared_files_to_open.is_empty() {
                 continue;
             }
-            let encryption_key_opt = match load_private_key_from_keychain(&profile_id) {
-                Ok(key) => key,
-                Err(_) => {
-                    log::error!(
-                        "Cannot decrypt shared files for profile {profile_id}: encryption key not available"
-                    );
-                    None
-                }
+            let encryption_key_opt = if let Ok(key) = load_private_key_from_keychain(&profile_id) {
+                key
+            } else {
+                log::error!(
+                    "Cannot decrypt shared files for profile {profile_id}: encryption key not available"
+                );
+                None
             };
             let server_max_size = sync_state
                 .max_file_size_bytes

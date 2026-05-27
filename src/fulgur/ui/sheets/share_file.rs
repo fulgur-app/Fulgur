@@ -386,15 +386,14 @@ fn build_profile_share_resources(
         if device_ids.is_empty() {
             continue;
         }
-        let devices = match map.get(&profile.id) {
-            Some(ProfileFetchState::Loaded(devices)) => Arc::clone(devices),
-            _ => {
-                log::warn!(
-                    "Profile '{}': selection present but no loaded devices, skipping",
-                    profile.name
-                );
-                continue;
-            }
+        let devices = if let Some(ProfileFetchState::Loaded(devices)) = map.get(&profile.id) {
+            Arc::clone(devices)
+        } else {
+            log::warn!(
+                "Profile '{}': selection present but no loaded devices, skipping",
+                profile.name
+            );
+            continue;
         };
         let (token_state, max_file_size_bytes) = entity.update(cx, |this, cx| {
             let sync_state = this.shared_state(cx).sync_state_for(&profile.id);
