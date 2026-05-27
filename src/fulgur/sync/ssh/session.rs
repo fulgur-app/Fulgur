@@ -105,9 +105,7 @@ pub fn connect(
         })
         .ok_or_else(|| {
             SshError::ConnectionFailed(
-                last_err
-                    .map(|e| e.to_string())
-                    .unwrap_or_else(|| "unknown error".to_string()),
+                last_err.map_or_else(|| "unknown error".to_string(), |e| e.to_string()),
             )
         })?;
 
@@ -721,9 +719,7 @@ pub fn home_dir() -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        std::env::var("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/tmp"))
+        std::env::var("HOME").map_or_else(|_| PathBuf::from("/tmp"), PathBuf::from)
     }
 }
 

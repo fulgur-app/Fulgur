@@ -68,11 +68,10 @@ impl Fulgur {
             .app_settings
             .synchronization_settings
             .find_profile_mut(profile_id)
-            .map(|profile| {
+            .is_some_and(|profile| {
                 mutator(profile);
                 true
-            })
-            .unwrap_or(false);
+            });
         if !found {
             return Ok(false);
         }

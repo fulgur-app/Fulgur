@@ -120,7 +120,7 @@ fn read_and_filter_entries(parent: &Path, filter: &str) -> Vec<PathEntry> {
                 return None;
             }
             // Follow symlinks for is_dir detection
-            let is_dir = entry.metadata().map(|m| m.is_dir()).unwrap_or(false);
+            let is_dir = entry.metadata().is_ok_and(|m| m.is_dir());
             Some(PathEntry {
                 full_path: entry.path(),
                 name,

@@ -31,8 +31,7 @@ pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
     })?;
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |duration| duration.as_nanos());
     let counter = ATOMIC_WRITE_COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp_name = format!(
         ".{}.{}.{}.{}.tmp",

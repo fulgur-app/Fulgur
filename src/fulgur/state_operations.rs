@@ -232,11 +232,7 @@ impl Fulgur {
     ) -> Option<EditorTab> {
         log::debug!("Restoring tab: {}", tab_state.title);
 
-        let file_exists = tab_state
-            .file_path
-            .as_ref()
-            .map(|p| p.exists())
-            .unwrap_or(false);
+        let file_exists = tab_state.file_path.as_ref().is_some_and(|p| p.exists());
         let file_modified_time = tab_state
             .file_path
             .as_ref()

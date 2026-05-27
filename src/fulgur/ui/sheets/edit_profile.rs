@@ -117,8 +117,7 @@ fn validate_email(value: &str) -> Result<(), SharedString> {
     }
     let at_pos = value.find('@');
     let is_valid = at_pos
-        .map(|pos| pos > 0 && pos < value.len() - 1 && value[pos + 1..].contains('.'))
-        .unwrap_or(false);
+        .is_some_and(|pos| pos > 0 && pos < value.len() - 1 && value[pos + 1..].contains('.'));
     if is_valid {
         Ok(())
     } else {

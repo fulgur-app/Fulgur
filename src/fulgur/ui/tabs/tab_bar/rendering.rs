@@ -498,8 +498,7 @@ impl Fulgur {
                 && self
                     .drag_ghost
                     .as_ref()
-                    .map(|(_, d)| d.tab_index == index)
-                    .unwrap_or(false);
+                    .is_some_and(|(_, d)| d.tab_index == index);
             if is_source {
                 tab_with_content = tab_with_content.opacity(0.45);
             }

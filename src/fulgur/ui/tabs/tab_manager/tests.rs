@@ -659,16 +659,14 @@ fn test_panel_preview_flag_can_be_toggled(cx: &mut TestAppContext) {
         fulgur.update(cx, |this, cx| {
             let initial = this
                 .get_active_editor_tab()
-                .map(|e| e.show_markdown_preview)
-                .unwrap_or(false);
+                .is_some_and(|e| e.show_markdown_preview);
             if let Some(editor) = this.get_active_editor_tab_mut() {
                 editor.show_markdown_preview = !editor.show_markdown_preview;
             }
             cx.notify();
             let after = this
                 .get_active_editor_tab()
-                .map(|e| e.show_markdown_preview)
-                .unwrap_or(false);
+                .is_some_and(|e| e.show_markdown_preview);
             assert_ne!(initial, after, "show_markdown_preview should toggle");
         });
     });

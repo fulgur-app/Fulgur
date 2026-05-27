@@ -387,8 +387,9 @@ fn get_profile_status(profile: &ServerProfile, master_on: bool, cx: &App) -> Syn
     let sync_states = shared.sync_states.read();
     sync_states
         .get(&profile.id)
-        .map(|state| *state.connection_status.lock())
-        .unwrap_or(SynchronizationStatus::NotActivated)
+        .map_or(SynchronizationStatus::NotActivated, |state| {
+            *state.connection_status.lock()
+        })
 }
 
 /// Resolve the foreground/background colors for a status pill.

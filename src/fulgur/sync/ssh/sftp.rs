@@ -145,10 +145,7 @@ pub fn list_remote_directory(
             if name == "." || name == ".." {
                 return None;
             }
-            let is_dir = stat
-                .perm
-                .map(|perm| perm & 0o170000 == 0o040000)
-                .unwrap_or(false);
+            let is_dir = stat.perm.is_some_and(|perm| perm & 0o170000 == 0o040000);
             let full_path = join_remote_path(&directory, &name);
             Some(RemoteDirectoryEntry {
                 name,

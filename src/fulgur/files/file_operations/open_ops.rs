@@ -413,8 +413,7 @@ impl Fulgur {
         let should_process_files = cx
             .global::<window_manager::WindowManager>()
             .get_last_focused()
-            .map(|id| id == self.window_id)
-            .unwrap_or(true); // If no last focused window, allow this one to process
+            .is_none_or(|id| id == self.window_id); // If no last focused window, allow this one to process
         let files_to_open = if should_process_files {
             if let Some(mut pending) = shared.pending_files_from_macos.try_lock() {
                 if pending.is_empty() {
@@ -597,8 +596,7 @@ mod tests {
                     .tabs
                     .first()
                     .and_then(|t| t.as_editor())
-                    .map(|e| e.modified)
-                    .unwrap_or(true);
+                    .is_none_or(|e| e.modified);
                 assert!(!modified, "tab should not be marked modified after reload");
             });
         });

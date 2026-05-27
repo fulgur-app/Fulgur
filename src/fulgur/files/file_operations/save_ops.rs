@@ -360,8 +360,7 @@ mod tests {
                     .tabs
                     .last()
                     .and_then(|t| t.as_editor())
-                    .map(|e| e.modified)
-                    .unwrap_or(true);
+                    .is_none_or(|e| e.modified);
                 assert!(!modified, "tab should be marked as not modified after save");
             });
         });

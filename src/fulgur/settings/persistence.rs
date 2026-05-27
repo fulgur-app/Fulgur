@@ -174,11 +174,9 @@ impl Settings {
             if let Some(ref email) = profile.email.clone() {
                 let trimmed = email.trim();
                 let at_pos = trimmed.find('@');
-                let is_valid = at_pos
-                    .map(|pos| {
-                        pos > 0 && pos < trimmed.len() - 1 && trimmed[pos + 1..].contains('.')
-                    })
-                    .unwrap_or(false);
+                let is_valid = at_pos.is_some_and(|pos| {
+                    pos > 0 && pos < trimmed.len() - 1 && trimmed[pos + 1..].contains('.')
+                });
                 if !is_valid {
                     log::warn!(
                         "Invalid email for profile '{}', clearing: {}",

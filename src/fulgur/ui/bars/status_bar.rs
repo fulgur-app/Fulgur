@@ -306,8 +306,7 @@ impl Fulgur {
             (SyncButtonState::Connected, false)
         } else if any_connecting {
             let show = earliest_connecting_since
-                .map(|since| since.elapsed() >= CONNECTING_SPINNER_DELAY)
-                .unwrap_or(false);
+                .is_some_and(|since| since.elapsed() >= CONNECTING_SPINNER_DELAY);
             (SyncButtonState::Connecting, show)
         } else {
             (SyncButtonState::Disconnected, false)
@@ -334,9 +333,7 @@ impl Fulgur {
             .filter(|p| p.is_active)
             .map(|profile| {
                 let state = sync_states.get(&profile.id);
-                let label = state
-                    .map(|s| s.connection_status.lock().label())
-                    .unwrap_or("Inactive");
+                let label = state.map_or("Inactive", |s| s.connection_status.lock().label());
                 let device_name = state.and_then(|s| s.device_name.lock().clone());
                 let name = match device_name {
                     Some(device) if !device.is_empty() => {

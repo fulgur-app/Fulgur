@@ -77,8 +77,7 @@ impl Fulgur {
         let old_handle = self
             .sse_states
             .get(profile_id)
-            .map(|s| s.sse_thread_handle.lock().take())
-            .unwrap_or(None);
+            .and_then(|s| s.sse_thread_handle.lock().take());
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
         let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
         let mut new_state = SseState::new();
