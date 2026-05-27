@@ -148,7 +148,9 @@ impl WindowManager {
         if self.windows.len() <= 1 {
             return None;
         }
-        self.window_names.get(&window_id).map(|s| s.as_str())
+        self.window_names
+            .get(&window_id)
+            .map(std::string::String::as_str)
     }
 
     /// Get all window entities

@@ -254,7 +254,7 @@ impl Fulgur {
         if self.tabs.is_empty() {
             return;
         }
-        let tab_ids: Vec<usize> = self.tabs.iter().map(|tab| tab.id()).collect();
+        let tab_ids: Vec<usize> = self.tabs.iter().map(super::super::tab::Tab::id).collect();
         for tab_id in tab_ids {
             if !self.tabs.iter().any(|t| t.id() == tab_id) {
                 continue;
@@ -311,7 +311,10 @@ impl Fulgur {
         if index == 0 || index >= self.tabs.len() {
             return;
         }
-        let tab_ids: Vec<usize> = self.tabs[0..index].iter().map(|tab| tab.id()).collect();
+        let tab_ids: Vec<usize> = self.tabs[0..index]
+            .iter()
+            .map(super::super::tab::Tab::id)
+            .collect();
         for tab_id in tab_ids {
             if !self.tabs.iter().any(|t| t.id() == tab_id) {
                 continue;
@@ -375,7 +378,7 @@ impl Fulgur {
         }
         let tab_ids: Vec<usize> = self.tabs[(index + 1)..]
             .iter()
-            .map(|tab| tab.id())
+            .map(super::super::tab::Tab::id)
             .collect();
         for tab_id in tab_ids {
             if !self.tabs.iter().any(|t| t.id() == tab_id) {
@@ -435,7 +438,7 @@ impl Fulgur {
         if self.tabs.len() <= 1 {
             return;
         }
-        let active_tab_id = self.tabs.get(active_index).map(|t| t.id());
+        let active_tab_id = self.tabs.get(active_index).map(super::super::tab::Tab::id);
         let tab_ids: Vec<usize> = self
             .tabs
             .iter()
@@ -569,7 +572,7 @@ impl Fulgur {
                 self.tabs
                     .iter()
                     .find(|t| matches!(t, Tab::MarkdownPreview(p) if p.source_tab_id == tab_id))
-                    .map(|t| t.id())
+                    .map(super::super::tab::Tab::id)
             } else {
                 None
             };
@@ -616,7 +619,7 @@ impl Fulgur {
     fn debug_assert_tab_maps_consistent(&self) {
         if cfg!(debug_assertions) {
             let live: std::collections::HashSet<usize> =
-                self.tabs.iter().map(|tab| tab.id()).collect();
+                self.tabs.iter().map(super::super::tab::Tab::id).collect();
             for &id in self.editor_modified_subscriptions.keys() {
                 debug_assert!(
                     live.contains(&id),

@@ -147,7 +147,7 @@ fn make_device_item(
         .rounded_sm()
         .border_color(cx.theme().border)
         .border_1()
-        .when(has_public_key, |this| this.cursor_pointer())
+        .when(has_public_key, gpui::Styled::cursor_pointer)
         .when(!has_public_key, |this| this.opacity(0.5))
         .when(has_public_key, |this| {
             this.hover(|hover| hover.bg(cx.theme().muted))

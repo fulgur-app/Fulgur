@@ -25,7 +25,7 @@ impl Fulgur {
             .tabs
             .iter()
             .find(|t| matches!(t, Tab::MarkdownPreview(p) if p.source_tab_id == editor_id))
-            .map(|t| t.id())
+            .map(super::super::tab::Tab::id)
         {
             self.remove_tab_by_id(preview_id, window, cx);
         } else {

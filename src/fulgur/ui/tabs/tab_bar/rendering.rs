@@ -334,7 +334,7 @@ impl Fulgur {
         let file_path = tab.as_editor().and_then(|editor_tab| {
             editor_tab
                 .file_path()
-                .and_then(|path| path.to_str().map(|s| s.to_string()))
+                .and_then(|path| path.to_str().map(std::string::ToString::to_string))
         });
         let has_file_path = file_path.is_some();
         let is_editor_tab = tab.as_editor().is_some();
@@ -348,7 +348,7 @@ impl Fulgur {
                 .filter_map(|id| {
                     manager
                         .get_window_name(id)
-                        .map(|name| name.to_string())
+                        .map(std::string::ToString::to_string)
                         .zip(manager.get_window(id))
                 })
                 .collect()

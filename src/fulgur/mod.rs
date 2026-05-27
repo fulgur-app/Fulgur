@@ -905,7 +905,7 @@ impl Fulgur {
         let window_name = cx
             .global::<window_manager::WindowManager>()
             .get_window_name(self.window_id)
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
         self.title_bar.update(cx, |this, _cx| {
             this.set_title(title, window_name.as_deref());
         });
@@ -1083,7 +1083,7 @@ impl Fulgur {
             .border_color(cx.theme().primary.opacity(0.7))
             .bg(cx.theme().muted.opacity(0.4))
             .on_drag_move::<ExternalPaths>(|_, _, _| {})
-            .group_drag_over::<ExternalPaths>("", |style| style.visible())
+            .group_drag_over::<ExternalPaths>("", gpui::Styled::visible)
             .child(
                 div()
                     .px_4()

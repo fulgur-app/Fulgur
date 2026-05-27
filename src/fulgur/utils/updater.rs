@@ -45,7 +45,7 @@ pub struct UpdateInfo {
 /// - `Err(anyhow::Error)`: If the version string could not be parsed
 fn parse_version(version_str: &str) -> anyhow::Result<Version> {
     let cleaned = version_str.trim_start_matches('v');
-    Version::parse(cleaned).map_err(|e| e.into())
+    Version::parse(cleaned).map_err(std::convert::Into::into)
 }
 
 /// Validate that a URL points to the canonical Fulgur release page on GitHub

@@ -114,7 +114,7 @@ fn read_and_filter_entries(parent: &Path, filter: &str) -> Vec<PathEntry> {
     };
     let filter_lower = filter.to_lowercase();
     let mut entries: Vec<PathEntry> = read_dir
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().to_string();
             if !filter_lower.is_empty() && !name.to_lowercase().starts_with(&filter_lower) {

@@ -798,9 +798,9 @@ fn test_reorder_tab_noop_when_to_equals_from(cx: &mut TestAppContext) {
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             this.new_tab(window, cx);
-            let ids_before: Vec<usize> = this.tabs.iter().map(|t| t.id()).collect();
+            let ids_before: Vec<usize> = this.tabs.iter().map(super::super::tab::Tab::id).collect();
             this.reorder_tab(1, 1, window, cx);
-            let ids_after: Vec<usize> = this.tabs.iter().map(|t| t.id()).collect();
+            let ids_after: Vec<usize> = this.tabs.iter().map(super::super::tab::Tab::id).collect();
             assert_eq!(ids_before, ids_after, "to == from should be a no-op");
         });
     });
@@ -812,10 +812,10 @@ fn test_reorder_tab_noop_when_to_equals_from_plus_one(cx: &mut TestAppContext) {
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             this.new_tab(window, cx);
-            let ids_before: Vec<usize> = this.tabs.iter().map(|t| t.id()).collect();
+            let ids_before: Vec<usize> = this.tabs.iter().map(super::super::tab::Tab::id).collect();
             // to == from+1 means inserting immediately after the tab, which is its current position
             this.reorder_tab(1, 2, window, cx);
-            let ids_after: Vec<usize> = this.tabs.iter().map(|t| t.id()).collect();
+            let ids_after: Vec<usize> = this.tabs.iter().map(super::super::tab::Tab::id).collect();
             assert_eq!(ids_before, ids_after, "to == from+1 should be a no-op");
         });
     });

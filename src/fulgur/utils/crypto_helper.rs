@@ -501,8 +501,9 @@ pub fn encrypt_bytes(content_bytes: &[u8], recipient_public_key: &str) -> anyhow
         .parse()
         .map_err(|e| anyhow::anyhow!("Failed to parse recipient public key: {e}"))?;
     let recipients: Vec<Box<dyn age::Recipient>> = vec![Box::new(recipient)];
-    let encryptor = age::Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref()))
-        .map_err(|e| anyhow::anyhow!("Failed to create encryptor: {e}"))?;
+    let encryptor =
+        age::Encryptor::with_recipients(recipients.iter().map(std::convert::AsRef::as_ref))
+            .map_err(|e| anyhow::anyhow!("Failed to create encryptor: {e}"))?;
     let mut encrypted = vec![];
     let mut writer = encryptor
         .wrap_output(&mut encrypted)
