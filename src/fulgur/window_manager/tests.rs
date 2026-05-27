@@ -134,7 +134,7 @@ fn invoke_do_open_file(
                 handle
                     .update(cx, |_, window, cx| {
                         fulgur.update(cx, |this, cx| {
-                            this.do_open_file(window, cx, path.to_path_buf())
+                            this.do_open_file(window, cx, path.to_path_buf());
                         });
                     })
                     .expect("failed to run do_open_file on test window");
