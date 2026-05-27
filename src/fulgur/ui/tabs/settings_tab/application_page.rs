@@ -408,7 +408,7 @@ fn pill_colors(status: SynchronizationStatus, cx: &App) -> (gpui::Hsla, gpui::Hs
         | SynchronizationStatus::ConnectionFailed
         | SynchronizationStatus::NotActivated
         | SynchronizationStatus::Other => (theme.danger, theme.danger),
-        _ => (theme.info, theme.info),
+        SynchronizationStatus::Disconnected => (theme.info, theme.info),
     }
 }
 

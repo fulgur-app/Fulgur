@@ -306,7 +306,7 @@ impl ColorPickerBarState {
                                 state.set_value(format_hsla(color), window, cx);
                             });
                     }
-                    _ => {}
+                    InputEvent::Focus => {}
                 }
             },
         );
@@ -347,7 +347,7 @@ impl ColorPickerBarState {
                                 state.set_value(format_hsla(color), window, cx);
                             });
                     }
-                    _ => {}
+                    InputEvent::Focus => {}
                 }
             },
         );
@@ -388,7 +388,7 @@ impl ColorPickerBarState {
                                 state.set_value(format_oklch(color), window, cx);
                             });
                     }
-                    _ => {}
+                    InputEvent::Focus => {}
                 }
             },
         );
