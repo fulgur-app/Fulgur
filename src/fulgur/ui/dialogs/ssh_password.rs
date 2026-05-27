@@ -1,5 +1,4 @@
 use std::cell::Cell;
-use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -56,7 +55,7 @@ impl Fulgur {
         let on_confirm = Arc::new(on_confirm);
         let has_initialized_focus = Rc::new(Cell::new(false));
 
-        window.open_alert_dialog(cx.deref_mut(), move |modal, window, cx| {
+        window.open_alert_dialog(cx, move |modal, window, cx| {
             if !has_initialized_focus.get() {
                 let focus_handle = if show_user_field {
                     user_input.read(cx).focus_handle(cx)

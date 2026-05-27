@@ -1,4 +1,4 @@
-use std::{ops::DerefMut, path::Path};
+use std::path::Path;
 
 use gpui::{Context, ParentElement, Styled, Window, div, px};
 use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, v_flex};
@@ -27,7 +27,7 @@ impl Fulgur {
             .unwrap_or("file")
             .to_string();
 
-        window.open_alert_dialog(cx.deref_mut(), move |modal, _, _| {
+        window.open_alert_dialog(cx, move |modal, _, _| {
             let entity_for_ok = entity.clone();
             modal
                 .title(div().text_size(px(16.)).child("File Modified Externally"))

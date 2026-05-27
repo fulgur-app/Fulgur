@@ -1,4 +1,3 @@
-use std::ops::DerefMut;
 use std::path::PathBuf;
 
 use gpui::{AppContext, Context, Focusable, ParentElement, SharedString, Styled, Window, div, px};
@@ -40,7 +39,7 @@ impl Fulgur {
         let path_browser = cx.new(|cx| PathBrowser::new(window, cx));
         let input = path_browser.read(cx).input().clone();
         let input_clone = input.clone();
-        window.open_alert_dialog(cx.deref_mut(), move |modal, window, cx| {
+        window.open_alert_dialog(cx, move |modal, window, cx| {
             let focus_handle = input.read(cx).focus_handle(cx);
             window.focus(&focus_handle, cx);
             let entity_ok = entity.clone();

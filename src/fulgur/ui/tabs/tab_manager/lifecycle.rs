@@ -14,7 +14,7 @@ use gpui_component::{
     WindowExt,
     select::{SearchableVec, SelectEvent},
 };
-use std::{ops::DerefMut, path::PathBuf};
+use std::path::PathBuf;
 
 impl Fulgur {
     /// Create a new tab
@@ -661,7 +661,7 @@ impl Fulgur {
         F: Fn(&mut Fulgur, &mut Window, &mut Context<Fulgur>) + 'static + Clone,
     {
         let entity = cx.entity().clone();
-        window.open_alert_dialog(cx.deref_mut(), move |modal, _, _| {
+        window.open_alert_dialog(cx, move |modal, _, _| {
             let entity_ok = entity.clone();
             let on_confirm_clone = on_confirm.clone();
             modal
@@ -700,7 +700,7 @@ impl Fulgur {
     pub fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.app_settings.confirm_exit {
             let entity = cx.entity().clone();
-            window.open_alert_dialog(cx.deref_mut(), move |modal, _, _| {
+            window.open_alert_dialog(cx, move |modal, _, _| {
                 let entity_ok = entity.clone();
                 modal
                     .title(div().text_size(px(16.)).child("Quit Fulgur"))
