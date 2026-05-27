@@ -6,34 +6,33 @@ mod tests;
 
 use gpui::{Action, Hsla, Styled};
 use gpui_component::button::Button;
-use serde::Deserialize;
 
 use crate::fulgur::ui::{
     components_utils::{TAB_BAR_BUTTON_SIZE, button_factory},
     icons::CustomIcon,
 };
 
-#[derive(Action, Clone, PartialEq, Deserialize)]
+#[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
 pub struct CloseTabAction(pub usize);
 
-#[derive(Action, Clone, PartialEq, Deserialize)]
+#[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
 pub struct CloseTabsToLeft(pub usize);
 
-#[derive(Action, Clone, PartialEq, Deserialize)]
+#[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
 pub struct CloseTabsToRight(pub usize);
 
-#[derive(Action, Clone, PartialEq, Deserialize)]
+#[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
 pub struct CloseAllOtherTabs(pub usize);
 
-#[derive(Action, Clone, PartialEq, Deserialize)]
+#[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
 pub struct ShowInFileManager(pub usize);
 
-#[derive(Action, Clone, PartialEq, Deserialize)]
+#[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
 pub struct DuplicateTab(pub usize);
 
