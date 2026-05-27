@@ -314,7 +314,7 @@ async fn create_window(
                 "Processing {} command-line file arguments",
                 cli_file_paths.len()
             );
-            for file_path in cli_file_paths.iter() {
+            for file_path in &cli_file_paths {
                 view.update(cx, |fulgur, cx| {
                     fulgur.handle_open_file_from_cli(window, cx, file_path.clone());
                 });

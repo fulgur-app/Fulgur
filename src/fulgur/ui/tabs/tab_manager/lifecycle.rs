@@ -631,7 +631,7 @@ impl Fulgur {
                     "markdown_preview_cache retains entry for removed tab {id}",
                 );
             }
-            for &id in self.markdown_preview_to_refresh.iter() {
+            for &id in &self.markdown_preview_to_refresh {
                 debug_assert!(
                     live.contains(&id),
                     "markdown_preview_to_refresh retains entry for removed tab {id}",

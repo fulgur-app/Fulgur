@@ -59,7 +59,7 @@ impl Fulgur {
 
         // Defer notifications to avoid reentrancy issues
         cx.defer(move |cx| {
-            for weak_window in all_windows.iter() {
+            for weak_window in &all_windows {
                 if let Some(window_entity) = weak_window.upgrade() {
                     // Skip the current window (already updating)
                     let should_notify = window_entity.read(cx).window_id != current_window_id;

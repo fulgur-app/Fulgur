@@ -166,7 +166,7 @@ pub(super) fn apply_replacements(
 ) -> String {
     let mut result = String::new();
     let mut last_pos = 0;
-    for m in search_matches.iter() {
+    for m in search_matches {
         result.push_str(&text[last_pos..m.start]);
         result.push_str(replace);
         last_pos = m.end;

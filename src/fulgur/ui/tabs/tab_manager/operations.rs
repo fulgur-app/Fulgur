@@ -25,7 +25,7 @@ impl Fulgur {
             .retain(|tab_id, _| active_editor_ids.contains(tab_id));
 
         let mut tabs_to_subscribe = Vec::new();
-        for tab in self.tabs.iter() {
+        for tab in &self.tabs {
             let Tab::Editor(editor_tab) = tab else {
                 continue;
             };

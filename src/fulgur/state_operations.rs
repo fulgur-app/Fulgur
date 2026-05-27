@@ -113,7 +113,7 @@ impl Fulgur {
         let mut windows_state = WindowsState { windows: vec![] };
         let current_window_id = self.window_id;
         let all_window_ids = window_manager.get_all_window_ids();
-        for window_id in all_window_ids.iter() {
+        for window_id in &all_window_ids {
             if *window_id == current_window_id {
                 windows_state
                     .windows
