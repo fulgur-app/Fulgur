@@ -108,9 +108,8 @@ fn parse_input_path(raw: &str) -> Option<(PathBuf, String)> {
 /// - `Vec<PathEntry>`: sorted with directories first, then files,
 ///   alphabetical within each group. Capped at 500 entries.
 fn read_and_filter_entries(parent: &Path, filter: &str) -> Vec<PathEntry> {
-    let read_dir = match std::fs::read_dir(parent) {
-        Ok(rd) => rd,
-        Err(_) => return Vec::new(),
+    let Ok(read_dir) = std::fs::read_dir(parent) else {
+        return Vec::new();
     };
     let filter_lower = filter.to_lowercase();
     let mut entries: Vec<PathEntry> = read_dir
