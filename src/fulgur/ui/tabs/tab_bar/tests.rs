@@ -67,7 +67,7 @@ fn test_get_tab_display_title_returns_filename_for_unique_path(cx: &mut TestAppC
             }
             let filename_counts = this.build_tab_filename_counts();
             let tab = this.tabs.first().unwrap();
-            let (filename, folder) = this.get_tab_display_title(tab, &filename_counts);
+            let (filename, folder) = Fulgur::get_tab_display_title(tab, &filename_counts);
             assert_eq!(filename, "main.rs");
             assert!(
                 folder.is_none(),
@@ -91,7 +91,7 @@ fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(cx: &m
             }
             let filename_counts = this.build_tab_filename_counts();
             let tab0 = this.tabs.first().unwrap();
-            let (filename0, folder0) = this.get_tab_display_title(tab0, &filename_counts);
+            let (filename0, folder0) = Fulgur::get_tab_display_title(tab0, &filename_counts);
             assert_eq!(filename0, "main.rs");
             assert_eq!(
                 folder0.as_deref(),
@@ -99,7 +99,7 @@ fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(cx: &m
                 "first tab should show its parent folder when filename is shared"
             );
             let tab1 = this.tabs.get(1).unwrap();
-            let (filename1, folder1) = this.get_tab_display_title(tab1, &filename_counts);
+            let (filename1, folder1) = Fulgur::get_tab_display_title(tab1, &filename_counts);
             assert_eq!(filename1, "main.rs");
             assert_eq!(
                 folder1.as_deref(),
@@ -119,7 +119,7 @@ fn test_get_tab_display_title_returns_tab_title_for_untitled_tab(cx: &mut TestAp
             let filename_counts = this.build_tab_filename_counts();
             let tab = this.tabs.first().unwrap();
             let tab_title = tab.title().to_string();
-            let (display_title, folder) = this.get_tab_display_title(tab, &filename_counts);
+            let (display_title, folder) = Fulgur::get_tab_display_title(tab, &filename_counts);
             assert_eq!(display_title, tab_title);
             assert!(folder.is_none());
         });
@@ -141,7 +141,7 @@ fn test_remote_tab_indicator_label_returns_ssh_for_remote_editor_tab(cx: &mut Te
                 });
             }
             let tab = this.tabs.first().expect("default tab should exist");
-            assert_eq!(this.remote_tab_indicator_label(tab), Some("R"));
+            assert_eq!(Fulgur::remote_tab_indicator_label(tab), Some("R"));
         });
     });
 }
@@ -155,7 +155,7 @@ fn test_remote_tab_indicator_label_is_none_for_local_tab(cx: &mut TestAppContext
                 e.location = TabLocation::Local(PathBuf::from("/tmp/local.txt"));
             }
             let tab = this.tabs.first().expect("default tab should exist");
-            assert_eq!(this.remote_tab_indicator_label(tab), None);
+            assert_eq!(Fulgur::remote_tab_indicator_label(tab), None);
         });
     });
 }

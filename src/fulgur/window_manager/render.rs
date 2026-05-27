@@ -30,7 +30,7 @@ impl Fulgur {
             gpui_component::notification::NotificationType,
             gpui::SharedString,
         )> = {
-            let states = self.shared_state(cx).sync_states.read();
+            let states = Fulgur::shared_state(cx).sync_states.read();
             states
                 .values()
                 .filter_map(|state| state.pending_notification.lock().take())

@@ -318,12 +318,12 @@ impl Fulgur {
                         }
                     } else {
                         self.reload_tab_from_disk(tab_index, window, cx);
-                        self.show_notification_file_reloaded(&path, window, cx);
+                        Self::show_notification_file_reloaded(&path, window, cx);
                     }
                 }
             }
             FileWatchEvent::Deleted(path) => {
-                self.show_notification_file_deleted(&path, window, cx);
+                Self::show_notification_file_deleted(&path, window, cx);
             }
             FileWatchEvent::Renamed { from, to } => {
                 if let Some(tab_index) = self.find_tab_by_path(&from) {
@@ -338,7 +338,7 @@ impl Fulgur {
                             .to_string()
                             .into();
                     }
-                    self.show_notification_file_renamed(&from, &to, window, cx);
+                    Self::show_notification_file_renamed(&from, &to, window, cx);
                 }
             }
             FileWatchEvent::Error(msg) => {

@@ -964,7 +964,7 @@ impl Fulgur {
             .map(|p| p.id.clone())
             .collect();
         for profile_id in profile_ids {
-            let sync_state = self.shared_state(cx).sync_state_for(&profile_id);
+            let sync_state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
             let shared_files_to_open =
                 if let Some(mut pending) = sync_state.pending_shared_files.try_lock() {
                     if pending.is_empty() {

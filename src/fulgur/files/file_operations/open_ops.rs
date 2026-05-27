@@ -156,7 +156,7 @@ impl Fulgur {
                     if let Err(e) = this.settings.add_file(path.to_path_buf()) {
                         log::error!("Failed to add file to recent files: {e}");
                     }
-                    let shared = this.shared_state(cx);
+                    let shared = Fulgur::shared_state(cx);
                     let update_info = shared.update_info.lock().clone();
                     let update_link = update_info.as_ref().map(|info| info.download_url.clone());
                     let menus = menus::build_menus(
@@ -412,7 +412,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         let should_process_files = cx
             .global::<window_manager::WindowManager>()
             .get_last_focused()

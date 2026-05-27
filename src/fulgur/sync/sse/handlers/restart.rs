@@ -137,7 +137,7 @@ impl Fulgur {
         else {
             return;
         };
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         let sync_state = shared.sync_state_for(&profile.id);
         let sync_status = sync_state.connection_status.clone();
         let token_state = Arc::clone(&sync_state.token_state);
@@ -203,7 +203,7 @@ impl Fulgur {
         else {
             return;
         };
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         let sync_state = shared.sync_state_for(&profile.id);
         let connection_status = sync_state.connection_status.clone();
         let connecting_since = sync_state.connecting_since.clone();

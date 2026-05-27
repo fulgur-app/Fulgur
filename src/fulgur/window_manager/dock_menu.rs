@@ -459,7 +459,7 @@ impl Fulgur {
             return;
         }
         let commands: Vec<String> = {
-            let shared = self.shared_state(cx);
+            let shared = Fulgur::shared_state(cx);
             if let Some(mut q) = shared.pending_ipc_commands.try_lock() {
                 q.drain(..).collect()
             } else {

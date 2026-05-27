@@ -194,7 +194,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `&'a shared_state::SharedAppState`: The shared application state
-    fn shared_state<'a>(&self, cx: &'a App) -> &'a shared_state::SharedAppState {
+    fn shared_state(cx: &App) -> &shared_state::SharedAppState {
         cx.global::<shared_state::SharedAppState>()
     }
 
@@ -362,9 +362,9 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to display the notification in
     /// - `cx`: The application context
-    fn process_update_notifications(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn process_update_notifications(window: &mut Window, cx: &mut Context<Self>) {
         let update_info = {
-            let shared = self.shared_state(cx);
+            let shared = Fulgur::shared_state(cx);
             shared.update_info.lock().take()
         };
         if let Some(update_info) = update_info {
@@ -445,7 +445,7 @@ impl Fulgur {
         {
             app_content = app_content.child(self.render_status_bar(cx));
         }
-        app_content = app_content.child(self.render_external_file_drop_overlay(cx));
+        app_content = app_content.child(Self::render_external_file_drop_overlay(cx));
         app_content
     }
 
@@ -526,7 +526,7 @@ impl Render for Fulgur {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.process_pending_initial_active_tab_activation(window, cx);
         self.process_window_state_updates(window, cx);
-        self.process_update_notifications(window, cx);
+        Self::process_update_notifications(window, cx);
         self.synchronize_settings_from_other_windows(cx);
         self.process_pending_files_from_macos(window, cx);
         #[cfg(target_os = "windows")]
@@ -974,8 +974,7 @@ impl Fulgur {
                         if let Err(e) = self.settings.add_file(PathBuf::from(recent_remote_url)) {
                             log::error!("Failed to add remote file to recent files: {e}");
                         }
-                        let update_link = self
-                            .shared_state(cx)
+                        let update_link = Fulgur::shared_state(cx)
                             .update_info
                             .lock()
                             .as_ref()
@@ -1067,7 +1066,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `impl IntoElement`: The rendered overlay
-    fn render_external_file_drop_overlay(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_external_file_drop_overlay(cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("external-file-drop-overlay")
             .invisible()

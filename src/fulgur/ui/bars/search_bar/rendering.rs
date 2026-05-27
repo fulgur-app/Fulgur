@@ -37,7 +37,7 @@ impl Fulgur {
                 .child(self.render_search_input_section(cx))
                 .child(self.render_search_navigation_section(cx))
                 .child(self.render_replace_section(cx))
-                .child(self.render_search_close_button(cx)),
+                .child(Self::render_search_close_button(cx)),
         )
     }
 
@@ -251,7 +251,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `Div`: The rendered close button element
-    fn render_search_close_button(&self, cx: &mut Context<Self>) -> Div {
+    fn render_search_close_button(cx: &mut Context<Self>) -> Div {
         div()
             .flex()
             .items_center()

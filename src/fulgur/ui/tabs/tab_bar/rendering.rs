@@ -66,7 +66,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(&'static str)`: `"R"` when the tab points to a remote location.
     /// - `None`: For local, untitled, settings, and markdown preview tabs.
-    pub(crate) fn remote_tab_indicator_label(&self, tab: &Tab) -> Option<&'static str> {
+    pub(crate) fn remote_tab_indicator_label(tab: &Tab) -> Option<&'static str> {
         let editor_tab = tab.as_editor()?;
         if matches!(editor_tab.location, TabLocation::Remote(_)) {
             Some("R")
@@ -101,7 +101,6 @@ impl Fulgur {
     /// ### Returns
     /// - `(String, Option<String>)`: A tuple of (filename, optional parent folder)
     pub(crate) fn get_tab_display_title(
-        &self,
         tab: &Tab,
         filename_counts: &HashMap<String, usize>,
     ) -> (String, Option<String>) {
@@ -231,12 +230,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `AnyElement`: The rendered ghost tab element
-    fn render_ghost_tab(
-        &self,
-        slot: usize,
-        dragged: &DraggedTab,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn render_ghost_tab(slot: usize, dragged: &DraggedTab, cx: &mut Context<Self>) -> AnyElement {
         use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
 
         let modified_indicator = if dragged.is_modified { " •" } else { "" };
@@ -296,14 +290,14 @@ impl Fulgur {
         let capacity = self.tabs.len() + usize::from(ghost.is_some());
         let mut elements: Vec<AnyElement> = Vec::with_capacity(capacity);
         if let Some((0, dragged)) = ghost {
-            elements.push(self.render_ghost_tab(0, dragged, cx));
+            elements.push(Self::render_ghost_tab(0, dragged, cx));
         }
         for (index, tab) in self.tabs.iter().enumerate() {
             elements.push(self.render_tab(index, tab, filename_counts, cx));
             if let Some((slot, dragged)) = ghost
                 && slot == index + 1
             {
-                elements.push(self.render_ghost_tab(slot, dragged, cx));
+                elements.push(Self::render_ghost_tab(slot, dragged, cx));
             }
         }
         elements
@@ -432,10 +426,10 @@ impl Fulgur {
                 .build(window, cx)
             });
         }
-        let (filename, folder) = self.get_tab_display_title(tab, filename_counts);
+        let (filename, folder) = Self::get_tab_display_title(tab, filename_counts);
         let modified_indicator = if tab.is_modified() { " •" } else { "" };
         let mut title_container = div().flex().items_center().gap_1().pl_1();
-        if let Some(remote_indicator) = self.remote_tab_indicator_label(tab) {
+        if let Some(remote_indicator) = Self::remote_tab_indicator_label(tab) {
             title_container = title_container.child(
                 div()
                     .text_sm()

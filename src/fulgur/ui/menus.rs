@@ -403,7 +403,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn check_for_updates(&self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(update_info) = self.shared_state(cx).update_info.lock().as_ref() {
+        if let Some(update_info) = Fulgur::shared_state(cx).update_info.lock().as_ref() {
             let url = update_info.download_url.clone();
             if !is_valid_release_page_url(&url) {
                 log::error!("Refusing to open non-canonical update URL: {url}");
@@ -435,7 +435,7 @@ impl Fulgur {
                         let download_url = new_update_info.download_url.clone();
                         let _ = view.update(cx, |this, cx| {
                             {
-                                let mut update_info = this.shared_state(cx).update_info.lock();
+                                let mut update_info = Fulgur::shared_state(cx).update_info.lock();
                                 *update_info = Some(new_update_info);
                             }
                             let menus = build_menus(

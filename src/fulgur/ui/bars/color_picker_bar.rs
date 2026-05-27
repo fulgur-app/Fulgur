@@ -489,19 +489,19 @@ impl Fulgur {
                                 .items_center()
                                 .h(SEARCH_BAR_HEIGHT)
                                 .child(self.render_color_picker_section(cx))
-                                .child(self.render_color_value_section(
+                                .child(Self::render_color_value_section(
                                     "Hex",
                                     hex_value,
                                     &self.color_picker_bar_state.hex_input,
                                     cx,
                                 ))
-                                .child(self.render_color_value_section(
+                                .child(Self::render_color_value_section(
                                     "OkLCH",
                                     oklch_value,
                                     &self.color_picker_bar_state.oklch_input,
                                     cx,
                                 ))
-                                .child(self.render_color_value_section(
+                                .child(Self::render_color_value_section(
                                     "HSLA",
                                     hsla_value,
                                     &self.color_picker_bar_state.hsla_input,
@@ -510,7 +510,7 @@ impl Fulgur {
                                 .child(self.render_highlight_toggle_button(cx)),
                         ),
                 )
-                .child(self.render_color_picker_close_button(cx)),
+                .child(Self::render_color_picker_close_button(cx)),
         )
     }
 
@@ -543,7 +543,6 @@ impl Fulgur {
     /// ### Returns
     /// - `Div`: The rendered color value section
     fn render_color_value_section(
-        &self,
         label: &'static str,
         value: &str,
         input_state: &Entity<InputState>,
@@ -629,7 +628,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `Div`: The rendered close button
-    fn render_color_picker_close_button(&self, cx: &mut Context<Self>) -> Div {
+    fn render_color_picker_close_button(cx: &mut Context<Self>) -> Div {
         div()
             .flex()
             .items_center()

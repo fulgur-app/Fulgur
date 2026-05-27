@@ -130,7 +130,7 @@ impl Fulgur {
             log::warn!("Failed to remove device API key for profile '{profile_id}': {e}");
         }
         self.sse_states.remove(profile_id);
-        self.shared_state(cx).remove_sync_state(profile_id);
+        Fulgur::shared_state(cx).remove_sync_state(profile_id);
         self.settings
             .app_settings
             .synchronization_settings
@@ -400,7 +400,7 @@ mod tests {
                     .expect("seeding device key should succeed");
                 save_private_key_to_keychain(&id, Some(&Zeroizing::new("AGE-FAKE".to_string())))
                     .expect("seeding private key should succeed");
-                let _ = this.shared_state(cx).sync_state_for(&id);
+                let _ = Fulgur::shared_state(cx).sync_state_for(&id);
                 let removed = this.delete_profile(&id, cx).expect("delete should persist");
                 assert!(removed, "delete must return true when the profile existed");
                 assert!(
@@ -416,7 +416,10 @@ mod tests {
                     "SSE slot must be removed"
                 );
                 assert!(
-                    !this.shared_state(cx).sync_states.read().contains_key(&id),
+                    !Fulgur::shared_state(cx)
+                        .sync_states
+                        .read()
+                        .contains_key(&id),
                     "SyncState entry must be removed"
                 );
                 assert!(

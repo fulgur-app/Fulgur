@@ -395,8 +395,8 @@ fn build_profile_share_resources(
             );
             continue;
         };
-        let (token_state, max_file_size_bytes) = entity.update(cx, |this, cx| {
-            let sync_state = this.shared_state(cx).sync_state_for(&profile.id);
+        let (token_state, max_file_size_bytes) = entity.update(cx, |_, cx| {
+            let sync_state = Fulgur::shared_state(cx).sync_state_for(&profile.id);
             (
                 Arc::clone(&sync_state.token_state),
                 sync_state
@@ -499,15 +499,14 @@ fn handle_share_file(
         return;
     }
     let share_context = capture_share_context(entity, cx);
-    let http_agent = entity.update(cx, |this, cx| Arc::clone(&this.shared_state(cx).http_agent));
-    let pending_notification = entity.update(cx, |this, cx| {
+    let http_agent = entity.update(cx, |_, cx| Arc::clone(&Fulgur::shared_state(cx).http_agent));
+    let pending_notification = entity.update(cx, |_, cx| {
         let first_profile_id = bundles
             .first()
             .map(|b| b.profile.id.clone())
             .unwrap_or_default();
         Arc::clone(
-            &this
-                .shared_state(cx)
+            &Fulgur::shared_state(cx)
                 .sync_state_for(&first_profile_id)
                 .pending_notification,
         )
@@ -740,7 +739,7 @@ impl Fulgur {
         }
         let state = Arc::new(ShareSheetState::new(active_profiles.clone()));
         self.share_sheet_state = Some(Arc::clone(&state));
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         let http_agent = Arc::clone(&shared.http_agent);
         for profile in active_profiles {
             let sync_state = shared.sync_state_for(&profile.id);
@@ -751,8 +750,8 @@ impl Fulgur {
                 Arc::clone(&http_agent),
             );
         }
-        self.start_share_sheet_render_pump(Arc::clone(&state), window, cx);
-        self.show_share_sheet(state, window, cx);
+        Self::start_share_sheet_render_pump(Arc::clone(&state), window, cx);
+        Self::show_share_sheet(state, window, cx);
     }
 
     /// Drive periodic re-renders while the share sheet is open and at least one profile is still loading.
@@ -762,7 +761,6 @@ impl Fulgur {
     /// - `window`: The window context.
     /// - `cx`: The application context.
     fn start_share_sheet_render_pump(
-        &mut self,
         state: Arc<ShareSheetState>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -810,12 +808,7 @@ impl Fulgur {
     /// - `state`: Shared sheet state.
     /// - `window`: The window context.
     /// - `cx`: The application context.
-    fn show_share_sheet(
-        &mut self,
-        state: Arc<ShareSheetState>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn show_share_sheet(state: Arc<ShareSheetState>, window: &mut Window, cx: &mut Context<Self>) {
         let entity = cx.entity();
         let viewport_height = window.viewport_size().height;
         window.open_sheet(cx, move |sheet, _window, cx| {
