@@ -234,15 +234,34 @@ fn initial_synchronization_v2(
             share::MAX_PENDING_SHARES_PER_RESPONSE
         )));
     }
-    let mut shares = Vec::with_capacity(begin_v2.share_ids.len());
-    for id in &begin_v2.share_ids {
-        match share::fetch_share_by_id(profile, token_state, http_agent, id) {
-            Ok(s) => shares.push(s),
-            Err(e) => {
-                log::warn!("Skipping share id {id}: {e}");
-            }
-        }
-    }
+    let shares: Vec<_> = std::thread::scope(|scope| {
+        let handles: Vec<_> = begin_v2
+            .share_ids
+            .iter()
+            .map(|id| {
+                scope.spawn(move || {
+                    (
+                        id.as_str(),
+                        share::fetch_share_by_id(profile, token_state, http_agent, id),
+                    )
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|h| match h.join() {
+                Ok((_, Ok(s))) => Some(s),
+                Ok((id, Err(e))) => {
+                    log::warn!("Skipping share id {id}: {e}");
+                    None
+                }
+                Err(_) => {
+                    log::error!("Fetch share worker thread panicked");
+                    None
+                }
+            })
+            .collect()
+    });
     log::info!(
         "Initial synchronization (v2) successful: {} announced, {} retrieved",
         begin_v2.share_ids.len(),
