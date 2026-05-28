@@ -167,6 +167,10 @@ fn is_token_valid(expires_at: &OffsetDateTime) -> bool {
 /// - `token_manager`: Arc to the token state manager (thread-safe)
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
+/// ### Errors
+/// Returns a `SynchronizationError` if the token refresh request fails, the
+/// server rejects the credentials, or the response cannot be parsed.
+///
 /// ### Returns
 /// - `Ok(String)`: A valid JWT access token
 /// - `Err(SynchronizationError)`: If token refresh failed

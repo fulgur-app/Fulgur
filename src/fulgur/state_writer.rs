@@ -67,6 +67,10 @@ impl StateWriter {
     /// - `state`: The fully-assembled windows state snapshot to persist.
     /// - `path`: Destination file path (typically the user config `state.json`).
     ///
+    /// ### Errors
+    /// Returns an error if the writer thread has exited, if the reply channel is
+    /// dropped, or if the underlying write reports an I/O or serialization error.
+    ///
     /// ### Returns
     /// - `Ok(())`: The writer successfully persisted the snapshot.
     /// - `Err(anyhow::Error)`: The writer reported an I/O or serialization error,

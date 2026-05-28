@@ -13,6 +13,11 @@ static ATOMIC_WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// - `path`: the path to the file to write
 /// - `content`: the content to write in the file
 ///
+/// ### Errors
+/// Returns an error if the destination has no parent directory or filename, if
+/// the temporary file cannot be created or written, or if the rename over the
+/// destination path fails.
+///
 /// ### Return
 /// - `Ok(())`: the write is successful
 /// - `Err()`: error while writing the file

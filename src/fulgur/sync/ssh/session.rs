@@ -70,6 +70,10 @@ pub struct HostKeyRequest {
 /// - `password`: Session-scoped password, zeroed on drop by the `Zeroizing` wrapper.
 /// - `host_key_cb`: Called with `(fingerprint_sha256_hex, host, port)` when the host key is unknown.
 ///
+/// ### Errors
+/// Returns an `SshError` on TCP connect failure, SSH handshake failure, host-key
+/// rejection, password authentication failure, or SFTP subsystem init failure.
+///
 /// ### Returns
 /// - `Ok(SshSession)`: Ready session with an open SFTP subsystem.
 /// - `Err(SshError)`: Any failure during TCP connect, handshake, host-key check, auth, or SFTP init.

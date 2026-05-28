@@ -190,6 +190,10 @@ impl SshSessionPool {
     ///   cache miss, to authenticate.
     /// - `host_key_cb`: Called only on cache miss when the host key is unknown.
     ///
+    /// ### Errors
+    /// Returns an `SshError` on connect, handshake, host-key check, authentication,
+    /// or SFTP initialization failures when establishing a new session.
+    ///
     /// ### Returns
     /// - `Ok(PooledSession)`: A guard owning the checked-out session. Drop returns
     ///   it to the pool; `invalidate()` discards it instead.

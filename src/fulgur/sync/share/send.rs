@@ -104,6 +104,11 @@ fn send_share_request(
 /// - `http_agent`: Shared HTTP agent for connection pooling
 /// - `max_file_size_bytes`: Server-advertised maximum file size; `u64::MAX` means no limit
 ///
+/// ### Errors
+/// Returns a `SynchronizationError` if the server URL is missing, the request
+/// is invalid (empty content, no devices), the content exceeds the size limit,
+/// or compression/encryption fails before per-device upload.
+///
 /// ### Returns
 /// - `Ok(ShareResult)`: Results of sharing with each device
 /// - `Err(SynchronizationError)`: If validation or setup failed

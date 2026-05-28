@@ -67,6 +67,10 @@ impl RetryConfig {
 /// - `config`: Retry configuration
 /// - `operation`: Function to retry (should be idempotent)
 ///
+/// ### Errors
+/// Returns the error reported by the operation's last failed attempt after all
+/// configured retries have been exhausted.
+///
 /// ### Returns
 /// - `Ok(T)`: Result from successful operation
 /// - `Err(E)`: Error from last failed attempt

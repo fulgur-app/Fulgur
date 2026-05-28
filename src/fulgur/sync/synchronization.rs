@@ -149,6 +149,10 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
 /// - `token_state`: Per-profile JWT token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
+/// ### Errors
+/// Returns a `SynchronizationError` if both the v2 and the legacy v1 begin
+/// requests fail (network failure, authentication failure, or invalid response).
+///
 /// ### Returns
 /// - `Ok(BeginResponse)`: Device name, max file size, and pending shares
 /// - `Err(SynchronizationError)`: If both v2 and v1 begin calls failed
@@ -340,6 +344,10 @@ fn initial_synchronization_v1(
 /// - `server_url`: The base URL of the server (e.g. `https://example.com`).
 /// - `token`: A valid JWT Bearer token.
 /// - `http_agent`: Shared HTTP agent.
+///
+/// ### Errors
+/// Returns a `SynchronizationError` if the server is unreachable, the token is
+/// rejected, or the response cannot be parsed as the expected `ok: true` body.
 ///
 /// ### Returns
 /// - `Ok(())`: Server responded with `ok: true`.

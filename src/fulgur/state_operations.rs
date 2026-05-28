@@ -104,6 +104,10 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `window`: The window to save (needed for window bounds)
     ///
+    /// ### Errors
+    /// Returns an error if the state cannot be persisted to disk (path
+    /// resolution, serialization, or file write failure).
+    ///
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved

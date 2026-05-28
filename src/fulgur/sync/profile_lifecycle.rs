@@ -16,6 +16,9 @@ impl Fulgur {
     /// - `profile`: The fully formed profile to register.
     /// - `cx`: The Fulgur context.
     ///
+    /// ### Errors
+    /// Returns an error if persisting the updated settings fails.
+    ///
     /// ### Returns
     /// - `Ok(())`: The profile was added and settings persisted.
     /// - `Err(anyhow::Error)`: The settings could not be saved; the in-memory
@@ -49,6 +52,9 @@ impl Fulgur {
     /// - `profile_id`: The id of the profile to mutate.
     /// - `mutator`: Closure invoked with the mutable profile reference.
     /// - `cx`: The Fulgur context.
+    ///
+    /// ### Errors
+    /// Returns an error if persisting the updated settings fails.
     ///
     /// ### Returns
     /// - `Ok(true)`: The profile was found, mutated, and settings persisted.
@@ -98,6 +104,9 @@ impl Fulgur {
     /// ### Arguments
     /// - `profile_id`: The id of the profile to delete.
     /// - `cx`: The Fulgur context.
+    ///
+    /// ### Errors
+    /// Returns an error if persisting the updated settings fails.
     ///
     /// ### Returns
     /// - `Ok(true)`: The profile was found and removed.

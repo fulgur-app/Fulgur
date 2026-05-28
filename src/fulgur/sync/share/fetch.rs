@@ -18,6 +18,11 @@ use std::sync::Arc;
 /// - `token_state`: Per-profile token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
+/// ### Errors
+/// Returns a `SynchronizationError` if the profile has no server URL, the
+/// authentication token cannot be obtained, the HTTP request fails, or the
+/// response cannot be deserialized.
+///
 /// ### Returns
 /// - `Ok(Vec<SharedFileResponse>)`: The shares that were drained from the server
 /// - `Err(SynchronizationError)`: If the request failed or the response was invalid
@@ -54,6 +59,11 @@ pub fn fetch_pending_shares(
 /// - `token_state`: Per-profile token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
 /// - `id`: The share identifier returned by the v2 begin endpoint
+///
+/// ### Errors
+/// Returns a `SynchronizationError` if the profile has no server URL, the
+/// authentication token cannot be obtained, the HTTP request fails, the share
+/// is missing, or the response is invalid or too large.
 ///
 /// ### Returns
 /// - `Ok(SharedFileResponse)`: The share content

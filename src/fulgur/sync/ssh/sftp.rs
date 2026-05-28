@@ -11,6 +11,10 @@ use std::path::Path;
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `remote_path`: Absolute path on the remote host.
 ///
+/// ### Errors
+/// Returns an `SshError::SftpError` when the remote file cannot be opened
+/// (missing, permission denied) or when an I/O error occurs while reading.
+///
 /// ### Returns
 /// - `Ok(Vec<u8>)`: Raw file contents.
 /// - `Err(SshError::SftpError)`: File not found, permission denied, or I/O error.
@@ -51,6 +55,10 @@ pub struct RemoteDirectoryEntry {
 /// ### Arguments
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `remote_path`: Path to classify on the remote host.
+///
+/// ### Errors
+/// Returns an `SshError::SftpError` if the SFTP metadata lookup fails for a
+/// reason other than the path being missing.
 ///
 /// ### Returns
 /// - `Ok(RemotePathKind::File)`: Path exists and is a file.
@@ -99,6 +107,10 @@ pub fn classify_remote_path(
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `path`: Candidate path to resolve.
 ///
+/// ### Errors
+/// Returns an `SshError::SftpError` if a path classification check fails
+/// unexpectedly while walking upward.
+///
 /// ### Returns
 /// - `Ok(String)`: Closest existing directory path.
 /// - `Err(SshError::SftpError)`: Path checks failed unexpectedly.
@@ -125,6 +137,9 @@ pub fn closest_existing_remote_directory(
 /// ### Arguments
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `directory`: Existing remote directory path.
+///
+/// ### Errors
+/// Returns an `SshError::SftpError` if the remote directory cannot be read.
 ///
 /// ### Returns
 /// - `Ok(Vec<RemoteDirectoryEntry>)`: Directory entries sorted with directories first.
@@ -175,6 +190,10 @@ pub fn list_remote_directory(
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `remote_path`: Absolute destination path on the remote host.
 /// - `data`: File contents to write.
+///
+/// ### Errors
+/// Returns an `SshError::SftpError` on any write, rename, or permission failure
+/// against the temporary file or the destination path.
 ///
 /// ### Returns
 /// - `Ok(())`: File written and renamed successfully.

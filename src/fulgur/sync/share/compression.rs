@@ -41,6 +41,11 @@ pub(super) fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
 /// - `max_size`: The server-advertised maximum file size in bytes. `u64::MAX`
 ///   means the user configured the server for no limit.
 ///
+/// ### Errors
+/// Returns an error if the compressed payload exceeds the advertised limit,
+/// if the decompressed output exceeds the ratio-bounded cap or the absolute
+/// limit, or if the decompressed bytes are not valid UTF-8.
+///
 /// ### Returns
 /// - `Ok(String)`: The decompressed content as string
 /// - `Err(anyhow::Error)`: If the compressed payload is oversized for the

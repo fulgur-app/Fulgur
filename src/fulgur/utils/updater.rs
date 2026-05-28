@@ -84,6 +84,11 @@ pub fn is_valid_release_page_url(url: &str) -> bool {
 /// ### Arguments
 /// - `current_version`: The current version of the application
 ///
+/// ### Errors
+/// Returns an error if the HTTP request to the GitHub releases API fails, the
+/// response cannot be deserialized, or the current/latest version strings
+/// cannot be parsed as semver.
+///
 /// ### Returns
 /// - `Ok(Some(UpdateInfo))`: The update information if an update is available
 /// - `Ok(None)`: If no update is available

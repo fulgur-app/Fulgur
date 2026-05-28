@@ -53,6 +53,10 @@ pub fn format_remote_url(spec: &RemoteSpec) -> String {
 /// ### Arguments
 /// - `input`: Raw string from the URL input field; leading/trailing whitespace is trimmed.
 ///
+/// ### Errors
+/// Returns an `SshError::ParseError` if the input is empty or does not match any
+/// of the accepted URL or scp-style formats.
+///
 /// ### Returns
 /// - `Ok(RemoteSpec)`: Successfully parsed specification.
 /// - `Err(SshError::ParseError)`: The input could not be understood.

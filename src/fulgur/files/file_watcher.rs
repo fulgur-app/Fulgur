@@ -82,6 +82,9 @@ impl FileWatcher {
 
     /// Starts the file watcher
     ///
+    /// ### Errors
+    /// Returns a `NotifyError` if the underlying file system watcher could not be created.
+    ///
     /// ### Returns
     /// - `Ok(())`: If the file watcher was started successfully
     /// - `Err(NotifyError)`: If the file watcher could not be started
@@ -190,6 +193,10 @@ impl FileWatcher {
     ///
     /// ### Arguments
     /// - `path`: The path to the file to watch
+    ///
+    /// ### Errors
+    /// Returns an error if the watcher cannot be started, the file metadata cannot be read,
+    /// or the watcher fails to register the path.
     ///
     /// ### Returns
     /// - `Ok(())`: If the file was watched successfully

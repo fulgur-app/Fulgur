@@ -64,6 +64,10 @@ fn log_directory() -> anyhow::Result<PathBuf> {
 /// level can be changed at runtime via `set_debug_mode`. In release builds the
 /// effective level starts at `Info`; debug builds always use `Debug`.
 ///
+/// ### Errors
+/// Returns an error if the log directory cannot be resolved or created, or if
+/// the underlying `flexi_logger` initialization fails.
+///
 /// ### Returns
 /// - `Ok(())`: If the logger was initialized successfully
 /// - `Err(anyhow::Error)`: If the logger could not be initialized

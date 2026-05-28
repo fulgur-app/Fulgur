@@ -211,6 +211,10 @@ impl WindowsState {
     /// ### Arguments
     /// - `path`: The path to save the state to
     ///
+    /// ### Errors
+    /// Returns an error if JSON serialization fails or if the atomic write to
+    /// the target path fails.
+    ///
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved
@@ -232,6 +236,10 @@ impl WindowsState {
     ///
     /// ### Arguments
     /// - `path`: The path to load the state from
+    ///
+    /// ### Errors
+    /// Returns an error if the state file cannot be read and the backup file
+    /// is also unavailable or corrupted, or if JSON deserialization fails on both.
     ///
     /// ### Returns
     /// - `Ok(WindowsState)`: The loaded windows state
@@ -263,6 +271,10 @@ impl WindowsState {
 
     /// Save the app state to the default state file location
     ///
+    /// ### Errors
+    /// Returns an error if the state file path cannot be resolved or if the
+    /// underlying write fails.
+    ///
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved
@@ -272,6 +284,10 @@ impl WindowsState {
     }
 
     /// Load the windows state from the default state file location
+    ///
+    /// ### Errors
+    /// Returns an error if the state file path cannot be resolved or if the
+    /// underlying load fails.
     ///
     /// ### Returns
     /// - `Ok(WindowsState)`: The loaded windows state

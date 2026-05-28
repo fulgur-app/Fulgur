@@ -74,6 +74,10 @@ pub fn config_dir() -> Result<PathBuf> {
 /// ### Arguments
 /// - `subdir`: The subdirectory name to create/access
 ///
+/// ### Errors
+/// Returns an error if the base config directory cannot be resolved or if the
+/// subdirectory cannot be created.
+///
 /// ### Returns
 /// - `Ok(PathBuf)`: Absolute path to the subdirectory
 /// - `Err(anyhow::Error)`: If base config path resolution or directory creation fails
@@ -88,6 +92,9 @@ pub fn config_subdir(subdir: &str) -> Result<PathBuf> {
 ///
 /// ### Arguments
 /// - `filename`: The file name to resolve in the config directory
+///
+/// ### Errors
+/// Returns an error if the base config directory cannot be resolved.
 ///
 /// ### Returns
 /// - `Ok(PathBuf)`: Absolute path to the file location

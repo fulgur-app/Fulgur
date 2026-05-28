@@ -15,6 +15,10 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     ///
+    /// ### Errors
+    /// Returns an error if persisting the settings to disk fails. The shared
+    /// state update and re-render still happen even when saving fails.
+    ///
     /// ### Returns
     /// - `anyhow::Result<()>`: Result of the operation
     pub fn update_and_propagate_settings(&mut self, cx: &mut Context<Self>) -> anyhow::Result<()> {
