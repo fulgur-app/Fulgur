@@ -30,6 +30,9 @@ impl StateWriter {
     /// ### Returns
     /// - `Self`: A writer handle whose `save_blocking` method dispatches work to
     ///   the worker thread.
+    ///
+    /// ### Panics
+    /// Panics if the OS refuses to spawn the background writer thread.
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::sync_channel::<WriteRequest>(CHANNEL_CAPACITY);
         thread::Builder::new()

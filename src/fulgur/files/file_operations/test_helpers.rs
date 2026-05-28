@@ -37,6 +37,7 @@ pub fn temp_test_path(file_name: &str) -> PathBuf {
 }
 
 #[cfg(feature = "gpui-test-support")]
+#[allow(clippy::missing_panics_doc)]
 pub fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
     cx.update(|cx| {
         gpui_component::init(cx);
@@ -80,6 +81,7 @@ pub fn setup_test_globals(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
+#[allow(clippy::missing_panics_doc)]
 pub fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Fulgur>) {
     let window_id_slot: RefCell<Option<WindowId>> = RefCell::new(None);
     let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
@@ -104,6 +106,7 @@ pub fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Ful
 }
 
 #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+#[allow(clippy::missing_panics_doc)]
 pub fn invoke_process_pending_files_from_macos(
     cx: &mut TestAppContext,
     window_id: WindowId,

@@ -251,11 +251,14 @@ impl PooledSession {
     ///
     /// ### Returns
     /// - `&SshSession`: Reference to the live SSH session and its SFTP subsystem.
+    ///
+    /// ### Panics
+    /// Panics if the session has already been consumed (e.g. via `discard` or `Drop`).
     pub fn session(&self) -> &SshSession {
         &self
             .inner
             .as_ref()
-            .expect("pooled session already consumed")
+            .expect("pooled session already consumed") //TODO: remove this
             .session
     }
 
