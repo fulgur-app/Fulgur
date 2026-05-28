@@ -20,13 +20,13 @@ impl CustomTitleBar {
     ///
     /// ### Arguments
     /// - `_window`: The window to create the title bar in
-    /// - `_cx`: The application context
+    /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `Entity<CustomTitleBar>`: The new custom title bar
     pub fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
         #[cfg(not(target_os = "macos"))]
-        let app_menu_bar = AppMenuBar::new(_cx);
+        let app_menu_bar = AppMenuBar::new(cx);
 
         cx.new(|_cx| Self {
             #[cfg(not(target_os = "macos"))]
