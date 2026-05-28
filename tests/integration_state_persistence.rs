@@ -443,7 +443,7 @@ fn test_state_backward_compatibility_missing_window_bounds() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let state_path = temp_state_path(&temp_dir);
     #[cfg(target_os = "windows")]
-    let file_path_json = r#"path\\to\\test.txt"#;
+    let file_path_json = r"path\\to\\test.txt";
     #[cfg(not(target_os = "windows"))]
     let file_path_json = "path/to/test.txt";
     let minimal_json = format!(

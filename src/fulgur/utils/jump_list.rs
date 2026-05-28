@@ -220,7 +220,7 @@ unsafe fn make_shell_link(
 unsafe fn propvariant_from_str(s: &str) -> PROPVARIANT {
     let wide: Vec<u16> = s.encode_utf16().chain(std::iter::once(0)).collect();
     let byte_len = wide.len() * std::mem::size_of::<u16>();
-    let ptr = CoTaskMemAlloc(byte_len) as *mut u16;
+    let ptr = CoTaskMemAlloc(byte_len).cast::<u16>();
     let mut pv = PROPVARIANT::default();
     if !ptr.is_null() {
         std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());

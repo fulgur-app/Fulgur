@@ -717,9 +717,7 @@ pub fn home_dir() -> PathBuf {
             .or_else(|_| {
                 std::env::var("HOMEDRIVE")
                     .and_then(|d| std::env::var("HOMEPATH").map(|p| format!("{d}{p}")))
-            })
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(r"C:\Users\User"))
+            }).map_or_else(|_| PathBuf::from(r"C:\Users\User"), PathBuf::from)
     }
     #[cfg(not(windows))]
     {
