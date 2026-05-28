@@ -166,7 +166,8 @@ impl BackoffCalculator {
         self.consecutive_failures += 1;
 
         let exponent = self.consecutive_failures - 1;
-        let delay_secs = self.initial_delay.as_secs_f64() * self.multiplier.powi(exponent as i32);
+        let delay_secs =
+            self.initial_delay.as_secs_f64() * self.multiplier.powi(exponent.cast_signed());
         let capped_delay = delay_secs.min(self.max_delay.as_secs_f64());
 
         Duration::from_secs_f64(capped_delay)
