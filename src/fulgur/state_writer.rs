@@ -30,6 +30,9 @@ impl StateWriter {
     /// ### Returns
     /// - `Self`: A writer handle whose `save_blocking` method dispatches work to
     ///   the worker thread.
+    ///
+    /// ### Panics
+    /// Panics if the OS refuses to spawn the background writer thread.
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::sync_channel::<WriteRequest>(CHANNEL_CAPACITY);
         thread::Builder::new()
@@ -66,6 +69,10 @@ impl StateWriter {
     /// ### Arguments
     /// - `state`: The fully-assembled windows state snapshot to persist.
     /// - `path`: Destination file path (typically the user config `state.json`).
+    ///
+    /// ### Errors
+    /// Returns an error if the writer thread has exited, if the reply channel is
+    /// dropped, or if the underlying write reports an I/O or serialization error.
     ///
     /// ### Returns
     /// - `Ok(())`: The writer successfully persisted the snapshot.

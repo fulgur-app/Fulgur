@@ -46,8 +46,7 @@ impl Tab {
     pub fn is_modified(&self) -> bool {
         match self {
             Tab::Editor(tab) => tab.modified,
-            Tab::Settings(_) => false,
-            Tab::MarkdownPreview(_) => false,
+            Tab::Settings(_) | Tab::MarkdownPreview(_) => false,
         }
     }
 

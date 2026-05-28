@@ -1,5 +1,3 @@
-use std::ops::DerefMut;
-
 use gpui::{Context, ParentElement, SharedString, Styled, Window, div, px};
 use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps};
 
@@ -29,7 +27,7 @@ impl Fulgur {
         let fingerprint_label: SharedString = request.fingerprint.into();
         let tx = request.decision_tx;
 
-        window.open_alert_dialog(cx.deref_mut(), move |modal, _, _| {
+        window.open_alert_dialog(cx, move |modal, _, _| {
             let tx_ok = tx.clone();
             let tx_cancel = tx.clone();
 

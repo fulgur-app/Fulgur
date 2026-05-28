@@ -134,7 +134,7 @@ fn invoke_do_open_file(
                 handle
                     .update(cx, |_, window, cx| {
                         fulgur.update(cx, |this, cx| {
-                            this.do_open_file(window, cx, path.to_path_buf())
+                            this.do_open_file(window, cx, path.to_path_buf());
                         });
                     })
                     .expect("failed to run do_open_file on test window");
@@ -421,8 +421,7 @@ fn test_process_window_state_updates_drains_local_and_sync_pending_notifications
                 NotificationType::Warning,
                 "pending from current window".into(),
             ));
-            *this
-                .shared_state(cx)
+            *Fulgur::shared_state(cx)
                 .primary_sync_state()
                 .pending_notification
                 .lock() = Some((
@@ -441,7 +440,7 @@ fn test_process_window_state_updates_drains_local_and_sync_pending_notifications
                 "window-local pending notification must be drained during render processing"
             );
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .pending_notification
                     .lock()

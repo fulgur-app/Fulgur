@@ -15,7 +15,7 @@ impl Fulgur {
     /// - `true`: At least one profile reports a connected status.
     /// - `false`: No profile is connected.
     pub fn is_connected(&self, cx: &App) -> bool {
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         let states = shared.sync_states.read();
         states
             .values()
@@ -44,7 +44,7 @@ impl Fulgur {
             return;
         }
         state.last_sse_event = Some(now);
-        let sync_state = self.shared_state(cx).sync_state_for(profile_id);
+        let sync_state = Fulgur::shared_state(cx).sync_state_for(profile_id);
         match event {
             SseEvent::Heartbeat { timestamp } => {
                 log::debug!("SSE heartbeat received for profile '{profile_id}': {timestamp}");

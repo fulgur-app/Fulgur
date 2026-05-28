@@ -14,7 +14,7 @@ use gpui_component::{
     WindowExt,
     select::{SearchableVec, SelectEvent},
 };
-use std::{ops::DerefMut, path::PathBuf};
+use std::path::PathBuf;
 
 impl Fulgur {
     /// Create a new tab
@@ -72,7 +72,7 @@ impl Fulgur {
                     }
                 },
             );
-            self._font_select_subscription = Some(font_select_subscription);
+            self.font_select_subscription = Some(font_select_subscription);
             let settings_tab = Tab::Settings(tab);
             self.tabs.push(settings_tab);
             self.active_tab_index = Some(self.tabs.len() - 1);
@@ -237,10 +237,8 @@ impl Fulgur {
                     let focus_handle = editor_tab.content.read(cx).focus_handle(cx);
                     window.focus(&focus_handle, cx);
                 }
-                Tab::Settings(_) => {
+                Tab::Settings(_) | Tab::MarkdownPreview(_) => {
                     // Settings don't have focusable content, just keep window focus
-                }
-                Tab::MarkdownPreview(_) => {
                     // Preview tabs are read-only, no focusable input content
                 }
             }
@@ -256,7 +254,7 @@ impl Fulgur {
         if self.tabs.is_empty() {
             return;
         }
-        let tab_ids: Vec<usize> = self.tabs.iter().map(|tab| tab.id()).collect();
+        let tab_ids: Vec<usize> = self.tabs.iter().map(super::super::tab::Tab::id).collect();
         for tab_id in tab_ids {
             if !self.tabs.iter().any(|t| t.id() == tab_id) {
                 continue;
@@ -313,7 +311,10 @@ impl Fulgur {
         if index == 0 || index >= self.tabs.len() {
             return;
         }
-        let tab_ids: Vec<usize> = self.tabs[0..index].iter().map(|tab| tab.id()).collect();
+        let tab_ids: Vec<usize> = self.tabs[0..index]
+            .iter()
+            .map(super::super::tab::Tab::id)
+            .collect();
         for tab_id in tab_ids {
             if !self.tabs.iter().any(|t| t.id() == tab_id) {
                 continue;
@@ -377,7 +378,7 @@ impl Fulgur {
         }
         let tab_ids: Vec<usize> = self.tabs[(index + 1)..]
             .iter()
-            .map(|tab| tab.id())
+            .map(super::super::tab::Tab::id)
             .collect();
         for tab_id in tab_ids {
             if !self.tabs.iter().any(|t| t.id() == tab_id) {
@@ -437,7 +438,7 @@ impl Fulgur {
         if self.tabs.len() <= 1 {
             return;
         }
-        let active_tab_id = self.tabs.get(active_index).map(|t| t.id());
+        let active_tab_id = self.tabs.get(active_index).map(super::super::tab::Tab::id);
         let tab_ids: Vec<usize> = self
             .tabs
             .iter()
@@ -571,7 +572,7 @@ impl Fulgur {
                 self.tabs
                     .iter()
                     .find(|t| matches!(t, Tab::MarkdownPreview(p) if p.source_tab_id == tab_id))
-                    .map(|t| t.id())
+                    .map(super::super::tab::Tab::id)
             } else {
                 None
             };
@@ -618,7 +619,7 @@ impl Fulgur {
     fn debug_assert_tab_maps_consistent(&self) {
         if cfg!(debug_assertions) {
             let live: std::collections::HashSet<usize> =
-                self.tabs.iter().map(|tab| tab.id()).collect();
+                self.tabs.iter().map(super::super::tab::Tab::id).collect();
             for &id in self.editor_modified_subscriptions.keys() {
                 debug_assert!(
                     live.contains(&id),
@@ -631,7 +632,7 @@ impl Fulgur {
                     "markdown_preview_cache retains entry for removed tab {id}",
                 );
             }
-            for &id in self.markdown_preview_to_refresh.iter() {
+            for &id in &self.markdown_preview_to_refresh {
                 debug_assert!(
                     live.contains(&id),
                     "markdown_preview_to_refresh retains entry for removed tab {id}",
@@ -661,7 +662,7 @@ impl Fulgur {
         F: Fn(&mut Fulgur, &mut Window, &mut Context<Fulgur>) + 'static + Clone,
     {
         let entity = cx.entity().clone();
-        window.open_alert_dialog(cx.deref_mut(), move |modal, _, _| {
+        window.open_alert_dialog(cx, move |modal, _, _| {
             let entity_ok = entity.clone();
             let on_confirm_clone = on_confirm.clone();
             modal
@@ -700,7 +701,7 @@ impl Fulgur {
     pub fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.app_settings.confirm_exit {
             let entity = cx.entity().clone();
-            window.open_alert_dialog(cx.deref_mut(), move |modal, _, _| {
+            window.open_alert_dialog(cx, move |modal, _, _| {
                 let entity_ok = entity.clone();
                 modal
                     .title(div().text_size(px(16.)).child("Quit Fulgur"))

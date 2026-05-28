@@ -104,6 +104,11 @@ fn send_share_request(
 /// - `http_agent`: Shared HTTP agent for connection pooling
 /// - `max_file_size_bytes`: Server-advertised maximum file size; `u64::MAX` means no limit
 ///
+/// ### Errors
+/// Returns a `SynchronizationError` if the server URL is missing, the request
+/// is invalid (empty content, no devices), the content exceeds the size limit,
+/// or compression/encryption fails before per-device upload.
+///
 /// ### Returns
 /// - `Ok(ShareResult)`: Results of sharing with each device
 /// - `Err(SynchronizationError)`: If validation or setup failed
@@ -181,29 +186,21 @@ pub fn share_file(
                     let deduplication_hash = deduplication_hash.clone();
                     let compressed_content = compressed_content.clone();
                     scope.spawn(move || {
-                        let device = match devices.iter().find(|d| d.id == device_id) {
-                            Some(d) => d,
-                            None => {
-                                log::warn!("Device {device_id} not found, skipping");
-                                return (
-                                    device_id.clone(),
-                                    Err(SynchronizationError::Other(format!(
-                                        "Device {device_id} not found"
-                                    ))),
-                                );
-                            }
+                        let Some(device) = devices.iter().find(|d| d.id == device_id) else {
+                            log::warn!("Device {device_id} not found, skipping");
+                            return (
+                                device_id.clone(),
+                                Err(SynchronizationError::Other(format!(
+                                    "Device {device_id} not found"
+                                ))),
+                            );
                         };
-                        let public_key = match &device.public_key {
-                            Some(key) => key,
-                            None => {
-                                log::warn!("Device {device_id} has no public key, skipping");
-                                return (
-                                    device_id.clone(),
-                                    Err(SynchronizationError::MissingPublicKey(
-                                        device.name.clone(),
-                                    )),
-                                );
-                            }
+                        let Some(public_key) = &device.public_key else {
+                            log::warn!("Device {device_id} has no public key, skipping");
+                            return (
+                                device_id.clone(),
+                                Err(SynchronizationError::MissingPublicKey(device.name.clone())),
+                            );
                         };
                         let encrypted_content =
                             match encrypt_content_for_device(&compressed_content, public_key) {

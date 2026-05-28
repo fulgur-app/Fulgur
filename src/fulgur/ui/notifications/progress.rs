@@ -140,7 +140,7 @@ pub fn start_progress(
                 }
 
                 window.push_notification(note, cx);
-                window.notifications(cx).last().map(|e| e.downgrade())
+                window.notifications(cx).last().map(gpui::Entity::downgrade)
             }) {
                 Ok(entity) => entity,
                 Err(_) => return,
@@ -153,7 +153,7 @@ pub fn start_progress(
                     .await;
                 if completed_for_task.load(Ordering::Acquire) {
                     let _ = async_cx.update(|window, cx| {
-                        if let Some(entity) = entity.as_ref().and_then(|e| e.upgrade()) {
+                        if let Some(entity) = entity.as_ref().and_then(gpui::WeakEntity::upgrade) {
                             entity.update(cx, |note, cx| note.dismiss(window, cx));
                         }
                     });

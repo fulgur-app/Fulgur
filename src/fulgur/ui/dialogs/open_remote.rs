@@ -1,5 +1,3 @@
-use std::ops::DerefMut;
-
 use gpui::{AppContext, Context, Focusable, ParentElement, SharedString, Styled, Window, div, px};
 use gpui_component::{
     WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input,
@@ -30,7 +28,7 @@ impl Fulgur {
                 .default_value(remembered_url.clone())
         });
         let input_for_ok = input.clone();
-        window.open_alert_dialog(cx.deref_mut(), move |modal, window, cx| {
+        window.open_alert_dialog(cx, move |modal, window, cx| {
             let focus_handle = input.read(cx).focus_handle(cx);
             window.focus(&focus_handle, cx);
             let entity_ok = entity.clone();
@@ -106,8 +104,8 @@ impl Fulgur {
             port: spec.port,
             user: user.clone(),
             credential_key: SshCredKey::new(spec.host.clone(), spec.port, user),
-            ssh_session_cache: self.shared_state(cx).ssh_session_cache.clone(),
-            ssh_session_pool: self.shared_state(cx).ssh_session_pool.clone(),
+            ssh_session_cache: Fulgur::shared_state(cx).ssh_session_cache.clone(),
+            ssh_session_pool: Fulgur::shared_state(cx).ssh_session_pool.clone(),
         };
         let initial_path = browser_directory_input(&spec.path);
         let initial_entries = browse.entries.clone();
@@ -127,7 +125,7 @@ impl Fulgur {
         let entity = cx.entity().clone();
         let spec_for_ok = spec.clone();
 
-        window.open_alert_dialog(cx.deref_mut(), move |modal, window, cx| {
+        window.open_alert_dialog(cx, move |modal, window, cx| {
             let focus_handle = browser_input.read(cx).focus_handle(cx);
             window.focus(&focus_handle, cx);
 

@@ -484,6 +484,10 @@ impl ThemeFile {
     /// ### Arguments
     /// - `path`: The path to the theme file
     ///
+    /// ### Errors
+    /// Returns an error if the theme file cannot be read or if it fails to
+    /// deserialize from JSON.
+    ///
     /// ### Returns
     /// - `anyhow::Result<Self>`: The theme file
     pub fn load(path: PathBuf) -> anyhow::Result<Self> {
@@ -502,6 +506,10 @@ pub struct Themes {
 
 impl Themes {
     /// Load the theme settings from the themes folder
+    ///
+    /// ### Errors
+    /// Returns an error if the themes directory cannot be resolved or read,
+    /// or if any bundled or user theme file fails to load.
     ///
     /// ### Returns
     /// - `anyhow::Result<Self>`: The theme settings

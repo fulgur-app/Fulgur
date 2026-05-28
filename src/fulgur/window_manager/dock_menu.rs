@@ -64,12 +64,6 @@ impl Fulgur {
         use gpui::{SharedString, WeakEntity};
 
         use crate::fulgur::ui::menus::{DockMenuTab, build_dock_menu};
-        let menu_state_revision = cx.global::<WindowManager>().menu_state_revision();
-        if menu_state_revision == self.last_dock_menu_revision {
-            return;
-        }
-        self.last_dock_menu_revision = menu_state_revision;
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
         // Collect raw tab data from all windows: (file_path_or_none, title, window_group_index)
         // We need all file paths upfront to compute cross-window duplicate filenames.
@@ -77,6 +71,13 @@ impl Fulgur {
             path: Option<PathBuf>,
             title: SharedString,
         }
+
+        let menu_state_revision = cx.global::<WindowManager>().menu_state_revision();
+        if menu_state_revision == self.last_dock_menu_revision {
+            return;
+        }
+        self.last_dock_menu_revision = menu_state_revision;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
         let mut all_windows_raw: Vec<Vec<RawTab>> = Vec::new();
         let current_window_raw: Vec<RawTab> = self
@@ -189,18 +190,19 @@ impl Fulgur {
     pub(super) fn update_jump_list_if_changed(&mut self, cx: &mut Context<Self>) {
         use crate::fulgur::ui::menus::DockMenuTab;
         use crate::fulgur::utils::jump_list::update_windows_jump_list;
-        let menu_state_revision = cx.global::<WindowManager>().menu_state_revision();
-        if menu_state_revision == self.last_jump_list_revision {
-            return;
-        }
-        self.last_jump_list_revision = menu_state_revision;
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
         use gpui::SharedString;
 
         struct RawTab {
             path: Option<PathBuf>,
             title: SharedString,
         }
+
+        let menu_state_revision = cx.global::<WindowManager>().menu_state_revision();
+        if menu_state_revision == self.last_jump_list_revision {
+            return;
+        }
+        self.last_jump_list_revision = menu_state_revision;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
         let mut all_windows_raw: Vec<Vec<RawTab>> = Vec::new();
         let current_window_raw: Vec<RawTab> = self
@@ -452,13 +454,12 @@ impl Fulgur {
         let should_process = cx
             .global::<WindowManager>()
             .get_last_focused()
-            .map(|id| id == self.window_id)
-            .unwrap_or(true);
+            .is_none_or(|id| id == self.window_id);
         if !should_process {
             return;
         }
         let commands: Vec<String> = {
-            let shared = self.shared_state(cx);
+            let shared = Fulgur::shared_state(cx);
             if let Some(mut q) = shared.pending_ipc_commands.try_lock() {
                 q.drain(..).collect()
             } else {

@@ -72,15 +72,13 @@ impl ShareResult {
             let reason = self
                 .failures
                 .first()
-                .map(|(_, err)| err.to_string())
-                .unwrap_or_else(|| "unknown error".to_string());
+                .map_or_else(|| "unknown error".to_string(), |(_, err)| err.to_string());
             return format!("0/{total} failed ({reason})");
         }
         let reason = self
             .failures
             .first()
-            .map(|(_, err)| err.to_string())
-            .unwrap_or_else(|| "unknown error".to_string());
+            .map_or_else(|| "unknown error".to_string(), |(_, err)| err.to_string());
         format!(
             "{}/{total} succeeded, {} failed ({reason})",
             self.successes.len(),

@@ -41,8 +41,8 @@ impl Fulgur {
         mut spec: RemoteSpec,
         contents: String,
     ) {
-        let ssh_session_cache = Arc::clone(&self.shared_state(cx).ssh_session_cache);
-        let ssh_session_pool = Arc::clone(&self.shared_state(cx).ssh_session_pool);
+        let ssh_session_cache = Arc::clone(&Fulgur::shared_state(cx).ssh_session_cache);
+        let ssh_session_pool = Arc::clone(&Fulgur::shared_state(cx).ssh_session_pool);
         if let (Some(user), Some(password)) = (spec.user.clone(), spec.password_in_url.take()) {
             let key = SshCredKey::new(spec.host.clone(), spec.port, user);
             ssh_session_cache.lock().insert(key, password);
@@ -57,7 +57,7 @@ impl Fulgur {
                 self.next_remote_request_id = self.next_remote_request_id.wrapping_add(1);
                 self.latest_remote_save_request_by_tab
                     .insert(tab_id, request_id);
-                self.spawn_ssh_save_task(
+                Self::spawn_ssh_save_task(
                     window,
                     cx,
                     RemoteSaveTaskParams {
@@ -114,7 +114,7 @@ impl Fulgur {
                         fulgur
                             .latest_remote_save_request_by_tab
                             .insert(tab_id, request_id);
-                        fulgur.spawn_ssh_save_task(
+                        Self::spawn_ssh_save_task(
                             window,
                             cx,
                             RemoteSaveTaskParams {
@@ -141,7 +141,6 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `params`: All data required to run the remote save operation
     fn spawn_ssh_save_task(
-        &mut self,
         window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
         params: RemoteSaveTaskParams,

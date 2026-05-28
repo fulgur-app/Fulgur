@@ -22,7 +22,6 @@ pub type Device = DeviceResponse;
 /// - `Icon`: The icon for the device
 pub fn get_icon(device: &Device) -> Icon {
     match device.device_type.to_lowercase().as_str() {
-        "desktop" => Icon::new(CustomIcon::Computer),
         "laptop" => Icon::new(CustomIcon::Laptop),
         "server" => Icon::new(CustomIcon::Server),
         _ => Icon::new(CustomIcon::Computer),
@@ -35,6 +34,11 @@ pub fn get_icon(device: &Device) -> Icon {
 /// - `profile`: The server profile to query
 /// - `token_state`: Arc to the per-profile token state manager (thread-safe with condition variable)
 /// - `http_agent`: Shared HTTP agent for connection pooling
+///
+/// ### Errors
+/// Returns a `SynchronizationError` if the profile has no server URL, if the
+/// authentication token cannot be obtained, or if the HTTP request fails or
+/// returns a non-success status.
 ///
 /// ### Returns
 /// - `Ok((Vec<Device>, Option<u64>))`: The devices and the server-reported maximum share file size (if advertised)

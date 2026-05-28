@@ -70,6 +70,10 @@ pub struct HostKeyRequest {
 /// - `password`: Session-scoped password, zeroed on drop by the `Zeroizing` wrapper.
 /// - `host_key_cb`: Called with `(fingerprint_sha256_hex, host, port)` when the host key is unknown.
 ///
+/// ### Errors
+/// Returns an `SshError` on TCP connect failure, SSH handshake failure, host-key
+/// rejection, password authentication failure, or SFTP subsystem init failure.
+///
 /// ### Returns
 /// - `Ok(SshSession)`: Ready session with an open SFTP subsystem.
 /// - `Err(SshError)`: Any failure during TCP connect, handshake, host-key check, auth, or SFTP init.
@@ -105,9 +109,7 @@ pub fn connect(
         })
         .ok_or_else(|| {
             SshError::ConnectionFailed(
-                last_err
-                    .map(|e| e.to_string())
-                    .unwrap_or_else(|| "unknown error".to_string()),
+                last_err.map_or_else(|| "unknown error".to_string(), |e| e.to_string()),
             )
         })?;
 
@@ -671,13 +673,12 @@ fn sha256_fingerprint(key: &[u8]) -> String {
 /// - `ssh2::KnownHostKeyFormat`: Corresponding format constant; `Unknown` falls back to `SshRsa`.
 fn host_key_type_to_format(key_type: ssh2::HostKeyType) -> ssh2::KnownHostKeyFormat {
     match key_type {
-        ssh2::HostKeyType::Rsa => ssh2::KnownHostKeyFormat::SshRsa,
         ssh2::HostKeyType::Dss => ssh2::KnownHostKeyFormat::SshDss,
         ssh2::HostKeyType::Ecdsa256 => ssh2::KnownHostKeyFormat::Ecdsa256,
         ssh2::HostKeyType::Ecdsa384 => ssh2::KnownHostKeyFormat::Ecdsa384,
         ssh2::HostKeyType::Ecdsa521 => ssh2::KnownHostKeyFormat::Ecdsa521,
         ssh2::HostKeyType::Ed25519 => ssh2::KnownHostKeyFormat::Ed25519,
-        ssh2::HostKeyType::Unknown => ssh2::KnownHostKeyFormat::SshRsa,
+        ssh2::HostKeyType::Rsa | ssh2::HostKeyType::Unknown => ssh2::KnownHostKeyFormat::SshRsa,
     }
 }
 
@@ -717,14 +718,11 @@ pub fn home_dir() -> PathBuf {
                 std::env::var("HOMEDRIVE")
                     .and_then(|d| std::env::var("HOMEPATH").map(|p| format!("{d}{p}")))
             })
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(r"C:\Users\User"))
+            .map_or_else(|_| PathBuf::from(r"C:\Users\User"), PathBuf::from)
     }
     #[cfg(not(windows))]
     {
-        std::env::var("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/tmp"))
+        std::env::var("HOME").map_or_else(|_| PathBuf::from("/tmp"), PathBuf::from)
     }
 }
 

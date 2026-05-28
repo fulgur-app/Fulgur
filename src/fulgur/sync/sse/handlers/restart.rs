@@ -77,8 +77,7 @@ impl Fulgur {
         let old_handle = self
             .sse_states
             .get(profile_id)
-            .map(|s| s.sse_thread_handle.lock().take())
-            .unwrap_or(None);
+            .and_then(|s| s.sse_thread_handle.lock().take());
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
         let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
         let mut new_state = SseState::new();
@@ -88,7 +87,7 @@ impl Fulgur {
         let handle_storage = Arc::clone(&new_state.sse_thread_handle);
         self.sse_states.insert(profile_id.to_string(), new_state);
 
-        let profile = match self
+        let profile = if let Some(p) = self
             .settings
             .app_settings
             .synchronization_settings
@@ -96,11 +95,10 @@ impl Fulgur {
             .iter()
             .find(|p| p.id == profile_id)
         {
-            Some(p) => p.clone(),
-            None => {
-                log::warn!("prepare_sse_restart: profile id '{profile_id}' not found in settings");
-                return None;
-            }
+            p.clone()
+        } else {
+            log::warn!("prepare_sse_restart: profile id '{profile_id}' not found in settings");
+            return None;
         };
         let master_on = self
             .settings
@@ -139,7 +137,7 @@ impl Fulgur {
         else {
             return;
         };
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         let sync_state = shared.sync_state_for(&profile.id);
         let sync_status = sync_state.connection_status.clone();
         let token_state = Arc::clone(&sync_state.token_state);
@@ -205,7 +203,7 @@ impl Fulgur {
         else {
             return;
         };
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         let sync_state = shared.sync_state_for(&profile.id);
         let connection_status = sync_state.connection_status.clone();
         let connecting_since = sync_state.connecting_since.clone();

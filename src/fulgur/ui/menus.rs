@@ -242,12 +242,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<&str>) -> Vec<M
     } else {
         let mut items: Vec<MenuItem> = recent_files
             .iter()
-            .map(|file| {
-                MenuItem::action(
-                    file.display().to_string(),
-                    OpenRecentFile(file.to_path_buf()),
-                )
-            })
+            .map(|file| MenuItem::action(file.display().to_string(), OpenRecentFile(file.clone())))
             .collect();
         items.push(MenuItem::Separator);
         items.push(MenuItem::action("Clear recent files", ClearRecentFiles));
@@ -349,12 +344,7 @@ pub fn build_dock_menu(windows: &[Vec<DockMenuTab>], recent_files: &[PathBuf]) -
     if !recent_files.is_empty() {
         let recent_items: Vec<MenuItem> = recent_files
             .iter()
-            .map(|file| {
-                MenuItem::action(
-                    file.display().to_string(),
-                    OpenRecentFile(file.to_path_buf()),
-                )
-            })
+            .map(|file| MenuItem::action(file.display().to_string(), OpenRecentFile(file.clone())))
             .collect();
         items.push(MenuItem::Submenu(Menu {
             name: "Recent Files".into(),
@@ -402,8 +392,10 @@ impl Fulgur {
             if let Some(owned_menus) = cx.get_menus() {
                 GlobalState::global_mut(cx).set_app_menus(owned_menus);
             }
-            self.title_bar
-                .update(cx, |tb, cx| tb.reload_app_menu_bar(cx));
+            self.title_bar.update(
+                cx,
+                super::bars::titlebar::CustomTitleBar::reload_app_menu_bar,
+            );
         }
     }
 
@@ -413,7 +405,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn check_for_updates(&self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(update_info) = self.shared_state(cx).update_info.lock().as_ref() {
+        if let Some(update_info) = Fulgur::shared_state(cx).update_info.lock().as_ref() {
             let url = update_info.download_url.clone();
             if !is_valid_release_page_url(&url) {
                 log::error!("Refusing to open non-canonical update URL: {url}");
@@ -445,7 +437,7 @@ impl Fulgur {
                         let download_url = new_update_info.download_url.clone();
                         let _ = view.update(cx, |this, cx| {
                             {
-                                let mut update_info = this.shared_state(cx).update_info.lock();
+                                let mut update_info = Fulgur::shared_state(cx).update_info.lock();
                                 *update_info = Some(new_update_info);
                             }
                             let menus = build_menus(

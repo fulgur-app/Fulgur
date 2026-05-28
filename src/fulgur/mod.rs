@@ -136,9 +136,9 @@ pub struct Fulgur {
     save_failed_once: bool, // Flag: save already failed once, allow force-close on next attempt
     pub share_sheet_state: Option<Arc<ui::sheets::share_file::ShareSheetState>>, // When Some, a share sheet is open and devices are being fetched per profile
     cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
-    _font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
+    font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
-    _editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
+    editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
     drag_ghost: Option<(usize, ui::tabs::tab_drag::DraggedTab)>, // Ghost tab shown at insertion point during tab drag
     status_bar_cache: StatusBarCache, // Cached status bar label strings (refreshed each render)
     cached_tab_filename_counts: HashMap<String, usize>, // Cached tab filename frequency map (refreshed when tabs change)
@@ -194,7 +194,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `&'a shared_state::SharedAppState`: The shared application state
-    fn shared_state<'a>(&self, cx: &'a App) -> &'a shared_state::SharedAppState {
+    fn shared_state(cx: &App) -> &shared_state::SharedAppState {
         cx.global::<shared_state::SharedAppState>()
     }
 
@@ -259,9 +259,9 @@ impl Fulgur {
                 save_failed_once: false,
                 share_sheet_state: None,
                 cached_window_bounds: None,
-                _font_select_subscription: None,
+                font_select_subscription: None,
                 editor_context_menu: None,
-                _editor_context_menu_subscription: None,
+                editor_context_menu_subscription: None,
                 drag_ghost: None,
                 status_bar_cache: StatusBarCache::default(),
                 cached_tab_filename_counts: HashMap::new(),
@@ -362,9 +362,9 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to display the notification in
     /// - `cx`: The application context
-    fn process_update_notifications(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn process_update_notifications(window: &mut Window, cx: &mut Context<Self>) {
         let update_info = {
-            let shared = self.shared_state(cx);
+            let shared = Fulgur::shared_state(cx);
             shared.update_info.lock().take()
         };
         if let Some(update_info) = update_info {
@@ -445,7 +445,7 @@ impl Fulgur {
         {
             app_content = app_content.child(self.render_status_bar(cx));
         }
-        app_content = app_content.child(self.render_external_file_drop_overlay(cx));
+        app_content = app_content.child(Self::render_external_file_drop_overlay(cx));
         app_content
     }
 
@@ -526,7 +526,7 @@ impl Render for Fulgur {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.process_pending_initial_active_tab_activation(window, cx);
         self.process_window_state_updates(window, cx);
-        self.process_update_notifications(window, cx);
+        Self::process_update_notifications(window, cx);
         self.synchronize_settings_from_other_windows(cx);
         self.process_pending_files_from_macos(window, cx);
         #[cfg(target_os = "windows")]
@@ -663,13 +663,13 @@ impl Fulgur {
             window,
             |this: &mut Self, _, _: &DismissEvent, _, cx| {
                 this.editor_context_menu = None;
-                this._editor_context_menu_subscription = None;
+                this.editor_context_menu_subscription = None;
                 cx.notify();
             },
         );
 
         self.editor_context_menu = Some((position, menu));
-        self._editor_context_menu_subscription = Some(subscription);
+        self.editor_context_menu_subscription = Some(subscription);
         cx.notify();
     }
 
@@ -905,7 +905,7 @@ impl Fulgur {
         let window_name = cx
             .global::<window_manager::WindowManager>()
             .get_window_name(self.window_id)
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
         self.title_bar.update(cx, |this, _cx| {
             this.set_title(title, window_name.as_deref());
         });
@@ -974,8 +974,7 @@ impl Fulgur {
                         if let Err(e) = self.settings.add_file(PathBuf::from(recent_remote_url)) {
                             log::error!("Failed to add remote file to recent files: {e}");
                         }
-                        let update_link = self
-                            .shared_state(cx)
+                        let update_link = Fulgur::shared_state(cx)
                             .update_info
                             .lock()
                             .as_ref()
@@ -1067,7 +1066,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `impl IntoElement`: The rendered overlay
-    fn render_external_file_drop_overlay(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_external_file_drop_overlay(cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("external-file-drop-overlay")
             .invisible()
@@ -1084,7 +1083,7 @@ impl Fulgur {
             .border_color(cx.theme().primary.opacity(0.7))
             .bg(cx.theme().muted.opacity(0.4))
             .on_drag_move::<ExternalPaths>(|_, _, _| {})
-            .group_drag_over::<ExternalPaths>("", |style| style.visible())
+            .group_drag_over::<ExternalPaths>("", gpui::Styled::visible)
             .child(
                 div()
                     .px_4()

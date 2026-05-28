@@ -100,8 +100,8 @@ pub fn reload_themes_and_update(settings: &Settings, entity: &Entity<Fulgur>, cx
             }
         };
         if let Some(themes) = themes {
-            entity_clone.update(cx, |fulgur, cx| {
-                let shared = fulgur.shared_state(cx);
+            entity_clone.update(cx, |_, cx| {
+                let shared = Fulgur::shared_state(cx);
                 *shared.themes.lock() = Some(themes);
             });
         }

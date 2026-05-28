@@ -104,6 +104,10 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `window`: The window to save (needed for window bounds)
     ///
+    /// ### Errors
+    /// Returns an error if the state cannot be persisted to disk (path
+    /// resolution, serialization, or file write failure).
+    ///
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved
@@ -113,7 +117,7 @@ impl Fulgur {
         let mut windows_state = WindowsState { windows: vec![] };
         let current_window_id = self.window_id;
         let all_window_ids = window_manager.get_all_window_ids();
-        for window_id in all_window_ids.iter() {
+        for window_id in &all_window_ids {
             if *window_id == current_window_id {
                 windows_state
                     .windows
@@ -232,11 +236,7 @@ impl Fulgur {
     ) -> Option<EditorTab> {
         log::debug!("Restoring tab: {}", tab_state.title);
 
-        let file_exists = tab_state
-            .file_path
-            .as_ref()
-            .map(|p| p.exists())
-            .unwrap_or(false);
+        let file_exists = tab_state.file_path.as_ref().is_some_and(|p| p.exists());
         let file_modified_time = tab_state
             .file_path
             .as_ref()

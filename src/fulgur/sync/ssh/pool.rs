@@ -190,6 +190,10 @@ impl SshSessionPool {
     ///   cache miss, to authenticate.
     /// - `host_key_cb`: Called only on cache miss when the host key is unknown.
     ///
+    /// ### Errors
+    /// Returns an `SshError` on connect, handshake, host-key check, authentication,
+    /// or SFTP initialization failures when establishing a new session.
+    ///
     /// ### Returns
     /// - `Ok(PooledSession)`: A guard owning the checked-out session. Drop returns
     ///   it to the pool; `invalidate()` discards it instead.
@@ -247,11 +251,14 @@ impl PooledSession {
     ///
     /// ### Returns
     /// - `&SshSession`: Reference to the live SSH session and its SFTP subsystem.
+    ///
+    /// ### Panics
+    /// Panics if the session has already been consumed (e.g. via `discard` or `Drop`).
     pub fn session(&self) -> &SshSession {
         &self
             .inner
             .as_ref()
-            .expect("pooled session already consumed")
+            .expect("pooled session already consumed") //TODO: remove this
             .session
     }
 

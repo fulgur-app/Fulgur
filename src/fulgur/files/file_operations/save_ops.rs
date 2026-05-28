@@ -162,7 +162,6 @@ impl Fulgur {
     /// - `window`: The window to show the notification in
     /// - `cx`: The application context
     pub(crate) fn show_notification_file_reloaded(
-        &self,
         path: &Path,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -179,7 +178,6 @@ impl Fulgur {
     /// - `window`: The window to show the notification in
     /// - `cx`: The application context
     pub(crate) fn show_notification_file_deleted(
-        &self,
         path: &Path,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -197,7 +195,6 @@ impl Fulgur {
     /// - `window`: The window to show the notification in
     /// - `cx`: The application context
     pub(crate) fn show_notification_file_renamed(
-        &self,
         from: &Path,
         to: &Path,
         window: &mut Window,
@@ -360,8 +357,7 @@ mod tests {
                     .tabs
                     .last()
                     .and_then(|t| t.as_editor())
-                    .map(|e| e.modified)
-                    .unwrap_or(true);
+                    .is_none_or(|e| e.modified);
                 assert!(!modified, "tab should be marked as not modified after save");
             });
         });

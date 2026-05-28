@@ -186,17 +186,14 @@ impl Fulgur {
                     return None;
                 }
             };
-            let filename = match theme_path.file_name() {
-                Some(name) => name,
-                None => {
-                    window
-                        .update(|window, cx| {
-                            let notification = SharedString::from("Invalid theme file path.");
-                            window.push_notification((NotificationType::Error, notification), cx);
-                        })
-                        .ok()?;
-                    return None;
-                }
+            let Some(filename) = theme_path.file_name() else {
+                window
+                    .update(|window, cx| {
+                        let notification = SharedString::from("Invalid theme file path.");
+                        window.push_notification((NotificationType::Error, notification), cx);
+                    })
+                    .ok()?;
+                return None;
             };
             let dest_path = themes_dir.join(filename);
             match fs::copy(&theme_path, &dest_path) {

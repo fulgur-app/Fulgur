@@ -44,7 +44,8 @@ pub struct PathBrowser {
     entries: Vec<PathEntry>,
     debounce_generation: u64,
     refresh_generation: u64,
-    _input_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    input_subscription: Subscription,
 }
 
 /// Parse the raw input string into a `(parent_directory, filter_prefix)` pair.
@@ -108,20 +109,19 @@ fn parse_input_path(raw: &str) -> Option<(PathBuf, String)> {
 /// - `Vec<PathEntry>`: sorted with directories first, then files,
 ///   alphabetical within each group. Capped at 500 entries.
 fn read_and_filter_entries(parent: &Path, filter: &str) -> Vec<PathEntry> {
-    let read_dir = match std::fs::read_dir(parent) {
-        Ok(rd) => rd,
-        Err(_) => return Vec::new(),
+    let Ok(read_dir) = std::fs::read_dir(parent) else {
+        return Vec::new();
     };
     let filter_lower = filter.to_lowercase();
     let mut entries: Vec<PathEntry> = read_dir
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().to_string();
             if !filter_lower.is_empty() && !name.to_lowercase().starts_with(&filter_lower) {
                 return None;
             }
             // Follow symlinks for is_dir detection
-            let is_dir = entry.metadata().map(|m| m.is_dir()).unwrap_or(false);
+            let is_dir = entry.metadata().is_ok_and(|m| m.is_dir());
             Some(PathEntry {
                 full_path: entry.path(),
                 name,
@@ -176,19 +176,18 @@ impl PathBrowser {
         input.update(cx, |state, cx| {
             state.set_value(&default_path, window, cx);
         });
-        let _input_subscription =
-            cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
-                if let InputEvent::Change = ev {
-                    this.schedule_refresh(cx);
-                }
-            });
+        let input_subscription = cx.subscribe(&input, |this: &mut Self, _, ev: &InputEvent, cx| {
+            if let InputEvent::Change = ev {
+                this.schedule_refresh(cx);
+            }
+        });
 
         let mut this = Self {
             input,
             entries: Vec::new(),
             debounce_generation: 0,
             refresh_generation: 0,
-            _input_subscription,
+            input_subscription,
         };
         this.dispatch_refresh(cx);
         this
@@ -380,7 +379,7 @@ mod tests {
     fn test_read_and_filter_entries_with_filter() {
         let entries = read_and_filter_entries(Path::new("/"), "t");
         for entry in &entries {
-            assert!(entry.name.to_lowercase().starts_with("t"));
+            assert!(entry.name.to_lowercase().starts_with('t'));
         }
     }
 

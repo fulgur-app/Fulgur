@@ -32,7 +32,7 @@ pub fn add_jinja2_support() {
 /// bleeding `@attribute` highlights over all subsequent Jinja2 content. Since the Jinja2
 /// grammar exposes no named nodes for the raw template text between tags, there is no
 /// way to restrict the injection to non-Jinja2 regions.
-const JINJA2_HIGHLIGHTS_QUERY: &str = r#"
+const JINJA2_HIGHLIGHTS_QUERY: &str = r"
 ; Comments: {# ... #}
 (comment) @comment
 
@@ -54,7 +54,7 @@ const JINJA2_HIGHLIGHTS_QUERY: &str = r#"
 
 ; Identifiers: variables, filter names, macro names, block names
 (identifier) @variable
-"#;
+";
 
 #[cfg(test)]
 mod tests {

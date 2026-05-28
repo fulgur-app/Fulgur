@@ -150,6 +150,10 @@ fn fetch_pending_shares_into(
 /// - `http_agent`: Shared HTTP agent for connection pooling
 /// - `pending_shared_files`: Per-profile queue for incoming file shares
 ///
+/// ### Errors
+/// Returns a `SynchronizationError` if required profile fields (server URL,
+/// email) are missing.
+///
 /// ### Returns
 /// - `Ok(thread::JoinHandle<()>)`: If the SSE connection thread was spawned successfully
 /// - `Err(SynchronizationError)`: If required profile fields are missing

@@ -18,17 +18,13 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
     let encoding = detector.guess(None, true);
     let (decoded, _, had_errors) = encoding.decode(bytes);
     let encoding_name = if had_errors {
-        match std::str::from_utf8(bytes) {
-            Ok(text) => {
-                log::debug!("File encoding detected as UTF-8 (after error recovery)");
-                return (UTF_8.to_string(), text.to_string());
-            }
-            Err(_) => {
-                let text = String::from_utf8_lossy(bytes).to_string();
-                log::warn!("File encoding detection failed, using UTF-8 lossy conversion");
-                return (UTF_8.to_string(), text);
-            }
+        if let Ok(text) = std::str::from_utf8(bytes) {
+            log::debug!("File encoding detected as UTF-8 (after error recovery)");
+            return (UTF_8.to_string(), text.to_string());
         }
+        let text = String::from_utf8_lossy(bytes).to_string();
+        log::warn!("File encoding detection failed, using UTF-8 lossy conversion");
+        return (UTF_8.to_string(), text);
     } else {
         encoding.name().to_string()
     };

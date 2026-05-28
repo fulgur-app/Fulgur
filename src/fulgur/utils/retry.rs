@@ -67,6 +67,10 @@ impl RetryConfig {
 /// - `config`: Retry configuration
 /// - `operation`: Function to retry (should be idempotent)
 ///
+/// ### Errors
+/// Returns the error reported by the operation's last failed attempt after all
+/// configured retries have been exhausted.
+///
 /// ### Returns
 /// - `Ok(T)`: Result from successful operation
 /// - `Err(E)`: Error from last failed attempt
@@ -162,7 +166,8 @@ impl BackoffCalculator {
         self.consecutive_failures += 1;
 
         let exponent = self.consecutive_failures - 1;
-        let delay_secs = self.initial_delay.as_secs_f64() * self.multiplier.powi(exponent as i32);
+        let delay_secs =
+            self.initial_delay.as_secs_f64() * self.multiplier.powi(exponent.cast_signed());
         let capped_delay = delay_secs.min(self.max_delay.as_secs_f64());
 
         Duration::from_secs_f64(capped_delay)

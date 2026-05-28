@@ -28,6 +28,18 @@ use super::search_bar::{search_bar_button_factory, search_bar_toggle_button_fact
 /// ### Returns
 /// `(f32, f32, f32)` where L is 0..1, C is chroma, and H is hue in degrees 0..360.
 fn hsla_to_oklch(color: Hsla) -> (f32, f32, f32) {
+    #[allow(clippy::excessive_precision, clippy::unreadable_literal)]
+    const LMS: [[f32; 3]; 3] = [
+        [0.4122214708, 0.5363325363, 0.0514459929],
+        [0.2119034982, 0.6806995451, 0.1073969566],
+        [0.0883024619, 0.2817188376, 0.6299787005],
+    ];
+    #[allow(clippy::excessive_precision, clippy::unreadable_literal)]
+    const OKLAB: [[f32; 3]; 3] = [
+        [0.2104542553, 0.7936177850, -0.0040720468],
+        [1.9779984951, -2.4285922050, 0.4505937099],
+        [0.0259040371, 0.7827717662, -0.8086757660],
+    ];
     let rgb = color.to_rgb();
     let to_linear = |c: f32| -> f32 {
         if c <= 0.04045 {
@@ -39,24 +51,12 @@ fn hsla_to_oklch(color: Hsla) -> (f32, f32, f32) {
     let lr = to_linear(rgb.r);
     let lg = to_linear(rgb.g);
     let lb = to_linear(rgb.b);
-    #[allow(clippy::excessive_precision)]
-    const LMS: [[f32; 3]; 3] = [
-        [0.4122214708, 0.5363325363, 0.0514459929],
-        [0.2119034982, 0.6806995451, 0.1073969566],
-        [0.0883024619, 0.2817188376, 0.6299787005],
-    ];
     let l = LMS[0][0] * lr + LMS[0][1] * lg + LMS[0][2] * lb;
     let m = LMS[1][0] * lr + LMS[1][1] * lg + LMS[1][2] * lb;
     let s = LMS[2][0] * lr + LMS[2][1] * lg + LMS[2][2] * lb;
     let l_ = l.cbrt();
     let m_ = m.cbrt();
     let s_ = s.cbrt();
-    #[allow(clippy::excessive_precision)]
-    const OKLAB: [[f32; 3]; 3] = [
-        [0.2104542553, 0.7936177850, -0.0040720468],
-        [1.9779984951, -2.4285922050, 0.4505937099],
-        [0.0259040371, 0.7827717662, -0.8086757660],
-    ];
     let ok_l = OKLAB[0][0] * l_ + OKLAB[0][1] * m_ + OKLAB[0][2] * s_;
     let ok_a = OKLAB[1][0] * l_ + OKLAB[1][1] * m_ + OKLAB[1][2] * s_;
     let ok_b = OKLAB[2][0] * l_ + OKLAB[2][1] * m_ + OKLAB[2][2] * s_;
@@ -76,33 +76,33 @@ fn hsla_to_oklch(color: Hsla) -> (f32, f32, f32) {
 /// ### Returns
 /// `Hsla`: The resulting color
 fn oklch_to_hsla(l: f32, c: f32, h: f32) -> Hsla {
-    let h_rad = h.to_radians();
-    let ok_a = c * h_rad.cos();
-    let ok_b = c * h_rad.sin();
-    #[allow(clippy::excessive_precision)]
+    #[allow(clippy::excessive_precision, clippy::unreadable_literal)]
     const INV_OKLAB: [[f32; 3]; 3] = [
         [1.0000000000, 0.3963377774, 0.2158037573],
         [1.0000000000, -0.1055613458, -0.0638541728],
         [1.0000000000, -0.0894841775, -1.2914855480],
     ];
+    #[allow(clippy::excessive_precision, clippy::unreadable_literal)]
+    const INV_LMS: [[f32; 3]; 3] = [
+        [4.0767416621, -3.3077115913, 0.2309699292],
+        [-1.2684380046, 2.6097574011, -0.3413193965],
+        [-0.0041960863, -0.7034186147, 1.7076147010],
+    ];
+    let h_rad = h.to_radians();
+    let ok_a = c * h_rad.cos();
+    let ok_b = c * h_rad.sin();
     let l_ = INV_OKLAB[0][0] * l + INV_OKLAB[0][1] * ok_a + INV_OKLAB[0][2] * ok_b;
     let m_ = INV_OKLAB[1][0] * l + INV_OKLAB[1][1] * ok_a + INV_OKLAB[1][2] * ok_b;
     let s_ = INV_OKLAB[2][0] * l + INV_OKLAB[2][1] * ok_a + INV_OKLAB[2][2] * ok_b;
     let lms_l = l_ * l_ * l_;
     let lms_m = m_ * m_ * m_;
     let lms_s = s_ * s_ * s_;
-    #[allow(clippy::excessive_precision)]
-    const INV_LMS: [[f32; 3]; 3] = [
-        [4.0767416621, -3.3077115913, 0.2309699292],
-        [-1.2684380046, 2.6097574011, -0.3413193965],
-        [-0.0041960863, -0.7034186147, 1.7076147010],
-    ];
     let lin_r = INV_LMS[0][0] * lms_l + INV_LMS[0][1] * lms_m + INV_LMS[0][2] * lms_s;
     let lin_g = INV_LMS[1][0] * lms_l + INV_LMS[1][1] * lms_m + INV_LMS[1][2] * lms_s;
     let lin_b = INV_LMS[2][0] * lms_l + INV_LMS[2][1] * lms_m + INV_LMS[2][2] * lms_s;
     let from_linear = |c: f32| -> f32 {
         let c = c.clamp(0.0, 1.0);
-        if c <= 0.0031308 {
+        if c <= 0.003_130_8 {
             c * 12.92
         } else {
             1.055 * c.powf(1.0 / 2.4) - 0.055
@@ -210,10 +210,14 @@ pub struct ColorPickerBarState {
     cached_hex: String,
     cached_oklch: String,
     cached_hsla: String,
-    _color_picker_subscription: Subscription,
-    _hex_input_subscription: Subscription,
-    _oklch_input_subscription: Subscription,
-    _hsla_input_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    color_picker_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    hex_input_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    oklch_input_subscription: Subscription,
+    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
+    hsla_input_subscription: Subscription,
 }
 
 impl ColorPickerBarState {
@@ -229,7 +233,7 @@ impl ColorPickerBarState {
         let color_picker_state =
             cx.new(|cx| ColorPickerState::new(window, cx).default_value(gpui::white()));
         let initial = gpui::white();
-        let initial_hex = gpui_component::Colorize::to_hex(&initial).to_string();
+        let initial_hex = gpui_component::Colorize::to_hex(&initial).clone();
         let initial_oklch = format_oklch(initial);
         let initial_hsla = format_hsla(initial);
         let hex_input = cx.new(|cx| InputState::new(window, cx).default_value(initial_hex.clone()));
@@ -237,7 +241,7 @@ impl ColorPickerBarState {
             cx.new(|cx| InputState::new(window, cx).default_value(initial_oklch.clone()));
         let hsla_input =
             cx.new(|cx| InputState::new(window, cx).default_value(initial_hsla.clone()));
-        let _color_picker_subscription = cx.subscribe_in(
+        let color_picker_subscription = cx.subscribe_in(
             &color_picker_state,
             window,
             |this: &mut Fulgur, _, event: &ColorPickerEvent, window, cx| {
@@ -246,7 +250,7 @@ impl ColorPickerBarState {
                     let hex = gpui_component::Colorize::to_hex(&color);
                     let oklch = format_oklch(color);
                     let hsla_str = format_hsla(color);
-                    this.color_picker_bar_state.cached_hex = hex.to_string();
+                    this.color_picker_bar_state.cached_hex.clone_from(&hex);
                     this.color_picker_bar_state.cached_oklch.clone_from(&oklch);
                     this.color_picker_bar_state
                         .cached_hsla
@@ -273,7 +277,7 @@ impl ColorPickerBarState {
         // On Change: update the color picker preview only (no cross-input sync, which
         // would loop since InputState::set_value always emits InputEvent::Change).
         // On PressEnter / Blur: parse and sync all three inputs + the color picker.
-        let _hex_input_subscription = cx.subscribe_in(
+        let hex_input_subscription = cx.subscribe_in(
             &hex_input,
             window,
             |this: &mut Fulgur, _, event: &InputEvent, window, cx| {
@@ -306,11 +310,11 @@ impl ColorPickerBarState {
                                 state.set_value(format_hsla(color), window, cx);
                             });
                     }
-                    _ => {}
+                    InputEvent::Focus => {}
                 }
             },
         );
-        let _oklch_input_subscription = cx.subscribe_in(
+        let oklch_input_subscription = cx.subscribe_in(
             &oklch_input,
             window,
             |this: &mut Fulgur, _, event: &InputEvent, window, cx| {
@@ -347,11 +351,11 @@ impl ColorPickerBarState {
                                 state.set_value(format_hsla(color), window, cx);
                             });
                     }
-                    _ => {}
+                    InputEvent::Focus => {}
                 }
             },
         );
-        let _hsla_input_subscription = cx.subscribe_in(
+        let hsla_input_subscription = cx.subscribe_in(
             &hsla_input,
             window,
             |this: &mut Fulgur, _, event: &InputEvent, window, cx| {
@@ -388,7 +392,7 @@ impl ColorPickerBarState {
                                 state.set_value(format_oklch(color), window, cx);
                             });
                     }
-                    _ => {}
+                    InputEvent::Focus => {}
                 }
             },
         );
@@ -401,10 +405,10 @@ impl ColorPickerBarState {
             cached_hex: initial_hex,
             cached_oklch: initial_oklch,
             cached_hsla: initial_hsla,
-            _color_picker_subscription,
-            _hex_input_subscription,
-            _oklch_input_subscription,
-            _hsla_input_subscription,
+            color_picker_subscription,
+            hex_input_subscription,
+            oklch_input_subscription,
+            hsla_input_subscription,
         }
     }
 }
@@ -489,19 +493,19 @@ impl Fulgur {
                                 .items_center()
                                 .h(SEARCH_BAR_HEIGHT)
                                 .child(self.render_color_picker_section(cx))
-                                .child(self.render_color_value_section(
+                                .child(Self::render_color_value_section(
                                     "Hex",
                                     hex_value,
                                     &self.color_picker_bar_state.hex_input,
                                     cx,
                                 ))
-                                .child(self.render_color_value_section(
+                                .child(Self::render_color_value_section(
                                     "OkLCH",
                                     oklch_value,
                                     &self.color_picker_bar_state.oklch_input,
                                     cx,
                                 ))
-                                .child(self.render_color_value_section(
+                                .child(Self::render_color_value_section(
                                     "HSLA",
                                     hsla_value,
                                     &self.color_picker_bar_state.hsla_input,
@@ -510,7 +514,7 @@ impl Fulgur {
                                 .child(self.render_highlight_toggle_button(cx)),
                         ),
                 )
-                .child(self.render_color_picker_close_button(cx)),
+                .child(Self::render_color_picker_close_button(cx)),
         )
     }
 
@@ -543,7 +547,6 @@ impl Fulgur {
     /// ### Returns
     /// - `Div`: The rendered color value section
     fn render_color_value_section(
-        &self,
         label: &'static str,
         value: &str,
         input_state: &Entity<InputState>,
@@ -629,7 +632,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `Div`: The rendered close button
-    fn render_color_picker_close_button(&self, cx: &mut Context<Self>) -> Div {
+    fn render_color_picker_close_button(cx: &mut Context<Self>) -> Div {
         div()
             .flex()
             .items_center()

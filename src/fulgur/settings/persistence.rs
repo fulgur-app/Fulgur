@@ -33,6 +33,10 @@ impl Settings {
     /// ### Arguments
     /// - `path`: The path to save the settings to
     ///
+    /// ### Errors
+    /// Returns an error if serialization to JSON fails or if the atomic write
+    /// to the target path fails.
+    ///
     /// ### Returns
     /// - `Ok(())`: The result of the operation
     /// - `Err(anyhow::Error)`: If there was an error saving the settings
@@ -60,6 +64,10 @@ impl Settings {
     ///
     /// ### Arguments
     /// - `path`: The path to load the settings from
+    ///
+    /// ### Errors
+    /// Returns an error if the settings file cannot be read and the backup file
+    /// is also unavailable or corrupted, or if JSON deserialization fails on both.
     ///
     /// ### Returns
     /// - `Ok(Settings)`: The loaded settings
@@ -174,11 +182,9 @@ impl Settings {
             if let Some(ref email) = profile.email.clone() {
                 let trimmed = email.trim();
                 let at_pos = trimmed.find('@');
-                let is_valid = at_pos
-                    .map(|pos| {
-                        pos > 0 && pos < trimmed.len() - 1 && trimmed[pos + 1..].contains('.')
-                    })
-                    .unwrap_or(false);
+                let is_valid = at_pos.is_some_and(|pos| {
+                    pos > 0 && pos < trimmed.len() - 1 && trimmed[pos + 1..].contains('.')
+                });
                 if !is_valid {
                     log::warn!(
                         "Invalid email for profile '{}', clearing: {}",
@@ -193,6 +199,10 @@ impl Settings {
 
     /// Save the settings to the default state file location
     ///
+    /// ### Errors
+    /// Returns an error if the settings file path cannot be resolved or if the
+    /// underlying write fails.
+    ///
     /// ### Returns
     /// - `Ok(())`: The result of the operation
     /// - `Err(anyhow::Error)`: If there was an error saving the settings
@@ -202,6 +212,10 @@ impl Settings {
     }
 
     /// Load the settings from the default state file location
+    ///
+    /// ### Errors
+    /// Returns an error if the settings file path cannot be resolved or if the
+    /// underlying load fails.
     ///
     /// ### Returns
     /// - `Ok(Settings)`: The loaded settings
@@ -225,6 +239,9 @@ impl Settings {
     ///
     /// ### Arguments
     /// - `file`: The file to add
+    ///
+    /// ### Errors
+    /// Returns an error if persisting the updated settings to disk fails.
     ///
     /// ### Returns
     /// - `Ok(())`: The result of the operation

@@ -15,6 +15,10 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     ///
+    /// ### Errors
+    /// Returns an error if persisting the settings to disk fails. The shared
+    /// state update and re-render still happen even when saving fails.
+    ///
     /// ### Returns
     /// - `anyhow::Result<()>`: Result of the operation
     pub fn update_and_propagate_settings(&mut self, cx: &mut Context<Self>) -> anyhow::Result<()> {
@@ -32,7 +36,7 @@ impl Fulgur {
         }
 
         // Update shared settings
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         *shared.settings.lock() = self.settings.clone();
 
         // Increment the version counter so other windows detect the change
@@ -59,7 +63,7 @@ impl Fulgur {
 
         // Defer notifications to avoid reentrancy issues
         cx.defer(move |cx| {
-            for weak_window in all_windows.iter() {
+            for weak_window in &all_windows {
                 if let Some(window_entity) = weak_window.upgrade() {
                     // Skip the current window (already updating)
                     let should_notify = window_entity.read(cx).window_id != current_window_id;
@@ -80,7 +84,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     pub fn synchronize_settings_from_other_windows(&mut self, cx: &mut Context<Self>) {
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         let shared_version = shared
             .settings_version
             .load(std::sync::atomic::Ordering::Relaxed);

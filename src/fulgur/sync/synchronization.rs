@@ -149,6 +149,10 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
 /// - `token_state`: Per-profile JWT token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
+/// ### Errors
+/// Returns a `SynchronizationError` if both the v2 and the legacy v1 begin
+/// requests fail (network failure, authentication failure, or invalid response).
+///
 /// ### Returns
 /// - `Ok(BeginResponse)`: Device name, max file size, and pending shares
 /// - `Err(SynchronizationError)`: If both v2 and v1 begin calls failed
@@ -340,6 +344,10 @@ fn initial_synchronization_v1(
 /// - `server_url`: The base URL of the server (e.g. `https://example.com`).
 /// - `token`: A valid JWT Bearer token.
 /// - `http_agent`: Shared HTTP agent.
+///
+/// ### Errors
+/// Returns a `SynchronizationError` if the server is unreachable, the token is
+/// rejected, or the response cannot be parsed as the expected `ok: true` body.
 ///
 /// ### Returns
 /// - `Ok(())`: Server responded with `ok: true`.
@@ -860,13 +868,14 @@ impl fmt::Display for SynchronizationError {
             SynchronizationError::InvalidPublicKey(name) => {
                 write!(f, "Invalid public key for device: {name}")
             }
-            SynchronizationError::InvalidResponse(e) => write!(f, "{e}"),
+            SynchronizationError::InvalidResponse(e) | SynchronizationError::Other(e) => {
+                write!(f, "{e}")
+            }
             SynchronizationError::MissingEncryptionKey => write!(f, "Missing encryption key"),
             SynchronizationError::MissingExpirationDate => write!(f, "Missing expiration date"),
             SynchronizationError::MissingPublicKey(e) => {
                 write!(f, "Missing public key for device: {e}")
             }
-            SynchronizationError::Other(e) => write!(f, "{e}"),
             SynchronizationError::ServerError(e) => write!(f, "{e}"),
             SynchronizationError::ServerUrlMissing => write!(f, "Server URL is missing"),
             SynchronizationError::Timeout(timeout) => write!(f, "Timeout: {timeout}"),
@@ -898,9 +907,9 @@ impl SynchronizationStatus {
             SynchronizationError::AuthenticationFailed => {
                 SynchronizationStatus::AuthenticationFailed
             }
-            SynchronizationError::HostNotFound => SynchronizationStatus::ConnectionFailed,
-            SynchronizationError::ConnectionFailed => SynchronizationStatus::ConnectionFailed,
-            SynchronizationError::Timeout(_) => SynchronizationStatus::ConnectionFailed,
+            SynchronizationError::HostNotFound
+            | SynchronizationError::ConnectionFailed
+            | SynchronizationError::Timeout(_) => SynchronizationStatus::ConnectionFailed,
             _ => SynchronizationStatus::Other,
         }
     }
@@ -912,12 +921,12 @@ impl SynchronizationStatus {
     pub fn is_connected(&self) -> bool {
         match self {
             SynchronizationStatus::Connected => true,
-            SynchronizationStatus::Connecting => false,
-            SynchronizationStatus::Disconnected => false,
-            SynchronizationStatus::AuthenticationFailed => false,
-            SynchronizationStatus::ConnectionFailed => false,
-            SynchronizationStatus::Other => false,
-            SynchronizationStatus::NotActivated => false,
+            SynchronizationStatus::Connecting
+            | SynchronizationStatus::Disconnected
+            | SynchronizationStatus::AuthenticationFailed
+            | SynchronizationStatus::ConnectionFailed
+            | SynchronizationStatus::Other
+            | SynchronizationStatus::NotActivated => false,
         }
     }
 
@@ -963,7 +972,7 @@ impl Fulgur {
             .map(|p| p.id.clone())
             .collect();
         for profile_id in profile_ids {
-            let sync_state = self.shared_state(cx).sync_state_for(&profile_id);
+            let sync_state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
             let shared_files_to_open =
                 if let Some(mut pending) = sync_state.pending_shared_files.try_lock() {
                     if pending.is_empty() {
@@ -981,14 +990,13 @@ impl Fulgur {
             if shared_files_to_open.is_empty() {
                 continue;
             }
-            let encryption_key_opt = match load_private_key_from_keychain(&profile_id) {
-                Ok(key) => key,
-                Err(_) => {
-                    log::error!(
-                        "Cannot decrypt shared files for profile {profile_id}: encryption key not available"
-                    );
-                    None
-                }
+            let encryption_key_opt = if let Ok(key) = load_private_key_from_keychain(&profile_id) {
+                key
+            } else {
+                log::error!(
+                    "Cannot decrypt shared files for profile {profile_id}: encryption key not available"
+                );
+                None
             };
             let server_max_size = sync_state
                 .max_file_size_bytes

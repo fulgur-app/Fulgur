@@ -66,7 +66,7 @@ fn test_handle_heartbeat_sets_last_heartbeat(cx: &mut TestAppContext) {
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .last_heartbeat
                     .lock()
@@ -81,7 +81,7 @@ fn test_handle_heartbeat_sets_last_heartbeat(cx: &mut TestAppContext) {
                 cx,
             );
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .last_heartbeat
                     .lock()
@@ -97,8 +97,7 @@ fn test_handle_heartbeat_when_disconnected_restores_connected_status(cx: &mut Te
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
-            *this
-                .shared_state(cx)
+            *Fulgur::shared_state(cx)
                 .primary_sync_state()
                 .connection_status
                 .lock() = SynchronizationStatus::Disconnected;
@@ -110,7 +109,7 @@ fn test_handle_heartbeat_when_disconnected_restores_connected_status(cx: &mut Te
                 cx,
             );
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .connection_status
                     .lock()
@@ -126,8 +125,7 @@ fn test_handle_heartbeat_when_connected_keeps_connected_status(cx: &mut TestAppC
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
-            *this
-                .shared_state(cx)
+            *Fulgur::shared_state(cx)
                 .primary_sync_state()
                 .connection_status
                 .lock() = SynchronizationStatus::Connected;
@@ -139,7 +137,7 @@ fn test_handle_heartbeat_when_connected_keeps_connected_status(cx: &mut TestAppC
                 cx,
             );
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .connection_status
                     .lock()
@@ -164,8 +162,7 @@ fn test_handle_sse_event_debounce_ignores_rapid_second_event(cx: &mut TestAppCon
                 window,
                 cx,
             );
-            *this
-                .shared_state(cx)
+            *Fulgur::shared_state(cx)
                 .primary_sync_state()
                 .connection_status
                 .lock() = SynchronizationStatus::Disconnected;
@@ -177,8 +174,7 @@ fn test_handle_sse_event_debounce_ignores_rapid_second_event(cx: &mut TestAppCon
                 cx,
             );
             assert!(
-                !this
-                    .shared_state(cx)
+                !Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .connection_status
                     .lock()
@@ -197,7 +193,7 @@ fn test_handle_share_available_does_not_touch_pending_files(cx: &mut TestAppCont
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .pending_shared_files
                     .lock()
@@ -207,7 +203,7 @@ fn test_handle_share_available_does_not_touch_pending_files(cx: &mut TestAppCont
             let notification = make_share_notification("share-abc");
             this.handle_sse_event(SseEvent::ShareAvailable(notification), window, cx);
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .pending_shared_files
                     .lock()
@@ -227,14 +223,14 @@ fn test_handle_error_event_does_not_change_shared_state(cx: &mut TestAppContext)
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .last_heartbeat
                     .lock()
                     .is_none()
             );
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .pending_shared_files
                     .lock()
@@ -246,14 +242,14 @@ fn test_handle_error_event_does_not_change_shared_state(cx: &mut TestAppContext)
                 cx,
             );
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .last_heartbeat
                     .lock()
                     .is_none()
             );
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .pending_shared_files
                     .lock()
@@ -287,7 +283,7 @@ fn test_process_sse_events_dispatches_heartbeat_from_channel(cx: &mut TestAppCon
             })
             .unwrap();
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .last_heartbeat
                     .lock()
@@ -295,7 +291,7 @@ fn test_process_sse_events_dispatches_heartbeat_from_channel(cx: &mut TestAppCon
             );
             this.process_sse_events(window, cx);
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .last_heartbeat
                     .lock()
@@ -314,7 +310,7 @@ fn test_process_sse_events_with_empty_channel_is_a_no_op(cx: &mut TestAppContext
             let _tx = install_test_sse_channel(this);
             this.process_sse_events(window, cx);
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .last_heartbeat
                     .lock()
@@ -337,7 +333,7 @@ fn test_process_sse_events_with_closed_channel_is_a_no_op(cx: &mut TestAppContex
             drop(tx);
             this.process_sse_events(window, cx);
             assert!(
-                this.shared_state(cx)
+                Fulgur::shared_state(cx)
                     .primary_sync_state()
                     .last_heartbeat
                     .lock()

@@ -16,6 +16,9 @@ impl Fulgur {
     /// - `profile`: The fully formed profile to register.
     /// - `cx`: The Fulgur context.
     ///
+    /// ### Errors
+    /// Returns an error if persisting the updated settings fails.
+    ///
     /// ### Returns
     /// - `Ok(())`: The profile was added and settings persisted.
     /// - `Err(anyhow::Error)`: The settings could not be saved; the in-memory
@@ -50,6 +53,9 @@ impl Fulgur {
     /// - `mutator`: Closure invoked with the mutable profile reference.
     /// - `cx`: The Fulgur context.
     ///
+    /// ### Errors
+    /// Returns an error if persisting the updated settings fails.
+    ///
     /// ### Returns
     /// - `Ok(true)`: The profile was found, mutated, and settings persisted.
     /// - `Ok(false)`: No profile with the given id exists.
@@ -68,11 +74,10 @@ impl Fulgur {
             .app_settings
             .synchronization_settings
             .find_profile_mut(profile_id)
-            .map(|profile| {
+            .is_some_and(|profile| {
                 mutator(profile);
                 true
-            })
-            .unwrap_or(false);
+            });
         if !found {
             return Ok(false);
         }
@@ -99,6 +104,9 @@ impl Fulgur {
     /// ### Arguments
     /// - `profile_id`: The id of the profile to delete.
     /// - `cx`: The Fulgur context.
+    ///
+    /// ### Errors
+    /// Returns an error if persisting the updated settings fails.
     ///
     /// ### Returns
     /// - `Ok(true)`: The profile was found and removed.
@@ -131,7 +139,7 @@ impl Fulgur {
             log::warn!("Failed to remove device API key for profile '{profile_id}': {e}");
         }
         self.sse_states.remove(profile_id);
-        self.shared_state(cx).remove_sync_state(profile_id);
+        Fulgur::shared_state(cx).remove_sync_state(profile_id);
         self.settings
             .app_settings
             .synchronization_settings
@@ -401,7 +409,7 @@ mod tests {
                     .expect("seeding device key should succeed");
                 save_private_key_to_keychain(&id, Some(&Zeroizing::new("AGE-FAKE".to_string())))
                     .expect("seeding private key should succeed");
-                let _ = this.shared_state(cx).sync_state_for(&id);
+                let _ = Fulgur::shared_state(cx).sync_state_for(&id);
                 let removed = this.delete_profile(&id, cx).expect("delete should persist");
                 assert!(removed, "delete must return true when the profile existed");
                 assert!(
@@ -417,7 +425,10 @@ mod tests {
                     "SSE slot must be removed"
                 );
                 assert!(
-                    !this.shared_state(cx).sync_states.read().contains_key(&id),
+                    !Fulgur::shared_state(cx)
+                        .sync_states
+                        .read()
+                        .contains_key(&id),
                     "SyncState entry must be removed"
                 );
                 assert!(

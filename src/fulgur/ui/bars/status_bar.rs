@@ -275,7 +275,7 @@ impl Fulgur {
     /// - `(SyncButtonState, bool)`: The aggregated state and whether to show the spinner.
     fn status_bar_sync_button_state(&self, cx: &Context<Self>) -> (SyncButtonState, bool) {
         let profiles = &self.settings.app_settings.synchronization_settings.profiles;
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         let sync_states = shared.sync_states.read();
 
         let mut any_connected = false;
@@ -306,8 +306,7 @@ impl Fulgur {
             (SyncButtonState::Connected, false)
         } else if any_connecting {
             let show = earliest_connecting_since
-                .map(|since| since.elapsed() >= CONNECTING_SPINNER_DELAY)
-                .unwrap_or(false);
+                .is_some_and(|since| since.elapsed() >= CONNECTING_SPINNER_DELAY);
             (SyncButtonState::Connecting, show)
         } else {
             (SyncButtonState::Disconnected, false)
@@ -326,7 +325,7 @@ impl Fulgur {
     /// - `Vec<(String, String)>`: Profile name and its human-readable status label.
     fn sync_profiles_tooltip_data(&self, cx: &Context<Self>) -> Vec<(String, String)> {
         let profiles = &self.settings.app_settings.synchronization_settings.profiles;
-        let shared = self.shared_state(cx);
+        let shared = Fulgur::shared_state(cx);
         let sync_states = shared.sync_states.read();
 
         profiles
@@ -334,9 +333,7 @@ impl Fulgur {
             .filter(|p| p.is_active)
             .map(|profile| {
                 let state = sync_states.get(&profile.id);
-                let label = state
-                    .map(|s| s.connection_status.lock().label())
-                    .unwrap_or("Inactive");
+                let label = state.map_or("Inactive", |s| s.connection_status.lock().label());
                 let device_name = state.and_then(|s| s.device_name.lock().clone());
                 let name = match device_name {
                     Some(device) if !device.is_empty() => {
@@ -703,7 +700,7 @@ mod tests {
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                let state = this.shared_state(cx).sync_state_for(&profile_id);
+                let state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
                 *state.connection_status.lock() = SynchronizationStatus::Connected;
                 *state.connecting_since.lock() = None;
 
@@ -720,7 +717,7 @@ mod tests {
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                let state = this.shared_state(cx).sync_state_for(&profile_id);
+                let state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
                 *state.connection_status.lock() = SynchronizationStatus::Connecting;
                 *state.connecting_since.lock() = Some(Instant::now() - Duration::from_millis(600));
 
@@ -737,7 +734,7 @@ mod tests {
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                let state = this.shared_state(cx).sync_state_for(&profile_id);
+                let state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
                 *state.connection_status.lock() = SynchronizationStatus::Connecting;
                 *state.connecting_since.lock() = Some(Instant::now() - Duration::from_millis(100));
 
@@ -754,7 +751,7 @@ mod tests {
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                let state = this.shared_state(cx).sync_state_for(&profile_id);
+                let state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
                 *state.connection_status.lock() = SynchronizationStatus::AuthenticationFailed;
                 *state.connecting_since.lock() = Some(Instant::now() - Duration::from_secs(2));
 
@@ -815,7 +812,7 @@ mod tests {
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                let shared = this.shared_state(cx);
+                let shared = Fulgur::shared_state(cx);
                 *shared.sync_state_for(&id_a).connection_status.lock() =
                     SynchronizationStatus::Connected;
                 *shared.sync_state_for(&id_b).connection_status.lock() =

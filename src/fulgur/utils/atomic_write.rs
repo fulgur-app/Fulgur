@@ -13,6 +13,11 @@ static ATOMIC_WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// - `path`: the path to the file to write
 /// - `content`: the content to write in the file
 ///
+/// ### Errors
+/// Returns an error if the destination has no parent directory or filename, if
+/// the temporary file cannot be created or written, or if the rename over the
+/// destination path fails.
+///
 /// ### Return
 /// - `Ok(())`: the write is successful
 /// - `Err()`: error while writing the file
@@ -31,8 +36,7 @@ pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
     })?;
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |duration| duration.as_nanos());
     let counter = ATOMIC_WRITE_COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp_name = format!(
         ".{}.{}.{}.{}.tmp",

@@ -114,11 +114,10 @@ const SCSS_HIGHLIGHTS_QUERY_SCSS_LAYER: &str = r#"
 
 /// The full highlights query: the unmodified CSS base from `arborium_css` followed by our rewritten SCSS layer.
 static SCSS_HIGHLIGHTS_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-    let full = &*arborium_scss::HIGHLIGHTS_QUERY;
+    let full: &str = &arborium_scss::HIGHLIGHTS_QUERY;
     let css_base = full
         .find("[\n  \"@at-root\"")
-        .map(|pos| &full[..pos])
-        .unwrap_or(full);
+        .map_or(full, |pos| &full[..pos]);
 
     format!("{css_base}\n{SCSS_HIGHLIGHTS_QUERY_SCSS_LAYER}")
 });

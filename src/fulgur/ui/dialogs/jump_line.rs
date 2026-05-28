@@ -1,5 +1,3 @@
-use std::ops::DerefMut;
-
 use gpui::{Context, Focusable, ParentElement, Styled, Window, div, px};
 use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input};
 
@@ -19,7 +17,7 @@ impl Fulgur {
         let jump_to_line_input = self.jump_to_line_input.clone();
         let entity = cx.entity().clone();
         self.jump_to_line_dialog_open = true;
-        window.open_alert_dialog(cx.deref_mut(), move |modal, window, cx| {
+        window.open_alert_dialog(cx, move |modal, window, cx| {
             let focus_handle = jump_to_line_input.read(cx).focus_handle(cx);
             window.focus(&focus_handle, cx);
             let jump_to_line_input_clone = jump_to_line_input.clone();

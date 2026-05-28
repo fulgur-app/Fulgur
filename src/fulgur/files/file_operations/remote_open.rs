@@ -63,8 +63,8 @@ impl Fulgur {
         mut spec: RemoteSpec,
         target_tab_id: Option<usize>,
     ) {
-        let ssh_session_cache = Arc::clone(&self.shared_state(cx).ssh_session_cache);
-        let ssh_session_pool = Arc::clone(&self.shared_state(cx).ssh_session_pool);
+        let ssh_session_cache = Arc::clone(&Fulgur::shared_state(cx).ssh_session_cache);
+        let ssh_session_pool = Arc::clone(&Fulgur::shared_state(cx).ssh_session_pool);
         let target_request_id = target_tab_id.map(|tab_id| {
             let request_id = self.next_remote_request_id;
             self.next_remote_request_id = self.next_remote_request_id.wrapping_add(1);

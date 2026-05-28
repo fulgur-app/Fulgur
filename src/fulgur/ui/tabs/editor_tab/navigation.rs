@@ -28,8 +28,8 @@ pub fn extract_line_number(destination: &SharedString) -> anyhow::Result<Jump> {
     let re = LINE_REGEX.clone();
     re.is_match(destination.as_str())
         .then(|| {
-            if destination.contains(":") {
-                let parts = destination.split(":").collect::<Vec<&str>>();
+            if destination.contains(':') {
+                let parts = destination.split(':').collect::<Vec<&str>>();
                 if parts.len() == 2 {
                     let line = string_to_u32(parts[0]);
                     jump.line = if line > 0 { line - 1 } else { 0 };
@@ -122,7 +122,7 @@ mod tests {
         // Very large valid number
         let destination = SharedString::from("999999999");
         let result = extract_line_number(&destination).unwrap();
-        assert_eq!(result.line, 999999998);
+        assert_eq!(result.line, 999_999_998);
         assert_eq!(result.character, None);
     }
 

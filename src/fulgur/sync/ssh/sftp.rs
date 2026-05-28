@@ -11,6 +11,10 @@ use std::path::Path;
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `remote_path`: Absolute path on the remote host.
 ///
+/// ### Errors
+/// Returns an `SshError::SftpError` when the remote file cannot be opened
+/// (missing, permission denied) or when an I/O error occurs while reading.
+///
 /// ### Returns
 /// - `Ok(Vec<u8>)`: Raw file contents.
 /// - `Err(SshError::SftpError)`: File not found, permission denied, or I/O error.
@@ -52,6 +56,10 @@ pub struct RemoteDirectoryEntry {
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `remote_path`: Path to classify on the remote host.
 ///
+/// ### Errors
+/// Returns an `SshError::SftpError` if the SFTP metadata lookup fails for a
+/// reason other than the path being missing.
+///
 /// ### Returns
 /// - `Ok(RemotePathKind::File)`: Path exists and is a file.
 /// - `Ok(RemotePathKind::Directory)`: Path exists and is a directory.
@@ -67,7 +75,7 @@ pub fn classify_remote_path(
         Ok(stat) => {
             if let Some(perm) = stat.perm {
                 // POSIX mode bits where 0o040000 indicates a directory.
-                if perm & 0o170000 == 0o040000 {
+                if perm & 0o170_000 == 0o040_000 {
                     return Ok(RemotePathKind::Directory);
                 }
                 return Ok(RemotePathKind::File);
@@ -99,6 +107,10 @@ pub fn classify_remote_path(
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `path`: Candidate path to resolve.
 ///
+/// ### Errors
+/// Returns an `SshError::SftpError` if a path classification check fails
+/// unexpectedly while walking upward.
+///
 /// ### Returns
 /// - `Ok(String)`: Closest existing directory path.
 /// - `Err(SshError::SftpError)`: Path checks failed unexpectedly.
@@ -126,6 +138,9 @@ pub fn closest_existing_remote_directory(
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `directory`: Existing remote directory path.
 ///
+/// ### Errors
+/// Returns an `SshError::SftpError` if the remote directory cannot be read.
+///
 /// ### Returns
 /// - `Ok(Vec<RemoteDirectoryEntry>)`: Directory entries sorted with directories first.
 /// - `Err(SshError::SftpError)`: Directory read failed.
@@ -145,10 +160,7 @@ pub fn list_remote_directory(
             if name == "." || name == ".." {
                 return None;
             }
-            let is_dir = stat
-                .perm
-                .map(|perm| perm & 0o170000 == 0o040000)
-                .unwrap_or(false);
+            let is_dir = stat.perm.is_some_and(|perm| perm & 0o170_000 == 0o040_000);
             let full_path = join_remote_path(&directory, &name);
             Some(RemoteDirectoryEntry {
                 name,
@@ -178,6 +190,10 @@ pub fn list_remote_directory(
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `remote_path`: Absolute destination path on the remote host.
 /// - `data`: File contents to write.
+///
+/// ### Errors
+/// Returns an `SshError::SftpError` on any write, rename, or permission failure
+/// against the temporary file or the destination path.
 ///
 /// ### Returns
 /// - `Ok(())`: File written and renamed successfully.

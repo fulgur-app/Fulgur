@@ -179,6 +179,10 @@ pub fn generate_key_pair() -> (Identity, Recipient) {
 /// - `private_key`: The key to save, wrapped in `Zeroizing` for secure memory
 ///   handling. `None` deletes the entry.
 ///
+/// ### Errors
+/// Returns an error if the keychain entry cannot be created, written, or
+/// deleted.
+///
 /// ### Returns
 /// - `Ok(())`: The private key was saved (or removed) successfully.
 /// - `Err(anyhow::Error)`: If the keychain operation failed.
@@ -197,6 +201,10 @@ pub fn save_private_key_to_keychain(
 /// ### Arguments
 /// - `profile_id`: The profile id used to namespace the keychain entry.
 /// - `device_api_key`: The key to save. `None` or empty deletes the entry.
+///
+/// ### Errors
+/// Returns an error if the keychain entry cannot be created, written, or
+/// deleted.
 ///
 /// ### Returns
 /// - `Ok(())`: The device API key was saved (or removed) successfully.
@@ -242,6 +250,10 @@ fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> anyhow::Result
 /// ### Arguments
 /// - `profile_id`: The profile id used to namespace the keychain entry.
 ///
+/// ### Errors
+/// Returns an error if the keychain access fails for a reason other than a
+/// missing entry.
+///
 /// ### Returns
 /// - `Ok(Some(Zeroizing<String>))`: The private key when present.
 /// - `Ok(None)`: The keychain has no entry for this profile.
@@ -257,6 +269,10 @@ pub fn load_private_key_from_keychain(
 /// ### Arguments
 /// - `profile_id`: The profile id used to namespace the keychain entry.
 ///
+/// ### Errors
+/// Returns an error if the keychain access fails for a reason other than a
+/// missing entry.
+///
 /// ### Returns
 /// - `Ok(Some(String))`: The device API key when present.
 /// - `Ok(None)`: The keychain has no entry for this profile.
@@ -271,6 +287,10 @@ pub fn load_device_api_key_from_keychain(profile_id: &str) -> anyhow::Result<Opt
 /// ### Arguments
 /// - `profile_id`: The id of the profile that should receive the migrated
 ///   credentials (typically the migrated "Fulgurant" profile).
+///
+/// ### Errors
+/// Returns an error if any of the keychain read, write, or delete operations
+/// fail; legacy entries are left in place so the migration can be retried.
 ///
 /// ### Returns
 /// - `Ok(())`: Migration completed (or had nothing to migrate).
@@ -311,6 +331,9 @@ fn legacy_keychain_entries_present() -> anyhow::Result<bool> {
 ///
 /// ### Arguments
 /// - `settings`: Application settings used to locate the target profile.
+///
+/// ### Errors
+/// Returns an error if any keychain read, write, or delete operation fails.
 ///
 /// ### Returns
 /// - `Ok(())`: Migration completed or there was nothing to migrate.
@@ -394,6 +417,11 @@ pub fn serialize(private_key: &Identity) -> Zeroizing<String> {
 /// ### Arguments
 /// - `profile`: The profile that may need a keypair.
 ///
+/// ### Errors
+/// Returns an error if reading from the keychain fails, if the stored private
+/// key cannot be parsed, or if saving a newly generated key to the keychain
+/// fails.
+///
 /// ### Returns
 /// - `Ok(true)`: The profile's `public_key` was updated (either generated or
 ///   recovered); the caller must persist settings.
@@ -433,6 +461,10 @@ pub fn ensure_profile_keypair(profile: &mut ServerProfile) -> anyhow::Result<boo
 /// ### Arguments
 /// - `settings`: The application settings; profiles whose keys had to be
 ///   generated will be mutated to carry the new public key.
+///
+/// ### Errors
+/// Returns an error if keychain access or key generation fails for any active
+/// profile, or if persisting the updated settings fails.
 ///
 /// ### Returns
 /// - `Ok(())`: All active profiles have valid keys.
@@ -493,6 +525,10 @@ pub fn is_valid_public_key(key: &str) -> bool {
 /// - `content_bytes`: The bytes to encrypt
 /// - `recipient_public_key`: The recipient's age x25519 public key (format: "age1...")
 ///
+/// ### Errors
+/// Returns an error if the recipient public key cannot be parsed, the
+/// encryptor cannot be created, or writing the encrypted payload fails.
+///
 /// ### Returns
 /// - `Ok(String)`: The base64-encoded encrypted content
 /// - `Err(anyhow::Error)`: If the encryption failed
@@ -501,8 +537,9 @@ pub fn encrypt_bytes(content_bytes: &[u8], recipient_public_key: &str) -> anyhow
         .parse()
         .map_err(|e| anyhow::anyhow!("Failed to parse recipient public key: {e}"))?;
     let recipients: Vec<Box<dyn age::Recipient>> = vec![Box::new(recipient)];
-    let encryptor = age::Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref()))
-        .map_err(|e| anyhow::anyhow!("Failed to create encryptor: {e}"))?;
+    let encryptor =
+        age::Encryptor::with_recipients(recipients.iter().map(std::convert::AsRef::as_ref))
+            .map_err(|e| anyhow::anyhow!("Failed to create encryptor: {e}"))?;
     let mut encrypted = vec![];
     let mut writer = encryptor
         .wrap_output(&mut encrypted)
@@ -521,6 +558,11 @@ pub fn encrypt_bytes(content_bytes: &[u8], recipient_public_key: &str) -> anyhow
 /// ### Arguments
 /// - `encrypted_b64`: Base64-encoded encrypted content
 /// - `private_key_str`: The recipient's age x25519 private key
+///
+/// ### Errors
+/// Returns an error if the input is not valid base64, the private key cannot
+/// be parsed, the decryptor cannot be created, or reading the decrypted
+/// payload fails.
 ///
 /// ### Returns
 /// - `Ok(Vec<u8>)`: The decrypted bytes

@@ -82,6 +82,9 @@ impl FileWatcher {
 
     /// Starts the file watcher
     ///
+    /// ### Errors
+    /// Returns a `NotifyError` if the underlying file system watcher could not be created.
+    ///
     /// ### Returns
     /// - `Ok(())`: If the file watcher was started successfully
     /// - `Err(NotifyError)`: If the file watcher could not be started
@@ -172,7 +175,7 @@ impl FileWatcher {
                     }
                 }
             }
-            EventKind::Modify(_) => {
+            EventKind::Modify(_) | EventKind::Create(_) => {
                 for path in event.paths {
                     let _ = event_tx.send(FileWatchEvent::Modified(path));
                 }
@@ -180,11 +183,6 @@ impl FileWatcher {
             EventKind::Remove(_) => {
                 for path in event.paths {
                     let _ = event_tx.send(FileWatchEvent::Deleted(path));
-                }
-            }
-            EventKind::Create(_) => {
-                for path in event.paths {
-                    let _ = event_tx.send(FileWatchEvent::Modified(path));
                 }
             }
             _ => {}
@@ -195,6 +193,10 @@ impl FileWatcher {
     ///
     /// ### Arguments
     /// - `path`: The path to the file to watch
+    ///
+    /// ### Errors
+    /// Returns an error if the watcher cannot be started, the file metadata cannot be read,
+    /// or the watcher fails to register the path.
     ///
     /// ### Returns
     /// - `Ok(())`: If the file was watched successfully
@@ -323,12 +325,12 @@ impl Fulgur {
                         }
                     } else {
                         self.reload_tab_from_disk(tab_index, window, cx);
-                        self.show_notification_file_reloaded(&path, window, cx);
+                        Self::show_notification_file_reloaded(&path, window, cx);
                     }
                 }
             }
             FileWatchEvent::Deleted(path) => {
-                self.show_notification_file_deleted(&path, window, cx);
+                Self::show_notification_file_deleted(&path, window, cx);
             }
             FileWatchEvent::Renamed { from, to } => {
                 if let Some(tab_index) = self.find_tab_by_path(&from) {
@@ -343,7 +345,7 @@ impl Fulgur {
                             .to_string()
                             .into();
                     }
-                    self.show_notification_file_renamed(&from, &to, window, cx);
+                    Self::show_notification_file_renamed(&from, &to, window, cx);
                 }
             }
             FileWatchEvent::Error(msg) => {

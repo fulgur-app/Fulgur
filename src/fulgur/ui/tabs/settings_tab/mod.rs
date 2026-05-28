@@ -106,7 +106,7 @@ impl Fulgur {
             editor_page::create_editor_page(&entity, font_family_select),
             application_page::create_application_page(&entity),
         ];
-        let themes = self.shared_state(cx).themes.lock().clone();
+        let themes = Fulgur::shared_state(cx).themes.lock().clone();
         if let Some(ref themes) = themes {
             pages.push(Self::create_themes_page(&entity, themes));
         }
@@ -160,7 +160,7 @@ impl Fulgur {
         }
         let menus = crate::fulgur::ui::menus::build_menus(
             self.settings.recent_files.get_files(),
-            self.shared_state(cx)
+            Fulgur::shared_state(cx)
                 .update_info
                 .lock()
                 .as_ref()
