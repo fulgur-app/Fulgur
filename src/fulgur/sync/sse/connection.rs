@@ -33,6 +33,14 @@ const MAX_SSE_EVENT_DATA_BYTES: usize = MAX_SYNC_SHARE_PAYLOAD_BYTES * 10;
 /// reconnects
 const SSE_READ_DEADLINE: Duration = Duration::from_secs(60);
 
+/// HTTP agents used by the SSE worker.
+pub struct SseAgents {
+    /// Short-timeout agent for REST calls (token, share fetches).
+    pub rest: Arc<ureq::Agent>,
+    /// Long-timeout agent for the long-lived SSE stream.
+    pub stream: Arc<ureq::Agent>,
+}
+
 /// Error type for line reading with shutdown support
 enum ReadError {
     /// I/O error during reading
@@ -163,7 +171,7 @@ fn fetch_pending_shares_into(
 /// - `shutdown_flag`: Atomic boolean flag to signal the SSE thread to shutdown
 /// - `sync_server_connection_status`: Arc-wrapped connection status to update on connection/disconnection
 /// - `token_state`: Arc to the per-profile token state manager for authentication
-/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `agents`: HTTP agents for the SSE stream and its REST calls
 /// - `pending_shared_files`: Per-profile queue for incoming file shares
 ///
 /// ### Errors
@@ -179,7 +187,7 @@ pub fn connect_sse(
     shutdown_flag: Arc<AtomicBool>,
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
     token_state: &Arc<TokenStateManager>,
-    http_agent: &Arc<ureq::Agent>,
+    agents: &SseAgents,
     pending_shared_files: &Arc<Mutex<Vec<SharedFileResponse>>>,
 ) -> Result<thread::JoinHandle<()>, SynchronizationError> {
     let server_url = profile
@@ -189,7 +197,8 @@ pub fn connect_sse(
     let sse_url = format!("{server_url}/api/sse");
     let profile_clone = profile.clone();
     let token_state_clone = Arc::clone(token_state);
-    let http_agent_clone = Arc::clone(http_agent);
+    let http_agent_clone = Arc::clone(&agents.rest);
+    let sse_http_agent_clone = Arc::clone(&agents.stream);
     let pending_shared_files_clone = Arc::clone(pending_shared_files);
     let handle = thread::spawn(move || {
         let mut backoff = BackoffCalculator::default_settings();
@@ -215,7 +224,7 @@ pub fn connect_sse(
                 }
             };
             log::info!("Connecting to SSE endpoint: {sse_url}");
-            let response = match http_agent_clone
+            let response = match sse_http_agent_clone
                 .get(&sse_url)
                 .header("Authorization", &format!("Bearer {token}"))
                 .header("Accept", "text/event-stream")

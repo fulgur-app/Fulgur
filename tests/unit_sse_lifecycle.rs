@@ -10,7 +10,7 @@
 
 use fulgur::fulgur::settings::ServerProfile;
 use fulgur::fulgur::sync::access_token::TokenStateManager;
-use fulgur::fulgur::sync::sse::{SseEvent, SseState, connect_sse};
+use fulgur::fulgur::sync::sse::{SseAgents, SseEvent, SseState, connect_sse};
 use fulgur::fulgur::sync::synchronization::{
     SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
 };
@@ -29,6 +29,13 @@ fn make_pending_shared_files() -> Arc<Mutex<Vec<SharedFileResponse>>> {
 
 fn make_http_agent() -> ureq::Agent {
     ureq::Agent::new_with_config(ureq::config::Config::builder().build())
+}
+
+fn make_sse_agents() -> SseAgents {
+    SseAgents {
+        rest: Arc::new(make_http_agent()),
+        stream: Arc::new(make_http_agent()),
+    }
 }
 
 fn make_connection_status(initial: SynchronizationStatus) -> Arc<Mutex<SynchronizationStatus>> {
@@ -227,7 +234,7 @@ fn test_connect_sse_fails_without_server_url() {
     let shutdown_flag = Arc::new(AtomicBool::new(false));
     let status = make_connection_status(SynchronizationStatus::Disconnected);
     let token_manager = Arc::new(TokenStateManager::new());
-    let http_agent = Arc::new(make_http_agent());
+    let agents = make_sse_agents();
 
     let result = connect_sse(
         &profile,
@@ -235,7 +242,7 @@ fn test_connect_sse_fails_without_server_url() {
         shutdown_flag,
         status,
         &token_manager,
-        &http_agent,
+        &agents,
         &make_pending_shared_files(),
     );
 
@@ -260,7 +267,7 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
     let shutdown_flag = Arc::new(AtomicBool::new(true)); // pre-set
     let status = make_connection_status(SynchronizationStatus::Disconnected);
     let token_manager = Arc::new(TokenStateManager::new());
-    let http_agent = Arc::new(make_http_agent());
+    let agents = make_sse_agents();
 
     let handle = connect_sse(
         &profile,
@@ -268,7 +275,7 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
         shutdown_flag,
         status,
         &token_manager,
-        &http_agent,
+        &agents,
         &make_pending_shared_files(),
     )
     .expect("connect_sse should succeed with a server URL");
@@ -296,7 +303,7 @@ fn test_connect_sse_returns_ok_handle_with_valid_settings() {
     let shutdown_flag = Arc::new(AtomicBool::new(true)); // shut down immediately
     let status = make_connection_status(SynchronizationStatus::Disconnected);
     let token_manager = Arc::new(TokenStateManager::new());
-    let http_agent = Arc::new(make_http_agent());
+    let agents = make_sse_agents();
 
     let result = connect_sse(
         &profile,
@@ -304,7 +311,7 @@ fn test_connect_sse_returns_ok_handle_with_valid_settings() {
         shutdown_flag,
         status,
         &token_manager,
-        &http_agent,
+        &agents,
         &make_pending_shared_files(),
     );
 

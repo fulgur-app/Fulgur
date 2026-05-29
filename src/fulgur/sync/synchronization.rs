@@ -1,5 +1,5 @@
 use super::access_token::{TokenStateManager, get_valid_token};
-use super::sse::connect_sse;
+use super::sse::{SseAgents, connect_sse};
 use crate::fulgur::Fulgur;
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::SyncState;
@@ -482,6 +482,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         .cloned()
         .collect();
     let http_agent = Arc::clone(&shared.http_agent);
+    let sse_http_agent = Arc::clone(&shared.sse_http_agent);
     for profile in active_profiles {
         let sync_state = shared.sync_state_for(&profile.id);
         let sse_tx = entity
@@ -500,6 +501,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             .get(&profile.id)
             .map(|s| s.sse_thread_handle.clone());
         let http_agent_clone = Arc::clone(&http_agent);
+        let sse_http_agent_clone = Arc::clone(&sse_http_agent);
         thread::spawn(move || {
             run_profile_bootstrap(
                 &profile,
@@ -508,6 +510,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                 sse_shutdown_flag,
                 sse_thread_handle,
                 &http_agent_clone,
+                &sse_http_agent_clone,
             );
         });
     }
@@ -521,7 +524,8 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
 /// - `sse_tx`: Optional SSE event sender; `None` skips the SSE step.
 /// - `sse_shutdown_flag`: Shutdown flag signalled by `restart_sse_connection`.
 /// - `sse_thread_handle`: Slot for the SSE worker thread handle.
-/// - `http_agent`: Shared HTTP agent.
+/// - `http_agent`: Shared HTTP agent for short-lived REST calls.
+/// - `sse_http_agent`: Dedicated long-timeout HTTP agent for the SSE stream.
 fn run_profile_bootstrap(
     profile: &ServerProfile,
     sync_state: &Arc<SyncState>,
@@ -529,6 +533,7 @@ fn run_profile_bootstrap(
     sse_shutdown_flag: Option<Arc<AtomicBool>>,
     sse_thread_handle: Option<Arc<Mutex<Option<thread::JoinHandle<()>>>>>,
     http_agent: &Arc<ureq::Agent>,
+    sse_http_agent: &Arc<ureq::Agent>,
 ) {
     // Small delay to ensure app initialization doesn't block
     thread::sleep(Duration::from_millis(100));
@@ -586,13 +591,17 @@ fn run_profile_bootstrap(
                     "Profile '{}': starting SSE connection for real-time updates",
                     profile.name
                 );
+                let agents = SseAgents {
+                    rest: Arc::clone(http_agent),
+                    stream: Arc::clone(sse_http_agent),
+                };
                 match connect_sse(
                     profile,
                     tx,
                     shutdown,
                     sync_state.connection_status.clone(),
                     &sync_state.token_state,
-                    http_agent,
+                    &agents,
                     &sync_state.pending_shared_files,
                 ) {
                     Ok(handle) => {
