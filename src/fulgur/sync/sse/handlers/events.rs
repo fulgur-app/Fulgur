@@ -22,7 +22,9 @@ impl Fulgur {
             .any(|s| s.connection_status.lock().is_connected())
     }
 
-    /// Handle a single SSE event for a specific profile.
+    /// Handle a single SSE event for a specific profile on the UI thread.
+    ///
+    /// Runs on the main/UI thread (it needs `window` and `cx`) and only performs UI-facing reactions.
     ///
     /// ### Arguments
     /// - `profile_id`: The profile that produced the event.
@@ -71,7 +73,7 @@ impl Fulgur {
         }
     }
 
-    /// Handle an SSE event using the primary profile.
+    /// Handle an SSE event using the primary profile, on the UI thread. Performs UI-facing reactions and never downloads shares.
     ///
     /// ### Arguments
     /// - `event`: The SSE event to handle.
@@ -93,7 +95,7 @@ impl Fulgur {
         self.handle_sse_event_for(&primary_id, event, window, cx);
     }
 
-    /// Drain pending SSE events from every profile's channel and dispatch them.
+    /// Drain pending SSE events from every profile's channel and dispatch them on the UI thread.
     ///
     /// ### Arguments
     /// - `window`: The window to handle events in.

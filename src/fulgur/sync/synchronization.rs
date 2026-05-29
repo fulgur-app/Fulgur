@@ -1,5 +1,5 @@
 use super::access_token::{TokenStateManager, get_valid_token};
-use super::sse::{SseAgents, connect_sse};
+use super::sse::{SseAgents, SseShareState, connect_sse};
 use crate::fulgur::Fulgur;
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::SyncState;
@@ -41,13 +41,32 @@ pub const MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES: u64 = (share::MAX_SYNC_SHARE_PAY
     + (share::JSON_OVERHEAD_PER_SHARE_BYTES as u64)
     + SHARE_RESPONSE_FRAMING_BYTES;
 
-/// Maximum number of bytes accepted from the legacy `POST /api/begin` response,
-/// which inlines every pending share. Sized to fit the worst-case bundle:
-/// `MAX_PENDING_SHARES_PER_RESPONSE` shares each at the single-share cap.
+/// Maximum number of bytes accepted from the legacy `POST /api/begin` response. Sized to fit the worst-case bundle.
 const MAX_HTTP_V1_BEGIN_RESPONSE_BYTES: u64 = (share::MAX_PENDING_SHARES_PER_RESPONSE as u64)
     * ((share::MAX_SYNC_SHARE_PAYLOAD_BYTES as u64)
         + (share::JSON_OVERHEAD_PER_SHARE_BYTES as u64))
     + SHARE_RESPONSE_FRAMING_BYTES;
+
+/// Compute the wire-size cap for a bulk `GET /api/shares` drain, derived from
+/// the server's advertised maximum file size.
+///
+/// ### Arguments
+/// - `server_max_file_size`: The server-advertised max file size in bytes, or
+///   `u64::MAX` when the server reports no limit.
+///
+/// ### Returns
+/// - `u64`: The maximum number of bytes to accept from the bulk drain response.
+pub fn max_http_bulk_shares_response_bytes(server_max_file_size: u64) -> u64 {
+    if server_max_file_size == u64::MAX {
+        return MAX_HTTP_V1_BEGIN_RESPONSE_BYTES;
+    }
+    let per_share_wire = server_max_file_size
+        .saturating_mul(2)
+        .saturating_add(share::JSON_OVERHEAD_PER_SHARE_BYTES as u64);
+    (share::MAX_PENDING_SHARES_PER_RESPONSE as u64)
+        .saturating_mul(per_share_wire)
+        .saturating_add(SHARE_RESPONSE_FRAMING_BYTES)
+}
 
 /// Handle ureq errors and convert them to `SynchronizationError` with appropriate logging
 ///
@@ -595,6 +614,10 @@ fn run_profile_bootstrap(
                     rest: Arc::clone(http_agent),
                     stream: Arc::clone(sse_http_agent),
                 };
+                let share_state = SseShareState {
+                    pending_shared_files: Arc::clone(&sync_state.pending_shared_files),
+                    max_file_size_bytes: Arc::clone(&sync_state.max_file_size_bytes),
+                };
                 match connect_sse(
                     profile,
                     tx,
@@ -602,7 +625,7 @@ fn run_profile_bootstrap(
                     sync_state.connection_status.clone(),
                     &sync_state.token_state,
                     &agents,
-                    &sync_state.pending_shared_files,
+                    &share_state,
                 ) {
                     Ok(handle) => {
                         *handle_storage.lock() = Some(handle);
@@ -1064,9 +1087,33 @@ impl Fulgur {
 
 #[cfg(test)]
 mod tests {
-    use super::store_server_max_file_size;
+    use super::{
+        MAX_HTTP_V1_BEGIN_RESPONSE_BYTES, max_http_bulk_shares_response_bytes,
+        store_server_max_file_size,
+    };
     use crate::fulgur::sync::share;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[test]
+    fn bulk_cap_falls_back_to_static_bound_when_unlimited() {
+        assert_eq!(
+            max_http_bulk_shares_response_bytes(u64::MAX),
+            MAX_HTTP_V1_BEGIN_RESPONSE_BYTES
+        );
+    }
+
+    #[test]
+    fn bulk_cap_derives_from_server_limit() {
+        let server_max = 2 * 1024 * 1024;
+        let per_share = server_max * 2 + share::JSON_OVERHEAD_PER_SHARE_BYTES as u64;
+        let expected = (share::MAX_PENDING_SHARES_PER_RESPONSE as u64) * per_share + 4 * 1024;
+        assert_eq!(max_http_bulk_shares_response_bytes(server_max), expected);
+    }
+
+    #[test]
+    fn bulk_cap_saturates_instead_of_overflowing() {
+        assert_eq!(max_http_bulk_shares_response_bytes(u64::MAX - 1), u64::MAX);
+    }
 
     #[test]
     fn none_is_stored_as_unlimited() {
