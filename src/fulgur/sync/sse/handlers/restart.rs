@@ -21,7 +21,7 @@ use std::{
 };
 
 use super::super::{
-    connection::connect_sse,
+    connection::{SseAgents, SseShareState, connect_sse},
     types::{SseEvent, SseState},
 };
 
@@ -142,7 +142,9 @@ impl Fulgur {
         let sync_status = sync_state.connection_status.clone();
         let token_state = Arc::clone(&sync_state.token_state);
         let http_agent = Arc::clone(&shared.http_agent);
+        let sse_http_agent = Arc::clone(&shared.sse_http_agent);
         let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
+        let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
         thread::spawn(move || {
             wait_for_previous_sse_thread(old_handle);
             thread::sleep(Duration::from_millis(200));
@@ -152,14 +154,22 @@ impl Fulgur {
                         "Profile '{}': initial sync succeeded, starting new SSE",
                         profile.name
                     );
+                    let agents = SseAgents {
+                        rest: Arc::clone(&http_agent),
+                        stream: Arc::clone(&sse_http_agent),
+                    };
+                    let share_state = SseShareState {
+                        pending_shared_files: Arc::clone(&pending_shared_files),
+                        max_file_size_bytes: Arc::clone(&max_file_size_bytes),
+                    };
                     match connect_sse(
                         &profile,
                         sse_tx,
                         sse_shutdown_flag,
                         sync_status,
                         &token_state,
-                        &http_agent,
-                        &pending_shared_files,
+                        &agents,
+                        &share_state,
                     ) {
                         Ok(new_handle) => {
                             *handle_storage.lock() = Some(new_handle);
@@ -209,6 +219,7 @@ impl Fulgur {
         let connecting_since = sync_state.connecting_since.clone();
         let token_state = Arc::clone(&sync_state.token_state);
         let http_agent = Arc::clone(&shared.http_agent);
+        let sse_http_agent = Arc::clone(&shared.sse_http_agent);
         let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
         let pending_notification = Arc::clone(&sync_state.pending_notification);
         let device_name = sync_state.device_name.clone();
@@ -259,14 +270,22 @@ impl Fulgur {
                             "{profile_name}: Connection successful as {}",
                             begin_response.device_name
                         );
+                        let agents = SseAgents {
+                            rest: Arc::clone(&http_agent),
+                            stream: Arc::clone(&sse_http_agent),
+                        };
+                        let share_state = SseShareState {
+                            pending_shared_files: Arc::clone(&pending_shared_files),
+                            max_file_size_bytes: Arc::clone(&max_file_size_bytes),
+                        };
                         match connect_sse(
                             &profile,
                             sse_tx,
                             sse_shutdown_flag,
                             connection_status.clone(),
                             &token_state,
-                            &http_agent,
-                            &pending_shared_files,
+                            &agents,
+                            &share_state,
                         ) {
                             Ok(new_handle) => {
                                 *handle_storage.lock() = Some(new_handle);

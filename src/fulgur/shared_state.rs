@@ -92,8 +92,11 @@ pub struct SharedAppState {
     /// Pending IPC commands from Windows jump list ("new-tab", "new-window")
     #[cfg(target_os = "windows")]
     pub pending_ipc_commands: Arc<Mutex<Vec<String>>>,
-    /// Shared HTTP agent for connection pooling across all requests
+    /// Shared HTTP agent for connection pooling across all short-lived REST
+    /// requests (token, ping, share fetch). Carries a 10s global timeout.
     pub http_agent: Arc<ureq::Agent>,
+    /// Dedicated HTTP agent for the long-lived SSE stream only.
+    pub sse_http_agent: Arc<ureq::Agent>,
     /// Session-scoped SSH password cache keyed by `(host, port, user)`.
     ///
     /// The cache is memory-only and dropped on app exit.
@@ -138,6 +141,12 @@ impl SharedAppState {
                 ureq::config::Config::builder()
                     .timeout_connect(Some(std::time::Duration::from_secs(5)))
                     .timeout_global(Some(std::time::Duration::from_secs(10)))
+                    .build(),
+            )),
+            sse_http_agent: Arc::new(ureq::Agent::new_with_config(
+                ureq::config::Config::builder()
+                    .timeout_connect(Some(std::time::Duration::from_secs(5)))
+                    .timeout_global(Some(std::time::Duration::from_secs(90)))
                     .build(),
             )),
             ssh_session_cache: Arc::new(Mutex::new(SshCredentialCache::new())),

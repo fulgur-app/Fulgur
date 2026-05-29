@@ -4,6 +4,7 @@ use crate::fulgur::{
         access_token::{TokenStateManager, get_valid_token},
         synchronization::{
             MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES, SynchronizationError, handle_ureq_error,
+            max_http_bulk_shares_response_bytes,
         },
     },
 };
@@ -13,15 +14,19 @@ use std::sync::Arc;
 /// Atomically fetch and delete all pending shares for the current device on
 /// a single profile's server.
 ///
+/// Will be deprecated in 0.11.0.
+///
 /// ### Arguments
 /// - `profile`: The server profile to fetch from
 /// - `token_state`: Per-profile token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `server_max_file_size`: The server-advertised max file size
 ///
 /// ### Errors
 /// Returns a `SynchronizationError` if the profile has no server URL, the
-/// authentication token cannot be obtained, the HTTP request fails, or the
-/// response cannot be deserialized.
+/// authentication token cannot be obtained, the HTTP request fails, the
+/// response exceeds the per-server bulk cap, or the response cannot be
+/// deserialized.
 ///
 /// ### Returns
 /// - `Ok(Vec<SharedFileResponse>)`: The shares that were drained from the server
@@ -30,6 +35,7 @@ pub fn fetch_pending_shares(
     profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
+    server_max_file_size: u64,
 ) -> Result<Vec<SharedFileResponse>, SynchronizationError> {
     let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
@@ -41,13 +47,19 @@ pub fn fetch_pending_shares(
         .header("Authorization", &format!("Bearer {token}"))
         .call()
         .map_err(|e| handle_ureq_error(e, "Failed to fetch pending shares"))?;
-    let shares: Vec<SharedFileResponse> = response
+    let body = response
         .body_mut()
-        .read_json::<Vec<SharedFileResponse>>()
+        .with_config()
+        .limit(max_http_bulk_shares_response_bytes(server_max_file_size))
+        .read_to_string()
         .map_err(|e| {
             log::error!("Failed to read pending shares: {e}");
-            SynchronizationError::InvalidResponse(e.to_string())
+            SynchronizationError::Other(e.to_string())
         })?;
+    let shares: Vec<SharedFileResponse> = serde_json::from_str(&body).map_err(|e| {
+        log::error!("Failed to parse pending shares: {e}");
+        SynchronizationError::InvalidResponse(e.to_string())
+    })?;
     log::debug!("Fetched {} pending share(s) from server", shares.len());
     Ok(shares)
 }
