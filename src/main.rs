@@ -59,30 +59,55 @@ impl AssetSource for Assets {
     }
 }
 
-/// Convert a file:// URL string to a `PathBuf`
+/// Return whether the string begins with an explicit URL scheme (e.g. `http:`).
 ///
 /// ### Arguments
-/// - `url_string`: The URL string to convert (e.g., "<file:///Users/user/file.txt>")
+/// - `input`: The candidate string.
 ///
 /// ### Returns
-/// - `Some(PathBuf)`: The `PathBuf` if successful
-/// - `None`: If the URL could not be converted to a path
-fn url_to_path(url_string: &str) -> Option<PathBuf> {
-    let path_str = url_string.strip_prefix("file://").unwrap_or(url_string);
-    match urlencoding::decode(path_str) {
-        Ok(decoded) => {
-            let path = PathBuf::from(decoded.into_owned());
-            if path.exists() && path.is_file() {
-                Some(path)
-            } else {
-                log::warn!("URL converted to path, but target is not a valid file");
-                None
+/// - `true`: The string starts with a URL scheme of two or more characters.
+/// - `false`: The string is a bare path, a Windows drive path, or otherwise schemeless.
+fn has_url_scheme(input: &str) -> bool {
+    let Some(colon) = input.find(':') else {
+        return false;
+    };
+    let scheme = &input[..colon];
+    scheme.len() >= 2
+        && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+/// Resolve an open request (a `file://` URL or a bare path) to a `PathBuf`.
+///
+/// ### Arguments
+/// - `input`: The URL or path to resolve (e.g., `file:///Users/user/file.txt`
+///   or `/Users/user/file.txt`).
+///
+/// ### Returns
+/// - `Some(PathBuf)`: An absolute path to an existing file.
+/// - `None`: The scheme was not `file`, decoding failed, or the target is not an absolute existing file.
+fn url_to_path(input: &str) -> Option<PathBuf> {
+    let path = if let Some(encoded) = input.strip_prefix("file://") {
+        match urlencoding::decode(encoded) {
+            Ok(decoded) => PathBuf::from(decoded.into_owned()),
+            Err(e) => {
+                log::error!("Failed to decode file URL: {e}");
+                return None;
             }
         }
-        Err(e) => {
-            log::error!("Failed to decode URL: {e}");
-            None
-        }
+    } else if has_url_scheme(input) {
+        log::warn!("Rejecting non-file URL scheme in open request");
+        return None;
+    } else {
+        PathBuf::from(input)
+    };
+    if path.is_absolute() && path.is_file() {
+        Some(path)
+    } else {
+        log::warn!("Open request did not resolve to an absolute existing file");
+        None
     }
 }
 
@@ -356,7 +381,7 @@ fn create_window(
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::url_to_path;
+    use super::{has_url_scheme, url_to_path};
     use tempfile::TempDir;
 
     #[test]
@@ -377,6 +402,19 @@ mod tests {
     }
 
     #[test]
+    fn test_url_to_path_accepts_bare_absolute_path() {
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let file_path = dir.path().join("plain.txt");
+        std::fs::write(&file_path, "content").expect("failed to write temp file");
+
+        let resolved = url_to_path(&file_path.to_string_lossy());
+        assert!(
+            resolved.is_some(),
+            "a bare absolute path should resolve without a file:// prefix"
+        );
+    }
+
+    #[test]
     fn test_url_to_path_rejects_invalid_percent_encoded_url() {
         let invalid = "file://%E0%A4%A";
         assert!(
@@ -392,5 +430,36 @@ mod tests {
             url_to_path(missing_url).is_none(),
             "non-existing targets must not be returned as openable file paths"
         );
+    }
+
+    #[test]
+    fn test_url_to_path_rejects_non_file_scheme() {
+        assert!(
+            url_to_path("http://example.com/etc/passwd").is_none(),
+            "non-file URL schemes must be rejected"
+        );
+        assert!(
+            url_to_path("javascript:alert(1)").is_none(),
+            "opaque non-file schemes must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_url_to_path_rejects_relative_path() {
+        assert!(
+            url_to_path("../sensitive").is_none(),
+            "relative paths must be rejected so they cannot resolve against cwd"
+        );
+    }
+
+    #[test]
+    fn test_has_url_scheme_classification() {
+        assert!(has_url_scheme("http://example.com"));
+        assert!(has_url_scheme("file:///tmp/x"));
+        assert!(has_url_scheme("mailto:a@b.com"));
+        assert!(!has_url_scheme("/Users/me/file.txt"));
+        assert!(!has_url_scheme("C:/Users/me/file.txt"));
+        assert!(!has_url_scheme("../relative"));
+        assert!(!has_url_scheme("/tmp/a:b"));
     }
 }

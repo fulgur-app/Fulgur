@@ -42,7 +42,7 @@ impl Fulgur {
         // Increment the version counter so other windows detect the change
         let new_version = shared
             .settings_version
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            .fetch_add(1, std::sync::atomic::Ordering::Release)
             + 1;
         self.local_settings_version = new_version;
 
@@ -85,9 +85,10 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn synchronize_settings_from_other_windows(&mut self, cx: &mut Context<Self>) {
         let shared = Fulgur::shared_state(cx);
+        // `Acquire` pairs with the `Release` increment.
         let shared_version = shared
             .settings_version
-            .load(std::sync::atomic::Ordering::Relaxed);
+            .load(std::sync::atomic::Ordering::Acquire);
         if shared_version > self.local_settings_version {
             // Settings have been updated in another window - reload them
             let shared_settings = shared.settings.lock().clone();
