@@ -6,9 +6,12 @@ use gpui::{Context, Window};
 use notify::{Error as NotifyError, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
+
+/// Bound for the file watch event channel.
+const FILE_WATCH_EVENT_CHANNEL_CAPACITY: usize = 256;
 
 /// File watching state for external file change detection
 pub struct FileWatchState {
@@ -56,7 +59,7 @@ pub enum FileWatchEvent {
 pub struct FileWatcher {
     watcher: Option<RecommendedWatcher>,
     watched_paths: HashMap<PathBuf, SystemTime>,
-    event_tx: Sender<FileWatchEvent>,
+    event_tx: SyncSender<FileWatchEvent>,
     /// Pending rename source path for Linux inotify, which splits rename events
     /// into separate From and To notifications rather than a single two-path event.
     pending_rename_from: Arc<Mutex<Option<PathBuf>>>,
@@ -70,7 +73,7 @@ impl FileWatcher {
     ///   - `FileWatcher`: The file watcher instance
     ///   - `Receiver<FileWatchEvent>`: The event receiver to receive the file watch events from the file watcher
     pub fn new() -> (Self, Receiver<FileWatchEvent>) {
-        let (event_tx, event_rx) = channel();
+        let (event_tx, event_rx) = sync_channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let watcher = Self {
             watcher: None,
             watched_paths: HashMap::new(),
@@ -100,11 +103,22 @@ impl FileWatcher {
                     Self::handle_notify_event(event, &event_tx, &pending_rename_from);
                 }
                 Err(e) => {
-                    let _ = event_tx.send(FileWatchEvent::Error(e.to_string()));
+                    Self::send_event(&event_tx, FileWatchEvent::Error(e.to_string()));
                 }
             })?;
         self.watcher = Some(watcher);
         Ok(())
+    }
+
+    /// Send a file watch event over the bounded channel, dropping it if the channel is full.
+    ///
+    /// ### Arguments
+    /// - `event_tx`: The bounded event sender
+    /// - `event`: The file watch event to send
+    fn send_event(event_tx: &SyncSender<FileWatchEvent>, event: FileWatchEvent) {
+        if let Err(TrySendError::Full(dropped)) = event_tx.try_send(event) {
+            log::warn!("File watch event channel full, dropping event: {dropped:?}");
+        }
     }
 
     /// Handles a notify event and converts it to a `FileWatchEvent`
@@ -127,7 +141,7 @@ impl FileWatcher {
     /// - `pending_rename_from`: Accumulator for the Linux split-rename `From` path
     fn handle_notify_event(
         event: Event,
-        event_tx: &Sender<FileWatchEvent>,
+        event_tx: &SyncSender<FileWatchEvent>,
         pending_rename_from: &Mutex<Option<PathBuf>>,
     ) {
         use notify::event::{ModifyKind, RenameMode};
@@ -138,7 +152,7 @@ impl FileWatcher {
                     // macOS / Windows: both paths arrive in one event
                     let from = event.paths[0].clone();
                     let to = event.paths[1].clone();
-                    let _ = event_tx.send(FileWatchEvent::Renamed { from, to });
+                    Self::send_event(event_tx, FileWatchEvent::Renamed { from, to });
                 } else if event.paths.len() == 1 {
                     match rename_mode {
                         RenameMode::From => {
@@ -152,15 +166,20 @@ impl FileWatcher {
                             let from = pending_rename_from.lock().ok().and_then(|mut p| p.take());
                             match from {
                                 Some(from) => {
-                                    let _ = event_tx.send(FileWatchEvent::Renamed {
-                                        from,
-                                        to: event.paths[0].clone(),
-                                    });
+                                    Self::send_event(
+                                        event_tx,
+                                        FileWatchEvent::Renamed {
+                                            from,
+                                            to: event.paths[0].clone(),
+                                        },
+                                    );
                                 }
                                 None => {
                                     // No matching From; treat as a new file appearing
-                                    let _ = event_tx
-                                        .send(FileWatchEvent::Modified(event.paths[0].clone()));
+                                    Self::send_event(
+                                        event_tx,
+                                        FileWatchEvent::Modified(event.paths[0].clone()),
+                                    );
                                 }
                             }
                         }
@@ -169,7 +188,7 @@ impl FileWatcher {
                             if let Ok(mut pending) = pending_rename_from.lock()
                                 && let Some(stale) = pending.take()
                             {
-                                let _ = event_tx.send(FileWatchEvent::Deleted(stale));
+                                Self::send_event(event_tx, FileWatchEvent::Deleted(stale));
                             }
                         }
                     }
@@ -177,12 +196,12 @@ impl FileWatcher {
             }
             EventKind::Modify(_) | EventKind::Create(_) => {
                 for path in event.paths {
-                    let _ = event_tx.send(FileWatchEvent::Modified(path));
+                    Self::send_event(event_tx, FileWatchEvent::Modified(path));
                 }
             }
             EventKind::Remove(_) => {
                 for path in event.paths {
-                    let _ = event_tx.send(FileWatchEvent::Deleted(path));
+                    Self::send_event(event_tx, FileWatchEvent::Deleted(path));
                 }
             }
             _ => {}
@@ -439,7 +458,7 @@ mod tests {
         path::PathBuf,
         sync::{
             Arc, Mutex,
-            mpsc::{TryRecvError, channel},
+            mpsc::{TryRecvError, sync_channel},
         },
         time::Instant,
     };
@@ -487,7 +506,7 @@ mod tests {
 
     #[gpui::test]
     fn test_handle_notify_event_maps_modify_to_modified(_cx: &mut TestAppContext) {
-        let (event_tx, event_rx) = channel();
+        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
         let path = temp_test_path("fulgur_notify_modify.txt");
         let event = Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
@@ -501,7 +520,7 @@ mod tests {
 
     #[gpui::test]
     fn test_handle_notify_event_maps_remove_to_deleted(_cx: &mut TestAppContext) {
-        let (event_tx, event_rx) = channel();
+        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
         let path = temp_test_path("fulgur_notify_deleted.txt");
         let event = Event::new(EventKind::Remove(RemoveKind::File)).add_path(path.clone());
@@ -514,7 +533,7 @@ mod tests {
 
     #[gpui::test]
     fn test_handle_notify_event_maps_rename_both_to_renamed(_cx: &mut TestAppContext) {
-        let (event_tx, event_rx) = channel();
+        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
         let from = temp_test_path("fulgur_notify_old.txt");
         let to = temp_test_path("fulgur_notify_new.txt");
@@ -533,7 +552,7 @@ mod tests {
 
     #[gpui::test]
     fn test_handle_notify_event_pairs_linux_split_rename(_cx: &mut TestAppContext) {
-        let (event_tx, event_rx) = channel();
+        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
         let from = temp_test_path("fulgur_notify_linux_from.txt");
         let to = temp_test_path("fulgur_notify_linux_to.txt");
