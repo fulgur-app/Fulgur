@@ -43,7 +43,7 @@ serde_json = "1.0.149"
 
 # Cryptography & security
 base64 = "0.22.1"
-age = "0.11.2"
+age = "0.11.3"
 zeroize = "1.8.2"
 sha2 = "0.10.9"
 sha1 = "0.10.6"
@@ -62,7 +62,7 @@ urlencoding = "2.1.3"
 url = "2.5.8"
 
 # Logging
-log = "0.4.29"
+log = "0.4.30"
 
 # Time
 time = { version = "0.3.47", features = ["serde", "macros", "formatting", "parsing"] }
@@ -78,7 +78,7 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component", feature
 
 # Filesystem
 notify = "8.2.0"
-open = "5.3.3"
+open = "5.3.5"
 flate2 = "1.1.9"
 
 # Security - forcing minimum versions for transitive dependencies
@@ -119,7 +119,7 @@ tree-sitter-r = "1.2.0"
 rust-embed = "8.11.0"
 regex = "1.12.3"
 ropey = "=2.0.0-beta.1"
-semver = "1.0.27"
+semver = "1.0.28"
 parking_lot = "0.12.5"
 color-lsp = "0.2.0"
 flexi_logger = "0.31.8"
@@ -143,7 +143,7 @@ windows = { version = "0.61", features = [
 tempfile = "3.26.0"
 
 [build-dependencies]
-embed-resource = "3.0.6"
+embed-resource = "3.0.9"
 
 
 # Builds the dependencies with optimisations even during debug builds, commented by default
