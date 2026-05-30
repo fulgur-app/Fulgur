@@ -7,6 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
 
+/// Maximum time a thread waits for another thread's in-flight token refresh to complete before giving up.
+const REFRESH_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// JWT access token state for thread-safe token management
 ///
 /// ### Fields
@@ -201,23 +204,22 @@ pub fn get_valid_token(
 
     // If another thread is already refreshing, wait for it to complete
     while state.is_refreshing_token {
-        // Wait for up to 30 seconds for the refresh to complete
-        // Using wait_for() instead of wait() provides a safety timeout
-        // in case the refreshing thread fails to notify
         let wait_result = token_manager
             .refresh_notify
-            .wait_for(&mut state, Duration::from_secs(30));
+            .wait_for(&mut state, REFRESH_WAIT_TIMEOUT);
 
-        if wait_result.timed_out() {
-            log::warn!("Timed out waiting for token refresh, proceeding anyway");
-            break;
-        }
-
-        // Check if token is now valid after being notified
+        // The refresher may have completed (and notified) before or at the moment we woke up => return the fresh token
         if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
             && is_token_valid(exp_time)
         {
             return Ok(token_str.clone());
+        }
+
+        if wait_result.timed_out() && state.is_refreshing_token {
+            log::warn!("Timed out waiting for a token refresh to complete");
+            return Err(SynchronizationError::Timeout(
+                "Timed out waiting for token refresh".to_string(),
+            ));
         }
     }
 
