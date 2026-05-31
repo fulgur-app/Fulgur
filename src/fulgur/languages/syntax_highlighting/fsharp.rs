@@ -56,23 +56,9 @@ const FSHARP_HIGHLIGHTS_QUERY: &str = r##"
 (attribute) @attribute
 
 [
-  (type_name type_name: (_))
   (_type)
   (atomic_type)
 ] @type
-
-(function_declaration_left . (_) @function)
-
-(member_defn
-  (method_or_prop_defn
-    (property_or_ident) @function))
-
-(application_expression . (_) @function)
-
-(field_initializer field: (_) @property)
-
-(record_fields
-  (record_field . (identifier) @property))
 
 (value_declaration_left . (_) @variable)
 
@@ -167,8 +153,6 @@ const FSHARP_HIGHLIGHTS_QUERY: &str = r##"
   "in"
   "do"
   "do!"
-  "event"
-  "field"
   "fun"
   "function"
   "get"
@@ -176,8 +160,6 @@ const FSHARP_HIGHLIGHTS_QUERY: &str = r##"
   "lazy"
   "new"
   "of"
-  "param"
-  "property"
   "struct"
   "val"
   "module"
@@ -203,27 +185,11 @@ const FSHARP_HIGHLIGHTS_QUERY: &str = r##"
   (union_type_case)
 ] @constant
 
-(rules
-  (rule
-    pattern: (_) @constant
-    block: (_)))
-
-(identifier_pattern
-  .
-  (_) @constant
-  .
-  (_) @variable)
-
-(ce_expression
-  .
-  (_) @constant)
+(type_name type_name: (_)) @type
 
 (named_module name: (_) @type)
 (namespace name: (_) @type)
-(module_defn . (_) @type)
 (import_decl . (_) @type)
-
-(dot_expression base: (_)? @type)
 
 ((_type
   (long_identifier (identifier) @type))
@@ -234,6 +200,8 @@ const FSHARP_HIGHLIGHTS_QUERY: &str = r##"
 
 #[cfg(test)]
 mod tests {
+    use gpui_component::highlighter::SyntaxHighlighter;
+
     #[test]
     fn test_add_fsharp_support_registers_language() {
         super::add_fsharp_support();
@@ -242,5 +210,12 @@ mod tests {
                 .language("fsharp")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn test_fsharp_highlights_query_compiles() {
+        super::add_fsharp_support();
+        let highlighter = SyntaxHighlighter::new("fsharp");
+        assert_eq!(highlighter.language().as_ref(), "fsharp");
     }
 }

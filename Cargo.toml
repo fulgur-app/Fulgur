@@ -39,30 +39,31 @@ lsp-types = "0.97"
 
 # Serialization
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 
 # Cryptography & security
 base64 = "0.22.1"
-age = "0.11.2"
+age = "0.11.3"
 zeroize = "1.8.2"
-sha2 = "0.10.9"
-sha1 = "0.10.6"
-hmac = "0.12.1"
+sha2 = "0.11.0"
+sha1 = "0.11.0"
+hmac = "0.13.0"
+hex = "0.4.3"
 ssh-key = { version = "0.6.7", features = ["std"] }
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "linux-native"] }
 
 # Networking
-ureq = { version = "3.2.0", features = ["json"] }
+ureq = { version = "3.3.0", features = ["json"] }
 ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 
 # Encoding
-chardetng = "0.1.17"
+chardetng = "1.0.0"
 encoding_rs = "0.8.35"
 urlencoding = "2.1.3"
 url = "2.5.8"
 
 # Logging
-log = "0.4.29"
+log = "0.4.30"
 
 # Time
 time = { version = "0.3.47", features = ["serde", "macros", "formatting", "parsing"] }
@@ -78,52 +79,52 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component", feature
 
 # Filesystem
 notify = "8.2.0"
-open = "5.3.3"
+open = "5.3.5"
 flate2 = "1.1.9"
 
 # Security - forcing minimum versions for transitive dependencies
 # Fix RUSTSEC-2026-0007: Integer overflow in BytesMut::reserve
 bytes = "1.11.1"
 # Fix RUSTSEC-2026-0098/0099: Name constraint bypass in rustls-webpki
-rustls-webpki = "0.103.12"
+rustls-webpki = "0.103.13"
 
 # Tree-sitter languages
-arborium-ada = "2.15.0"
-arborium-asm = "2.16.0"
-arborium-c = "2.15.0"
-arborium-clojure = "2.15.0"
-arborium-d = "2.15.0"
-arborium-dart = "2.15.0"
-arborium-erlang = "2.15.0"
-arborium-groovy = "2.15.0"
-arborium-jinja2 = "2.16.0"
-arborium-julia = "2.16.0"
-arborium-matlab = "2.16.0"
-arborium-ini = "2.15.0"
-arborium-objc = "2.14.0"
-arborium-prolog = "2.15.0"
-arborium-scss = "2.14.0"
-arborium-tsx= "2.14.0"
-arborium-vue = "2.14.0"
-arborium-dockerfile = "2.15.0"
+arborium-ada = "2.17.0"
+arborium-asm = "2.17.0"
+arborium-c = "2.17.0"
+arborium-clojure = "2.17.0"
+arborium-d = "2.17.0"
+arborium-dart = "2.17.0"
+arborium-erlang = "2.17.0"
+arborium-groovy = "2.17.0"
+arborium-jinja2 = "2.17.0"
+arborium-julia = "2.17.0"
+arborium-matlab = "2.17.0"
+arborium-ini = "2.17.0"
+arborium-objc = "2.17.0"
+arborium-prolog = "2.17.0"
+arborium-scss = "2.17.0"
+arborium-tsx= "2.17.0"
+arborium-vue = "2.17.0"
+arborium-dockerfile = "2.17.0"
 tree-sitter-haskell = "0.23.1"
-tree-sitter-ocaml = "0.24.2"
+tree-sitter-ocaml = "0.25.0"
 tree-sitter-pascal = "0.10.2"
 tree-sitter-perl-next = "0.1.0"
-tree-sitter-powershell = "0.26.3"
-tree-sitter-fortran = "0.5.1"
-tree-sitter-fsharp = "0.1.0"
+tree-sitter-powershell = "0.26.4"
+tree-sitter-fortran = "0.6.0"
+tree-sitter-fsharp = "0.3.0"
 tree-sitter-r = "1.2.0"
 
 # Others
 rust-embed = "8.11.0"
 regex = "1.12.3"
 ropey = "=2.0.0-beta.1"
-semver = "1.0.27"
+semver = "1.0.28"
 parking_lot = "0.12.5"
 color-lsp = "0.2.0"
-flexi_logger = "0.31.8"
-uuid = { version = "1.22.0", features = ["v4"] }
+flexi_logger = "0.31.9"
+uuid = { version = "1.23.2", features = ["v4"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6.1"
@@ -140,10 +141,10 @@ windows = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
-tempfile = "3.26.0"
+tempfile = "3.27.0"
 
 [build-dependencies]
-embed-resource = "3.0.6"
+embed-resource = "3.0.9"
 
 
 # Builds the dependencies with optimisations even during debug builds, commented by default

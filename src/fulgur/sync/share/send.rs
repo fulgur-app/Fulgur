@@ -160,7 +160,7 @@ pub fn share_file(
     let deduplication_hash = if profile.is_deduplication {
         request.file_path.as_ref().map(|path| {
             let hash = Sha256::digest(path.to_string_lossy().as_bytes());
-            format!("{hash:x}")
+            hex::encode(hash)
         })
     } else {
         None

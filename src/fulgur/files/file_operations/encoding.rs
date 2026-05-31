@@ -1,5 +1,5 @@
 use crate::fulgur::ui::components_utils::UTF_8;
-use chardetng::EncodingDetector;
+use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 
 /// Detect encoding from file bytes
 ///
@@ -13,9 +13,9 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> (String, String) {
         log::debug!("File encoding detected as UTF-8");
         return (UTF_8.to_string(), text.to_string());
     }
-    let mut detector = EncodingDetector::new();
+    let mut detector = EncodingDetector::new(Iso2022JpDetection::Allow);
     detector.feed(bytes, true);
-    let encoding = detector.guess(None, true);
+    let encoding = detector.guess(None, Utf8Detection::Allow);
     let (decoded, _, had_errors) = encoding.decode(bytes);
     let encoding_name = if had_errors {
         if let Ok(text) = std::str::from_utf8(bytes) {
