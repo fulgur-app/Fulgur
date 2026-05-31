@@ -1,6 +1,6 @@
 use super::error::SshError;
 use super::url::RemoteSpec;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use ssh_key::{
