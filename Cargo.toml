@@ -57,7 +57,7 @@ ureq = { version = "3.3.0", features = ["json"] }
 ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 
 # Encoding
-chardetng = "0.1.17"
+chardetng = "1.0.0"
 encoding_rs = "0.8.35"
 urlencoding = "2.1.3"
 url = "2.5.8"
