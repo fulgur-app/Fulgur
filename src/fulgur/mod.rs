@@ -345,7 +345,7 @@ impl Fulgur {
     /// - `settings`: The application settings (already loaded and resolved, including first-run overrides)
     pub fn init(cx: &mut App, settings: &mut Settings) {
         let recent_files = settings.get_recent_files();
-        //languages::supported_languages::register_external_languages();
+        languages::supported_languages::register_external_languages();
         themes::init(settings, cx, move |cx| {
             cx.bind_keys(build_default_key_bindings());
             let menus = build_menus(&recent_files, None);
