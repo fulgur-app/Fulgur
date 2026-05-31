@@ -141,16 +141,23 @@ const FORTRAN_HIGHLIGHTS_QUERY: &str = r#"
  ] @operator
 
 [
- "\\.and\\."
- "\\.or\\."
- "\\.lt\\."
- "\\.gt\\."
- "\\.ge\\."
- "\\.le\\."
- "\\.eq\\."
- "\\.eqv\\."
- "\\.neqv\\."
+ ".and."
+ ".or."
+ ".lt."
+ ".gt."
+ ".ge."
+ ".le."
+ ".eq."
+ ".ne."
+ ".not."
+ ".eqv."
+ ".neqv."
  ] @operator
+
+[
+ ".true."
+ ".false."
+ ] @boolean
 
 [
  "("
