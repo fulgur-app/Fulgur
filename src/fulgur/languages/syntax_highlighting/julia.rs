@@ -395,4 +395,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_julia_highlights_query_compiles() {
+        super::add_julia_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("julia");
+        assert_eq!(highlighter.language().as_ref(), "julia");
+    }
 }

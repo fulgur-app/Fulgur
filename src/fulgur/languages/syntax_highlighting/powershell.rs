@@ -27,4 +27,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_powershell_highlights_query_compiles() {
+        super::add_powershell_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("powershell");
+        assert_eq!(highlighter.language().as_ref(), "powershell");
+    }
 }

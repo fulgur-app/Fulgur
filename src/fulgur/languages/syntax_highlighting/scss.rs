@@ -133,4 +133,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_scss_highlights_query_compiles() {
+        super::add_scss_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("scss");
+        assert_eq!(highlighter.language().as_ref(), "scss");
+    }
 }

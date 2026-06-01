@@ -234,4 +234,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_fortran_highlights_query_compiles() {
+        super::add_fortran_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("fortran");
+        assert_eq!(highlighter.language().as_ref(), "fortran");
+    }
 }

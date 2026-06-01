@@ -112,4 +112,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_asm_highlights_query_compiles() {
+        super::add_asm_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("asm");
+        assert_eq!(highlighter.language().as_ref(), "asm");
+    }
 }

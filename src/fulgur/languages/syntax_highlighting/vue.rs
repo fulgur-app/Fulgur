@@ -32,4 +32,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_vue_highlights_query_compiles() {
+        super::add_vue_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("vue");
+        assert_eq!(highlighter.language().as_ref(), "vue");
+    }
 }

@@ -26,4 +26,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_ini_highlights_query_compiles() {
+        super::add_ini_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("ini");
+        assert_eq!(highlighter.language().as_ref(), "ini");
+    }
 }

@@ -27,4 +27,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_r_highlights_query_compiles() {
+        super::add_r_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("r");
+        assert_eq!(highlighter.language().as_ref(), "r");
+    }
 }

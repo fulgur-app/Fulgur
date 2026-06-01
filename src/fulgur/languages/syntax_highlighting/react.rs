@@ -32,4 +32,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_react_highlights_query_compiles() {
+        super::add_react_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("react");
+        assert_eq!(highlighter.language().as_ref(), "react");
+    }
 }

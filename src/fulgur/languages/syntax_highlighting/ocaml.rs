@@ -27,4 +27,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_ocaml_highlights_query_compiles() {
+        super::add_ocaml_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("ocaml");
+        assert_eq!(highlighter.language().as_ref(), "ocaml");
+    }
 }

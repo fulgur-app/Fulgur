@@ -284,4 +284,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_objective_c_highlights_query_compiles() {
+        super::add_objective_c_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("objective-c");
+        assert_eq!(highlighter.language().as_ref(), "objective-c");
+    }
 }
