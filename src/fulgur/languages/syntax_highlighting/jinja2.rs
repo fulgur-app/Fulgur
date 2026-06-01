@@ -67,4 +67,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_jinja2_highlights_query_compiles() {
+        super::add_jinja2_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("jinja2");
+        assert_eq!(highlighter.language().as_ref(), "jinja2");
+    }
 }

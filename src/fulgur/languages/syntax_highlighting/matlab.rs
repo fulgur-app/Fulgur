@@ -175,4 +175,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_matlab_highlights_query_compiles() {
+        super::add_matlab_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("matlab");
+        assert_eq!(highlighter.language().as_ref(), "matlab");
+    }
 }

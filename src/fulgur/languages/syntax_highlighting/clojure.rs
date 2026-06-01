@@ -112,4 +112,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_clojure_highlights_query_compiles() {
+        super::add_clojure_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("clojure");
+        assert_eq!(highlighter.language().as_ref(), "clojure");
+    }
 }
