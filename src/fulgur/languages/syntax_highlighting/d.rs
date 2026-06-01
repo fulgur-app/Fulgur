@@ -26,4 +26,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_d_highlights_query_compiles() {
+        super::add_d_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("d");
+        assert_eq!(highlighter.language().as_ref(), "d");
+    }
 }

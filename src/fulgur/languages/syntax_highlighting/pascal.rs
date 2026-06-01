@@ -29,4 +29,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_pascal_highlights_query_compiles() {
+        super::add_pascal_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("pascal");
+        assert_eq!(highlighter.language().as_ref(), "pascal");
+    }
 }

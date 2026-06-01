@@ -139,4 +139,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_ada_highlights_query_compiles() {
+        super::add_ada_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("ada");
+        assert_eq!(highlighter.language().as_ref(), "ada");
+    }
 }

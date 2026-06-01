@@ -27,4 +27,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_dockerfile_highlights_query_compiles() {
+        super::add_dockerfile_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("dockerfile");
+        assert_eq!(highlighter.language().as_ref(), "dockerfile");
+    }
 }

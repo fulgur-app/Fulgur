@@ -26,4 +26,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_erlang_highlights_query_compiles() {
+        super::add_erlang_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("erlang");
+        assert_eq!(highlighter.language().as_ref(), "erlang");
+    }
 }

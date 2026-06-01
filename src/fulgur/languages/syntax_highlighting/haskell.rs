@@ -27,4 +27,11 @@ mod tests {
                 .is_some()
         );
     }
+
+    #[test]
+    fn test_haskell_highlights_query_compiles() {
+        super::add_haskell_support();
+        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("haskell");
+        assert_eq!(highlighter.language().as_ref(), "haskell");
+    }
 }
