@@ -19,17 +19,26 @@
 //! - Windows: Windows Credential Manager
 //! - Linux: Secret Service API (libsecret/gnome-keyring)
 
-use fulgur::fulgur::utils::crypto_helper::{generate_key_pair, serialize};
-use keyring::Entry;
+use fulgur::fulgur::utils::crypto_helper::{generate_key_pair, init_keychain_backend, serialize};
+use keyring_core::Entry;
 
 // Test-specific service name to isolate from production
 const TEST_SERVICE_NAME: &str = "FulgurTest";
+
+/// Ensure the platform keychain backend is registered before the test runs.
+///
+/// `keyring-core` requires a default credential store to be installed before
+/// any `Entry` is created; this installs the native backend exactly once.
+fn ensure_backend() {
+    init_keychain_backend().expect("keychain backend should be available for integration tests");
+}
 
 /// Clean up test keychain entries
 ///
 /// ### Arguments
 /// - `entry_name`: The name of the keychain entry to clean up
 fn cleanup_keychain_entry(entry_name: &str) {
+    ensure_backend();
     if let Ok(entry) = Entry::new(TEST_SERVICE_NAME, entry_name) {
         let _ = entry.delete_credential();
     }
@@ -45,6 +54,7 @@ fn cleanup_keychain_entry(entry_name: &str) {
 /// - `Ok(())`: If the value was saved successfully
 /// - `Err(anyhow::Error)`: If the save failed
 fn save_to_test_keychain(entry_name: &str, value: &str) -> anyhow::Result<()> {
+    ensure_backend();
     let entry = Entry::new(TEST_SERVICE_NAME, entry_name)?;
     entry.set_password(value)?;
     Ok(())
@@ -60,10 +70,11 @@ fn save_to_test_keychain(entry_name: &str, value: &str) -> anyhow::Result<()> {
 /// - `Ok(None)`: If the entry doesn't exist
 /// - `Err(anyhow::Error)`: If the load failed
 fn load_from_test_keychain(entry_name: &str) -> anyhow::Result<Option<String>> {
+    ensure_backend();
     let entry = Entry::new(TEST_SERVICE_NAME, entry_name)?;
     match entry.get_password() {
         Ok(value) => Ok(Some(value)),
-        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(keyring_core::Error::NoEntry) => Ok(None),
         Err(e) => Err(anyhow::anyhow!("Failed to load from keychain: {e}")),
     }
 }

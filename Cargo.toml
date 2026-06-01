@@ -50,7 +50,7 @@ sha1 = "0.11.0"
 hmac = "0.13.0"
 hex = "0.4.3"
 ssh-key = { version = "0.6.7", features = ["std"] }
-keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "linux-native"] }
+keyring-core = "1.0.0"
 
 # Networking
 ureq = { version = "3.3.0", features = ["json"] }
@@ -129,7 +129,14 @@ uuid = { version = "1.23.2", features = ["v4"] }
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6.1"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1.0.0", features = ["keychain"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service-keyring-store = { version = "1.0.0", features = ["crypto-rust"] }
+
 [target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = "1.1.0"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_System_Com",

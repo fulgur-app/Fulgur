@@ -102,6 +102,28 @@ Both must be on your `PATH` before running `cargo build`.
 
 #### Linux
 
+**System libraries**
+
+Fulgur stores its end-to-end encryption keys in the system keychain through the Secret Service API (GNOME Keyring, KWallet, or any compatible provider). Building the Linux version therefore requires the D-Bus development headers in addition to the usual GUI libraries:
+
+On Ubuntu/Debian:
+
+```sh
+sudo apt install \
+  libdbus-1-dev pkg-config libssl-dev \
+  libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
+  libfontconfig1-dev libfreetype6-dev \
+  libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+```
+
+On Fedora/RHEL: `sudo dnf install dbus-devel pkgconf-pkg-config openssl-devel libxcb-devel libxkbcommon-devel libxkbcommon-x11-devel fontconfig-devel freetype-devel`
+
+On Arch: `sudo pacman -S dbus pkgconf openssl libxcb libxkbcommon libxkbcommon-x11 fontconfig freetype2`
+
+At runtime a Secret Service provider (for example GNOME Keyring or KWallet) must be running and unlocked for synchronization key storage to work.
+
+**Linker**
+
 Fulgur uses `mold` as the linker on Linux to reduce memory usage during compilation. You have two options:
 
 **Option 1: Install clang and mold**
