@@ -4,11 +4,14 @@ use age::{
     x25519::{Identity, Recipient},
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use keyring::Entry;
+use keyring_core::Entry;
 use std::{
     collections::HashMap,
     ffi::OsStr,
-    sync::{Mutex, OnceLock},
+    sync::{
+        Mutex, Once, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use zeroize::Zeroizing;
 
@@ -17,6 +20,71 @@ const PRIVATE_KEY_PREFIX: &str = "private_key";
 const DEVICE_API_KEY_PREFIX: &str = "device_api_key";
 
 const SERVICE_NAME: &str = "Fulgur";
+
+/// Registers the platform credential store as the `keyring-core` default.
+///
+/// ### Errors
+/// Returns an error if the platform store cannot be created or the current
+/// platform has no supported native store.
+///
+/// ### Returns
+/// - `Ok(())`: The default store was registered.
+/// - `Err(anyhow::Error)`: The store could not be created or is unsupported.
+#[cfg(target_os = "macos")]
+fn register_platform_store() -> anyhow::Result<()> {
+    let store = apple_native_keyring_store::keychain::Store::new()
+        .map_err(|e| anyhow::anyhow!("Failed to create macOS keychain store: {e}"))?;
+    keyring_core::set_default_store(store);
+    Ok(())
+}
+
+/// See the macOS variant of [`register_platform_store`].
+#[cfg(target_os = "windows")]
+fn register_platform_store() -> anyhow::Result<()> {
+    let store = windows_native_keyring_store::Store::new()
+        .map_err(|e| anyhow::anyhow!("Failed to create Windows credential store: {e}"))?;
+    keyring_core::set_default_store(store);
+    Ok(())
+}
+
+/// See the macOS variant of [`register_platform_store`].
+#[cfg(target_os = "linux")]
+fn register_platform_store() -> anyhow::Result<()> {
+    let store = dbus_secret_service_keyring_store::store::Store::new()
+        .map_err(|e| anyhow::anyhow!("Failed to create Linux Secret Service store: {e}"))?;
+    keyring_core::set_default_store(store);
+    Ok(())
+}
+
+/// See the macOS variant of [`register_platform_store`].
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn register_platform_store() -> anyhow::Result<()> {
+    Err(anyhow::anyhow!(
+        "No native keychain backend is available for this platform"
+    ))
+}
+
+/// Ensures the platform credential store is registered exactly once.
+///
+/// ### Errors
+/// Returns an error if the platform store could not be registered.
+///
+/// ### Returns
+/// - `Ok(())`: The default store is registered and ready.
+/// - `Err(anyhow::Error)`: The default store could not be registered.
+pub fn init_keychain_backend() -> anyhow::Result<()> {
+    static STORE_INIT: Once = Once::new();
+    static INIT_OK: AtomicBool = AtomicBool::new(false);
+    STORE_INIT.call_once(|| match register_platform_store() {
+        Ok(()) => INIT_OK.store(true, Ordering::SeqCst),
+        Err(e) => log::error!("Failed to register keychain backend: {e}"),
+    });
+    if INIT_OK.load(Ordering::SeqCst) {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Keychain backend is not available"))
+    }
+}
 
 /// Build the keychain user string for a profile's private key entry.
 ///
@@ -229,6 +297,7 @@ fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> anyhow::Result
     if should_use_in_memory_keychain() {
         return save_or_remove_to_in_memory_keychain(user, value);
     }
+    init_keychain_backend()?;
     let entry = Entry::new(SERVICE_NAME, user)?;
     if let Some(value) = value
         && !value.is_empty()
@@ -237,7 +306,7 @@ fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> anyhow::Result
         return Ok(());
     }
     match entry.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
         Err(e) => Err(anyhow::anyhow!(
             "Failed to remove '{user}' from keychain: {e}"
         )),
@@ -372,6 +441,7 @@ fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
     if should_use_in_memory_keychain() {
         return load_from_in_memory_keychain(user);
     }
+    init_keychain_backend()?;
     let entry = Entry::new(SERVICE_NAME, user)?;
     match entry.get_password() {
         Ok(value) if value.is_empty() => {
@@ -381,14 +451,14 @@ fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
                 "Keychain entry '{user}' is empty; treating as missing and removing stale credential"
             );
             match entry.delete_credential() {
-                Ok(()) | Err(keyring::Error::NoEntry) => Ok(None),
+                Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(None),
                 Err(e) => Err(anyhow::anyhow!(
                     "Failed to clean up empty '{user}' keychain entry: {e}"
                 )),
             }
         }
         Ok(value) => Ok(Some(value)),
-        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(keyring_core::Error::NoEntry) => Ok(None),
         Err(e) => Err(anyhow::anyhow!(
             "Failed to load '{user}' from keychain: {e}"
         )),
