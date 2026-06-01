@@ -191,8 +191,7 @@ const FSHARP_HIGHLIGHTS_QUERY: &str = r##"
 (namespace name: (_) @type)
 (import_decl . (_) @type)
 
-((_type
-  (long_identifier (identifier) @type))
+((long_identifier (identifier) @type)
  (#any-of? @type "bool" "byte" "sbyte" "int16" "uint16" "int" "uint" "int64" "uint64"
            "nativeint" "unativeint" "decimal" "float" "double" "float32" "single"
            "char" "string" "unit"))

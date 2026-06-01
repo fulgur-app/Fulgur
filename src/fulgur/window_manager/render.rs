@@ -13,7 +13,9 @@ impl Fulgur {
     /// - `window`: The window being rendered
     /// - `cx`: The application context
     pub fn process_window_state_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let display_id = window.display(cx).map(|d| d.id().into());
+        let display_id = window
+            .display(cx)
+            .and_then(|d| u32::try_from(u64::from(d.id())).ok());
         self.cached_window_bounds =
             Some(state_persistence::SerializedWindowBounds::from_gpui_bounds(
                 window.window_bounds(),

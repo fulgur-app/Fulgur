@@ -302,10 +302,7 @@ fn create_window(
         cx.update(|cx| {
             cx.displays()
                 .into_iter()
-                .find(|display| {
-                    let display_id_u32: u32 = display.id().into();
-                    display_id_u32 == saved_id
-                })
+                .find(|display| u64::from(display.id()) == u64::from(saved_id))
                 .map(|display| display.id())
         })
     } else {

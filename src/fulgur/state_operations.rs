@@ -465,7 +465,9 @@ impl Fulgur {
     /// ### Returns
     /// - `WindowState`: The `WindowState` for this window
     pub fn build_window_state(&self, cx: &App, window: &Window) -> WindowState {
-        let display_id = window.display(cx).map(|d| d.id().into());
+        let display_id = window
+            .display(cx)
+            .and_then(|d| u32::try_from(u64::from(d.id())).ok());
         let window_bounds =
             SerializedWindowBounds::from_gpui_bounds(window.window_bounds(), display_id);
         WindowState {
