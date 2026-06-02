@@ -1,0 +1,68 @@
+name: Manual Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Target platform to run cargo test on'
+        type: choice
+        required: true
+        default: ubuntu-latest
+        options:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test - ${{ inputs.platform }}
+    runs-on: ${{ inputs.platform }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          # Free pre-installed tool directories that the build does not use.
+          # Android SDK (~8 GB), .NET (~1.7 GB), GHC (~1.4 GB), CodeQL (~5 GB).
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get update
+          sudo apt-get install -y \
+            mold \
+            libdbus-1-dev \
+            pkg-config \
+            libssl-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+
+      # ssh2 vendored-openssl requires NASM and Perl to compile OpenSSL from source on Windows
+      - name: Install NASM (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
+
+      - name: Install Perl (Windows)
+        if: runner.os == 'Windows'
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ inputs.platform }}-cargo
+
+      - name: Run tests
+        run: cargo test --all-features
