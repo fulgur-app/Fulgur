@@ -112,8 +112,9 @@ impl Fulgur {
                         );
                         return false;
                     }
-                    let password_str = password_input_inner.read(cx).value().to_string();
-                    if password_str.is_empty() {
+                    let password =
+                        Zeroizing::new(password_input_inner.read(cx).value().to_string());
+                    if password.is_empty() {
                         window.push_notification(
                             (
                                 NotificationType::Error,
@@ -123,7 +124,7 @@ impl Fulgur {
                         );
                         return false;
                     }
-                    on_confirm_inner(username, Zeroizing::new(password_str), window, cx);
+                    on_confirm_inner(username, password, window, cx);
                     true
                 })
                 .on_cancel(|_, _, _| true)
