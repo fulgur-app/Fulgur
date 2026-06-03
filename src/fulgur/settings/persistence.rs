@@ -179,20 +179,15 @@ impl Settings {
                 );
                 profile.server_url = None;
             }
-            if let Some(ref email) = profile.email.clone() {
-                let trimmed = email.trim();
-                let at_pos = trimmed.find('@');
-                let is_valid = at_pos.is_some_and(|pos| {
-                    pos > 0 && pos < trimmed.len() - 1 && trimmed[pos + 1..].contains('.')
-                });
-                if !is_valid {
-                    log::warn!(
-                        "Invalid email for profile '{}', clearing: {}",
-                        profile.name,
-                        email
-                    );
-                    profile.email = None;
-                }
+            if let Some(ref email) = profile.email.clone()
+                && !is_valid_email(email.trim())
+            {
+                log::warn!(
+                    "Invalid email for profile '{}', clearing: {}",
+                    profile.name,
+                    email
+                );
+                profile.email = None;
             }
         }
     }
@@ -283,4 +278,53 @@ fn json_has_legacy_synchronization_shape(json: &str) -> bool {
         || sync.get("email").is_some()
         || sync.get("public_key").is_some()
         || sync.get("is_deduplication").is_some()
+}
+
+/// Check whether a string is a plausibly-valid email address.
+///
+/// ### Arguments
+/// - `email`: The candidate email address (already trimmed by the caller).
+///
+/// ### Returns
+/// - `true`: The address passes the structural checks.
+/// - `false`: The address is empty, malformed, or contains whitespace.
+fn is_valid_email(email: &str) -> bool {
+    if email.chars().any(char::is_whitespace) {
+        return false;
+    }
+    let Some((local, domain)) = email.split_once('@') else {
+        return false;
+    };
+    if local.is_empty() || domain.contains('@') {
+        return false;
+    }
+    let mut labels = domain.split('.');
+    labels.clone().count() >= 2 && labels.all(|label| !label.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_email;
+
+    #[test]
+    fn accepts_well_formed_addresses() {
+        assert!(is_valid_email("user@example.com"));
+        assert!(is_valid_email("first.last@sub.example.co.uk"));
+        assert!(is_valid_email("a@b.io"));
+    }
+
+    #[test]
+    fn rejects_malformed_addresses() {
+        assert!(!is_valid_email(""));
+        assert!(!is_valid_email("plainaddress"));
+        assert!(!is_valid_email("@example.com"));
+        assert!(!is_valid_email("user@"));
+        assert!(!is_valid_email("user@.com"));
+        assert!(!is_valid_email("user@exam."));
+        assert!(!is_valid_email("user@example"));
+        assert!(!is_valid_email("user@exam ple.com"));
+        assert!(!is_valid_email("us er@example.com"));
+        assert!(!is_valid_email("user@@example.com"));
+        assert!(!is_valid_email("user@host@example.com"));
+    }
 }
