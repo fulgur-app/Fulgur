@@ -496,6 +496,15 @@ fn handle_share_file(
     let bundles = build_profile_share_resources(&keys, state, entity, cx);
     if bundles.is_empty() {
         log::warn!("Share aborted: no loaded profiles in selection");
+        window.push_notification(
+            (
+                NotificationType::Warning,
+                SharedString::from(
+                    "No devices available to share with. Wait for the device list to load and try again.",
+                ),
+            ),
+            cx,
+        );
         return;
     }
     let share_context = capture_share_context(entity, cx);
@@ -730,6 +739,15 @@ impl Fulgur {
         let active_profiles = self.collect_active_profiles();
         if active_profiles.is_empty() {
             log::warn!("Share aborted: no active profile or master sync is off");
+            window.push_notification(
+                (
+                    NotificationType::Warning,
+                    SharedString::from(
+                        "No active sync profile. Enable a profile in Settings, Synchronization.",
+                    ),
+                ),
+                cx,
+            );
             return;
         }
         if let Some(previous) = self.share_sheet_state.take() {
