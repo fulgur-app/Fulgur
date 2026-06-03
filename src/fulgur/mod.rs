@@ -118,8 +118,7 @@ pub struct Fulgur {
     pub color_picker_bar_state: ColorPickerBarState, // Color picker bar state
     pub jump_to_line_input: Entity<InputState>,      // Input for jumping to a line in the editor
     pending_jump: Option<editor_tab::Jump>,          // Pending jump to line action
-    jump_to_line_dialog_open: bool, // Flag to indicate that the jump to line dialog is open
-    pub settings: Settings,         // The settings for the application (local copy for fast access)
+    pub settings: Settings, // The settings for the application (local copy for fast access)
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
     local_settings_version: u64, // Track the version of settings this window has loaded
     rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
@@ -241,7 +240,6 @@ impl Fulgur {
                 color_picker_bar_state: ColorPickerBarState::new(window, cx),
                 jump_to_line_input,
                 pending_jump: None,
-                jump_to_line_dialog_open: false,
                 settings,
                 settings_changed: false,
                 local_settings_version: 0,
@@ -546,10 +544,6 @@ impl Render for Fulgur {
         self.handle_pending_tab_transfer(window, cx);
         self.handle_pending_tab_removal(window, cx);
         self.handle_pending_jump_to_line(window, cx);
-        if !self.jump_to_line_dialog_open {
-            window.close_dialog(cx);
-            self.jump_to_line_dialog_open = true;
-        }
         self.update_modified_status(cx);
         self.prune_markdown_preview_cache(cx);
         self.process_pending_tab_scroll(cx);
