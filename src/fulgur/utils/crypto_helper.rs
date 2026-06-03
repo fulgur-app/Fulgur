@@ -5,11 +5,12 @@ use age::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use keyring_core::Entry;
+use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     ffi::OsStr,
     sync::{
-        Mutex, Once, OnceLock,
+        Once, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -193,14 +194,8 @@ fn in_memory_key(user: &str) -> String {
 /// ### Arguments
 /// - `user`: The keychain entry name.
 /// - `value`: The value to save.
-///
-/// ### Returns
-/// - `Ok(())`: The in-memory operation succeeded.
-/// - `Err(anyhow::Error)`: The in-memory store lock failed.
-fn save_or_remove_to_in_memory_keychain(user: &str, value: Option<&str>) -> anyhow::Result<()> {
-    let mut keychain = in_memory_keychain()
-        .lock()
-        .map_err(|_| anyhow::anyhow!("Failed to lock in-memory keychain"))?;
+fn save_or_remove_to_in_memory_keychain(user: &str, value: Option<&str>) {
+    let mut keychain = in_memory_keychain().lock();
     let key = in_memory_key(user);
     if let Some(value) = value
         && !value.is_empty()
@@ -209,7 +204,6 @@ fn save_or_remove_to_in_memory_keychain(user: &str, value: Option<&str>) -> anyh
     } else {
         keychain.remove(&key);
     }
-    Ok(())
 }
 
 /// Loads a value from the in-memory keychain backend.
@@ -218,14 +212,11 @@ fn save_or_remove_to_in_memory_keychain(user: &str, value: Option<&str>) -> anyh
 /// - `user`: The keychain entry name.
 ///
 /// ### Returns
-/// - `Ok(Some(String))`: The value exists.
-/// - `Ok(None)`: The value does not exist.
-/// - `Err(anyhow::Error)`: The in-memory store lock failed.
-fn load_from_in_memory_keychain(user: &str) -> anyhow::Result<Option<String>> {
-    let keychain = in_memory_keychain()
-        .lock()
-        .map_err(|_| anyhow::anyhow!("Failed to lock in-memory keychain"))?;
-    Ok(keychain.get(&in_memory_key(user)).cloned())
+/// - `Some(String)`: The value exists.
+/// - `None`: The value does not exist.
+fn load_from_in_memory_keychain(user: &str) -> Option<String> {
+    let keychain = in_memory_keychain().lock();
+    keychain.get(&in_memory_key(user)).cloned()
 }
 
 /// Generate a matching pair of private/public keys
@@ -295,7 +286,8 @@ pub fn save_device_api_key_to_keychain(
 /// - `Err(anyhow::Error)`: If the value could not be saved
 fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> anyhow::Result<()> {
     if should_use_in_memory_keychain() {
-        return save_or_remove_to_in_memory_keychain(user, value);
+        save_or_remove_to_in_memory_keychain(user, value);
+        return Ok(());
     }
     init_keychain_backend()?;
     let entry = Entry::new(SERVICE_NAME, user)?;
@@ -439,7 +431,7 @@ pub fn migrate_legacy_keychain_entries_if_present(settings: &Settings) -> anyhow
 /// - `Err(anyhow::Error)`: If the value could not be loaded
 fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
     if should_use_in_memory_keychain() {
-        return load_from_in_memory_keychain(user);
+        return Ok(load_from_in_memory_keychain(user));
     }
     init_keychain_backend()?;
     let entry = Entry::new(SERVICE_NAME, user)?;
