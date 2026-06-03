@@ -13,6 +13,9 @@ use std::time::{Duration, Instant, SystemTime};
 /// Bound for the file watch event channel.
 const FILE_WATCH_EVENT_CHANNEL_CAPACITY: usize = 256;
 
+/// Maximum time a Linux inotify rename `From` event waits for its matching `To` before it is treated as a deletion.
+const PENDING_RENAME_TIMEOUT: Duration = Duration::from_millis(500);
+
 /// File watching state for external file change detection
 pub struct FileWatchState {
     pub file_watcher: Option<FileWatcher>,
@@ -62,7 +65,7 @@ pub struct FileWatcher {
     event_tx: SyncSender<FileWatchEvent>,
     /// Pending rename source path for Linux inotify, which splits rename events
     /// into separate From and To notifications rather than a single two-path event.
-    pending_rename_from: Arc<Mutex<Option<PathBuf>>>,
+    pending_rename_from: Arc<Mutex<Option<(PathBuf, Instant)>>>,
 }
 
 impl FileWatcher {
@@ -121,6 +124,32 @@ impl FileWatcher {
         }
     }
 
+    /// Expire a pending rename `From` that has waited longer than `PENDING_RENAME_TIMEOUT`
+    /// for its matching `To`, emitting it as a `Deleted` event.
+    ///
+    /// ### Arguments
+    /// - `pending_rename_from`: Accumulator holding the `From` path and the instant it was stored
+    /// - `event_tx`: The event sender used to emit the synthesized `Deleted` event
+    fn expire_pending_rename_from(
+        pending_rename_from: &Mutex<Option<(PathBuf, Instant)>>,
+        event_tx: &SyncSender<FileWatchEvent>,
+    ) {
+        let stale = pending_rename_from.lock().ok().and_then(|mut pending| {
+            let is_stale = pending
+                .as_ref()
+                .is_some_and(|(_, stored_at)| stored_at.elapsed() >= PENDING_RENAME_TIMEOUT);
+            if is_stale { pending.take() } else { None }
+        });
+        if let Some((path, _)) = stale {
+            Self::send_event(event_tx, FileWatchEvent::Deleted(path));
+        }
+    }
+
+    /// Flush a stale pending rename `From` if it has exceeded `PENDING_RENAME_TIMEOUT`.
+    pub fn flush_expired_pending_rename(&self) {
+        Self::expire_pending_rename_from(&self.pending_rename_from, &self.event_tx);
+    }
+
     /// Handles a notify event and converts it to a `FileWatchEvent`
     ///
     /// ### Description
@@ -142,9 +171,12 @@ impl FileWatcher {
     fn handle_notify_event(
         event: Event,
         event_tx: &SyncSender<FileWatchEvent>,
-        pending_rename_from: &Mutex<Option<PathBuf>>,
+        pending_rename_from: &Mutex<Option<(PathBuf, Instant)>>,
     ) {
         use notify::event::{ModifyKind, RenameMode};
+
+        // Any incoming event is a chance to flush a From whose matching To never came.
+        Self::expire_pending_rename_from(pending_rename_from, event_tx);
 
         match event.kind {
             EventKind::Modify(ModifyKind::Name(rename_mode)) => {
@@ -158,12 +190,16 @@ impl FileWatcher {
                         RenameMode::From => {
                             // Linux inotify: first half - store and wait for the To event
                             if let Ok(mut pending) = pending_rename_from.lock() {
-                                *pending = Some(event.paths[0].clone());
+                                *pending = Some((event.paths[0].clone(), Instant::now()));
                             }
                         }
                         RenameMode::To => {
                             // Linux inotify: second half - pair with the stored From path
-                            let from = pending_rename_from.lock().ok().and_then(|mut p| p.take());
+                            let from = pending_rename_from
+                                .lock()
+                                .ok()
+                                .and_then(|mut p| p.take())
+                                .map(|(path, _)| path);
                             match from {
                                 Some(from) => {
                                     Self::send_event(
@@ -186,7 +222,7 @@ impl FileWatcher {
                         _ => {
                             // Orphaned or unrecognised single-path rename; flush any pending From
                             if let Ok(mut pending) = pending_rename_from.lock()
-                                && let Some(stale) = pending.take()
+                                && let Some((stale, _)) = pending.take()
                             {
                                 Self::send_event(event_tx, FileWatchEvent::Deleted(stale));
                             }
@@ -433,6 +469,9 @@ impl Fulgur {
     /// - `window`: The window containing the tabs with watched files
     /// - `cx`: The application context
     pub fn process_file_watch_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(watcher) = &self.file_watch_state.file_watcher {
+            watcher.flush_expired_pending_rename();
+        }
         let events = collect_events(&self.file_watch_state.file_watch_events);
         for event in events {
             self.handle_file_watch_event(event, window, cx);
@@ -460,7 +499,7 @@ mod tests {
             Arc, Mutex,
             mpsc::{TryRecvError, sync_channel},
         },
-        time::Instant,
+        time::{Duration, Instant},
     };
     use tempfile::TempDir;
 
@@ -570,6 +609,54 @@ mod tests {
                 to: actual_to
             }) if actual_from == from && actual_to == to
         ));
+    }
+
+    #[gpui::test]
+    fn test_handle_notify_event_expires_stale_pending_rename(_cx: &mut TestAppContext) {
+        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
+        let stale_from = temp_test_path("fulgur_notify_stale_from.txt");
+        let stored_at = Instant::now()
+            .checked_sub(Duration::from_secs(1))
+            .expect("instant subtraction should not underflow");
+        let pending_rename_from = Mutex::new(Some((stale_from.clone(), stored_at)));
+        let unrelated = temp_test_path("fulgur_notify_unrelated_modify.txt");
+        let event = Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
+            .add_path(unrelated.clone());
+        FileWatcher::handle_notify_event(event, &event_tx, &pending_rename_from);
+        assert!(
+            matches!(event_rx.try_recv(), Ok(FileWatchEvent::Deleted(actual)) if actual == stale_from),
+            "a stale pending From should be flushed as Deleted on the next event"
+        );
+        assert!(
+            matches!(event_rx.try_recv(), Ok(FileWatchEvent::Modified(actual)) if actual == unrelated)
+        );
+        assert!(
+            pending_rename_from.lock().expect("lock poisoned").is_none(),
+            "the stale pending From should be cleared after expiry"
+        );
+    }
+
+    #[gpui::test]
+    fn test_flush_expired_pending_rename_emits_deleted(_cx: &mut TestAppContext) {
+        let (watcher, event_rx) = FileWatcher::new();
+        let stale_from = temp_test_path("fulgur_flush_stale_from.txt");
+        let stored_at = Instant::now()
+            .checked_sub(Duration::from_secs(1))
+            .expect("instant subtraction should not underflow");
+        *watcher.pending_rename_from.lock().expect("lock poisoned") =
+            Some((stale_from.clone(), stored_at));
+        watcher.flush_expired_pending_rename();
+        assert!(
+            matches!(event_rx.try_recv(), Ok(FileWatchEvent::Deleted(actual)) if actual == stale_from),
+            "render-loop flush should expire a never-completed rename From"
+        );
+        assert!(
+            watcher
+                .pending_rename_from
+                .lock()
+                .expect("lock poisoned")
+                .is_none()
+        );
     }
 
     #[gpui::test]
