@@ -16,7 +16,6 @@ impl Fulgur {
         });
         let jump_to_line_input = self.jump_to_line_input.clone();
         let entity = cx.entity().clone();
-        self.jump_to_line_dialog_open = true;
         window.open_alert_dialog(cx, move |modal, window, cx| {
             let focus_handle = jump_to_line_input.read(cx).focus_handle(cx);
             window.focus(&focus_handle, cx);
@@ -44,7 +43,6 @@ impl Fulgur {
                     entity_for_ok.update(cx, |this, cx| {
                         if let Ok(jump) = jump_result {
                             this.pending_jump = Some(jump);
-                            this.jump_to_line_dialog_open = false;
                             cx.notify();
                         } else {
                             this.pending_jump = None;
@@ -54,8 +52,7 @@ impl Fulgur {
                     is_ok
                 })
                 .on_cancel(move |_, _, cx| {
-                    entity_for_cancel.update(cx, |this, cx| {
-                        this.jump_to_line_dialog_open = false;
+                    entity_for_cancel.update(cx, |_this, cx| {
                         cx.notify();
                     });
                     true
@@ -104,26 +101,6 @@ mod tests {
             .expect("expected fulgur entity");
         let visual_cx = VisualTestContext::from_window(window.into(), cx);
         (fulgur, visual_cx)
-    }
-
-    // ========== show_jump_to_line_dialog tests ==========
-
-    #[gpui::test]
-    fn test_show_jump_to_line_dialog_sets_open_flag(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        // The render loop resets the flag to true on each render pass, so force it
-        // to false before calling show_jump_to_line_dialog to verify the method sets it.
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.jump_to_line_dialog_open = false;
-                this.show_jump_to_line_dialog(window, cx);
-            });
-        });
-        let after = fulgur.read_with(&visual_cx, |this, _| this.jump_to_line_dialog_open);
-        assert!(
-            after,
-            "show_jump_to_line_dialog should set the open flag to true"
-        );
     }
 
     // ========== handle_pending_jump_to_line tests ==========
