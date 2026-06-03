@@ -23,6 +23,22 @@ pub const MAX_PENDING_SHARES_PER_RESPONSE: usize = 1024;
 /// JSON framing overhead allowance per share (ids, filename, timestamps, quoting, separators).
 pub const JSON_OVERHEAD_PER_SHARE_BYTES: usize = 1024;
 
+/// Extract a human-readable message from a thread panic payload
+///
+/// ### Arguments
+/// - `payload`: The boxed panic payload returned by `JoinHandle::join`
+///
+/// ### Returns
+/// - `String`: The recovered panic message, or a placeholder if the payload is
+///   neither a `&str` nor a `String`
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "<non-string panic payload>".to_string())
+}
+
 /// Encrypt compressed content for a specific device
 ///
 /// ### Arguments
@@ -235,10 +251,13 @@ pub fn share_file(
                 .into_iter()
                 .map(|h| {
                     h.join().unwrap_or_else(|e| {
-                        log::error!("Share thread panicked: {e:?}");
+                        let payload = panic_payload_message(e.as_ref());
+                        log::error!("Share worker thread panicked: {payload}");
                         (
                             String::new(),
-                            Err(SynchronizationError::Other("Internal issue".to_string())),
+                            Err(SynchronizationError::Other(format!(
+                                "Share worker thread panicked: {payload}"
+                            ))),
                         )
                     })
                 })
