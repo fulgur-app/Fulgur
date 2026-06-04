@@ -191,6 +191,11 @@ impl Fulgur {
                             .border_b_1()
                             .border_color(cx.theme().border)
                             .h(TAB_BAR_HEIGHT)
+                            .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                                if event.click_count() == 2 {
+                                    this.new_tab(window, cx);
+                                }
+                            }))
                             .on_drag_move::<DraggedTab>(cx.listener(
                                 |this, event: &DragMoveEvent<DraggedTab>, _window, cx| {
                                     let cursor = event.event.position;
