@@ -45,6 +45,56 @@ impl Fulgur {
         cx.notify();
     }
 
+    /// Return the id of the last tab when it is an empty, unsaved scratch buffer
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some(usize)`: The id of the reusable last editor tab.
+    /// - `None`: If the last tab is missing, not an editor, has a file, or has non-whitespace content.
+    fn reusable_scratch_tab_id(&self, cx: &App) -> Option<usize> {
+        let Tab::Editor(editor) = self.tabs.last()? else {
+            return None;
+        };
+        let is_blank = editor
+            .content
+            .read(cx)
+            .text()
+            .chunks()
+            .all(|chunk| chunk.chars().all(char::is_whitespace));
+        if editor.location.is_untitled() && is_blank {
+            Some(editor.id)
+        } else {
+            None
+        }
+    }
+
+    /// Place a freshly built editor tab, reusing a trailing empty scratch tab
+    ///
+    /// ### Arguments
+    /// - `tab`: The editor tab to place
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `usize`: The index where the tab was placed.
+    pub fn place_editor_tab_reusing_scratch(
+        &mut self,
+        tab: Tab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> usize {
+        if let Some(scratch_id) = self.reusable_scratch_tab_id(cx) {
+            self.remove_tab_by_id(scratch_id, window, cx);
+        }
+        self.tabs.push(tab);
+        let index = self.tabs.len() - 1;
+        self.active_tab_index = Some(index);
+        self.pending_tab_scroll = Some(index);
+        index
+    }
+
     /// Open settings in a new tab or switch to existing settings tab
     ///
     /// ### Arguments

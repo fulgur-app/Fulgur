@@ -959,10 +959,7 @@ impl Fulgur {
                             cx,
                             &self.settings.editor_settings,
                         );
-                        let idx = self.tabs.len();
-                        self.tabs.push(Tab::Editor(editor_tab));
-                        self.active_tab_index = Some(idx);
-                        self.pending_tab_scroll = Some(idx);
+                        self.place_editor_tab_reusing_scratch(Tab::Editor(editor_tab), window, cx);
                         self.next_tab_id += 1;
                         self.focus_active_tab(window, cx);
                         if let Err(e) = self.settings.add_file(PathBuf::from(recent_remote_url)) {
