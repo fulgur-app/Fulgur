@@ -99,6 +99,44 @@ impl Fulgur {
         }
     }
 
+    /// Focus an existing tab for a local path and resolve modified-content conflicts.
+    ///
+    /// ### Arguments
+    /// - `path`: The path being opened again
+    /// - `tab_index`: The index of the existing tab for this path
+    /// - `window`: The active window context
+    /// - `cx`: The application context
+    fn focus_existing_local_tab_for_open(
+        &mut self,
+        path: &Path,
+        tab_index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let is_modified = self
+            .tabs
+            .get(tab_index)
+            .and_then(Tab::as_editor)
+            .is_some_and(|editor_tab| editor_tab.modified);
+
+        if is_modified {
+            log::debug!(
+                "Tab for {} has unsaved changes; asking user which version to keep",
+                path.display()
+            );
+            self.show_reopen_modified_file_dialog(path, tab_index, window, cx);
+        } else {
+            log::debug!(
+                "Tab for {} is already open and not modified; focusing existing tab",
+                path.display()
+            );
+        }
+
+        self.active_tab_index = Some(tab_index);
+        self.focus_active_tab(window, cx);
+        cx.notify();
+    }
+
     /// Internal helper function to open a file from a path. This function handles reading the file, detecting encoding, and creating the editor tab
     ///
     /// ### Arguments
@@ -203,19 +241,10 @@ impl Fulgur {
                     view.update(cx, |this, cx| {
                         if let Some(tab_index) = this.find_tab_by_path(&path) {
                             log::debug!(
-                                "Tab already exists for {} at index {tab_index}, focusing and reloading", path.display()
+                                "Tab already exists for {} at index {tab_index}, focusing existing tab",
+                                path.display()
                             );
-                            if let Some(Tab::Editor(editor_tab)) = this.tabs.get(tab_index) {
-                                if editor_tab.modified {
-                                    log::debug!("Tab is modified, reloading content from disk");
-                                    this.reload_tab_from_disk(tab_index, window, cx);
-                                } else {
-                                    log::debug!("Tab is not modified, just focusing it");
-                                }
-                            }
-                            this.active_tab_index = Some(tab_index);
-                            this.focus_active_tab(window, cx);
-                            cx.notify();
+                            this.focus_existing_local_tab_for_open(&path, tab_index, window, cx);
                             false // Don't open new tab
                         } else {
                             true // Open new tab
@@ -246,20 +275,10 @@ impl Fulgur {
     pub fn do_open_file(&mut self, window: &mut Window, cx: &mut Context<Self>, path: PathBuf) {
         if let Some(tab_index) = self.find_tab_by_path(&path) {
             log::debug!(
-                "Tab already exists for {} at index {tab_index}, focusing and reloading if modified",
+                "Tab already exists for {} at index {tab_index}, focusing existing tab",
                 path.display()
             );
-            if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
-                if editor_tab.modified {
-                    log::debug!("Tab is modified, reloading content from disk");
-                    self.reload_tab_from_disk(tab_index, window, cx);
-                } else {
-                    log::debug!("Tab is not modified, just focusing it");
-                }
-            }
-            self.active_tab_index = Some(tab_index);
-            self.focus_active_tab(window, cx);
-            cx.notify();
+            self.focus_existing_local_tab_for_open(&path, tab_index, window, cx);
             return;
         }
         let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
@@ -320,7 +339,7 @@ impl Fulgur {
     /// Handle opening a file from the command line (double-click or "Open with")
     ///
     /// ### Behavior
-    /// - If a tab exists for the file in this window: focus the tab (reload if modified)
+    /// - If a tab exists for the file in this window: focus the tab and prompt when unsaved changes exist
     /// - If a tab exists in another window: show notification
     /// - If no tab exists: open a new tab and focus it
     ///
@@ -459,7 +478,9 @@ mod tests {
         open_window_with_fulgur, setup_test_globals,
     };
     #[cfg(feature = "gpui-test-support")]
-    use crate::fulgur::files::file_operations::test_helpers::{setup_fulgur, temp_test_path};
+    use crate::fulgur::files::file_operations::test_helpers::{
+        setup_fulgur, setup_fulgur_with_root, temp_test_path,
+    };
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
     use gpui::BorrowAppContext;
     #[cfg(feature = "gpui-test-support")]
@@ -650,6 +671,43 @@ mod tests {
                     this.tabs.len(),
                     count_before,
                     "no new tab should be created for an already-open file"
+                );
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_do_open_file_does_not_reload_modified_existing_tab_without_confirmation(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("already_open_modified.txt");
+        std::fs::write(&path, "content on disk").expect("failed to write disk version");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.content.update(cx, |input_state, cx| {
+                        input_state.set_value("local unsaved edits", window, cx);
+                    });
+                    editor_tab.set_original_content_from_str("content on disk");
+                    editor_tab.modified = true;
+                }
+
+                this.do_open_file(window, cx, path.clone());
+
+                let editor_tab = this.tabs[0].as_editor().expect("expected editor tab");
+                assert_eq!(
+                    editor_tab.content.read(cx).text(),
+                    "local unsaved edits",
+                    "re-opening a modified tab should keep local edits until user confirms reload"
+                );
+                assert!(
+                    editor_tab.modified,
+                    "re-opening a modified tab should keep the modified flag set"
                 );
             });
         });

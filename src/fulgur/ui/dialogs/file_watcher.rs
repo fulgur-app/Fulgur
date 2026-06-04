@@ -59,4 +59,58 @@ impl Fulgur {
                 .on_cancel(|_, _, _| true)
         });
     }
+
+    /// Show dialog when re-opening an already-open modified file.
+    ///
+    /// ### Arguments
+    /// - `path`: The file path that is already open in the editor
+    /// - `tab_index`: The index of the already-open tab
+    /// - `window`: The target window
+    /// - `cx`: The application context
+    pub fn show_reopen_modified_file_dialog(
+        &self,
+        path: &Path,
+        tab_index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let entity = cx.entity().clone();
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file")
+            .to_string();
+
+        window.open_alert_dialog(cx, move |modal, _, _| {
+            let entity_for_ok = entity.clone();
+            modal
+                .title(div().text_size(px(16.)).child("File Already Open"))
+                .keyboard(true)
+                .button_props(
+                    DialogButtonProps::default()
+                        .show_cancel(true)
+                        .cancel_text("Keep local changes")
+                        .cancel_variant(ButtonVariant::Secondary)
+                        .ok_text("Reload from disk")
+                        .ok_variant(ButtonVariant::Primary),
+                )
+                .overlay_closable(false)
+                .close_button(false)
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .child(format!(
+                            "The file \"{filename}\" is already open with unsaved local changes."
+                        ))
+                        .child("Choose which version to keep."),
+                )
+                .on_ok(move |_, window, cx| {
+                    entity_for_ok.update(cx, |this, cx| {
+                        this.reload_tab_from_disk(tab_index, window, cx);
+                    });
+                    true
+                })
+                .on_cancel(|_, _, _| true)
+        });
+    }
 }
