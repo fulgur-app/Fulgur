@@ -145,10 +145,8 @@ impl Fulgur {
                         cx,
                         &this.settings.editor_settings,
                     );
-                    let editor_tab_index = this.tabs.len();
-                    this.tabs.push(Tab::Editor(editor_tab));
-                    this.active_tab_index = Some(editor_tab_index);
-                    this.pending_tab_scroll = Some(editor_tab_index);
+                    let editor_tab_index =
+                        this.place_editor_tab_reusing_scratch(Tab::Editor(editor_tab), window, cx);
                     this.next_tab_id += 1;
                     this.maybe_open_markdown_preview_for_editor(editor_tab_index, cx);
                     this.watch_file(path);
@@ -467,6 +465,8 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use gpui::TestAppContext;
     #[cfg(feature = "gpui-test-support")]
+    use gpui_component::input::InputEvent;
+    #[cfg(feature = "gpui-test-support")]
     use tempfile::TempDir;
 
     // ========== find_tab_by_path tests ==========
@@ -657,12 +657,13 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
-    fn test_do_open_file_opens_new_tab_from_disk(cx: &mut TestAppContext) {
+    fn test_do_open_file_reuses_empty_scratch_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
         let path = dir.path().join("open_new_tab.rs");
         std::fs::write(&path, "fn main() {}").expect("failed to write file");
 
+        // The default tab created on Fulgur::new is an empty, unsaved scratch buffer.
         let count_before = fulgur.read_with(&visual_cx, |this, _| this.tabs.len());
 
         visual_cx.update(|window, cx| {
@@ -674,9 +675,8 @@ mod tests {
 
         let count_after = fulgur.read_with(&visual_cx, |this, _| this.tabs.len());
         assert_eq!(
-            count_after,
-            count_before + 1,
-            "a new tab should be opened for a file not yet open"
+            count_after, count_before,
+            "opening a file should reuse the empty scratch tab instead of adding one"
         );
 
         let tab_path = fulgur.read_with(&visual_cx, |this, _| {
@@ -692,6 +692,145 @@ mod tests {
             .and_then(|p| std::fs::canonicalize(p).ok())
             .unwrap_or_else(|| tab_path.clone().unwrap_or_default());
         assert_eq!(canonical_actual, canonical_expected);
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_do_open_file_does_not_reuse_tab_with_content(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("keep_scratch.rs");
+        std::fs::write(&path, "fn main() {}").expect("failed to write file");
+
+        // Type into the default scratch tab so it is no longer empty.
+        let editor_content = visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                this.tabs[0]
+                    .as_editor()
+                    .expect("expected editor tab")
+                    .content
+                    .clone()
+            })
+        });
+        visual_cx.update(|window, cx| {
+            editor_content.update(cx, |input_state, cx| {
+                input_state.set_value("some work in progress", window, cx);
+                cx.emit(InputEvent::Change);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        let count_before = fulgur.read_with(&visual_cx, |this, _| this.tabs.len());
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.do_open_file(window, cx, path.clone());
+            });
+        });
+        visual_cx.run_until_parked();
+
+        let count_after = fulgur.read_with(&visual_cx, |this, _| this.tabs.len());
+        assert_eq!(
+            count_after,
+            count_before + 1,
+            "a tab with unsaved content must not be reused; a new tab should open"
+        );
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_do_open_file_reuses_whitespace_only_scratch_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("reuse_blank.rs");
+        std::fs::write(&path, "fn main() {}").expect("failed to write file");
+
+        // Fill the default scratch tab with whitespace only; it should still be reused.
+        let editor_content = visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, _cx| {
+                this.tabs[0]
+                    .as_editor()
+                    .expect("expected editor tab")
+                    .content
+                    .clone()
+            })
+        });
+        visual_cx.update(|window, cx| {
+            editor_content.update(cx, |input_state, cx| {
+                input_state.set_value("  \n\t\n", window, cx);
+                cx.emit(InputEvent::Change);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        let count_before = fulgur.read_with(&visual_cx, |this, _| this.tabs.len());
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.do_open_file(window, cx, path.clone());
+            });
+        });
+        visual_cx.run_until_parked();
+
+        let count_after = fulgur.read_with(&visual_cx, |this, _| this.tabs.len());
+        assert_eq!(
+            count_after, count_before,
+            "a whitespace-only scratch tab should be reused instead of adding a tab"
+        );
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_do_open_file_reuses_only_the_last_tab_position(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("reuse_last_position.rs");
+        std::fs::write(&path, "fn main() {}").expect("failed to write file");
+
+        // Two blank scratch tabs: only the last one in position should be replaced,
+        // leaving the earlier blank tab untouched.
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.new_tab(window, cx);
+            });
+        });
+
+        let count_before = fulgur.read_with(&visual_cx, |this, _| this.tabs.len());
+        let first_tab_id = fulgur.read_with(&visual_cx, |this, _| this.tabs[0].id());
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.do_open_file(window, cx, path.clone());
+            });
+        });
+        visual_cx.run_until_parked();
+
+        let count_after = fulgur.read_with(&visual_cx, |this, _| this.tabs.len());
+        assert_eq!(
+            count_after, count_before,
+            "the trailing scratch tab should be reused, keeping the tab count stable"
+        );
+
+        let (first_id_after, first_is_blank, last_has_path) =
+            fulgur.read_with(&visual_cx, |this, cx| {
+                let first_blank = this.tabs[0].as_editor().is_some_and(|e| {
+                    e.location.is_untitled() && e.content.read(cx).text().len() == 0
+                });
+                let last_path = this
+                    .tabs
+                    .last()
+                    .and_then(|t| t.as_editor())
+                    .and_then(|e| e.file_path().cloned())
+                    .is_some();
+                (this.tabs[0].id(), first_blank, last_path)
+            });
+        assert_eq!(
+            first_id_after, first_tab_id,
+            "the earlier blank tab must be preserved, not the one replaced"
+        );
+        assert!(
+            first_is_blank,
+            "the earlier blank scratch tab must remain blank"
+        );
+        assert!(last_has_path, "the opened file must land in the last tab");
     }
 
     #[cfg(feature = "gpui-test-support")]
@@ -767,11 +906,17 @@ mod tests {
                 shared.pending_files_from_macos.lock().is_empty(),
                 "focused window should consume pending macOS open-url files"
             );
-            let tab_count = fulgur_two.read(cx).tabs.len();
-            assert!(
-                tab_count >= 2,
-                "processing a queued file should open it in a new tab"
-            );
+            // The focused window starts with an empty scratch tab, which the queued file
+            // reuses, so the file should be open without adding a new tab.
+            let canonical_expected =
+                std::fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
+            let has_file = fulgur_two.read(cx).tabs.iter().any(|tab| {
+                tab.as_editor()
+                    .and_then(|e| e.file_path().cloned())
+                    .and_then(|p| std::fs::canonicalize(&p).ok())
+                    .is_some_and(|p| p == canonical_expected)
+            });
+            assert!(has_file, "processing a queued file should open it in a tab");
         });
     }
 }
