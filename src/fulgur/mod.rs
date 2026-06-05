@@ -38,6 +38,7 @@ use gpui_component::{
     notification::NotificationType,
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
+    table::{DataTable, TableState},
     text::TextView,
     v_flex,
 };
@@ -436,6 +437,7 @@ impl Fulgur {
             .child(self.render_tab_bar(cx))
             .child(self.render_content_area(active_tab_index, window, cx))
             .children(self.render_markdown_bar(cx))
+            .children(self.render_csv_toolbar(cx))
             .children(self.render_search_bar(cx))
             .children(self.render_color_picker_bar(cx));
         if let Some(index) = self.active_tab_index
@@ -688,6 +690,8 @@ impl Fulgur {
                 language: SupportedLanguage,
                 show_markdown_preview: bool,
                 content: Entity<InputState>,
+                csv_view_mode: editor_tab::CsvViewMode,
+                csv_table: Option<Entity<TableState<editor_tab::CsvTableDelegate>>>,
             },
             Settings,
             MarkdownPreview {
@@ -697,6 +701,16 @@ impl Fulgur {
             },
         }
 
+        // A CSV tab in table mode needs its grid (re)built from the canonical
+        // text before we snapshot the tab read-only below.
+        if let Some(active_index) = active_tab_index
+            && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(active_index)
+            && editor_tab.language == SupportedLanguage::Csv
+            && editor_tab.csv_view_mode == editor_tab::CsvViewMode::Table
+        {
+            editor_tab.ensure_csv_table(window, cx);
+        }
+
         let active_tab = active_tab_index.and_then(|active_index| {
             self.tabs.get(active_index).map(|tab| match tab {
                 Tab::Editor(editor_tab) => ActiveTabRenderData::Editor {
@@ -704,6 +718,8 @@ impl Fulgur {
                     language: editor_tab.language,
                     show_markdown_preview: editor_tab.show_markdown_preview,
                     content: editor_tab.content.clone(),
+                    csv_view_mode: editor_tab.csv_view_mode,
+                    csv_table: editor_tab.csv_table.clone(),
                 },
                 Tab::Settings(_) => ActiveTabRenderData::Settings,
                 Tab::MarkdownPreview(preview_tab) => ActiveTabRenderData::MarkdownPreview {
@@ -721,7 +737,19 @@ impl Fulgur {
                     language,
                     show_markdown_preview,
                     content,
+                    csv_view_mode,
+                    csv_table,
                 } => {
+                    if language == SupportedLanguage::Csv
+                        && csv_view_mode == editor_tab::CsvViewMode::Table
+                        && let Some(table) = csv_table
+                    {
+                        return v_flex()
+                            .w_full()
+                            .flex_1()
+                            .child(DataTable::new(&table).bordered(true).stripe(true))
+                            .into_any_element();
+                    }
                     let editor_input = Input::new(&content)
                         .bordered(false)
                         .p_0()

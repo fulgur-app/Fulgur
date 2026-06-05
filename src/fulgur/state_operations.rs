@@ -305,6 +305,8 @@ impl Fulgur {
             )
         } else {
             let language = language_from_content(&tab_state.title, &content);
+            let (csv_view_mode, csv_delimiter) =
+                crate::fulgur::ui::tabs::editor_tab::initial_csv_state(language, &content);
             let content_entity = cx.new(|cx| {
                 gpui_component::input::InputState::new(window, cx)
                     .code_editor(language_registry_name(&language))
@@ -341,6 +343,10 @@ impl Fulgur {
                     .show_markdown_preview,
                 file_size_bytes: None,
                 file_last_modified: None,
+                csv_view_mode,
+                csv_delimiter,
+                csv_table: None,
+                csv_table_source_hash: 0,
             }
         };
 
