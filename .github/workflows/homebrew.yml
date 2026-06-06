@@ -1,0 +1,81 @@
+name: Bump Homebrew Cask
+
+# Updates the Fulgur cask in the fulgur-app/homebrew-tap repository whenever a
+# stable GitHub release is published. Triggering on "published" (rather than on
+# the tag push that builds the release as a draft) guarantees the DMG asset is
+# publicly downloadable before the cask points at it.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  bump-cask:
+    name: Update Homebrew tap
+    runs-on: ubuntu-latest
+    # Casks track stable versions only; skip pre-releases.
+    if: github.event.release.prerelease == false
+    steps:
+      - name: Extract version
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve aarch64 DMG SHA256 from the release
+        id: sha
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release download "$TAG" --repo "$REPO" --pattern "SHA256SUMS.txt" --dir .
+          DMG="Fulgur-v${VERSION}-macos-aarch64.dmg"
+          # SHA256SUMS.txt mixes path-prefixed (Unix) and bare (Windows) names,
+          # so match on the basename being a substring of the filename field.
+          SHA=$(awk -v f="$DMG" 'index($2, f) { print $1 }' SHA256SUMS.txt | head -1)
+          if [ -z "$SHA" ]; then
+            echo "::error::Could not find a SHA256 for $DMG in SHA256SUMS.txt"
+            cat SHA256SUMS.txt
+            exit 1
+          fi
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the tap
+        uses: actions/checkout@v6
+        with:
+          repository: fulgur-app/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Update the cask
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA256: ${{ steps.sha.outputs.sha256 }}
+        run: |
+          CASK="tap/Casks/fulgur.rb"
+          sed -i -E "s|^  version \".*\"|  version \"${VERSION}\"|" "$CASK"
+          sed -i -E "s|^  sha256 \".*\"|  sha256 \"${SHA256}\"|" "$CASK"
+          echo "Updated cask:"
+          cat "$CASK"
+
+      - name: Commit and push
+        working-directory: tap
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Cask already up to date; nothing to commit."
+            exit 0
+          fi
+          git add Casks/fulgur.rb
+          git commit -m "fulgur ${VERSION}"
+          git push
