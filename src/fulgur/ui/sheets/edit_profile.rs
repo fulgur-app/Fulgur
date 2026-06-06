@@ -561,8 +561,31 @@ fn handle_save(
     window: &mut Window,
     cx: &mut App,
 ) {
+    handle_save_internal(entity, state, window, cx, true);
+}
+
+/// Handle profile persistence for the Save button, with optional HTTP warning.
+///
+/// ### Arguments
+/// - `entity`: The Fulgur entity.
+/// - `state`: The shared form state.
+/// - `window`: The window to attach notifications/modals to.
+/// - `cx`: The application context.
+/// - `warn_on_http`: Whether to show an HTTP confirmation before saving.
+fn handle_save_internal(
+    entity: &Entity<Fulgur>,
+    state: &Arc<ProfileFormState>,
+    window: &mut Window,
+    cx: &mut App,
+    warn_on_http: bool,
+) {
     if let Err(message) = validate_form(state, entity, cx) {
         window.push_notification((NotificationType::Error, message), cx);
+        return;
+    }
+    let server_url_value = state.server_url_input.read(cx).value().trim().to_string();
+    if warn_on_http && should_warn_for_http_url(&server_url_value) {
+        confirm_http_save(entity, state, window, cx);
         return;
     }
     let device_key_edit = read_device_key_edit(state, cx);
@@ -633,6 +656,69 @@ fn handle_save(
             );
         }
     }
+}
+
+/// Check whether the save flow should warn the user about insecure transport.
+///
+/// ### Arguments
+/// - `server_url`: The trimmed server URL string from the form.
+///
+/// ### Returns
+/// - `true`: The URL parses and uses the `http` scheme.
+/// - `false`: The URL is empty, invalid, or uses another scheme.
+fn should_warn_for_http_url(server_url: &str) -> bool {
+    if server_url.is_empty() {
+        return false;
+    }
+    url::Url::parse(server_url).is_ok_and(|url| url.scheme().eq_ignore_ascii_case("http"))
+}
+
+/// Ask for explicit confirmation before saving an `http://` server URL.
+///
+/// ### Arguments
+/// - `entity`: The Fulgur entity.
+/// - `state`: The shared form state.
+/// - `window`: The window to attach the alert dialog to.
+/// - `cx`: The application context.
+fn confirm_http_save(
+    entity: &Entity<Fulgur>,
+    state: &Arc<ProfileFormState>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let server_url = state.server_url_input.read(cx).value().trim().to_string();
+    let entity_for_confirm = entity.clone();
+    let state_for_confirm = Arc::clone(state);
+    window.open_alert_dialog(cx, move |modal, _, _| {
+        let entity_ok = entity_for_confirm.clone();
+        let state_ok = Arc::clone(&state_for_confirm);
+        modal
+            .title(div().text_size(px(16.)).child("Insecure HTTP connection"))
+            .keyboard(true)
+            .button_props(
+                DialogButtonProps::default()
+                    .show_cancel(true)
+                    .cancel_text("Cancel")
+                    .cancel_variant(ButtonVariant::Secondary)
+                    .ok_text("Continue")
+                    .ok_variant(ButtonVariant::Danger),
+            )
+            .overlay_closable(false)
+            .close_button(false)
+            .child(
+                v_flex()
+                    .gap_2()
+                    .child(format!(
+                        "The server URL \"{server_url}\" uses HTTP and can expose credentials in transit."
+                    ))
+                    .child("Are you sure you want to continue saving this server?"),
+            )
+            .on_ok(move |_, window, cx| {
+                handle_save_internal(&entity_ok, &state_ok, window, cx, false);
+                true
+            })
+            .on_cancel(|_, _, _| true)
+    });
 }
 
 /// Handle the Cancel button.
@@ -771,7 +857,7 @@ fn confirm_delete_profile(
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_email, validate_url};
+    use super::{should_warn_for_http_url, validate_email, validate_url};
 
     #[test]
     fn test_validate_url_accepts_empty() {
@@ -786,6 +872,16 @@ mod tests {
     #[test]
     fn test_validate_url_accepts_https() {
         assert!(validate_url("https://example.com").is_ok());
+    }
+
+    #[test]
+    fn test_should_warn_for_http_url_accepts_https_without_warning() {
+        assert!(!should_warn_for_http_url("https://example.com"));
+    }
+
+    #[test]
+    fn test_should_warn_for_http_url_warns_for_http() {
+        assert!(should_warn_for_http_url("http://example.com"));
     }
 
     #[test]
