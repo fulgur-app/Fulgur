@@ -7,6 +7,7 @@ use crate::fulgur::{
     ui::{
         components_utils::{EMPTY, UTF_8},
         icons::CustomIcon,
+        tabs::editor_tab::CsvViewMode,
     },
 };
 use gpui::{
@@ -431,6 +432,22 @@ impl Fulgur {
                 (preview_button, toolbar_button)
             }
         };
+        let is_csv = self.get_current_language() == SupportedLanguage::Csv;
+        let csv_table_active = self
+            .get_active_editor_tab()
+            .is_some_and(|tab| tab.csv_view_mode == CsvViewMode::Table);
+        let csv_view_button = status_bar_toggle_button_factory(
+            "Table".to_string(),
+            cx.theme().border,
+            cx.theme().muted,
+            csv_table_active,
+        )
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _event: &MouseDownEvent, window, cx| {
+                this.toggle_csv_view_mode(window, cx);
+            }),
+        );
         let is_markdown = self.is_markdown();
         let (sync_button_state, show_spinner) = self.status_bar_sync_button_state(cx);
         let profile_statuses = self.sync_profiles_tooltip_data(cx);
@@ -502,7 +519,8 @@ impl Fulgur {
                     )
                     .child(language_button)
                     .when(is_markdown, |this| this.child(preview_button))
-                    .when(is_markdown, |this| this.child(toolbar_button)),
+                    .when(is_markdown, |this| this.child(toolbar_button))
+                    .when(is_csv, |this| this.child(csv_view_button)),
             )
             .child({
                 let color_picker_active = self.color_picker_bar_state.show_color_picker;

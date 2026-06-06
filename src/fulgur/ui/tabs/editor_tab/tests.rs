@@ -9,6 +9,7 @@ use gpui::{
     div,
 };
 use gpui_component::input::Position;
+use gpui_component::table::TableDelegate;
 use std::path::PathBuf;
 
 struct EmptyView;
@@ -45,6 +46,8 @@ fn make_transfer_data() -> TabTransferData {
         file_size_bytes: Some(12),
         file_last_modified: None,
         cursor_position: Position::default(),
+        csv_view_mode: super::CsvViewMode::Text,
+        csv_delimiter: b',',
     }
 }
 
@@ -426,6 +429,8 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
         file_size_bytes: None,
         file_last_modified: None,
         cursor_position: Position::default(),
+        csv_view_mode: super::CsvViewMode::Text,
+        csv_delimiter: b',',
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -458,6 +463,8 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
         file_size_bytes: None,
         file_last_modified: None,
         cursor_position: Position::default(),
+        csv_view_mode: super::CsvViewMode::Text,
+        csv_delimiter: b',',
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -493,6 +500,8 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
         file_size_bytes: None,
         file_last_modified: None,
         cursor_position: Position::default(),
+        csv_view_mode: super::CsvViewMode::Text,
+        csv_delimiter: b',',
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -522,12 +531,115 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
         file_size_bytes: None,
         file_last_modified: None,
         cursor_position: Position::default(),
+        csv_view_mode: super::CsvViewMode::Text,
+        csv_delimiter: b',',
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_transfer(4, data, window, cx, &settings);
             assert!(tab.show_markdown_toolbar);
             assert!(tab.show_markdown_preview);
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
+#[gpui::test]
+fn test_editor_tab_from_file_csv_defaults_to_table(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let settings = EditorSettings::new();
+    let params = FromFileParams {
+        id: 70,
+        path: temp_test_path("data.csv"),
+        contents: "name,age\nAlice,30\n".to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: false,
+    };
+
+    cx.update(|cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let tab = EditorTab::from_file(params, window, cx, &settings);
+            assert_eq!(tab.language, SupportedLanguage::Csv);
+            assert_eq!(tab.csv_view_mode, super::CsvViewMode::Table);
+            assert_eq!(tab.csv_delimiter, b',');
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
+#[gpui::test]
+fn test_editor_tab_from_file_csv_detects_semicolon(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let settings = EditorSettings::new();
+    let params = FromFileParams {
+        id: 71,
+        path: temp_test_path("euro.csv"),
+        contents: "name;age\nAlice;30\n".to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: false,
+    };
+
+    cx.update(|cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let tab = EditorTab::from_file(params, window, cx, &settings);
+            assert_eq!(tab.csv_delimiter, b';');
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
+#[gpui::test]
+fn test_csv_table_insert_row_commits_to_buffer(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let settings = EditorSettings::new();
+    let params = FromFileParams {
+        id: 72,
+        path: temp_test_path("grid.csv"),
+        contents: "a,b\n1,2\n".to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: false,
+    };
+
+    cx.update(|cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let mut tab = EditorTab::from_file(params, window, cx, &settings);
+            tab.ensure_csv_table(window, cx);
+            let table = tab.csv_table.clone().expect("table should be built");
+            table.update(cx, |state, cx| {
+                state.delegate_mut().insert_row_below(None, window, cx);
+            });
+            assert_eq!(tab.content.read(cx).text().to_string(), "a,b\n1,2\n,\n");
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
+#[gpui::test]
+fn test_csv_table_move_column_reorders_data(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let settings = EditorSettings::new();
+    let params = FromFileParams {
+        id: 73,
+        path: temp_test_path("reorder.csv"),
+        contents: "a,b,c\n1,2,3\n".to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: false,
+    };
+
+    cx.update(|cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let mut tab = EditorTab::from_file(params, window, cx, &settings);
+            tab.ensure_csv_table(window, cx);
+            let table = tab.csv_table.clone().expect("table should be built");
+            // Grid column 1 is data column "a"; move it to grid column 3 (last).
+            table.update(cx, |state, cx| {
+                state.delegate_mut().move_column(1, 3, window, cx);
+            });
+            assert_eq!(tab.content.read(cx).text().to_string(), "b,c,a\n2,3,1\n");
             cx.new(|_| EmptyView)
         })
         .expect("failed to open test window");

@@ -3,6 +3,10 @@ use gpui_component::Icon;
 
 #[derive(Clone)]
 pub enum CustomIcon {
+    AddColumnAfter,
+    AddColumnBefore,
+    AddRowAbove,
+    AddRowBelow,
     ALargeSmall,
     Asterisk,
     Bold,
@@ -15,6 +19,8 @@ pub enum CustomIcon {
     Code,
     Computer,
     Copy,
+    DeleteColumn,
+    DeleteRow,
     File,
     FileCode,
     FolderOpen,
@@ -65,6 +71,10 @@ impl CustomIcon {
     /// - `SharedString`: The path to the icon
     pub fn path(self) -> SharedString {
         match self {
+            Self::AddColumnAfter => "icons/add-column-after.svg",
+            Self::AddColumnBefore => "icons/add-column-before.svg",
+            Self::AddRowAbove => "icons/add-row-above.svg",
+            Self::AddRowBelow => "icons/add-row-below.svg",
             Self::ALargeSmall => "icons/a-large-small.svg",
             Self::Asterisk => "icons/asterisk.svg",
             Self::Bold => "icons/bold.svg",
@@ -77,6 +87,8 @@ impl CustomIcon {
             Self::CircleX => "icons/circle-x.svg",
             Self::Computer => "icons/computer.svg",
             Self::Copy => "icons/copy.svg",
+            Self::DeleteColumn => "icons/delete-column.svg",
+            Self::DeleteRow => "icons/delete-row.svg",
             Self::File => "icons/file.svg",
             Self::FileCode => "icons/file-code.svg",
             Self::FolderOpen => "icons/folder-open.svg",

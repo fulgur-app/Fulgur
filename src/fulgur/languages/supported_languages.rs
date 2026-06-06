@@ -14,6 +14,7 @@ pub enum SupportedLanguage {
     CSharp,
     Cpp,
     Css,
+    Csv,
     D,
     Dart,
     Diff,
@@ -170,6 +171,7 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
         SupportedLanguage::Ada
         | SupportedLanguage::Asm
         | SupportedLanguage::Clojure
+        | SupportedLanguage::Csv
         | SupportedLanguage::D
         | SupportedLanguage::Dart
         | SupportedLanguage::Dockerfile
@@ -216,6 +218,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
         SupportedLanguage::CSharp => "C#".to_string(),
         SupportedLanguage::Cpp => "C++".to_string(),
         SupportedLanguage::Css => "CSS".to_string(),
+        SupportedLanguage::Csv => "CSV".to_string(),
         SupportedLanguage::D => "D".to_string(),
         SupportedLanguage::Dart => "Dart".to_string(),
         SupportedLanguage::Diff => "Diff".to_string(),
@@ -347,6 +350,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
     // Overriding gpui-component's default language mapping.
     if let Some(lang) = match extension {
         "scss" => Some(SupportedLanguage::Scss),
+        "csv" | "tsv" => Some(SupportedLanguage::Csv),
         _ => None,
     } {
         return lang;
@@ -465,6 +469,7 @@ impl SupportedLanguage {
             SupportedLanguage::CMake,
             SupportedLanguage::CSharp,
             SupportedLanguage::Css,
+            SupportedLanguage::Csv,
             SupportedLanguage::D,
             SupportedLanguage::Dart,
             SupportedLanguage::Diff,

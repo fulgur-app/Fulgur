@@ -1,4 +1,5 @@
 mod constructors;
+mod csv_table;
 pub mod hex_color_provider;
 mod location;
 mod navigation;
@@ -7,17 +8,27 @@ mod operations;
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;
 
+pub use csv_table::CsvTableDelegate;
 pub use location::TabLocation;
 pub use navigation::{Jump, extract_line_number};
 
-use gpui::{Context, Entity, SharedString, Window};
+use gpui::{App, AppContext, Context, Entity, SharedString, Window};
 use gpui_component::input::{InputState, Rope, TabSize};
+use gpui_component::table::TableState;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::SystemTime;
 
+use crate::fulgur::files::csv_support::{DEFAULT_DELIMITER, detect_delimiter, parse_csv};
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
 use crate::fulgur::settings::EditorSettings;
+
+/// Which surface a CSV-language tab is currently editing through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CsvViewMode {
+    Table,
+    Text,
+}
 
 /// A single editor tab with its content and file metadata
 #[derive(Clone)]
@@ -35,6 +46,14 @@ pub struct EditorTab {
     pub show_markdown_preview: bool,
     pub file_size_bytes: Option<u64>,
     pub file_last_modified: Option<SystemTime>,
+    /// Which surface a CSV tab edits through. Always `Text` for non-CSV tabs.
+    pub csv_view_mode: CsvViewMode,
+    /// The delimiter detected on open and preserved on save (CSV tabs only).
+    pub csv_delimiter: u8,
+    /// The lazily built table state, rebuilt when the source text changes.
+    pub csv_table: Option<Entity<TableState<CsvTableDelegate>>>,
+    /// Fingerprint of the text the current `csv_table` was parsed from.
+    pub csv_table_source_hash: u64,
 }
 
 /// All state required to transfer an editor tab between windows
@@ -52,6 +71,8 @@ pub struct TabTransferData {
     pub file_size_bytes: Option<u64>,
     pub file_last_modified: Option<SystemTime>,
     pub cursor_position: gpui_component::input::Position,
+    pub csv_view_mode: CsvViewMode,
+    pub csv_delimiter: u8,
 }
 
 /// Parameters for creating an editor tab as a duplicate of another
@@ -63,6 +84,22 @@ pub struct FromDuplicateParams {
     pub language: SupportedLanguage,
 }
 
+/// Compute the initial CSV view mode and delimiter for a freshly opened tab.
+///
+/// ### Arguments
+/// - `language`: The detected language of the tab
+/// - `content`: The file content, used to sniff the delimiter
+///
+/// ### Returns
+/// - `(CsvViewMode, u8)`: The initial view mode and delimiter
+pub(crate) fn initial_csv_state(language: SupportedLanguage, content: &str) -> (CsvViewMode, u8) {
+    if language == SupportedLanguage::Csv {
+        (CsvViewMode::Table, detect_delimiter(content))
+    } else {
+        (CsvViewMode::Text, DEFAULT_DELIMITER)
+    }
+}
+
 impl EditorTab {
     /// Return the local filesystem path, if this tab holds a local file.
     ///
@@ -71,6 +108,33 @@ impl EditorTab {
     /// - `None`: If the tab is remote or untitled.
     pub fn file_path(&self) -> Option<&PathBuf> {
         self.location.local_path()
+    }
+
+    /// Ensure the CSV table state is built and reflects the current text.
+    ///
+    /// ### Arguments
+    /// - `window`: The window the table is created in
+    /// - `cx`: The application context
+    pub fn ensure_csv_table(&mut self, window: &mut Window, cx: &mut App) {
+        let text = self.content.read(cx).value().to_string();
+        let (hash, _len) = content_fingerprint_from_str(&text);
+        if self.csv_table.is_some() && self.csv_table_source_hash == hash {
+            return;
+        }
+
+        let data = parse_csv(&text, self.csv_delimiter);
+        let content = self.content.clone();
+        let dialog_input = cx.new(|cx| InputState::new(window, cx));
+        let delegate = CsvTableDelegate::new(data, self.csv_delimiter, content, dialog_input);
+        let table = cx.new(|cx| {
+            TableState::new(delegate, window, cx)
+                .cell_selectable(true)
+                .row_selectable(true)
+                .row_header(false)
+        });
+
+        self.csv_table = Some(table);
+        self.csv_table_source_hash = hash;
     }
 }
 
