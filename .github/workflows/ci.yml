@@ -36,7 +36,9 @@ jobs:
   # in ~30s instead of being hidden behind a 10-minute test run.
   fmt:
     name: Formatting
-    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/dev-')
+    # Merge-to-main gate disabled: fmt no longer runs on pull_request, only on dev-* pushes.
+    # Restore the merge gate by prepending: github.event_name == 'pull_request' ||
+    if: startsWith(github.ref, 'refs/heads/dev-')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -52,7 +54,9 @@ jobs:
 
   clippy:
     name: Clippy - ${{ matrix.os }}
-    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/dev-')
+    # Merge-to-main gate disabled: clippy no longer runs on pull_request, only on dev-* pushes.
+    # Restore the merge gate by prepending: github.event_name == 'pull_request' ||
+    if: startsWith(github.ref, 'refs/heads/dev-')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
