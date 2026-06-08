@@ -1022,64 +1022,90 @@ impl Fulgur {
             if shared_files_to_open.is_empty() {
                 continue;
             }
-            let encryption_key_opt = if let Ok(key) = load_private_key_from_keychain(&profile_id) {
-                key
-            } else {
-                log::error!(
-                    "Cannot decrypt shared files for profile {profile_id}: encryption key not available"
-                );
-                None
-            };
             let server_max_size = sync_state
                 .max_file_size_bytes
                 .load(std::sync::atomic::Ordering::Acquire);
-            if let Some(encryption_key) = encryption_key_opt {
-                for shared_file in shared_files_to_open {
-                    if server_max_size != u64::MAX
-                        && shared_file.content.len() as u64 > server_max_size.saturating_mul(2)
-                    {
+            let mut shared_files_iter = shared_files_to_open.into_iter();
+            let mut retry_queue = Vec::new();
+
+            while let Some(shared_file) = shared_files_iter.next() {
+                if server_max_size != u64::MAX
+                    && shared_file.content.len() as u64 > server_max_size.saturating_mul(2)
+                {
+                    log::warn!(
+                        "Skipping shared file '{}' from device {}: encrypted payload ({} bytes) exceeds the server max ({} bytes)",
+                        shared_file.file_name,
+                        shared_file.source_device_id,
+                        shared_file.content.len(),
+                        server_max_size
+                    );
+                    continue;
+                }
+
+                let encryption_key = match load_private_key_from_keychain(&profile_id) {
+                    Ok(Some(key)) => key,
+                    Ok(None) => {
                         log::warn!(
-                            "Skipping shared file '{}' from device {}: encrypted payload ({} bytes) exceeds 2x the server max ({} bytes)",
-                            shared_file.file_name,
-                            shared_file.source_device_id,
-                            shared_file.content.len(),
-                            server_max_size
+                            "Deferring {} shared file(s) for profile {profile_id}: encryption key is unavailable",
+                            1 + shared_files_iter.len()
                         );
-                        continue;
+                        retry_queue.push(shared_file);
+                        retry_queue.extend(shared_files_iter);
+                        break;
                     }
-                    let decrypted_result =
-                        crypto_helper::decrypt_bytes(&shared_file.content, &encryption_key)
-                            .and_then(|compressed_bytes| {
-                                share::decompress_content(&compressed_bytes, server_max_size)
-                            });
-                    match decrypted_result {
-                        Ok(decrypted_content) => {
-                            let tab_id = self.next_tab_id;
-                            self.next_tab_id += 1;
-                            let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
-                                tab_id,
-                                &decrypted_content,
-                                shared_file.file_name.clone(),
-                                window,
-                                cx,
-                                &self.settings.editor_settings,
-                            ));
-                            self.tabs.push(new_tab);
-                            self.active_tab_index = Some(self.tabs.len() - 1);
-                            self.pending_tab_scroll = Some(self.tabs.len() - 1);
-                            log::info!("Opened shared file: {}", shared_file.file_name);
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "Failed to decrypt shared file {}: {}",
-                                shared_file.file_name,
-                                e
-                            );
-                        }
+                    Err(e) => {
+                        log::warn!(
+                            "Deferring {} shared file(s) for profile {profile_id}: failed to load encryption key from keychain: {e}",
+                            1 + shared_files_iter.len()
+                        );
+                        retry_queue.push(shared_file);
+                        retry_queue.extend(shared_files_iter);
+                        break;
+                    }
+                };
+
+                let decrypted_result =
+                    crypto_helper::decrypt_bytes(&shared_file.content, encryption_key.as_str())
+                        .and_then(|compressed_bytes| {
+                            share::decompress_content(&compressed_bytes, server_max_size)
+                        });
+                drop(encryption_key);
+
+                match decrypted_result {
+                    Ok(decrypted_content) => {
+                        let tab_id = self.next_tab_id;
+                        self.next_tab_id += 1;
+                        let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
+                            tab_id,
+                            &decrypted_content,
+                            shared_file.file_name.clone(),
+                            window,
+                            cx,
+                            &self.settings.editor_settings,
+                        ));
+                        self.tabs.push(new_tab);
+                        self.active_tab_index = Some(self.tabs.len() - 1);
+                        self.pending_tab_scroll = Some(self.tabs.len() - 1);
+                        log::info!("Opened shared file: {}", shared_file.file_name);
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Deferring shared file '{}' for profile {profile_id}: decryption failed ({e})",
+                            shared_file.file_name
+                        );
+                        retry_queue.push(shared_file);
                     }
                 }
-            } else {
-                log::error!("Cannot decrypt shared files: encryption key not available");
+            }
+
+            if !retry_queue.is_empty() {
+                let retry_count = retry_queue.len();
+                let mut pending = sync_state.pending_shared_files.lock();
+                retry_queue.extend(std::mem::take(&mut *pending));
+                *pending = retry_queue;
+                log::warn!(
+                    "Re-queued {retry_count} shared file(s) for profile {profile_id} for retry"
+                );
             }
         }
     }
