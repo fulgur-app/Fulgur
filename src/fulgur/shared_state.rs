@@ -42,6 +42,8 @@ pub struct SyncState {
     pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
     /// Pending notification from background sync operations (checked in render loop).
     pub pending_notification: Arc<Mutex<Option<(NotificationType, SharedString)>>>,
+    /// Last emitted receive-error signature for shared-file processing (error deduplication).
+    pub last_share_receive_error_signature: Arc<Mutex<Option<String>>>,
     /// Pending devices list from background fetch (checked in render loop to open share sheet).
     pub pending_devices: Arc<Mutex<Option<PendingDevicesResult>>>,
     /// Maximum file size for sharing (bytes), as reported by this profile's server.
@@ -65,6 +67,7 @@ impl SyncState {
             token_state: Arc::new(crate::fulgur::sync::access_token::TokenStateManager::new()),
             last_heartbeat: Arc::new(Mutex::new(None)),
             pending_notification: Arc::new(Mutex::new(None)),
+            last_share_receive_error_signature: Arc::new(Mutex::new(None)),
             pending_devices: Arc::new(Mutex::new(None)),
             max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),
         }

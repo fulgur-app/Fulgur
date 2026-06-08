@@ -994,16 +994,16 @@ impl Fulgur {
     /// - `window`: The window to create new tabs in
     /// - `cx`: The application context
     pub fn process_shared_files_from_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let profile_ids: Vec<crate::fulgur::settings::ProfileId> = self
+        let active_profiles: Vec<(crate::fulgur::settings::ProfileId, String)> = self
             .settings
             .app_settings
             .synchronization_settings
             .profiles
             .iter()
             .filter(|p| p.is_active)
-            .map(|p| p.id.clone())
+            .map(|p| (p.id.clone(), p.name.clone()))
             .collect();
-        for profile_id in profile_ids {
+        for (profile_id, profile_name) in active_profiles {
             let sync_state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
             let shared_files_to_open =
                 if let Some(mut pending) = sync_state.pending_shared_files.try_lock() {
@@ -1020,6 +1020,7 @@ impl Fulgur {
                     Vec::new()
                 };
             if shared_files_to_open.is_empty() {
+                *sync_state.last_share_receive_error_signature.lock() = None;
                 continue;
             }
             let server_max_size = sync_state
@@ -1027,6 +1028,10 @@ impl Fulgur {
                 .load(std::sync::atomic::Ordering::Acquire);
             let mut shared_files_iter = shared_files_to_open.into_iter();
             let mut retry_queue = Vec::new();
+            let mut key_unavailable = false;
+            let mut key_load_failed = false;
+            let mut decrypt_failures = 0usize;
+            let mut opened_files = 0usize;
 
             while let Some(shared_file) = shared_files_iter.next() {
                 if server_max_size != u64::MAX
@@ -1045,6 +1050,7 @@ impl Fulgur {
                 let encryption_key = match load_private_key_from_keychain(&profile_id) {
                     Ok(Some(key)) => key,
                     Ok(None) => {
+                        key_unavailable = true;
                         log::warn!(
                             "Deferring {} shared file(s) for profile {profile_id}: encryption key is unavailable",
                             1 + shared_files_iter.len()
@@ -1054,6 +1060,7 @@ impl Fulgur {
                         break;
                     }
                     Err(e) => {
+                        key_load_failed = true;
                         log::warn!(
                             "Deferring {} shared file(s) for profile {profile_id}: failed to load encryption key from keychain: {e}",
                             1 + shared_files_iter.len()
@@ -1086,9 +1093,11 @@ impl Fulgur {
                         self.tabs.push(new_tab);
                         self.active_tab_index = Some(self.tabs.len() - 1);
                         self.pending_tab_scroll = Some(self.tabs.len() - 1);
+                        opened_files += 1;
                         log::info!("Opened shared file: {}", shared_file.file_name);
                     }
                     Err(e) => {
+                        decrypt_failures += 1;
                         log::warn!(
                             "Deferring shared file '{}' for profile {profile_id}: decryption failed ({e})",
                             shared_file.file_name
@@ -1098,14 +1107,51 @@ impl Fulgur {
                 }
             }
 
+            let mut retry_count = 0usize;
             if !retry_queue.is_empty() {
-                let retry_count = retry_queue.len();
+                retry_count = retry_queue.len();
                 let mut pending = sync_state.pending_shared_files.lock();
                 retry_queue.extend(std::mem::take(&mut *pending));
                 *pending = retry_queue;
                 log::warn!(
                     "Re-queued {retry_count} shared file(s) for profile {profile_id} for retry"
                 );
+            }
+
+            let error_notification = if key_unavailable {
+                Some((
+                    "missing-keychain-private-key",
+                    SharedString::from(format!(
+                        "{profile_name}: Cannot receive shared files because the encryption key is unavailable in the keychain. Fulgur will retry automatically."
+                    )),
+                ))
+            } else if key_load_failed {
+                Some((
+                    "failed-to-load-keychain-private-key",
+                    SharedString::from(format!(
+                        "{profile_name}: Cannot receive shared files because the encryption key could not be loaded from the keychain. Fulgur will retry automatically."
+                    )),
+                ))
+            } else if decrypt_failures > 0 {
+                Some((
+                    "share-decryption-failed",
+                    SharedString::from(format!(
+                        "{profile_name}: Failed to decrypt {decrypt_failures} shared file(s). Fulgur will retry automatically."
+                    )),
+                ))
+            } else {
+                None
+            };
+
+            if let Some((signature, message)) = error_notification {
+                let mut last_signature = sync_state.last_share_receive_error_signature.lock();
+                if last_signature.as_deref() != Some(signature) {
+                    *sync_state.pending_notification.lock() =
+                        Some((NotificationType::Error, message));
+                    *last_signature = Some(signature.to_string());
+                }
+            } else if opened_files > 0 || retry_count == 0 {
+                *sync_state.last_share_receive_error_signature.lock() = None;
             }
         }
     }
