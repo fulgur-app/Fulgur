@@ -7,7 +7,7 @@ use crate::fulgur::{
     settings::ServerProfile,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
-        synchronization::{SynchronizationError, handle_ureq_error},
+        synchronization::{MAX_HTTP_SMALL_RESPONSE_BYTES, SynchronizationError, handle_ureq_error},
     },
     utils::crypto_helper::{self, is_valid_public_key},
 };
@@ -95,10 +95,15 @@ fn send_share_request(
         .map_err(|e| {
             handle_ureq_error(e, &format!("Failed to share file to device {device_id}"))
         })?;
-    let body = response.body_mut().read_to_string().map_err(|e| {
-        log::error!("Failed to read response body: {e}");
-        SynchronizationError::InvalidResponse(e.to_string())
-    })?;
+    let body = response
+        .body_mut()
+        .with_config()
+        .limit(MAX_HTTP_SMALL_RESPONSE_BYTES)
+        .read_to_string()
+        .map_err(|e| {
+            log::error!("Failed to read share response body: {e}");
+            SynchronizationError::InvalidResponse(e.to_string())
+        })?;
     let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
         log::error!("Failed to parse response body: {e}");
         SynchronizationError::InvalidResponse(e.to_string())
