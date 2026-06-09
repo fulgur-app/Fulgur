@@ -28,6 +28,8 @@ Version 0.6.0 finally introduces **drag and drop**! Open your files by just drag
 
 Version 0.7.0 introduces a much anticipated feature, the **direct remote edition of files via SSH**. You can now edit files on a remote server directly from Fulgur, without needing to download them first. An **integrated file browser** allows you to navigate and edit files on the remote server if you don't know its path. The settings and state files now support **corruption recovery** by backing up their last known good state. And, as a preparation for the support of multiple Fulgurant servers, the **maximum size of a shared file is now directly obtained from the server** (Fulgurant 0.6.0+). Besides the many performance & security improvements, the **linter has been hardened** to `pedantic` to increase even more the code quality.
 
+Versoin 0.8.0 now allows **connecting to several Fulgurant instances at the same time** e.g. your own personnal instance and a work instance while keeping the same principles: end to end secure connection, SSE for each instance... The share sheet makes posible to **share on devices from several servers at once**. An **aggregated sync status in the status bar** makes it easy to know the state of each Fulgurant instance. Also, Fulgur now support Fulgurant's v0.7.0+ V2 API. For the contributors, a **developer mode** allows to use several user profiles. The **linter hardening** to `pedantic` continues.
+
 ### Screenshots
 
 ![](assets/readme/fulgur_1.webp)
