@@ -2,7 +2,9 @@ use crate::fulgur::{
     settings::ServerProfile,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
-        synchronization::{SynchronizationError, handle_ureq_error},
+        synchronization::{
+            MAX_HTTP_DEVICES_RESPONSE_BYTES, SynchronizationError, handle_ureq_error,
+        },
     },
     ui::icons::CustomIcon,
     utils::crypto_helper::is_valid_public_key,
@@ -59,13 +61,19 @@ pub fn get_devices(
         .call()
         .map_err(|e| handle_ureq_error(e, "Failed to get devices"))?;
 
-    let devices_response: DevicesResponse = response
+    let body = response
         .body_mut()
-        .read_json::<DevicesResponse>()
+        .with_config()
+        .limit(MAX_HTTP_DEVICES_RESPONSE_BYTES)
+        .read_to_string()
         .map_err(|e| {
-            log::error!("Failed to read devices: {e}");
+            log::error!("Failed to read devices response body: {e}");
             SynchronizationError::InvalidResponse(e.to_string())
         })?;
+    let devices_response: DevicesResponse = serde_json::from_str(&body).map_err(|e| {
+        log::error!("Failed to parse devices response body: {e}");
+        SynchronizationError::InvalidResponse(e.to_string())
+    })?;
 
     let devices = devices_response
         .devices

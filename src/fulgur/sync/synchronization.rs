@@ -31,6 +31,10 @@ use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress}
 /// Maximum number of bytes accepted from small JSON HTTP responses (token, ping).
 pub const MAX_HTTP_SMALL_RESPONSE_BYTES: u64 = 64 * 1024;
 
+/// Maximum number of bytes accepted from the devices listing response
+/// (`GET /api/devices`).
+pub const MAX_HTTP_DEVICES_RESPONSE_BYTES: u64 = 1024 * 1024;
+
 /// Top-level JSON framing overhead allowance for a single-share response
 /// (object braces, sibling fields like `id`, `file_name`, timestamps).
 const SHARE_RESPONSE_FRAMING_BYTES: u64 = 4 * 1024;
