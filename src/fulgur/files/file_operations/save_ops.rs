@@ -77,7 +77,7 @@ impl Fulgur {
         let Some(active_tab_index) = self.active_tab_index else {
             return;
         };
-        let (content_entity, directory, suggested_filename) = match &self.tabs[active_tab_index] {
+        let (tab_id, directory, suggested_filename) = match &self.tabs[active_tab_index] {
             Tab::Editor(editor_tab) => {
                 let dir = if let Some(path) = editor_tab.file_path() {
                     path.parent()
@@ -87,7 +87,7 @@ impl Fulgur {
                     std::env::current_dir().unwrap_or_default()
                 };
                 let suggested = editor_tab.get_suggested_filename();
-                (editor_tab.content.clone(), dir, suggested)
+                (editor_tab.id, dir, suggested)
             }
             Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
         };
@@ -95,8 +95,18 @@ impl Fulgur {
         cx.spawn_in(window, async move |view, window| {
             let path = path_future.await.ok()?.ok()??;
             let contents = window
-                .update(|_, cx| content_entity.read(cx).text().to_string())
-                .ok()?;
+                .update(|_, cx| {
+                    view.update(cx, |this, cx| {
+                        this.tabs
+                            .iter()
+                            .find(|tab| tab.id() == tab_id)
+                            .and_then(|tab| tab.as_editor())
+                            .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
+                    })
+                    .ok()
+                    .flatten()
+                })
+                .ok()??;
             log::debug!(
                 "Saving file as: {} ({} bytes)",
                 path.display(),
@@ -117,42 +127,73 @@ impl Fulgur {
                 return None;
             }
             log::debug!("File saved successfully as: {}", path.display());
-            window
+            let applied = window
                 .update(|window, cx| {
-                    _ = view.update(cx, |this, cx| {
-                        let old_path = if let Some(Tab::Editor(editor_tab)) =
-                            this.tabs.get(active_tab_index)
-                        {
-                            editor_tab.file_path().cloned()
-                        } else {
-                            None
-                        };
-                        if let Some(old_path) = old_path {
-                            this.unwatch_file(&old_path);
-                        }
-                        this.file_watch_state
-                            .last_file_saves
-                            .insert(path.clone(), std::time::Instant::now());
-                        if let Some(Tab::Editor(editor_tab)) = this.tabs.get_mut(active_tab_index) {
-                            editor_tab.location = TabLocation::Local(path.clone());
-                            editor_tab.title = path
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or(UNTITLED)
-                                .to_string()
-                                .into();
-                            editor_tab.mark_as_saved(cx);
-                            editor_tab.update_file_tooltip_cache(contents.len());
-                            editor_tab.update_language(window, cx, &this.settings.editor_settings);
-                            cx.notify();
-                        }
-                        this.watch_file(&path);
-                    });
+                    view.update(cx, |this, cx| {
+                        this.apply_save_as_result_to_tab(tab_id, &path, contents.len(), window, cx)
+                    })
+                    .ok()
                 })
-                .ok()?;
+                .ok()??;
+            if !applied {
+                log::warn!("Save As destination selected, but tab {tab_id} no longer exists");
+                return None;
+            }
             Some(())
         })
         .detach();
+    }
+
+    /// Apply successful "Save As" updates to the tab that initiated the request.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: Stable identifier of the editor tab that started `save_file_as`
+    /// - `path`: Destination path selected by the user
+    /// - `content_len`: Number of bytes written to disk
+    /// - `window`: The host window for language updates
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: If the originating tab still exists and was updated
+    /// - `false`: If the tab no longer exists or is not an editor tab
+    fn apply_save_as_result_to_tab(
+        &mut self,
+        tab_id: usize,
+        path: &Path,
+        content_len: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(tab_index) = self.tabs.iter().position(|tab| tab.id() == tab_id) else {
+            return false;
+        };
+        let old_path = self
+            .tabs
+            .get(tab_index)
+            .and_then(|tab| tab.as_editor())
+            .and_then(|editor_tab| editor_tab.file_path().cloned());
+        if let Some(old_path) = old_path {
+            self.unwatch_file(&old_path);
+        }
+        self.file_watch_state
+            .last_file_saves
+            .insert(path.to_path_buf(), std::time::Instant::now());
+        let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) else {
+            return false;
+        };
+        editor_tab.location = TabLocation::Local(path.to_path_buf());
+        editor_tab.title = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(UNTITLED)
+            .to_string()
+            .into();
+        editor_tab.mark_as_saved(cx);
+        editor_tab.update_file_tooltip_cache(content_len);
+        editor_tab.update_language(window, cx, &self.settings.editor_settings);
+        self.watch_file(path);
+        cx.notify();
+        true
     }
 
     /// Show notification when file is reloaded
@@ -372,6 +413,59 @@ mod tests {
             fulgur.update(cx, |this, cx| {
                 this.active_tab_index = None;
                 this.save_file(window, cx); // Must not panic
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_apply_save_as_result_targets_tab_by_id(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let first_path = dir.path().join("first.txt");
+        let renamed_path = dir.path().join("renamed.rs");
+        let second_path = dir.path().join("second.txt");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let first_tab_id = this.tabs.first().expect("expected first tab").id();
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
+                    editor_tab.location = TabLocation::Local(first_path.clone());
+                }
+
+                this.new_tab(window, cx);
+                let second_tab_id = this.tabs.last().expect("expected second tab").id();
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
+                    editor_tab.location = TabLocation::Local(second_path.clone());
+                }
+
+                let applied =
+                    this.apply_save_as_result_to_tab(first_tab_id, &renamed_path, 42, window, cx);
+                assert!(applied, "save-as metadata updates should be applied");
+
+                let first_tab_path = this
+                    .tabs
+                    .iter()
+                    .find(|tab| tab.id() == first_tab_id)
+                    .and_then(|tab| tab.as_editor())
+                    .and_then(|editor_tab| editor_tab.file_path().cloned())
+                    .expect("first tab path should exist");
+                let second_tab_path = this
+                    .tabs
+                    .iter()
+                    .find(|tab| tab.id() == second_tab_id)
+                    .and_then(|tab| tab.as_editor())
+                    .and_then(|editor_tab| editor_tab.file_path().cloned())
+                    .expect("second tab path should exist");
+
+                assert_eq!(
+                    first_tab_path, renamed_path,
+                    "save-as update must target the originating tab id"
+                );
+                assert_eq!(
+                    second_tab_path, second_path,
+                    "save-as update must not alter other tabs"
+                );
             });
         });
     }
