@@ -180,7 +180,7 @@ fn check_host_key(
     port: u16,
     host_key_cb: impl FnOnce(&str, &str, u16) -> HostKeyDecision,
 ) -> Result<(), SshError> {
-    let kh_path = known_hosts_path();
+    let kh_path = known_hosts_path()?;
     let mut known_hosts = session
         .known_hosts()
         .map_err(|e| SshError::ConnectionFailed(e.to_string()))?;
@@ -195,7 +195,13 @@ fn check_host_key(
         .host_key()
         .ok_or_else(|| SshError::ConnectionFailed("Server provided no host key".to_string()))?;
 
-    match resolve_known_host_check_result_with_known_hosts_fallback(&known_hosts, host, port, key) {
+    match resolve_known_host_check_result_with_known_hosts_fallback(
+        &known_hosts,
+        host,
+        port,
+        key,
+        &kh_path,
+    ) {
         ssh2::CheckResult::Match => Ok(()),
         ssh2::CheckResult::Mismatch => Err(SshError::HostKeyMismatch {
             host: host.to_string(),
@@ -248,13 +254,14 @@ fn resolve_known_host_check_result_with_known_hosts_fallback(
     host: &str,
     port: u16,
     key: &[u8],
+    known_hosts_path: &Path,
 ) -> ssh2::CheckResult {
     let primary = resolve_known_host_check_result(known_hosts, host, port, key);
     if matches!(primary, ssh2::CheckResult::Match) {
         return primary;
     }
 
-    let fallback = check_known_hosts_with_parser(host, port, key, &known_hosts_path());
+    let fallback = check_known_hosts_with_parser(host, port, key, known_hosts_path);
     match fallback {
         Some(ssh2::CheckResult::Match) => ssh2::CheckResult::Match,
         Some(ssh2::CheckResult::Mismatch) => ssh2::CheckResult::Mismatch,
@@ -388,7 +395,8 @@ fn resolve_known_host_check_result_from_entries(
 /// - `Some(String)`: Comma-separated `MethodType::HostKey` preference string.
 /// - `None`: No known key types were found or `known_hosts` could not be parsed.
 fn hostkey_method_preferences_from_known_hosts(host: &str, port: u16) -> Option<String> {
-    let known_types = known_host_algorithms_for_target(host, port, &known_hosts_path())?;
+    let known_hosts_path = known_hosts_path().ok()?;
+    let known_types = known_host_algorithms_for_target(host, port, &known_hosts_path)?;
     if known_types.is_empty() {
         return None;
     }
@@ -685,9 +693,10 @@ fn host_key_type_to_format(key_type: ssh2::HostKeyType) -> ssh2::KnownHostKeyFor
 /// Return the platform-appropriate path to `~/.ssh/known_hosts`.
 ///
 /// ### Returns
-/// - `PathBuf`: Absolute path derived from `home_dir()`.
-fn known_hosts_path() -> PathBuf {
-    home_dir().join(".ssh").join("known_hosts")
+/// - `Ok(PathBuf)`: Absolute path derived from `home_dir()`.
+/// - `Err(SshError::ConnectionFailed)`: Home directory could not be resolved safely.
+fn known_hosts_path() -> Result<PathBuf, SshError> {
+    Ok(home_dir()?.join(".ssh").join("known_hosts"))
 }
 
 /// Create `~/.ssh` with mode `0700` on Unix if it does not already exist.
@@ -696,7 +705,7 @@ fn known_hosts_path() -> PathBuf {
 /// - `Ok(())`: Directory exists or was created successfully.
 /// - `Err(SshError::IoError)`: Directory could not be created.
 fn ensure_ssh_dir() -> Result<(), SshError> {
-    let ssh_dir = home_dir().join(".ssh");
+    let ssh_dir = home_dir()?.join(".ssh");
     if !ssh_dir.exists() {
         std::fs::create_dir_all(&ssh_dir)
             .map_err(|e| SshError::IoError(format!("Failed to create ~/.ssh: {e}")))?;
@@ -707,23 +716,46 @@ fn ensure_ssh_dir() -> Result<(), SshError> {
 
 /// Return the current user's home directory from platform-specific environment variables.
 ///
+/// ### Errors
+/// Returns `SshError::ConnectionFailed` if the home directory cannot be resolved from
+/// platform-specific environment variables or if the resolved path is not absolute.
+///
 /// ### Returns
-/// - `PathBuf`: Home directory path; falls back to `/tmp` on Unix or `C:\Users\User` on Windows
-///   if the environment variable is missing.
-pub fn home_dir() -> PathBuf {
+/// - `Ok(PathBuf)`: Absolute home directory path.
+/// - `Err(SshError::ConnectionFailed)`: Home path is missing or not absolute.
+pub fn home_dir() -> Result<PathBuf, SshError> {
     #[cfg(windows)]
-    {
-        std::env::var("USERPROFILE")
-            .or_else(|_| {
-                std::env::var("HOMEDRIVE")
-                    .and_then(|d| std::env::var("HOMEPATH").map(|p| format!("{d}{p}")))
-            })
-            .map_or_else(|_| PathBuf::from(r"C:\Users\User"), PathBuf::from)
-    }
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| {
+            std::env::var("HOMEDRIVE")
+                .and_then(|d| std::env::var("HOMEPATH").map(|p| format!("{d}{p}")))
+        })
+        .map(PathBuf::from)
+        .map_err(|_| {
+            SshError::ConnectionFailed(
+                "Cannot resolve the home directory for SSH trust storage. \
+                 Set USERPROFILE or HOMEDRIVE/HOMEPATH and retry."
+                    .to_string(),
+            )
+        })?;
+
     #[cfg(not(windows))]
-    {
-        std::env::var("HOME").map_or_else(|_| PathBuf::from("/tmp"), PathBuf::from)
+    let home = std::env::var("HOME").map(PathBuf::from).map_err(|_| {
+        SshError::ConnectionFailed(
+            "Cannot resolve the home directory for SSH trust storage. \
+             Set HOME and retry."
+                .to_string(),
+        )
+    })?;
+
+    if !home.is_absolute() {
+        return Err(SshError::ConnectionFailed(
+            "Resolved home directory is not an absolute path; cannot use it for SSH trust storage."
+                .to_string(),
+        ));
     }
+
+    Ok(home)
 }
 
 /// Set file permissions to `0600` on Unix; no-op on Windows.
