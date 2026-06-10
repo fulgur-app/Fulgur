@@ -64,7 +64,7 @@ impl Fulgur {
     /// Show a confirmation dialog when "Save as" would lose data through encoding.
     ///
     /// ### Arguments
-    /// - `active_tab_index`: Index of the tab being saved
+    /// - `tab_id`: Stable id of the tab being saved
     /// - `path`: The chosen destination path
     /// - `contents`: The editor text to write as UTF-8 on confirm
     /// - `encoding`: The current encoding label that cannot represent the text
@@ -72,7 +72,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn show_lossy_save_as_dialog(
         &self,
-        active_tab_index: usize,
+        tab_id: usize,
         path: PathBuf,
         contents: String,
         encoding: &str,
@@ -109,7 +109,7 @@ impl Fulgur {
                 .on_ok(move |_, window, cx| {
                     entity_for_ok.update(cx, |this, cx| {
                         this.finalize_save_as(
-                            active_tab_index,
+                            tab_id,
                             &path,
                             contents.as_bytes(),
                             UTF_8.to_string(),

@@ -96,39 +96,43 @@ impl Fulgur {
         let Some(active_tab_index) = self.active_tab_index else {
             return;
         };
-        let (content_entity, encoding, directory, suggested_filename) =
-            match &self.tabs[active_tab_index] {
-                Tab::Editor(editor_tab) => {
-                    let dir = if let Some(path) = editor_tab.file_path() {
-                        path.parent()
-                            .unwrap_or(std::path::Path::new("."))
-                            .to_path_buf()
-                    } else {
-                        std::env::current_dir().unwrap_or_default()
-                    };
-                    let suggested = editor_tab.get_suggested_filename();
-                    (
-                        editor_tab.content.clone(),
-                        editor_tab.encoding.clone(),
-                        dir,
-                        suggested,
-                    )
-                }
-                Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
-            };
+        let (tab_id, encoding, directory, suggested_filename) = match &self.tabs[active_tab_index] {
+            Tab::Editor(editor_tab) => {
+                let dir = if let Some(path) = editor_tab.file_path() {
+                    path.parent()
+                        .unwrap_or(std::path::Path::new("."))
+                        .to_path_buf()
+                } else {
+                    std::env::current_dir().unwrap_or_default()
+                };
+                let suggested = editor_tab.get_suggested_filename();
+                (editor_tab.id, editor_tab.encoding.clone(), dir, suggested)
+            }
+            Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
+        };
         let path_future = cx.prompt_for_new_path(&directory, suggested_filename.as_deref());
         cx.spawn_in(window, async move |view, window| {
             let path = path_future.await.ok()?.ok()??;
             let contents = window
-                .update(|_, cx| content_entity.read(cx).text().to_string())
-                .ok()?;
+                .update(|_, cx| {
+                    view.update(cx, |this, cx| {
+                        this.tabs
+                            .iter()
+                            .find(|tab| tab.id() == tab_id)
+                            .and_then(|tab| tab.as_editor())
+                            .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
+                    })
+                    .ok()
+                    .flatten()
+                })
+                .ok()??;
             // Re-encode with the source tab's encoding. If the text cannot be represented, defer to a confirm dialog instead of writing.
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| match encode_for_save(&contents, &encoding) {
                         EncodedContents::Encoded(bytes) => {
                             this.finalize_save_as(
-                                active_tab_index,
+                                tab_id,
                                 &path,
                                 &bytes,
                                 encoding.clone(),
@@ -138,7 +142,7 @@ impl Fulgur {
                         }
                         EncodedContents::Lossy => {
                             this.show_lossy_save_as_dialog(
-                                active_tab_index,
+                                tab_id,
                                 path.clone(),
                                 contents.clone(),
                                 &encoding,
@@ -154,10 +158,10 @@ impl Fulgur {
         .detach();
     }
 
-    /// Write a "Save as" result to disk and update the active tab on success.
+    /// Write a "Save as" result to disk and update the originating tab on success.
     ///
     /// ### Arguments
-    /// - `active_tab_index`: Index of the tab being saved
+    /// - `tab_id`: Stable identifier of the editor tab that started `save_file_as`
     /// - `path`: The chosen destination path
     /// - `bytes`: The already-encoded file contents
     /// - `encoding`: The encoding label the bytes were written in
@@ -165,7 +169,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(crate) fn finalize_save_as(
         &mut self,
-        active_tab_index: usize,
+        tab_id: usize,
         path: &Path,
         bytes: &[u8],
         encoding: String,
@@ -184,9 +188,13 @@ impl Fulgur {
             return;
         }
         log::debug!("File saved successfully as: {}", path.display());
+        let Some(tab_index) = self.tabs.iter().position(|tab| tab.id() == tab_id) else {
+            log::warn!("Save As destination selected, but tab {tab_id} no longer exists");
+            return;
+        };
         let old_path = self
             .tabs
-            .get(active_tab_index)
+            .get(tab_index)
             .and_then(Tab::as_editor)
             .and_then(|editor_tab| editor_tab.file_path().cloned());
         if let Some(old_path) = old_path {
@@ -195,7 +203,7 @@ impl Fulgur {
         self.file_watch_state
             .last_file_saves
             .insert(path.to_path_buf(), std::time::Instant::now());
-        if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(active_tab_index) {
+        if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
             editor_tab.location = TabLocation::Local(path.to_path_buf());
             editor_tab.title = path
                 .file_name()
@@ -457,5 +465,63 @@ mod tests {
         // "café" must be written as the single windows-1252 byte 0xE9, not the
         // UTF-8 two-byte sequence 0xC3 0xA9.
         assert_eq!(bytes, vec![0x63, 0x61, 0x66, 0xE9]);
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_finalize_save_as_targets_tab_by_id(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let first_path = dir.path().join("first.txt");
+        let renamed_path = dir.path().join("renamed.rs");
+        let second_path = dir.path().join("second.txt");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let first_tab_id = this.tabs.first().expect("expected first tab").id();
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
+                    editor_tab.location = TabLocation::Local(first_path.clone());
+                }
+
+                this.new_tab(window, cx);
+                let second_tab_id = this.tabs.last().expect("expected second tab").id();
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
+                    editor_tab.location = TabLocation::Local(second_path.clone());
+                }
+
+                this.finalize_save_as(
+                    first_tab_id,
+                    &renamed_path,
+                    b"hello",
+                    "UTF-8".to_string(),
+                    window,
+                    cx,
+                );
+
+                let first_tab_path = this
+                    .tabs
+                    .iter()
+                    .find(|tab| tab.id() == first_tab_id)
+                    .and_then(|tab| tab.as_editor())
+                    .and_then(|editor_tab| editor_tab.file_path().cloned())
+                    .expect("first tab path should exist");
+                let second_tab_path = this
+                    .tabs
+                    .iter()
+                    .find(|tab| tab.id() == second_tab_id)
+                    .and_then(|tab| tab.as_editor())
+                    .and_then(|editor_tab| editor_tab.file_path().cloned())
+                    .expect("second tab path should exist");
+
+                assert_eq!(
+                    first_tab_path, renamed_path,
+                    "save-as update must target the originating tab id"
+                );
+                assert_eq!(
+                    second_tab_path, second_path,
+                    "save-as update must not alter other tabs"
+                );
+            });
+        });
     }
 }
