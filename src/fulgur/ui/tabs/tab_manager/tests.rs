@@ -723,6 +723,51 @@ fn test_update_modified_status_does_not_duplicate_subscriptions(cx: &mut TestApp
 }
 
 #[gpui::test]
+fn test_update_modified_status_resubscribes_after_content_rebuild(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    // Subscribe to the original content entity, then rebuild it via `force_language`.
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_modified_status(cx);
+            let settings = this.settings.editor_settings.clone();
+            let editor = this.tabs[0].as_editor_mut().expect("expected editor tab");
+            editor.force_language(window, cx, SupportedLanguage::Rust, &settings);
+        });
+    });
+
+    // The subscription now points at the dropped entity; re-running must re-subscribe.
+    let new_content = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_modified_status(cx);
+            this.tabs[0]
+                .as_editor()
+                .expect("expected editor tab")
+                .content
+                .clone()
+        })
+    });
+
+    visual_cx.update(|window, cx| {
+        new_content.update(cx, |input_state, cx| {
+            input_state.set_value("edited after rebuild", window, cx);
+            cx.emit(InputEvent::Change);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, _cx| {
+            let editor = this.tabs[0].as_editor().expect("expected editor tab");
+            assert!(
+                editor.modified,
+                "InputEvent::Change on the rebuilt content entity must update modified state"
+            );
+        });
+    });
+}
+
+#[gpui::test]
 fn test_update_modified_status_prunes_subscriptions_for_closed_tabs(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {

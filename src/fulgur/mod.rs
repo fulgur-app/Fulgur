@@ -27,9 +27,10 @@ use crate::fulgur::{
 };
 use crate::register_action;
 use gpui::{
-    Anchor, AnyElement, App, AppContext, Context, DismissEvent, Entity, ExternalPaths, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels,
-    Point, Render, ScrollHandle, SharedString, Styled, Subscription, Window, WindowId, div, px,
+    Anchor, AnyElement, App, AppContext, Context, DismissEvent, Entity, EntityId, ExternalPaths,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, Render, ScrollHandle, SharedString, Styled, Subscription, Window,
+    WindowId, div, px,
 };
 use gpui_component::{
     ActiveTheme, Root, StyledExt, WindowExt,
@@ -124,10 +125,10 @@ pub struct Fulgur {
     local_settings_version: u64, // Track the version of settings this window has loaded
     rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
     tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
-    editor_modified_subscriptions: HashMap<usize, Subscription>, // Per-editor subscriptions for incremental modified-state updates
+    editor_modified_subscriptions: HashMap<usize, (EntityId, Subscription)>, // Per-editor (subscribed content entity id, subscription) for incremental modified-state updates
     markdown_preview_cache: HashMap<usize, SharedString>, // Cached markdown source text keyed by source editor tab id
     markdown_preview_to_refresh: HashSet<usize>, // Source tab ids whose cached preview text is stale and must be refreshed on next read
-    markdown_preview_subscriptions: HashMap<usize, Subscription>, // Per-source subscriptions for markdown preview cache updates
+    markdown_preview_subscriptions: HashMap<usize, (EntityId, Subscription)>, // Per-source (subscribed content entity id, subscription) for markdown preview cache updates
     tab_scroll_handle: ScrollHandle, // Scroll handle for the tab bar to scroll active tab into view
     pending_tab_scroll: Option<usize>, // Deferred scroll-to-tab request (needs one render cycle for layout)
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
@@ -711,8 +712,9 @@ impl Fulgur {
             editor_tab.ensure_csv_table(window, cx);
         }
 
+        let tabs_ref = &self.tabs;
         let active_tab = active_tab_index.and_then(|active_index| {
-            self.tabs.get(active_index).map(|tab| match tab {
+            tabs_ref.get(active_index).map(|tab| match tab {
                 Tab::Editor(editor_tab) => ActiveTabRenderData::Editor {
                     tab_id: editor_tab.id,
                     language: editor_tab.language,
@@ -724,7 +726,17 @@ impl Fulgur {
                 Tab::Settings(_) => ActiveTabRenderData::Settings,
                 Tab::MarkdownPreview(preview_tab) => ActiveTabRenderData::MarkdownPreview {
                     source_tab_id: preview_tab.source_tab_id,
-                    content: preview_tab.content.clone(),
+                    content: tabs_ref
+                        .iter()
+                        .find_map(|t| match t {
+                            Tab::Editor(editor_tab)
+                                if editor_tab.id == preview_tab.source_tab_id =>
+                            {
+                                Some(editor_tab.content.clone())
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| preview_tab.content.clone()),
                     view_state: preview_tab.view_state.clone(),
                 },
             })
@@ -889,9 +901,12 @@ impl Fulgur {
         content: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> SharedString {
-        if let std::collections::hash_map::Entry::Vacant(entry) =
-            self.markdown_preview_subscriptions.entry(source_tab_id)
-        {
+        let current_entity_id = content.entity_id();
+        let entity_changed = self
+            .markdown_preview_subscriptions
+            .get(&source_tab_id)
+            .is_none_or(|(entity_id, _)| *entity_id != current_entity_id);
+        if entity_changed {
             let subscription =
                 cx.subscribe(content, move |this: &mut Self, _, ev: &InputEvent, cx| {
                     if !matches!(ev, InputEvent::Change) {
@@ -900,9 +915,12 @@ impl Fulgur {
                     this.markdown_preview_to_refresh.insert(source_tab_id);
                     cx.notify();
                 });
-            entry.insert(subscription);
+            self.markdown_preview_subscriptions
+                .insert(source_tab_id, (current_entity_id, subscription));
         }
-        let needs_refresh = self.markdown_preview_to_refresh.remove(&source_tab_id)
+        let refresh_requested = self.markdown_preview_to_refresh.remove(&source_tab_id);
+        let needs_refresh = entity_changed
+            || refresh_requested
             || !self.markdown_preview_cache.contains_key(&source_tab_id);
         if needs_refresh {
             self.markdown_preview_cache

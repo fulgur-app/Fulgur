@@ -29,9 +29,11 @@ impl Fulgur {
             let Tab::Editor(editor_tab) = tab else {
                 continue;
             };
+            let current_entity_id = editor_tab.content.entity_id();
             if self
                 .editor_modified_subscriptions
-                .contains_key(&editor_tab.id)
+                .get(&editor_tab.id)
+                .is_some_and(|(entity_id, _)| *entity_id == current_entity_id)
             {
                 continue;
             }
@@ -39,6 +41,7 @@ impl Fulgur {
         }
 
         for (tab_id, content) in tabs_to_subscribe {
+            let entity_id = content.entity_id();
             let subscription =
                 cx.subscribe(&content, move |this: &mut Self, _, ev: &InputEvent, cx| {
                     if !matches!(ev, InputEvent::Change) {
@@ -55,7 +58,7 @@ impl Fulgur {
                     }
                 });
             self.editor_modified_subscriptions
-                .insert(tab_id, subscription);
+                .insert(tab_id, (entity_id, subscription));
         }
     }
 
