@@ -1,4 +1,4 @@
-use super::detect_encoding_and_decode;
+use super::{detect_encoding_and_decode, looks_binary};
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
@@ -79,13 +79,14 @@ impl Fulgur {
             log::debug!("Reloading tab content from disk: {}", path.display());
             match std::fs::read(&path) {
                 Ok(bytes) => {
-                    let (encoding, contents) = detect_encoding_and_decode(&bytes);
+                    let decoded = detect_encoding_and_decode(&bytes);
                     if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
                         editor_tab.content.update(cx, |input_state, cx| {
-                            input_state.set_value(&contents, window, cx);
+                            input_state.set_value(&decoded.content, window, cx);
                         });
-                        editor_tab.set_original_content_from_str(&contents);
-                        editor_tab.encoding = encoding;
+                        editor_tab.set_original_content_from_str(&decoded.content);
+                        editor_tab.encoding = decoded.encoding;
+                        editor_tab.lossy_decode = decoded.lossy;
                         editor_tab.modified = false;
                         editor_tab.update_file_tooltip_cache(bytes.len());
                         editor_tab.update_language(window, cx, &self.settings.editor_settings);
@@ -167,22 +168,44 @@ impl Fulgur {
                 return None;
             }
         };
-        let (encoding, contents) = detect_encoding_and_decode(&bytes);
+        if looks_binary(&bytes) {
+            log::warn!("Refusing to open binary file: {}", path.display());
+            let file_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file")
+                .to_string();
+            window
+                .update(|_, cx| {
+                    _ = view.update(cx, |this, cx| {
+                        this.pending_notification = Some((
+                            NotificationType::Warning,
+                            format!("Cannot open '{file_name}': appears to be a binary file")
+                                .into(),
+                        ));
+                        cx.notify();
+                    });
+                })
+                .ok();
+            return None;
+        }
+        let decoded = detect_encoding_and_decode(&bytes);
         window
             .update(|window, cx| {
                 _ = view.update(cx, |this, cx| {
-                    let editor_tab = EditorTab::from_file(
+                    let mut editor_tab = EditorTab::from_file(
                         FromFileParams {
                             id: this.next_tab_id,
                             path: path.to_path_buf(),
-                            contents,
-                            encoding,
+                            contents: decoded.content,
+                            encoding: decoded.encoding,
                             is_modified: false,
                         },
                         window,
                         cx,
                         &this.settings.editor_settings,
                     );
+                    editor_tab.lossy_decode = decoded.lossy;
                     let editor_tab_index =
                         this.place_editor_tab_reusing_scratch(Tab::Editor(editor_tab), window, cx);
                     this.next_tab_id += 1;

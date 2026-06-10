@@ -32,7 +32,8 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `tab_id`: Stable editor-tab id used to apply completion updates
     /// - `spec`: Remote file specification for the tab
-    /// - `contents`: Snapshot of editor contents to persist remotely
+    /// - `contents`: Snapshot of editor text, used to reset the modified baseline
+    /// - `bytes`: The encoded file contents to write to the remote host
     pub(super) fn save_remote_file(
         &mut self,
         window: &mut gpui::Window,
@@ -40,6 +41,7 @@ impl Fulgur {
         tab_id: usize,
         mut spec: RemoteSpec,
         contents: String,
+        bytes: Vec<u8>,
     ) {
         let ssh_session_cache = Arc::clone(&Fulgur::shared_state(cx).ssh_session_cache);
         let ssh_session_pool = Arc::clone(&Fulgur::shared_state(cx).ssh_session_pool);
@@ -49,6 +51,7 @@ impl Fulgur {
         }
 
         let saved_content = Arc::new(contents);
+        let saved_bytes = Arc::new(bytes);
         if let Some(user) = spec.user.clone() {
             let cache_key = SshCredKey::new(spec.host.clone(), spec.port, user.clone());
             if let Some(cached_password) = ssh_session_cache.lock().get(&cache_key).cloned() {
@@ -65,6 +68,7 @@ impl Fulgur {
                         request_id,
                         spec,
                         saved_content: Arc::clone(&saved_content),
+                        saved_bytes: Arc::clone(&saved_bytes),
                         password: cached_password,
                         credential_key: cache_key,
                         ssh_session_cache: Arc::clone(&ssh_session_cache),
@@ -122,6 +126,7 @@ impl Fulgur {
                                 request_id,
                                 spec: spec_with_user,
                                 saved_content: Arc::clone(&saved_content),
+                                saved_bytes: Arc::clone(&saved_bytes),
                                 password,
                                 credential_key: cache_key,
                                 ssh_session_cache: Arc::clone(&cache_for_callback),
@@ -150,6 +155,7 @@ impl Fulgur {
             request_id,
             spec,
             saved_content,
+            saved_bytes,
             password,
             credential_key,
             ssh_session_cache,
@@ -174,7 +180,7 @@ impl Fulgur {
         let user = spec.user.clone().unwrap_or_default();
         let cache_for_thread = Arc::clone(&ssh_session_cache);
         let credential_key_for_thread = credential_key.clone();
-        let content_for_thread = Arc::clone(&saved_content);
+        let content_for_thread = Arc::clone(&saved_bytes);
         let pool_for_thread = Arc::clone(&ssh_session_pool);
 
         let progress_label =
@@ -223,7 +229,7 @@ impl Fulgur {
                     let result = ssh::sftp::write_remote_file(
                         pooled_session.session(),
                         &spec_for_thread.path,
-                        content_for_thread.as_bytes(),
+                        content_for_thread.as_slice(),
                     );
                     if result.is_err() {
                         pooled_session.invalidate();

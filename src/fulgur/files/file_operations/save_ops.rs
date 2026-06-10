@@ -1,3 +1,4 @@
+use super::{EncodedContents, encode_for_save};
 use crate::fulgur::{
     Fulgur, editor_tab::TabLocation, tab::Tab, ui::components_utils::UNTITLED,
     utils::atomic_write::atomic_write_file,
@@ -20,11 +21,13 @@ impl Fulgur {
             return;
         };
         let active_tab = &self.tabs[active_tab_index];
-        let (tab_id, location, content_entity) = match active_tab {
+        let (tab_id, location, content_entity, encoding, lossy_decode) = match active_tab {
             Tab::Editor(editor_tab) => (
                 editor_tab.id,
                 editor_tab.location.clone(),
                 editor_tab.content.clone(),
+                editor_tab.encoding.clone(),
+                editor_tab.lossy_decode,
             ),
             Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
         };
@@ -33,10 +36,26 @@ impl Fulgur {
             return;
         }
         let contents = content_entity.read(cx).text().to_string();
+        // Re-encode using the tab's stored encoding so legacy-encoded files are
+        // not silently rewritten as UTF-8. A lossy decode (undecodable bytes
+        // already replaced) or an encoding that cannot represent the current
+        // text both require the user to confirm a UTF-8 conversion first.
+        let bytes = if lossy_decode {
+            None
+        } else {
+            match encode_for_save(&contents, &encoding) {
+                EncodedContents::Encoded(bytes) => Some(bytes),
+                EncodedContents::Lossy => None,
+            }
+        };
+        let Some(bytes) = bytes else {
+            self.show_lossy_save_dialog(tab_id, &encoding, window, cx);
+            return;
+        };
         match location {
             TabLocation::Local(path) => {
-                log::debug!("Saving file: {} ({} bytes)", path.display(), contents.len());
-                if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
+                log::debug!("Saving file: {} ({} bytes)", path.display(), bytes.len());
+                if let Err(e) = atomic_write_file(&path, &bytes) {
                     log::error!("Failed to save file {}: {e}", path.display());
                     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
                     window.push_notification(
@@ -54,12 +73,12 @@ impl Fulgur {
                     .insert(path.clone(), std::time::Instant::now());
                 if let Tab::Editor(editor_tab) = &mut self.tabs[active_tab_index] {
                     editor_tab.mark_as_saved(cx);
-                    editor_tab.update_file_tooltip_cache(contents.len());
+                    editor_tab.update_file_tooltip_cache(bytes.len());
                 }
                 cx.notify();
             }
             TabLocation::Remote(spec) => {
-                self.save_remote_file(window, cx, tab_id, spec, contents);
+                self.save_remote_file(window, cx, tab_id, spec, contents, bytes);
             }
             TabLocation::Untitled => {}
         }
@@ -77,7 +96,7 @@ impl Fulgur {
         let Some(active_tab_index) = self.active_tab_index else {
             return;
         };
-        let (tab_id, directory, suggested_filename) = match &self.tabs[active_tab_index] {
+        let (tab_id, encoding, directory, suggested_filename) = match &self.tabs[active_tab_index] {
             Tab::Editor(editor_tab) => {
                 let dir = if let Some(path) = editor_tab.file_path() {
                     path.parent()
@@ -87,7 +106,7 @@ impl Fulgur {
                     std::env::current_dir().unwrap_or_default()
                 };
                 let suggested = editor_tab.get_suggested_filename();
-                (editor_tab.id, dir, suggested)
+                (editor_tab.id, editor_tab.encoding.clone(), dir, suggested)
             }
             Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
         };
@@ -107,70 +126,76 @@ impl Fulgur {
                     .flatten()
                 })
                 .ok()??;
-            log::debug!(
-                "Saving file as: {} ({} bytes)",
-                path.display(),
-                contents.len()
-            );
-            if let Err(e) = atomic_write_file(&path, contents.as_bytes()) {
-                log::error!("Failed to save file {}: {e}", path.display());
-                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-                let message = SharedString::from(format!("Failed to save '{file_name}': {e}"));
-                window
-                    .update(|_, cx| {
-                        _ = view.update(cx, |this, cx| {
-                            this.pending_notification = Some((NotificationType::Error, message));
-                            cx.notify();
-                        });
-                    })
-                    .ok()?;
-                return None;
-            }
-            log::debug!("File saved successfully as: {}", path.display());
-            let applied = window
+            // Re-encode with the source tab's encoding. If the text cannot be represented, defer to a confirm dialog instead of writing.
+            window
                 .update(|window, cx| {
-                    view.update(cx, |this, cx| {
-                        this.apply_save_as_result_to_tab(tab_id, &path, contents.len(), window, cx)
-                    })
-                    .ok()
+                    _ = view.update(cx, |this, cx| match encode_for_save(&contents, &encoding) {
+                        EncodedContents::Encoded(bytes) => {
+                            this.finalize_save_as(
+                                tab_id,
+                                &path,
+                                &bytes,
+                                encoding.clone(),
+                                window,
+                                cx,
+                            );
+                        }
+                        EncodedContents::Lossy => {
+                            this.show_lossy_save_as_dialog(
+                                tab_id,
+                                path.clone(),
+                                contents.clone(),
+                                &encoding,
+                                window,
+                                cx,
+                            );
+                        }
+                    });
                 })
-                .ok()??;
-            if !applied {
-                log::warn!("Save As destination selected, but tab {tab_id} no longer exists");
-                return None;
-            }
+                .ok()?;
             Some(())
         })
         .detach();
     }
 
-    /// Apply successful "Save As" updates to the tab that initiated the request.
+    /// Write a "Save as" result to disk and update the originating tab on success.
     ///
     /// ### Arguments
     /// - `tab_id`: Stable identifier of the editor tab that started `save_file_as`
-    /// - `path`: Destination path selected by the user
-    /// - `content_len`: Number of bytes written to disk
-    /// - `window`: The host window for language updates
+    /// - `path`: The chosen destination path
+    /// - `bytes`: The already-encoded file contents
+    /// - `encoding`: The encoding label the bytes were written in
+    /// - `window`: The window context
     /// - `cx`: The application context
-    ///
-    /// ### Returns
-    /// - `true`: If the originating tab still exists and was updated
-    /// - `false`: If the tab no longer exists or is not an editor tab
-    fn apply_save_as_result_to_tab(
+    pub(crate) fn finalize_save_as(
         &mut self,
         tab_id: usize,
         path: &Path,
-        content_len: usize,
+        bytes: &[u8],
+        encoding: String,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> bool {
+    ) {
+        log::debug!("Saving file as: {} ({} bytes)", path.display(), bytes.len());
+        if let Err(e) = atomic_write_file(path, bytes) {
+            log::error!("Failed to save file {}: {e}", path.display());
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+            self.pending_notification = Some((
+                NotificationType::Error,
+                SharedString::from(format!("Failed to save '{file_name}': {e}")),
+            ));
+            cx.notify();
+            return;
+        }
+        log::debug!("File saved successfully as: {}", path.display());
         let Some(tab_index) = self.tabs.iter().position(|tab| tab.id() == tab_id) else {
-            return false;
+            log::warn!("Save As destination selected, but tab {tab_id} no longer exists");
+            return;
         };
         let old_path = self
             .tabs
             .get(tab_index)
-            .and_then(|tab| tab.as_editor())
+            .and_then(Tab::as_editor)
             .and_then(|editor_tab| editor_tab.file_path().cloned());
         if let Some(old_path) = old_path {
             self.unwatch_file(&old_path);
@@ -178,22 +203,21 @@ impl Fulgur {
         self.file_watch_state
             .last_file_saves
             .insert(path.to_path_buf(), std::time::Instant::now());
-        let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) else {
-            return false;
-        };
-        editor_tab.location = TabLocation::Local(path.to_path_buf());
-        editor_tab.title = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(UNTITLED)
-            .to_string()
-            .into();
-        editor_tab.mark_as_saved(cx);
-        editor_tab.update_file_tooltip_cache(content_len);
-        editor_tab.update_language(window, cx, &self.settings.editor_settings);
+        if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
+            editor_tab.location = TabLocation::Local(path.to_path_buf());
+            editor_tab.title = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(UNTITLED)
+                .to_string()
+                .into();
+            editor_tab.encoding = encoding;
+            editor_tab.mark_as_saved(cx);
+            editor_tab.update_file_tooltip_cache(bytes.len());
+            editor_tab.update_language(window, cx, &self.settings.editor_settings);
+            cx.notify();
+        }
         self.watch_file(path);
-        cx.notify();
-        true
     }
 
     /// Show notification when file is reloaded
@@ -419,7 +443,33 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
-    fn test_apply_save_as_result_targets_tab_by_id(cx: &mut TestAppContext) {
+    fn test_save_file_preserves_non_utf8_encoding(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("latin1.txt");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.encoding = "windows-1252".to_string();
+                    editor_tab.content.update(cx, |state, cx| {
+                        state.set_value("café", window, cx);
+                    });
+                }
+                this.save_file(window, cx);
+            });
+        });
+
+        let bytes = std::fs::read(&path).expect("file should exist after save");
+        // "café" must be written as the single windows-1252 byte 0xE9, not the
+        // UTF-8 two-byte sequence 0xC3 0xA9.
+        assert_eq!(bytes, vec![0x63, 0x61, 0x66, 0xE9]);
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_finalize_save_as_targets_tab_by_id(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
         let first_path = dir.path().join("first.txt");
@@ -439,9 +489,14 @@ mod tests {
                     editor_tab.location = TabLocation::Local(second_path.clone());
                 }
 
-                let applied =
-                    this.apply_save_as_result_to_tab(first_tab_id, &renamed_path, 42, window, cx);
-                assert!(applied, "save-as metadata updates should be applied");
+                this.finalize_save_as(
+                    first_tab_id,
+                    &renamed_path,
+                    b"hello",
+                    "UTF-8".to_string(),
+                    window,
+                    cx,
+                );
 
                 let first_tab_path = this
                     .tabs
