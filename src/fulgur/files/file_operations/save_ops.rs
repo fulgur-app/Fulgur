@@ -152,7 +152,11 @@ impl Fulgur {
                         }
                     });
                 })
-                .ok()?;
+                .ok()??;
+            if !applied {
+                log::warn!("Save As destination selected, but tab {tab_id} no longer exists");
+                return None;
+            }
             Some(())
         })
         .detach();
