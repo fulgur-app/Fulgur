@@ -558,6 +558,7 @@ impl Fulgur {
         let language = editor_tab.language;
         let raw_title = editor_tab.title.to_string();
         let encoding = editor_tab.encoding.clone();
+        let lossy_decode = editor_tab.lossy_decode;
         let settings = self.settings.editor_settings.clone();
         let clean_title: SharedString = raw_title.trim_end_matches(" •").trim().to_string().into();
         let new_tab = Tab::Editor(EditorTab::from_duplicate(
@@ -566,6 +567,7 @@ impl Fulgur {
                 title: clean_title,
                 current_content,
                 encoding,
+                lossy_decode,
                 language,
             },
             window,

@@ -27,6 +27,7 @@ impl Fulgur {
             original_content_hash: editor.original_content_hash,
             original_content_len: editor.original_content_len,
             encoding: editor.encoding.clone(),
+            lossy_decode: editor.lossy_decode,
             language: editor.language,
             show_markdown_toolbar: editor.show_markdown_toolbar,
             show_markdown_preview: editor.show_markdown_preview,

@@ -23,6 +23,7 @@ pub struct RemoteFileResult {
     pub spec: RemoteSpec,
     pub content: String,
     pub encoding: String,
+    pub lossy: bool,
     pub file_size: usize,
 }
 
@@ -105,6 +106,7 @@ pub struct RemoteSaveTaskParams {
     pub request_id: u64,
     pub spec: RemoteSpec,
     pub saved_content: Arc<String>,
+    pub saved_bytes: Arc<Vec<u8>>,
     pub password: Zeroizing<String>,
     pub credential_key: SshCredKey,
     pub ssh_session_cache: Arc<Mutex<ssh::credentials::SshCredentialCache>>,

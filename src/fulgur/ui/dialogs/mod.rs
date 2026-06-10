@@ -2,6 +2,7 @@ pub mod about;
 pub mod file_browser;
 pub mod file_watcher;
 pub mod jump_line;
+pub mod lossy_save;
 pub mod open_path;
 pub mod open_remote;
 pub mod path_browser;

@@ -255,7 +255,7 @@ impl Fulgur {
             file_modified_time,
             can_read_file,
         );
-        let (content, path, encoding, is_modified) = match decision {
+        let (content, path, encoding, is_modified, lossy_decode) = match decision {
             TabRestoreDecision::RestoreRemote { remote, content } => {
                 let is_modified = content.is_some();
                 let restored_content = content.unwrap_or_default();
@@ -266,6 +266,7 @@ impl Fulgur {
                         file_size: restored_content.len(),
                         content: restored_content,
                         encoding: UTF_8.to_string(),
+                        lossy: false,
                     },
                     window,
                     cx,
@@ -279,19 +280,25 @@ impl Fulgur {
                 let mut bytes = Vec::new();
                 let mut file = readable_file.take()?;
                 file.read_to_end(&mut bytes).ok()?;
-                let (enc, file_content) = detect_encoding_and_decode(&bytes);
-                (file_content, Some(path), enc, false)
+                let decoded = detect_encoding_and_decode(&bytes);
+                (
+                    decoded.content,
+                    Some(path),
+                    decoded.encoding,
+                    false,
+                    decoded.lossy,
+                )
             }
             TabRestoreDecision::UseSavedContentWithPath { path, content } => {
-                (content, Some(path), UTF_8.to_string(), true)
+                (content, Some(path), UTF_8.to_string(), true, false)
             }
             TabRestoreDecision::UseSavedContentNoPath { content } => {
-                (content, None, UTF_8.to_string(), true)
+                (content, None, UTF_8.to_string(), true, false)
             }
             TabRestoreDecision::Skip => return None,
         };
         let tab = if let Some(file_path) = path {
-            EditorTab::from_file(
+            let mut tab = EditorTab::from_file(
                 FromFileParams {
                     id: tab_id,
                     path: file_path,
@@ -302,7 +309,9 @@ impl Fulgur {
                 window,
                 cx,
                 &self.settings.editor_settings,
-            )
+            );
+            tab.lossy_decode = lossy_decode;
+            tab
         } else {
             let language = language_from_content(&tab_state.title, &content);
             let (csv_view_mode, csv_delimiter) =
@@ -330,6 +339,7 @@ impl Fulgur {
                     crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str("").0,
                 original_content_len: 0,
                 encoding: "UTF-8".to_string(),
+                lossy_decode: false,
                 language,
                 show_markdown_toolbar: self
                     .settings

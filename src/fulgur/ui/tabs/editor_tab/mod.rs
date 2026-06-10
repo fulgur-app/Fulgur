@@ -41,6 +41,8 @@ pub struct EditorTab {
     pub original_content_hash: u64,
     pub original_content_len: usize,
     pub encoding: String,
+    /// Whether the file was decoded lossily (undecodable bytes replaced).
+    pub lossy_decode: bool,
     pub language: SupportedLanguage,
     pub show_markdown_toolbar: bool,
     pub show_markdown_preview: bool,
@@ -65,6 +67,7 @@ pub struct TabTransferData {
     pub original_content_hash: u64,
     pub original_content_len: usize,
     pub encoding: String,
+    pub lossy_decode: bool,
     pub language: SupportedLanguage,
     pub show_markdown_toolbar: bool,
     pub show_markdown_preview: bool,
@@ -81,6 +84,7 @@ pub struct FromDuplicateParams {
     pub title: SharedString,
     pub current_content: String,
     pub encoding: String,
+    pub lossy_decode: bool,
     pub language: SupportedLanguage,
 }
 
