@@ -860,6 +860,108 @@ fn test_gpui_replace_all_whole_word_only(cx: &mut TestAppContext) {
 
 #[cfg(feature = "gpui-test-support")]
 #[gpui::test]
+fn test_gpui_replace_current_recomputes_after_buffer_edit(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.get_active_editor_tab_mut()
+                .expect("expected active editor tab")
+                .content
+                .update(cx, |content, cx| {
+                    content.set_value("alpha beta alpha", window, cx);
+                });
+
+            this.search_state.show_search = true;
+            this.search_state.match_case = false;
+            this.search_state.match_whole_word = false;
+            this.search_state.search_input.update(cx, |input, cx| {
+                input.set_value("alpha", window, cx);
+            });
+            this.search_state.replace_input.update(cx, |input, cx| {
+                input.set_value("x", window, cx);
+            });
+
+            this.perform_search(window, cx);
+            assert_eq!(this.search_state.search_matches.len(), 2);
+            // Point at the second match, whose offset (11) is about to go stale.
+            this.search_state.current_match_index = Some(1);
+
+            // Shrink the buffer without refreshing matches; offset 11 is now out
+            // of bounds. Replacing previously sliced out of bounds and panicked.
+            this.get_active_editor_tab_mut()
+                .expect("expected active editor tab")
+                .content
+                .update(cx, |content, cx| {
+                    content.set_value("alpha", window, cx);
+                });
+
+            this.replace_current(window, cx);
+
+            let text = this
+                .get_active_editor_tab()
+                .expect("expected active editor tab")
+                .content
+                .read(cx)
+                .text()
+                .to_string();
+            assert_eq!(text, "x");
+        });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_gpui_replace_all_recomputes_after_buffer_edit(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.get_active_editor_tab_mut()
+                .expect("expected active editor tab")
+                .content
+                .update(cx, |content, cx| {
+                    content.set_value("foo foo foo", window, cx);
+                });
+
+            this.search_state.show_search = true;
+            this.search_state.match_case = false;
+            this.search_state.match_whole_word = true;
+            this.search_state.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            this.search_state.replace_input.update(cx, |input, cx| {
+                input.set_value("baz", window, cx);
+            });
+
+            this.perform_search(window, cx);
+            assert_eq!(this.search_state.search_matches.len(), 3);
+
+            // Shrink the buffer without refreshing matches; offsets 4 and 8 are
+            // now out of bounds. Replace All previously corrupted or panicked.
+            this.get_active_editor_tab_mut()
+                .expect("expected active editor tab")
+                .content
+                .update(cx, |content, cx| {
+                    content.set_value("foo", window, cx);
+                });
+
+            this.replace_all(window, cx);
+
+            let text = this
+                .get_active_editor_tab()
+                .expect("expected active editor tab")
+                .content
+                .read(cx)
+                .text()
+                .to_string();
+            assert_eq!(text, "baz");
+        });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
 fn test_gpui_replace_all_case_sensitive_non_whole_word(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 

@@ -167,6 +167,18 @@ pub(super) fn apply_replacements(
     let mut result = String::new();
     let mut last_pos = 0;
     for m in search_matches {
+        // Defensive guard against stale offsets: skip any match that does not
+        // align with the current text's char boundaries, runs past its end, or
+        // overlaps the previous replacement. This prevents an out-of-bounds or
+        // non-char-boundary slice from panicking if the buffer changed.
+        if m.start < last_pos
+            || m.end > text.len()
+            || m.start > m.end
+            || !text.is_char_boundary(m.start)
+            || !text.is_char_boundary(m.end)
+        {
+            continue;
+        }
         result.push_str(&text[last_pos..m.start]);
         result.push_str(replace);
         last_pos = m.end;
@@ -388,12 +400,26 @@ impl Fulgur {
         }
     }
 
+    /// Force a fresh search, bypassing the query/option dedup cache
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn force_perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_state.last_search_query.clear();
+        self.search_state.search_matches.clear();
+        self.perform_search(window, cx);
+    }
+
     /// Replace the current search match
     ///
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
     pub(super) fn replace_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Recompute matches against the current buffer before slicing: the cached
+        // offsets may be stale if the document was edited since the last search.
+        self.force_perform_search(window, cx);
         if let Some(match_index) = self.search_state.current_match_index
             && let Some(search_match) = self.search_state.search_matches.get(match_index).cloned()
             && let Some(active_index) = self.active_tab_index
@@ -402,6 +428,16 @@ impl Fulgur {
         {
             let replace_text = self.search_state.replace_input.read(cx).text().to_string();
             let text = editor_tab.content.read(cx).text().to_string();
+            // Defensive guard against stale offsets: bail out instead of slicing
+            // out of bounds or on a non-char-boundary if the buffer changed.
+            if search_match.end > text.len()
+                || search_match.start > search_match.end
+                || !text.is_char_boundary(search_match.start)
+                || !text.is_char_boundary(search_match.end)
+            {
+                cx.notify();
+                return;
+            }
             let mut new_text = String::new();
             new_text.push_str(&text[..search_match.start]);
             new_text.push_str(&replace_text);
@@ -429,6 +465,9 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub(super) fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Recompute matches against the current buffer before slicing: the cached
+        // offsets may be stale if the document was edited since the last search.
+        self.force_perform_search(window, cx);
         if self.search_state.search_matches.is_empty() {
             return;
         }
