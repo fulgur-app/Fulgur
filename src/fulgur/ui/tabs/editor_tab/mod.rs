@@ -119,17 +119,32 @@ impl EditorTab {
     /// ### Arguments
     /// - `window`: The window the table is created in
     /// - `cx`: The application context
-    pub fn ensure_csv_table(&mut self, window: &mut Window, cx: &mut App) {
+    ///
+    /// ### Returns
+    /// - `Some(String)`: A warning to surface when the table could not be built
+    ///   safely and the tab fell back to text mode
+    /// - `None`: When the table was built (or already current)
+    pub fn ensure_csv_table(&mut self, window: &mut Window, cx: &mut App) -> Option<String> {
         let text = self.content.read(cx).value().to_string();
         let (hash, _len) = content_fingerprint_from_str(&text);
         if self.csv_table.is_some() && self.csv_table_source_hash == hash {
-            return;
+            return None;
         }
 
-        let data = parse_csv(&text, self.csv_delimiter);
+        let outcome = parse_csv(&text, self.csv_delimiter);
+        if outcome.dropped_records > 0 {
+            self.csv_view_mode = CsvViewMode::Text;
+            self.csv_table = None;
+            return Some(format!(
+                "{} malformed CSV row(s) could not be parsed. Showing raw text to avoid data loss.",
+                outcome.dropped_records
+            ));
+        }
+
         let content = self.content.clone();
         let dialog_input = cx.new(|cx| InputState::new(window, cx));
-        let delegate = CsvTableDelegate::new(data, self.csv_delimiter, content, dialog_input);
+        let delegate =
+            CsvTableDelegate::new(outcome.data, self.csv_delimiter, content, dialog_input);
         let table = cx.new(|cx| {
             TableState::new(delegate, window, cx)
                 .cell_selectable(true)
@@ -139,6 +154,7 @@ impl EditorTab {
 
         self.csv_table = Some(table);
         self.csv_table_source_hash = hash;
+        None
     }
 }
 
