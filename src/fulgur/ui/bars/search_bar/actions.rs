@@ -20,6 +20,32 @@ fn refresh_newline_offsets(text: &str, newline_offsets_scratch: &mut Vec<usize>)
     );
 }
 
+/// Rebuild the lowercased search text together with a byte-offset map back to the original text.
+///
+/// ### Arguments
+/// - `text`: The original source text
+/// - `lowercase_text_scratch`: Reusable buffer filled with the lowercased text
+/// - `lowercase_offsets_scratch`: Reusable buffer filled with the lowercased-to-original offset map
+fn rebuild_lowercase_text(
+    text: &str,
+    lowercase_text_scratch: &mut String,
+    lowercase_offsets_scratch: &mut Vec<usize>,
+) {
+    lowercase_text_scratch.clear();
+    lowercase_offsets_scratch.clear();
+    for (orig_offset, ch) in text.char_indices() {
+        let before = lowercase_text_scratch.len();
+        for lowered in ch.to_lowercase() {
+            lowercase_text_scratch.push(lowered);
+        }
+        let added = lowercase_text_scratch.len() - before;
+        for _ in 0..added {
+            lowercase_offsets_scratch.push(orig_offset);
+        }
+    }
+    lowercase_offsets_scratch.push(text.len());
+}
+
 /// Find all matches in the text
 ///
 /// ### Arguments
@@ -39,6 +65,7 @@ pub(super) fn find_matches(
 ) -> Vec<SearchMatch> {
     let mut newline_offsets_scratch = Vec::new();
     let mut lowercase_text_scratch = String::new();
+    let mut lowercase_offsets_scratch = Vec::new();
     find_matches_with_scratch(
         text,
         query,
@@ -46,6 +73,7 @@ pub(super) fn find_matches(
         match_whole_word,
         &mut newline_offsets_scratch,
         &mut lowercase_text_scratch,
+        &mut lowercase_offsets_scratch,
     )
 }
 
@@ -58,9 +86,10 @@ pub(super) fn find_matches(
 /// - `match_whole_word`: Whether to match whole words only
 /// - `newline_offsets_scratch`: Reusable newline-offset buffer
 /// - `lowercase_text_scratch`: Reusable lowercase-text buffer
+/// - `lowercase_offsets_scratch`: Reusable lowercased-to-original byte-offset map
 ///
 /// ### Returns
-/// - `Vec<SearchMatch>`: A vector of search matches
+/// - `Vec<SearchMatch>`: A vector of search matches with offsets into the original `text`
 pub(super) fn find_matches_with_scratch(
     text: &str,
     query: &str,
@@ -68,6 +97,7 @@ pub(super) fn find_matches_with_scratch(
     match_whole_word: bool,
     newline_offsets_scratch: &mut Vec<usize>,
     lowercase_text_scratch: &mut String,
+    lowercase_offsets_scratch: &mut Vec<usize>,
 ) -> Vec<SearchMatch> {
     let mut matches = Vec::new();
     if query.is_empty() {
@@ -76,11 +106,13 @@ pub(super) fn find_matches_with_scratch(
 
     refresh_newline_offsets(text, newline_offsets_scratch);
 
+    // For case-insensitive search the haystack is a lowercased copy whose byte layout
+    // can differ from the original. Offsets found in that copy are translated back to
+    // the original text through `lowercase_offsets_scratch`.
     let search_text = if match_case {
         text
     } else {
-        lowercase_text_scratch.clear();
-        lowercase_text_scratch.extend(text.chars().flat_map(char::to_lowercase));
+        rebuild_lowercase_text(text, lowercase_text_scratch, lowercase_offsets_scratch);
         lowercase_text_scratch.as_str()
     };
     let search_query: Cow<str> = if match_case {
@@ -91,42 +123,62 @@ pub(super) fn find_matches_with_scratch(
 
     let mut start_pos = 0;
     while let Some(pos) = search_text[start_pos..].find(search_query.as_ref()) {
-        let absolute_pos = start_pos + pos;
-        let end_pos = absolute_pos + query.len();
+        let search_start = start_pos + pos;
+        let search_end = search_start + search_query.len();
+        // Map both endpoints from search-text space back to original-text space.
+        // With case-sensitive search the two spaces are identical.
+        let (match_start, match_end) = if match_case {
+            (search_start, search_end)
+        } else {
+            (
+                lowercase_offsets_scratch[search_start],
+                lowercase_offsets_scratch[search_end],
+            )
+        };
         if match_whole_word {
-            let is_word_start = absolute_pos == 0
-                || !text[..absolute_pos]
+            let is_word_start = match_start == 0
+                || !text[..match_start]
                     .chars()
                     .next_back()
                     .is_some_and(|c| c.is_alphanumeric() || c == '_');
-            let is_word_end = end_pos >= text.len()
-                || !text[end_pos..]
+            let is_word_end = match_end >= text.len()
+                || !text[match_end..]
                     .chars()
                     .next()
                     .is_some_and(|c| c.is_alphanumeric() || c == '_');
 
             if !is_word_start || !is_word_end {
-                start_pos = absolute_pos + 1;
+                start_pos = advance_past_char(search_text, search_start);
                 continue;
             }
         }
-        let (line, col) = get_line_col_fast(text, absolute_pos, newline_offsets_scratch);
+        let (line, col) = get_line_col_fast(text, match_start, newline_offsets_scratch);
         matches.push(SearchMatch {
-            start: absolute_pos,
-            end: end_pos,
+            start: match_start,
+            end: match_end,
             line,
             col,
         });
-        start_pos = absolute_pos + 1;
+        start_pos = advance_past_char(search_text, search_start);
     }
     matches
 }
 
+/// Advance a scan cursor past the character starting at `pos`, staying on a char boundary.
+///
+/// ### Arguments
+/// - `text`: The text being scanned
+/// - `pos`: A char-boundary byte offset within `text`
+///
+/// ### Returns
+/// - `usize`: The byte offset of the next character boundary after `pos`
+fn advance_past_char(text: &str, pos: usize) -> usize {
+    let char_len = text[pos..].chars().next().map_or(1, char::len_utf8);
+    pos + char_len
+}
+
 /// Get line and column from byte position using precomputed newline offsets
-///
-/// Uses binary search over newline positions for O(log n) lookup instead of
-/// scanning from the start of the text each time.
-///
+///  
 /// ### Arguments
 /// - `text`: The text
 /// - `byte_pos`: The byte position
@@ -281,6 +333,7 @@ impl Fulgur {
                 match_whole_word,
                 &mut self.search_state.search_newline_offsets_scratch,
                 &mut self.search_state.search_lowercase_text_scratch,
+                &mut self.search_state.search_lowercase_offsets_scratch,
             );
             self.search_state.search_text_scratch = search_text_scratch;
             self.search_state.search_matches = matches;

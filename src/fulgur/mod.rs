@@ -73,6 +73,7 @@ pub struct SearchState {
     pub search_text_scratch: String,
     pub search_newline_offsets_scratch: Vec<usize>,
     pub search_lowercase_text_scratch: String,
+    pub search_lowercase_offsets_scratch: Vec<usize>,
 }
 
 impl SearchState {
@@ -105,6 +106,7 @@ impl SearchState {
             search_text_scratch: String::new(),
             search_newline_offsets_scratch: Vec::new(),
             search_lowercase_text_scratch: String::new(),
+            search_lowercase_offsets_scratch: Vec::new(),
         }
     }
 }
