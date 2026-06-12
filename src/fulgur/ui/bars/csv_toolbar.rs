@@ -1,7 +1,7 @@
 //! The bottom toolbar shown for CSV tabs in table view.
 
 use gpui::{Context, Div, Entity, ParentElement, Styled, Window, div};
-use gpui_component::{ActiveTheme, h_flex, table::TableState};
+use gpui_component::{ActiveTheme, h_flex, notification::NotificationType, table::TableState};
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
@@ -140,8 +140,13 @@ impl Fulgur {
             CsvViewMode::Table => CsvViewMode::Text,
             CsvViewMode::Text => CsvViewMode::Table,
         };
-        if editor.csv_view_mode == CsvViewMode::Table {
-            editor.ensure_csv_table(window, cx);
+        let warning = if editor.csv_view_mode == CsvViewMode::Table {
+            editor.ensure_csv_table(window, cx)
+        } else {
+            None
+        };
+        if let Some(message) = warning {
+            self.pending_notification = Some((NotificationType::Warning, message.into()));
         }
         cx.notify();
     }

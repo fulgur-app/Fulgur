@@ -140,7 +140,13 @@ impl CsvTableDelegate {
     /// - `window`: The active window
     /// - `cx`: The table state context
     fn commit_to_buffer(&self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        let text = serialize_csv(&self.headers, &self.rows, self.delimiter);
+        let text = match serialize_csv(&self.headers, &self.rows, self.delimiter) {
+            Ok(text) => text,
+            Err(error) => {
+                log::error!("Refusing to commit CSV edit, serialization failed: {error}");
+                return;
+            }
+        };
         self.content.update(cx, |state, cx| {
             state.set_value(text, window, cx);
             cx.emit(InputEvent::Change);

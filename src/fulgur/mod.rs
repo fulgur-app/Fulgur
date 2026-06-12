@@ -682,13 +682,20 @@ impl Fulgur {
         }
 
         // A CSV tab in table mode needs its grid (re)built from the canonical
-        // text before we snapshot the tab read-only below.
-        if let Some(active_index) = active_tab_index
+        // text before we snapshot the tab read-only below. When the parse is
+        // lossy, `ensure_csv_table` falls back to text mode and returns a
+        // warning to surface to the user.
+        let csv_table_warning = if let Some(active_index) = active_tab_index
             && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(active_index)
             && editor_tab.language == SupportedLanguage::Csv
             && editor_tab.csv_view_mode == editor_tab::CsvViewMode::Table
         {
-            editor_tab.ensure_csv_table(window, cx);
+            editor_tab.ensure_csv_table(window, cx)
+        } else {
+            None
+        };
+        if let Some(message) = csv_table_warning {
+            self.pending_notification = Some((NotificationType::Warning, message.into()));
         }
 
         let tabs_ref = &self.tabs;

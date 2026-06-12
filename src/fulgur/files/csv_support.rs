@@ -13,6 +13,14 @@ pub struct CsvData {
     pub rows: Vec<Vec<String>>,
 }
 
+/// The outcome of parsing CSV text: the rectangular model plus the number of
+/// records that were dropped because they could not be parsed.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CsvParseOutcome {
+    pub data: CsvData,
+    pub dropped_records: usize,
+}
+
 /// Detect the most likely delimiter of a CSV document.
 ///
 /// ### Arguments
@@ -46,9 +54,10 @@ pub fn detect_delimiter(text: &str) -> u8 {
 /// - `delimiter`: The field delimiter byte
 ///
 /// ### Returns
-/// - `CsvData`: The parsed headers and rows, padded to a common width. Empty
-///   input yields empty headers and no rows.
-pub fn parse_csv(text: &str, delimiter: u8) -> CsvData {
+/// - `CsvParseOutcome`: The parsed headers and rows, padded to a common width,
+///   together with the count of records that failed to parse. Empty input
+///   yields empty headers and no rows.
+pub fn parse_csv(text: &str, delimiter: u8) -> CsvParseOutcome {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .flexible(true)
@@ -56,15 +65,22 @@ pub fn parse_csv(text: &str, delimiter: u8) -> CsvData {
         .from_reader(text.as_bytes());
 
     let mut records: Vec<Vec<String>> = Vec::new();
+    let mut dropped_records = 0usize;
     for result in reader.records() {
         match result {
             Ok(record) => records.push(record.iter().map(str::to_string).collect()),
-            Err(error) => log::warn!("Failed to parse CSV record: {error}"),
+            Err(error) => {
+                dropped_records += 1;
+                log::warn!("Failed to parse CSV record: {error}");
+            }
         }
     }
 
     if records.is_empty() {
-        return CsvData::default();
+        return CsvParseOutcome {
+            data: CsvData::default(),
+            dropped_records,
+        };
     }
 
     let width = records.iter().map(Vec::len).max().unwrap_or(0);
@@ -73,9 +89,12 @@ pub fn parse_csv(text: &str, delimiter: u8) -> CsvData {
     }
 
     let headers = records.remove(0);
-    CsvData {
-        headers,
-        rows: records,
+    CsvParseOutcome {
+        data: CsvData {
+            headers,
+            rows: records,
+        },
+        dropped_records,
     }
 }
 
@@ -86,30 +105,43 @@ pub fn parse_csv(text: &str, delimiter: u8) -> CsvData {
 /// - `rows`: The data rows
 /// - `delimiter`: The field delimiter byte
 ///
+/// ### Errors
+/// Returns an `Err(String)` describing the failure if a record cannot be
+/// written, the writer cannot be finalized, or the produced bytes are not valid
+/// UTF-8. Callers must leave the source buffer untouched on error rather than
+/// writing back a partial or empty result.
+///
 /// ### Returns
-/// - `String`: The serialized CSV text
-pub fn serialize_csv(headers: &[String], rows: &[Vec<String>], delimiter: u8) -> String {
+/// - `Ok(String)`: The serialized CSV text
+/// - `Err(String)`: A description of the serialization failure
+pub fn serialize_csv(
+    headers: &[String],
+    rows: &[Vec<String>],
+    delimiter: u8,
+) -> Result<String, String> {
     let mut writer = csv::WriterBuilder::new()
         .delimiter(delimiter)
         .flexible(true)
         .from_writer(Vec::new());
 
-    if let Err(error) = writer.write_record(headers) {
-        log::warn!("Failed to write CSV header record: {error}");
-    }
+    writer
+        .write_record(headers)
+        .map_err(|error| format!("failed to write CSV header record: {error}"))?;
     for row in rows {
-        if let Err(error) = writer.write_record(row) {
-            log::warn!("Failed to write CSV data record: {error}");
-        }
+        writer
+            .write_record(row)
+            .map_err(|error| format!("failed to write CSV data record: {error}"))?;
     }
 
-    let bytes = writer.into_inner().unwrap_or_default();
-    String::from_utf8(bytes).unwrap_or_default()
+    let bytes = writer
+        .into_inner()
+        .map_err(|error| format!("failed to finalize CSV writer: {error}"))?;
+    String::from_utf8(bytes).map_err(|error| format!("CSV output is not valid UTF-8: {error}"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{CsvData, detect_delimiter, parse_csv, serialize_csv};
+    use super::{CsvParseOutcome, detect_delimiter, parse_csv, serialize_csv};
 
     #[test]
     fn test_detect_delimiter_comma() {
@@ -138,64 +170,95 @@ mod tests {
 
     #[test]
     fn test_parse_simple() {
-        let data = parse_csv("name,age\nAlice,30\nBob,25\n", b',');
-        assert_eq!(data.headers, vec!["name", "age"]);
-        assert_eq!(data.rows, vec![vec!["Alice", "30"], vec!["Bob", "25"]]);
+        let outcome = parse_csv("name,age\nAlice,30\nBob,25\n", b',');
+        assert_eq!(outcome.dropped_records, 0);
+        assert_eq!(outcome.data.headers, vec!["name", "age"]);
+        assert_eq!(
+            outcome.data.rows,
+            vec![vec!["Alice", "30"], vec!["Bob", "25"]]
+        );
     }
 
     #[test]
     fn test_parse_empty() {
-        assert_eq!(parse_csv("", b','), CsvData::default());
+        assert_eq!(parse_csv("", b','), CsvParseOutcome::default());
     }
 
     #[test]
     fn test_parse_pads_ragged_rows() {
-        let data = parse_csv("a,b,c\n1,2\n3\n", b',');
-        assert_eq!(data.headers, vec!["a", "b", "c"]);
-        assert_eq!(data.rows, vec![vec!["1", "2", ""], vec!["3", "", ""]]);
+        let outcome = parse_csv("a,b,c\n1,2\n3\n", b',');
+        assert_eq!(outcome.data.headers, vec!["a", "b", "c"]);
+        assert_eq!(
+            outcome.data.rows,
+            vec![vec!["1", "2", ""], vec!["3", "", ""]]
+        );
     }
 
     #[test]
     fn test_parse_extends_width_for_long_rows() {
-        let data = parse_csv("a,b\n1,2,3\n", b',');
-        assert_eq!(data.headers, vec!["a", "b", ""]);
-        assert_eq!(data.rows, vec![vec!["1", "2", "3"]]);
+        let outcome = parse_csv("a,b\n1,2,3\n", b',');
+        assert_eq!(outcome.data.headers, vec!["a", "b", ""]);
+        assert_eq!(outcome.data.rows, vec![vec!["1", "2", "3"]]);
+    }
+
+    #[test]
+    fn test_parse_does_not_count_ragged_rows_as_dropped() {
+        // Ragged rows are recovered by padding, not dropped, so they must not
+        // trip the lossy-parse guard that forces a fallback to text mode.
+        let outcome = parse_csv("a,b,c\n1,2\n3\n", b',');
+        assert_eq!(outcome.dropped_records, 0);
+        assert_eq!(outcome.data.rows.len(), 2);
     }
 
     #[test]
     fn test_roundtrip_simple() {
         let text = "name,age\nAlice,30\nBob,25\n";
-        let data = parse_csv(text, b',');
-        assert_eq!(serialize_csv(&data.headers, &data.rows, b','), text);
+        let outcome = parse_csv(text, b',');
+        assert_eq!(
+            serialize_csv(&outcome.data.headers, &outcome.data.rows, b','),
+            Ok(text.to_string())
+        );
     }
 
     #[test]
     fn test_roundtrip_quoted_embedded_comma() {
         let text = "name,note\n\"Doe, John\",hello\n";
-        let data = parse_csv(text, b',');
-        assert_eq!(data.rows, vec![vec!["Doe, John", "hello"]]);
-        assert_eq!(serialize_csv(&data.headers, &data.rows, b','), text);
+        let outcome = parse_csv(text, b',');
+        assert_eq!(outcome.data.rows, vec![vec!["Doe, John", "hello"]]);
+        assert_eq!(
+            serialize_csv(&outcome.data.headers, &outcome.data.rows, b','),
+            Ok(text.to_string())
+        );
     }
 
     #[test]
     fn test_roundtrip_embedded_newline() {
         let text = "name,note\nAlice,\"line1\nline2\"\n";
-        let data = parse_csv(text, b',');
-        assert_eq!(data.rows, vec![vec!["Alice", "line1\nline2"]]);
-        assert_eq!(serialize_csv(&data.headers, &data.rows, b','), text);
+        let outcome = parse_csv(text, b',');
+        assert_eq!(outcome.data.rows, vec![vec!["Alice", "line1\nline2"]]);
+        assert_eq!(
+            serialize_csv(&outcome.data.headers, &outcome.data.rows, b','),
+            Ok(text.to_string())
+        );
     }
 
     #[test]
     fn test_roundtrip_semicolon() {
         let text = "a;b\n1;2\n";
-        let data = parse_csv(text, b';');
-        assert_eq!(serialize_csv(&data.headers, &data.rows, b';'), text);
+        let outcome = parse_csv(text, b';');
+        assert_eq!(
+            serialize_csv(&outcome.data.headers, &outcome.data.rows, b';'),
+            Ok(text.to_string())
+        );
     }
 
     #[test]
     fn test_roundtrip_tab() {
         let text = "a\tb\n1\t2\n";
-        let data = parse_csv(text, b'\t');
-        assert_eq!(serialize_csv(&data.headers, &data.rows, b'\t'), text);
+        let outcome = parse_csv(text, b'\t');
+        assert_eq!(
+            serialize_csv(&outcome.data.headers, &outcome.data.rows, b'\t'),
+            Ok(text.to_string())
+        );
     }
 }
