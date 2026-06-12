@@ -15,8 +15,6 @@ use crate::fulgur::{
         file_watcher::FileWatchState,
     },
     languages::supported_languages::SupportedLanguage,
-    settings::ProfileId,
-    sync::sse::SseState,
     ui::{
         bars::color_picker_bar::ColorPickerBarState,
         dialogs::about::about,
@@ -44,9 +42,7 @@ use gpui_component::{
     v_flex,
 };
 use settings::Settings;
-use std::{
-    collections::HashMap, collections::HashSet, path::PathBuf, sync::Arc, sync::atomic::AtomicBool,
-};
+use std::{collections::HashMap, collections::HashSet, path::PathBuf, sync::Arc};
 use tab::Tab;
 use ui::{
     bars::search_bar::SearchMatch, bars::status_bar::StatusBarCache,
@@ -134,7 +130,6 @@ pub struct Fulgur {
     tab_scroll_handle: ScrollHandle, // Scroll handle for the tab bar to scroll active tab into view
     pending_tab_scroll: Option<usize>, // Deferred scroll-to-tab request (needs one render cycle for layout)
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
-    pub sse_states: HashMap<ProfileId, SseState>, // Per-profile SSE state for real-time sync
     pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
     save_failed_once: bool, // Flag: save already failed once, allow force-close on next attempt
     pub share_sheet_state: Option<Arc<ui::sheets::share_file::ShareSheetState>>, // When Some, a share sheet is open and devices are being fetched per profile
@@ -256,7 +251,6 @@ impl Fulgur {
                 tab_scroll_handle: ScrollHandle::new(),
                 pending_tab_scroll: None,
                 file_watch_state: FileWatchState::new(),
-                sse_states: HashMap::new(),
                 pending_notification: None,
                 save_failed_once: false,
                 share_sheet_state: None,
@@ -293,23 +287,6 @@ impl Fulgur {
             }
         });
         entity.update(cx, |this, cx| {
-            let profile_ids: Vec<ProfileId> = this
-                .settings
-                .app_settings
-                .synchronization_settings
-                .profiles
-                .iter()
-                .map(|p| p.id.clone())
-                .collect();
-            for profile_id in profile_ids {
-                let (sse_tx, sse_rx) = std::sync::mpsc::channel();
-                let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
-                let mut state = SseState::new();
-                state.sse_events = Some(sse_rx);
-                state.sse_event_tx = Some(sse_tx);
-                state.sse_shutdown_flag = Some(sse_shutdown_flag);
-                this.sse_states.insert(profile_id, state);
-            }
             let shared = cx.global::<shared_state::SharedAppState>();
             if let Some(error_msg) = shared.sync_error.lock().as_ref() {
                 this.pending_notification =

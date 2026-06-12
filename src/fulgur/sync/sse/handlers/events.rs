@@ -39,14 +39,16 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         let now = Instant::now();
-        let state = self.sse_states.entry(profile_id.clone()).or_default();
-        if let Some(last_time) = state.last_sse_event
-            && now.duration_since(last_time) < Duration::from_millis(500)
-        {
-            return;
-        }
-        state.last_sse_event = Some(now);
         let sync_state = Fulgur::shared_state(cx).sync_state_for(profile_id);
+        {
+            let mut sse = sync_state.sse.lock();
+            if let Some(last_time) = sse.last_sse_event
+                && now.duration_since(last_time) < Duration::from_millis(500)
+            {
+                return;
+            }
+            sse.last_sse_event = Some(now);
+        }
         match event {
             SseEvent::Heartbeat { timestamp } => {
                 log::debug!("SSE heartbeat received for profile '{profile_id}': {timestamp}");
@@ -101,13 +103,18 @@ impl Fulgur {
     /// - `window`: The window to handle events in.
     /// - `cx`: The application context.
     pub fn process_sse_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let profile_ids: Vec<ProfileId> = self.sse_states.keys().cloned().collect();
-        for profile_id in profile_ids {
-            let events = self
-                .sse_states
-                .get(&profile_id)
-                .map(|s| collect_events(&s.sse_events))
-                .unwrap_or_default();
+        let drained: Vec<(ProfileId, Vec<SseEvent>)> = {
+            let shared = Fulgur::shared_state(cx);
+            let states = shared.sync_states.read();
+            states
+                .iter()
+                .map(|(profile_id, sync_state)| {
+                    let events = collect_events(&sync_state.sse.lock().sse_events);
+                    (profile_id.clone(), events)
+                })
+                .collect()
+        };
+        for (profile_id, events) in drained {
             for event in events {
                 self.handle_sse_event_for(&profile_id, event, window, cx);
             }

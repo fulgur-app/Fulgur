@@ -261,14 +261,15 @@ fn test_handle_error_event_does_not_change_shared_state(cx: &mut TestAppContext)
 
 // --- process_sse_events ---
 
-/// Insert (or replace) the SSE channel for the empty profile id used by
-/// the Phase 1 single-profile tests. Returns the `Sender` for the test to
-/// emit events through.
-fn install_test_sse_channel(this: &mut Fulgur) -> std::sync::mpsc::Sender<SseEvent> {
+/// Install a fresh SSE channel on the shared sync state for the empty profile
+/// id used by the Phase 1 single-profile tests. Returns the `Sender` for the
+/// test to emit events through.
+fn install_test_sse_channel(cx: &gpui::App) -> std::sync::mpsc::Sender<SseEvent> {
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut state = SseState::new();
-    state.sse_events = Some(rx);
-    this.sse_states.insert(String::new(), state);
+    let sync_state = Fulgur::shared_state(cx).sync_state_for("");
+    let mut sse = sync_state.sse.lock();
+    sse.sse_event_tx = Some(tx.clone());
+    sse.sse_events = Some(rx);
     tx
 }
 
@@ -277,7 +278,7 @@ fn test_process_sse_events_dispatches_heartbeat_from_channel(cx: &mut TestAppCon
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
-            let tx = install_test_sse_channel(this);
+            let tx = install_test_sse_channel(cx);
             tx.send(SseEvent::Heartbeat {
                 timestamp: "ts".to_string(),
             })
@@ -307,7 +308,7 @@ fn test_process_sse_events_with_empty_channel_is_a_no_op(cx: &mut TestAppContext
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
-            let _tx = install_test_sse_channel(this);
+            let _tx = install_test_sse_channel(cx);
             this.process_sse_events(window, cx);
             assert!(
                 Fulgur::shared_state(cx)
@@ -329,7 +330,7 @@ fn test_process_sse_events_with_closed_channel_is_a_no_op(cx: &mut TestAppContex
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
-            let tx = install_test_sse_channel(this);
+            let tx = install_test_sse_channel(cx);
             drop(tx);
             this.process_sse_events(window, cx);
             assert!(

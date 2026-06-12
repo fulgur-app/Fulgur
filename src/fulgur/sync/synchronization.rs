@@ -508,21 +508,14 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     let sse_http_agent = Arc::clone(&shared.sse_http_agent);
     for profile in active_profiles {
         let sync_state = shared.sync_state_for(&profile.id);
-        let sse_tx = entity
-            .read(cx)
-            .sse_states
-            .get(&profile.id)
-            .and_then(|s| s.sse_event_tx.clone());
-        let sse_shutdown_flag = entity
-            .read(cx)
-            .sse_states
-            .get(&profile.id)
-            .and_then(|s| s.sse_shutdown_flag.clone());
-        let sse_thread_handle = entity
-            .read(cx)
-            .sse_states
-            .get(&profile.id)
-            .map(|s| s.sse_thread_handle.clone());
+        let (sse_tx, sse_shutdown_flag, sse_thread_handle) = {
+            let mut sse = sync_state.sse.lock();
+            let sse_tx = sse.sse_event_tx.clone();
+            let shutdown_flag = Arc::new(AtomicBool::new(false));
+            sse.sse_shutdown_flag = Some(Arc::clone(&shutdown_flag));
+            let thread_handle = Arc::clone(&sse.sse_thread_handle);
+            (sse_tx, Some(shutdown_flag), Some(thread_handle))
+        };
         let http_agent_clone = Arc::clone(&http_agent);
         let sse_http_agent_clone = Arc::clone(&sse_http_agent);
         thread::spawn(move || {
