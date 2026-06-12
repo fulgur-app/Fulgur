@@ -1,13 +1,11 @@
 use crate::fulgur::{
     Fulgur,
-    settings::{ProfileId, ServerProfile},
-    sync::sse::SseState,
+    settings::ServerProfile,
     utils::crypto_helper::{
         ensure_profile_keypair, save_device_api_key_to_keychain, save_private_key_to_keychain,
     },
 };
 use gpui::Context;
-use std::sync::{Arc, atomic::AtomicBool};
 
 impl Fulgur {
     /// Add a new server profile to the configuration.
@@ -42,7 +40,7 @@ impl Fulgur {
             .synchronization_settings
             .profiles
             .push(profile);
-        self.allocate_sse_slot(&profile_id);
+        Fulgur::shared_state(cx).sync_state_for(&profile_id);
         self.update_and_propagate_settings(cx)
     }
 
@@ -127,8 +125,11 @@ impl Fulgur {
         if !exists {
             return Ok(false);
         }
-        if let Some(state) = self.sse_states.get(profile_id)
-            && let Some(ref shutdown_flag) = state.sse_shutdown_flag
+        if let Some(ref shutdown_flag) = Fulgur::shared_state(cx)
+            .sync_state_for(profile_id)
+            .sse
+            .lock()
+            .sse_shutdown_flag
         {
             shutdown_flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
@@ -138,7 +139,6 @@ impl Fulgur {
         if let Err(e) = save_device_api_key_to_keychain(profile_id, None) {
             log::warn!("Failed to remove device API key for profile '{profile_id}': {e}");
         }
-        self.sse_states.remove(profile_id);
         Fulgur::shared_state(cx).remove_sync_state(profile_id);
         self.settings
             .app_settings
@@ -147,27 +147,6 @@ impl Fulgur {
             .retain(|p| p.id != profile_id);
         self.update_and_propagate_settings(cx)?;
         Ok(true)
-    }
-
-    /// Allocate a fresh per-window SSE state slot for a profile.
-    ///
-    /// ### Arguments
-    /// - `profile_id`: The profile id to register.
-    fn allocate_sse_slot(&mut self, profile_id: &ProfileId) {
-        let needs_init = match self.sse_states.get(profile_id) {
-            None => true,
-            Some(state) => state.sse_event_tx.is_none(),
-        };
-        if !needs_init {
-            return;
-        }
-        let (sse_tx, sse_rx) = std::sync::mpsc::channel();
-        let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
-        let mut state = SseState::new();
-        state.sse_events = Some(sse_rx);
-        state.sse_event_tx = Some(sse_tx);
-        state.sse_shutdown_flag = Some(sse_shutdown_flag);
-        self.sse_states.insert(profile_id.clone(), state);
     }
 }
 
@@ -234,8 +213,11 @@ mod tests {
                     "profile must be present in settings"
                 );
                 assert!(
-                    this.sse_states.contains_key(&id),
-                    "SSE slot must be allocated for the new profile"
+                    Fulgur::shared_state(cx)
+                        .sync_states
+                        .read()
+                        .contains_key(&id),
+                    "shared sync state (with SSE channel) must exist for the new profile"
                 );
             });
         });
@@ -419,10 +401,6 @@ mod tests {
                         .find_profile(&id)
                         .is_none(),
                     "profile must be gone from settings"
-                );
-                assert!(
-                    !this.sse_states.contains_key(&id),
-                    "SSE slot must be removed"
                 );
                 assert!(
                     !Fulgur::shared_state(cx)

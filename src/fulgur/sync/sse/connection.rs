@@ -374,6 +374,7 @@ pub fn connect_sse(
             let mut reader = std::io::BufReader::new(response.body_mut().as_reader());
             let mut current_event_type = String::new();
             let mut current_data = String::new();
+            let mut receiver_gone = false;
 
             loop {
                 if shutdown_flag.load(Ordering::Relaxed) {
@@ -430,6 +431,7 @@ pub fn connect_sse(
                             }
                             if let Err(e) = event_tx.send(event) {
                                 log::error!("Failed to send SSE event: {e}");
+                                receiver_gone = true;
                                 break;
                             }
                             current_event_type.clear();
@@ -457,6 +459,10 @@ pub fn connect_sse(
             }
             if shutdown_flag.load(Ordering::Relaxed) {
                 log::info!("SSE connection shutdown requested, stopping...");
+                break;
+            }
+            if receiver_gone {
+                log::info!("SSE event receiver permanently gone, stopping worker");
                 break;
             }
             let delay = backoff.record_failure();

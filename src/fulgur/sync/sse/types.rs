@@ -44,6 +44,21 @@ impl SseState {
             sse_thread_handle: Arc::new(Mutex::new(None)),
         }
     }
+
+    /// Create a new `SseState` that already owns a live event channel.
+    ///
+    /// ### Returns
+    /// `Self`: a new `SseState` with `sse_event_tx`/`sse_events` wired up.
+    pub fn with_channel() -> Self {
+        let (sse_tx, sse_rx) = std::sync::mpsc::channel();
+        Self {
+            sse_events: Some(sse_rx),
+            sse_event_tx: Some(sse_tx),
+            sse_shutdown_flag: None,
+            last_sse_event: None,
+            sse_thread_handle: Arc::new(Mutex::new(None)),
+        }
+    }
 }
 
 /// Heartbeat event data sent by SSE to keep connection alive

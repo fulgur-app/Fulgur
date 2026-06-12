@@ -1,5 +1,6 @@
 use crate::fulgur::settings::ProfileId;
 use crate::fulgur::state_writer::StateWriter;
+use crate::fulgur::sync::sse::SseState;
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::sync::ssh::pool::SshSessionPool;
 use crate::fulgur::utils::crypto_helper::{
@@ -48,6 +49,8 @@ pub struct SyncState {
     pub pending_devices: Arc<Mutex<Option<PendingDevicesResult>>>,
     /// Maximum file size for sharing (bytes), as reported by this profile's server.
     pub max_file_size_bytes: Arc<AtomicU64>,
+    /// SSE channel and worker lifecycle state for this profile.
+    pub sse: Arc<Mutex<SseState>>,
 }
 
 impl SyncState {
@@ -70,6 +73,7 @@ impl SyncState {
             last_share_receive_error_signature: Arc::new(Mutex::new(None)),
             pending_devices: Arc::new(Mutex::new(None)),
             max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),
+            sse: Arc::new(Mutex::new(SseState::with_channel())),
         }
     }
 }

@@ -22,7 +22,7 @@ use std::{
 
 use super::super::{
     connection::{SseAgents, SseShareState, connect_sse},
-    types::{SseEvent, SseState},
+    types::SseEvent,
 };
 
 /// Maximum time to wait for the previous SSE thread to exit before starting a new one
@@ -58,34 +58,39 @@ fn wait_for_previous_sse_thread(old_handle: Option<thread::JoinHandle<()>>) {
 }
 
 impl Fulgur {
-    /// Signal the old SSE worker's shutdown flag, allocate a fresh SSE state
-    /// slot, and validate that the profile is ready to connect.
+    /// Signal the old SSE worker's shutdown flag, rotate in a fresh shutdown
+    /// flag on the shared SSE state, and validate that the profile is ready to
+    /// connect.
     ///
     /// ### Arguments
     /// - `profile_id`: The profile to restart.
+    /// - `cx`: The Fulgur context.
     ///
     /// ### Returns
     /// - `Some(SseRestartSetup)`: Setup resources ready for the caller to spawn a thread.
     /// - `None`: The profile was not found, is inactive, or the master switch is off.
-    fn prepare_sse_restart(&mut self, profile_id: &str) -> Option<SseRestartSetup> {
-        if let Some(state) = self.sse_states.get(profile_id)
-            && let Some(ref shutdown_flag) = state.sse_shutdown_flag
-        {
-            log::info!("Profile '{profile_id}': signaling SSE shutdown");
-            shutdown_flag.store(true, Ordering::Relaxed);
-        }
-        let old_handle = self
-            .sse_states
-            .get(profile_id)
-            .and_then(|s| s.sse_thread_handle.lock().take());
-        let (sse_tx, sse_rx) = std::sync::mpsc::channel();
-        let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
-        let mut new_state = SseState::new();
-        new_state.sse_events = Some(sse_rx);
-        new_state.sse_event_tx = Some(sse_tx.clone());
-        new_state.sse_shutdown_flag = Some(sse_shutdown_flag.clone());
-        let handle_storage = Arc::clone(&new_state.sse_thread_handle);
-        self.sse_states.insert(profile_id.to_string(), new_state);
+    fn prepare_sse_restart(
+        &mut self,
+        profile_id: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<SseRestartSetup> {
+        let sync_state = Fulgur::shared_state(cx).sync_state_for(profile_id);
+        let (sse_tx, sse_shutdown_flag, handle_storage, old_handle) = {
+            let mut sse = sync_state.sse.lock();
+            if let Some(ref shutdown_flag) = sse.sse_shutdown_flag {
+                log::info!("Profile '{profile_id}': signaling SSE shutdown");
+                shutdown_flag.store(true, Ordering::Relaxed);
+            }
+            let old_handle = sse.sse_thread_handle.lock().take();
+            let sse_tx = sse
+                .sse_event_tx
+                .clone()
+                .expect("shared SSE state must own a live event sender");
+            let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
+            sse.sse_shutdown_flag = Some(Arc::clone(&sse_shutdown_flag));
+            let handle_storage = Arc::clone(&sse.sse_thread_handle);
+            (sse_tx, sse_shutdown_flag, handle_storage, old_handle)
+        };
 
         let profile = if let Some(p) = self
             .settings
@@ -133,7 +138,7 @@ impl Fulgur {
             sse_shutdown_flag,
             handle_storage,
             profile,
-        }) = self.prepare_sse_restart(profile_id)
+        }) = self.prepare_sse_restart(profile_id, cx)
         else {
             return;
         };
@@ -209,7 +214,7 @@ impl Fulgur {
             sse_shutdown_flag,
             handle_storage,
             profile,
-        }) = self.prepare_sse_restart(profile_id)
+        }) = self.prepare_sse_restart(profile_id, cx)
         else {
             return;
         };
