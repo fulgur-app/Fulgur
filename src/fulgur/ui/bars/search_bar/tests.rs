@@ -495,6 +495,7 @@ fn test_find_matches_with_scratch_matches_baseline() {
     let baseline = find_matches(text, query, false, false);
     let mut newline_offsets_scratch = Vec::new();
     let mut lowercase_text_scratch = String::new();
+    let mut lowercase_offsets_scratch = Vec::new();
     let with_scratch = find_matches_with_scratch(
         text,
         query,
@@ -502,6 +503,7 @@ fn test_find_matches_with_scratch_matches_baseline() {
         false,
         &mut newline_offsets_scratch,
         &mut lowercase_text_scratch,
+        &mut lowercase_offsets_scratch,
     );
     assert_eq!(with_scratch.len(), baseline.len());
     assert_eq!(with_scratch[0].start, baseline[0].start);
@@ -513,6 +515,7 @@ fn test_find_matches_with_scratch_matches_baseline() {
 fn test_find_matches_with_scratch_rebuilds_offsets_between_calls() {
     let mut newline_offsets_scratch = vec![999, 1000, 1001];
     let mut lowercase_text_scratch = "stale".repeat(64);
+    let mut lowercase_offsets_scratch = vec![42, 43, 44];
     let first = find_matches_with_scratch(
         "line1\nline2\nline3",
         "line",
@@ -520,6 +523,7 @@ fn test_find_matches_with_scratch_rebuilds_offsets_between_calls() {
         false,
         &mut newline_offsets_scratch,
         &mut lowercase_text_scratch,
+        &mut lowercase_offsets_scratch,
     );
     assert_eq!(first.len(), 3);
 
@@ -530,10 +534,46 @@ fn test_find_matches_with_scratch_rebuilds_offsets_between_calls() {
         false,
         &mut newline_offsets_scratch,
         &mut lowercase_text_scratch,
+        &mut lowercase_offsets_scratch,
     );
     assert_eq!(second.len(), 1);
     assert_eq!(second[0].line, 0);
     assert_eq!(second[0].col, 0);
+}
+
+#[test]
+fn test_find_matches_case_insensitive_offsets_after_shrinking_char() {
+    // `ẞ` (U+1E9E, 3 bytes) lowercases to `ß` (U+00DF, 2 bytes), so the lowercased
+    // haystack is one byte shorter before the match. Offsets must still point into the
+    // original text.
+    let text = "ẞ hello";
+    let matches = find_matches(text, "hello", false, false);
+    assert_eq!(matches.len(), 1);
+    let hello_start = text.find("hello").unwrap();
+    assert_eq!(matches[0].start, hello_start);
+    assert_eq!(matches[0].end, text.len());
+    assert_eq!(&text[matches[0].start..matches[0].end], "hello");
+}
+
+#[test]
+fn test_find_matches_case_insensitive_offsets_after_growing_char() {
+    // `İ` (U+0130, 2 bytes) lowercases to `i` + combining dot (U+0069 U+0307, 3 bytes),
+    // so the lowercased haystack is one byte longer before the match.
+    let text = "İ world";
+    let matches = find_matches(text, "WORLD", false, false);
+    assert_eq!(matches.len(), 1);
+    let world_start = text.find("world").unwrap();
+    assert_eq!(matches[0].start, world_start);
+    assert_eq!(matches[0].end, text.len());
+    assert_eq!(&text[matches[0].start..matches[0].end], "world");
+}
+
+#[test]
+fn test_find_matches_case_insensitive_whole_word_after_shrinking_char() {
+    let text = "ẞ hello world";
+    let matches = find_matches(text, "HELLO", false, true);
+    assert_eq!(matches.len(), 1);
+    assert_eq!(&text[matches[0].start..matches[0].end], "hello");
 }
 
 // ========== Visibility control ==========
