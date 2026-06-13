@@ -242,9 +242,11 @@ impl Fulgur {
             } else {
                 None
             };
-            if let Some(path) = pending_path {
+            if let Some(path) = pending_path
+                && let Some(tab_id) = self.tabs.get(index).map(Tab::id)
+            {
                 self.file_watch_state.pending_conflicts.remove(&path);
-                self.show_file_conflict_dialog(&path, index, window, cx);
+                self.show_file_conflict_dialog(&path, tab_id, window, cx);
             }
             let pending_remote_reload = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index)
             {
