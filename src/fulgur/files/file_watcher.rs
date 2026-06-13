@@ -369,10 +369,11 @@ impl Fulgur {
                     && let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index)
                 {
                     if editor_tab.modified {
+                        let tab_id = editor_tab.id;
                         let is_active = self.active_tab_index == Some(tab_index);
 
                         if is_active {
-                            self.show_file_conflict_dialog(&path, tab_index, window, cx);
+                            self.show_file_conflict_dialog(&path, tab_id, window, cx);
                         } else {
                             self.file_watch_state
                                 .pending_conflicts

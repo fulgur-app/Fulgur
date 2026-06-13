@@ -125,7 +125,9 @@ impl Fulgur {
                 "Tab for {} has unsaved changes; asking user which version to keep",
                 path.display()
             );
-            self.show_reopen_modified_file_dialog(path, tab_index, window, cx);
+            if let Some(tab_id) = self.tabs.get(tab_index).map(Tab::id) {
+                self.show_reopen_modified_file_dialog(path, tab_id, window, cx);
+            }
         } else {
             log::debug!(
                 "Tab for {} is already open and not modified; focusing existing tab",
