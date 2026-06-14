@@ -68,6 +68,12 @@ impl Fulgur {
                     return;
                 }
                 log::debug!("File saved successfully: {}", path.display());
+                // For Inode-based backends (Linux inotify, BSD kqueue).
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                {
+                    self.unwatch_file(&path);
+                    self.watch_file(&path);
+                }
                 self.file_watch_state
                     .last_file_saves
                     .insert(path.clone(), std::time::Instant::now());
