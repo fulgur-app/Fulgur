@@ -363,6 +363,7 @@ impl Fulgur {
         if index == 0 || index >= self.tabs.len() {
             return;
         }
+        let keep_id = self.tabs[index].id();
         let tab_ids: Vec<usize> = self.tabs[0..index]
             .iter()
             .map(super::super::tab::Tab::id)
@@ -377,12 +378,11 @@ impl Fulgur {
                 }
                 self.show_unsaved_changes_dialog(window, cx, move |this, window, cx| {
                     this.remove_tab_by_id(tab_id, window, cx);
-                    if !this.tabs.is_empty() && index > 0 {
-                        let new_index = this.tabs.len().min(index - 1);
-                        if new_index > 0 {
-                            this.close_tabs_to_left(new_index, window, cx);
-                            return;
-                        }
+                    if let Some(boundary_index) = this.tabs.iter().position(|t| t.id() == keep_id)
+                        && boundary_index > 0
+                    {
+                        this.close_tabs_to_left(boundary_index, window, cx);
+                        return;
                     }
                     if let Err(e) = this.save_state(cx, window) {
                         log::error!("Failed to save state after closing tabs to left: {e}");
