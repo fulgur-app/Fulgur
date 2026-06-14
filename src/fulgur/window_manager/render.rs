@@ -6,7 +6,9 @@ use gpui_component::WindowExt;
 impl Fulgur {
     /// Process window state updates during the render cycle:
     /// 1. Cache the current window bounds and display ID for state persistence
-    /// 2. Update the global `WindowManager` to track this window as focused
+    /// 2. Update the global `WindowManager` to track this window as focused, but
+    ///    only when it is the OS-active window (renders also fire for background
+    ///    windows, so render order is not a reliable focus signal)
     /// 3. Display any pending notifications that were queued during event processing
     ///
     /// ### Arguments
@@ -21,9 +23,11 @@ impl Fulgur {
                 window.window_bounds(),
                 display_id,
             ));
-        cx.update_global::<WindowManager, _>(|manager, _| {
-            manager.set_focused(self.window_id);
-        });
+        if window.is_window_active() {
+            cx.update_global::<WindowManager, _>(|manager, _| {
+                manager.set_focused(self.window_id);
+            });
+        }
         if let Some((notification_type, message)) = self.pending_notification.take() {
             window.push_notification((notification_type, message), cx);
         }
