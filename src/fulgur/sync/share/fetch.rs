@@ -3,8 +3,8 @@ use crate::fulgur::{
     sync::{
         access_token::{TokenStateManager, get_valid_token},
         synchronization::{
-            MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES, SynchronizationError, handle_ureq_error,
-            max_http_bulk_shares_response_bytes,
+            SynchronizationError, handle_ureq_error, max_http_bulk_shares_response_bytes,
+            max_http_single_share_response_bytes,
         },
     },
     utils::sanitize::sanitize_filename,
@@ -77,6 +77,8 @@ pub fn fetch_pending_shares(
 /// - `token_state`: Per-profile token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
 /// - `id`: The share identifier returned by the v2 begin endpoint
+/// - `server_max_file_size`: The server-advertised max file size, or `u64::MAX`,
+///   used to size the response body cap
 ///
 /// ### Errors
 /// Returns a `SynchronizationError` if the profile has no server URL, the
@@ -93,6 +95,7 @@ pub fn fetch_share_by_id(
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
     id: &str,
+    server_max_file_size: u64,
 ) -> Result<SharedFileResponse, SynchronizationError> {
     let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
@@ -107,7 +110,7 @@ pub fn fetch_share_by_id(
     let body = response
         .body_mut()
         .with_config()
-        .limit(MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES)
+        .limit(max_http_single_share_response_bytes(server_max_file_size))
         .read_to_string()
         .map_err(|e| {
             log::error!("Failed to read share response body for id {id}: {e}");

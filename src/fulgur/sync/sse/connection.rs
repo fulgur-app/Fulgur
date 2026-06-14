@@ -226,7 +226,13 @@ fn fetch_single_share_into(
     share_id: &str,
 ) {
     let server_max_file_size = share_state.max_file_size_bytes.load(Ordering::Acquire);
-    match fetch_share_by_id(profile, token_state, http_agent, share_id) {
+    match fetch_share_by_id(
+        profile,
+        token_state,
+        http_agent,
+        share_id,
+        server_max_file_size,
+    ) {
         Ok(share) => {
             if share_payload_exceeds_limit(share.content.len(), server_max_file_size) {
                 log::warn!(
