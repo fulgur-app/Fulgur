@@ -331,11 +331,72 @@ impl Fulgur {
         self.file_watch_state.pending_conflicts.clear();
     }
 
+    /// Determine whether a watch event for a path should be ignored as a recent
+    /// self-save echo or a duplicate within the debounce window.
+    ///
+    /// ### Arguments
+    /// - `path`: The file path the event refers to
+    ///
+    /// ### Returns
+    /// - `true`: The event is a recent echo or duplicate and should be ignored
+    /// - `false`: The event is new and the debounce timestamp has been recorded
+    fn should_suppress_file_watch_event(&mut self, path: &PathBuf) -> bool {
+        let now = Instant::now();
+        if let Some(&last_time) = self.file_watch_state.last_file_events.get(path)
+            && now.duration_since(last_time) < Duration::from_millis(500)
+        {
+            return true;
+        }
+        if let Some(&save_time) = self.file_watch_state.last_file_saves.get(path)
+            && now.duration_since(save_time) < Duration::from_millis(500)
+        {
+            return true;
+        }
+        self.file_watch_state
+            .last_file_events
+            .insert(path.clone(), now);
+        false
+    }
+
+    /// Apply an external-modification event to the tab backing a path.
+    ///
+    /// ### Arguments
+    /// - `path`: The path of the externally modified file
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn apply_external_modification(
+        &mut self,
+        path: &PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(tab_index) = self.find_tab_by_path(path)
+            && let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index)
+        {
+            if editor_tab.modified {
+                let tab_id = editor_tab.id;
+                let is_active = self.active_tab_index == Some(tab_index);
+
+                if is_active {
+                    self.show_file_conflict_dialog(path, tab_id, window, cx);
+                } else {
+                    self.file_watch_state
+                        .pending_conflicts
+                        .insert(path.clone(), tab_index);
+                }
+            } else {
+                self.reload_tab_from_disk(tab_index, window, cx);
+                Self::show_notification_file_reloaded(path, window, cx);
+            }
+        }
+    }
+
     /// Handle file watch events received from the file watcher
     ///
     /// ### Description
     /// - If the event is a modification, it shows a conflict dialog if the file is modified and the tab is active
-    /// - If the event is a deletion, it shows a notification that the file was deleted
+    /// - If the event is a deletion whose path still exists, it is treated as an atomic-rename replacement (re-watch and reload)
+    /// - If the event is a deletion whose path is gone, it shows a notification that the file was deleted
     /// - If the event is a rename, it shows a notification that the file was renamed
     /// - If the event is an error, it logs the error
     ///
@@ -351,44 +412,35 @@ impl Fulgur {
     ) {
         match event {
             FileWatchEvent::Modified(path) => {
-                let now = Instant::now();
-                if let Some(&last_time) = self.file_watch_state.last_file_events.get(&path)
-                    && now.duration_since(last_time) < Duration::from_millis(500)
-                {
+                if self.should_suppress_file_watch_event(&path) {
                     return;
                 }
-                if let Some(&save_time) = self.file_watch_state.last_file_saves.get(&path)
-                    && now.duration_since(save_time) < Duration::from_millis(500)
-                {
-                    return;
-                }
-                self.file_watch_state
-                    .last_file_events
-                    .insert(path.clone(), now);
-                if let Some(tab_index) = self.find_tab_by_path(&path)
-                    && let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index)
-                {
-                    if editor_tab.modified {
-                        let tab_id = editor_tab.id;
-                        let is_active = self.active_tab_index == Some(tab_index);
-
-                        if is_active {
-                            self.show_file_conflict_dialog(&path, tab_id, window, cx);
-                        } else {
-                            self.file_watch_state
-                                .pending_conflicts
-                                .insert(path, tab_index);
-                        }
-                    } else {
-                        self.reload_tab_from_disk(tab_index, window, cx);
-                        Self::show_notification_file_reloaded(&path, window, cx);
-                    }
-                }
+                self.apply_external_modification(&path, window, cx);
             }
             FileWatchEvent::Deleted(path) => {
+                if self.should_suppress_file_watch_event(&path) {
+                    return;
+                }
+                // A "deleted" event whose path still exists on disk is an atomic save.
+                if path.exists() {
+                    // Re-register only on inode-based backends..
+                    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                    {
+                        self.unwatch_file(&path);
+                        self.watch_file(&path);
+                        self.file_watch_state
+                            .last_file_events
+                            .insert(path.clone(), Instant::now());
+                    }
+                    self.apply_external_modification(&path, window, cx);
+                    return;
+                }
                 Self::show_notification_file_deleted(&path, window, cx);
             }
             FileWatchEvent::Renamed { from, to } => {
+                if self.should_suppress_file_watch_event(&from) {
+                    return;
+                }
                 if let Some(tab_index) = self.find_tab_by_path(&from) {
                     self.unwatch_file(&from);
                     self.watch_file(&to);
@@ -819,6 +871,71 @@ mod tests {
     }
 
     #[gpui::test]
+    fn test_handle_file_watch_event_deleted_existing_path_reloads(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("atomic_rename_reload.txt");
+        std::fs::write(&path, "content-from-disk").expect("failed to write test file");
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.content.update(cx, |input_state, cx| {
+                        input_state.set_value("stale-content", window, cx);
+                    });
+                    editor_tab.set_original_content_from_str("stale-content");
+                    editor_tab.modified = false;
+                }
+                this.handle_file_watch_event(FileWatchEvent::Deleted(path.clone()), window, cx);
+                let content = this
+                    .tabs
+                    .first()
+                    .and_then(Tab::as_editor)
+                    .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
+                    .unwrap_or_default();
+                assert_eq!(
+                    content, "content-from-disk",
+                    "a delete whose path still exists is an atomic-rename replacement and should reload"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn test_handle_file_watch_event_deleted_is_suppressed_after_self_save(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("self_save_suppressed.txt");
+        std::fs::write(&path, "content-from-disk").expect("failed to write test file");
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.content.update(cx, |input_state, cx| {
+                        input_state.set_value("local-content", window, cx);
+                    });
+                    editor_tab.set_original_content_from_str("local-content");
+                    editor_tab.modified = false;
+                }
+                this.file_watch_state
+                    .last_file_saves
+                    .insert(path.clone(), Instant::now());
+                this.handle_file_watch_event(FileWatchEvent::Deleted(path.clone()), window, cx);
+                let content = this
+                    .tabs
+                    .first()
+                    .and_then(Tab::as_editor)
+                    .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
+                    .unwrap_or_default();
+                assert_eq!(
+                    content, "local-content",
+                    "a delete echoing the user's own atomic save must be suppressed, not reloaded"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
     fn test_handle_file_watch_event_renamed_updates_path_and_title(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let from = temp_test_path("fulgur_rename_from.rs");
@@ -829,12 +946,18 @@ mod tests {
                     editor_tab.location = TabLocation::Local(from.clone());
                     editor_tab.title = "fulgur_rename_from.rs".into();
                 }
+                // Seed stale bookkeeping (older than the 500 ms suppression
+                // window): a genuine external rename happens long after any
+                // prior save, so it must still be processed and prune these.
+                let stale = Instant::now()
+                    .checked_sub(Duration::from_secs(1))
+                    .expect("instant subtraction should not underflow");
                 this.file_watch_state
                     .last_file_events
-                    .insert(from.clone(), Instant::now());
+                    .insert(from.clone(), stale);
                 this.file_watch_state
                     .last_file_saves
-                    .insert(from.clone(), Instant::now());
+                    .insert(from.clone(), stale);
                 this.file_watch_state
                     .pending_conflicts
                     .insert(from.clone(), 0);
