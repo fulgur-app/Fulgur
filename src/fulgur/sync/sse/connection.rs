@@ -7,7 +7,7 @@ use crate::fulgur::{
             SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
         },
     },
-    utils::{retry::BackoffCalculator, sanitize::sanitize_filename},
+    utils::retry::BackoffCalculator,
 };
 use fulgur_common::api::shares::SharedFileResponse;
 use parking_lot::Mutex;
@@ -189,7 +189,7 @@ fn fetch_pending_shares_into(
             }
             let count = shares.len();
             let mut queue = share_state.pending_shared_files.lock();
-            for mut share in shares {
+            for share in shares {
                 if share_payload_exceeds_limit(share.content.len(), server_max_file_size) {
                     log::warn!(
                         "Dropping shared file '{}' from device {}: encrypted payload ({} bytes) exceeds 2x the server max ({} bytes)",
@@ -200,7 +200,6 @@ fn fetch_pending_shares_into(
                     );
                     continue;
                 }
-                share.file_name = sanitize_filename(&share.file_name);
                 queue.push(share);
             }
             log::info!("Fetch ({reason}): queued {count} pending share(s)");
@@ -228,7 +227,7 @@ fn fetch_single_share_into(
 ) {
     let server_max_file_size = share_state.max_file_size_bytes.load(Ordering::Acquire);
     match fetch_share_by_id(profile, token_state, http_agent, share_id) {
-        Ok(mut share) => {
+        Ok(share) => {
             if share_payload_exceeds_limit(share.content.len(), server_max_file_size) {
                 log::warn!(
                     "Dropping shared file '{}' from device {}: encrypted payload ({} bytes) exceeds 2x the server max ({} bytes)",
@@ -239,7 +238,6 @@ fn fetch_single_share_into(
                 );
                 return;
             }
-            share.file_name = sanitize_filename(&share.file_name);
             share_state.pending_shared_files.lock().push(share);
             log::info!("Fetch (doorbell): queued share id {share_id}");
         }

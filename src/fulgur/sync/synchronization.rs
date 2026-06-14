@@ -347,13 +347,16 @@ fn initial_synchronization_v1(
             return Err(SynchronizationError::Other(e.to_string()));
         }
     };
-    let begin_response: BeginResponse = match serde_json::from_str(&body) {
+    let mut begin_response: BeginResponse = match serde_json::from_str(&body) {
         Ok(response) => response,
         Err(e) => {
             log::error!("Failed to parse v1 begin response body: {e}");
             return Err(SynchronizationError::InvalidResponse(e.to_string()));
         }
     };
+    for share in &mut begin_response.shares {
+        share.file_name = sanitize_filename(&share.file_name);
+    }
     log::info!(
         "Initial synchronization (v1) successful with {} shared files",
         begin_response.shares.len()
@@ -591,14 +594,7 @@ fn run_profile_bootstrap(
             }
             {
                 let mut files = sync_state.pending_shared_files.lock();
-                *files = begin_response
-                    .shares
-                    .into_iter()
-                    .map(|mut share| {
-                        share.file_name = sanitize_filename(&share.file_name);
-                        share
-                    })
-                    .collect();
+                *files = begin_response.shares;
             }
             if let (Some(tx), Some(shutdown), Some(handle_storage)) =
                 (sse_tx, sse_shutdown_flag, sse_thread_handle)
