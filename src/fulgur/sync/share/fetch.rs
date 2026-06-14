@@ -7,6 +7,7 @@ use crate::fulgur::{
             max_http_bulk_shares_response_bytes,
         },
     },
+    utils::sanitize::sanitize_filename,
 };
 use fulgur_common::api::shares::SharedFileResponse;
 use std::sync::Arc;
@@ -29,7 +30,9 @@ use std::sync::Arc;
 /// deserialized.
 ///
 /// ### Returns
-/// - `Ok(Vec<SharedFileResponse>)`: The shares that were drained from the server
+/// - `Ok(Vec<SharedFileResponse>)`: The shares that were drained from the
+///   server, with each `file_name` sanitized against path traversal and
+///   control characters
 /// - `Err(SynchronizationError)`: If the request failed or the response was invalid
 pub fn fetch_pending_shares(
     profile: &ServerProfile,
@@ -56,10 +59,13 @@ pub fn fetch_pending_shares(
             log::error!("Failed to read pending shares: {e}");
             SynchronizationError::Other(e.to_string())
         })?;
-    let shares: Vec<SharedFileResponse> = serde_json::from_str(&body).map_err(|e| {
+    let mut shares: Vec<SharedFileResponse> = serde_json::from_str(&body).map_err(|e| {
         log::error!("Failed to parse pending shares: {e}");
         SynchronizationError::InvalidResponse(e.to_string())
     })?;
+    for share in &mut shares {
+        share.file_name = sanitize_filename(&share.file_name);
+    }
     log::debug!("Fetched {} pending share(s) from server", shares.len());
     Ok(shares)
 }
@@ -78,7 +84,8 @@ pub fn fetch_pending_shares(
 /// is missing, or the response is invalid or too large.
 ///
 /// ### Returns
-/// - `Ok(SharedFileResponse)`: The share content
+/// - `Ok(SharedFileResponse)`: The share content, with `file_name` sanitized
+///   against path traversal and control characters
 /// - `Err(SynchronizationError)`: If the request failed, the share is gone,
 ///   or the response was invalid or too large
 pub fn fetch_share_by_id(
@@ -106,8 +113,10 @@ pub fn fetch_share_by_id(
             log::error!("Failed to read share response body for id {id}: {e}");
             SynchronizationError::Other(e.to_string())
         })?;
-    serde_json::from_str::<SharedFileResponse>(&body).map_err(|e| {
+    let mut share = serde_json::from_str::<SharedFileResponse>(&body).map_err(|e| {
         log::error!("Failed to parse share response body for id {id}: {e}");
         SynchronizationError::InvalidResponse(e.to_string())
-    })
+    })?;
+    share.file_name = sanitize_filename(&share.file_name);
+    Ok(share)
 }
