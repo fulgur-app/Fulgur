@@ -159,8 +159,11 @@ impl FileWatcher {
     /// - If the event is other, it ignores it
     /// - Ignore other event types (access, etc.)
     ///
-    /// Rename events come in two shapes depending on the OS backend:
-    /// - **macOS/Windows**: A single event with two paths (`RenameMode::Both`)
+    /// Rename events come in three shapes depending on the OS backend:
+    /// - **Windows**: A single event with two paths (`RenameMode::Both`)
+    /// - **macOS**: A single-path `RenameMode::Any` event for the source only, since
+    ///   `FSEvents` cannot pair the two sides. This also covers a move or delete-to-Trash,
+    ///   so it is surfaced as a `Deleted` for the source path.
     /// - **Linux inotify**: Two consecutive single-path events (`RenameMode::From` then
     ///   `RenameMode::To`). The `pending_rename_from` accumulator pairs them up.
     ///
@@ -225,6 +228,14 @@ impl FileWatcher {
                                 && let Some((stale, _)) = pending.take()
                             {
                                 Self::send_event(event_tx, FileWatchEvent::Deleted(stale));
+                            }
+                            // macOS FSEvents reports a move, rename, or delete-to-Trash of a
+                            // watched file as a single-path `RenameMode::Any` with no destination.
+                            if rename_mode == RenameMode::Any {
+                                Self::send_event(
+                                    event_tx,
+                                    FileWatchEvent::Deleted(event.paths[0].clone()),
+                                );
                             }
                         }
                     }
@@ -391,6 +402,19 @@ impl Fulgur {
         }
     }
 
+    /// Mark the tab backing an externally deleted file as modified.
+    ///
+    /// ### Arguments
+    /// - `path`: The path of the file that was deleted externally
+    fn mark_tab_deleted_externally(&mut self, path: &PathBuf) {
+        self.file_watch_state.pending_conflicts.remove(path);
+        if let Some(tab_index) = self.find_tab_by_path(path)
+            && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index)
+        {
+            editor_tab.modified = true;
+        }
+    }
+
     /// Handle file watch events received from the file watcher
     ///
     /// ### Description
@@ -435,6 +459,7 @@ impl Fulgur {
                     self.apply_external_modification(&path, window, cx);
                     return;
                 }
+                self.mark_tab_deleted_externally(&path);
                 Self::show_notification_file_deleted(&path, window, cx);
             }
             FileWatchEvent::Renamed { from, to } => {
@@ -621,6 +646,22 @@ mod tests {
             event_rx.try_recv(),
             Ok(FileWatchEvent::Deleted(actual)) if actual == path
         ));
+    }
+
+    #[gpui::test]
+    fn test_handle_notify_event_maps_macos_rename_any_to_deleted(_cx: &mut TestAppContext) {
+        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
+        let pending_rename_from = Mutex::new(None);
+        let path = temp_test_path("fulgur_notify_rename_any.txt");
+        // macOS FSEvents reports a delete-to-Trash, move, or rename of a watched
+        // file as a single-path `RenameMode::Any` with no destination.
+        let event =
+            Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Any))).add_path(path.clone());
+        FileWatcher::handle_notify_event(event, &event_tx, &pending_rename_from);
+        assert!(
+            matches!(event_rx.try_recv(), Ok(FileWatchEvent::Deleted(actual)) if actual == path),
+            "a single-path RenameMode::Any should map to a Deleted event for the source path"
+        );
     }
 
     #[gpui::test]
@@ -851,7 +892,7 @@ mod tests {
                     editor_tab.title = "deleted_branch.txt".into();
                 }
                 this.handle_file_watch_event(FileWatchEvent::Deleted(path.clone()), window, cx);
-                let (current_path, current_title, current_content) = this
+                let (current_path, current_title, current_content, current_modified) = this
                     .tabs
                     .first()
                     .and_then(Tab::as_editor)
@@ -860,12 +901,17 @@ mod tests {
                             editor_tab.file_path().cloned(),
                             editor_tab.title.to_string(),
                             editor_tab.content.read(cx).text().to_string(),
+                            editor_tab.modified,
                         )
                     })
                     .expect("expected active editor tab");
                 assert_eq!(current_path, Some(path));
                 assert_eq!(current_title, "deleted_branch.txt");
                 assert_eq!(current_content, "current-content");
+                assert!(
+                    current_modified,
+                    "a genuine external deletion should mark the tab modified so closing prompts to save"
+                );
             });
         });
     }
