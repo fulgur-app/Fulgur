@@ -113,6 +113,46 @@ impl Fulgur {
     /// - `Err(anyhow::Error)`: If the app state could not be saved
     pub fn save_state(&self, cx: &App, window: &Window) -> anyhow::Result<()> {
         log::debug!("Saving application state...");
+        let windows_state = self.build_windows_state(cx, window);
+        let window_count = windows_state.windows.len();
+        let tab_count = self.tabs.len();
+        let path = WindowsState::state_file_path()?;
+        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+        shared.state_writer.save_blocking(windows_state, path)?;
+        log::debug!(
+            "Application state saved successfully ({window_count} windows, {tab_count} tabs in this window)"
+        );
+        Ok(())
+    }
+
+    /// Save the current app state to disk without blocking the UI thread.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    /// - `window`: The window to save (needed for window bounds)
+    pub fn save_state_async(&self, cx: &App, window: &Window) {
+        log::debug!("Saving application state (async)...");
+        let windows_state = self.build_windows_state(cx, window);
+        let path = match WindowsState::state_file_path() {
+            Ok(path) => path,
+            Err(e) => {
+                log::error!("Failed to resolve state file path for async save: {e}");
+                return;
+            }
+        };
+        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+        shared.state_writer.save_async(windows_state, path);
+    }
+
+    /// Assemble the full multi-window state snapshot for persistence.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    /// - `window`: The current window (needed for its bounds)
+    ///
+    /// ### Returns
+    /// - `WindowsState`: The snapshot of all open windows
+    fn build_windows_state(&self, cx: &App, window: &Window) -> WindowsState {
         let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
         let mut windows_state = WindowsState { windows: vec![] };
         let current_window_id = self.window_id;
@@ -130,15 +170,7 @@ impl Fulgur {
                     .push(entity.read(cx).build_window_state_without_bounds(cx));
             }
         }
-        let window_count = windows_state.windows.len();
-        let tab_count = self.tabs.len();
-        let path = WindowsState::state_file_path()?;
-        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-        shared.state_writer.save_blocking(windows_state, path)?;
-        log::debug!(
-            "Application state saved successfully ({window_count} windows, {tab_count} tabs in this window)"
-        );
-        Ok(())
+        windows_state
     }
 
     /// Load app state from disk and restore tabs

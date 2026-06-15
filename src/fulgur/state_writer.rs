@@ -11,12 +11,12 @@ use std::thread;
 const CHANNEL_CAPACITY: usize = 16;
 
 /// A request sent from a UI thread to the writer thread: a serialized snapshot,
-/// the destination path, and a reply channel the writer uses to report the I/O
-/// result.
+/// the destination path, and an optional reply channel the writer uses to report
+/// the I/O result.
 struct WriteRequest {
     state: WindowsState,
     path: PathBuf,
-    reply: mpsc::Sender<anyhow::Result<()>>,
+    reply: Option<mpsc::Sender<anyhow::Result<()>>>,
 }
 
 /// Dedicated background writer that serializes all `WindowsState` persistence.
@@ -52,7 +52,9 @@ impl StateWriter {
             if let Err(ref e) = result {
                 log::error!("State writer failed to save state: {e}");
             }
-            if req.reply.send(result).is_err() {
+            if let Some(reply) = req.reply
+                && reply.send(result).is_err()
+            {
                 log::warn!("State writer reply channel dropped before result was read");
             }
         }
@@ -84,12 +86,31 @@ impl StateWriter {
             .send(WriteRequest {
                 state,
                 path,
-                reply: reply_tx,
+                reply: Some(reply_tx),
             })
             .map_err(|_| anyhow::anyhow!("state writer thread has exited"))?;
         reply_rx
             .recv()
             .map_err(|_| anyhow::anyhow!("state writer reply channel closed before result"))?
+    }
+
+    /// Enqueue a snapshot without waiting for the write to complete.
+    ///
+    /// ### Arguments
+    /// - `state`: The fully-assembled windows state snapshot to persist.
+    /// - `path`: Destination file path (typically the user config `state.json`).
+    pub fn save_async(&self, state: WindowsState, path: PathBuf) {
+        if self
+            .sender
+            .send(WriteRequest {
+                state,
+                path,
+                reply: None,
+            })
+            .is_err()
+        {
+            log::error!("State writer thread has exited; dropped async save request");
+        }
     }
 }
 
@@ -136,6 +157,21 @@ mod tests {
         let reloaded = WindowsState::load_from_path(&path).unwrap();
         assert_eq!(reloaded.windows.len(), 1);
         assert_eq!(reloaded.windows[0].tabs[0].title, "solo");
+    }
+
+    #[test]
+    fn writer_async_save_persists_snapshot() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let writer = StateWriter::new();
+        writer.save_async(sample_state("async"), path.clone());
+        // No reply channel is returned, so wait for a subsequent blocking save to
+        // flush the FIFO queue and guarantee the async write has landed.
+        writer
+            .save_blocking(sample_state("flush"), dir.path().join("flush.json"))
+            .unwrap();
+        let reloaded = WindowsState::load_from_path(&path).unwrap();
+        assert_eq!(reloaded.windows[0].tabs[0].title, "async");
     }
 
     #[test]

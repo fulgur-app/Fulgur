@@ -65,9 +65,7 @@ impl Fulgur {
                 self.watch_file(&path);
             }
             self.focus_active_tab(window, cx);
-            if let Err(e) = self.save_state(cx, window) {
-                log::error!("Failed to save state after receiving tab from another window: {e}");
-            }
+            self.save_state_async(cx, window);
             cx.notify();
         }
     }
@@ -110,9 +108,7 @@ impl Fulgur {
                 window.remove_window();
                 return;
             }
-            if let Err(e) = self.save_state(cx, window) {
-                log::error!("Failed to save state after sending tab to another window: {e}");
-            }
+            self.save_state_async(cx, window);
         }
     }
 }
