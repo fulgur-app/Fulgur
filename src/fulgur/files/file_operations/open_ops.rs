@@ -156,6 +156,8 @@ impl Fulgur {
         path: &Path,
     ) -> Option<()> {
         log::debug!("Attempting to open file: {}", path.display());
+        let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let path = canonical_path.as_path();
         let bytes = match std::fs::read(path) {
             Ok(bytes) => {
                 log::debug!(
@@ -258,7 +260,8 @@ impl Fulgur {
         });
         cx.spawn_in(window, async move |view, window| {
             let paths = path_future.await.ok()?.ok()??;
-            let path = paths.first()?.clone();
+            let raw_path = paths.first()?.clone();
+            let path = std::fs::canonicalize(&raw_path).unwrap_or(raw_path);
 
             // Check if tab already exists for this path
             let should_open_new = window
@@ -298,6 +301,7 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `path`: The path to the file to open
     pub fn do_open_file(&mut self, window: &mut Window, cx: &mut Context<Self>, path: PathBuf) {
+        let path = std::fs::canonicalize(&path).unwrap_or(path);
         if let Some(tab_index) = self.find_tab_by_path(&path) {
             log::debug!(
                 "Tab already exists for {} at index {tab_index}, focusing existing tab",
