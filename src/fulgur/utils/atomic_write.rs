@@ -22,18 +22,21 @@ static ATOMIC_WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// - `Ok(())`: the write is successful
 /// - `Err()`: error while writing the file
 pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
-    let parent = path.parent().ok_or_else(|| {
+    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let parent = target.parent().ok_or_else(|| {
         anyhow::anyhow!(
             "Cannot atomically write '{}': destination has no parent directory",
-            path.display()
+            target.display()
         )
     })?;
-    let filename = path.file_name().ok_or_else(|| {
+    let filename = target.file_name().ok_or_else(|| {
         anyhow::anyhow!(
             "Cannot atomically write '{}': destination has no filename",
-            path.display()
+            target.display()
         )
     })?;
+
+    let existing_permissions = fs::metadata(&target).ok().map(|meta| meta.permissions());
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos());
@@ -47,17 +50,22 @@ pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
     );
     let tmp_path = parent.join(tmp_name);
     let write_result = (|| -> anyhow::Result<()> {
-        let mut tmp_file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&tmp_path)
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to create temp file '{}' for atomic write: {}",
-                    tmp_path.display(),
-                    e
-                )
-            })?;
+        let mut open_options = OpenOptions::new();
+        open_options.create_new(true).write(true);
+
+        #[cfg(unix)]
+        if let Some(permissions) = &existing_permissions {
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+            open_options.mode(permissions.mode());
+        }
+        let mut tmp_file = open_options.open(&tmp_path).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to create temp file '{}' for atomic write: {}",
+                tmp_path.display(),
+                e
+            )
+        })?;
+
         tmp_file.write_all(contents).map_err(|e| {
             anyhow::anyhow!("Failed to write temp file '{}': {}", tmp_path.display(), e)
         })?;
@@ -71,10 +79,20 @@ pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
                 e
             )
         })?;
-        fs::rename(&tmp_path, path).map_err(|e| {
+
+        if let Some(permissions) = &existing_permissions {
+            tmp_file.set_permissions(permissions.clone()).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to apply destination permissions to temp file '{}': {}",
+                    tmp_path.display(),
+                    e
+                )
+            })?;
+        }
+        fs::rename(&tmp_path, &target).map_err(|e| {
             anyhow::anyhow!(
                 "Failed to replace '{}' with '{}' atomically: {}",
-                path.display(),
+                target.display(),
                 tmp_path.display(),
                 e
             )
@@ -202,6 +220,50 @@ mod tests {
 
         let written = fs::read_to_string(&file_path).expect("file should exist after replacement");
         assert_eq!(written, "new contents");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_preserves_existing_unix_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = TempDir::new().expect("failed to create temp dir");
+        let file_path = temp_dir.path().join("private.txt");
+        fs::write(&file_path, "secret").expect("failed to write initial file");
+        fs::set_permissions(&file_path, fs::Permissions::from_mode(0o600))
+            .expect("failed to set initial permissions");
+
+        atomic_write_file(&file_path, b"new secret").expect("atomic write should succeed");
+
+        let mode = fs::metadata(&file_path)
+            .expect("file should exist")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "0600 permissions should survive the save");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_through_symlink_keeps_link_and_updates_target() {
+        let temp_dir = TempDir::new().expect("failed to create temp dir");
+        let target_path = temp_dir.path().join("real.txt");
+        let link_path = temp_dir.path().join("link.txt");
+        fs::write(&target_path, "original").expect("failed to write target");
+        std::os::unix::fs::symlink(&target_path, &link_path).expect("failed to create symlink");
+
+        atomic_write_file(&link_path, b"updated").expect("atomic write should succeed");
+
+        let link_meta = fs::symlink_metadata(&link_path).expect("link should still exist");
+        assert!(
+            link_meta.file_type().is_symlink(),
+            "the symlink must not be replaced by a regular file"
+        );
+        let target_contents = fs::read_to_string(&target_path).expect("target should exist");
+        assert_eq!(
+            target_contents, "updated",
+            "the link target receives the write"
+        );
     }
 
     #[test]
