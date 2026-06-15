@@ -183,13 +183,13 @@ impl Fulgur {
         match classify_remote_path(session, &spec.path)? {
             RemotePathKind::File => {
                 let bytes = ssh::sftp::read_remote_file(session, &spec.path)?;
-                let decoded = detect_encoding_and_decode(&bytes);
+                let decoded = detect_encoding_and_decode(bytes);
                 Ok(RemoteOpenResult::File(RemoteFileResult {
                     spec: spec.clone(),
+                    file_size: decoded.byte_len,
                     content: decoded.content,
                     encoding: decoded.encoding,
                     lossy: decoded.lossy,
-                    file_size: bytes.len(),
                 }))
             }
             RemotePathKind::Directory => {
@@ -338,13 +338,13 @@ impl Fulgur {
                     let result = if target_tab_id.is_some() {
                         ssh::sftp::read_remote_file(pooled_session.session(), &spec_for_thread.path)
                             .map(|bytes| {
-                                let decoded = detect_encoding_and_decode(&bytes);
+                                let decoded = detect_encoding_and_decode(bytes);
                                 RemoteOpenResult::File(RemoteFileResult {
                                     spec: spec_for_thread.clone(),
+                                    file_size: decoded.byte_len,
                                     content: decoded.content,
                                     encoding: decoded.encoding,
                                     lossy: decoded.lossy,
-                                    file_size: bytes.len(),
                                 })
                             })
                     } else {
