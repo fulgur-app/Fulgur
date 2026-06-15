@@ -5,6 +5,9 @@ use ssh2::{ErrorCode, OpenFlags, OpenType, RenameFlags};
 use std::io::{Read, Write};
 use std::path::Path;
 
+/// Fallback permission bits used when the remote destination mode cannot be read
+const DEFAULT_REMOTE_FILE_MODE: u32 = 0o644;
+
 /// Read a file from the remote host via SFTP.
 ///
 /// ### Arguments
@@ -203,20 +206,42 @@ pub fn write_remote_file(
     remote_path: &str,
     data: &[u8],
 ) -> Result<(), SshError> {
+    // Resolve symlinks so the write targets the real file instead of replacingn the link.
+    let resolved = session
+        .sftp
+        .realpath(Path::new(remote_path))
+        .ok()
+        .and_then(|path| path.to_str().map(str::to_string))
+        .unwrap_or_else(|| remote_path.to_string());
+
+    // Preserve the destination permission bits across the temp-then-rename so a
+    // private or executable remote file is not reset to a default mode.
+    let dest_mode = session
+        .sftp
+        .stat(Path::new(&resolved))
+        .ok()
+        .and_then(|stat| stat.perm)
+        .map_or(DEFAULT_REMOTE_FILE_MODE, |perm| perm & 0o777);
+
     let pid = std::process::id();
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_nanos();
 
-    let tmp_str = format!("{remote_path}.fulgur.tmp.{pid}.{nanos}");
+    let tmp_str = format!("{resolved}.fulgur.tmp.{pid}.{nanos}");
     let tmp_path = Path::new(&tmp_str);
-    let dest_path = Path::new(remote_path);
+    let dest_path = Path::new(&resolved);
 
     let write_result: Result<(), SshError> = (|| {
         let mut tmp = session
             .sftp
-            .create(tmp_path)
+            .open_mode(
+                tmp_path,
+                OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE,
+                dest_mode.cast_signed(),
+                OpenType::File,
+            )
             .map_err(|e| SshError::SftpError(format!("Cannot create temp file {tmp_str}: {e}")))?;
 
         tmp.write_all(data)
@@ -230,8 +255,22 @@ pub fn write_remote_file(
         return write_result;
     }
 
-    let rename_result = rename_with_fallback(session, tmp_path, dest_path, remote_path, data)
-        .map_err(|e| SshError::SftpError(format!("Rename failed for {remote_path}: {e}")));
+    // Enforce the exact mode regardless of the remote umask applied at creation.
+    let _ = session.sftp.setstat(
+        tmp_path,
+        ssh2::FileStat {
+            size: None,
+            uid: None,
+            gid: None,
+            perm: Some(dest_mode),
+            atime: None,
+            mtime: None,
+        },
+    );
+
+    let rename_result =
+        rename_with_fallback(session, tmp_path, dest_path, &resolved, data, dest_mode)
+            .map_err(|e| SshError::SftpError(format!("Rename failed for {resolved}: {e}")));
 
     let _ = session.sftp.unlink(tmp_path);
 
@@ -246,6 +285,7 @@ pub fn write_remote_file(
 /// - `dest_path`: Final destination path.
 /// - `remote_path`: Destination path string for logging and error messages.
 /// - `data`: File contents used by the direct-write fallback.
+/// - `mode`: Permission bits to apply when the direct-write fallback creates the file.
 ///
 /// ### Returns
 /// - `Ok(())`: Rename succeeded, or compatibility fallback direct-write succeeded.
@@ -256,6 +296,7 @@ fn rename_with_fallback(
     dest_path: &Path,
     remote_path: &str,
     data: &[u8],
+    mode: u32,
 ) -> Result<(), String> {
     let attempts = [
         (
@@ -280,7 +321,7 @@ fn rename_with_fallback(
     log::warn!(
         "All SFTP rename modes failed for {remote_path}; trying direct write fallback (non-atomic)"
     );
-    direct_write_fallback(session, dest_path, remote_path, data)
+    direct_write_fallback(session, dest_path, remote_path, data, mode)
         .map_err(|fallback_err| format!("{last_err}; fallback direct write failed: {fallback_err}"))
 }
 
@@ -294,6 +335,7 @@ fn rename_with_fallback(
 /// - `dest_path`: Final destination path.
 /// - `remote_path`: Destination path string for error messages.
 /// - `data`: File contents to write.
+/// - `mode`: Permission bits applied when the destination is created.
 ///
 /// ### Returns
 /// - `Ok(())`: Direct write succeeded.
@@ -303,13 +345,14 @@ fn direct_write_fallback(
     dest_path: &Path,
     remote_path: &str,
     data: &[u8],
+    mode: u32,
 ) -> Result<(), String> {
     let mut dest = session
         .sftp
         .open_mode(
             dest_path,
             OpenFlags::WRITE | OpenFlags::TRUNCATE | OpenFlags::CREATE,
-            0o644,
+            mode.cast_signed(),
             OpenType::File,
         )
         .map_err(|e| format!("cannot open destination for direct write: {e}"))?;
