@@ -1,10 +1,12 @@
 pub(super) mod compression;
+pub(super) mod decrypt;
 pub(super) mod devices;
 pub(super) mod fetch;
 pub(super) mod send;
 pub(super) mod types;
 
 pub use compression::decompress_content;
+pub use decrypt::{DecryptedShare, start_decryption_if_idle};
 pub use devices::{Device, get_devices, get_icon};
 pub use fetch::{fetch_pending_shares, fetch_share_by_id};
 pub use send::{
