@@ -34,8 +34,12 @@ pub struct SyncState {
     pub connecting_since: Arc<Mutex<Option<std::time::Instant>>>,
     /// Device name reported by the server for this profile.
     pub device_name: Arc<Mutex<Option<String>>>,
-    /// Pending shared files arrived from this profile's server.
+    /// Pending shared files arrived from this profile's server (still encrypted).
     pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
+    /// Shares already decrypted off the UI thread, awaiting tab creation in the render loop.
+    pub pending_decrypted_files: Arc<Mutex<Vec<crate::fulgur::sync::share::DecryptedShare>>>,
+    /// Guard ensuring at most one background decryption worker runs per profile.
+    pub decrypt_in_flight: Arc<AtomicBool>,
     /// JWT token state manager with condition variable for efficient token
     /// refresh coordination, scoped to this profile.
     pub token_state: Arc<crate::fulgur::sync::access_token::TokenStateManager>,
@@ -67,6 +71,8 @@ impl SyncState {
             connecting_since: Arc::new(Mutex::new(None)),
             device_name: Arc::new(Mutex::new(None)),
             pending_shared_files: Arc::new(Mutex::new(Vec::new())),
+            pending_decrypted_files: Arc::new(Mutex::new(Vec::new())),
+            decrypt_in_flight: Arc::new(AtomicBool::new(false)),
             token_state: Arc::new(crate::fulgur::sync::access_token::TokenStateManager::new()),
             last_heartbeat: Arc::new(Mutex::new(None)),
             pending_notification: Arc::new(Mutex::new(None)),
