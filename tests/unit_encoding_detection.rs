@@ -9,8 +9,7 @@ use std::fmt::Write;
 #[test]
 fn test_detect_encoding_utf8() {
     let content = "Hello, World! 你好世界";
-    let bytes = content.as_bytes();
-    let result = detect_encoding_and_decode(bytes);
+    let result = detect_encoding_and_decode(content.as_bytes().to_vec());
     assert_eq!(result.encoding, "UTF-8", "Should detect UTF-8 encoding");
     assert_eq!(
         result.content, content,
@@ -21,8 +20,7 @@ fn test_detect_encoding_utf8() {
 #[test]
 fn test_detect_encoding_ascii() {
     let content = "Hello, World!";
-    let bytes = content.as_bytes();
-    let result = detect_encoding_and_decode(bytes);
+    let result = detect_encoding_and_decode(content.as_bytes().to_vec());
     assert_eq!(
         result.encoding, "UTF-8",
         "ASCII should be detected as UTF-8"
@@ -39,7 +37,7 @@ fn test_detect_encoding_with_bom() {
     let content = "Hello, World!";
     let mut bytes = bom;
     bytes.extend_from_slice(content.as_bytes());
-    let result = detect_encoding_and_decode(&bytes);
+    let result = detect_encoding_and_decode(bytes);
     assert_eq!(result.encoding, "UTF-8", "Should detect UTF-8 with BOM");
     assert!(
         result.content.contains("Hello, World!"),
@@ -53,7 +51,7 @@ fn test_detect_encoding_latin1() {
         0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, // "Hello "
         0xE9, 0xE8, 0xE0, // "éèà" in Latin-1
     ];
-    let result = detect_encoding_and_decode(&bytes);
+    let result = detect_encoding_and_decode(bytes);
     assert!(
         !result.encoding.is_empty(),
         "Should detect some encoding for Latin-1"
@@ -63,7 +61,7 @@ fn test_detect_encoding_latin1() {
 
 #[test]
 fn test_detect_encoding_empty_file() {
-    let bytes: &[u8] = &[];
+    let bytes: Vec<u8> = Vec::new();
     let result = detect_encoding_and_decode(bytes);
     assert_eq!(
         result.encoding, "UTF-8",
@@ -81,7 +79,7 @@ fn test_detect_encoding_binary_like_data() {
     bytes.extend_from_slice(b"Text start ");
     bytes.extend_from_slice(&[0xFF, 0xFE, 0xFD]); // Invalid UTF-8 bytes
     bytes.extend_from_slice(b" text end");
-    let result = detect_encoding_and_decode(&bytes);
+    let result = detect_encoding_and_decode(bytes);
     assert!(
         !result.encoding.is_empty(),
         "Should detect some encoding for mixed data"
@@ -102,8 +100,7 @@ fn test_detect_encoding_with_various_newlines() {
         (windows_content, "Windows"),
         (mac_content, "Mac"),
     ] {
-        let bytes = content.as_bytes();
-        let result = detect_encoding_and_decode(bytes);
+        let result = detect_encoding_and_decode(content.as_bytes().to_vec());
         assert_eq!(result.encoding, "UTF-8", "{name} newlines should be UTF-8");
         assert_eq!(
             result.content, content,
@@ -118,8 +115,7 @@ fn test_detect_encoding_large_file() {
     for i in 0..1000 {
         let _ = writeln!(content, "Line {i} with some content");
     }
-    let bytes = content.as_bytes();
-    let result = detect_encoding_and_decode(bytes);
+    let result = detect_encoding_and_decode(content.as_bytes().to_vec());
     assert_eq!(
         result.encoding, "UTF-8",
         "Large file should be detected as UTF-8"
@@ -133,8 +129,7 @@ fn test_detect_encoding_large_file() {
 #[test]
 fn test_detect_encoding_unicode_emoji() {
     let content = "Hello 👋 World 🌍 Rust 🦀";
-    let bytes = content.as_bytes();
-    let result = detect_encoding_and_decode(bytes);
+    let result = detect_encoding_and_decode(content.as_bytes().to_vec());
     assert_eq!(
         result.encoding, "UTF-8",
         "Emoji should be detected as UTF-8"
@@ -145,10 +140,8 @@ fn test_detect_encoding_unicode_emoji() {
 #[test]
 fn test_detect_encoding_roundtrip() {
     let original_content = "Test content with Unicode: 你好, مرحبا, Здравствуй";
-    let bytes = original_content.as_bytes();
-    let first = detect_encoding_and_decode(bytes);
-    let bytes2 = first.content.as_bytes();
-    let second = detect_encoding_and_decode(bytes2);
+    let first = detect_encoding_and_decode(original_content.as_bytes().to_vec());
+    let second = detect_encoding_and_decode(first.content.as_bytes().to_vec());
     assert_eq!(first.encoding, second.encoding, "Encoding should be stable");
     assert_eq!(first.content, second.content, "Content should be stable");
     assert_eq!(second.content, original_content, "Should match original");

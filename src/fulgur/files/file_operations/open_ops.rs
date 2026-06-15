@@ -1,4 +1,4 @@
-use super::{detect_encoding_and_decode, looks_binary};
+use super::{DecodedContents, detect_encoding_and_decode, looks_binary};
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
@@ -15,6 +15,13 @@ use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
+
+/// Result of reading and classifying a file on the background executor.
+enum FileReadOutcome {
+    Decoded(DecodedContents),
+    Binary,
+    Failed,
+}
 
 impl Fulgur {
     /// Find the index of a tab with the given file path
@@ -75,28 +82,62 @@ impl Fulgur {
         } else {
             None
         };
-        if let Some(path) = path {
-            log::debug!("Reloading tab content from disk: {}", path.display());
-            match std::fs::read(&path) {
-                Ok(bytes) => {
-                    let decoded = detect_encoding_and_decode(&bytes);
-                    if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
-                        editor_tab.content.update(cx, |input_state, cx| {
-                            input_state.set_value(&decoded.content, window, cx);
-                        });
-                        editor_tab.set_original_content_from_str(&decoded.content);
-                        editor_tab.encoding = decoded.encoding;
-                        editor_tab.lossy_decode = decoded.lossy;
-                        editor_tab.modified = false;
-                        editor_tab.update_file_tooltip_cache(bytes.len());
-                        editor_tab.update_language(window, cx, &self.settings.editor_settings);
-                        log::debug!("Tab reloaded successfully from disk: {}", path.display());
-                    }
+        let Some(path) = path else {
+            return;
+        };
+        log::debug!("Reloading tab content from disk: {}", path.display());
+        cx.spawn_in(window, async move |view, window| {
+            let read_path = path.clone();
+            let read_result = window
+                .background_executor()
+                .spawn(async move { std::fs::read(&read_path).map(detect_encoding_and_decode) })
+                .await;
+            match read_result {
+                Ok(decoded) => {
+                    window
+                        .update(|window, cx| {
+                            _ = view.update(cx, |this, cx| {
+                                this.apply_reloaded_contents(&path, decoded, window, cx);
+                            });
+                        })
+                        .ok();
                 }
                 Err(e) => {
                     log::error!("Failed to reload file {}: {e}", path.display());
                 }
             }
+        })
+        .detach();
+    }
+
+    /// Apply freshly decoded file contents to the editor tab backing a path.
+    ///
+    /// ### Arguments
+    /// - `path`: The path whose tab should receive the reloaded content
+    /// - `decoded`: The decoded file contents produced off the UI thread
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn apply_reloaded_contents(
+        &mut self,
+        path: &Path,
+        decoded: DecodedContents,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab_index) = self.find_tab_by_path(&path.to_path_buf()) else {
+            return;
+        };
+        if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
+            editor_tab.content.update(cx, |input_state, cx| {
+                input_state.set_value(&decoded.content, window, cx);
+            });
+            editor_tab.set_original_content_from_str(&decoded.content);
+            editor_tab.encoding = decoded.encoding;
+            editor_tab.lossy_decode = decoded.lossy;
+            editor_tab.modified = false;
+            editor_tab.update_file_tooltip_cache(decoded.byte_len);
+            editor_tab.update_language(window, cx, &self.settings.editor_settings);
+            log::debug!("Tab reloaded successfully from disk: {}", path.display());
         }
     }
 
@@ -150,50 +191,63 @@ impl Fulgur {
     /// ### Returns
     /// - `None`: If the file could not be opened
     /// - `Some(())`: If the file was opened successfully
-    fn open_file_from_path(
+    async fn open_file_from_path(
         view: &WeakEntity<Self>,
         window: &mut AsyncWindowContext,
         path: &Path,
     ) -> Option<()> {
         log::debug!("Attempting to open file: {}", path.display());
         let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let read_path = canonical_path.clone();
+        let outcome = window
+            .background_executor()
+            .spawn(async move {
+                match std::fs::read(&read_path) {
+                    Ok(bytes) => {
+                        log::debug!(
+                            "Successfully read file: {} ({} bytes)",
+                            read_path.display(),
+                            bytes.len()
+                        );
+                        if looks_binary(&bytes) {
+                            FileReadOutcome::Binary
+                        } else {
+                            FileReadOutcome::Decoded(detect_encoding_and_decode(bytes))
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to read file {}: {e}", read_path.display());
+                        FileReadOutcome::Failed
+                    }
+                }
+            })
+            .await;
         let path = canonical_path.as_path();
-        let bytes = match std::fs::read(path) {
-            Ok(bytes) => {
-                log::debug!(
-                    "Successfully read file: {} ({} bytes)",
-                    path.display(),
-                    bytes.len()
-                );
-                bytes
-            }
-            Err(e) => {
-                log::error!("Failed to read file {}: {e}", path.display());
+        let decoded = match outcome {
+            FileReadOutcome::Decoded(decoded) => decoded,
+            FileReadOutcome::Failed => return None,
+            FileReadOutcome::Binary => {
+                log::warn!("Refusing to open binary file: {}", path.display());
+                let file_name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("file")
+                    .to_string();
+                window
+                    .update(|_, cx| {
+                        _ = view.update(cx, |this, cx| {
+                            this.pending_notification = Some((
+                                NotificationType::Warning,
+                                format!("Cannot open '{file_name}': appears to be a binary file")
+                                    .into(),
+                            ));
+                            cx.notify();
+                        });
+                    })
+                    .ok();
                 return None;
             }
         };
-        if looks_binary(&bytes) {
-            log::warn!("Refusing to open binary file: {}", path.display());
-            let file_name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("file")
-                .to_string();
-            window
-                .update(|_, cx| {
-                    _ = view.update(cx, |this, cx| {
-                        this.pending_notification = Some((
-                            NotificationType::Warning,
-                            format!("Cannot open '{file_name}': appears to be a binary file")
-                                .into(),
-                        ));
-                        cx.notify();
-                    });
-                })
-                .ok();
-            return None;
-        }
-        let decoded = detect_encoding_and_decode(&bytes);
         window
             .update(|window, cx| {
                 _ = view.update(cx, |this, cx| {
@@ -283,7 +337,7 @@ impl Fulgur {
                 .ok()??;
 
             if should_open_new {
-                Self::open_file_from_path(&view, window, &path)
+                Self::open_file_from_path(&view, window, &path).await
             } else {
                 Some(())
             }
@@ -327,7 +381,7 @@ impl Fulgur {
             return;
         }
         cx.spawn_in(window, async move |view, window| {
-            Self::open_file_from_path(&view, window, &path)
+            Self::open_file_from_path(&view, window, &path).await
         })
         .detach();
     }
@@ -638,6 +692,14 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.reload_tab_from_disk(0, window, cx);
+            });
+        });
+        // The read and decode now run on the background executor and are applied
+        // asynchronously, so let the spawned task complete before asserting.
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
                 let content = this
                     .tabs
                     .first()

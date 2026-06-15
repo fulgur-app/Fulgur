@@ -770,6 +770,17 @@ mod tests {
                     editor_tab.modified = false;
                 }
                 this.handle_file_watch_event(FileWatchEvent::Modified(path.clone()), window, cx);
+                assert!(
+                    this.file_watch_state.last_file_events.contains_key(&path),
+                    "modified event should update debounce map"
+                );
+            });
+        });
+        // Reloading runs on the background executor, so wait for it to apply.
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
                 let content = this
                     .tabs
                     .first()
@@ -777,10 +788,6 @@ mod tests {
                     .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
                     .unwrap_or_default();
                 assert_eq!(content, "content-from-disk");
-                assert!(
-                    this.file_watch_state.last_file_events.contains_key(&path),
-                    "modified event should update debounce map"
-                );
             });
         });
     }
@@ -933,6 +940,13 @@ mod tests {
                     editor_tab.modified = false;
                 }
                 this.handle_file_watch_event(FileWatchEvent::Deleted(path.clone()), window, cx);
+            });
+        });
+        // Reloading runs on the background executor, so wait for it to apply.
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
                 let content = this
                     .tabs
                     .first()

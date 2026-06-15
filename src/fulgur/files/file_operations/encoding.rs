@@ -9,6 +9,7 @@ pub struct DecodedContents {
     pub encoding: String,
     pub content: String,
     pub lossy: bool,
+    pub byte_len: usize,
 }
 
 /// Outcome of re-encoding editor text for writing back to disk.
@@ -23,26 +24,33 @@ pub enum EncodedContents {
 /// - `bytes`: The bytes to detect encoding from
 ///
 /// ### Returns
-/// - `DecodedContents`: The detected encoding, decoded text, and whether the decode was lossy
-pub fn detect_encoding_and_decode(bytes: &[u8]) -> DecodedContents {
-    if let Ok(text) = std::str::from_utf8(bytes) {
-        log::debug!("File encoding detected as UTF-8");
-        return DecodedContents {
-            encoding: UTF_8.to_string(),
-            content: text.to_string(),
-            lossy: false,
-        };
-    }
+/// - `DecodedContents`: The detected encoding, decoded text, the original byte
+///   length, and whether the decode was lossy
+pub fn detect_encoding_and_decode(bytes: Vec<u8>) -> DecodedContents {
+    let byte_len = bytes.len();
+    let bytes = match String::from_utf8(bytes) {
+        Ok(text) => {
+            log::debug!("File encoding detected as UTF-8");
+            return DecodedContents {
+                encoding: UTF_8.to_string(),
+                content: text,
+                lossy: false,
+                byte_len,
+            };
+        }
+        Err(error) => error.into_bytes(),
+    };
     let mut detector = EncodingDetector::new(Iso2022JpDetection::Allow);
-    detector.feed(bytes, true);
+    detector.feed(&bytes, true);
     let encoding = detector.guess(None, Utf8Detection::Allow);
-    let (decoded, _, had_errors) = encoding.decode(bytes);
+    let (decoded, _, had_errors) = encoding.decode(&bytes);
     if had_errors {
         log::warn!("File encoding detection failed, using UTF-8 lossy conversion");
         return DecodedContents {
             encoding: UTF_8.to_string(),
-            content: String::from_utf8_lossy(bytes).to_string(),
+            content: String::from_utf8_lossy(&bytes).to_string(),
             lossy: true,
+            byte_len,
         };
     }
     let encoding_name = encoding.name().to_string();
@@ -51,6 +59,7 @@ pub fn detect_encoding_and_decode(bytes: &[u8]) -> DecodedContents {
         encoding: encoding_name,
         content: decoded.to_string(),
         lossy: false,
+        byte_len,
     }
 }
 
@@ -107,16 +116,17 @@ mod tests {
     #[test]
     fn test_detect_encoding_returns_utf8_for_valid_utf8_text() {
         let text = "Hello, world! Fulgur rocks.";
-        let decoded = detect_encoding_and_decode(text.as_bytes());
+        let decoded = detect_encoding_and_decode(text.as_bytes().to_vec());
         assert_eq!(decoded.encoding, UTF_8);
         assert_eq!(decoded.content, text);
         assert!(!decoded.lossy);
+        assert_eq!(decoded.byte_len, text.len());
     }
 
     #[test]
     fn test_detect_encoding_returns_utf8_for_ascii_content() {
         let text = "fn main() { println!(\"hi\"); }";
-        let decoded = detect_encoding_and_decode(text.as_bytes());
+        let decoded = detect_encoding_and_decode(text.as_bytes().to_vec());
         assert_eq!(decoded.encoding, UTF_8);
         assert_eq!(decoded.content, text);
         assert!(!decoded.lossy);
@@ -125,7 +135,7 @@ mod tests {
     #[test]
     fn test_detect_encoding_detects_non_utf8_encoding() {
         // 0xE9 is 'é' in Latin-1 but not a valid UTF-8 byte sequence on its own
-        let bytes: &[u8] = &[0x63, 0x61, 0x66, 0xE9]; // "café" in Latin-1
+        let bytes: Vec<u8> = vec![0x63, 0x61, 0x66, 0xE9]; // "café" in Latin-1
         let decoded = detect_encoding_and_decode(bytes);
         assert_ne!(decoded.encoding, UTF_8);
         assert!(!decoded.content.is_empty());
@@ -135,7 +145,7 @@ mod tests {
     fn test_encode_for_save_roundtrips_latin1() {
         // "café" decoded from Latin-1, re-encoded must restore the original bytes.
         let original: &[u8] = &[0x63, 0x61, 0x66, 0xE9];
-        let decoded = detect_encoding_and_decode(original);
+        let decoded = detect_encoding_and_decode(original.to_vec());
         let EncodedContents::Encoded(bytes) = encode_for_save(&decoded.content, &decoded.encoding)
         else {
             panic!("expected lossless re-encode for Latin-1 content");

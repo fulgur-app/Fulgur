@@ -280,7 +280,7 @@ impl Fulgur {
                 let mut bytes = Vec::new();
                 let mut file = readable_file.take()?;
                 file.read_to_end(&mut bytes).ok()?;
-                let decoded = detect_encoding_and_decode(&bytes);
+                let decoded = detect_encoding_and_decode(bytes);
                 (
                     decoded.content,
                     Some(path),
