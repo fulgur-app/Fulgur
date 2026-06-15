@@ -1005,13 +1005,7 @@ impl Fulgur {
                         let menus =
                             build_menus(&self.settings.get_recent_files(), update_link.as_deref());
                         self.update_menus(menus, cx);
-                        if let Err(e) = self.save_state(cx, window) {
-                            log::error!("Failed to save app state after opening remote file: {e}");
-                            self.pending_notification = Some((
-                                NotificationType::Warning,
-                                format!("Remote file opened but failed to save state: {e}").into(),
-                            ));
-                        }
+                        self.save_state_async(cx, window);
                         cx.notify();
                     }
                 }

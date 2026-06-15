@@ -35,13 +35,7 @@ impl Fulgur {
         self.pending_tab_scroll = Some(self.tabs.len() - 1);
         self.next_tab_id += 1;
         self.focus_active_tab(window, cx);
-        if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after creating tab: {e}");
-            self.pending_notification = Some((
-                gpui_component::notification::NotificationType::Warning,
-                format!("Tab created but failed to save state: {e}").into(),
-            ));
-        }
+        self.save_state_async(cx, window);
         cx.notify();
     }
 
@@ -128,13 +122,7 @@ impl Fulgur {
             self.active_tab_index = Some(self.tabs.len() - 1);
             self.pending_tab_scroll = Some(self.tabs.len() - 1);
             self.next_tab_id += 1;
-            if let Err(e) = self.save_state(cx, window) {
-                log::error!("Failed to save app state after opening settings: {e}");
-                self.pending_notification = Some((
-                    gpui_component::notification::NotificationType::Warning,
-                    format!("Settings opened but failed to save state: {e}").into(),
-                ));
-            }
+            self.save_state_async(cx, window);
             cx.notify();
         }
     }
@@ -153,24 +141,12 @@ impl Fulgur {
         if self.check_tab_modified(tab_id) {
             self.show_unsaved_changes_dialog(window, cx, move |this, window, cx| {
                 this.remove_tab_by_id(tab_id, window, cx);
-                if let Err(e) = this.save_state(cx, window) {
-                    log::error!("Failed to save app state after closing tab: {e}");
-                    this.pending_notification = Some((
-                        gpui_component::notification::NotificationType::Warning,
-                        format!("Tab closed but failed to save state: {e}").into(),
-                    ));
-                }
+                this.save_state_async(cx, window);
             });
         } else {
             self.remove_tab_by_id(tab_id, window, cx);
             self.focus_active_tab(window, cx);
-            if let Err(e) = self.save_state(cx, window) {
-                log::error!("Failed to save app state after closing tab: {e}");
-                self.pending_notification = Some((
-                    gpui_component::notification::NotificationType::Warning,
-                    format!("Tab closed but failed to save state: {e}").into(),
-                ));
-            }
+            self.save_state_async(cx, window);
         }
     }
 
@@ -319,13 +295,7 @@ impl Fulgur {
                     this.remove_tab_by_id(tab_id, window, cx);
                     if this.tabs.is_empty() {
                         this.active_tab_index = None;
-                        if let Err(e) = this.save_state(cx, window) {
-                            log::error!("Failed to save state after closing all tabs: {e}");
-                            this.pending_notification = Some((
-                                gpui_component::notification::NotificationType::Warning,
-                                format!("Tabs closed but failed to save state: {e}").into(),
-                            ));
-                        }
+                        this.save_state_async(cx, window);
                         cx.notify();
                     } else {
                         this.close_all_tabs(window, cx);
@@ -338,13 +308,7 @@ impl Fulgur {
         if self.tabs.is_empty() {
             self.active_tab_index = None;
         }
-        if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after closing all tabs: {e}");
-            self.pending_notification = Some((
-                gpui_component::notification::NotificationType::Warning,
-                format!("Tabs closed but failed to save state: {e}").into(),
-            ));
-        }
+        self.save_state_async(cx, window);
         cx.notify();
     }
 
@@ -384,13 +348,7 @@ impl Fulgur {
                         this.close_tabs_to_left(boundary_index, window, cx);
                         return;
                     }
-                    if let Err(e) = this.save_state(cx, window) {
-                        log::error!("Failed to save state after closing tabs to left: {e}");
-                        this.pending_notification = Some((
-                            gpui_component::notification::NotificationType::Warning,
-                            format!("Tabs closed but failed to save state: {e}").into(),
-                        ));
-                    }
+                    this.save_state_async(cx, window);
                     cx.notify();
                 });
                 return;
@@ -402,13 +360,7 @@ impl Fulgur {
         {
             self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
         }
-        if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after closing tabs to left: {e}");
-            self.pending_notification = Some((
-                gpui_component::notification::NotificationType::Warning,
-                format!("Tabs closed but failed to save state: {e}").into(),
-            ));
-        }
+        self.save_state_async(cx, window);
         self.focus_active_tab(window, cx);
         cx.notify();
     }
@@ -449,13 +401,7 @@ impl Fulgur {
                             return;
                         }
                     }
-                    if let Err(e) = this.save_state(cx, window) {
-                        log::error!("Failed to save state after closing tabs to right: {e}");
-                        this.pending_notification = Some((
-                            gpui_component::notification::NotificationType::Warning,
-                            format!("Tabs closed but failed to save state: {e}").into(),
-                        ));
-                    }
+                    this.save_state_async(cx, window);
                     cx.notify();
                 });
                 return;
@@ -467,13 +413,7 @@ impl Fulgur {
         {
             self.active_tab_index = Some(self.tabs.len().saturating_sub(1));
         }
-        if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after closing tabs to right: {e}");
-            self.pending_notification = Some((
-                gpui_component::notification::NotificationType::Warning,
-                format!("Tabs closed but failed to save state: {e}").into(),
-            ));
-        }
+        self.save_state_async(cx, window);
         self.focus_active_tab(window, cx);
         cx.notify();
     }
@@ -532,13 +472,7 @@ impl Fulgur {
             self.active_tab_index = Some(new_active_pos);
         }
         self.focus_active_tab(window, cx);
-        if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after closing other tabs: {e}");
-            self.pending_notification = Some((
-                gpui_component::notification::NotificationType::Warning,
-                format!("Tabs closed but failed to save state: {e}").into(),
-            ));
-        }
+        self.save_state_async(cx, window);
         cx.notify();
     }
 
@@ -582,13 +516,7 @@ impl Fulgur {
         self.pending_tab_scroll = Some(insert_pos);
         self.next_tab_id += 1;
         self.focus_active_tab(window, cx);
-        if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state after duplicating tab: {e}");
-            self.pending_notification = Some((
-                gpui_component::notification::NotificationType::Warning,
-                format!("Tab duplicated but failed to save state: {e}").into(),
-            ));
-        }
+        self.save_state_async(cx, window);
         cx.notify();
     }
 
