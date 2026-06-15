@@ -194,6 +194,8 @@ impl Fulgur {
             return;
         }
         log::debug!("File saved successfully as: {}", path.display());
+        let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let path = canonical_path.as_path();
         let Some(tab_index) = self.tabs.iter().position(|tab| tab.id() == tab_id) else {
             log::warn!("Save As destination selected, but tab {tab_id} no longer exists");
             return;
@@ -519,8 +521,12 @@ mod tests {
                     .and_then(|editor_tab| editor_tab.file_path().cloned())
                     .expect("second tab path should exist");
 
+                // finalize_save_as canonicalizes the destination, so compare against the
+                // resolved path (macOS resolves /var/ to /private/var/).
+                let expected_renamed_path =
+                    std::fs::canonicalize(&renamed_path).unwrap_or_else(|_| renamed_path.clone());
                 assert_eq!(
-                    first_tab_path, renamed_path,
+                    first_tab_path, expected_renamed_path,
                     "save-as update must target the originating tab id"
                 );
                 assert_eq!(
