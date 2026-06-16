@@ -110,12 +110,13 @@ enum ReadError {
 /// - `Ok(Some(String))`: A line was read successfully
 /// - `Ok(None)`: End of stream reached
 /// - `Err(ReadError::Shutdown)`: Shutdown was requested
-/// - `Err(ReadError::Io)`: I/O error occurred, or the read deadline elapsed
+/// - `Err(ReadError::Io)`: I/O error occurred, the read deadline elapsed, or a
+///   single line exceeded `MAX_SSE_EVENT_DATA_BYTES` (forcing a reconnect)
 fn read_line_with_timeout<R: Read>(
     reader: &mut BufReader<R>,
     shutdown_flag: &Arc<AtomicBool>,
 ) -> Result<Option<String>, ReadError> {
-    let mut line = String::new();
+    let mut line = Vec::new();
     let mut byte = [0u8; 1];
     let mut last_byte_received = Instant::now();
 
@@ -128,17 +129,25 @@ fn read_line_with_timeout<R: Read>(
                 if line.is_empty() {
                     return Ok(None);
                 }
-                return Ok(Some(line));
+                return Ok(Some(String::from_utf8_lossy(&line).into_owned()));
             }
             Ok(_) => {
                 last_byte_received = Instant::now();
                 if byte[0] == b'\n' {
-                    if line.ends_with('\r') {
+                    if line.last() == Some(&b'\r') {
                         line.pop();
                     }
-                    return Ok(Some(line));
+                    return Ok(Some(String::from_utf8_lossy(&line).into_owned()));
                 }
-                line.push(byte[0] as char);
+                if line.len() >= MAX_SSE_EVENT_DATA_BYTES {
+                    return Err(ReadError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "SSE line exceeds size limit ({MAX_SSE_EVENT_DATA_BYTES} bytes), connection presumed malicious"
+                        ),
+                    )));
+                }
+                line.push(byte[0]);
             }
             Err(e)
                 if e.kind() == std::io::ErrorKind::WouldBlock
