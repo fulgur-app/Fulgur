@@ -1,182 +1,16 @@
+use super::widgets::SyncButtonState;
 use crate::fulgur::{
     Fulgur,
     languages::supported_languages::{SupportedLanguage, pretty_name},
-    settings::MarkdownPreviewMode,
     sync::synchronization::SynchronizationStatus,
-    tab::Tab,
-    ui::{
-        components_utils::{EMPTY, UTF_8},
-        icons::CustomIcon,
-        tabs::editor_tab::CsvViewMode,
-    },
+    ui::components_utils::{EMPTY, UTF_8},
 };
-use gpui::{
-    Animation, AnimationExt, Context, Div, Hsla, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, StatefulInteractiveElement, Styled, div, prelude::FluentBuilder,
-};
-use gpui_component::{
-    ActiveTheme, Icon, StyledExt, h_flex, input::Position, tooltip::Tooltip, v_flex,
-};
-use std::f32::consts::PI;
+use gpui::Context;
+use gpui_component::input::Position;
 use std::time::{Duration, Instant};
-
-/// Create a status bar item
-///
-/// ### Arguments
-/// - `content`: The content of the status bar item
-/// - `border_color`: The color of the border
-///
-/// ### Returns
-/// - `Div`: A status bar item
-pub fn status_bar_item_factory(content: impl IntoElement, border_color: Hsla) -> Div {
-    div()
-        .text_xs()
-        .px_2()
-        .py_1()
-        .border_color(border_color)
-        .child(content)
-}
-
-/// Create a status bar button
-///
-/// ### Arguments
-/// - `content`: The content of the status bar button
-/// - `border_color`: The color of the border
-/// - `accent_color`: The color of the accent
-///
-/// ### Returns
-/// - `Div`: A status bar button
-pub fn status_bar_button_factory(
-    content: impl IntoElement,
-    border_color: Hsla,
-    accent_color: Hsla,
-) -> Div {
-    status_bar_item_factory(content, border_color)
-        .hover(|this| this.bg(accent_color))
-        .cursor_pointer()
-}
-
-/// Create a status bar item, right hand side
-///
-/// ### Arguments
-/// - `content`: The content of the status bar right item
-/// - `border_color`: The color of the border
-///
-/// ### Returns
-/// - `impl IntoElement`: A status bar right item
-pub fn status_bar_right_item_factory(content: String, border_color: Hsla) -> impl IntoElement {
-    status_bar_item_factory(content, border_color) //.border_l_1()
-}
-
-/// Create a status bar toggle button
-///
-/// ### Arguments
-/// - `content`: The content of the status bar toggle button
-/// - `border_color`: The color of the border
-/// - `accent_color`: The color of the accent
-/// - `checked`: Whether the toggle is checked
-///
-/// ### Returns
-/// - `Div`: A status bar toggle button
-pub fn status_bar_toggle_button_factory(
-    content: impl IntoElement,
-    border_color: Hsla,
-    accent_color: Hsla,
-    checked: bool,
-) -> Div {
-    let mut button = status_bar_button_factory(content, border_color, accent_color);
-    if checked {
-        button = button.bg(accent_color);
-    }
-    button
-}
-
-/// Parameters for the sync button styling
-pub struct SyncButtonStyle {
-    pub connected_icon: Icon,
-    pub disconnected_icon: Icon,
-    pub border_color: Hsla,
-    pub connected_color: Hsla,
-    pub connected_foreground_color: Hsla,
-    pub connected_hover_color: Hsla,
-    pub disconnected_color: Hsla,
-    pub disconnected_foreground_color: Hsla,
-    pub disconnected_hover_color: Hsla,
-    pub connecting_color: Hsla,
-    pub connecting_foreground_color: Hsla,
-}
-
-/// The visual state of the sync button
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SyncButtonState {
-    Connected,
-    Connecting,
-    Disconnected,
-}
 
 /// Delay before showing the connecting spinner (to avoid flickering on fast connections)
 const CONNECTING_SPINNER_DELAY: Duration = Duration::from_millis(500);
-
-/// Create a status bar sync button
-///
-/// ### Arguments
-/// - `style`: The styling parameters for the sync button
-/// - `state`: The current sync button state
-/// - `show_spinner`: Whether to show the spinning animation (only after delay)
-///
-/// ### Returns
-/// - `Div`: A status bar sync button
-pub fn status_bar_sync_button(
-    style: SyncButtonStyle,
-    state: SyncButtonState,
-    show_spinner: bool,
-) -> Div {
-    let mut button = div()
-        .text_sm()
-        .flex()
-        .items_center()
-        .justify_center()
-        .px_4()
-        .py_1()
-        .border_color(style.border_color);
-    match state {
-        SyncButtonState::Connected => {
-            button = button
-                .child(style.connected_icon)
-                .bg(style.connected_color)
-                .text_color(style.connected_foreground_color)
-                .hover(|this| this.bg(style.connected_hover_color))
-                .cursor_pointer();
-        }
-        SyncButtonState::Connecting => {
-            if show_spinner {
-                let spinning_icon = Icon::new(CustomIcon::Zap).with_animation(
-                    "sync-spinner",
-                    Animation::new(Duration::from_secs(1)).repeat(),
-                    |icon, delta| icon.rotate(gpui::radians(delta * 2.0 * PI)),
-                );
-                button = button
-                    .child(spinning_icon)
-                    .bg(style.connecting_color)
-                    .text_color(style.connecting_foreground_color);
-            } else {
-                button = button
-                    .child(style.connected_icon)
-                    .bg(style.connecting_color)
-                    .text_color(style.connecting_foreground_color);
-            }
-        }
-        SyncButtonState::Disconnected => {
-            button = button
-                .child(style.disconnected_icon)
-                .bg(style.disconnected_color)
-                .text_color(style.disconnected_foreground_color)
-                .hover(|this| this.bg(style.disconnected_hover_color))
-                .cursor_pointer();
-        }
-    }
-    button
-}
 
 /// Cached status bar label strings
 pub(crate) struct StatusBarCache {
@@ -185,9 +19,9 @@ pub(crate) struct StatusBarCache {
     cursor_character: u32,
     language: Option<SupportedLanguage>,
     encoding: String,
-    line_col: String,
-    language_label: String,
-    encoding_label: String,
+    pub(super) line_col: String,
+    pub(super) language_label: String,
+    pub(super) encoding_label: String,
 }
 
 impl Default for StatusBarCache {
@@ -274,7 +108,10 @@ impl Fulgur {
     ///
     /// ### Returns:
     /// - `(SyncButtonState, bool)`: The aggregated state and whether to show the spinner.
-    fn status_bar_sync_button_state(&self, cx: &Context<Self>) -> (SyncButtonState, bool) {
+    pub(super) fn status_bar_sync_button_state(
+        &self,
+        cx: &Context<Self>,
+    ) -> (SyncButtonState, bool) {
         let profiles = &self.settings.app_settings.synchronization_settings.profiles;
         let shared = Fulgur::shared_state(cx);
         let sync_states = shared.sync_states.read();
@@ -316,15 +153,12 @@ impl Fulgur {
 
     /// Collect per-profile tooltip data for all active profiles.
     ///
-    /// Returns one `(name, label)` pair per profile whose `is_active` flag is set.
-    /// An empty vec is returned when there are no active profiles.
-    ///
     /// ### Parameters:
     /// - `cx`: The application context.
     ///
     /// ### Returns:
     /// - `Vec<(String, String)>`: Profile name and its human-readable status label.
-    fn sync_profiles_tooltip_data(&self, cx: &Context<Self>) -> Vec<(String, String)> {
+    pub(super) fn sync_profiles_tooltip_data(&self, cx: &Context<Self>) -> Vec<(String, String)> {
         let profiles = &self.settings.app_settings.synchronization_settings.profiles;
         let shared = Fulgur::shared_state(cx);
         let sync_states = shared.sync_states.read();
@@ -345,206 +179,6 @@ impl Fulgur {
                 (name, label.to_string())
             })
             .collect()
-    }
-
-    /// Render the status bar
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    ///
-    /// ### Returns
-    /// - `impl IntoElement`: The rendered status bar element
-    pub fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let line_col = self.status_bar_cache.line_col.clone();
-        let language = self.status_bar_cache.language_label.clone();
-        let encoding = self.status_bar_cache.encoding_label.clone();
-        let jump_to_line_button =
-            status_bar_button_factory(line_col, cx.theme().border, cx.theme().muted);
-        let jump_to_line_button = jump_to_line_button.on_mouse_down(
-            MouseButton::Left,
-            cx.listener(|this, _event: &MouseDownEvent, window, cx| {
-                this.show_jump_to_line_dialog(window, cx);
-            }),
-        );
-        let language_button =
-            status_bar_button_factory(language, cx.theme().border, cx.theme().muted).on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
-                    //set_language(this, window, cx, language_shared.clone());
-                    this.render_select_language_sheet(window, cx);
-                }),
-            );
-        let (preview_button, toolbar_button) = match self.get_active_editor_tab() {
-            None => (div(), div()),
-            Some(active_editor_tab) => {
-                let editor_id = active_editor_tab.id;
-                let preview_active = match self
-                    .settings
-                    .editor_settings
-                    .markdown_settings
-                    .preview_mode
-                {
-                    MarkdownPreviewMode::DedicatedTab => self.tabs.iter().any(
-                        |t| matches!(t, Tab::MarkdownPreview(p) if p.source_tab_id == editor_id),
-                    ),
-                    MarkdownPreviewMode::Panel => active_editor_tab.show_markdown_preview,
-                };
-                let preview_button = status_bar_toggle_button_factory(
-                    "Preview".to_string(),
-                    cx.theme().border,
-                    cx.theme().muted,
-                    preview_active,
-                )
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
-                        if this.settings.editor_settings.markdown_settings.preview_mode
-                            == MarkdownPreviewMode::DedicatedTab
-                        {
-                            this.open_markdown_preview_tab(window, cx);
-                        } else {
-                            if let Some(active_editor_tab) = this.get_active_editor_tab_mut() {
-                                active_editor_tab.show_markdown_preview =
-                                    !active_editor_tab.show_markdown_preview;
-                            }
-                            cx.notify();
-                        }
-                    }),
-                );
-                let show_markdown_toolbar = active_editor_tab.show_markdown_toolbar;
-                let toolbar_button = status_bar_toggle_button_factory(
-                    "Toolbar".to_string(),
-                    cx.theme().border,
-                    cx.theme().muted,
-                    show_markdown_toolbar,
-                )
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
-                        let active_editor_tab = this.get_active_editor_tab_mut();
-                        if let Some(active_editor_tab) = active_editor_tab {
-                            active_editor_tab.show_markdown_toolbar =
-                                !active_editor_tab.show_markdown_toolbar;
-                        }
-                        cx.notify();
-                    }),
-                );
-                (preview_button, toolbar_button)
-            }
-        };
-        let is_csv = self.get_current_language() == SupportedLanguage::Csv;
-        let csv_table_active = self
-            .get_active_editor_tab()
-            .is_some_and(|tab| tab.csv_view_mode == CsvViewMode::Table);
-        let csv_view_button = status_bar_toggle_button_factory(
-            "Table".to_string(),
-            cx.theme().border,
-            cx.theme().muted,
-            csv_table_active,
-        )
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(|this, _event: &MouseDownEvent, window, cx| {
-                this.toggle_csv_view_mode(window, cx);
-            }),
-        );
-        let is_markdown = self.is_markdown();
-        let (sync_button_state, show_spinner) = self.status_bar_sync_button_state(cx);
-        let profile_statuses = self.sync_profiles_tooltip_data(cx);
-        let sync_button = status_bar_sync_button(
-            SyncButtonStyle {
-                connected_icon: Icon::new(CustomIcon::Zap),
-                disconnected_icon: Icon::new(CustomIcon::ZapOff),
-                border_color: cx.theme().border,
-                connected_color: cx.theme().primary,
-                connected_foreground_color: cx.theme().primary_foreground,
-                connected_hover_color: cx.theme().primary_hover,
-                disconnected_color: cx.theme().danger,
-                disconnected_foreground_color: cx.theme().danger_foreground,
-                disconnected_hover_color: cx.theme().danger_hover,
-                connecting_color: cx.theme().warning,
-                connecting_foreground_color: cx.theme().warning_foreground,
-            },
-            sync_button_state,
-            show_spinner,
-        )
-        .id("sync-status-button")
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(|this, _event, window, cx| {
-                this.open_share_file_sheet(window, cx);
-            }),
-        )
-        .when(!profile_statuses.is_empty(), move |this| {
-            this.tooltip(move |window, cx| {
-                let rows = profile_statuses.clone();
-                Tooltip::element(move |_, cx| {
-                    let mut container = v_flex().gap_1().py_1().px_1();
-                    for (name, label) in &rows {
-                        container = container.child(
-                            h_flex()
-                                .gap_2()
-                                .child(div().text_sm().font_semibold().child(format!("{name}:")))
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(label.clone()),
-                                ),
-                        );
-                    }
-                    container
-                })
-                .build(window, cx)
-            })
-        });
-        h_flex()
-            .justify_between()
-            .bg(cx.theme().tab_bar)
-            .py_0()
-            .my_0()
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .text_color(cx.theme().foreground)
-            .child(
-                div()
-                    .flex()
-                    .justify_start()
-                    .when(
-                        self.settings
-                            .app_settings
-                            .synchronization_settings
-                            .is_synchronization_activated,
-                        |this| this.child(sync_button),
-                    )
-                    .child(language_button)
-                    .when(is_markdown, |this| this.child(preview_button))
-                    .when(is_markdown, |this| this.child(toolbar_button))
-                    .when(is_csv, |this| this.child(csv_view_button)),
-            )
-            .child({
-                let color_picker_active = self.color_picker_bar_state.show_color_picker;
-                let color_button = status_bar_toggle_button_factory(
-                    "Color".to_string(),
-                    cx.theme().border,
-                    cx.theme().muted,
-                    color_picker_active,
-                )
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _event: &MouseDownEvent, _window, cx| {
-                        this.color_picker_bar_state.show_color_picker =
-                            !this.color_picker_bar_state.show_color_picker;
-                        cx.notify();
-                    }),
-                );
-                div()
-                    .flex()
-                    .justify_end()
-                    .child(color_button)
-                    .child(jump_to_line_button)
-                    .child(status_bar_right_item_factory(encoding, cx.theme().border))
-            })
     }
 }
 
