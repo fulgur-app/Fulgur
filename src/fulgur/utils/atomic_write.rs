@@ -6,6 +6,38 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static ATOMIC_WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Resolve the destination path for an atomic write on Unix.
+///
+/// ### Arguments
+/// - `path`: the path to the file to write
+///
+/// ### Returns
+/// - `PathBuf`: the canonicalized path, or the original path if canonicalization fails
+#[cfg(unix)]
+fn resolve_target(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Resolve the destination path for an atomic write on Windows.
+///
+/// ### Arguments
+/// - `path`: the path to the file to write
+///
+/// ### Returns
+/// - `PathBuf`: the original filename joined onto the canonicalized parent
+///   directory, or the original path if the parent cannot be canonicalized
+#[cfg(windows)]
+fn resolve_target(path: &Path) -> PathBuf {
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(filename)) if !parent.as_os_str().is_empty() => {
+            fs::canonicalize(parent)
+                .map(|dir| dir.join(filename))
+                .unwrap_or_else(|_| path.to_path_buf())
+        }
+        _ => path.to_path_buf(),
+    }
+}
+
 /// Write file contents atomically by writing to a sibling temporary file,
 /// syncing it, then renaming it over the destination path.
 ///
@@ -22,7 +54,7 @@ static ATOMIC_WRITE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// - `Ok(())`: the write is successful
 /// - `Err()`: error while writing the file
 pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
-    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let target = resolve_target(path);
     let parent = target.parent().ok_or_else(|| {
         anyhow::anyhow!(
             "Cannot atomically write '{}': destination has no parent directory",
