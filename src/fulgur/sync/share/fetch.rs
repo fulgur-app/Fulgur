@@ -100,10 +100,134 @@ pub fn fetch_share_by_id(
     let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
-    let token = get_valid_token(profile, token_state, http_agent)?;
     let share_url = format!("{server_url}/api/shares/{id}");
+    fetch_share_at_url(
+        profile,
+        token_state,
+        http_agent,
+        &share_url,
+        id,
+        server_max_file_size,
+    )
+}
+
+/// Fetch a single available share by ID without consuming it (Fulgurant 0.8.0+).
+///
+/// ### Arguments
+/// - `profile`: The server profile to fetch from
+/// - `token_state`: Per-profile token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `id`: The share identifier announced by the doorbell event
+/// - `server_max_file_size`: The server-advertised max file size, or `u64::MAX`,
+///   used to size the response body cap
+///
+/// ### Errors
+/// - Returns a `SynchronizationError` if the profile has no server URL, the
+///   authentication token cannot be obtained, the HTTP request fails, the share
+///   is missing, or the response is invalid or too large.
+///
+/// ### Returns
+/// - `Ok(SharedFileResponse)`: The share content, left intact server-side, with
+///   `file_name` sanitized against path traversal and control characters
+/// - `Err(SynchronizationError)`: If the request failed, the share is gone,
+///   or the response was invalid or too large
+pub fn fetch_share_by_id_v2(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+    id: &str,
+    server_max_file_size: u64,
+) -> Result<SharedFileResponse, SynchronizationError> {
+    let Some(server_url) = profile.server_url.clone() else {
+        return Err(SynchronizationError::ServerUrlMissing);
+    };
+    let share_url = format!("{server_url}/api/v2/shares/{id}");
+    fetch_share_at_url(
+        profile,
+        token_state,
+        http_agent,
+        &share_url,
+        id,
+        server_max_file_size,
+    )
+}
+
+/// Acknowledge a successful download of a v2 share, consuming it server-side (Fulgurant 0.8.0+).
+///
+/// ### Arguments
+/// - `profile`: The server profile to acknowledge against
+/// - `token_state`: Per-profile token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `id`: The share identifier to acknowledge
+///
+/// ### Errors
+/// - Returns a `SynchronizationError` if the profile has no server URL, the
+///   authentication token cannot be obtained, or the HTTP request fails with a
+///   status other than 204 or 404.
+///
+/// ### Returns
+/// - `Ok(())`: The share was acknowledged, or was already gone (404)
+/// - `Err(SynchronizationError)`: If the request failed
+pub fn acknowledge_share_download(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+    id: &str,
+) -> Result<(), SynchronizationError> {
+    let Some(server_url) = profile.server_url.clone() else {
+        return Err(SynchronizationError::ServerUrlMissing);
+    };
+    let token = get_valid_token(profile, token_state, http_agent)?;
+    let ack_url = format!("{server_url}/api/v2/shares/{id}/successful");
+    match http_agent
+        .post(&ack_url)
+        .header("Authorization", &format!("Bearer {token}"))
+        .send("")
+    {
+        Ok(_) => {
+            log::debug!("Acknowledged successful download of share {id}");
+            Ok(())
+        }
+        Err(ureq::Error::StatusCode(404)) => {
+            log::debug!(
+                "Share {id} no longer available to acknowledge (404); treating as already consumed"
+            );
+            Ok(())
+        }
+        Err(e) => Err(handle_ureq_error(e, "Failed to acknowledge share download")),
+    }
+}
+
+/// Fetch a single share from a fully-qualified URL, capping and sanitizing the response. Backs both the
+/// v1 ([`fetch_share_by_id`]) and v2 ([`fetch_share_by_id_v2`]) per-id fetches.
+///
+/// ### Arguments
+/// - `profile`: The server profile, used to obtain a valid token
+/// - `token_state`: Per-profile token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `share_url`: The fully-qualified share URL to GET
+/// - `id`: The share identifier, used only for logging
+/// - `server_max_file_size`: The server-advertised max file size, or `u64::MAX`,
+///   used to size the response body cap
+///
+/// ### Errors
+/// - Returns a `SynchronizationError` if the authentication token cannot be
+///   obtained, the HTTP request fails, or the response is invalid or too large.
+///
+/// ### Returns
+/// - `Ok(SharedFileResponse)`: The share content, with `file_name` sanitized
+/// - `Err(SynchronizationError)`: If the request or response was invalid
+fn fetch_share_at_url(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+    share_url: &str,
+    id: &str,
+    server_max_file_size: u64,
+) -> Result<SharedFileResponse, SynchronizationError> {
+    let token = get_valid_token(profile, token_state, http_agent)?;
     let mut response = http_agent
-        .get(&share_url)
+        .get(share_url)
         .header("Authorization", &format!("Bearer {token}"))
         .call()
         .map_err(|e| handle_ureq_error(e, "Failed to fetch share by id"))?;

@@ -151,6 +151,7 @@ fn run_profile_bootstrap(
                 };
                 let share_state = SseShareState {
                     pending_shared_files: Arc::clone(&sync_state.pending_shared_files),
+                    pending_ack_share_ids: Arc::clone(&sync_state.pending_ack_share_ids),
                     max_file_size_bytes: Arc::clone(&sync_state.max_file_size_bytes),
                 };
                 match connect_sse(
