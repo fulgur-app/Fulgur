@@ -14,7 +14,7 @@ use fulgur_common::api::shares::SharedFileResponse;
 use gpui::SharedString;
 use gpui_component::notification::NotificationType;
 use parking_lot::{Mutex, RwLock};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -36,6 +36,9 @@ pub struct SyncState {
     pub device_name: Arc<Mutex<Option<String>>>,
     /// Pending shared files arrived from this profile's server (still encrypted).
     pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
+    /// Share IDs fetched via the v2 read/ack flow (`GET /api/v2/shares/:id`) that still need acknowledging
+    /// (`POST /api/v2/shares/:id/successful`) once decryption succeeds.
+    pub pending_ack_share_ids: Arc<Mutex<HashSet<String>>>,
     /// Shares already decrypted off the UI thread, awaiting tab creation in the render loop.
     pub pending_decrypted_files: Arc<Mutex<Vec<crate::fulgur::sync::share::DecryptedShare>>>,
     /// Guard ensuring at most one background decryption worker runs per profile.
@@ -71,6 +74,7 @@ impl SyncState {
             connecting_since: Arc::new(Mutex::new(None)),
             device_name: Arc::new(Mutex::new(None)),
             pending_shared_files: Arc::new(Mutex::new(Vec::new())),
+            pending_ack_share_ids: Arc::new(Mutex::new(HashSet::new())),
             pending_decrypted_files: Arc::new(Mutex::new(Vec::new())),
             decrypt_in_flight: Arc::new(AtomicBool::new(false)),
             token_state: Arc::new(crate::fulgur::sync::access_token::TokenStateManager::new()),

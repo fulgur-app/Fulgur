@@ -1,4 +1,4 @@
-use crate::fulgur::settings::ProfileId;
+use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::SyncState;
 use crate::fulgur::sync::share;
 use crate::fulgur::utils::crypto_helper::{self, load_private_key_from_keychain};
@@ -35,13 +35,14 @@ struct DecryptionOutcome {
 /// shares are waiting and no pass is already running.
 ///
 /// ### Arguments
-/// - `profile_id`: The profile whose pending shares should be decoded.
-/// - `profile_name`: The human-readable profile name used in notifications.
+/// - `profile`: The server profile whose pending shares should be decoded;
+///   also used to acknowledge v2 shares once they decrypt successfully.
 /// - `sync_state`: The shared sync state holding the queues and guard flag.
+/// - `http_agent`: Shared HTTP agent used to acknowledge downloaded v2 shares.
 pub fn start_decryption_if_idle(
-    profile_id: &ProfileId,
-    profile_name: &str,
+    profile: &ServerProfile,
     sync_state: &Arc<SyncState>,
+    http_agent: &Arc<ureq::Agent>,
 ) {
     if sync_state.pending_shared_files.lock().is_empty() {
         return;
@@ -53,11 +54,11 @@ pub fn start_decryption_if_idle(
     {
         return;
     }
-    let profile_id = profile_id.clone();
-    let profile_name = profile_name.to_string();
+    let profile = profile.clone();
     let sync_state = Arc::clone(sync_state);
+    let http_agent = Arc::clone(http_agent);
     thread::spawn(move || {
-        run_decryption_pass(&profile_id, &profile_name, &sync_state);
+        run_decryption_pass(&profile, &sync_state, &http_agent);
         sync_state.decrypt_in_flight.store(false, Ordering::Release);
     });
 }
@@ -65,10 +66,13 @@ pub fn start_decryption_if_idle(
 /// Decode every currently pending share for a profile on a background thread.
 ///
 /// ### Arguments
-/// - `profile_id`: The profile whose shares are being decoded.
-/// - `profile_name`: The human-readable profile name used in notifications.
+/// - `profile`: The server profile whose shares are being decoded; also used to
+///   acknowledge v2 shares that decrypt successfully.
 /// - `sync_state`: The shared sync state holding the queues and notification slots.
-fn run_decryption_pass(profile_id: &ProfileId, profile_name: &str, sync_state: &SyncState) {
+/// - `http_agent`: Shared HTTP agent used to acknowledge downloaded v2 shares.
+fn run_decryption_pass(profile: &ServerProfile, sync_state: &SyncState, http_agent: &ureq::Agent) {
+    let profile_id = &profile.id;
+    let profile_name = profile.name.as_str();
     let server_max_size = sync_state.max_file_size_bytes.load(Ordering::Acquire);
     let shared_files: Vec<fulgur_common::api::shares::SharedFileResponse> = {
         let mut pending = sync_state.pending_shared_files.lock();
@@ -80,6 +84,7 @@ fn run_decryption_pass(profile_id: &ProfileId, profile_name: &str, sync_state: &
 
     let mut retry_queue = Vec::new();
     let mut outcome = DecryptionOutcome::default();
+    let mut decrypted_ids: Vec<String> = Vec::new();
 
     match load_private_key_from_keychain(profile_id) {
         Ok(Some(encryption_key)) => {
@@ -113,6 +118,7 @@ fn run_decryption_pass(profile_id: &ProfileId, profile_name: &str, sync_state: &
                                 content,
                             });
                         outcome.decrypted_count += 1;
+                        decrypted_ids.push(shared_file.id.clone());
                         log::info!("Decrypted shared file: {}", shared_file.file_name);
                     }
                     Err(e) => {
@@ -156,7 +162,47 @@ fn run_decryption_pass(profile_id: &ProfileId, profile_name: &str, sync_state: &
         );
     }
 
+    acknowledge_downloaded_shares(profile, sync_state, http_agent, &decrypted_ids);
+
     outcome.publish_notification(profile_name, sync_state);
+}
+
+/// Acknowledge successfully-downloaded v2 shares, consuming them server-side.
+///
+/// ### Arguments
+/// - `profile`: The server profile to acknowledge against.
+/// - `sync_state`: The shared sync state holding the ack set and token manager.
+/// - `http_agent`: Shared HTTP agent for connection pooling.
+/// - `decrypted_ids`: IDs of shares decrypted successfully in this pass.
+fn acknowledge_downloaded_shares(
+    profile: &ServerProfile,
+    sync_state: &SyncState,
+    http_agent: &ureq::Agent,
+    decrypted_ids: &[String],
+) {
+    if decrypted_ids.is_empty() {
+        return;
+    }
+    let ids_to_ack: Vec<String> = {
+        let pending_ack = sync_state.pending_ack_share_ids.lock();
+        decrypted_ids
+            .iter()
+            .filter(|id| pending_ack.contains(*id))
+            .cloned()
+            .collect()
+    };
+    for id in ids_to_ack {
+        match share::acknowledge_share_download(profile, &sync_state.token_state, http_agent, &id) {
+            Ok(()) => {
+                sync_state.pending_ack_share_ids.lock().remove(&id);
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to acknowledge downloaded share {id}: {e}; duplicate delivery is suppressed and the share will expire server-side"
+                );
+            }
+        }
+    }
 }
 
 impl DecryptionOutcome {

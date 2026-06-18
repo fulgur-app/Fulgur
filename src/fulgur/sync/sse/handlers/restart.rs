@@ -149,11 +149,17 @@ impl Fulgur {
         let http_agent = Arc::clone(&shared.http_agent);
         let sse_http_agent = Arc::clone(&shared.sse_http_agent);
         let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
+        let pending_ack_share_ids = Arc::clone(&sync_state.pending_ack_share_ids);
         let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
         thread::spawn(move || {
             wait_for_previous_sse_thread(old_handle);
             thread::sleep(Duration::from_millis(200));
-            match initial_synchronization(&profile, &token_state, &http_agent) {
+            match initial_synchronization(
+                &profile,
+                &token_state,
+                &http_agent,
+                &pending_ack_share_ids,
+            ) {
                 Ok(_) => {
                     log::info!(
                         "Profile '{}': initial sync succeeded, starting new SSE",
@@ -165,6 +171,7 @@ impl Fulgur {
                     };
                     let share_state = SseShareState {
                         pending_shared_files: Arc::clone(&pending_shared_files),
+                        pending_ack_share_ids: Arc::clone(&pending_ack_share_ids),
                         max_file_size_bytes: Arc::clone(&max_file_size_bytes),
                     };
                     match connect_sse(
@@ -226,6 +233,7 @@ impl Fulgur {
         let http_agent = Arc::clone(&shared.http_agent);
         let sse_http_agent = Arc::clone(&shared.sse_http_agent);
         let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
+        let pending_ack_share_ids = Arc::clone(&sync_state.pending_ack_share_ids);
         let pending_notification = Arc::clone(&sync_state.pending_notification);
         let device_name = sync_state.device_name.clone();
         let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
@@ -262,56 +270,61 @@ impl Fulgur {
                 return;
             }
 
-            let (notification, status) =
-                match initial_synchronization(&profile, &token_state, &http_agent) {
-                    Ok(begin_response) => {
-                        store_server_max_file_size(
-                            &max_file_size_bytes,
-                            begin_response.max_file_size_bytes,
-                        );
-                        *device_name.lock() = Some(begin_response.device_name.clone());
-                        *pending_shared_files.lock() = begin_response.shares;
-                        let msg = format!(
-                            "{profile_name}: Connection successful as {}",
-                            begin_response.device_name
-                        );
-                        let agents = SseAgents {
-                            rest: Arc::clone(&http_agent),
-                            stream: Arc::clone(&sse_http_agent),
-                        };
-                        let share_state = SseShareState {
-                            pending_shared_files: Arc::clone(&pending_shared_files),
-                            max_file_size_bytes: Arc::clone(&max_file_size_bytes),
-                        };
-                        match connect_sse(
-                            &profile,
-                            sse_tx,
-                            sse_shutdown_flag,
-                            connection_status.clone(),
-                            &token_state,
-                            &agents,
-                            &share_state,
-                        ) {
-                            Ok(new_handle) => {
-                                *handle_storage.lock() = Some(new_handle);
-                            }
-                            Err(e) => {
-                                log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
-                            }
+            let (notification, status) = match initial_synchronization(
+                &profile,
+                &token_state,
+                &http_agent,
+                &pending_ack_share_ids,
+            ) {
+                Ok(begin_response) => {
+                    store_server_max_file_size(
+                        &max_file_size_bytes,
+                        begin_response.max_file_size_bytes,
+                    );
+                    *device_name.lock() = Some(begin_response.device_name.clone());
+                    *pending_shared_files.lock() = begin_response.shares;
+                    let msg = format!(
+                        "{profile_name}: Connection successful as {}",
+                        begin_response.device_name
+                    );
+                    let agents = SseAgents {
+                        rest: Arc::clone(&http_agent),
+                        stream: Arc::clone(&sse_http_agent),
+                    };
+                    let share_state = SseShareState {
+                        pending_shared_files: Arc::clone(&pending_shared_files),
+                        pending_ack_share_ids: Arc::clone(&pending_ack_share_ids),
+                        max_file_size_bytes: Arc::clone(&max_file_size_bytes),
+                    };
+                    match connect_sse(
+                        &profile,
+                        sse_tx,
+                        sse_shutdown_flag,
+                        connection_status.clone(),
+                        &token_state,
+                        &agents,
+                        &share_state,
+                    ) {
+                        Ok(new_handle) => {
+                            *handle_storage.lock() = Some(new_handle);
                         }
-                        (
-                            (NotificationType::Success, SharedString::from(msg)),
-                            SynchronizationStatus::Connected,
-                        )
+                        Err(e) => {
+                            log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
+                        }
                     }
-                    Err(e) => {
-                        let msg = format!("{profile_name}: Connection failed: {e}");
-                        (
-                            (NotificationType::Error, SharedString::from(msg)),
-                            SynchronizationStatus::from_error(&e),
-                        )
-                    }
-                };
+                    (
+                        (NotificationType::Success, SharedString::from(msg)),
+                        SynchronizationStatus::Connected,
+                    )
+                }
+                Err(e) => {
+                    let msg = format!("{profile_name}: Connection failed: {e}");
+                    (
+                        (NotificationType::Error, SharedString::from(msg)),
+                        SynchronizationStatus::from_error(&e),
+                    )
+                }
+            };
             set_sync_server_connection_status(&connection_status, status);
             *connecting_since.lock() = None;
             *pending_notification.lock() = Some(notification);

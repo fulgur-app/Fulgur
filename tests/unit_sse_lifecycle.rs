@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 fn make_sse_share_state() -> SseShareState {
     SseShareState {
         pending_shared_files: Arc::new(Mutex::new(Vec::<SharedFileResponse>::new())),
+        pending_ack_share_ids: Arc::new(Mutex::new(std::collections::HashSet::new())),
         max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),
     }
 }

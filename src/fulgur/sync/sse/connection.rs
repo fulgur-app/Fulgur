@@ -2,9 +2,14 @@ use crate::fulgur::{
     settings::ServerProfile,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
-        share::{MAX_SYNC_SHARE_PAYLOAD_BYTES, fetch_pending_shares, fetch_share_by_id},
+        share::{
+            MAX_SYNC_SHARE_PAYLOAD_BYTES, fetch_pending_shares, fetch_share_by_id,
+            fetch_share_by_id_v2,
+        },
         synchronization::{
-            SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
+            FULGURANT_VERSION_HEADER, SynchronizationError, SynchronizationStatus,
+            list_pending_share_ids_v2, set_sync_server_connection_status,
+            version_supports_per_id_fetch, version_supports_v2_share_flow,
         },
     },
     utils::retry::BackoffCalculator,
@@ -12,6 +17,7 @@ use crate::fulgur::{
 use fulgur_common::api::shares::SharedFileResponse;
 use parking_lot::Mutex;
 use std::{
+    collections::HashSet,
     io::{BufReader, Read},
     sync::{
         Arc,
@@ -32,35 +38,6 @@ const MAX_SSE_EVENT_DATA_BYTES: usize = MAX_SYNC_SHARE_PAYLOAD_BYTES * 10;
 /// connection is considered dead and an error is returned so the caller
 /// reconnects
 const SSE_READ_DEADLINE: Duration = Duration::from_secs(60);
-
-/// HTTP header advertised by Fulgurant 0.7.0+ carrying the server version.
-const FULGURANT_VERSION_HEADER: &str = "x-fulgurant-version";
-
-/// Minimum Fulgurant `(major, minor)` version that supports fetching a single
-/// share by id (`GET /api/shares/:id`) and advertises `x-fulgurant-version`.
-const MIN_PER_ID_FETCH_VERSION: (u64, u64) = (0, 7);
-
-/// Decide whether the server supports per-id share fetch from its advertised version.
-///
-/// ### Arguments
-/// - `version_header`: The raw `x-fulgurant-version` value, if present.
-///
-/// ### Returns
-/// - `true`: The server is recent enough to fetch shares by id.
-/// - `false`: The header is absent, unparseable, or older than 0.7.0.
-fn version_supports_per_id_fetch(version_header: Option<&str>) -> bool {
-    let Some(raw) = version_header else {
-        return false;
-    };
-    let trimmed = raw.trim().trim_start_matches('v');
-    match semver::Version::parse(trimmed) {
-        Ok(version) => (version.major, version.minor) >= MIN_PER_ID_FETCH_VERSION,
-        Err(e) => {
-            log::warn!("Unparseable {FULGURANT_VERSION_HEADER} header '{raw}': {e}");
-            false
-        }
-    }
-}
 
 /// Decide whether a fetched share's encrypted payload is too large to queue,
 /// based on the server-advertised max file size.
@@ -88,6 +65,9 @@ pub struct SseAgents {
 pub struct SseShareState {
     /// Queue the UI tick drains incoming shares from.
     pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
+    /// Share IDs fetched via the v2 read/ack flow awaiting acknowledgement once
+    /// decryption succeeds. The bulk drain skips IDs present here.
+    pub pending_ack_share_ids: Arc<Mutex<HashSet<String>>>,
     /// Server-advertised max file size, used to bound the bulk drain response.
     pub max_file_size_bytes: Arc<AtomicU64>,
 }
@@ -197,8 +177,17 @@ fn fetch_pending_shares_into(
                 return;
             }
             let count = shares.len();
+            let pending_ack = share_state.pending_ack_share_ids.lock();
             let mut queue = share_state.pending_shared_files.lock();
             for share in shares {
+                if pending_ack.contains(&share.id) {
+                    log::debug!(
+                        "Skipping bulk-drained share id {} from device {}: already in flight via v2 doorbell fetch",
+                        share.id,
+                        share.source_device_id
+                    );
+                    continue;
+                }
                 if share_payload_exceeds_limit(share.content.len(), server_max_file_size) {
                     log::warn!(
                         "Dropping shared file '{}' from device {}: encrypted payload ({} bytes) exceeds 2x the server max ({} bytes)",
@@ -262,6 +251,96 @@ fn fetch_single_share_into(
     }
 }
 
+/// Fetch a single share by id via the v2 read/ack flow into the shared queue.
+///
+/// ### Arguments
+/// - `profile`: The server profile to fetch from
+/// - `token_state`: Arc to the per-profile token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `share_state`: Per-profile queue, ack set, and server-advertised max file size
+/// - `share_id`: The id announced by the doorbell event
+fn fetch_single_share_v2_into(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &Arc<ureq::Agent>,
+    share_state: &SseShareState,
+    share_id: &str,
+) {
+    if share_state.pending_ack_share_ids.lock().contains(share_id) {
+        log::debug!("Fetch (doorbell v2): share id {share_id} already in flight, skipping");
+        return;
+    }
+    let server_max_file_size = share_state.max_file_size_bytes.load(Ordering::Acquire);
+    match fetch_share_by_id_v2(
+        profile,
+        token_state,
+        http_agent,
+        share_id,
+        server_max_file_size,
+    ) {
+        Ok(share) => {
+            if share_payload_exceeds_limit(share.content.len(), server_max_file_size) {
+                log::warn!(
+                    "Dropping shared file '{}' from device {}: encrypted payload ({} bytes) exceeds 2x the server max ({} bytes)",
+                    share.file_name,
+                    share.source_device_id,
+                    share.content.len(),
+                    server_max_file_size
+                );
+                return;
+            }
+            share_state
+                .pending_ack_share_ids
+                .lock()
+                .insert(share.id.clone());
+            share_state.pending_shared_files.lock().push(share);
+            log::info!("Fetch (doorbell v2): queued share id {share_id}, pending ack");
+        }
+        Err(e) => {
+            log::warn!("Fetch (doorbell v2) for id {share_id} failed: {e}");
+        }
+    }
+}
+
+/// Catch up on pending shares via the v2 read/ack flow after an SSE reconnect.
+///
+/// ### Description
+/// The server does not replay doorbell events for shares that arrived while the
+/// connection was down, so on a 0.8.0+ server the catch-up enumerates the
+/// device's pending share ids with the non-consuming `POST /api/v2/begin`
+/// (Fulgurant exposes no standalone listing endpoint) and routes each through
+/// `fetch_single_share_v2_into`, which deduplicates against in-flight doorbell
+/// fetches and registers ids for acknowledgement after a successful download.
+///
+/// ### Arguments
+/// - `profile`: The server profile to fetch from
+/// - `token_state`: Arc to the per-profile token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `share_state`: Per-profile queue, ack set, and server-advertised max file size
+fn fetch_pending_shares_v2_into(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &Arc<ureq::Agent>,
+    share_state: &SseShareState,
+) {
+    match list_pending_share_ids_v2(profile, token_state, http_agent) {
+        Ok(share_ids) => {
+            if share_ids.is_empty() {
+                log::debug!("Fetch (reconnect v2): no pending shares");
+                return;
+            }
+            let count = share_ids.len();
+            for share_id in &share_ids {
+                fetch_single_share_v2_into(profile, token_state, http_agent, share_state, share_id);
+            }
+            log::info!("Fetch (reconnect v2): processed {count} pending share id(s)");
+        }
+        Err(e) => {
+            log::warn!("Fetch (reconnect v2) failed: {e}");
+        }
+    }
+}
+
 /// Connect to SSE (Server-Sent Events) endpoint on the sync server for real-time notifications
 ///
 /// ### Description
@@ -307,6 +386,7 @@ pub fn connect_sse(
     let sse_http_agent_clone = Arc::clone(&agents.stream);
     let share_state_clone = SseShareState {
         pending_shared_files: Arc::clone(&share_state.pending_shared_files),
+        pending_ack_share_ids: Arc::clone(&share_state.pending_ack_share_ids),
         max_file_size_bytes: Arc::clone(&share_state.max_file_size_bytes),
     };
     let handle = thread::spawn(move || {
@@ -346,13 +426,6 @@ pub fn connect_sse(
                     );
                     log::info!("SSE connection established");
                     backoff.record_success();
-                    fetch_pending_shares_into(
-                        &profile_clone,
-                        &token_state_clone,
-                        &http_agent_clone,
-                        &share_state_clone,
-                        "reconnect",
-                    );
                     resp
                 }
                 Err(e) => {
@@ -373,16 +446,40 @@ pub fn connect_sse(
                 }
             };
             let mut response = response;
-            let supports_per_id_fetch = version_supports_per_id_fetch(
-                response
-                    .headers()
-                    .get(FULGURANT_VERSION_HEADER)
-                    .and_then(|value| value.to_str().ok()),
-            );
-            if supports_per_id_fetch {
+            let version_header = response
+                .headers()
+                .get(FULGURANT_VERSION_HEADER)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
+            let supports_v2_share_flow = version_supports_v2_share_flow(version_header.as_deref());
+            let supports_per_id_fetch = version_supports_per_id_fetch(version_header.as_deref());
+            if supports_v2_share_flow {
+                log::info!(
+                    "Server supports the v2 read/ack share flow; doorbell events fetch by id and acknowledge after download"
+                );
+            } else if supports_per_id_fetch {
                 log::info!("Server supports per-id share fetch; doorbell events fetch by id");
             } else {
                 log::info!("Server lacks per-id share fetch; doorbell events use bulk drain");
+            }
+            // Catch up on shares that arrived while the connection was down. The
+            // server does not replay doorbell events for the downtime window.
+            if supports_v2_share_flow {
+                fetch_pending_shares_v2_into(
+                    &profile_clone,
+                    &token_state_clone,
+                    &http_agent_clone,
+                    &share_state_clone,
+                );
+            } else {
+                //TODO: Remove in 0.11.0
+                fetch_pending_shares_into(
+                    &profile_clone,
+                    &token_state_clone,
+                    &http_agent_clone,
+                    &share_state_clone,
+                    "reconnect",
+                );
             }
             let mut reader = std::io::BufReader::new(response.body_mut().as_reader());
             let mut current_event_type = String::new();
@@ -423,7 +520,16 @@ pub fn connect_sse(
                                     "Share doorbell received (share_id={}), fetching share",
                                     notification.share_id
                                 );
-                                if supports_per_id_fetch {
+                                if supports_v2_share_flow {
+                                    fetch_single_share_v2_into(
+                                        &profile_clone,
+                                        &token_state_clone,
+                                        &http_agent_clone,
+                                        &share_state_clone,
+                                        &notification.share_id,
+                                    );
+                                } else if supports_per_id_fetch {
+                                    //TODO: Remove in 0.11.0
                                     fetch_single_share_into(
                                         &profile_clone,
                                         &token_state_clone,
@@ -492,7 +598,7 @@ pub fn connect_sse(
 
 #[cfg(test)]
 mod tests {
-    use super::{share_payload_exceeds_limit, version_supports_per_id_fetch};
+    use super::share_payload_exceeds_limit;
 
     #[test]
     fn unlimited_server_never_drops() {
@@ -509,36 +615,5 @@ mod tests {
     fn payload_above_twice_the_limit_is_dropped() {
         let server_max = 1024;
         assert!(share_payload_exceeds_limit(2 * 1024 + 1, server_max));
-    }
-
-    #[test]
-    fn absent_header_falls_back_to_bulk() {
-        assert!(!version_supports_per_id_fetch(None));
-    }
-
-    #[test]
-    fn unparseable_header_falls_back_to_bulk() {
-        assert!(!version_supports_per_id_fetch(Some("not-a-version")));
-    }
-
-    #[test]
-    fn exact_minimum_version_is_supported() {
-        assert!(version_supports_per_id_fetch(Some("0.7.0")));
-    }
-
-    #[test]
-    fn older_version_is_not_supported() {
-        assert!(!version_supports_per_id_fetch(Some("0.6.9")));
-    }
-
-    #[test]
-    fn newer_minor_and_major_are_supported() {
-        assert!(version_supports_per_id_fetch(Some("0.8.1")));
-        assert!(version_supports_per_id_fetch(Some("1.0.0")));
-    }
-
-    #[test]
-    fn leading_v_and_whitespace_are_tolerated() {
-        assert!(version_supports_per_id_fetch(Some("  v0.7.0  ")));
     }
 }
