@@ -280,7 +280,8 @@ fn table_header(cx: &App) -> impl IntoElement {
         .child(div().flex_1().child("Name"))
         .child(div().w(gpui::px(90.0)).child("Version"))
         .child(div().flex_1().child("URL"))
-        .child(div().w(gpui::px(110.0)).child("Status"))
+        .child(div().w(gpui::px(125.0)).child("Status").pr_4())
+        .child(div().w(gpui::px(60.0)).child("Activate"))
         .child(div().w(gpui::px(80.0)).child(""))
 }
 
@@ -308,7 +309,11 @@ fn render_profile_row(
     let pill = render_status_pill(profile, master_on, cx);
     let row_id = SharedString::from(format!("profile-row-{}", profile.id));
     let edit_id = SharedString::from(format!("profile-row-edit-{}", profile.id));
+    let activate_id = SharedString::from(format!("profile-row-activate-{}", profile.id));
     let profile_id_for_edit = profile.id.clone();
+    let profile_id_for_activate = profile.id.clone();
+    let entity_for_activate = entity.clone();
+    let is_active = profile.is_active;
     let profile_name = profile.name.clone();
     h_flex()
         .id(row_id)
@@ -340,7 +345,17 @@ fn render_profile_row(
                 .text_color(cx.theme().muted_foreground)
                 .child(display_url),
         )
-        .child(div().w(gpui::px(110.0)).child(pill))
+        .child(div().w(gpui::px(125.0)).child(pill).pr_4())
+        .child(
+            div()
+                .w(gpui::px(60.0))
+                .child(Switch::new(activate_id).checked(is_active).on_click(
+                    move |val: &bool, window, cx| {
+                        let id = profile_id_for_activate.clone();
+                        handle_profile_active_toggle(&entity_for_activate, &id, *val, window, cx);
+                    },
+                )),
+        )
         .child(
             div().w(gpui::px(80.0)).child(
                 Button::new(edit_id)
@@ -355,6 +370,36 @@ fn render_profile_row(
                     }),
             ),
         )
+}
+
+/// Toggle a profile's activation state and refresh its SSE connection.
+///
+/// ### Arguments
+/// - `entity`: The Fulgur entity.
+/// - `profile_id`: The id of the profile to toggle.
+/// - `value`: The new activation value.
+/// - `window`: The window (used to show connection progress).
+/// - `cx`: The application context.
+fn handle_profile_active_toggle(
+    entity: &Entity<Fulgur>,
+    profile_id: &str,
+    value: bool,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    entity.update(cx, |this, cx| {
+        match this.update_profile(profile_id, |profile| profile.is_active = value, cx) {
+            Ok(true) => {
+                this.restart_sse_connection_for_with_progress(profile_id, window, cx);
+            }
+            Ok(false) => {
+                log::warn!("Profile '{profile_id}' could not be toggled (no longer in settings)");
+            }
+            Err(e) => {
+                log::error!("Failed to toggle profile '{profile_id}': {e}");
+            }
+        }
+    });
 }
 
 /// Render a status pill for a profile.
