@@ -56,6 +56,9 @@ pub struct SyncState {
     pub pending_devices: Arc<Mutex<Option<PendingDevicesResult>>>,
     /// Maximum file size for sharing (bytes), as reported by this profile's server.
     pub max_file_size_bytes: Arc<AtomicU64>,
+    /// Raw `x-fulgurant-version` value advertised by this profile's server, if any.
+    /// `None` means the server did not advertise a version (Fulgurant before 0.7.0).
+    pub server_version: Arc<Mutex<Option<String>>>,
     /// SSE channel and worker lifecycle state for this profile.
     pub sse: Arc<Mutex<SseState>>,
 }
@@ -83,6 +86,7 @@ impl SyncState {
             last_share_receive_error_signature: Arc::new(Mutex::new(None)),
             pending_devices: Arc::new(Mutex::new(None)),
             max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),
+            server_version: Arc::new(Mutex::new(None)),
             sse: Arc::new(Mutex::new(SseState::with_channel())),
         }
     }

@@ -158,6 +158,7 @@ fn run_profile_bootstrap(
                     pending_shared_files: Arc::clone(&sync_state.pending_shared_files),
                     pending_ack_share_ids: Arc::clone(&sync_state.pending_ack_share_ids),
                     max_file_size_bytes: Arc::clone(&sync_state.max_file_size_bytes),
+                    server_version: Arc::clone(&sync_state.server_version),
                 };
                 match connect_sse(
                     profile,
