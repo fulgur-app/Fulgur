@@ -2,11 +2,15 @@ use super::error::{SynchronizationError, handle_ureq_error};
 use super::limits::{
     MAX_HTTP_SMALL_RESPONSE_BYTES, MAX_HTTP_V1_BEGIN_RESPONSE_BYTES, resolve_server_max_file_size,
 };
+use super::version::{FULGURANT_VERSION_HEADER, version_supports_v2_share_flow};
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::sync::access_token::{TokenStateManager, get_valid_token};
 use crate::fulgur::sync::share;
 use crate::fulgur::utils::sanitize::sanitize_filename;
+use fulgur_common::api::shares::SharedFileResponse;
 use fulgur_common::api::sync::{BeginResponse, BeginV2Response, InitialSynchronizationPayload};
+use parking_lot::Mutex;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// Initial synchronization with the server.
@@ -21,6 +25,8 @@ use std::sync::Arc;
 /// - `profile`: The server profile to synchronize with
 /// - `token_state`: Per-profile JWT token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `pending_ack_share_ids`: Ack set the v2 read/ack flow registers fetched ids
+///   into so the decryption pass acknowledges them after a successful download
 ///
 /// ### Errors
 /// Returns a `SynchronizationError` if both the v2 and the legacy v1 begin
@@ -29,12 +35,16 @@ use std::sync::Arc;
 /// ### Returns
 /// - `Ok(BeginResponse)`: Device name, max file size, and pending shares
 /// - `Err(SynchronizationError)`: If both v2 and v1 begin calls failed
+// The ack set is always the default-hasher `HashSet<String>` owned by `SyncState`;
+// generalizing over `BuildHasher` would only add noise.
+#[allow(clippy::implicit_hasher)]
 pub fn initial_synchronization(
     profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
+    pending_ack_share_ids: &Arc<Mutex<HashSet<String>>>,
 ) -> Result<BeginResponse, SynchronizationError> {
-    match initial_synchronization_v2(profile, token_state, http_agent) {
+    match initial_synchronization_v2(profile, token_state, http_agent, pending_ack_share_ids) {
         Ok(response) => Ok(response),
         Err(SynchronizationError::ServerError(404)) => {
             log::warn!(
@@ -46,26 +56,33 @@ pub fn initial_synchronization(
     }
 }
 
-/// Initial synchronization via the v2 begin flow.
-///
-/// ### Description
-/// Calls `POST /api/v2/begin` to update the device's encryption key and obtain
-/// the list of pending share IDs, then fetches each share individually via
-/// `GET /api/shares/:id`.
+/// Parsed `POST /api/v2/begin` response together with the advertised server version.
+struct BeginV2Outcome {
+    /// The decoded begin response (device name, pending share ids, max file size).
+    response: BeginV2Response,
+    /// Raw `x-fulgurant-version` header value, if the server advertised one.
+    version_header: Option<String>,
+}
+
+/// Perform the `POST /api/v2/begin` request and parse its response.
 ///
 /// ### Arguments
 /// - `profile`: The server profile to synchronize with
 /// - `token_state`: Per-profile JWT token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
+/// ### Errors
+/// Returns a `SynchronizationError` if the request fails, the response cannot be
+/// read or parsed, or the server announces more pending shares than the client allows.
+///
 /// ### Returns
-/// - `Ok(BeginResponse)`: Device name, max file size, and successfully fetched pending shares
-/// - `Err(SynchronizationError)`: If the v2 begin call failed or returned an invalid response
-fn initial_synchronization_v2(
+/// - `Ok(BeginV2Outcome)`: The parsed begin response and advertised version
+/// - `Err(SynchronizationError)`: If the begin call failed or returned an invalid response
+fn perform_begin_v2(
     profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
-) -> Result<BeginResponse, SynchronizationError> {
+) -> Result<BeginV2Outcome, SynchronizationError> {
     let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
@@ -80,6 +97,11 @@ fn initial_synchronization_v2(
         .header("Authorization", &format!("Bearer {token}"))
         .send_json(payload)
         .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization (v2)"))?;
+    let version_header = response
+        .headers()
+        .get(FULGURANT_VERSION_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let body = match response
         .body_mut()
         .with_config()
@@ -111,23 +133,80 @@ fn initial_synchronization_v2(
             share::MAX_PENDING_SHARES_PER_RESPONSE
         )));
     }
-    let server_max_file_size = resolve_server_max_file_size(begin_v2.max_file_size_bytes);
-    let shares: Vec<_> = std::thread::scope(|scope| {
-        let handles: Vec<_> = begin_v2
-            .share_ids
+    Ok(BeginV2Outcome {
+        response: begin_v2,
+        version_header,
+    })
+}
+
+/// List the IDs of the device's pending shares via `POST /api/v2/begin` without consuming them.
+///
+/// ### Arguments
+/// - `profile`: The server profile to synchronize with
+/// - `token_state`: Per-profile JWT token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+///
+/// ### Errors
+/// Returns a `SynchronizationError` if the begin call fails or returns an invalid response.
+///
+/// ### Returns
+/// - `Ok(Vec<String>)`: The IDs of the device's pending shares
+/// - `Err(SynchronizationError)`: If the begin call failed
+pub fn list_pending_share_ids_v2(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+) -> Result<Vec<String>, SynchronizationError> {
+    Ok(perform_begin_v2(profile, token_state, http_agent)?
+        .response
+        .share_ids)
+}
+
+/// Fetch each announced share by id in parallel, choosing the retrieval endpoint
+/// based on whether the server supports the v2 read/ack flow.
+///
+/// ### Arguments
+/// - `profile`: The server profile to fetch from
+/// - `token_state`: Per-profile JWT token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `share_ids`: The announced pending share ids to retrieve
+/// - `server_max_file_size`: Server-advertised max file size used to bound each response
+/// - `use_v2_flow`: When `true`, fetch via the non-consuming `GET /api/v2/shares/:id`;
+///   otherwise via the consuming `GET /api/shares/:id`
+///
+/// ### Returns
+/// - `Vec<SharedFileResponse>`: The successfully fetched shares; failures are logged and skipped
+fn fetch_shares_for_ids(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+    share_ids: &[String],
+    server_max_file_size: u64,
+    use_v2_flow: bool,
+) -> Vec<SharedFileResponse> {
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = share_ids
             .iter()
             .map(|id| {
                 scope.spawn(move || {
-                    (
-                        id.as_str(),
+                    let result = if use_v2_flow {
+                        share::fetch_share_by_id_v2(
+                            profile,
+                            token_state,
+                            http_agent,
+                            id,
+                            server_max_file_size,
+                        )
+                    } else {
                         share::fetch_share_by_id(
                             profile,
                             token_state,
                             http_agent,
                             id,
                             server_max_file_size,
-                        ),
-                    )
+                        )
+                    };
+                    (id.as_str(), result)
                 })
             })
             .collect();
@@ -145,9 +224,48 @@ fn initial_synchronization_v2(
                 }
             })
             .collect()
-    });
+    })
+}
+
+/// Initial synchronization via the v2 begin flow.
+///
+/// ### Arguments
+/// - `profile`: The server profile to synchronize with
+/// - `token_state`: Per-profile JWT token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `pending_ack_share_ids`: Ack set the v2 read/ack flow registers fetched ids into
+///
+/// ### Returns
+/// - `Ok(BeginResponse)`: Device name, max file size, and successfully fetched pending shares
+/// - `Err(SynchronizationError)`: If the v2 begin call failed or returned an invalid response
+fn initial_synchronization_v2(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+    pending_ack_share_ids: &Arc<Mutex<HashSet<String>>>,
+) -> Result<BeginResponse, SynchronizationError> {
+    let BeginV2Outcome {
+        response: begin_v2,
+        version_header,
+    } = perform_begin_v2(profile, token_state, http_agent)?;
+    let use_v2_flow = version_supports_v2_share_flow(version_header.as_deref());
+    let server_max_file_size = resolve_server_max_file_size(begin_v2.max_file_size_bytes);
+    let shares = fetch_shares_for_ids(
+        profile,
+        token_state,
+        http_agent,
+        &begin_v2.share_ids,
+        server_max_file_size,
+        use_v2_flow,
+    );
+    if use_v2_flow {
+        let mut ack_set = pending_ack_share_ids.lock();
+        for share in &shares {
+            ack_set.insert(share.id.clone());
+        }
+    }
     log::info!(
-        "Initial synchronization (v2) successful: {} announced, {} retrieved",
+        "Initial synchronization (v2) successful: {} announced, {} retrieved (read/ack flow: {use_v2_flow})",
         begin_v2.share_ids.len(),
         shares.len()
     );

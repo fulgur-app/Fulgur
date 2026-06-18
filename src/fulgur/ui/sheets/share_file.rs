@@ -604,6 +604,7 @@ fn spawn_profile_device_fetch(
                 &profile,
                 &sync_state.token_state,
                 &http_agent,
+                &sync_state.pending_ack_share_ids,
             ) {
                 Ok(begin_response) => {
                     *sync_state.device_name.lock() = Some(begin_response.device_name.clone());

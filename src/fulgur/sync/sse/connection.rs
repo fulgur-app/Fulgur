@@ -7,7 +7,9 @@ use crate::fulgur::{
             fetch_share_by_id_v2,
         },
         synchronization::{
-            SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
+            FULGURANT_VERSION_HEADER, SynchronizationError, SynchronizationStatus,
+            list_pending_share_ids_v2, set_sync_server_connection_status,
+            version_supports_per_id_fetch, version_supports_v2_share_flow,
         },
     },
     utils::retry::BackoffCalculator,
@@ -36,61 +38,6 @@ const MAX_SSE_EVENT_DATA_BYTES: usize = MAX_SYNC_SHARE_PAYLOAD_BYTES * 10;
 /// connection is considered dead and an error is returned so the caller
 /// reconnects
 const SSE_READ_DEADLINE: Duration = Duration::from_secs(60);
-
-/// HTTP header advertised by Fulgurant 0.7.0+ carrying the server version.
-const FULGURANT_VERSION_HEADER: &str = "x-fulgurant-version";
-
-/// Minimum Fulgurant `(major, minor)` version that supports fetching a single
-/// share by id (`GET /api/shares/:id`) and advertises `x-fulgurant-version`.
-const MIN_PER_ID_FETCH_VERSION: (u64, u64) = (0, 7);
-
-/// Minimum Fulgurant `(major, minor)` version that supports the v2 read/ack
-/// share flow (`GET /api/v2/shares/:id` + `POST /api/v2/shares/:id/successful`).
-const MIN_V2_SHARE_FLOW_VERSION: (u64, u64) = (0, 8);
-
-/// Parse the advertised Fulgurant version header into a `(major, minor)` pair.
-///
-/// ### Arguments
-/// - `version_header`: The raw `x-fulgurant-version` value, if present.
-///
-/// ### Returns
-/// - `Some((major, minor))`: The parsed version.
-/// - `None`: The header is absent or unparseable.
-fn parse_fulgurant_version(version_header: Option<&str>) -> Option<(u64, u64)> {
-    let raw = version_header?;
-    let trimmed = raw.trim().trim_start_matches('v');
-    match semver::Version::parse(trimmed) {
-        Ok(version) => Some((version.major, version.minor)),
-        Err(e) => {
-            log::warn!("Unparseable {FULGURANT_VERSION_HEADER} header '{raw}': {e}");
-            None
-        }
-    }
-}
-
-/// Decide whether the server supports per-id share fetch from its advertised version.
-///
-/// ### Arguments
-/// - `version_header`: The raw `x-fulgurant-version` value, if present.
-///
-/// ### Returns
-/// - `true`: The server is recent enough to fetch shares by id.
-/// - `false`: The header is absent, unparseable, or older than 0.7.0.
-fn version_supports_per_id_fetch(version_header: Option<&str>) -> bool {
-    parse_fulgurant_version(version_header).is_some_and(|v| v >= MIN_PER_ID_FETCH_VERSION)
-}
-
-/// Decide whether the server supports the v2 read/ack share flow from its advertised version.
-///
-/// ### Arguments
-/// - `version_header`: The raw `x-fulgurant-version` value, if present.
-///
-/// ### Returns
-/// - `true`: The server is 0.8.0 or newer and supports the read/ack flow.
-/// - `false`: The header is absent, unparseable, or older than 0.8.0.
-fn version_supports_v2_share_flow(version_header: Option<&str>) -> bool {
-    parse_fulgurant_version(version_header).is_some_and(|v| v >= MIN_V2_SHARE_FLOW_VERSION)
-}
 
 /// Decide whether a fetched share's encrypted payload is too large to queue,
 /// based on the server-advertised max file size.
@@ -355,6 +302,45 @@ fn fetch_single_share_v2_into(
     }
 }
 
+/// Catch up on pending shares via the v2 read/ack flow after an SSE reconnect.
+///
+/// ### Description
+/// The server does not replay doorbell events for shares that arrived while the
+/// connection was down, so on a 0.8.0+ server the catch-up enumerates the
+/// device's pending share ids with the non-consuming `POST /api/v2/begin`
+/// (Fulgurant exposes no standalone listing endpoint) and routes each through
+/// `fetch_single_share_v2_into`, which deduplicates against in-flight doorbell
+/// fetches and registers ids for acknowledgement after a successful download.
+///
+/// ### Arguments
+/// - `profile`: The server profile to fetch from
+/// - `token_state`: Arc to the per-profile token state manager
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `share_state`: Per-profile queue, ack set, and server-advertised max file size
+fn fetch_pending_shares_v2_into(
+    profile: &ServerProfile,
+    token_state: &Arc<TokenStateManager>,
+    http_agent: &Arc<ureq::Agent>,
+    share_state: &SseShareState,
+) {
+    match list_pending_share_ids_v2(profile, token_state, http_agent) {
+        Ok(share_ids) => {
+            if share_ids.is_empty() {
+                log::debug!("Fetch (reconnect v2): no pending shares");
+                return;
+            }
+            let count = share_ids.len();
+            for share_id in &share_ids {
+                fetch_single_share_v2_into(profile, token_state, http_agent, share_state, share_id);
+            }
+            log::info!("Fetch (reconnect v2): processed {count} pending share id(s)");
+        }
+        Err(e) => {
+            log::warn!("Fetch (reconnect v2) failed: {e}");
+        }
+    }
+}
+
 /// Connect to SSE (Server-Sent Events) endpoint on the sync server for real-time notifications
 ///
 /// ### Description
@@ -440,13 +426,6 @@ pub fn connect_sse(
                     );
                     log::info!("SSE connection established");
                     backoff.record_success();
-                    fetch_pending_shares_into(
-                        &profile_clone,
-                        &token_state_clone,
-                        &http_agent_clone,
-                        &share_state_clone,
-                        "reconnect",
-                    );
                     resp
                 }
                 Err(e) => {
@@ -482,6 +461,25 @@ pub fn connect_sse(
                 log::info!("Server supports per-id share fetch; doorbell events fetch by id");
             } else {
                 log::info!("Server lacks per-id share fetch; doorbell events use bulk drain");
+            }
+            // Catch up on shares that arrived while the connection was down. The
+            // server does not replay doorbell events for the downtime window.
+            if supports_v2_share_flow {
+                fetch_pending_shares_v2_into(
+                    &profile_clone,
+                    &token_state_clone,
+                    &http_agent_clone,
+                    &share_state_clone,
+                );
+            } else {
+                //TODO: Remove in 0.11.0
+                fetch_pending_shares_into(
+                    &profile_clone,
+                    &token_state_clone,
+                    &http_agent_clone,
+                    &share_state_clone,
+                    "reconnect",
+                );
             }
             let mut reader = std::io::BufReader::new(response.body_mut().as_reader());
             let mut current_event_type = String::new();
@@ -600,9 +598,7 @@ pub fn connect_sse(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        share_payload_exceeds_limit, version_supports_per_id_fetch, version_supports_v2_share_flow,
-    };
+    use super::share_payload_exceeds_limit;
 
     #[test]
     fn unlimited_server_never_drops() {
@@ -619,52 +615,5 @@ mod tests {
     fn payload_above_twice_the_limit_is_dropped() {
         let server_max = 1024;
         assert!(share_payload_exceeds_limit(2 * 1024 + 1, server_max));
-    }
-
-    #[test]
-    fn absent_header_falls_back_to_bulk() {
-        assert!(!version_supports_per_id_fetch(None));
-    }
-
-    #[test]
-    fn unparseable_header_falls_back_to_bulk() {
-        assert!(!version_supports_per_id_fetch(Some("not-a-version")));
-    }
-
-    #[test]
-    fn exact_minimum_version_is_supported() {
-        assert!(version_supports_per_id_fetch(Some("0.7.0")));
-    }
-
-    #[test]
-    fn older_version_is_not_supported() {
-        assert!(!version_supports_per_id_fetch(Some("0.6.9")));
-    }
-
-    #[test]
-    fn newer_minor_and_major_are_supported() {
-        assert!(version_supports_per_id_fetch(Some("0.8.1")));
-        assert!(version_supports_per_id_fetch(Some("1.0.0")));
-    }
-
-    #[test]
-    fn leading_v_and_whitespace_are_tolerated() {
-        assert!(version_supports_per_id_fetch(Some("  v0.7.0  ")));
-    }
-
-    #[test]
-    fn v2_flow_requires_at_least_0_8_0() {
-        assert!(!version_supports_v2_share_flow(None));
-        assert!(!version_supports_v2_share_flow(Some("not-a-version")));
-        assert!(!version_supports_v2_share_flow(Some("0.7.9")));
-        assert!(version_supports_v2_share_flow(Some("0.8.0")));
-        assert!(version_supports_v2_share_flow(Some("  v0.8.1  ")));
-        assert!(version_supports_v2_share_flow(Some("1.0.0")));
-    }
-
-    #[test]
-    fn version_0_7_x_supports_per_id_fetch_but_not_v2_flow() {
-        assert!(version_supports_per_id_fetch(Some("0.7.5")));
-        assert!(!version_supports_v2_share_flow(Some("0.7.5")));
     }
 }

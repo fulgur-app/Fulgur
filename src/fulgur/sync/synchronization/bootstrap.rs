@@ -119,7 +119,12 @@ fn run_profile_bootstrap(
         );
         return;
     }
-    match initial_synchronization(profile, &sync_state.token_state, http_agent) {
+    match initial_synchronization(
+        profile,
+        &sync_state.token_state,
+        http_agent,
+        &sync_state.pending_ack_share_ids,
+    ) {
         Ok(begin_response) => {
             log::info!("Profile '{}': connected to sync server", profile.name);
             set_sync_server_connection_status(
@@ -222,10 +227,12 @@ pub fn perform_initial_synchronization(profile: ServerProfile, cx: &mut App) {
     let connecting_since = sync_state.connecting_since.clone();
     let device_name = sync_state.device_name.clone();
     let pending_shared_files = sync_state.pending_shared_files.clone();
+    let pending_ack_share_ids = sync_state.pending_ack_share_ids.clone();
     let pending_notification = sync_state.pending_notification.clone();
     let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
     thread::spawn(move || {
-        let result = initial_synchronization(&profile, &token_state, &http_agent);
+        let result =
+            initial_synchronization(&profile, &token_state, &http_agent, &pending_ack_share_ids);
         let (notification, status) = match result {
             Ok(begin_response) => {
                 store_server_max_file_size(
@@ -290,6 +297,7 @@ pub fn perform_initial_synchronization_with_progress(
     let connecting_since = sync_state.connecting_since.clone();
     let device_name = sync_state.device_name.clone();
     let pending_shared_files = sync_state.pending_shared_files.clone();
+    let pending_ack_share_ids = sync_state.pending_ack_share_ids.clone();
     let pending_notification = sync_state.pending_notification.clone();
     let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
 
@@ -313,7 +321,8 @@ pub fn perform_initial_synchronization_with_progress(
     let cancel_flag_for_thread = Arc::clone(&cancel_flag);
 
     thread::spawn(move || {
-        let result = initial_synchronization(&profile, &token_state, &http_agent);
+        let result =
+            initial_synchronization(&profile, &token_state, &http_agent, &pending_ack_share_ids);
 
         if cancel_flag_for_thread.load(Ordering::Acquire) {
             done_for_thread.store(true, Ordering::Release);
