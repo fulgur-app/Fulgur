@@ -278,6 +278,7 @@ fn table_header(cx: &App) -> impl IntoElement {
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(cx.theme().muted_foreground)
         .child(div().flex_1().child("Name"))
+        .child(div().w(gpui::px(90.0)).child("Version"))
         .child(div().flex_1().child("URL"))
         .child(div().w(gpui::px(110.0)).child("Status"))
         .child(div().w(gpui::px(80.0)).child(""))
@@ -303,6 +304,7 @@ fn render_profile_row(
         .server_url
         .clone()
         .unwrap_or_else(|| "-".to_string());
+    let version_label = get_profile_version_display(profile, master_on, cx);
     let pill = render_status_pill(profile, master_on, cx);
     let row_id = SharedString::from(format!("profile-row-{}", profile.id));
     let edit_id = SharedString::from(format!("profile-row-edit-{}", profile.id));
@@ -323,6 +325,13 @@ fn render_profile_row(
                 .text_sm()
                 .text_color(cx.theme().foreground)
                 .child(profile_name),
+        )
+        .child(
+            div()
+                .w(gpui::px(90.0))
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child(version_label),
         )
         .child(
             div()
@@ -390,6 +399,34 @@ fn get_profile_status(profile: &ServerProfile, master_on: bool, cx: &App) -> Syn
         .map_or(SynchronizationStatus::NotActivated, |state| {
             *state.connection_status.lock()
         })
+}
+
+/// Resolve the version label to display for a profile.
+///
+/// ### Arguments
+/// - `profile`: The profile to resolve the version for.
+/// - `master_on`: Whether the master switch is on.
+/// - `cx`: The application context.
+///
+/// ### Returns
+/// - `String`: The version label to render.
+fn get_profile_version_display(profile: &ServerProfile, master_on: bool, cx: &App) -> String {
+    if !matches!(
+        get_profile_status(profile, master_on, cx),
+        SynchronizationStatus::Connected
+    ) {
+        return "-".to_string();
+    }
+    let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+    let sync_states = shared.sync_states.read();
+    let Some(state) = sync_states.get(&profile.id) else {
+        return "-".to_string();
+    };
+    let version = state.server_version.lock();
+    match version.as_deref() {
+        Some(raw) => format!("v{}", raw.trim().trim_start_matches(['v', 'V'])),
+        None => "< v0.7.0".to_string(),
+    }
 }
 
 /// Resolve the foreground/background colors for a status pill.

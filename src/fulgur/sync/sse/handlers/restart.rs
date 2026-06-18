@@ -151,6 +151,7 @@ impl Fulgur {
         let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
         let pending_ack_share_ids = Arc::clone(&sync_state.pending_ack_share_ids);
         let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
+        let server_version = Arc::clone(&sync_state.server_version);
         thread::spawn(move || {
             wait_for_previous_sse_thread(old_handle);
             thread::sleep(Duration::from_millis(200));
@@ -173,6 +174,7 @@ impl Fulgur {
                         pending_shared_files: Arc::clone(&pending_shared_files),
                         pending_ack_share_ids: Arc::clone(&pending_ack_share_ids),
                         max_file_size_bytes: Arc::clone(&max_file_size_bytes),
+                        server_version: Arc::clone(&server_version),
                     };
                     match connect_sse(
                         &profile,
@@ -237,6 +239,7 @@ impl Fulgur {
         let pending_notification = Arc::clone(&sync_state.pending_notification);
         let device_name = sync_state.device_name.clone();
         let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
+        let server_version = Arc::clone(&sync_state.server_version);
         let profile_name = profile.name.clone();
 
         set_sync_server_connection_status(&connection_status, SynchronizationStatus::Connecting);
@@ -295,6 +298,7 @@ impl Fulgur {
                         pending_shared_files: Arc::clone(&pending_shared_files),
                         pending_ack_share_ids: Arc::clone(&pending_ack_share_ids),
                         max_file_size_bytes: Arc::clone(&max_file_size_bytes),
+                        server_version: Arc::clone(&server_version),
                     };
                     match connect_sse(
                         &profile,

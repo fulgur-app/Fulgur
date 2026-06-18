@@ -70,6 +70,9 @@ pub struct SseShareState {
     pub pending_ack_share_ids: Arc<Mutex<HashSet<String>>>,
     /// Server-advertised max file size, used to bound the bulk drain response.
     pub max_file_size_bytes: Arc<AtomicU64>,
+    /// Raw `x-fulgurant-version` value, updated each time the SSE handshake
+    /// succeeds. `None` means the server did not advertise a version.
+    pub server_version: Arc<Mutex<Option<String>>>,
 }
 
 /// Error type for line reading with shutdown support
@@ -388,6 +391,7 @@ pub fn connect_sse(
         pending_shared_files: Arc::clone(&share_state.pending_shared_files),
         pending_ack_share_ids: Arc::clone(&share_state.pending_ack_share_ids),
         max_file_size_bytes: Arc::clone(&share_state.max_file_size_bytes),
+        server_version: Arc::clone(&share_state.server_version),
     };
     let handle = thread::spawn(move || {
         let mut backoff = BackoffCalculator::default_settings();
@@ -451,6 +455,7 @@ pub fn connect_sse(
                 .get(FULGURANT_VERSION_HEADER)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_owned);
+            (*share_state_clone.server_version.lock()).clone_from(&version_header);
             let supports_v2_share_flow = version_supports_v2_share_flow(version_header.as_deref());
             let supports_per_id_fetch = version_supports_per_id_fetch(version_header.as_deref());
             if supports_v2_share_flow {
