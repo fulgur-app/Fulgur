@@ -169,6 +169,7 @@ mod tests {
             content: content.map(std::string::ToString::to_string),
             last_saved: last_saved.map(std::string::ToString::to_string),
             remote: None,
+            log_view: false,
         }
     }
 
@@ -247,6 +248,7 @@ mod tests {
                         content: Some("scratch content".to_string()),
                         last_saved: None,
                         remote: None,
+                        log_view: false,
                     }],
                     active_tab_index: Some(0),
                     window_bounds: SerializedWindowBounds {

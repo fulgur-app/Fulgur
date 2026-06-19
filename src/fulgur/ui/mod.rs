@@ -4,6 +4,7 @@ pub mod copy_button;
 pub mod dialogs;
 pub mod icons;
 pub mod insert_button;
+pub mod log_view;
 pub mod menus;
 pub mod notifications;
 pub mod sheets;

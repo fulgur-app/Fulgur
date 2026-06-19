@@ -308,6 +308,7 @@ impl Fulgur {
             self.markdown_preview_cache.remove(&tab_id);
             self.markdown_preview_to_refresh.remove(&tab_id);
             self.markdown_preview_subscriptions.remove(&tab_id);
+            self.clear_log_tail(tab_id);
             if let Some(path) = path_to_unwatch {
                 self.unwatch_file(&path);
             }

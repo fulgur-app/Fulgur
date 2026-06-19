@@ -56,6 +56,16 @@ pub struct EditorTab {
     pub csv_table: Option<Entity<TableState<CsvTableDelegate>>>,
     /// Fingerprint of the text the current `csv_table` was parsed from.
     pub csv_table_source_hash: u64,
+    /// Whether the log view (live tail) is active for this tab.
+    pub log_view: bool,
+    /// Whether the log view auto-scrolls to follow newly appended lines.
+    pub log_follow: bool,
+    /// Whether the line cap is lifted (user requested loading the full file).
+    pub log_full: bool,
+    /// Dedicated read-only display buffer for the tailed log, created lazily when
+    /// log view first activates. Kept separate from the editable `content` so the
+    /// line cap never truncates the saveable buffer.
+    pub log_content: Option<Entity<InputState>>,
 }
 
 /// All state required to transfer an editor tab between windows
@@ -76,6 +86,7 @@ pub struct TabTransferData {
     pub cursor_position: gpui_component::input::Position,
     pub csv_view_mode: CsvViewMode,
     pub csv_delimiter: u8,
+    pub log_view: bool,
 }
 
 /// Parameters for creating an editor tab as a duplicate of another

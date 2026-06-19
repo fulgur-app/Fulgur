@@ -137,6 +137,7 @@ mod tests {
                     content: Some(label.to_string()),
                     last_saved: None,
                     remote: None,
+                    log_view: false,
                 }],
                 active_tab_index: Some(0),
                 window_bounds: SerializedWindowBounds::default(),

@@ -106,6 +106,8 @@ impl Fulgur {
                 content: Entity<InputState>,
                 csv_view_mode: editor_tab::CsvViewMode,
                 csv_table: Option<Entity<TableState<editor_tab::CsvTableDelegate>>>,
+                log_view: bool,
+                log_content: Option<Entity<InputState>>,
             },
             Settings,
             MarkdownPreview {
@@ -142,6 +144,8 @@ impl Fulgur {
                     content: editor_tab.content.clone(),
                     csv_view_mode: editor_tab.csv_view_mode,
                     csv_table: editor_tab.csv_table.clone(),
+                    log_view: editor_tab.log_view,
+                    log_content: editor_tab.log_content.clone(),
                 },
                 Tab::Settings(_) => ActiveTabRenderData::Settings,
                 Tab::MarkdownPreview(preview_tab) => ActiveTabRenderData::MarkdownPreview {
@@ -171,7 +175,24 @@ impl Fulgur {
                     content,
                     csv_view_mode,
                     csv_table,
+                    log_view,
+                    log_content,
                 } => {
+                    if log_view && let Some(log_content) = log_content {
+                        let log_input = Input::new(&log_content)
+                            .disabled(true)
+                            .bordered(false)
+                            .p_0()
+                            .h_full()
+                            .font_family(self.settings.editor_settings.font_family.clone())
+                            .text_size(px(self.settings.editor_settings.font_size))
+                            .focus_bordered(false);
+                        return v_flex()
+                            .w_full()
+                            .flex_1()
+                            .child(log_input)
+                            .into_any_element();
+                    }
                     if language == SupportedLanguage::Csv
                         && csv_view_mode == editor_tab::CsvViewMode::Table
                         && let Some(table) = csv_table

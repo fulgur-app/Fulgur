@@ -7,7 +7,7 @@ use crate::fulgur::{
     languages::supported_languages::SupportedLanguage,
     settings::MarkdownPreviewMode,
     tab::Tab,
-    ui::{icons::CustomIcon, tabs::editor_tab::CsvViewMode},
+    ui::{icons::CustomIcon, log_view::log_toggle_available, tabs::editor_tab::CsvViewMode},
 };
 use gpui::{
     Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
@@ -117,6 +117,51 @@ impl Fulgur {
                 this.toggle_csv_view_mode(window, cx);
             }),
         );
+        let log_path = self
+            .get_active_editor_tab()
+            .and_then(|tab| tab.file_path().cloned());
+        let log_toggle_visible = log_path.as_deref().is_some_and(log_toggle_available);
+        let log_view_active = self.get_active_editor_tab().is_some_and(|tab| tab.log_view);
+        let log_follow_active = self
+            .get_active_editor_tab()
+            .is_some_and(|tab| tab.log_follow);
+        let log_dropped = self
+            .get_active_editor_tab()
+            .map(|tab| tab.id)
+            .and_then(|id| self.log_tail_state.get(&id))
+            .is_some_and(|state| state.dropped_lines);
+        let log_button = status_bar_toggle_button_factory(
+            "Log".to_string(),
+            cx.theme().border,
+            cx.theme().muted,
+            log_view_active,
+        )
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _event: &MouseDownEvent, window, cx| {
+                this.toggle_log_view(window, cx);
+            }),
+        );
+        let log_follow_button = status_bar_toggle_button_factory(
+            "Follow".to_string(),
+            cx.theme().border,
+            cx.theme().muted,
+            log_follow_active,
+        )
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _event: &MouseDownEvent, window, cx| {
+                this.toggle_log_follow(window, cx);
+            }),
+        );
+        let log_load_full_button =
+            status_bar_button_factory("Load full".to_string(), cx.theme().border, cx.theme().muted)
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _event: &MouseDownEvent, window, cx| {
+                        this.load_full_log(window, cx);
+                    }),
+                );
         let is_markdown = self.is_markdown();
         let (sync_button_state, show_spinner) = self.status_bar_sync_button_state(cx);
         let profile_statuses = self.sync_profiles_tooltip_data(cx);
@@ -189,7 +234,12 @@ impl Fulgur {
                     .child(language_button)
                     .when(is_markdown, |this| this.child(preview_button))
                     .when(is_markdown, |this| this.child(toolbar_button))
-                    .when(is_csv, |this| this.child(csv_view_button)),
+                    .when(is_csv, |this| this.child(csv_view_button))
+                    .when(log_toggle_visible, |this| this.child(log_button))
+                    .when(log_view_active, |this| this.child(log_follow_button))
+                    .when(log_view_active && log_dropped, |this| {
+                        this.child(log_load_full_button)
+                    }),
             )
             .child({
                 let color_picker_active = self.color_picker_bar_state.show_color_picker;

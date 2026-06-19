@@ -85,6 +85,8 @@ impl Fulgur {
                 markdown_preview_cache: HashMap::new(),
                 markdown_preview_to_refresh: HashSet::new(),
                 markdown_preview_subscriptions: HashMap::new(),
+                log_tail_state: HashMap::new(),
+                log_tail_cancel: HashMap::new(),
                 tab_scroll_handle: ScrollHandle::new(),
                 pending_tab_scroll: None,
                 file_watch_state: FileWatchState::new(),

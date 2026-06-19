@@ -45,6 +45,7 @@ fn create_file_tab_unmodified() -> TabState {
         content: None,
         last_saved: None,
         remote: None,
+        log_view: false,
     }
 }
 
@@ -64,6 +65,7 @@ fn create_file_tab_modified() -> TabState {
         content: Some("# Modified Content\n\nThis has unsaved changes.".to_string()),
         last_saved: Some("2024-01-15T10:30:00Z".to_string()),
         remote: None,
+        log_view: false,
     }
 }
 
@@ -78,6 +80,7 @@ fn create_unsaved_tab() -> TabState {
         content: Some("New file content".to_string()),
         last_saved: None,
         remote: None,
+        log_view: false,
     }
 }
 
@@ -374,6 +377,7 @@ fn test_state_roundtrip_with_real_temp_files() {
                     content: None,
                     last_saved: None,
                     remote: None,
+                    log_view: false,
                 },
                 TabState {
                     title: "real_file2.rs".to_string(),
@@ -381,6 +385,7 @@ fn test_state_roundtrip_with_real_temp_files() {
                     content: Some("Modified!".to_string()),
                     last_saved: Some("2024-01-01T00:00:00Z".to_string()),
                     remote: None,
+                    log_view: false,
                 },
             ],
             active_tab_index: Some(0),
@@ -421,6 +426,7 @@ fn test_state_roundtrip_with_unicode_content() {
                 content: Some(unicode_content.to_string()),
                 last_saved: Some("2024-01-01T00:00:00Z".to_string()),
                 remote: None,
+                log_view: false,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds::default(),
@@ -585,6 +591,7 @@ fn test_state_roundtrip_preserves_remote_spec_without_password_fields() {
                     user: "alice".to_string(),
                     path: "/srv/remote.txt".to_string(),
                 }),
+                log_view: false,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds::default(),
@@ -626,6 +633,7 @@ fn test_state_preserves_window_order() {
                 content: Some(format!("This is window number {i}")),
                 last_saved: None,
                 remote: None,
+                log_view: false,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds {
