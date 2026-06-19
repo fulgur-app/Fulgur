@@ -1,18 +1,16 @@
 use super::form_state::{
     DeviceKeyEdit, ProfileFormState, apply_device_key_edit, build_profile_from_form, optional_text,
-    read_device_key_edit,
+    read_device_key_edit, rollback_device_key, snapshot_device_key_for_rollback,
 };
 use super::validation::{should_warn_for_http_url, validate_form, validate_url};
 use crate::fulgur::Fulgur;
 use crate::fulgur::sync::synchronization::perform_ping_with_progress;
-use crate::fulgur::utils::crypto_helper::save_device_api_key_to_keychain;
 use gpui::{App, Entity, ParentElement, SharedString, Styled, Window, div, px};
 use gpui_component::{
     WindowExt, button::ButtonVariant, dialog::DialogButtonProps, notification::NotificationType,
     v_flex,
 };
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 /// Handle the Test connection button.
 ///
@@ -43,6 +41,13 @@ pub(super) fn handle_test_connection(
         return;
     }
     let device_key_edit = read_device_key_edit(state, cx);
+    // Snapshot the existing key before any write so Cancel can restore it.
+    if matches!(
+        device_key_edit,
+        DeviceKeyEdit::Set(_) | DeviceKeyEdit::Clear
+    ) {
+        snapshot_device_key_for_rollback(state);
+    }
     if let Err(e) = apply_device_key_edit(&state.profile_id, &device_key_edit) {
         log::error!("Failed to save device API key for ping: {e}");
         window.push_notification(
@@ -53,11 +58,6 @@ pub(super) fn handle_test_connection(
             cx,
         );
         return;
-    }
-    if state.is_new && matches!(device_key_edit, DeviceKeyEdit::Set(_)) {
-        state
-            .device_key_written_for_add
-            .store(true, Ordering::Relaxed);
     }
     let existing_public_key = entity
         .read(cx)
@@ -250,12 +250,9 @@ pub(super) fn handle_cancel(
     window: &mut Window,
     cx: &mut App,
 ) {
-    if state.is_new
-        && state.device_key_written_for_add.load(Ordering::Relaxed)
-        && let Err(e) = save_device_api_key_to_keychain(&state.profile_id, None)
-    {
+    if let Err(e) = rollback_device_key(state) {
         log::warn!(
-            "Failed to clean up draft device key for profile '{}': {e}",
+            "Failed to roll back device key for profile '{}': {e}",
             state.profile_id
         );
     }
