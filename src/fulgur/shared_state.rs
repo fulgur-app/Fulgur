@@ -1,5 +1,5 @@
 use crate::fulgur::settings::ProfileId;
-use crate::fulgur::state_writer::StateWriter;
+use crate::fulgur::state::StateWriter;
 use crate::fulgur::sync::sse::SseState;
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::sync::ssh::pool::SshSessionPool;

@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use fulgur::fulgur::state_operations::{
+use fulgur::fulgur::state::{
     TabRestoreDecision, determine_tab_restore_strategy as determine_tab_restore_strategy_inner,
 };
 

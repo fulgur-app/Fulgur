@@ -1,5 +1,5 @@
 use super::WindowManager;
-use crate::fulgur::{Fulgur, state_persistence};
+use crate::fulgur::{Fulgur, state};
 use gpui::{BorrowAppContext, Context, Window};
 use gpui_component::WindowExt;
 
@@ -18,11 +18,10 @@ impl Fulgur {
         let display_id = window
             .display(cx)
             .and_then(|d| u32::try_from(u64::from(d.id())).ok());
-        self.cached_window_bounds =
-            Some(state_persistence::SerializedWindowBounds::from_gpui_bounds(
-                window.window_bounds(),
-                display_id,
-            ));
+        self.cached_window_bounds = Some(state::SerializedWindowBounds::from_gpui_bounds(
+            window.window_bounds(),
+            display_id,
+        ));
         if window.is_window_active() {
             cx.update_global::<WindowManager, _>(|manager, _| {
                 manager.set_focused(self.window_id);

@@ -1,4 +1,4 @@
-use crate::fulgur::state_persistence::WindowsState;
+use super::persistence::WindowsState;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
@@ -122,10 +122,8 @@ impl Default for StateWriter {
 
 #[cfg(test)]
 mod tests {
+    use super::super::persistence::{SerializedWindowBounds, TabState, WindowState, WindowsState};
     use super::*;
-    use crate::fulgur::state_persistence::{
-        SerializedWindowBounds, TabState, WindowState, WindowsState,
-    };
     use std::sync::Arc;
     use std::thread;
     use tempfile::tempdir;

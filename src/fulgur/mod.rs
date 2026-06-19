@@ -2,9 +2,7 @@ pub mod files;
 pub mod languages;
 pub mod settings;
 pub mod shared_state;
-pub mod state_operations;
-pub mod state_persistence;
-pub mod state_writer;
+pub mod state;
 pub mod sync;
 mod ui;
 pub mod utils;
@@ -133,7 +131,7 @@ pub struct Fulgur {
     pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
     save_failed_once: bool, // Flag: save already failed once, allow force-close on next attempt
     pub share_sheet_state: Option<Arc<ui::sheets::share_file::ShareSheetState>>, // When Some, a share sheet is open and devices are being fetched per profile
-    cached_window_bounds: Option<state_persistence::SerializedWindowBounds>, // Cached window bounds for cross-window saves
+    cached_window_bounds: Option<state::SerializedWindowBounds>, // Cached window bounds for cross-window saves
     font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
     editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss

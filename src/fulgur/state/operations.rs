@@ -1,12 +1,12 @@
+use super::persistence::{
+    SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
+    get_file_modified_time, is_file_newer,
+};
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
     files::file_operations::{RemoteFileResult, detect_encoding_and_decode},
     languages::supported_languages::{language_from_content, language_registry_name},
-    state_persistence::{
-        SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
-        get_file_modified_time, is_file_newer,
-    },
     tab::Tab,
     ui::components_utils::{UNTITLED, UTF_8},
 };
@@ -529,7 +529,7 @@ impl Fulgur {
 #[cfg(test)]
 mod tests {
     use super::{TabRestoreDecision, determine_tab_restore_strategy};
-    use crate::fulgur::state_persistence::SerializedRemoteSpec;
+    use crate::fulgur::state::SerializedRemoteSpec;
     use std::path::PathBuf;
 
     #[test]
