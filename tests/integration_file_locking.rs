@@ -68,6 +68,7 @@ fn test_state_concurrent_writes_no_corruption() {
                         content: Some(format!("Content from thread {i}")),
                         last_saved: None,
                         remote: None,
+                        log_view: false,
                     }],
                     active_tab_index: Some(0),
                     window_bounds: SerializedWindowBounds::default(),
@@ -183,6 +184,7 @@ fn test_state_concurrent_writes_large_data() {
                             content: Some("x".repeat(1000)), // 1KB of content per tab
                             last_saved: Some("2026-02-13T10:00:00Z".to_string()),
                             remote: None,
+                            log_view: false,
                         });
                     }
 

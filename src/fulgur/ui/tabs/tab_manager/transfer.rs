@@ -36,6 +36,7 @@ impl Fulgur {
             cursor_position: content_state.cursor_position(),
             csv_view_mode: editor.csv_view_mode,
             csv_delimiter: editor.csv_delimiter,
+            log_view: editor.log_view,
         })
     }
 
@@ -63,6 +64,14 @@ impl Fulgur {
             self.pending_transfer_scroll = Some(cursor_position);
             if let Some(path) = local_path {
                 self.watch_file(&path);
+            }
+            if self
+                .tabs
+                .get(new_index)
+                .and_then(Tab::as_editor)
+                .is_some_and(|editor| editor.log_view)
+            {
+                self.activate_log_view(id, window, cx);
             }
             self.focus_active_tab(window, cx);
             self.save_state_async(cx, window);

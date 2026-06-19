@@ -269,6 +269,11 @@ impl Fulgur {
                     this.next_tab_id += 1;
                     this.maybe_open_markdown_preview_for_editor(editor_tab_index, cx);
                     this.watch_file(path);
+                    if crate::fulgur::ui::log_view::opens_as_log_by_default(path)
+                        && let Some(tab_id) = this.tabs.get(editor_tab_index).map(Tab::id)
+                    {
+                        this.activate_log_view(tab_id, window, cx);
+                    }
                     this.focus_active_tab(window, cx);
                     if let Err(e) = this.settings.add_file(path.to_path_buf()) {
                         log::error!("Failed to add file to recent files: {e}");

@@ -98,6 +98,7 @@ impl Fulgur {
                             let current_content = editor_tab.content.read(cx).text().to_string();
                             TabState {
                                 title: editor_tab.title.to_string(),
+                                log_view: editor_tab.log_view,
                                 file_path: Some(path.clone()),
                                 content: Some(current_content),
                                 last_saved: get_file_modified_time(path),
@@ -106,6 +107,7 @@ impl Fulgur {
                         } else {
                             TabState {
                                 title: editor_tab.title.to_string(),
+                                log_view: editor_tab.log_view,
                                 file_path: Some(path.clone()),
                                 content: None,
                                 last_saved: None,
@@ -121,6 +123,7 @@ impl Fulgur {
                         };
                         TabState {
                             title: editor_tab.title.to_string(),
+                            log_view: editor_tab.log_view,
                             file_path: None,
                             content,
                             last_saved: None,
@@ -134,6 +137,7 @@ impl Fulgur {
                         }
                         TabState {
                             title: editor_tab.title.to_string(),
+                            log_view: editor_tab.log_view,
                             file_path: None,
                             content: Some(current_content),
                             last_saved: None,

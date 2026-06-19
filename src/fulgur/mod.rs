@@ -20,8 +20,9 @@ use gpui::{
 };
 use gpui_component::{input::InputState, menu::PopupMenu, notification::NotificationType};
 use settings::Settings;
-use std::{collections::HashMap, collections::HashSet, sync::Arc};
+use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
 use tab::Tab;
+use ui::log_view::LogTailState;
 use ui::{
     bars::color_picker_bar::ColorPickerBarState,
     bars::search_bar::SearchState,
@@ -53,6 +54,8 @@ pub struct Fulgur {
     markdown_preview_cache: HashMap<usize, SharedString>, // Cached markdown source text keyed by source editor tab id
     markdown_preview_to_refresh: HashSet<usize>, // Source tab ids whose cached preview text is stale and must be refreshed on next read
     markdown_preview_subscriptions: HashMap<usize, (EntityId, Subscription)>, // Per-source (subscribed content entity id, subscription) for markdown preview cache updates
+    log_tail_state: HashMap<usize, LogTailState>, // Per-log-tab tail bookkeeping (byte offset, dropped lines, pending text) keyed by tab id
+    log_tail_cancel: HashMap<usize, Arc<AtomicBool>>, // Cancellation flag for the per-active-log-tab poll task keyed by tab id
     tab_scroll_handle: ScrollHandle, // Scroll handle for the tab bar to scroll active tab into view
     pending_tab_scroll: Option<usize>, // Deferred scroll-to-tab request (needs one render cycle for layout)
     pub file_watch_state: FileWatchState, // File watching state for external file change detection

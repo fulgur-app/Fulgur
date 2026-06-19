@@ -11,6 +11,16 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn set_active_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
+            let previous_active_id = self
+                .active_tab_index
+                .and_then(|prev| self.tabs.get(prev))
+                .map(Tab::id);
+            let new_tab_id = self.tabs.get(index).map(Tab::id);
+            if let Some(prev_id) = previous_active_id
+                && previous_active_id != new_tab_id
+            {
+                self.stop_log_poll_task(prev_id);
+            }
             self.active_tab_index = Some(index);
             self.tab_scroll_handle.scroll_to_item(index);
             let pending_path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) {
@@ -55,6 +65,15 @@ impl Fulgur {
                 self.ensure_remote_tab_loaded(window, cx, tab_id, spec);
             }
             self.focus_active_tab(window, cx);
+            if let Some(new_id) = new_tab_id
+                && self
+                    .tabs
+                    .get(index)
+                    .and_then(Tab::as_editor)
+                    .is_some_and(|editor| editor.log_view)
+            {
+                self.resume_log_view(new_id, window, cx);
+            }
             if self.search_state.show_search {
                 self.search_state.search_matches.clear();
                 self.perform_search(window, cx);

@@ -60,6 +60,10 @@ impl EditorTab {
             csv_delimiter: crate::fulgur::files::csv_support::DEFAULT_DELIMITER,
             csv_table: None,
             csv_table_source_hash: 0,
+            log_view: false,
+            log_follow: true,
+            log_full: false,
+            log_content: None,
         }
     }
 
@@ -115,6 +119,10 @@ impl EditorTab {
             csv_delimiter,
             csv_table: None,
             csv_table_source_hash: 0,
+            log_view: false,
+            log_follow: true,
+            log_full: false,
+            log_content: None,
         }
     }
 
@@ -179,6 +187,10 @@ impl EditorTab {
             csv_delimiter,
             csv_table: None,
             csv_table_source_hash: 0,
+            log_view: false,
+            log_follow: true,
+            log_full: false,
+            log_content: None,
         }
     }
 
@@ -232,6 +244,10 @@ impl EditorTab {
             csv_delimiter,
             csv_table: None,
             csv_table_source_hash: 0,
+            log_view: false,
+            log_follow: true,
+            log_full: false,
+            log_content: None,
         }
     }
 
@@ -290,6 +306,10 @@ impl EditorTab {
             csv_delimiter,
             csv_table: None,
             csv_table_source_hash: 0,
+            log_view: false,
+            log_follow: true,
+            log_full: false,
+            log_content: None,
         }
     }
 
@@ -350,6 +370,10 @@ impl EditorTab {
             csv_delimiter,
             csv_table: None,
             csv_table_source_hash: 0,
+            log_view: false,
+            log_follow: true,
+            log_full: false,
+            log_content: None,
         }
     }
 
@@ -407,6 +431,10 @@ impl EditorTab {
             csv_delimiter: data.csv_delimiter,
             csv_table: None,
             csv_table_source_hash: 0,
+            log_view: data.log_view,
+            log_follow: true,
+            log_full: false,
+            log_content: None,
         }
     }
 }

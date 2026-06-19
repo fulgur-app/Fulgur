@@ -65,6 +65,9 @@ pub struct TabState {
     /// Serialized remote location metadata for SSH/SFTP tabs.
     #[serde(default)]
     pub remote: Option<SerializedRemoteSpec>,
+    /// Whether the tab was in log view mode and should reopen in it.
+    #[serde(default)]
+    pub log_view: bool,
 }
 
 #[cfg(test)]

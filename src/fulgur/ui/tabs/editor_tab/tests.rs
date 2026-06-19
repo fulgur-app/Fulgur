@@ -49,6 +49,7 @@ fn make_transfer_data() -> TabTransferData {
         cursor_position: Position::default(),
         csv_view_mode: super::CsvViewMode::Text,
         csv_delimiter: b',',
+        log_view: false,
     }
 }
 
@@ -434,6 +435,7 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
         cursor_position: Position::default(),
         csv_view_mode: super::CsvViewMode::Text,
         csv_delimiter: b',',
+        log_view: false,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -469,6 +471,7 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
         cursor_position: Position::default(),
         csv_view_mode: super::CsvViewMode::Text,
         csv_delimiter: b',',
+        log_view: false,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -507,6 +510,7 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
         cursor_position: Position::default(),
         csv_view_mode: super::CsvViewMode::Text,
         csv_delimiter: b',',
+        log_view: false,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -539,6 +543,7 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
         cursor_position: Position::default(),
         csv_view_mode: super::CsvViewMode::Text,
         csv_delimiter: b',',
+        log_view: false,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {

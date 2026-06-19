@@ -8,6 +8,7 @@ use gpui::SharedString;
 
 /// Enum representing different types of tabs
 #[derive(Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum Tab {
     Editor(EditorTab),
     Settings(SettingsTab),

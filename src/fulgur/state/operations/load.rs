@@ -60,6 +60,17 @@ impl Fulgur {
                     None
                 };
 
+                if let Some(active_index) = self.active_tab_index
+                    && let Some(active_id) = self.tabs.get(active_index).map(Tab::id)
+                    && self
+                        .tabs
+                        .get(active_index)
+                        .and_then(Tab::as_editor)
+                        .is_some_and(|editor| editor.log_view)
+                {
+                    self.activate_log_view(active_id, window, cx);
+                }
+
                 cx.notify();
             }
         } else {
@@ -170,7 +181,7 @@ impl Fulgur {
             }
             TabRestoreDecision::Skip => return None,
         };
-        let tab = if let Some(file_path) = path {
+        let mut tab = if let Some(file_path) = path {
             let mut tab = EditorTab::from_file(
                 FromFileParams {
                     id: tab_id,
@@ -230,9 +241,19 @@ impl Fulgur {
                 csv_delimiter,
                 csv_table: None,
                 csv_table_source_hash: 0,
+                log_view: false,
+                log_follow: true,
+                log_full: false,
+                log_content: None,
             }
         };
 
+        let opens_as_log = tab
+            .file_path()
+            .is_some_and(|path| crate::fulgur::ui::log_view::opens_as_log_by_default(path));
+        if tab_state.log_view || opens_as_log {
+            tab.log_view = true;
+        }
         Some(tab)
     }
 }
