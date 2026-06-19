@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 // Import from the main crate
-use fulgur::fulgur::state_persistence::{
+use fulgur::fulgur::state::{
     SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
 };
 

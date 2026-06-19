@@ -258,7 +258,7 @@ fn main() {
             fulgur::utils::single_instance::start_ipc_listener(pf, pic);
         }
         cx.set_global(fulgur::window_manager::WindowManager::new());
-        let windows_state = fulgur::state_persistence::WindowsState::load().ok();
+        let windows_state = fulgur::state::WindowsState::load().ok();
         if let Some(ws) = windows_state.filter(|ws| !ws.windows.is_empty()) {
             log::info!("Restoring {} saved window(s)", ws.windows.len());
             for (index, window_state) in ws.windows.into_iter().enumerate() {
@@ -291,7 +291,7 @@ fn main() {
 fn create_window(
     cx: &mut gpui::AsyncApp,
     window_index: usize,
-    saved_bounds: Option<&fulgur::state_persistence::SerializedWindowBounds>,
+    saved_bounds: Option<&fulgur::state::SerializedWindowBounds>,
     cli_file_paths: &[std::path::PathBuf],
 ) -> anyhow::Result<()> {
     let (window_bounds, saved_display_id) = match saved_bounds {

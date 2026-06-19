@@ -3,9 +3,7 @@
 /// These tests verify that settings and state files can be safely written
 /// by multiple threads concurrently without corruption, using atomic file writes.
 use fulgur::fulgur::settings::Settings;
-use fulgur::fulgur::state_persistence::{
-    SerializedWindowBounds, TabState, WindowState, WindowsState,
-};
+use fulgur::fulgur::state::{SerializedWindowBounds, TabState, WindowState, WindowsState};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
