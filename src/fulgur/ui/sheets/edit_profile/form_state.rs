@@ -1,12 +1,19 @@
 use crate::fulgur::settings::{ProfileId, ServerProfile};
-use crate::fulgur::utils::crypto_helper::save_device_api_key_to_keychain;
+use crate::fulgur::utils::crypto_helper::{
+    load_device_api_key_from_keychain, save_device_api_key_to_keychain,
+};
 use gpui::{App, Entity};
 use gpui_component::input::InputState;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 pub(super) const DEVICE_KEY_PLACEHOLDER: &str = "<Device Key>";
+
+/// Rollback state for a Test-connection keychain write.
+pub(super) enum KeyRollback {
+    NoWrite,
+    Written(Option<String>),
+}
 
 /// Form state shared between the sheet body, the Test connection button, and the Save handler.
 pub(super) struct ProfileFormState {
@@ -18,7 +25,7 @@ pub(super) struct ProfileFormState {
     pub(super) device_key_input: Entity<InputState>,
     pub(super) is_active: Arc<Mutex<bool>>, //Per-profile activation flag held in a shared mutex
     pub(super) is_deduplication: Arc<Mutex<bool>>,
-    pub(super) device_key_written_for_add: Arc<AtomicBool>, //Used by the Cancel path to roll back that write so the keychain stays clea
+    pub(super) device_key_rollback: Arc<Mutex<KeyRollback>>, //Snapshot of the pre-test device key so Cancel can restore the keychain
 }
 
 /// Build a profile draft from the current form values.
@@ -119,4 +126,44 @@ pub(super) fn apply_device_key_edit(
             Ok(true)
         }
     }
+}
+
+/// Snapshot the existing keychain device key for rollback, once per sheet session.
+///
+/// ### Arguments
+/// - `state`: The shared form state holding the rollback slot.
+pub(super) fn snapshot_device_key_for_rollback(state: &ProfileFormState) {
+    let mut rollback = state.device_key_rollback.lock();
+    if matches!(*rollback, KeyRollback::NoWrite) {
+        let previous = match load_device_api_key_from_keychain(&state.profile_id) {
+            Ok(key) => key,
+            Err(e) => {
+                log::warn!(
+                    "Failed to read existing device key for rollback snapshot for profile '{}': {e}",
+                    state.profile_id
+                );
+                None
+            }
+        };
+        *rollback = KeyRollback::Written(previous);
+    }
+}
+
+/// Restore the keychain device key to its pre-test snapshot.
+///
+/// ### Arguments
+/// - `state`: The shared form state holding the rollback slot.
+///
+/// ### Errors
+/// - Returns the underlying keychain error if restoring the previous key fails.
+///
+/// ### Returns
+/// - `Ok(())`: Either nothing needed rolling back, or the previous key was restored.
+/// - `Err(anyhow::Error)`: The keychain restore write failed.
+pub(super) fn rollback_device_key(state: &ProfileFormState) -> anyhow::Result<()> {
+    let rollback = state.device_key_rollback.lock();
+    if let KeyRollback::Written(previous) = &*rollback {
+        save_device_api_key_to_keychain(&state.profile_id, previous.as_deref())?;
+    }
+    Ok(())
 }

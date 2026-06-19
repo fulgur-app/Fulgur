@@ -7,7 +7,7 @@ use crate::fulgur::{
     Fulgur,
     settings::{MAX_PROFILES, new_profile_id},
 };
-use form_state::{DEVICE_KEY_PLACEHOLDER, ProfileFormState};
+use form_state::{DEVICE_KEY_PLACEHOLDER, KeyRollback, ProfileFormState};
 use gpui::{AppContext, Context, ParentElement, SharedString, Styled, Window, div, px};
 use gpui_component::{
     Sizable, WindowExt,
@@ -20,7 +20,7 @@ use gpui_component::{
 use handlers::{confirm_delete_profile, handle_cancel, handle_save, handle_test_connection};
 use parking_lot::Mutex;
 use render::render_form_body;
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::Arc;
 
 impl Fulgur {
     /// Open the Add/Edit Profile sheet.
@@ -124,7 +124,7 @@ impl Fulgur {
             device_key_input,
             is_active: Arc::new(Mutex::new(initial_active)),
             is_deduplication: Arc::new(Mutex::new(initial_dedup)),
-            device_key_written_for_add: Arc::new(AtomicBool::new(false)),
+            device_key_rollback: Arc::new(Mutex::new(KeyRollback::NoWrite)),
         });
 
         let entity = cx.entity();
