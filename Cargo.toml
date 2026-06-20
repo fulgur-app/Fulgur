@@ -2,7 +2,7 @@
 name = "Fulgur"
 version = "0.8.0"
 edition = "2024"
-rust-version = "1.95"
+rust-version = "1.96"
 license = "Apache-2.0"
 readme = "README.md"
 keywords = ["rust", "text", "editor", "fulgur", "sync", "desktop", "multiplatform"]
