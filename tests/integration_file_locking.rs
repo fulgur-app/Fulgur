@@ -171,7 +171,7 @@ fn test_state_concurrent_writes_large_data() {
     let state_path = Arc::new(state_path);
 
     // Spawn threads that write larger state objects
-    let handles: Vec<_> = (0..5)
+    let handles: Vec<_> = (0u32..5)
         .map(|i| {
             let path = Arc::clone(&state_path);
             thread::spawn(move || {
@@ -200,7 +200,7 @@ fn test_state_concurrent_writes_large_data() {
                             y: (i * 100) as f32,
                             width: 1200.0,
                             height: 800.0,
-                            display_id: Some(i as u32),
+                            display_id: Some(i),
                         },
                     });
                 }
