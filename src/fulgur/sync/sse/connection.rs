@@ -12,7 +12,7 @@ use crate::fulgur::{
             version_supports_per_id_fetch, version_supports_v2_share_flow,
         },
     },
-    utils::retry::BackoffCalculator,
+    utils::retry::{BackoffCalculator, interruptible_sleep},
 };
 use fulgur_common::api::shares::SharedFileResponse;
 use parking_lot::Mutex;
@@ -412,7 +412,10 @@ pub fn connect_sse(
                     );
                     let delay = backoff.record_failure();
                     log::info!("Retrying SSE connection after {delay:?}");
-                    thread::sleep(delay);
+                    if interruptible_sleep(delay, || shutdown_flag.load(Ordering::Relaxed)) {
+                        log::info!("SSE connection shutdown requested during backoff, stopping...");
+                        break;
+                    }
                     continue;
                 }
             };
@@ -445,7 +448,10 @@ pub fn connect_sse(
                     }
                     let delay = backoff.record_failure();
                     log::info!("Retrying SSE connection after {delay:?}");
-                    thread::sleep(delay);
+                    if interruptible_sleep(delay, || shutdown_flag.load(Ordering::Relaxed)) {
+                        log::info!("SSE connection shutdown requested during backoff, stopping...");
+                        break;
+                    }
                     continue;
                 }
             };
@@ -595,7 +601,10 @@ pub fn connect_sse(
                 &sync_server_connection_status,
                 SynchronizationStatus::Disconnected,
             );
-            thread::sleep(delay);
+            if interruptible_sleep(delay, || shutdown_flag.load(Ordering::Relaxed)) {
+                log::info!("SSE connection shutdown requested during backoff, stopping...");
+                break;
+            }
         }
     });
     Ok(handle)
