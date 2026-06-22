@@ -42,7 +42,7 @@ impl RetryConfig {
         Self {
             max_attempts: 5,
             initial_delay: Duration::from_millis(500),
-            max_delay: Duration::from_secs(60),
+            max_delay: Duration::from_mins(1),
             backoff_multiplier: 2.0,
         }
     }
@@ -153,7 +153,7 @@ impl BackoffCalculator {
     pub fn default_settings() -> Self {
         Self::new(
             Duration::from_secs(1),
-            Duration::from_secs(300), // 5 minutes
+            Duration::from_mins(5), // 5 minutes
             2.0,
         )
     }
@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn test_backoff_calculator_progression() {
         let mut backoff =
-            BackoffCalculator::new(Duration::from_secs(1), Duration::from_secs(60), 2.0);
+            BackoffCalculator::new(Duration::from_secs(1), Duration::from_mins(1), 2.0);
 
         // First failure: 1s
         let delay1 = backoff.record_failure();
