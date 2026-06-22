@@ -194,7 +194,11 @@ pub fn create_editor_page(
                     {
                         let entity = entity.clone();
                         move |cx: &App| {
-                            entity.read(cx).settings.editor_settings.tab_size as f64
+                            // tab_size is a tiny value (2-12); the f64 cast is exact.
+                            #[allow(clippy::cast_precision_loss)]
+                            let tab_size =
+                                entity.read(cx).settings.editor_settings.tab_size as f64;
+                            tab_size
                         }
                     },
                     {

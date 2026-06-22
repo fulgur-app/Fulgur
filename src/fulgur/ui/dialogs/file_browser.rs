@@ -61,6 +61,9 @@ pub fn build_browser_entry(
 /// ### Returns
 /// - `Pixels`: Height fixed to `MAX_VISIBLE_BROWSER_ROWS` rows, forcing scrollbar
 ///   overflow beyond that.
+// A small row-count constant cast to f32 for a pixel height; far within f32's
+// exact-integer range.
+#[allow(clippy::cast_precision_loss)]
 pub fn browser_list_height() -> Pixels {
     px(MAX_VISIBLE_BROWSER_ROWS as f32 * BROWSER_ROW_HEIGHT_PX)
 }

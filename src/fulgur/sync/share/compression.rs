@@ -25,12 +25,6 @@ pub(super) fn compress_content(content: &str) -> anyhow::Result<Vec<u8>> {
     let mut encoder = GzEncoder::new(content.as_bytes(), Compression::default());
     let mut compressed = Vec::new();
     encoder.read_to_end(&mut compressed)?;
-    let original_size_kb = content.len() as f64 / 1024.0;
-    let compressed_size_kb = compressed.len() as f64 / 1024.0;
-    let compression_ratio = (1.0 - (compressed.len() as f64 / content.len() as f64)) * 100.0;
-    log::debug!(
-        "Compression: {original_size_kb:.2} KB -> {compressed_size_kb:.2} KB ({compression_ratio:.1}% reduction)"
-    );
     Ok(compressed)
 }
 

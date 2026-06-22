@@ -1,3 +1,6 @@
+// Test fixtures cast small loop indices to f32; precision loss is irrelevant.
+#![allow(clippy::cast_precision_loss)]
+
 /// Integration tests for concurrent file access
 ///
 /// These tests verify that settings and state files can be safely written
