@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 /// Time after which an idle SSH session is considered stale and discarded.
-pub const SSH_SESSION_IDLE_TTL: Duration = Duration::from_secs(60 * 60);
+pub const SSH_SESSION_IDLE_TTL: Duration = Duration::from_hours(1);
 
 /// Maximum number of idle sessions held by the pool at once.
 const SSH_SESSION_POOL_CAPACITY: usize = 64;

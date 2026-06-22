@@ -37,7 +37,7 @@ const MAX_SSE_EVENT_DATA_BYTES: usize = MAX_SYNC_SHARE_PAYLOAD_BYTES * 10;
 /// Absolute deadline for receiving any byte on the SSE stream before the
 /// connection is considered dead and an error is returned so the caller
 /// reconnects
-const SSE_READ_DEADLINE: Duration = Duration::from_secs(60);
+const SSE_READ_DEADLINE: Duration = Duration::from_mins(1);
 
 /// Decide whether a fetched share's encrypted payload is too large to queue,
 /// based on the server-advertised max file size.
