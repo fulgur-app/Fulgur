@@ -40,7 +40,7 @@ impl Fulgur {
             .synchronization_settings
             .profiles
             .push(profile);
-        Fulgur::shared_state(cx).sync_state_for(&profile_id);
+        let _ = Fulgur::shared_state(cx).sync_state_for(&profile_id);
         self.update_and_propagate_settings(cx)
     }
 
@@ -139,7 +139,7 @@ impl Fulgur {
         if let Err(e) = save_device_api_key_to_keychain(profile_id, None) {
             log::warn!("Failed to remove device API key for profile '{profile_id}': {e}");
         }
-        Fulgur::shared_state(cx).remove_sync_state(profile_id);
+        let _ = Fulgur::shared_state(cx).remove_sync_state(profile_id);
         self.settings
             .app_settings
             .synchronization_settings

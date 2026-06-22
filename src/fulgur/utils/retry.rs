@@ -38,6 +38,7 @@ impl RetryConfig {
     ///
     /// ### Returns
     /// `Self`: an aggressive configuration
+    #[must_use]
     pub fn aggressive() -> Self {
         Self {
             max_attempts: 5,
@@ -51,6 +52,7 @@ impl RetryConfig {
     ///
     /// ### Returns
     /// `Self`: a conservative configuration
+    #[must_use]
     pub fn conservative() -> Self {
         Self {
             max_attempts: 2,
@@ -137,6 +139,7 @@ impl BackoffCalculator {
     ///
     /// ### Returns
     /// `Self`: a new `BackoffCalculator`
+    #[must_use]
     pub fn new(initial_delay: Duration, max_delay: Duration, multiplier: f64) -> Self {
         Self {
             consecutive_failures: 0,
@@ -150,6 +153,7 @@ impl BackoffCalculator {
     ///
     /// ### Returns
     /// `Self`: A `BackoffCalculator` with default settings
+    #[must_use]
     pub fn default_settings() -> Self {
         Self::new(
             Duration::from_secs(1),
@@ -188,6 +192,7 @@ impl BackoffCalculator {
     ///
     /// ### Returns
     /// `u32`: the number of consecutive failures
+    #[must_use]
     pub fn consecutive_failures(&self) -> u32 {
         self.consecutive_failures
     }

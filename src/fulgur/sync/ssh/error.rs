@@ -30,7 +30,7 @@ impl fmt::Display for SshError {
             SshError::ConnectionFailed(msg) => write!(f, "Connection failed: {msg}"),
             SshError::HostKeyMismatch { host, port } => write!(
                 f,
-                "Host key mismatch for {host}:{port} — possible MITM. \
+                "Host key mismatch for {host}:{port} - possible MITM. \
                  Verify or update ~/.ssh/known_hosts."
             ),
             SshError::UnknownHost {
@@ -39,7 +39,7 @@ impl fmt::Display for SshError {
                 fingerprint,
             } => write!(f, "Unknown host {host}:{port} (fingerprint: {fingerprint})"),
             SshError::AuthFailed => {
-                write!(f, "Authentication failed — check username and password.")
+                write!(f, "Authentication failed - check username and password.")
             }
             SshError::SftpError(msg) => write!(f, "SFTP error: {msg}"),
             SshError::IoError(msg) => write!(f, "I/O error: {msg}"),
@@ -52,6 +52,7 @@ impl SshError {
     ///
     /// ### Returns
     /// - `String`: User-facing message; delegates to the `Display` implementation.
+    #[must_use]
     pub fn user_message(&self) -> String {
         self.to_string()
     }

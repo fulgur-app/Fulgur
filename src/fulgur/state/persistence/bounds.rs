@@ -44,6 +44,7 @@ impl SerializedWindowBounds {
     ///
     /// ### Returns
     /// - `SerializedWindowBounds`: The serialized window bounds
+    #[must_use]
     pub fn from_gpui_bounds(bounds: gpui::WindowBounds, display_id: Option<u32>) -> Self {
         use gpui::WindowBounds;
         match bounds {
@@ -78,6 +79,7 @@ impl SerializedWindowBounds {
     ///
     /// ### Returns
     /// - `gpui::WindowBounds`: The GPUI window bounds
+    #[must_use]
     pub fn to_gpui_bounds(&self) -> gpui::WindowBounds {
         use gpui::{Bounds, WindowBounds, point, px, size};
         let bounds = Bounds {

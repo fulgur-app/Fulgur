@@ -224,6 +224,7 @@ impl Settings {
     ///
     /// ### Returns
     /// - `Vec<PathBuf>`: The recent files
+    #[must_use]
     pub fn get_recent_files(&self) -> Vec<PathBuf> {
         let mut files = self.recent_files.get_files().clone();
         files.reverse();

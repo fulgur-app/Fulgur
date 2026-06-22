@@ -21,6 +21,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `SettingPage`: The Themes settings page
+    #[must_use]
     pub fn create_themes_page(entity: &Entity<Self>, themes: &Themes) -> SettingPage {
         let mut user_theme_items = Vec::new();
         let mut default_theme_items = Vec::new();

@@ -78,6 +78,7 @@ pub enum SupportedLanguage {
 ///
 /// ### Returns
 /// - `SupportedLanguage`: The corresponding `SupportedLanguage`
+#[must_use]
 pub fn from_language(language: Language) -> SupportedLanguage {
     match language {
         Language::Astro => SupportedLanguage::Astro,
@@ -128,6 +129,7 @@ pub fn from_language(language: Language) -> SupportedLanguage {
 ///
 /// ### Returns
 /// The corresponding language
+#[must_use]
 pub fn to_language(supported_language: &SupportedLanguage) -> Language {
     match supported_language {
         // Custom-registered languages: no native Language variant, plain text fallback.
@@ -206,6 +208,7 @@ pub fn to_language(supported_language: &SupportedLanguage) -> Language {
 ///
 /// ### Returns
 /// - `String`: The human-readable name of the language
+#[must_use]
 pub fn pretty_name(language: &SupportedLanguage) -> String {
     match language {
         SupportedLanguage::Ada => "Ada".to_string(),
@@ -285,6 +288,7 @@ pub fn pretty_name(language: &SupportedLanguage) -> String {
 ///
 /// ### Returns
 /// - `&'static str`: The language name as registered in the `LanguageRegistry`
+#[must_use]
 pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'static str {
     match supported_language {
         SupportedLanguage::Ada => "ada",
@@ -326,6 +330,7 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
 ///
 /// ### Returns
 /// - `SupportedLanguage`: The detected language
+#[must_use]
 pub fn language_from_filename(filename: &str) -> SupportedLanguage {
     let lower = filename.to_lowercase();
     let exact = match lower.as_str() {
@@ -438,6 +443,7 @@ fn detect_m_file_language(content: &str) -> SupportedLanguage {
 ///
 /// ### Returns
 /// - `SupportedLanguage`: The detected language
+#[must_use]
 pub fn language_from_content(filename: &str, content: &str) -> SupportedLanguage {
     let base = language_from_filename(filename);
     if base == SupportedLanguage::ObjectiveC {
@@ -457,6 +463,7 @@ impl SupportedLanguage {
     ///
     /// ### Returns
     /// - `Vec<SupportedLanguage>`: A vector of all supported languages
+    #[must_use]
     pub fn all() -> Vec<SupportedLanguage> {
         vec![
             SupportedLanguage::Ada,
@@ -533,6 +540,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `SupportedLanguage`: The active tab's language
+    #[must_use]
     pub fn get_current_language(&self) -> SupportedLanguage {
         match self.active_tab_index {
             Some(index) => {
@@ -550,6 +558,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `True` if the active tab's language is a Markdown language, `False` otherwise
+    #[must_use]
     pub fn is_markdown(&self) -> bool {
         let current_language = self.get_current_language();
         current_language == SupportedLanguage::Markdown

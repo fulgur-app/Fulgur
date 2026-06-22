@@ -31,6 +31,7 @@ pub enum TabRestoreDecision {
 ///
 /// ### Returns
 /// - `TabRestoreDecision`: The decision for how to restore this tab
+#[must_use]
 pub fn determine_tab_restore_strategy(
     saved_path: Option<PathBuf>,
     saved_remote: Option<SerializedRemoteSpec>,

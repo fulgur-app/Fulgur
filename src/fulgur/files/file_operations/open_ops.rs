@@ -32,6 +32,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(usize)`: The index of the tab if found
     /// - `None`: If the tab was not found
+    #[must_use]
     pub fn find_tab_by_path(&self, path: &PathBuf) -> Option<usize> {
         self.tabs.iter().position(|tab| {
             if let Tab::Editor(editor_tab) = tab {
@@ -50,6 +51,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(usize)`: The index of the matching remote tab.
     /// - `None`: If no tab matches this remote location.
+    #[must_use]
     pub fn find_tab_by_remote_spec(&self, spec: &RemoteSpec) -> Option<usize> {
         self.tabs.iter().position(|tab| {
             if let Tab::Editor(editor_tab) = tab

@@ -94,6 +94,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(&EditorTab)`: The active editor tab
     /// - `None`: If there is no active editor tab
+    #[must_use]
     pub fn get_active_editor_tab(&self) -> Option<&EditorTab> {
         if let Some(index) = self.active_tab_index
             && let Some(tab) = self.tabs.get(index)

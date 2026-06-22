@@ -21,6 +21,7 @@
 /// assert_eq!(sanitize_filename(".hidden"), ".hidden");
 /// assert_eq!(sanitize_filename(""), "untitled");
 /// ```
+#[must_use]
 pub fn sanitize_filename(filename: &str) -> String {
     // Normalize path separators to Unix style, then split and take the last component
     let normalized = filename.replace('\\', "/");

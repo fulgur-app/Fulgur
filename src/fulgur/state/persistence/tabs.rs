@@ -25,6 +25,7 @@ impl SerializedRemoteSpec {
     ///
     /// ### Returns
     /// - `SerializedRemoteSpec`: Persistable remote spec with no password field.
+    #[must_use]
     pub fn from_remote_spec(spec: &RemoteSpec) -> Self {
         Self {
             host: spec.host.clone(),
@@ -38,6 +39,7 @@ impl SerializedRemoteSpec {
     ///
     /// ### Returns
     /// - `RemoteSpec`: Runtime remote spec with `password_in_url` cleared.
+    #[must_use]
     pub fn to_remote_spec(&self) -> RemoteSpec {
         RemoteSpec {
             host: self.host.clone(),

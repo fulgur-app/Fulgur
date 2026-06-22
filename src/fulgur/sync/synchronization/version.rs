@@ -44,6 +44,7 @@ fn parse_fulgurant_version(version_header: Option<&str>) -> Option<(u64, u64)> {
 /// ### Returns
 /// - `true`: The server is recent enough to fetch shares by id.
 /// - `false`: The header is absent, unparseable, or older than 0.7.0.
+#[must_use]
 pub fn version_supports_per_id_fetch(version_header: Option<&str>) -> bool {
     parse_fulgurant_version(version_header).is_some_and(|v| v >= MIN_PER_ID_FETCH_VERSION)
 }
@@ -56,6 +57,7 @@ pub fn version_supports_per_id_fetch(version_header: Option<&str>) -> bool {
 /// ### Returns
 /// - `true`: The server is 0.8.0 or newer and supports the read/ack flow.
 /// - `false`: The header is absent, unparseable, or older than 0.8.0.
+#[must_use]
 pub fn version_supports_v2_share_flow(version_header: Option<&str>) -> bool {
     parse_fulgurant_version(version_header).is_some_and(|v| v >= MIN_V2_SHARE_FLOW_VERSION)
 }

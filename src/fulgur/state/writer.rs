@@ -33,6 +33,7 @@ impl StateWriter {
     ///
     /// ### Panics
     /// Panics if the OS refuses to spawn the background writer thread.
+    #[must_use]
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::sync_channel::<WriteRequest>(CHANNEL_CAPACITY);
         thread::Builder::new()

@@ -8,6 +8,7 @@ use std::fmt;
 ///
 /// ### Returns
 /// - `SynchronizationError`: The mapped synchronization error
+#[must_use]
 pub fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationError {
     match error {
         ureq::Error::StatusCode(code) => {
@@ -145,6 +146,7 @@ impl SynchronizationStatus {
     ///
     /// ### Returns
     /// - `SynchronizationStatus`: The synchronization status
+    #[must_use]
     pub fn from_error(error: &SynchronizationError) -> SynchronizationStatus {
         match error {
             SynchronizationError::AuthenticationFailed => {
@@ -161,6 +163,7 @@ impl SynchronizationStatus {
     ///
     /// ### Returns
     /// - `true` if the synchronization status is connected, `false` otherwise
+    #[must_use]
     pub fn is_connected(&self) -> bool {
         match self {
             SynchronizationStatus::Connected => true,
@@ -177,6 +180,7 @@ impl SynchronizationStatus {
     ///
     /// ### Returns
     /// - `true` if the synchronization status is connecting, `false` otherwise
+    #[must_use]
     pub fn is_connecting(&self) -> bool {
         matches!(self, SynchronizationStatus::Connecting)
     }
@@ -185,6 +189,7 @@ impl SynchronizationStatus {
     ///
     /// ### Returns
     /// - `&'static str`: One of "Connected", "Connecting", "Disconnected", "Inactive", or "Error".
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             SynchronizationStatus::Connected => "Connected",

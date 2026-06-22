@@ -10,6 +10,7 @@ use std::sync::mpsc::Receiver;
 ///
 /// ### Returns
 /// - `Vec<T>`: Vector containing all available events, or empty vec if receiver is None
+#[must_use]
 pub fn collect_events<T>(receiver: &Option<Receiver<T>>) -> Vec<T> {
     if let Some(rx) = receiver {
         let mut events = Vec::new();

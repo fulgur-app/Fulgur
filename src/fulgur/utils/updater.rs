@@ -56,6 +56,7 @@ fn parse_version(version_str: &str) -> anyhow::Result<Version> {
 /// ### Returns
 /// - `true`: If the URL is a well-formed canonical Fulgur release page URL
 /// - `false`: Otherwise
+#[must_use]
 pub fn is_valid_release_page_url(url: &str) -> bool {
     let Ok(parsed) = Url::parse(url) else {
         return false;

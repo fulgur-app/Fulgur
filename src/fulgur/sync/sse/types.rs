@@ -35,6 +35,7 @@ impl SseState {
     ///
     /// ### Returns
     /// `Self`: a new `SseState`
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sse_events: None,
@@ -49,6 +50,7 @@ impl SseState {
     ///
     /// ### Returns
     /// `Self`: a new `SseState` with `sse_event_tx`/`sse_events` wired up.
+    #[must_use]
     pub fn with_channel() -> Self {
         let (sse_tx, sse_rx) = std::sync::mpsc::channel();
         Self {
@@ -93,6 +95,7 @@ impl SseEvent {
     ///
     /// ### Returns
     /// - `SseEvent`: The parsed event
+    #[must_use]
     pub fn parse(event_type: &str, data: &str) -> Self {
         match event_type {
             "heartbeat" => match serde_json::from_str::<HeartbeatData>(data) {

@@ -12,6 +12,7 @@ use crate::fulgur::settings::{ServerProfile, Settings};
 ///
 /// ### Returns
 /// - `(Identity, Recipient)`: The generated (private, public) key pair
+#[must_use]
 pub fn generate_key_pair() -> (Identity, Recipient) {
     let private_key = age::x25519::Identity::generate();
     let public_key = private_key.to_public();
@@ -27,6 +28,7 @@ pub fn generate_key_pair() -> (Identity, Recipient) {
 ///
 /// ### Returns
 /// - `Zeroizing<String>`: The serialized private key, zeroed on drop
+#[must_use]
 pub fn serialize(private_key: &Identity) -> Zeroizing<String> {
     let secret = private_key.to_string();
     Zeroizing::new(secret.expose_secret().to_string())
@@ -138,6 +140,7 @@ pub fn check_private_public_keys(settings: &mut Settings) -> anyhow::Result<()> 
 ///
 /// ### Returns
 /// - `bool`: `true` if the string parses as a valid `age::x25519::Recipient`, `false` otherwise
+#[must_use]
 pub fn is_valid_public_key(key: &str) -> bool {
     key.parse::<Recipient>().is_ok()
 }

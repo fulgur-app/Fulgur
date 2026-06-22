@@ -34,6 +34,7 @@ pub(super) const MAX_HTTP_V1_BEGIN_RESPONSE_BYTES: u64 = (share::MAX_PENDING_SHA
 ///
 /// ### Returns
 /// - `u64`: The maximum number of bytes to accept from the bulk drain response.
+#[must_use]
 pub fn max_http_bulk_shares_response_bytes(server_max_file_size: u64) -> u64 {
     if server_max_file_size == u64::MAX {
         return MAX_HTTP_V1_BEGIN_RESPONSE_BYTES;
@@ -54,6 +55,7 @@ pub fn max_http_bulk_shares_response_bytes(server_max_file_size: u64) -> u64 {
 ///
 /// ### Returns
 /// - `u64`: The maximum number of bytes to accept from the single-share response.
+#[must_use]
 pub fn max_http_single_share_response_bytes(server_max_file_size: u64) -> u64 {
     if server_max_file_size == u64::MAX {
         return MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES;
@@ -71,6 +73,7 @@ pub fn max_http_single_share_response_bytes(server_max_file_size: u64) -> u64 {
 ///
 /// ### Returns
 /// - `u64`: The resolved cap in bytes, or `u64::MAX` when unlimited
+#[must_use]
 pub fn resolve_server_max_file_size(advertised: Option<u64>) -> u64 {
     match advertised {
         None => u64::MAX,

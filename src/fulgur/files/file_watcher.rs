@@ -40,6 +40,7 @@ impl FileWatchState {
     ///
     /// ### Returns
     /// `Self`: A new `FileWatchState`
+    #[must_use]
     pub fn new() -> Self {
         Self {
             file_watcher: None,
@@ -75,6 +76,7 @@ impl FileWatcher {
     /// - `(FileWatcher, Receiver<FileWatchEvent>)`: A tuple containing the file watcher and the event receiver
     ///   - `FileWatcher`: The file watcher instance
     ///   - `Receiver<FileWatchEvent>`: The event receiver to receive the file watch events from the file watcher
+    #[must_use]
     pub fn new() -> (Self, Receiver<FileWatchEvent>) {
         let (event_tx, event_rx) = sync_channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let watcher = Self {
