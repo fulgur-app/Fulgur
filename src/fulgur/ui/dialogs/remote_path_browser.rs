@@ -465,6 +465,8 @@ impl Render for BrowserDialogTitle {
 
 #[cfg(test)]
 mod tests {
+    // Test fixtures cast small integer constants to f32; precision loss is irrelevant.
+    #![allow(clippy::cast_precision_loss)]
     use super::super::file_browser::{
         BROWSER_ROW_HEIGHT_PX, MAX_VISIBLE_BROWSER_ROWS, browser_list_height,
     };

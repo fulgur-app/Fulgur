@@ -109,6 +109,9 @@ pub fn format_system_time(time: SystemTime) -> Option<String> {
 ///
 /// ### Returns
 /// - `String`: Human-readable file size
+// File sizes are cast to f64 only for display rounding; exactness beyond f64's
+// 52-bit integer range (4 PB) is never needed here.
+#[allow(clippy::cast_precision_loss)]
 pub fn format_file_size(bytes: u64) -> String {
     if bytes < 1024 {
         format!("{bytes} B")

@@ -20,7 +20,6 @@ pedantic = { level = "deny", priority = -1 }
 
 # --- Burn-down list: allowed until fixed one by one ---
 borrow_as_ptr = "allow" # Windows only
-cast_precision_loss = "allow"
 cast_sign_loss = "allow"
 duration_suboptimal_units = "allow"
 must_use_candidate = "allow"
@@ -34,7 +33,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Types
-fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.5.0"}
+fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.6.0"}
 lsp-types = "0.97"
 
 # Serialization

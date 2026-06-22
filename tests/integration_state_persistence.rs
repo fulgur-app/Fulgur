@@ -9,6 +9,9 @@
 //! path separators on all platforms (/ on Unix, \ on Windows). Never use
 //! hardcoded strings like "/path/to/file" or "C:\path\to\file".
 
+// Test fixtures cast small loop indices to f32; precision loss is irrelevant.
+#![allow(clippy::cast_precision_loss)]
+
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
