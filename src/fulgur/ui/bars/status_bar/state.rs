@@ -371,7 +371,11 @@ mod tests {
             fulgur.update(cx, |this, cx| {
                 let state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
                 *state.connection_status.lock() = SynchronizationStatus::Connecting;
-                *state.connecting_since.lock() = Some(Instant::now() - Duration::from_millis(600));
+                *state.connecting_since.lock() = Some(
+                    Instant::now()
+                        .checked_sub(Duration::from_millis(600))
+                        .unwrap(),
+                );
 
                 let (btn_state, show_spinner) = this.status_bar_sync_button_state(cx);
                 assert_eq!(btn_state, SyncButtonState::Connecting);
@@ -388,7 +392,11 @@ mod tests {
             fulgur.update(cx, |this, cx| {
                 let state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
                 *state.connection_status.lock() = SynchronizationStatus::Connecting;
-                *state.connecting_since.lock() = Some(Instant::now() - Duration::from_millis(100));
+                *state.connecting_since.lock() = Some(
+                    Instant::now()
+                        .checked_sub(Duration::from_millis(100))
+                        .unwrap(),
+                );
 
                 let (btn_state, show_spinner) = this.status_bar_sync_button_state(cx);
                 assert_eq!(btn_state, SyncButtonState::Connecting);
@@ -405,7 +413,8 @@ mod tests {
             fulgur.update(cx, |this, cx| {
                 let state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
                 *state.connection_status.lock() = SynchronizationStatus::AuthenticationFailed;
-                *state.connecting_since.lock() = Some(Instant::now() - Duration::from_secs(2));
+                *state.connecting_since.lock() =
+                    Some(Instant::now().checked_sub(Duration::from_secs(2)).unwrap());
 
                 let (btn_state, show_spinner) = this.status_bar_sync_button_state(cx);
                 assert_eq!(btn_state, SyncButtonState::Disconnected);
