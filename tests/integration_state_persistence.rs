@@ -628,7 +628,7 @@ fn test_state_preserves_window_order() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let state_path = temp_state_path(&temp_dir);
     let mut windows = Vec::new();
-    for i in 0..5 {
+    for i in 0u32..5 {
         windows.push(WindowState {
             tabs: vec![TabState {
                 title: format!("Window {i} Marker"),
@@ -645,7 +645,7 @@ fn test_state_preserves_window_order() {
                 y: (i as f32) * 100.0,
                 width: 800.0,
                 height: 600.0,
-                display_id: Some(i as u32),
+                display_id: Some(i),
             },
         });
     }
