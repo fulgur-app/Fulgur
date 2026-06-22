@@ -19,6 +19,7 @@ pub const DEFAULT_LEGACY_PROFILE_NAME: &str = "Fulgurant";
 ///
 /// ### Returns
 /// - `ProfileId`: A freshly generated UUID v4 string.
+#[must_use]
 pub fn new_profile_id() -> ProfileId {
     uuid::Uuid::new_v4().to_string()
 }
@@ -100,6 +101,7 @@ impl SynchronizationSettings {
     /// ### Returns
     /// - `SynchronizationSettings`: An empty configuration with sync disabled
     ///   and no profiles.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             is_synchronization_activated: false,
@@ -112,6 +114,7 @@ impl SynchronizationSettings {
     /// ### Returns
     /// - `Some(&ServerProfile)`: The first profile when at least one is configured.
     /// - `None`: When no profiles are configured.
+    #[must_use]
     pub fn primary_profile(&self) -> Option<&ServerProfile> {
         self.profiles.first()
     }
@@ -146,6 +149,7 @@ impl SynchronizationSettings {
     /// ### Returns
     /// - `Some(&ServerProfile)`: The matching profile.
     /// - `None`: When no profile with that id exists.
+    #[must_use]
     pub fn find_profile(&self, profile_id: &str) -> Option<&ServerProfile> {
         self.profiles.iter().find(|p| p.id == profile_id)
     }
@@ -171,6 +175,7 @@ impl SynchronizationSettings {
     /// ### Returns
     /// - `true`: At least one other profile carries the same normalized name.
     /// - `false`: The name is unique among the other profiles.
+    #[must_use]
     pub fn name_collides(&self, candidate: &str, exclude_id: Option<&str>) -> bool {
         let normalized = candidate.trim().to_lowercase();
         self.profiles.iter().any(|profile| {
@@ -274,6 +279,7 @@ impl MarkdownSettings {
     ///
     /// ### Returns
     /// - `MarkdownSettings`: The new markdown settings instance
+    #[must_use]
     pub fn new() -> Self {
         Self {
             preview_mode: MarkdownPreviewMode::DedicatedTab,
@@ -370,6 +376,7 @@ impl EditorSettings {
     ///
     /// ### Returns
     /// - `EditorSettings`: The new editor settings instance
+    #[must_use]
     pub fn new() -> Self {
         Self {
             show_line_numbers: true,
@@ -398,6 +405,7 @@ impl AppSettings {
     ///
     /// ### Returns
     /// - `AppSettings`: The new app settings instance
+    #[must_use]
     pub fn new() -> Self {
         Self {
             confirm_exit: true,
@@ -423,6 +431,7 @@ impl RecentFiles {
     ///
     /// ### Returns
     /// - `RecentFiles`: The new recent files instance
+    #[must_use]
     pub fn new(max_files: usize) -> Self {
         Self {
             files: Vec::new(),
@@ -453,6 +462,7 @@ impl RecentFiles {
     ///
     /// ### Returns
     /// - `&Vec<PathBuf>`: The recent files
+    #[must_use]
     pub fn get_files(&self) -> &Vec<PathBuf> {
         &self.files
     }
@@ -560,6 +570,7 @@ impl Settings {
     ///
     /// ### Returns
     /// - `Self`: The new settings instance
+    #[must_use]
     pub fn new() -> Self {
         Self {
             editor_settings: EditorSettings::new(),

@@ -22,6 +22,7 @@ impl ShareResult {
     ///
     /// ### Returns
     /// - `true`: If all shares were successful, `false` otherwise
+    #[must_use]
     pub fn is_complete_success(&self) -> bool {
         self.failures.is_empty()
     }
@@ -30,6 +31,7 @@ impl ShareResult {
     ///
     /// ### Returns
     /// - `String`: The message
+    #[must_use]
     pub fn summary_message(&self) -> String {
         let total = self.successes.len() + self.failures.len();
         if self.is_complete_success() {
@@ -57,6 +59,7 @@ impl ShareResult {
     /// ### Returns
     /// - `String`: A short description of how many devices succeeded or failed
     ///   for this profile, including the failure reason on full failure.
+    #[must_use]
     pub fn profile_scoped_summary(&self) -> String {
         let total = self.successes.len() + self.failures.len();
         if total == 0 {
@@ -102,6 +105,7 @@ impl ProfileShareOutcome {
     /// ### Returns
     /// - `String`: A short description suitable for inclusion in an aggregated
     ///   multi-profile summary.
+    #[must_use]
     pub fn summary(&self) -> String {
         match self {
             ProfileShareOutcome::Completed(result) => result.profile_scoped_summary(),
@@ -114,6 +118,7 @@ impl ProfileShareOutcome {
     /// ### Returns
     /// - `true`: At least one device on this profile received the file.
     /// - `false`: No device on this profile received the file.
+    #[must_use]
     pub fn has_success(&self) -> bool {
         match self {
             ProfileShareOutcome::Completed(result) => !result.successes.is_empty(),
@@ -126,6 +131,7 @@ impl ProfileShareOutcome {
     /// ### Returns
     /// - `true`: The profile has at least one failure to report.
     /// - `false`: The profile completed without any failure.
+    #[must_use]
     pub fn has_failure(&self) -> bool {
         match self {
             ProfileShareOutcome::Completed(result) => !result.failures.is_empty(),
@@ -141,6 +147,7 @@ impl ProfileShareOutcome {
 ///
 /// ### Returns
 /// - `String`: A multi-line summary with one entry per profile.
+#[must_use]
 pub fn format_multi_profile_summary(outcomes: &[(String, ProfileShareOutcome)]) -> String {
     let any_success = outcomes.iter().any(|(_, o)| o.has_success());
     let header = if any_success {

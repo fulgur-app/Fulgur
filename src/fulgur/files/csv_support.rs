@@ -29,6 +29,7 @@ pub struct CsvParseOutcome {
 /// ### Returns
 /// - `u8`: The detected delimiter byte, or [`DEFAULT_DELIMITER`] when no
 ///   candidate appears on the first non-empty line
+#[must_use]
 pub fn detect_delimiter(text: &str) -> u8 {
     let first_line = text
         .lines()

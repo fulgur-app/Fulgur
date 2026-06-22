@@ -71,6 +71,7 @@ impl SyncState {
     ///
     /// ### Returns
     /// - `Self`: The new sync state.
+    #[must_use]
     pub fn new(connection_status: SynchronizationStatus) -> Self {
         Self {
             connection_status: Arc::new(Mutex::new(connection_status)),
@@ -286,6 +287,7 @@ impl SharedAppState {
     /// ### Returns
     /// - `Arc<SyncState>`: The shared sync state for the profile. A fresh
     ///   `NotActivated` state is inserted when the profile is unknown.
+    #[must_use]
     pub fn sync_state_for(&self, profile_id: &str) -> Arc<SyncState> {
         if let Some(existing) = self.sync_states.read().get(profile_id) {
             return Arc::clone(existing);
@@ -302,6 +304,7 @@ impl SharedAppState {
     /// ### Returns
     /// - `Arc<SyncState>`: The first profile's sync state, or the
     ///   empty-id-keyed fallback state when there are no profiles.
+    #[must_use]
     pub fn primary_sync_state(&self) -> Arc<SyncState> {
         let primary_id = self
             .settings
@@ -323,6 +326,7 @@ impl SharedAppState {
     /// ### Returns
     /// - `Some(Arc<SyncState>)`: The removed state if it existed.
     /// - `None`: When no entry exists for the profile.
+    #[must_use]
     pub fn remove_sync_state(&self, profile_id: &str) -> Option<Arc<SyncState>> {
         self.sync_states.write().remove(profile_id)
     }

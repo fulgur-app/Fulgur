@@ -390,6 +390,7 @@ fn normalize_remote_path(path: &str) -> String {
 ///
 /// ### Returns
 /// - `String`: Parent directory path (returns `/` for root or single-segment paths).
+#[must_use]
 pub fn parent_remote_path(path: &str) -> String {
     let trimmed = path.trim_end_matches(REMOTE_ROOT_PATH);
     if trimmed.is_empty() || trimmed == REMOTE_ROOT_PATH {

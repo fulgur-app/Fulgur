@@ -26,6 +26,7 @@ pub enum EncodedContents {
 /// ### Returns
 /// - `DecodedContents`: The detected encoding, decoded text, the original byte
 ///   length, and whether the decode was lossy
+#[must_use]
 pub fn detect_encoding_and_decode(bytes: Vec<u8>) -> DecodedContents {
     let byte_len = bytes.len();
     let bytes = match String::from_utf8(bytes) {
@@ -73,6 +74,7 @@ pub fn detect_encoding_and_decode(bytes: Vec<u8>) -> DecodedContents {
 /// - `EncodedContents::Encoded`: The encoded bytes ready to write
 /// - `EncodedContents::Lossy`: The text cannot be represented losslessly in the
 ///   target encoding
+#[must_use]
 pub fn encode_for_save(contents: &str, label: &str) -> EncodedContents {
     if label.eq_ignore_ascii_case(UTF_8) {
         return EncodedContents::Encoded(contents.as_bytes().to_vec());
@@ -103,6 +105,7 @@ pub fn encode_for_save(contents: &str, label: &str) -> EncodedContents {
 ///
 /// ### Returns
 /// - `bool`: `true` if the prefix contains a NUL byte
+#[must_use]
 pub fn looks_binary(bytes: &[u8]) -> bool {
     let prefix = &bytes[..bytes.len().min(BINARY_SNIFF_LEN)];
     prefix.contains(&0)

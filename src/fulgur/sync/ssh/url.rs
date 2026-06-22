@@ -27,6 +27,7 @@ pub struct RemoteSpec {
 ///
 /// ### Returns
 /// - `String`: Canonical URL that can be fed back into `parse_remote_url`.
+#[must_use]
 pub fn format_remote_url(spec: &RemoteSpec) -> String {
     let host = format_host_for_url(&spec.host);
     let authority = match spec.user.as_deref() {

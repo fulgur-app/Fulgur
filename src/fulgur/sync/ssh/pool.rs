@@ -78,6 +78,7 @@ impl SshSessionPool {
     ///
     /// ### Returns
     /// - `Self`: Empty pool ready to accept sessions.
+    #[must_use]
     pub fn new() -> Self {
         Self::with_idle_ttl(SSH_SESSION_IDLE_TTL)
     }
@@ -89,6 +90,7 @@ impl SshSessionPool {
     ///
     /// ### Returns
     /// - `Self`: Empty pool with the supplied TTL.
+    #[must_use]
     pub fn with_idle_ttl(idle_ttl: Duration) -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
@@ -254,6 +256,7 @@ impl PooledSession {
     ///
     /// ### Panics
     /// Panics if the session has already been consumed (e.g. via `discard` or `Drop`).
+    #[must_use]
     pub fn session(&self) -> &SshSession {
         &self
             .inner

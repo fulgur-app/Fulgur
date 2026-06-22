@@ -9,6 +9,7 @@ use std::path::PathBuf;
 /// ### Returns
 /// - `Some(String)`: The last modified time of the file
 /// - `None`: If the file could not be found or the last modified time could not be determined
+#[must_use]
 pub fn get_file_modified_time(path: &PathBuf) -> Option<String> {
     let metadata = fs::metadata(path).ok()?;
     let modified = metadata.modified().ok()?;
@@ -26,6 +27,7 @@ pub fn get_file_modified_time(path: &PathBuf) -> Option<String> {
 ///
 /// ### Returns
 /// - `True`: If the file is newer than the saved file, `False` otherwise
+#[must_use]
 pub fn is_file_newer(file_time: &str, saved_time: &str) -> bool {
     let file_dt =
         time::OffsetDateTime::parse(file_time, &time::format_description::well_known::Rfc3339).ok();

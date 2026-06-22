@@ -29,6 +29,7 @@ impl SshSession {
     /// ### Returns
     /// - `true`: ssh2 reports the session as authenticated.
     /// - `false`: The session is not authenticated and should be discarded.
+    #[must_use]
     pub fn is_authenticated(&self) -> bool {
         self.session.authenticated()
     }

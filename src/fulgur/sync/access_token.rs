@@ -38,6 +38,7 @@ pub struct TokenStateManager {
 
 impl TokenStateManager {
     /// Create a new token state manager with empty state
+    #[must_use]
     pub fn new() -> Self {
         Self {
             state: Mutex::new(TokenState::new()),
@@ -77,6 +78,7 @@ impl Default for TokenState {
 
 impl TokenState {
     /// Create a new empty `TokenState`
+    #[must_use]
     pub fn new() -> Self {
         Self {
             access_token: None,

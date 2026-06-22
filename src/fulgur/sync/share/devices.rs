@@ -22,6 +22,7 @@ pub type Device = DeviceResponse;
 ///
 /// ### Returns
 /// - `Icon`: The icon for the device
+#[must_use]
 pub fn get_icon(device: &Device) -> Icon {
     match device.device_type.to_lowercase().as_str() {
         "laptop" => Icon::new(CustomIcon::Laptop),

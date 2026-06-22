@@ -58,6 +58,7 @@ impl WindowManager {
     ///
     /// ### Returns
     /// - `WindowManager`: A new window manager instance
+    #[must_use]
     pub fn new() -> Self {
         Self {
             windows: HashMap::new(),
@@ -124,6 +125,7 @@ impl WindowManager {
     /// ### Returns
     /// - `Some(WindowId)`: The ID of the last focused window,
     /// - `None`: If no window is focused
+    #[must_use]
     pub fn get_last_focused(&self) -> Option<WindowId> {
         self.last_focused
     }
@@ -132,6 +134,7 @@ impl WindowManager {
     ///
     /// ### Returns
     /// - `usize`: The number of open windows
+    #[must_use]
     pub fn window_count(&self) -> usize {
         self.windows.len()
     }
@@ -157,6 +160,7 @@ impl WindowManager {
     ///
     /// ### Returns
     /// - `Vec<WeakEntity<Fulgur>>`: A vector of weak references to all open windows
+    #[must_use]
     pub fn get_all_windows(&self) -> Vec<WeakEntity<Fulgur>> {
         self.windows.values().cloned().collect()
     }
@@ -165,6 +169,7 @@ impl WindowManager {
     ///
     /// ### Returns
     /// - `Vec<WindowId>`: A vector of all window IDs
+    #[must_use]
     pub fn get_all_window_ids(&self) -> Vec<WindowId> {
         self.windows.keys().copied().collect()
     }
@@ -176,6 +181,7 @@ impl WindowManager {
     ///
     /// ### Returns
     /// - `Option<WeakEntity<Fulgur>>`: The window entity if it exists
+    #[must_use]
     pub fn get_window(&self, window_id: WindowId) -> Option<WeakEntity<Fulgur>> {
         self.windows.get(&window_id).cloned()
     }
@@ -213,6 +219,7 @@ impl WindowManager {
     /// ### Returns
     /// - `Some(u64)`: Last known fingerprint for this window
     /// - `None`: Window has not published one yet
+    #[must_use]
     pub fn get_window_menu_fingerprint(&self, window_id: WindowId) -> Option<u64> {
         self.window_menu_fingerprints.get(&window_id).copied()
     }
@@ -221,6 +228,7 @@ impl WindowManager {
     ///
     /// ### Returns
     /// - `u64`: Monotonic revision that changes when menu input state changes
+    #[must_use]
     pub fn menu_state_revision(&self) -> u64 {
         self.menu_state_revision
     }

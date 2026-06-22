@@ -162,6 +162,7 @@ pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
 ///
 /// ### Returns
 /// - `PathBuf`: The backup path (e.g. `settings.json` → `settings.json.bak`)
+#[must_use]
 pub fn backup_path_for(path: &Path) -> PathBuf {
     let name = path
         .file_name()

@@ -32,6 +32,7 @@ impl Render for EmptyView {
 /// ### Returns
 /// - `PathBuf`: A path under `std::env::temp_dir()` suitable for cross-platform tests.
 #[cfg(feature = "gpui-test-support")]
+#[must_use]
 pub fn temp_test_path(file_name: &str) -> PathBuf {
     std::env::temp_dir().join(file_name)
 }
