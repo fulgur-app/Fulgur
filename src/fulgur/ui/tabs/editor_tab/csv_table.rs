@@ -172,10 +172,22 @@ impl CsvTableDelegate {
     /// ### Returns
     /// - `String`: The current value, or an empty string if out of bounds
     fn value_at(&self, target: EditTarget) -> String {
+        Self::value_at_in(&self.headers, &self.rows, target)
+    }
+
+    /// Read the value at a header or cell from a plain headers/rows model.
+    ///
+    /// ### Arguments
+    /// - `headers`: The column headers
+    /// - `rows`: The data rows
+    /// - `target`: The header or cell to read (data indices)
+    ///
+    /// ### Returns
+    /// - `String`: The current value, or an empty string if out of bounds
+    fn value_at_in(headers: &[String], rows: &[Vec<String>], target: EditTarget) -> String {
         match target {
-            EditTarget::Header(col) => self.headers.get(col).cloned().unwrap_or_default(),
-            EditTarget::Cell(row, col) => self
-                .rows
+            EditTarget::Header(col) => headers.get(col).cloned().unwrap_or_default(),
+            EditTarget::Cell(row, col) => rows
                 .get(row)
                 .and_then(|cells| cells.get(col))
                 .cloned()
@@ -251,37 +263,51 @@ impl CsvTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
+        Self::apply_edit_in(&mut self.headers, &mut self.rows, target, value);
+        self.commit_and_refresh(window, cx);
+    }
+
+    /// Write an edited value into a plain headers/rows model, ignoring
+    /// out-of-bounds targets.
+    ///
+    /// ### Arguments
+    /// - `headers`: The column headers
+    /// - `rows`: The data rows
+    /// - `target`: The header or cell being edited (data indices)
+    /// - `value`: The new value
+    fn apply_edit_in(
+        headers: &mut [String],
+        rows: &mut [Vec<String>],
+        target: EditTarget,
+        value: String,
+    ) {
         match target {
             EditTarget::Header(col) => {
-                if let Some(header) = self.headers.get_mut(col) {
+                if let Some(header) = headers.get_mut(col) {
                     *header = value;
                 }
             }
             EditTarget::Cell(row, col) => {
-                if let Some(cell) = self.rows.get_mut(row).and_then(|cells| cells.get_mut(col)) {
+                if let Some(cell) = rows.get_mut(row).and_then(|cells| cells.get_mut(col)) {
                     *cell = value;
                 }
             }
         }
-        self.commit_and_refresh(window, cx);
     }
 
-    /// Insert an empty row at `index`.
+    /// Insert an empty row at `index` into a plain headers/rows model.
+    ///
+    /// ### Description
+    /// The index is clamped to the current row count, so an out-of-bounds index
+    /// appends. The inserted row is padded to the header width.
     ///
     /// ### Arguments
+    /// - `headers`: The column headers, used to size the new row
+    /// - `rows`: The data rows to mutate
     /// - `index`: The row index to insert at
-    /// - `window`: The active window
-    /// - `cx`: The table state context
-    fn insert_row_at(
-        &mut self,
-        index: usize,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        let index = index.min(self.rows.len());
-        self.rows
-            .insert(index, vec![String::new(); self.headers.len()]);
-        self.commit_and_refresh(window, cx);
+    fn insert_row_at_in(headers: &[String], rows: &mut Vec<Vec<String>>, index: usize) {
+        let index = index.min(rows.len());
+        rows.insert(index, vec![String::new(); headers.len()]);
     }
 
     /// Insert an empty row above the selected row (or at the end if none).
@@ -296,8 +322,24 @@ impl CsvTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        let index = selected.map_or(self.rows.len(), |(row, _)| row);
-        self.insert_row_at(index, window, cx);
+        Self::insert_row_above_in(&self.headers, &mut self.rows, selected);
+        self.commit_and_refresh(window, cx);
+    }
+
+    /// Insert an empty row above the selected row into a plain model.
+    ///
+    /// ### Arguments
+    /// - `headers`: The column headers, used to size the new row
+    /// - `rows`: The data rows to mutate
+    /// - `selected`: The currently selected `(row, grid column)`, if any; when
+    ///   `None` the row is appended at the end
+    fn insert_row_above_in(
+        headers: &[String],
+        rows: &mut Vec<Vec<String>>,
+        selected: Option<(usize, usize)>,
+    ) {
+        let index = selected.map_or(rows.len(), |(row, _)| row);
+        Self::insert_row_at_in(headers, rows, index);
     }
 
     /// Insert an empty row below the selected row (or at the end if none).
@@ -312,8 +354,24 @@ impl CsvTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        let index = selected.map_or(self.rows.len(), |(row, _)| row + 1);
-        self.insert_row_at(index, window, cx);
+        Self::insert_row_below_in(&self.headers, &mut self.rows, selected);
+        self.commit_and_refresh(window, cx);
+    }
+
+    /// Insert an empty row below the selected row into a plain model.
+    ///
+    /// ### Arguments
+    /// - `headers`: The column headers, used to size the new row
+    /// - `rows`: The data rows to mutate
+    /// - `selected`: The currently selected `(row, grid column)`, if any; when
+    ///   `None` the row is appended at the end
+    fn insert_row_below_in(
+        headers: &[String],
+        rows: &mut Vec<Vec<String>>,
+        selected: Option<(usize, usize)>,
+    ) {
+        let index = selected.map_or(rows.len(), |(row, _)| row + 1);
+        Self::insert_row_at_in(headers, rows, index);
     }
 
     /// Delete the selected row, or the last row if none is selected.
@@ -328,35 +386,50 @@ impl CsvTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        if self.rows.is_empty() {
-            return;
+        if Self::delete_row_in(&mut self.rows, selected) {
+            self.commit_and_refresh(window, cx);
         }
-        let index = selected
-            .map_or(self.rows.len() - 1, |(row, _)| row)
-            .min(self.rows.len() - 1);
-        self.rows.remove(index);
-        self.commit_and_refresh(window, cx);
     }
 
-    /// Insert an empty data column at `index`.
+    /// Delete the selected row from a plain model, clamping out-of-bounds
+    /// selections to the last row.
     ///
     /// ### Arguments
+    /// - `rows`: The data rows to mutate
+    /// - `selected`: The currently selected `(row, grid column)`, if any; when
+    ///   `None` the last row is removed
+    ///
+    /// ### Returns
+    /// - `true`: A row was removed
+    /// - `false`: The buffer was empty and nothing changed
+    fn delete_row_in(rows: &mut Vec<Vec<String>>, selected: Option<(usize, usize)>) -> bool {
+        if rows.is_empty() {
+            return false;
+        }
+        let last = rows.len() - 1;
+        let index = selected.map_or(last, |(row, _)| row).min(last);
+        rows.remove(index);
+        true
+    }
+
+    /// Insert an empty data column at `index` into a plain headers/rows model.
+    ///
+    /// ### Description
+    /// The header index is clamped to the header count, and each row's insertion
+    /// position is independently clamped to that row's width, so ragged rows stay
+    /// in bounds.
+    ///
+    /// ### Arguments
+    /// - `headers`: The column headers to mutate
+    /// - `rows`: The data rows to mutate
     /// - `index`: The column index to insert at
-    /// - `window`: The active window
-    /// - `cx`: The table state context
-    fn insert_column_at(
-        &mut self,
-        index: usize,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        let index = index.min(self.headers.len());
-        self.headers.insert(index, String::new());
-        for row in &mut self.rows {
+    fn insert_column_at_in(headers: &mut Vec<String>, rows: &mut [Vec<String>], index: usize) {
+        let index = index.min(headers.len());
+        headers.insert(index, String::new());
+        for row in rows {
             let position = index.min(row.len());
             row.insert(position, String::new());
         }
-        self.commit_and_refresh(window, cx);
     }
 
     /// Insert an empty column before the selected column (or at the end).
@@ -371,8 +444,24 @@ impl CsvTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        let index = Self::selected_data_column(selected).unwrap_or(self.headers.len());
-        self.insert_column_at(index, window, cx);
+        Self::insert_column_before_in(&mut self.headers, &mut self.rows, selected);
+        self.commit_and_refresh(window, cx);
+    }
+
+    /// Insert an empty column before the selected column into a plain model.
+    ///
+    /// ### Arguments
+    /// - `headers`: The column headers to mutate
+    /// - `rows`: The data rows to mutate
+    /// - `selected`: The currently selected `(row, grid column)`, if any; when
+    ///   `None` the column is appended at the end
+    fn insert_column_before_in(
+        headers: &mut Vec<String>,
+        rows: &mut [Vec<String>],
+        selected: Option<(usize, usize)>,
+    ) {
+        let index = Self::selected_data_column(selected).unwrap_or(headers.len());
+        Self::insert_column_at_in(headers, rows, index);
     }
 
     /// Insert an empty column after the selected column (or at the end).
@@ -387,8 +476,24 @@ impl CsvTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        let index = Self::selected_data_column(selected).map_or(self.headers.len(), |col| col + 1);
-        self.insert_column_at(index, window, cx);
+        Self::insert_column_after_in(&mut self.headers, &mut self.rows, selected);
+        self.commit_and_refresh(window, cx);
+    }
+
+    /// Insert an empty column after the selected column into a plain model.
+    ///
+    /// ### Arguments
+    /// - `headers`: The column headers to mutate
+    /// - `rows`: The data rows to mutate
+    /// - `selected`: The currently selected `(row, grid column)`, if any; when
+    ///   `None` the column is appended at the end
+    fn insert_column_after_in(
+        headers: &mut Vec<String>,
+        rows: &mut [Vec<String>],
+        selected: Option<(usize, usize)>,
+    ) {
+        let index = Self::selected_data_column(selected).map_or(headers.len(), |col| col + 1);
+        Self::insert_column_at_in(headers, rows, index);
     }
 
     /// Delete the selected column, or the last column if none is selected.
@@ -403,19 +508,88 @@ impl CsvTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        if self.headers.is_empty() {
-            return;
+        if Self::delete_column_in(&mut self.headers, &mut self.rows, selected) {
+            self.commit_and_refresh(window, cx);
         }
+    }
+
+    /// Delete the selected column from a plain model, clamping out-of-bounds
+    /// selections to the last column.
+    ///
+    /// ### Arguments
+    /// - `headers`: The column headers to mutate
+    /// - `rows`: The data rows to mutate
+    /// - `selected`: The currently selected `(row, grid column)`, if any; when
+    ///   `None` the last column is removed
+    ///
+    /// ### Returns
+    /// - `true`: A column was removed
+    /// - `false`: There were no columns and nothing changed
+    fn delete_column_in(
+        headers: &mut Vec<String>,
+        rows: &mut [Vec<String>],
+        selected: Option<(usize, usize)>,
+    ) -> bool {
+        if headers.is_empty() {
+            return false;
+        }
+        let last = headers.len() - 1;
         let index = Self::selected_data_column(selected)
-            .unwrap_or(self.headers.len() - 1)
-            .min(self.headers.len() - 1);
-        self.headers.remove(index);
-        for row in &mut self.rows {
+            .unwrap_or(last)
+            .min(last);
+        headers.remove(index);
+        for row in rows {
             if index < row.len() {
                 row.remove(index);
             }
         }
-        self.commit_and_refresh(window, cx);
+        true
+    }
+
+    /// Move a grid column to a new position within a plain headers/rows model.
+    ///
+    /// ### Description
+    /// Grid indices include the synthetic row-number column at index 0, which is
+    /// not movable. The source is rejected when it is the row-number column or
+    /// out of bounds, and the destination is clamped to the last data column.
+    ///
+    /// ### Arguments
+    /// - `headers`: The column headers to mutate
+    /// - `rows`: The data rows to mutate
+    /// - `col_ix`: The source grid column index
+    /// - `to_ix`: The destination grid column index
+    ///
+    /// ### Returns
+    /// - `true`: A column was moved
+    /// - `false`: The move was a no-op (row-number column, out of bounds, or same
+    ///   position)
+    fn move_column_in(
+        headers: &mut Vec<String>,
+        rows: &mut [Vec<String>],
+        col_ix: usize,
+        to_ix: usize,
+    ) -> bool {
+        // The row-number column (grid index 0) is not movable.
+        let Some(from_data) = col_ix.checked_sub(1) else {
+            return false;
+        };
+        if from_data >= headers.len() {
+            return false;
+        }
+        let to_data = to_ix.saturating_sub(1).min(headers.len() - 1);
+        if from_data == to_data {
+            return false;
+        }
+
+        let header = headers.remove(from_data);
+        headers.insert(to_data, header);
+        for row in rows {
+            if from_data < row.len() {
+                let cell = row.remove(from_data);
+                row.insert(to_data.min(row.len()), cell);
+            }
+        }
+        true
     }
 }
 
@@ -507,27 +681,9 @@ impl TableDelegate for CsvTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        // The row-number column (grid index 0) is not movable.
-        let Some(from_data) = col_ix.checked_sub(1) else {
-            return;
-        };
-        if from_data >= self.headers.len() {
-            return;
+        if Self::move_column_in(&mut self.headers, &mut self.rows, col_ix, to_ix) {
+            self.commit_and_refresh(window, cx);
         }
-        let to_data = to_ix.saturating_sub(1).min(self.headers.len() - 1);
-        if from_data == to_data {
-            return;
-        }
-
-        let header = self.headers.remove(from_data);
-        self.headers.insert(to_data, header);
-        for row in &mut self.rows {
-            if from_data < row.len() {
-                let cell = row.remove(from_data);
-                row.insert(to_data.min(row.len()), cell);
-            }
-        }
-        self.commit_and_refresh(window, cx);
     }
 
     fn cell_text(&self, row_ix: usize, col_ix: usize, _: &App) -> String {
@@ -539,5 +695,286 @@ impl TableDelegate for CsvTableDelegate {
             .and_then(|cells| cells.get(col_ix - 1))
             .cloned()
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CsvTableDelegate, EditTarget};
+    use crate::fulgur::files::csv_support::serialize_csv;
+
+    /// Build a `Vec<String>` from string literals for terser test fixtures.
+    fn row(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    /// A small two-column, two-row fixture shared across tests.
+    fn sample() -> (Vec<String>, Vec<Vec<String>>) {
+        (row(&["a", "b"]), vec![row(&["1", "2"]), row(&["3", "4"])])
+    }
+
+    #[test]
+    fn test_compute_columns_has_row_number_plus_one_per_header() {
+        let (headers, rows) = sample();
+        let columns = CsvTableDelegate::compute_columns(&headers, &rows);
+        assert_eq!(columns.len(), headers.len() + 1);
+    }
+
+    #[test]
+    fn test_selected_data_column_ignores_row_number_column() {
+        assert_eq!(CsvTableDelegate::selected_data_column(None), None);
+        assert_eq!(CsvTableDelegate::selected_data_column(Some((0, 0))), None);
+        assert_eq!(
+            CsvTableDelegate::selected_data_column(Some((0, 1))),
+            Some(0)
+        );
+        assert_eq!(
+            CsvTableDelegate::selected_data_column(Some((3, 2))),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn test_value_at_in_reads_header_and_cell() {
+        let (headers, rows) = sample();
+        assert_eq!(
+            CsvTableDelegate::value_at_in(&headers, &rows, EditTarget::Header(1)),
+            "b"
+        );
+        assert_eq!(
+            CsvTableDelegate::value_at_in(&headers, &rows, EditTarget::Cell(1, 0)),
+            "3"
+        );
+    }
+
+    #[test]
+    fn test_value_at_in_out_of_bounds_is_empty() {
+        let (headers, rows) = sample();
+        assert_eq!(
+            CsvTableDelegate::value_at_in(&headers, &rows, EditTarget::Header(9)),
+            ""
+        );
+        assert_eq!(
+            CsvTableDelegate::value_at_in(&headers, &rows, EditTarget::Cell(9, 9)),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_apply_edit_in_sets_header_and_cell() {
+        let (mut headers, mut rows) = sample();
+        CsvTableDelegate::apply_edit_in(
+            &mut headers,
+            &mut rows,
+            EditTarget::Header(0),
+            "name".to_string(),
+        );
+        CsvTableDelegate::apply_edit_in(
+            &mut headers,
+            &mut rows,
+            EditTarget::Cell(0, 1),
+            "x".to_string(),
+        );
+        assert_eq!(headers, row(&["name", "b"]));
+        assert_eq!(rows[0], row(&["1", "x"]));
+    }
+
+    #[test]
+    fn test_apply_edit_in_out_of_bounds_is_noop() {
+        let (mut headers, mut rows) = sample();
+        CsvTableDelegate::apply_edit_in(
+            &mut headers,
+            &mut rows,
+            EditTarget::Cell(9, 9),
+            "x".to_string(),
+        );
+        assert_eq!(headers, row(&["a", "b"]));
+        assert_eq!(rows, vec![row(&["1", "2"]), row(&["3", "4"])]);
+    }
+
+    #[test]
+    fn test_insert_row_at_in_start_middle_end_and_out_of_bounds() {
+        let (headers, _) = sample();
+
+        let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
+        CsvTableDelegate::insert_row_at_in(&headers, &mut rows, 0);
+        assert_eq!(rows[0], row(&["", ""]));
+
+        let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
+        CsvTableDelegate::insert_row_at_in(&headers, &mut rows, 1);
+        assert_eq!(rows[1], row(&["", ""]));
+        assert_eq!(rows.len(), 3);
+
+        let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
+        CsvTableDelegate::insert_row_at_in(&headers, &mut rows, 2);
+        assert_eq!(rows[2], row(&["", ""]));
+
+        let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
+        CsvTableDelegate::insert_row_at_in(&headers, &mut rows, 99);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[2], row(&["", ""]));
+    }
+
+    #[test]
+    fn test_insert_row_above_and_below_resolve_selection() {
+        let (headers, _) = sample();
+
+        let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
+        CsvTableDelegate::insert_row_above_in(&headers, &mut rows, Some((1, 1)));
+        assert_eq!(rows[1], row(&["", ""]));
+        assert_eq!(rows[2], row(&["3", "4"]));
+
+        let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
+        CsvTableDelegate::insert_row_below_in(&headers, &mut rows, Some((0, 1)));
+        assert_eq!(rows[1], row(&["", ""]));
+        assert_eq!(rows[0], row(&["1", "2"]));
+
+        let mut rows = vec![row(&["1", "2"])];
+        CsvTableDelegate::insert_row_above_in(&headers, &mut rows, None);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[1], row(&["", ""]));
+    }
+
+    #[test]
+    fn test_delete_row_in_selected_last_and_empty() {
+        let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
+        assert!(CsvTableDelegate::delete_row_in(&mut rows, Some((0, 1))));
+        assert_eq!(rows, vec![row(&["3", "4"])]);
+
+        let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
+        assert!(CsvTableDelegate::delete_row_in(&mut rows, None));
+        assert_eq!(rows, vec![row(&["1", "2"])]);
+
+        // Out-of-bounds selection clamps to the last row.
+        let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
+        assert!(CsvTableDelegate::delete_row_in(&mut rows, Some((9, 1))));
+        assert_eq!(rows, vec![row(&["1", "2"])]);
+
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        assert!(!CsvTableDelegate::delete_row_in(&mut rows, None));
+    }
+
+    #[test]
+    fn test_insert_column_at_in_shifts_cells_and_pads_ragged_rows() {
+        let mut headers = row(&["a", "b"]);
+        let mut rows = vec![row(&["1", "2"]), row(&["3"])];
+        CsvTableDelegate::insert_column_at_in(&mut headers, &mut rows, 1);
+        assert_eq!(headers, row(&["a", "", "b"]));
+        assert_eq!(rows[0], row(&["1", "", "2"]));
+        // The ragged row gets the new cell clamped to its own width.
+        assert_eq!(rows[1], row(&["3", ""]));
+    }
+
+    #[test]
+    fn test_insert_column_before_and_after_resolve_selection() {
+        let mut headers = row(&["a", "b"]);
+        let mut rows = vec![row(&["1", "2"])];
+        CsvTableDelegate::insert_column_before_in(&mut headers, &mut rows, Some((0, 2)));
+        assert_eq!(headers, row(&["a", "", "b"]));
+        assert_eq!(rows[0], row(&["1", "", "2"]));
+
+        let mut headers = row(&["a", "b"]);
+        let mut rows = vec![row(&["1", "2"])];
+        CsvTableDelegate::insert_column_after_in(&mut headers, &mut rows, Some((0, 1)));
+        assert_eq!(headers, row(&["a", "", "b"]));
+        assert_eq!(rows[0], row(&["1", "", "2"]));
+
+        let mut headers = row(&["a", "b"]);
+        let mut rows = vec![row(&["1", "2"])];
+        CsvTableDelegate::insert_column_before_in(&mut headers, &mut rows, None);
+        assert_eq!(headers, row(&["a", "b", ""]));
+        assert_eq!(rows[0], row(&["1", "2", ""]));
+    }
+
+    #[test]
+    fn test_delete_column_in_selected_last_and_empty() {
+        let mut headers = row(&["a", "b", "c"]);
+        let mut rows = vec![row(&["1", "2", "3"])];
+        assert!(CsvTableDelegate::delete_column_in(
+            &mut headers,
+            &mut rows,
+            Some((0, 2))
+        ));
+        assert_eq!(headers, row(&["a", "c"]));
+        assert_eq!(rows[0], row(&["1", "3"]));
+
+        // None deletes the last column.
+        let mut headers = row(&["a", "b", "c"]);
+        let mut rows = vec![row(&["1", "2", "3"])];
+        assert!(CsvTableDelegate::delete_column_in(
+            &mut headers,
+            &mut rows,
+            None
+        ));
+        assert_eq!(headers, row(&["a", "b"]));
+        assert_eq!(rows[0], row(&["1", "2"]));
+
+        let mut headers: Vec<String> = Vec::new();
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        assert!(!CsvTableDelegate::delete_column_in(
+            &mut headers,
+            &mut rows,
+            None
+        ));
+    }
+
+    #[test]
+    fn test_move_column_in_reorders_header_and_cells() {
+        let mut headers = row(&["a", "b", "c"]);
+        let mut rows = vec![row(&["1", "2", "3"])];
+        // Grid index 1 is data column 0; move it after data column 2.
+        assert!(CsvTableDelegate::move_column_in(
+            &mut headers,
+            &mut rows,
+            1,
+            3
+        ));
+        assert_eq!(headers, row(&["b", "c", "a"]));
+        assert_eq!(rows[0], row(&["2", "3", "1"]));
+    }
+
+    #[test]
+    fn test_move_column_in_rejects_row_number_column_and_noops() {
+        let (mut headers, mut rows) = sample();
+
+        // The row-number column (grid index 0) cannot be moved.
+        assert!(!CsvTableDelegate::move_column_in(
+            &mut headers,
+            &mut rows,
+            0,
+            2
+        ));
+        // Out-of-bounds source.
+        assert!(!CsvTableDelegate::move_column_in(
+            &mut headers,
+            &mut rows,
+            9,
+            1
+        ));
+        // Same source and destination.
+        assert!(!CsvTableDelegate::move_column_in(
+            &mut headers,
+            &mut rows,
+            1,
+            1
+        ));
+        assert_eq!(headers, row(&["a", "b"]));
+        assert_eq!(rows, vec![row(&["1", "2"]), row(&["3", "4"])]);
+    }
+
+    #[test]
+    fn test_edits_round_trip_through_serialize_csv() {
+        let (mut headers, mut rows) = sample();
+        CsvTableDelegate::insert_row_below_in(&headers, &mut rows, Some((0, 1)));
+        CsvTableDelegate::apply_edit_in(
+            &mut headers,
+            &mut rows,
+            EditTarget::Cell(1, 0),
+            "5".to_string(),
+        );
+        assert_eq!(
+            serialize_csv(&headers, &rows, b','),
+            Ok("a,b\n1,2\n5,\n3,4\n".to_string())
+        );
     }
 }
