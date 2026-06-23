@@ -1,7 +1,10 @@
 use super::begin::{InitialSyncOutcome, initial_synchronization};
 use super::error::SynchronizationStatus;
 use super::limits::store_server_max_file_size;
-use super::version::{VersionCompatibility, compare_required_version};
+use super::version::{
+    FULGURANT_VERSION_WITHOUT_HEADER, RECOMMENDED_FULGURANT_VERSION, VersionCompatibility,
+    compare_required_version,
+};
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::SyncState;
 use crate::fulgur::sync::sse::{SseAgents, SseShareState, connect_sse};
@@ -21,7 +24,7 @@ use std::time::{Duration, Instant};
 /// ### Arguments
 /// - `entity`: The Fulgur entity
 /// - `cx`: The application context.
-pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &gpui::App) {
+pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &mut gpui::App) {
     if !entity
         .read(cx)
         .settings
@@ -76,6 +79,37 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             );
         });
     }
+    nudge_windows_during_startup_sync(cx);
+}
+
+/// Periodically re-render all windows for a few seconds after startup sync begins.
+///
+/// ### Description
+/// The startup bootstrap runs on background threads that cannot trigger a GPUI
+/// render, so any notification they queue (such as a version-mismatch warning)
+/// would sit undrained until an unrelated render occurs.
+///
+/// ### Arguments
+/// - `cx`: The application context used to spawn the foreground task.
+fn nudge_windows_during_startup_sync(cx: &mut gpui::App) {
+    cx.spawn(async move |cx| {
+        for _ in 0..12 {
+            cx.background_executor()
+                .timer(Duration::from_millis(250))
+                .await;
+            cx.update(|cx| {
+                for weak in cx
+                    .global::<crate::fulgur::window_manager::WindowManager>()
+                    .get_all_windows()
+                {
+                    if let Some(entity) = weak.upgrade() {
+                        entity.update(cx, |_, cx| cx.notify());
+                    }
+                }
+            });
+        }
+    })
+    .detach();
 }
 
 /// Run the bootstrap sequence for a single profile in a background thread.
@@ -129,6 +163,7 @@ fn run_profile_bootstrap(
         Ok(InitialSyncOutcome {
             begin: begin_response,
             min_fulgur_version,
+            fulgurant_version,
         }) => {
             log::info!("Profile '{}': connected to sync server", profile.name);
             set_sync_server_connection_status(
@@ -139,12 +174,17 @@ fn run_profile_bootstrap(
                 &sync_state.max_file_size_bytes,
                 begin_response.max_file_size_bytes,
             );
-            if let Some(notification) = record_server_min_fulgur_version(
+            // Record both directions independently; either or both version
+            // warnings may be queued for display.
+            let notifications = record_versions_and_build_notifications(
                 &sync_state.server_min_fulgur_version,
+                &sync_state.server_version,
                 &profile.name,
                 min_fulgur_version,
-            ) {
-                *sync_state.pending_notification.lock() = Some(notification);
+                fulgurant_version,
+            );
+            if !notifications.is_empty() {
+                sync_state.pending_notification.lock().extend(notifications);
             }
             {
                 let mut device_name = sync_state.device_name.lock();
@@ -207,6 +247,39 @@ fn run_profile_bootstrap(
     }
 }
 
+/// Record both versions advertised by a begin response and build an update
+/// notification for each direction whose gap requires one.
+///
+/// ### Arguments
+/// - `server_min_fulgur_slot`: Per-profile storage for the server's `min_fulgur_version`.
+/// - `server_version_slot`: Per-profile storage for the connected Fulgurant version.
+/// - `profile_name`: Profile name used in the notification text.
+/// - `min_fulgur_version`: The minimum Fulgur version advertised by the server, if any.
+/// - `fulgurant_version`: The Fulgurant version advertised by the server, if any.
+///
+/// ### Returns
+/// - `Vec<(NotificationType, SharedString)>`: Zero, one, or two update notifications.
+fn record_versions_and_build_notifications(
+    server_min_fulgur_slot: &Arc<Mutex<Option<String>>>,
+    server_version_slot: &Arc<Mutex<Option<String>>>,
+    profile_name: &str,
+    min_fulgur_version: Option<String>,
+    fulgurant_version: Option<String>,
+) -> Vec<(NotificationType, SharedString)> {
+    let mut notifications = Vec::new();
+    if let Some(notification) =
+        record_server_min_fulgur_version(server_min_fulgur_slot, profile_name, min_fulgur_version)
+    {
+        notifications.push(notification);
+    }
+    if let Some(notification) =
+        record_fulgurant_version(server_version_slot, profile_name, fulgurant_version)
+    {
+        notifications.push(notification);
+    }
+    notifications
+}
+
 /// Store the server's advertised minimum Fulgur version and decide whether the
 /// running Fulgur is too old to keep up with it.
 ///
@@ -236,6 +309,42 @@ pub fn record_server_min_fulgur_version(
     } else {
         None
     }
+}
+
+/// Store the connected Fulgurant version and decide whether it is too old for
+/// the version of Fulgurant this Fulgur build is best paired with.
+///
+///
+/// ### Arguments
+/// - `slot`: Per-profile storage for the connected Fulgurant version (`server_version`).
+/// - `profile_name`: Profile name used in the notification text.
+/// - `fulgurant_version`: The Fulgurant version advertised by the server, if any.
+///
+/// ### Returns
+/// - `Some((NotificationType, SharedString))`: An "update Fulgurant" notification.
+/// - `None`: The connected Fulgurant is recent enough.
+pub fn record_fulgurant_version(
+    slot: &Arc<Mutex<Option<String>>>,
+    profile_name: &str,
+    fulgurant_version: Option<String>,
+) -> Option<(NotificationType, SharedString)> {
+    let effective = fulgurant_version
+        .as_deref()
+        .unwrap_or(FULGURANT_VERSION_WITHOUT_HEADER);
+    let notification = if compare_required_version(effective, RECOMMENDED_FULGURANT_VERSION)
+        == VersionCompatibility::UpdateRequired
+    {
+        Some((
+            NotificationType::Warning,
+            SharedString::from(format!(
+                "{profile_name}: Fulgur works best with Fulgurant v{RECOMMENDED_FULGURANT_VERSION} or newer (this server runs v{effective}). Please update Fulgurant."
+            )),
+        ))
+    } else {
+        None
+    };
+    *slot.lock() = fulgurant_version;
+    notification
 }
 
 /// Set the synchronization status of the sync server
@@ -274,13 +383,15 @@ pub fn perform_initial_synchronization(profile: ServerProfile, cx: &mut App) {
     let pending_notification = sync_state.pending_notification.clone();
     let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
     let server_min_fulgur_version = sync_state.server_min_fulgur_version.clone();
+    let server_version = sync_state.server_version.clone();
     thread::spawn(move || {
         let result =
             initial_synchronization(&profile, &token_state, &http_agent, &pending_ack_share_ids);
-        let (notification, status) = match result {
+        let (notifications, status) = match result {
             Ok(InitialSyncOutcome {
                 begin: begin_response,
                 min_fulgur_version,
+                fulgurant_version,
             }) => {
                 store_server_max_file_size(
                     &max_file_size_bytes,
@@ -294,33 +405,35 @@ pub fn perform_initial_synchronization(profile: ServerProfile, cx: &mut App) {
                     let mut files = pending_shared_files.lock();
                     *files = begin_response.shares;
                 }
-                let notification = record_server_min_fulgur_version(
+                let mut notifications = record_versions_and_build_notifications(
                     &server_min_fulgur_version,
+                    &server_version,
                     &profile_name,
                     min_fulgur_version,
-                )
-                .unwrap_or_else(|| {
-                    (
+                    fulgurant_version,
+                );
+                if notifications.is_empty() {
+                    notifications.push((
                         NotificationType::Success,
                         SharedString::from(format!(
                             "{profile_name}: Connection successful as {}",
                             begin_response.device_name
                         )),
-                    )
-                });
-                (notification, SynchronizationStatus::Connected)
+                    ));
+                }
+                (notifications, SynchronizationStatus::Connected)
             }
             Err(e) => (
-                (
+                vec![(
                     NotificationType::Error,
                     SharedString::from(format!("{profile_name}: Connection failed: {e}")),
-                ),
+                )],
                 SynchronizationStatus::from_error(&e),
             ),
         };
         set_sync_server_connection_status(&connection_status, status);
         *connecting_since.lock() = None;
-        *pending_notification.lock() = Some(notification);
+        pending_notification.lock().extend(notifications);
     });
 }
 
@@ -353,6 +466,7 @@ pub fn perform_initial_synchronization_with_progress(
     let pending_notification = sync_state.pending_notification.clone();
     let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
     let server_min_fulgur_version = sync_state.server_min_fulgur_version.clone();
+    let server_version = sync_state.server_version.clone();
 
     let done = Arc::new(AtomicBool::new(false));
     let done_for_thread = Arc::clone(&done);
@@ -382,10 +496,11 @@ pub fn perform_initial_synchronization_with_progress(
             return;
         }
 
-        let (notification, status) = match result {
+        let (notifications, status) = match result {
             Ok(InitialSyncOutcome {
                 begin: begin_response,
                 min_fulgur_version,
+                fulgurant_version,
             }) => {
                 store_server_max_file_size(
                     &max_file_size_bytes,
@@ -399,33 +514,35 @@ pub fn perform_initial_synchronization_with_progress(
                     let mut files = pending_shared_files.lock();
                     *files = begin_response.shares;
                 }
-                let notification = record_server_min_fulgur_version(
+                let mut notifications = record_versions_and_build_notifications(
                     &server_min_fulgur_version,
+                    &server_version,
                     &profile_name,
                     min_fulgur_version,
-                )
-                .unwrap_or_else(|| {
-                    (
+                    fulgurant_version,
+                );
+                if notifications.is_empty() {
+                    notifications.push((
                         NotificationType::Success,
                         SharedString::from(format!(
                             "{profile_name}: Connection successful as {}",
                             begin_response.device_name
                         )),
-                    )
-                });
-                (notification, SynchronizationStatus::Connected)
+                    ));
+                }
+                (notifications, SynchronizationStatus::Connected)
             }
             Err(e) => (
-                (
+                vec![(
                     NotificationType::Error,
                     SharedString::from(format!("{profile_name}: Connection failed: {e}")),
-                ),
+                )],
                 SynchronizationStatus::from_error(&e),
             ),
         };
         set_sync_server_connection_status(&connection_status, status);
         *connecting_since.lock() = None;
-        *pending_notification.lock() = Some(notification);
+        pending_notification.lock().extend(notifications);
         done_for_thread.store(true, Ordering::Release);
     });
 

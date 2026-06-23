@@ -241,7 +241,10 @@ impl DecryptionOutcome {
         if let Some((signature, message)) = error_notification {
             let mut last_signature = sync_state.last_share_receive_error_signature.lock();
             if last_signature.as_deref() != Some(signature) {
-                *sync_state.pending_notification.lock() = Some((NotificationType::Error, message));
+                sync_state
+                    .pending_notification
+                    .lock()
+                    .push((NotificationType::Error, message));
                 *last_signature = Some(signature.to_string());
             }
         } else if self.decrypted_count > 0 || self.retry_count == 0 {

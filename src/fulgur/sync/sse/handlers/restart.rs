@@ -4,8 +4,8 @@ use crate::fulgur::{
     settings::ServerProfile,
     sync::synchronization::{
         InitialSyncOutcome, SynchronizationStatus, initial_synchronization,
-        record_server_min_fulgur_version, set_sync_server_connection_status,
-        store_server_max_file_size,
+        record_fulgurant_version, record_server_min_fulgur_version,
+        set_sync_server_connection_status, store_server_max_file_size,
     },
 };
 use gpui::{Context, SharedString, Window};
@@ -164,13 +164,17 @@ impl Fulgur {
                 &pending_ack_share_ids,
             ) {
                 Ok(InitialSyncOutcome {
-                    min_fulgur_version, ..
+                    min_fulgur_version,
+                    fulgurant_version,
+                    ..
                 }) => {
                     let _ = record_server_min_fulgur_version(
                         &server_min_fulgur_version,
                         &profile.name,
                         min_fulgur_version,
                     );
+                    let _ =
+                        record_fulgurant_version(&server_version, &profile.name, fulgurant_version);
                     log::info!(
                         "Profile '{}': initial sync succeeded, starting new SSE",
                         profile.name
@@ -292,6 +296,7 @@ impl Fulgur {
                 Ok(InitialSyncOutcome {
                     begin: begin_response,
                     min_fulgur_version,
+                    fulgurant_version,
                 }) => {
                     store_server_max_file_size(
                         &max_file_size_bytes,
@@ -299,11 +304,14 @@ impl Fulgur {
                     );
                     *device_name.lock() = Some(begin_response.device_name.clone());
                     *pending_shared_files.lock() = begin_response.shares;
-                    let update_notification = record_server_min_fulgur_version(
+                    let min_fulgur_notification = record_server_min_fulgur_version(
                         &server_min_fulgur_version,
                         &profile_name,
                         min_fulgur_version,
                     );
+                    let fulgurant_notification =
+                        record_fulgurant_version(&server_version, &profile_name, fulgurant_version);
+                    let update_notification = min_fulgur_notification.or(fulgurant_notification);
                     let agents = SseAgents {
                         rest: Arc::clone(&http_agent),
                         stream: Arc::clone(&sse_http_agent),
@@ -351,7 +359,7 @@ impl Fulgur {
             };
             set_sync_server_connection_status(&connection_status, status);
             *connecting_since.lock() = None;
-            *pending_notification.lock() = Some(notification);
+            pending_notification.lock().push(notification);
             done_for_thread.store(true, Ordering::Release);
         });
 

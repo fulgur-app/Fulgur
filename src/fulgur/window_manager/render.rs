@@ -30,7 +30,7 @@ impl Fulgur {
         if let Some((notification_type, message)) = self.pending_notification.take() {
             window.push_notification((notification_type, message), cx);
         }
-        // Drain pending notifications from every profile's sync state.
+        // Drain every queued notification from every profile's sync state.
         let pending_notifications: Vec<(
             gpui_component::notification::NotificationType,
             gpui::SharedString,
@@ -38,7 +38,7 @@ impl Fulgur {
             let states = Fulgur::shared_state(cx).sync_states.read();
             states
                 .values()
-                .filter_map(|state| state.pending_notification.lock().take())
+                .flat_map(|state| std::mem::take(&mut *state.pending_notification.lock()))
                 .collect()
         };
         for (notification_type, message) in pending_notifications {

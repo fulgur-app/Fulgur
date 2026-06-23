@@ -2,7 +2,8 @@ use crate::fulgur::{
     Fulgur,
     settings::{AppSettings, MAX_PROFILES, ServerProfile},
     sync::synchronization::{
-        SynchronizationStatus, VersionCompatibility, compare_required_version,
+        FULGURANT_VERSION_WITHOUT_HEADER, RECOMMENDED_FULGURANT_VERSION, SynchronizationStatus,
+        VersionCompatibility, compare_required_version,
     },
     ui::icons::CustomIcon,
     utils::crypto_helper,
@@ -311,7 +312,7 @@ fn render_profile_row(
         .clone()
         .unwrap_or_else(|| "-".to_string());
     let version_label = get_profile_version_display(profile, master_on, cx);
-    let update_warning = get_profile_fulgur_update_warning(profile, master_on, cx).map(|tooltip| {
+    let update_warning = get_profile_version_warning(profile, master_on, cx).map(|tooltip| {
         let warn_id = SharedString::from(format!("profile-row-warn-{}", profile.id));
         let tooltip = SharedString::from(tooltip);
         div()
@@ -538,6 +539,77 @@ fn get_profile_fulgur_update_warning(
             ))
         }
     }
+}
+
+/// Resolve an "update Fulgurant" warning for a profile when the connected
+/// Fulgurant is older than the version this Fulgur build is best paired with.
+///
+/// ### Arguments
+/// - `profile`: The profile to check.
+/// - `master_on`: Whether the master switch is on.
+/// - `cx`: The application context.
+///
+/// ### Returns
+/// - `Some(String)`: A tooltip describing the recommended Fulgurant update.
+/// - `None`: Fulgurant is recent enough, or the profile is not connected.
+fn get_profile_fulgurant_update_warning(
+    profile: &ServerProfile,
+    master_on: bool,
+    cx: &App,
+) -> Option<String> {
+    if !matches!(
+        get_profile_status(profile, master_on, cx),
+        SynchronizationStatus::Connected
+    ) {
+        return None;
+    }
+    let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+    let sync_states = shared.sync_states.read();
+    let reported = sync_states.get(&profile.id)?.server_version.lock().clone();
+    let current = reported.as_deref().map_or_else(
+        || FULGURANT_VERSION_WITHOUT_HEADER.to_string(),
+        |raw| raw.trim().trim_start_matches(['v', 'V']).to_string(),
+    );
+    let required = RECOMMENDED_FULGURANT_VERSION;
+    match compare_required_version(&current, required) {
+        VersionCompatibility::Compatible => None,
+        VersionCompatibility::UpdateRecommended | VersionCompatibility::UpdateRequired => {
+            Some(match reported {
+                Some(_) => format!(
+                    "This server runs Fulgurant v{current}, but Fulgur works best with v{required} or newer. Please update Fulgurant."
+                ),
+                None => format!(
+                    "This server runs an old Fulgurant (pre-0.7.0). Fulgur works best with v{required} or newer. Please update Fulgurant."
+                ),
+            })
+        }
+    }
+}
+
+/// Resolve the combined version-mismatch warning for a profile, covering both
+/// "update Fulgur" (server too new) and "update Fulgurant" (server too old).
+///
+/// ### Arguments
+/// - `profile`: The profile to check.
+/// - `master_on`: Whether the master switch is on.
+/// - `cx`: The application context.
+///
+/// ### Returns
+/// - `Some(String)`: A tooltip with one or both warnings, newline-separated.
+/// - `None`: No version mismatch to surface.
+fn get_profile_version_warning(
+    profile: &ServerProfile,
+    master_on: bool,
+    cx: &App,
+) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(warning) = get_profile_fulgur_update_warning(profile, master_on, cx) {
+        parts.push(warning);
+    }
+    if let Some(warning) = get_profile_fulgurant_update_warning(profile, master_on, cx) {
+        parts.push(warning);
+    }
+    (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
 /// Resolve the foreground/background colors for a status pill.

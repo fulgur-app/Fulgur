@@ -274,7 +274,9 @@ pub(super) fn handle_share_file(
         }
         let summary = format_multi_profile_summary(&outcomes);
         let notification_type = aggregate_notification_type(&outcomes);
-        *pending_notification.lock() = Some((notification_type, SharedString::from(summary)));
+        pending_notification
+            .lock()
+            .push((notification_type, SharedString::from(summary)));
     });
 }
 
@@ -311,6 +313,7 @@ pub(super) fn spawn_profile_device_fetch(
                 Ok(crate::fulgur::sync::synchronization::InitialSyncOutcome {
                     begin: begin_response,
                     min_fulgur_version,
+                    fulgurant_version,
                 }) => {
                     *sync_state.device_name.lock() = Some(begin_response.device_name.clone());
                     *sync_state.pending_shared_files.lock() = begin_response.shares;
@@ -318,12 +321,17 @@ pub(super) fn spawn_profile_device_fetch(
                         &sync_state.max_file_size_bytes,
                         begin_response.max_file_size_bytes,
                     );
-                    // Refresh the stored minimum so the profiles-list warning
-                    // stays current after a reconnect triggered from sharing.
+                    // Refresh the stored versions so the profiles-list warnings
+                    // stay current after a reconnect triggered from sharing.
                     let _ = crate::fulgur::sync::synchronization::record_server_min_fulgur_version(
                         &sync_state.server_min_fulgur_version,
                         &profile.name,
                         min_fulgur_version,
+                    );
+                    let _ = crate::fulgur::sync::synchronization::record_fulgurant_version(
+                        &sync_state.server_version,
+                        &profile.name,
+                        fulgurant_version,
                     );
                     crate::fulgur::sync::synchronization::set_sync_server_connection_status(
                         &sync_state.connection_status,

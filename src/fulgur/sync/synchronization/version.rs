@@ -19,6 +19,10 @@ const MIN_V2_SHARE_FLOW_VERSION: (u64, u64) = (0, 8);
 /// Minimum Fulgurant version this build of Fulgur is best paired with.
 pub const RECOMMENDED_FULGURANT_VERSION: &str = "0.8.0";
 
+/// Version assumed for a Fulgurant server that does not advertise the
+/// `x-fulgurant-version` header.
+pub const FULGURANT_VERSION_WITHOUT_HEADER: &str = "0.6.0";
+
 /// Compatibility verdict between a running component version and a minimum
 /// version required by its counterpart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

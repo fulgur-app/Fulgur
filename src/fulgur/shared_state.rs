@@ -48,8 +48,8 @@ pub struct SyncState {
     pub token_state: Arc<crate::fulgur::sync::access_token::TokenStateManager>,
     /// Last heartbeat time received from this profile's SSE stream.
     pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
-    /// Pending notification from background sync operations (checked in render loop).
-    pub pending_notification: Arc<Mutex<Option<(NotificationType, SharedString)>>>,
+    /// Pending notifications queued by background sync operations, drained in the render loop.
+    pub pending_notification: Arc<Mutex<Vec<(NotificationType, SharedString)>>>,
     /// Last emitted receive-error signature for shared-file processing (error deduplication).
     pub last_share_receive_error_signature: Arc<Mutex<Option<String>>>,
     /// Pending devices list from background fetch (checked in render loop to open share sheet).
@@ -86,7 +86,7 @@ impl SyncState {
             decrypt_in_flight: Arc::new(AtomicBool::new(false)),
             token_state: Arc::new(crate::fulgur::sync::access_token::TokenStateManager::new()),
             last_heartbeat: Arc::new(Mutex::new(None)),
-            pending_notification: Arc::new(Mutex::new(None)),
+            pending_notification: Arc::new(Mutex::new(Vec::new())),
             last_share_receive_error_signature: Arc::new(Mutex::new(None)),
             pending_devices: Arc::new(Mutex::new(None)),
             max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),

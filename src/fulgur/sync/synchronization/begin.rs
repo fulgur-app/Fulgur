@@ -64,6 +64,9 @@ pub struct InitialSyncOutcome {
     /// The `min_fulgur_version` advertised by the v2 begin response, if any.
     /// `None` for legacy v1 servers, which do not advertise it.
     pub min_fulgur_version: Option<String>,
+    /// Raw `x-fulgurant-version` header advertised by the server, if any.
+    /// `None` for Fulgurant before 0.7.0, which does not advertise it.
+    pub fulgurant_version: Option<String>,
 }
 
 /// Parsed `POST /api/v2/begin` response together with the advertised server version.
@@ -287,6 +290,7 @@ fn initial_synchronization_v2(
             max_file_size_bytes: begin_v2.max_file_size_bytes,
         },
         min_fulgur_version,
+        fulgurant_version: version_header,
     })
 }
 
@@ -325,6 +329,11 @@ fn initial_synchronization_v1(
         .header("Authorization", &format!("Bearer {token}"))
         .send_json(payload)
         .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization (v1)"))?;
+    let version_header = response
+        .headers()
+        .get(FULGURANT_VERSION_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let body = match response
         .body_mut()
         .with_config()
@@ -354,5 +363,6 @@ fn initial_synchronization_v1(
     Ok(InitialSyncOutcome {
         begin: begin_response,
         min_fulgur_version: None,
+        fulgurant_version: version_header,
     })
 }

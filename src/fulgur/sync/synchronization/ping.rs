@@ -98,7 +98,7 @@ pub fn perform_ping_with_progress(
                 SharedString::from(format!("{display_name}: Ping failed: {e}")),
             ),
         };
-        *pending_notification.lock() = Some(notification);
+        pending_notification.lock().push(notification);
         done_for_thread.store(true, Ordering::Release);
     });
 
