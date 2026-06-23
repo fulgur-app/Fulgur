@@ -3,8 +3,9 @@ use crate::fulgur::{
     Fulgur,
     settings::ServerProfile,
     sync::synchronization::{
-        SynchronizationStatus, initial_synchronization, set_sync_server_connection_status,
-        store_server_max_file_size,
+        InitialSyncOutcome, SynchronizationStatus, initial_synchronization,
+        record_fulgurant_version, record_server_min_fulgur_version,
+        set_sync_server_connection_status, store_server_max_file_size,
     },
 };
 use gpui::{Context, SharedString, Window};
@@ -152,6 +153,7 @@ impl Fulgur {
         let pending_ack_share_ids = Arc::clone(&sync_state.pending_ack_share_ids);
         let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
         let server_version = Arc::clone(&sync_state.server_version);
+        let server_min_fulgur_version = Arc::clone(&sync_state.server_min_fulgur_version);
         thread::spawn(move || {
             wait_for_previous_sse_thread(old_handle);
             thread::sleep(Duration::from_millis(200));
@@ -161,7 +163,18 @@ impl Fulgur {
                 &http_agent,
                 &pending_ack_share_ids,
             ) {
-                Ok(_) => {
+                Ok(InitialSyncOutcome {
+                    min_fulgur_version,
+                    fulgurant_version,
+                    ..
+                }) => {
+                    let _ = record_server_min_fulgur_version(
+                        &server_min_fulgur_version,
+                        &profile.name,
+                        min_fulgur_version,
+                    );
+                    let _ =
+                        record_fulgurant_version(&server_version, &profile.name, fulgurant_version);
                     log::info!(
                         "Profile '{}': initial sync succeeded, starting new SSE",
                         profile.name
@@ -240,6 +253,7 @@ impl Fulgur {
         let device_name = sync_state.device_name.clone();
         let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
         let server_version = Arc::clone(&sync_state.server_version);
+        let server_min_fulgur_version = Arc::clone(&sync_state.server_min_fulgur_version);
         let profile_name = profile.name.clone();
 
         set_sync_server_connection_status(&connection_status, SynchronizationStatus::Connecting);
@@ -279,17 +293,25 @@ impl Fulgur {
                 &http_agent,
                 &pending_ack_share_ids,
             ) {
-                Ok(begin_response) => {
+                Ok(InitialSyncOutcome {
+                    begin: begin_response,
+                    min_fulgur_version,
+                    fulgurant_version,
+                }) => {
                     store_server_max_file_size(
                         &max_file_size_bytes,
                         begin_response.max_file_size_bytes,
                     );
                     *device_name.lock() = Some(begin_response.device_name.clone());
                     *pending_shared_files.lock() = begin_response.shares;
-                    let msg = format!(
-                        "{profile_name}: Connection successful as {}",
-                        begin_response.device_name
+                    let min_fulgur_notification = record_server_min_fulgur_version(
+                        &server_min_fulgur_version,
+                        &profile_name,
+                        min_fulgur_version,
                     );
+                    let fulgurant_notification =
+                        record_fulgurant_version(&server_version, &profile_name, fulgurant_version);
+                    let update_notification = min_fulgur_notification.or(fulgurant_notification);
                     let agents = SseAgents {
                         rest: Arc::clone(&http_agent),
                         stream: Arc::clone(&sse_http_agent),
@@ -316,10 +338,16 @@ impl Fulgur {
                             log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
                         }
                     }
-                    (
-                        (NotificationType::Success, SharedString::from(msg)),
-                        SynchronizationStatus::Connected,
-                    )
+                    let notification = update_notification.unwrap_or_else(|| {
+                        (
+                            NotificationType::Success,
+                            SharedString::from(format!(
+                                "{profile_name}: Connection successful as {}",
+                                begin_response.device_name
+                            )),
+                        )
+                    });
+                    (notification, SynchronizationStatus::Connected)
                 }
                 Err(e) => {
                     let msg = format!("{profile_name}: Connection failed: {e}");
@@ -331,7 +359,7 @@ impl Fulgur {
             };
             set_sync_server_connection_status(&connection_status, status);
             *connecting_since.lock() = None;
-            *pending_notification.lock() = Some(notification);
+            pending_notification.lock().push(notification);
             done_for_thread.store(true, Ordering::Release);
         });
 

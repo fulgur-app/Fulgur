@@ -421,13 +421,14 @@ fn test_process_window_state_updates_drains_local_and_sync_pending_notifications
                 NotificationType::Warning,
                 "pending from current window".into(),
             ));
-            *Fulgur::shared_state(cx)
+            Fulgur::shared_state(cx)
                 .primary_sync_state()
                 .pending_notification
-                .lock() = Some((
-                NotificationType::Success,
-                "pending from sync background task".into(),
-            ));
+                .lock()
+                .push((
+                    NotificationType::Success,
+                    "pending from sync background task".into(),
+                ));
         });
     });
 
@@ -444,7 +445,7 @@ fn test_process_window_state_updates_drains_local_and_sync_pending_notifications
                     .primary_sync_state()
                     .pending_notification
                     .lock()
-                    .is_none(),
+                    .is_empty(),
                 "sync pending notification must be drained during render processing"
             );
         });

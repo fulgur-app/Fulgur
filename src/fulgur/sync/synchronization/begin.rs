@@ -33,7 +33,8 @@ use std::sync::Arc;
 /// requests fail (network failure, authentication failure, or invalid response).
 ///
 /// ### Returns
-/// - `Ok(BeginResponse)`: Device name, max file size, and pending shares
+/// - `Ok(InitialSyncOutcome)`: Begin response plus the server's advertised
+///   minimum supported Fulgur version (v2 only)
 /// - `Err(SynchronizationError)`: If both v2 and v1 begin calls failed
 // The ack set is always the default-hasher `HashSet<String>` owned by `SyncState`;
 // generalizing over `BuildHasher` would only add noise.
@@ -43,7 +44,7 @@ pub fn initial_synchronization(
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
     pending_ack_share_ids: &Arc<Mutex<HashSet<String>>>,
-) -> Result<BeginResponse, SynchronizationError> {
+) -> Result<InitialSyncOutcome, SynchronizationError> {
     match initial_synchronization_v2(profile, token_state, http_agent, pending_ack_share_ids) {
         Ok(response) => Ok(response),
         Err(SynchronizationError::ServerError(404)) => {
@@ -54,6 +55,18 @@ pub fn initial_synchronization(
         }
         Err(e) => Err(e),
     }
+}
+
+/// Outcome of an initial synchronization.
+pub struct InitialSyncOutcome {
+    /// Device name, max file size, and successfully fetched pending shares.
+    pub begin: BeginResponse,
+    /// The `min_fulgur_version` advertised by the v2 begin response, if any.
+    /// `None` for legacy v1 servers, which do not advertise it.
+    pub min_fulgur_version: Option<String>,
+    /// Raw `x-fulgurant-version` header advertised by the server, if any.
+    /// `None` for Fulgurant before 0.7.0, which does not advertise it.
+    pub fulgurant_version: Option<String>,
 }
 
 /// Parsed `POST /api/v2/begin` response together with the advertised server version.
@@ -236,18 +249,19 @@ fn fetch_shares_for_ids(
 /// - `pending_ack_share_ids`: Ack set the v2 read/ack flow registers fetched ids into
 ///
 /// ### Returns
-/// - `Ok(BeginResponse)`: Device name, max file size, and successfully fetched pending shares
+/// - `Ok(InitialSyncOutcome)`: Begin response and advertised minimum Fulgur version
 /// - `Err(SynchronizationError)`: If the v2 begin call failed or returned an invalid response
 fn initial_synchronization_v2(
     profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
     pending_ack_share_ids: &Arc<Mutex<HashSet<String>>>,
-) -> Result<BeginResponse, SynchronizationError> {
+) -> Result<InitialSyncOutcome, SynchronizationError> {
     let BeginV2Outcome {
         response: begin_v2,
         version_header,
     } = perform_begin_v2(profile, token_state, http_agent)?;
+    let min_fulgur_version = begin_v2.min_fulgur_version.clone();
     let use_v2_flow = version_supports_v2_share_flow(version_header.as_deref());
     let server_max_file_size = resolve_server_max_file_size(begin_v2.max_file_size_bytes);
     let shares = fetch_shares_for_ids(
@@ -269,10 +283,14 @@ fn initial_synchronization_v2(
         begin_v2.share_ids.len(),
         shares.len()
     );
-    Ok(BeginResponse {
-        device_name: begin_v2.device_name,
-        shares,
-        max_file_size_bytes: begin_v2.max_file_size_bytes,
+    Ok(InitialSyncOutcome {
+        begin: BeginResponse {
+            device_name: begin_v2.device_name,
+            shares,
+            max_file_size_bytes: begin_v2.max_file_size_bytes,
+        },
+        min_fulgur_version,
+        fulgurant_version: version_header,
     })
 }
 
@@ -289,13 +307,14 @@ fn initial_synchronization_v2(
 /// - `http_agent`: Shared HTTP agent for connection pooling
 ///
 /// ### Returns
-/// - `Ok(BeginResponse)`: Device name, max file size, and pending shares
+/// - `Ok(InitialSyncOutcome)`: Begin response with no advertised minimum Fulgur
+///   version (legacy v1 servers do not advertise one)
 /// - `Err(SynchronizationError)`: If the v1 begin call failed or returned an invalid response
 fn initial_synchronization_v1(
     profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
-) -> Result<BeginResponse, SynchronizationError> {
+) -> Result<InitialSyncOutcome, SynchronizationError> {
     let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
@@ -310,6 +329,11 @@ fn initial_synchronization_v1(
         .header("Authorization", &format!("Bearer {token}"))
         .send_json(payload)
         .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization (v1)"))?;
+    let version_header = response
+        .headers()
+        .get(FULGURANT_VERSION_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let body = match response
         .body_mut()
         .with_config()
@@ -336,5 +360,9 @@ fn initial_synchronization_v1(
         "Initial synchronization (v1) successful with {} shared files",
         begin_response.shares.len()
     );
-    Ok(begin_response)
+    Ok(InitialSyncOutcome {
+        begin: begin_response,
+        min_fulgur_version: None,
+        fulgurant_version: version_header,
+    })
 }
