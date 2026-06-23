@@ -16,6 +16,9 @@ const MIN_PER_ID_FETCH_VERSION: (u64, u64) = (0, 7);
 /// share flow (`GET /api/v2/shares/:id` + `POST /api/v2/shares/:id/successful`).
 const MIN_V2_SHARE_FLOW_VERSION: (u64, u64) = (0, 8);
 
+/// Minimum Fulgurant version this build of Fulgur is best paired with.
+pub const RECOMMENDED_FULGURANT_VERSION: &str = "0.8.0";
+
 /// Parse the advertised Fulgurant version header into a `(major, minor)` pair.
 ///
 /// ### Arguments
@@ -64,7 +67,15 @@ pub fn version_supports_v2_share_flow(version_header: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{version_supports_per_id_fetch, version_supports_v2_share_flow};
+    use super::{
+        RECOMMENDED_FULGURANT_VERSION, version_supports_per_id_fetch,
+        version_supports_v2_share_flow,
+    };
+
+    #[test]
+    fn recommended_fulgurant_version_is_valid_semver() {
+        assert!(semver::Version::parse(RECOMMENDED_FULGURANT_VERSION).is_ok());
+    }
 
     #[test]
     fn absent_header_falls_back_to_bulk() {

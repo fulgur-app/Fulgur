@@ -19,5 +19,6 @@ pub use limits::{
 };
 pub use ping::{perform_ping_with_progress, ping_server};
 pub use version::{
-    FULGURANT_VERSION_HEADER, version_supports_per_id_fetch, version_supports_v2_share_flow,
+    FULGURANT_VERSION_HEADER, RECOMMENDED_FULGURANT_VERSION, version_supports_per_id_fetch,
+    version_supports_v2_share_flow,
 };
