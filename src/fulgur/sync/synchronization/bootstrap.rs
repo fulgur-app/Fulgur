@@ -1,6 +1,7 @@
-use super::begin::initial_synchronization;
+use super::begin::{InitialSyncOutcome, initial_synchronization};
 use super::error::SynchronizationStatus;
 use super::limits::store_server_max_file_size;
+use super::version::{VersionCompatibility, compare_required_version};
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::SyncState;
 use crate::fulgur::sync::sse::{SseAgents, SseShareState, connect_sse};
@@ -125,7 +126,10 @@ fn run_profile_bootstrap(
         http_agent,
         &sync_state.pending_ack_share_ids,
     ) {
-        Ok(begin_response) => {
+        Ok(InitialSyncOutcome {
+            begin: begin_response,
+            min_fulgur_version,
+        }) => {
             log::info!("Profile '{}': connected to sync server", profile.name);
             set_sync_server_connection_status(
                 &sync_state.connection_status,
@@ -135,6 +139,13 @@ fn run_profile_bootstrap(
                 &sync_state.max_file_size_bytes,
                 begin_response.max_file_size_bytes,
             );
+            if let Some(notification) = record_server_min_fulgur_version(
+                &sync_state.server_min_fulgur_version,
+                &profile.name,
+                min_fulgur_version,
+            ) {
+                *sync_state.pending_notification.lock() = Some(notification);
+            }
             {
                 let mut device_name = sync_state.device_name.lock();
                 *device_name = Some(begin_response.device_name);
@@ -196,6 +207,37 @@ fn run_profile_bootstrap(
     }
 }
 
+/// Store the server's advertised minimum Fulgur version and decide whether the
+/// running Fulgur is too old to keep up with it.
+///
+/// ### Arguments
+/// - `slot`: Per-profile storage for the server's advertised `min_fulgur_version`.
+/// - `profile_name`: Profile name used in the notification text.
+/// - `min_fulgur_version`: The minimum Fulgur version advertised by the server, if any.
+///
+/// ### Returns
+/// - `Some((NotificationType, SharedString))`: An "update Fulgur" notification.
+/// - `None`: The running Fulgur is recent enough, or the server advertised no version.
+pub fn record_server_min_fulgur_version(
+    slot: &Arc<Mutex<Option<String>>>,
+    profile_name: &str,
+    min_fulgur_version: Option<String>,
+) -> Option<(NotificationType, SharedString)> {
+    slot.lock().clone_from(&min_fulgur_version);
+    let required = min_fulgur_version?;
+    let current = env!("CARGO_PKG_VERSION");
+    if compare_required_version(current, &required) == VersionCompatibility::UpdateRequired {
+        Some((
+            NotificationType::Warning,
+            SharedString::from(format!(
+                "{profile_name}: this server needs Fulgur v{required} or newer (you have v{current}). Please update Fulgur."
+            )),
+        ))
+    } else {
+        None
+    }
+}
+
 /// Set the synchronization status of the sync server
 ///
 /// ### Arguments
@@ -231,11 +273,15 @@ pub fn perform_initial_synchronization(profile: ServerProfile, cx: &mut App) {
     let pending_ack_share_ids = sync_state.pending_ack_share_ids.clone();
     let pending_notification = sync_state.pending_notification.clone();
     let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
+    let server_min_fulgur_version = sync_state.server_min_fulgur_version.clone();
     thread::spawn(move || {
         let result =
             initial_synchronization(&profile, &token_state, &http_agent, &pending_ack_share_ids);
         let (notification, status) = match result {
-            Ok(begin_response) => {
+            Ok(InitialSyncOutcome {
+                begin: begin_response,
+                min_fulgur_version,
+            }) => {
                 store_server_max_file_size(
                     &max_file_size_bytes,
                     begin_response.max_file_size_bytes,
@@ -248,16 +294,21 @@ pub fn perform_initial_synchronization(profile: ServerProfile, cx: &mut App) {
                     let mut files = pending_shared_files.lock();
                     *files = begin_response.shares;
                 }
-                (
+                let notification = record_server_min_fulgur_version(
+                    &server_min_fulgur_version,
+                    &profile_name,
+                    min_fulgur_version,
+                )
+                .unwrap_or_else(|| {
                     (
                         NotificationType::Success,
                         SharedString::from(format!(
                             "{profile_name}: Connection successful as {}",
                             begin_response.device_name
                         )),
-                    ),
-                    SynchronizationStatus::Connected,
-                )
+                    )
+                });
+                (notification, SynchronizationStatus::Connected)
             }
             Err(e) => (
                 (
@@ -301,6 +352,7 @@ pub fn perform_initial_synchronization_with_progress(
     let pending_ack_share_ids = sync_state.pending_ack_share_ids.clone();
     let pending_notification = sync_state.pending_notification.clone();
     let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
+    let server_min_fulgur_version = sync_state.server_min_fulgur_version.clone();
 
     let done = Arc::new(AtomicBool::new(false));
     let done_for_thread = Arc::clone(&done);
@@ -331,7 +383,10 @@ pub fn perform_initial_synchronization_with_progress(
         }
 
         let (notification, status) = match result {
-            Ok(begin_response) => {
+            Ok(InitialSyncOutcome {
+                begin: begin_response,
+                min_fulgur_version,
+            }) => {
                 store_server_max_file_size(
                     &max_file_size_bytes,
                     begin_response.max_file_size_bytes,
@@ -344,16 +399,21 @@ pub fn perform_initial_synchronization_with_progress(
                     let mut files = pending_shared_files.lock();
                     *files = begin_response.shares;
                 }
-                (
+                let notification = record_server_min_fulgur_version(
+                    &server_min_fulgur_version,
+                    &profile_name,
+                    min_fulgur_version,
+                )
+                .unwrap_or_else(|| {
                     (
                         NotificationType::Success,
                         SharedString::from(format!(
                             "{profile_name}: Connection successful as {}",
                             begin_response.device_name
                         )),
-                    ),
-                    SynchronizationStatus::Connected,
-                )
+                    )
+                });
+                (notification, SynchronizationStatus::Connected)
             }
             Err(e) => (
                 (

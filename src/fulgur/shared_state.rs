@@ -59,6 +59,9 @@ pub struct SyncState {
     /// Raw `x-fulgurant-version` value advertised by this profile's server, if any.
     /// `None` means the server did not advertise a version (Fulgurant before 0.7.0).
     pub server_version: Arc<Mutex<Option<String>>>,
+    /// Minimum Fulgur version this profile's server requires for all its features.
+    /// `None` means the server did not advertise one (legacy v1 server).
+    pub server_min_fulgur_version: Arc<Mutex<Option<String>>>,
     /// SSE channel and worker lifecycle state for this profile.
     pub sse: Arc<Mutex<SseState>>,
 }
@@ -88,6 +91,7 @@ impl SyncState {
             pending_devices: Arc::new(Mutex::new(None)),
             max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),
             server_version: Arc::new(Mutex::new(None)),
+            server_min_fulgur_version: Arc::new(Mutex::new(None)),
             sse: Arc::new(Mutex::new(SseState::with_channel())),
         }
     }
