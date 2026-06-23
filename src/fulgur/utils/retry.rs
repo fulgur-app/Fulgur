@@ -3,7 +3,40 @@
 //! Provides reusable retry logic to handle transient network failures gracefully.
 
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// Granularity of the interruptible sleep poll loop.
+const INTERRUPTIBLE_SLEEP_SLICE: Duration = Duration::from_millis(100);
+
+/// Sleep for a duration while staying responsive to an abort signal.
+///
+/// ### Description
+/// Splits the wait into short slices and polls `should_abort` between each one,
+/// so a long backoff delay can be cancelled promptly instead of blocking the
+/// thread for the full duration. Used by connection loops that must react to a
+/// shutdown flag during exponential backoff.
+///
+/// ### Arguments
+/// - `duration`: The total time to wait.
+/// - `should_abort`: Predicate polled between slices; returning `true` ends the
+///   wait immediately.
+///
+/// ### Returns
+/// - `true`: The wait was cut short because `should_abort` returned `true`.
+/// - `false`: The full duration elapsed without an abort request.
+pub fn interruptible_sleep<F: Fn() -> bool>(duration: Duration, should_abort: F) -> bool {
+    let deadline = Instant::now() + duration;
+    loop {
+        if should_abort() {
+            return true;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        thread::sleep(remaining.min(INTERRUPTIBLE_SLEEP_SLICE));
+    }
+}
 
 /// Configuration for retry behavior
 #[derive(Debug, Clone, Copy)]
@@ -200,8 +233,9 @@ impl BackoffCalculator {
 
 #[cfg(test)]
 mod tests {
-    use super::{BackoffCalculator, RetryConfig, with_retry};
-    use std::time::Duration;
+    use super::{BackoffCalculator, RetryConfig, interruptible_sleep, with_retry};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
 
     #[test]
     fn test_retry_success_first_attempt() {
@@ -334,5 +368,25 @@ mod tests {
         let config = RetryConfig::conservative();
         assert_eq!(config.max_attempts, 2);
         assert!(config.initial_delay >= Duration::from_secs(2));
+    }
+
+    #[test]
+    fn test_interruptible_sleep_waits_full_duration() {
+        let start = Instant::now();
+        let aborted = interruptible_sleep(Duration::from_millis(250), || false);
+        assert!(!aborted);
+        assert!(start.elapsed() >= Duration::from_millis(250));
+    }
+
+    #[test]
+    fn test_interruptible_sleep_aborts_early() {
+        let flag = AtomicBool::new(false);
+        let start = Instant::now();
+        // Run for one slice, then abort on the second poll.
+        let aborted = interruptible_sleep(Duration::from_mins(5), || {
+            flag.swap(true, Ordering::Relaxed)
+        });
+        assert!(aborted);
+        assert!(start.elapsed() < Duration::from_secs(1));
     }
 }
