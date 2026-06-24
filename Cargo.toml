@@ -83,6 +83,8 @@ flate2 = "1.1.9"
 bytes = "1.11.1"
 # Fix RUSTSEC-2026-0098/0099: Name constraint bypass in rustls-webpki
 rustls-webpki = "0.103.13"
+# Fix RUSTSEC-2026-0186: Unchecked pointer offset in memmap2 (via fontdb -> usvg -> gpui)
+memmap2 = "0.9.11"
 
 # Tree-sitter languages
 arborium-ada = "2.17.0"
