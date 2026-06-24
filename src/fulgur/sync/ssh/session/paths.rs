@@ -59,6 +59,21 @@ pub fn home_dir() -> Result<PathBuf, SshError> {
         )
     })?;
 
+    ensure_absolute_home(home)
+}
+
+/// Validate that a resolved home directory is an absolute path.
+///
+/// ### Arguments
+/// - `home`: Candidate home directory resolved from the environment.
+///
+/// ### Errors
+/// Returns `SshError::ConnectionFailed` if `home` is not an absolute path.
+///
+/// ### Returns
+/// - `Ok(PathBuf)`: The unchanged path when it is absolute.
+/// - `Err(SshError::ConnectionFailed)`: When the path is relative.
+fn ensure_absolute_home(home: PathBuf) -> Result<PathBuf, SshError> {
     if !home.is_absolute() {
         return Err(SshError::ConnectionFailed(
             "Resolved home directory is not an absolute path; cannot use it for SSH trust storage."
@@ -103,5 +118,83 @@ fn apply_unix_mode(path: &Path, mode: u32) {
         let mut perms = meta.permissions();
         perms.set_mode(mode);
         let _ = std::fs::set_permissions(path, perms);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ensure_absolute_home, home_dir};
+    use std::path::PathBuf;
+
+    #[test]
+    fn ensure_absolute_home_accepts_absolute_path() {
+        let path = PathBuf::from("/home/user");
+        let result = ensure_absolute_home(path.clone()).expect("absolute path should be accepted");
+        assert_eq!(result, path);
+    }
+
+    #[test]
+    fn ensure_absolute_home_rejects_relative_path() {
+        let result = ensure_absolute_home(PathBuf::from("relative/home"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn home_dir_returns_existing_absolute_path() {
+        let home = home_dir().expect("home directory should resolve in the test environment");
+        assert!(home.is_absolute());
+        assert!(home.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn set_dir_permissions_700_sets_owner_only_mode() {
+        use super::set_dir_permissions_700;
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        set_dir_permissions_700(dir.path());
+
+        let mode = std::fs::metadata(dir.path())
+            .expect("failed to read metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn set_file_permissions_600_sets_owner_only_mode() {
+        use super::set_file_permissions_600;
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let file_path = dir.path().join("secret");
+        std::fs::write(&file_path, b"secret").expect("failed to write file");
+        set_file_permissions_600(&file_path);
+
+        let mode = std::fs::metadata(&file_path)
+            .expect("failed to read metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_unix_mode_sets_requested_mode() {
+        use super::apply_unix_mode;
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let file_path = dir.path().join("entry");
+        std::fs::write(&file_path, b"data").expect("failed to write file");
+        apply_unix_mode(&file_path, 0o640);
+
+        let mode = std::fs::metadata(&file_path)
+            .expect("failed to read metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o640);
     }
 }
