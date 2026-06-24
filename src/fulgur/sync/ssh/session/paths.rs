@@ -128,7 +128,11 @@ mod tests {
 
     #[test]
     fn ensure_absolute_home_accepts_absolute_path() {
+        #[cfg(windows)]
+        let path = PathBuf::from(r"C:\Users\user");
+        #[cfg(not(windows))]
         let path = PathBuf::from("/home/user");
+
         let result = ensure_absolute_home(path.clone()).expect("absolute path should be accepted");
         assert_eq!(result, path);
     }
