@@ -1,9 +1,9 @@
 use super::{
     CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
-    DuplicateTab, ShowInFileManager,
+    CopyPath, DuplicateTab, ShowInFileManager,
 };
 use crate::fulgur::Fulgur;
-use gpui::{Context, Window};
+use gpui::{ClipboardItem, Context, Window};
 use gpui_component::{ActiveTheme, Theme, ThemeRegistry};
 
 impl Fulgur {
@@ -115,6 +115,33 @@ impl Fulgur {
         if let Err(e) = result {
             log::error!("Failed to open file manager: {e}");
         }
+    }
+
+    /// Handle copy path action from context menu.
+    ///
+    /// ### Arguments
+    /// - `action`: The action carrying the tab index
+    /// - `_window`: The window context
+    /// - `cx`: The application context
+    pub fn on_copy_path(
+        &mut self,
+        action: &CopyPath,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab) = self.tabs.get(action.0) else {
+            return;
+        };
+        let Some(editor_tab) = tab.as_editor() else {
+            return;
+        };
+        let Some(file_path) = editor_tab.file_path() else {
+            return;
+        };
+
+        cx.write_to_clipboard(ClipboardItem::new_string(
+            file_path.to_string_lossy().to_string(),
+        ));
     }
 
     /// Handle duplicate tab action from context menu
