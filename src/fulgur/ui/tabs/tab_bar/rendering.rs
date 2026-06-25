@@ -1,6 +1,6 @@
 use super::{
     CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
-    DuplicateTab, SendTabToWindowNoOp, ShowInFileManager, tab_bar_button_factory,
+    CopyPath, DuplicateTab, SendTabToWindowNoOp, ShowInFileManager, tab_bar_button_factory,
 };
 use crate::fulgur::{
     Fulgur,
@@ -546,6 +546,7 @@ impl Fulgur {
                     Box::new(ShowInFileManager(index)),
                     !has_file_path,
                 )
+                .menu_with_disabled("Copy path", Box::new(CopyPath(index)), !has_file_path)
                 .menu_with_disabled(
                     "Duplicate Tab",
                     Box::new(DuplicateTab(index)),

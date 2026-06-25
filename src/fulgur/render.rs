@@ -131,6 +131,7 @@ impl Fulgur {
         register_action!(app_content, cx, ui::tabs::tab_bar::CloseAllTabsAction => on_close_all_tabs_action(&action));
         register_action!(app_content, cx, ui::tabs::tab_bar::CloseAllOtherTabs => on_close_all_other_tabs_action(&action));
         register_action!(app_content, cx, ui::tabs::tab_bar::ShowInFileManager => on_show_in_file_manager(&action));
+        register_action!(app_content, cx, ui::tabs::tab_bar::CopyPath => on_copy_path(&action));
         register_action!(app_content, cx, ui::tabs::tab_bar::DuplicateTab => on_duplicate_tab(&action));
         register_action!(app_content, cx, ui::menus::OpenRecentFile => do_open_recent_file(.0));
         register_action!(app_content, cx, ui::menus::CheckForUpdates => check_for_updates);

@@ -34,6 +34,10 @@ pub struct ShowInFileManager(pub usize);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
+pub struct CopyPath(pub usize);
+
+#[derive(Action, Clone, PartialEq)]
+#[action(namespace = fulgur, no_json)]
 pub struct DuplicateTab(pub usize);
 
 gpui::actions!(fulgur, [CloseAllTabsAction, SendTabToWindowNoOp]);
