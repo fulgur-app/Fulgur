@@ -9,7 +9,7 @@ use crate::fulgur::{
         },
         synchronization::SynchronizationStatus,
     },
-    ui::notifications::progress::{CancelCallback, start_progress},
+    ui::notifications::progress::start_progress,
 };
 use gpui::{App, Entity, SharedString, Window};
 use gpui_component::{WindowExt, notification::NotificationType};
@@ -230,9 +230,10 @@ pub(super) fn handle_share_file(
     });
     window.close_sheet(cx);
     let progress_label = format!("Sharing {}...", share_context.file_name);
-    let cancel_callback: Option<CancelCallback> = Some(Box::new(|_, _| {}));
-    let progress = start_progress(window, cx, progress_label.into(), cancel_callback);
-    let cancel_flag = progress.cancel_flag();
+    // No Cancel button: every per-device upload is dispatched in parallel via
+    // nested `thread::scope` and `ureq` offers no in-flight abort, so a cancel
+    // flag could not actually stop a share once started. See improvement 025.
+    let progress = start_progress(window, cx, progress_label.into(), None);
     std::thread::spawn(move || {
         let _progress = progress;
         let outcomes: Vec<(String, ProfileShareOutcome)> = std::thread::scope(|scope| {
@@ -269,9 +270,6 @@ pub(super) fn handle_share_file(
                 })
                 .collect()
         });
-        if cancel_flag.load(std::sync::atomic::Ordering::Acquire) {
-            return;
-        }
         let summary = format_multi_profile_summary(&outcomes);
         let notification_type = aggregate_notification_type(&outcomes);
         pending_notification
