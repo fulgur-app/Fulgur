@@ -1,4 +1,4 @@
-use super::super::persistence::{TabState, WindowsState, get_file_modified_time};
+use super::super::persistence::{TabState, get_file_modified_time};
 use super::decision::{TabRestoreDecision, determine_tab_restore_strategy};
 use crate::fulgur::{
     Fulgur,
@@ -25,56 +25,60 @@ impl Fulgur {
         // Temporarily disable indent guides during restoration to prevent crash
         let original_indent_guides = self.settings.editor_settings.show_indent_guides;
         self.settings.editor_settings.show_indent_guides = false;
-        if let Ok(windows_state) = WindowsState::load() {
-            if let Some(window_state) = windows_state.windows.get(window_index) {
-                log::debug!(
-                    "State loaded successfully, restoring {} tabs",
-                    window_state.tabs.len()
-                );
-                self.tabs.clear();
-                self.pending_remote_restore.clear();
-                self.inflight_remote_restore.clear();
-                let mut tab_id = 0;
-                for tab_state in &window_state.tabs {
-                    let tab = self.restore_tab_from_state(tab_state.clone(), tab_id, window, cx);
-                    if let Some(editor_tab) = tab {
-                        self.tabs.push(Tab::Editor(editor_tab));
-                        tab_id += 1;
-                    }
+        let window_state = cx
+            .global::<crate::fulgur::shared_state::SharedAppState>()
+            .restore_state
+            .lock()
+            .as_ref()
+            .and_then(|ws| ws.windows.get(window_index).cloned());
+        if let Some(window_state) = window_state {
+            log::debug!(
+                "Restoring {} tabs from startup snapshot",
+                window_state.tabs.len()
+            );
+            self.tabs.clear();
+            self.pending_remote_restore.clear();
+            self.inflight_remote_restore.clear();
+            let mut tab_id = 0;
+            for tab_state in &window_state.tabs {
+                let tab = self.restore_tab_from_state(tab_state.clone(), tab_id, window, cx);
+                if let Some(editor_tab) = tab {
+                    self.tabs.push(Tab::Editor(editor_tab));
+                    tab_id += 1;
                 }
-                let saved_active_editor_id: Option<usize> = window_state
-                    .active_tab_index
-                    .and_then(|idx| self.tabs.get(idx))
-                    .and_then(|t| t.as_editor())
-                    .map(|et| et.id);
-                self.next_tab_id = tab_id;
-                self.insert_preview_tabs_for_markdown(cx);
-                self.active_tab_index = if let Some(target_id) = saved_active_editor_id {
-                    self.tabs
-                        .iter()
-                        .position(|t| t.id() == target_id)
-                        .or(if self.tabs.is_empty() { None } else { Some(0) })
-                } else if !self.tabs.is_empty() {
-                    Some(0)
-                } else {
-                    None
-                };
-
-                if let Some(active_index) = self.active_tab_index
-                    && let Some(active_id) = self.tabs.get(active_index).map(Tab::id)
-                    && self
-                        .tabs
-                        .get(active_index)
-                        .and_then(Tab::as_editor)
-                        .is_some_and(|editor| editor.log_view)
-                {
-                    self.activate_log_view(active_id, window, cx);
-                }
-
-                cx.notify();
             }
+            let saved_active_editor_id: Option<usize> = window_state
+                .active_tab_index
+                .and_then(|idx| self.tabs.get(idx))
+                .and_then(|t| t.as_editor())
+                .map(|et| et.id);
+            self.next_tab_id = tab_id;
+            self.insert_preview_tabs_for_markdown(cx);
+            self.active_tab_index = if let Some(target_id) = saved_active_editor_id {
+                self.tabs
+                    .iter()
+                    .position(|t| t.id() == target_id)
+                    .or(if self.tabs.is_empty() { None } else { Some(0) })
+            } else if !self.tabs.is_empty() {
+                Some(0)
+            } else {
+                None
+            };
+
+            if let Some(active_index) = self.active_tab_index
+                && let Some(active_id) = self.tabs.get(active_index).map(Tab::id)
+                && self
+                    .tabs
+                    .get(active_index)
+                    .and_then(Tab::as_editor)
+                    .is_some_and(|editor| editor.log_view)
+            {
+                self.activate_log_view(active_id, window, cx);
+            }
+
+            cx.notify();
         } else {
-            log::warn!("Failed to load application state, starting fresh");
+            log::warn!("No saved state for window {window_index}, starting fresh");
         }
         if self.tabs.is_empty() {
             log::debug!("No tabs restored, creating initial empty tab");

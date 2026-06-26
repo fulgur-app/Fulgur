@@ -184,7 +184,7 @@ mod tests {
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-            cx.set_global(SharedAppState::new(settings, pending_files));
+            cx.set_global(SharedAppState::new(settings, pending_files, None));
             cx.set_global(WindowManager::new());
         });
         let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);

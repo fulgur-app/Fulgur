@@ -349,6 +349,7 @@ mod tests {
             cx.set_global(SharedAppState::new(
                 Settings::new(),
                 Arc::new(Mutex::new(Vec::new())),
+                None,
             ));
             cx.set_global(WindowManager::new());
         });
