@@ -346,17 +346,21 @@ impl Fulgur {
                 async move |_this, async_window| {
                     async_window
                         .update(|_window, cx| {
-                            target_entity.update(cx, |fulgur, cx| {
-                                if let Some(tab_index) = fulgur.find_tab_by_path(&path) {
-                                    fulgur.tab_scroll_handle.scroll_to_item(tab_index);
-                                    fulgur.active_tab_index = Some(tab_index);
-                                    cx.notify();
-                                }
-                            });
                             for handle in cx.windows() {
                                 if handle.window_id() == target_wid {
                                     handle
-                                        .update(cx, |_, target_window, _| {
+                                        .update(cx, |_, target_window, cx| {
+                                            target_entity.update(cx, |fulgur, cx| {
+                                                if let Some(tab_index) =
+                                                    fulgur.find_tab_by_path(&path)
+                                                {
+                                                    fulgur.set_active_tab(
+                                                        tab_index,
+                                                        target_window,
+                                                        cx,
+                                                    );
+                                                }
+                                            });
                                             target_window.activate_window();
                                         })
                                         .ok();
@@ -413,19 +417,23 @@ impl Fulgur {
                 async move |_this, async_window| {
                     async_window
                         .update(|_window, cx| {
-                            target_entity.update(cx, |fulgur, cx| {
-                                if let Some(tab_index) =
-                                    fulgur.tabs.iter().position(|t| t.title() == title)
-                                {
-                                    fulgur.tab_scroll_handle.scroll_to_item(tab_index);
-                                    fulgur.active_tab_index = Some(tab_index);
-                                    cx.notify();
-                                }
-                            });
                             for handle in cx.windows() {
                                 if handle.window_id() == target_wid {
                                     handle
-                                        .update(cx, |_, target_window, _| {
+                                        .update(cx, |_, target_window, cx| {
+                                            target_entity.update(cx, |fulgur, cx| {
+                                                if let Some(tab_index) = fulgur
+                                                    .tabs
+                                                    .iter()
+                                                    .position(|t| t.title() == title)
+                                                {
+                                                    fulgur.set_active_tab(
+                                                        tab_index,
+                                                        target_window,
+                                                        cx,
+                                                    );
+                                                }
+                                            });
                                             target_window.activate_window();
                                         })
                                         .ok();
