@@ -12,6 +12,7 @@ use fulgur_common::api::sync::{BeginResponse, BeginV2Response, InitialSynchroniz
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Initial synchronization with the server.
 ///
@@ -175,6 +176,9 @@ pub fn list_pending_share_ids_v2(
         .share_ids)
 }
 
+/// Maximum number of concurrent share fetch worker threads.
+const MAX_FETCH_WORKERS: usize = 8;
+
 /// Fetch each announced share by id in parallel, choosing the retrieval endpoint
 /// based on whether the server supports the v2 read/ack flow.
 ///
@@ -197,11 +201,20 @@ fn fetch_shares_for_ids(
     server_max_file_size: u64,
     use_v2_flow: bool,
 ) -> Vec<SharedFileResponse> {
+    if share_ids.is_empty() {
+        return Vec::new();
+    }
+    let worker_count = MAX_FETCH_WORKERS.min(share_ids.len());
+    let next_index = AtomicUsize::new(0);
+    let results = Mutex::new(Vec::with_capacity(share_ids.len()));
     std::thread::scope(|scope| {
-        let handles: Vec<_> = share_ids
-            .iter()
-            .map(|id| {
-                scope.spawn(move || {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let index = next_index.fetch_add(1, Ordering::Relaxed);
+                    let Some(id) = share_ids.get(index) else {
+                        break;
+                    };
                     let result = if use_v2_flow {
                         share::fetch_share_by_id_v2(
                             profile,
@@ -219,25 +232,15 @@ fn fetch_shares_for_ids(
                             server_max_file_size,
                         )
                     };
-                    (id.as_str(), result)
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .filter_map(|h| match h.join() {
-                Ok((_, Ok(s))) => Some(s),
-                Ok((id, Err(e))) => {
-                    log::warn!("Skipping share id {id}: {e}");
-                    None
+                    match result {
+                        Ok(s) => results.lock().push(s),
+                        Err(e) => log::warn!("Skipping share id {id}: {e}"),
+                    }
                 }
-                Err(_) => {
-                    log::error!("Fetch share worker thread panicked");
-                    None
-                }
-            })
-            .collect()
-    })
+            });
+        }
+    });
+    results.into_inner()
 }
 
 /// Initial synchronization via the v2 begin flow.
