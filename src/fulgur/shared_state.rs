@@ -1,5 +1,5 @@
 use crate::fulgur::settings::ProfileId;
-use crate::fulgur::state::StateWriter;
+use crate::fulgur::state::{StateWriter, WindowsState};
 use crate::fulgur::sync::sse::SseState;
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::sync::ssh::pool::SshSessionPool;
@@ -132,6 +132,13 @@ pub struct SharedAppState {
     pub ssh_session_pool: Arc<SshSessionPool>,
     /// Dedicated background writer for `WindowsState` persistence.
     pub state_writer: Arc<StateWriter>,
+    /// In-memory snapshot of `WindowsState` taken once at startup, used to
+    /// restore every window without re-reading `state.json` per window.
+    ///
+    /// Holding the snapshot read-only also closes the consistency window: a
+    /// `save_state` landing between a window's spawn and its restore can no
+    /// longer change what that window sees.
+    pub restore_state: Arc<Mutex<Option<WindowsState>>>,
 }
 
 impl gpui::Global for SharedAppState {}
@@ -143,10 +150,15 @@ impl SharedAppState {
     /// ### Arguments
     /// - `settings`: Already-loaded application settings
     /// - `pending_files_from_macos`: Arc to the pending files queue from macOS open events
+    /// - `restore_state`: Startup snapshot of `WindowsState` shared with every window for restoration
     ///
     /// ### Returns
     /// - `Self`: The new shared app state
-    pub fn new(settings: Settings, pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>) -> Self {
+    pub fn new(
+        settings: Settings,
+        pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
+        restore_state: Option<WindowsState>,
+    ) -> Self {
         let (settings, sync_error) = Self::validate_settings(settings);
         let themes = Self::load_themes();
         let synchronization_status = Self::determine_initial_sync_status(&settings);
@@ -178,6 +190,7 @@ impl SharedAppState {
             ssh_session_cache: Arc::new(Mutex::new(SshCredentialCache::new())),
             ssh_session_pool: Arc::new(SshSessionPool::new()),
             state_writer: Arc::new(StateWriter::new()),
+            restore_state: Arc::new(Mutex::new(restore_state)),
         }
     }
 

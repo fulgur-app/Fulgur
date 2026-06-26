@@ -245,8 +245,23 @@ fn main() {
             );
         }
         fulgur::Fulgur::init(cx, &mut settings);
-        let shared_state =
-            fulgur::shared_state::SharedAppState::new(settings, pending_files.clone());
+        // Load persisted window state once at startup. The snapshot is shared with
+        // every window via SharedAppState so each window restores from the same
+        // in-memory copy instead of re-reading and re-parsing state.json.
+        let windows_state = fulgur::state::WindowsState::load()
+            .ok()
+            .filter(|ws| !ws.windows.is_empty());
+        // Capture per-window bounds before moving the snapshot into shared state,
+        // so window creation can position each window without the snapshot.
+        let restore_bounds: Vec<fulgur::state::SerializedWindowBounds> = windows_state
+            .as_ref()
+            .map(|ws| ws.windows.iter().map(|w| w.window_bounds.clone()).collect())
+            .unwrap_or_default();
+        let shared_state = fulgur::shared_state::SharedAppState::new(
+            settings,
+            pending_files.clone(),
+            windows_state,
+        );
         cx.set_global(shared_state);
         // On Windows, start the IPC listener now that SharedAppState is registered.
         // We grab the two arcs from the global so there's a single source of truth.
@@ -258,25 +273,24 @@ fn main() {
             fulgur::utils::single_instance::start_ipc_listener(pf, pic);
         }
         cx.set_global(fulgur::window_manager::WindowManager::new());
-        let windows_state = fulgur::state::WindowsState::load().ok();
-        if let Some(ws) = windows_state.filter(|ws| !ws.windows.is_empty()) {
-            log::info!("Restoring {} saved window(s)", ws.windows.len());
-            for (index, window_state) in ws.windows.into_iter().enumerate() {
+        if restore_bounds.is_empty() {
+            log::info!("No saved state, creating initial window");
+            cx.spawn(async move |cx| create_window(cx, 0, None, &cli_file_paths))
+                .detach();
+        } else {
+            log::info!("Restoring {} saved window(s)", restore_bounds.len());
+            for (index, window_bounds) in restore_bounds.into_iter().enumerate() {
                 let cli_files = if index == 0 {
                     cli_file_paths.clone()
                 } else {
                     vec![]
                 };
-                let saved_bounds = Some(window_state.window_bounds);
+                let saved_bounds = Some(window_bounds);
                 cx.spawn(async move |cx| {
                     create_window(cx, index, saved_bounds.as_ref(), &cli_files)
                 })
                 .detach();
             }
-        } else {
-            log::info!("No saved state, creating initial window");
-            cx.spawn(async move |cx| create_window(cx, 0, None, &cli_file_paths))
-                .detach();
         }
     });
 }
