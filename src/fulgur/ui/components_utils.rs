@@ -97,8 +97,10 @@ pub fn reveal_in_file_manager_label() -> &'static str {
 /// - `None`: If the time could not be formatted
 pub fn format_system_time(time: SystemTime) -> Option<String> {
     let datetime = OffsetDateTime::from(time);
-    let format =
-        time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]").ok()?;
+    let format = time::format_description::parse_borrowed::<2>(
+        "[year]-[month]-[day] [hour]:[minute]:[second]",
+    )
+    .ok()?;
     datetime.format(&format).ok()
 }
 
