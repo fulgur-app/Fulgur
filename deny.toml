@@ -59,6 +59,7 @@ ignore = [
     "RUSTSEC-2026-0105",  # core2 - unmaintained and yanked (from gpui via rav1e)
     "RUSTSEC-2026-0173",  # proc-macro-error2 - unmaintained (from gpui via stacksafe-macro, and from age via i18n-embed-fl)
     "RUSTSEC-2023-0071",  # rsa - Marvin Attack timing side-channel; no fix available upstream; mandatory dep of ssh-key 0.6.7
+    "RUSTSEC-2026-0192",  # ttf-parser - unmaintained; no safe upgrade available (from gpui via fontdb/cosmic-text/usvg/rustybuzz)
 ]
 
 # Check unmaintained crates in transitive dependencies
