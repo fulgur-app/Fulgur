@@ -1,5 +1,5 @@
 use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
-use tree_sitter_perl_next;
+use ts_parser_perl;
 
 /// Add Perl support to the editor
 pub fn add_perl_support() {
@@ -7,10 +7,10 @@ pub fn add_perl_support() {
         "perl",
         &LanguageConfig::new(
             "perl",
-            tree_sitter_perl_next::LANGUAGE.into(),
+            ts_parser_perl::LANGUAGE.into(),
             vec![],
-            tree_sitter_perl_next::HIGHLIGHTS_QUERY,
-            tree_sitter_perl_next::INJECTIONS_QUERY,
+            ts_parser_perl::HIGHLIGHTS_QUERY,
+            ts_parser_perl::INJECTIONS_QUERY,
             "",
         ),
     );
