@@ -8,7 +8,7 @@ use gpui_component::text::TextViewState;
 use std::collections::HashSet;
 
 impl Fulgur {
-    /// Open or close the Markdown preview tab for the active editor tab.
+    /// Open or close the Markdown preview tab.
     ///
     /// ### Arguments
     /// - `window`: The window context
@@ -19,10 +19,12 @@ impl Fulgur {
         {
             return;
         }
-        let Some(editor_tab) = self.get_active_editor_tab() else {
-            return;
+        let active_tab = self.active_tab_index.and_then(|index| self.tabs.get(index));
+        let editor_id = match active_tab {
+            Some(Tab::Editor(editor_tab)) => editor_tab.id,
+            Some(Tab::MarkdownPreview(preview_tab)) => preview_tab.source_tab_id,
+            _ => return,
         };
-        let editor_id = editor_tab.id;
         if let Some(preview_id) = self
             .tabs
             .iter()
@@ -46,9 +48,8 @@ impl Fulgur {
                 view_state,
             });
             self.tabs.insert(editor_pos + 1, preview_tab);
-            self.pending_tab_scroll = Some(editor_pos + 1);
             self.next_tab_id += 1;
-            cx.notify();
+            self.set_active_tab(editor_pos + 1, window, cx);
         }
     }
 
