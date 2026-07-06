@@ -60,6 +60,10 @@ ignore = [
     "RUSTSEC-2026-0173",  # proc-macro-error2 - unmaintained (from gpui via stacksafe-macro, and from age via i18n-embed-fl)
     "RUSTSEC-2023-0071",  # rsa - Marvin Attack timing side-channel; no fix available upstream; mandatory dep of ssh-key 0.6.7
     "RUSTSEC-2026-0192",  # ttf-parser - unmaintained; no safe upgrade available (from gpui via fontdb/cosmic-text/usvg/rustybuzz)
+    # quick-xml DoS advisories - Linux-only, build/protocol XML parsing of trusted local data, not the untrusted remote XML in the advisory threat model.
+    # Cannot upgrade: xcb (^0.30) and wayland-scanner (^0.39) pin incompatible ranges and are locked via the pinned gpui/Zed revision.
+    "RUSTSEC-2026-0194",  # quick-xml - quadratic runtime on duplicate attribute names (from gpui via xcb and wayland-scanner)
+    "RUSTSEC-2026-0195",  # quick-xml - unbounded namespace-declaration allocation in NsReader (from gpui via wayland-scanner)
 ]
 
 # Check unmaintained crates in transitive dependencies
