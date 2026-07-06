@@ -70,9 +70,9 @@ dependencies = [
  "tree-sitter-haskell",
  "tree-sitter-ocaml",
  "tree-sitter-pascal",
- "tree-sitter-perl-next",
  "tree-sitter-powershell",
  "tree-sitter-r",
+ "ts-parser-perl",
  "ureq",
  "url",
  "urlencoding",
@@ -8027,16 +8027,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tree-sitter-perl-next"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97b02c571f4d63663ade506b1f81dd9f78e37a0014268c521b6e75df0603d911"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
 name = "tree-sitter-php"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8195,6 +8185,16 @@ dependencies = [
  "arc-swap",
  "serde",
  "stable_deref_trait",
+]
+
+[[package]]
+name = "ts-parser-perl"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d125f7bfdd1fd82a7e87d2e85793f486ad1b5f465144e9e22132dbe5bd80e694"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
 ]
 
 [[package]]
