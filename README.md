@@ -63,7 +63,7 @@ Version 0.9.0 introduces 2 new modes: CSV mode **opens CSV files into an easy to
 Fulgur is currently in alpha development. While it has been stable in testing, several features are still being implemented and issues remain to be resolved:
 
 * DONE in 0.6.0 ~~Drag and drop support~~
-* Multi Fulgurant sync server support
+* DONE in 0.8.0 ~~Multi Fulgurant sync server support~~
 * DONE in 0.3.0 ~~Multi-windows support~~
 * CONTINUED in 0.5.0 Syntax highlighting for additional languages
 * DONE in 0.2.0 ~~Sync mode functionality~~
