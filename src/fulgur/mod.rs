@@ -45,11 +45,11 @@ pub struct Fulgur {
     pub color_picker_bar_state: ColorPickerBarState, // Color picker bar state
     pub jump_to_line_input: Entity<InputState>,      // Input for jumping to a line in the editor
     pending_jump: Option<editor_tab::Jump>,          // Pending jump to line action
-    pub settings: Settings, // The settings for the application (local copy for fast access)
+    pub settings: Settings, // The settings for the application (local snapshot, refreshed by the SharedAppState observer)
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
-    local_settings_version: u64, // Track the version of settings this window has loaded
-    rendered_tabs: HashSet<usize>, // Track which tabs have been rendered
-    tabs_pending_update: HashSet<usize>, // Track tabs that need settings update on next render
+    _shared_state_observation: Subscription, // Global observer keeping the local settings snapshot in sync with SharedAppState
+    rendered_tabs: HashSet<usize>,           // Track which tabs have been rendered
+    tabs_pending_update: HashSet<usize>,     // Track tabs that need settings update on next render
     editor_modified_subscriptions: HashMap<usize, (EntityId, Subscription)>, // Per-editor (subscribed content entity id, subscription) for incremental modified-state updates
     markdown_preview_cache: HashMap<usize, SharedString>, // Cached markdown source text keyed by source editor tab id
     markdown_preview_to_refresh: HashSet<usize>, // Source tab ids whose cached preview text is stale and must be refreshed on next read

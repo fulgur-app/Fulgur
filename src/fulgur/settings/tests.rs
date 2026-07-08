@@ -765,13 +765,13 @@ fn load_from_path_returns_error_when_both_primary_and_backup_are_corrupted() {
 }
 
 #[cfg(feature = "gpui-test-support")]
-mod gpui_settings_versioning_tests {
+mod gpui_settings_propagation_tests {
     use crate::fulgur::{
         Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
     use gpui::{AppContext, BorrowAppContext, Entity, TestAppContext, WindowId, WindowOptions};
     use parking_lot::Mutex;
-    use std::{cell::RefCell, path::PathBuf, sync::Arc, sync::atomic::Ordering};
+    use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
     /// Initialize shared globals required by `Fulgur::new` for GPUI tests.
     ///
@@ -837,44 +837,36 @@ mod gpui_settings_versioning_tests {
     }
 
     #[gpui::test]
-    fn test_update_and_propagate_settings_increments_shared_version_and_marks_window(
+    fn test_update_and_propagate_settings_publishes_to_shared_state_and_marks_window(
         cx: &mut TestAppContext,
     ) {
         setup_test_globals(cx);
         let (window_id, fulgur) = open_window_with_fulgur(cx);
         register_window_in_global_manager(cx, window_id, &fulgur);
         cx.update(|cx| {
-            let starting_shared_version = cx
-                .global::<SharedAppState>()
-                .settings_version
-                .load(Ordering::Relaxed);
-            assert_eq!(starting_shared_version, 0);
             fulgur.update(cx, |this, cx| {
                 this.settings.app_settings.theme = "Tokyo Night".into();
                 this.settings.app_settings.confirm_exit = false;
                 this.settings_changed = false;
                 this.update_and_propagate_settings(cx)
                     .expect("settings update should succeed");
-                assert_eq!(this.local_settings_version, 1);
                 assert!(this.settings_changed);
             });
-            let shared = cx.global::<SharedAppState>();
-            let shared_version = shared.settings_version.load(Ordering::Relaxed);
-            let shared_settings = shared.settings.lock().clone();
-            assert_eq!(shared_version, 1);
+            let shared_settings = cx.global::<SharedAppState>().settings.clone();
             assert_eq!(shared_settings.app_settings.theme, "Tokyo Night");
             assert!(!shared_settings.app_settings.confirm_exit);
         });
     }
 
     #[gpui::test]
-    fn test_synchronize_settings_from_other_windows_applies_newer_shared_version(
-        cx: &mut TestAppContext,
-    ) {
+    fn test_settings_observer_applies_shared_settings_to_other_windows(cx: &mut TestAppContext) {
         setup_test_globals(cx);
         let (_window_id_one, fulgur_one) = open_window_with_fulgur(cx);
         let (_window_id_two, fulgur_two) = open_window_with_fulgur(cx);
         cx.update(|cx| {
+            fulgur_two.update(cx, |this, _cx| {
+                this.settings_changed = false;
+            });
             fulgur_one.update(cx, |this, cx| {
                 this.settings.app_settings.theme = "Catppuccin Frappe".into();
                 this.settings.editor_settings.show_line_numbers = false;
@@ -884,43 +876,35 @@ mod gpui_settings_versioning_tests {
         });
         cx.run_until_parked();
         cx.update(|cx| {
-            let before_sync_theme = fulgur_two.read(cx).settings.app_settings.theme.clone();
-            assert_ne!(
-                before_sync_theme, "Catppuccin Frappe",
-                "target window should not reflect shared settings before synchronization step"
+            let target = fulgur_two.read(cx);
+            assert_eq!(target.settings.app_settings.theme, "Catppuccin Frappe");
+            assert!(!target.settings.editor_settings.show_line_numbers);
+            assert!(
+                !target.settings_changed,
+                "the render triggered by the observer should have consumed settings_changed by propagating settings to tabs"
             );
-            fulgur_two.update(cx, |this, cx| {
-                this.synchronize_settings_from_other_windows(cx);
-                assert_eq!(this.settings.app_settings.theme, "Catppuccin Frappe");
-                assert!(!this.settings.editor_settings.show_line_numbers);
-                assert_eq!(this.local_settings_version, 1);
-                assert!(this.settings_changed);
-            });
         });
     }
 
     #[gpui::test]
-    fn test_synchronize_settings_from_other_windows_is_noop_when_versions_match(
-        cx: &mut TestAppContext,
-    ) {
+    fn test_theme_only_global_update_does_not_mark_settings_changed(cx: &mut TestAppContext) {
         setup_test_globals(cx);
         let (_, fulgur) = open_window_with_fulgur(cx);
         cx.update(|cx| {
-            {
-                let shared = cx.global::<SharedAppState>();
-                shared.settings_version.store(5, Ordering::Relaxed);
-                let mut shared_settings = shared.settings.lock();
-                shared_settings.app_settings.theme = "Shared Theme".into();
-            }
-            fulgur.update(cx, |this, cx| {
-                this.local_settings_version = 5;
-                this.settings.app_settings.theme = "Local Theme".into();
+            fulgur.update(cx, |this, _cx| {
                 this.settings_changed = false;
-                this.synchronize_settings_from_other_windows(cx);
-                assert_eq!(this.settings.app_settings.theme, "Local Theme");
-                assert_eq!(this.local_settings_version, 5);
-                assert!(!this.settings_changed);
             });
+            cx.update_global::<SharedAppState, _>(|shared, _| {
+                shared.themes = None;
+            });
+        });
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let this = fulgur.read(cx);
+            assert!(
+                !this.settings_changed,
+                "a global update that leaves settings identical should not trigger settings propagation"
+            );
         });
     }
 }

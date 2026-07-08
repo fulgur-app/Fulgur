@@ -45,7 +45,7 @@ fn default_profile_name() -> String {
 ///   the per-profile private key stored in the system keychain.
 /// - `is_deduplication`: When true, the server deduplicates shares of the
 ///   same file path.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct ServerProfile {
     pub id: ProfileId,
     #[serde(default = "default_profile_name")]
@@ -82,7 +82,7 @@ impl ServerProfile {
 }
 
 /// Top-level synchronization configuration.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, PartialEq)]
 pub struct SynchronizationSettings {
     pub is_synchronization_activated: bool,
     #[serde(default)]
@@ -260,7 +260,7 @@ pub enum MarkdownPreviewMode {
     Panel,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct MarkdownSettings {
     #[serde(default)]
     pub preview_mode: MarkdownPreviewMode,
@@ -289,7 +289,7 @@ impl MarkdownSettings {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct EditorSettings {
     pub show_line_numbers: bool,
     pub show_indent_guides: bool,
@@ -309,7 +309,7 @@ pub struct EditorSettings {
     pub highlight_colors: bool,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppSettings {
     pub confirm_exit: bool,
     #[serde(default = "default_debug_mode")]
@@ -417,7 +417,7 @@ impl AppSettings {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct RecentFiles {
     pub(super) files: Vec<PathBuf>,
     pub(super) max_files: usize,
@@ -552,7 +552,7 @@ impl Themes {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Settings {
     pub editor_settings: EditorSettings,
     pub app_settings: AppSettings,

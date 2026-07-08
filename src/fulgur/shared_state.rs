@@ -99,12 +99,10 @@ impl SyncState {
 
 /// State that is shared across all windows. This includes settings, themes, and sync-related state.
 pub struct SharedAppState {
-    /// Settings (shared across all windows)
-    pub settings: Arc<Mutex<Settings>>,
-    /// Settings version counter, incremented whenever settings change. All windows check this to detect when they need to reload settings.
-    pub settings_version: Arc<AtomicU64>,
-    /// Available themes
-    pub themes: Arc<Mutex<Option<Themes>>>,
+    /// Settings (shared across all windows). Mutate via `cx.update_global` only.
+    pub settings: Settings,
+    /// Available themes. Mutate via `cx.update_global` only.
+    pub themes: Option<Themes>,
     /// Per-profile sync states keyed by profile id.
     pub sync_states: Arc<RwLock<HashMap<ProfileId, Arc<SyncState>>>>,
     /// Global flag to ensure sync bootstrap runs only once across all windows.
@@ -165,9 +163,8 @@ impl SharedAppState {
         let sync_states = Self::seed_sync_states(&settings, synchronization_status);
 
         Self {
-            settings: Arc::new(Mutex::new(settings)),
-            settings_version: Arc::new(AtomicU64::new(0)),
-            themes: Arc::new(Mutex::new(themes)),
+            settings,
+            themes,
             sync_states: Arc::new(RwLock::new(sync_states)),
             sync_initialized: Arc::new(AtomicBool::new(false)),
             sync_error: Arc::new(Mutex::new(sync_error)),
@@ -325,7 +322,6 @@ impl SharedAppState {
     pub fn primary_sync_state(&self) -> Arc<SyncState> {
         let primary_id = self
             .settings
-            .lock()
             .app_settings
             .synchronization_settings
             .profiles

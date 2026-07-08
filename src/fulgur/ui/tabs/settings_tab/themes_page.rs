@@ -75,13 +75,8 @@ impl Fulgur {
                                     } else {
                                         log::info!("Deleted theme file: {}", theme_path.display());
                                     }
-                                    let entity_for_update = entity_clone.clone();
                                     entity_clone.update(cx, |this, cx| {
-                                        themes::reload_themes_and_update(
-                                            &this.settings,
-                                            &entity_for_update,
-                                            cx,
-                                        );
+                                        themes::reload_themes_and_update(&this.settings, cx);
                                     });
                                 }),
                         )

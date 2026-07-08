@@ -106,7 +106,7 @@ impl Fulgur {
             editor_page::create_editor_page(&entity, font_family_select),
             application_page::create_application_page(&entity),
         ];
-        let themes = Fulgur::shared_state(cx).themes.lock().clone();
+        let themes = Fulgur::shared_state(cx).themes.clone();
         if let Some(ref themes) = themes {
             pages.push(Self::create_themes_page(&entity, themes));
         }
