@@ -160,7 +160,7 @@ impl Fulgur {
     /// - `Some(usize)`: the active editor tab index
     /// - `None`: if the active tab is a Settings tab (not persisted).
     fn active_editor_index_for_state(&self) -> Option<usize> {
-        let active = self.active_tab_index?;
+        let active = self.active_tab_index()?;
         let active_tab = self.tabs.get(active)?;
         let editor_tab_id = match active_tab {
             Tab::Editor(et) => et.id,

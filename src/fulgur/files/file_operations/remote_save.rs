@@ -2,6 +2,7 @@ use super::remote_types::{
     RemoteSaveTaskParams, SSH_HOST_KEY_APPROVAL_TIMEOUT, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS,
     SSH_SAVE_TIMEOUT_LABEL, format_remote_endpoint_label, wait_for_host_key_decision,
 };
+use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur,
     editor_tab::TabLocation,
@@ -38,7 +39,7 @@ impl Fulgur {
         &mut self,
         window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
-        tab_id: usize,
+        tab_id: TabId,
         mut spec: RemoteSpec,
         contents: String,
         bytes: Vec<u8>,
@@ -338,7 +339,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn handle_remote_save_result(
         &mut self,
-        tab_id: usize,
+        tab_id: TabId,
         request_id: u64,
         saved_content: &str,
         result: Result<(), String>,

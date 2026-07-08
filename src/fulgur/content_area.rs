@@ -1,3 +1,4 @@
+use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
 };
@@ -38,12 +39,10 @@ impl Fulgur {
         }
         cx.stop_propagation();
 
-        let Some(active_index) = self.active_tab_index else {
+        let Some(Tab::Editor(editor_tab)) = self.active_tab() else {
             return;
         };
-        let Some(Tab::Editor(editor_tab)) = self.tabs.get(active_index) else {
-            return;
-        };
+        let active_tab_id = editor_tab.id;
         let editor_focus = editor_tab.content.focus_handle(cx);
         let has_file = editor_tab.file_path().is_some();
         let position = event.position;
@@ -56,7 +55,7 @@ impl Fulgur {
                     menu = menu
                         .menu(
                             crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
-                            Box::new(ui::tabs::tab_bar::ShowInFileManager(active_index)),
+                            Box::new(ui::tabs::tab_bar::ShowInFileManager(active_tab_id)),
                         )
                         .separator();
                 }
@@ -100,7 +99,7 @@ impl Fulgur {
     ) -> AnyElement {
         enum ActiveTabRenderData {
             Editor {
-                tab_id: usize,
+                tab_id: TabId,
                 language: SupportedLanguage,
                 show_markdown_preview: bool,
                 content: Entity<InputState>,
@@ -111,7 +110,7 @@ impl Fulgur {
             },
             Settings,
             MarkdownPreview {
-                source_tab_id: usize,
+                source_tab_id: TabId,
                 content: Entity<InputState>,
                 view_state: Entity<gpui_component::text::TextViewState>,
             },

@@ -10,7 +10,10 @@ use gpui_component::{
     v_flex,
 };
 
-use crate::fulgur::{Fulgur, ui::tabs::tab::Tab};
+use crate::fulgur::{
+    Fulgur,
+    ui::tabs::tab::{Tab, TabId},
+};
 
 mod application_page;
 mod editor_page;
@@ -18,7 +21,7 @@ mod themes_page;
 
 #[derive(Clone)]
 pub struct SettingsTab {
-    pub id: usize,
+    pub id: TabId,
     pub title: SharedString,
     pub font_family_select: Entity<SelectState<SearchableVec<SharedString>>>,
 }
@@ -34,7 +37,7 @@ impl SettingsTab {
     ///
     /// ### Returns
     /// - `Self`: The settings tab
-    pub fn new(id: usize, current_font: &str, window: &mut Window, cx: &mut App) -> Self {
+    pub fn new(id: TabId, current_font: &str, window: &mut Window, cx: &mut App) -> Self {
         let font_family_select = Self::build_font_select(current_font, window, cx);
         Self {
             id,

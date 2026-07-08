@@ -5,7 +5,7 @@ use crate::fulgur::{
     editor_tab::{EditorTab, FromFileParams, TabLocation},
     files::file_operations::{RemoteFileResult, detect_encoding_and_decode},
     languages::supported_languages::{language_from_content, language_registry_name},
-    tab::Tab,
+    tab::{Tab, TabId},
     ui::components_utils::{UNTITLED, UTF_8},
 };
 use gpui::{App, AppContext, Context, Window};
@@ -39,40 +39,29 @@ impl Fulgur {
             self.tabs.clear();
             self.pending_remote_restore.clear();
             self.inflight_remote_restore.clear();
-            let mut tab_id = 0;
+            let mut tab_id = TabId(0);
             for tab_state in &window_state.tabs {
                 let tab = self.restore_tab_from_state(tab_state.clone(), tab_id, window, cx);
                 if let Some(editor_tab) = tab {
                     self.tabs.push(Tab::Editor(editor_tab));
-                    tab_id += 1;
+                    tab_id = tab_id.next();
                 }
             }
-            let saved_active_editor_id: Option<usize> = window_state
+            let saved_active_editor_id: Option<TabId> = window_state
                 .active_tab_index
                 .and_then(|idx| self.tabs.get(idx))
                 .and_then(|t| t.as_editor())
                 .map(|et| et.id);
             self.next_tab_id = tab_id;
             self.insert_preview_tabs_for_markdown(cx);
-            self.active_tab_index = if let Some(target_id) = saved_active_editor_id {
-                self.tabs
-                    .iter()
-                    .position(|t| t.id() == target_id)
-                    .or(if self.tabs.is_empty() { None } else { Some(0) })
-            } else if !self.tabs.is_empty() {
-                Some(0)
-            } else {
-                None
-            };
+            self.active_tab_id = saved_active_editor_id.or_else(|| self.tabs.first().map(Tab::id));
 
-            if let Some(active_index) = self.active_tab_index
-                && let Some(active_id) = self.tabs.get(active_index).map(Tab::id)
-                && self
-                    .tabs
-                    .get(active_index)
-                    .and_then(Tab::as_editor)
-                    .is_some_and(|editor| editor.log_view)
-            {
+            let active_log_tab_id = self
+                .active_tab()
+                .and_then(Tab::as_editor)
+                .filter(|editor| editor.log_view)
+                .map(|editor| editor.id);
+            if let Some(active_id) = active_log_tab_id {
                 self.activate_log_view(active_id, window, cx);
             }
 
@@ -83,15 +72,15 @@ impl Fulgur {
         if self.tabs.is_empty() {
             log::debug!("No tabs restored, creating initial empty tab");
             let initial_tab = Tab::Editor(EditorTab::new(
-                0,
+                TabId(0),
                 UNTITLED,
                 window,
                 cx,
                 &self.settings.editor_settings,
             ));
+            self.active_tab_id = Some(initial_tab.id());
             self.tabs.push(initial_tab);
-            self.active_tab_index = Some(0);
-            self.next_tab_id = 1;
+            self.next_tab_id = TabId(1);
         }
         self.settings.editor_settings.show_indent_guides = original_indent_guides;
         if original_indent_guides {
@@ -118,7 +107,7 @@ impl Fulgur {
     fn restore_tab_from_state(
         &mut self,
         tab_state: TabState,
-        tab_id: usize,
+        tab_id: TabId,
         window: &mut Window,
         cx: &mut App,
     ) -> Option<EditorTab> {

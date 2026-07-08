@@ -22,6 +22,7 @@ use std::time::SystemTime;
 use crate::fulgur::files::csv_support::{DEFAULT_DELIMITER, detect_delimiter, parse_csv};
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
 use crate::fulgur::settings::EditorSettings;
+use crate::fulgur::ui::tabs::tab::TabId;
 
 /// Which surface a CSV-language tab is currently editing through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +34,7 @@ pub enum CsvViewMode {
 /// A single editor tab with its content and file metadata
 #[derive(Clone)]
 pub struct EditorTab {
-    pub id: usize,
+    pub id: TabId,
     pub title: SharedString,
     pub content: Entity<InputState>,
     pub location: TabLocation,
@@ -91,7 +92,7 @@ pub struct TabTransferData {
 
 /// Parameters for creating an editor tab as a duplicate of another
 pub struct FromDuplicateParams {
-    pub id: usize,
+    pub id: TabId,
     pub title: SharedString,
     pub current_content: String,
     pub encoding: String,
@@ -211,7 +212,7 @@ pub(crate) fn content_fingerprint_from_rope(content: &Rope) -> (u64, usize) {
 
 /// Parameters for creating an editor tab from a file
 pub struct FromFileParams {
-    pub id: usize,
+    pub id: TabId,
     pub path: std::path::PathBuf,
     pub contents: String,
     pub encoding: String,

@@ -7,6 +7,7 @@ use super::{
         wait_for_host_key_decision,
     },
 };
+use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur,
     sync::ssh::{
@@ -40,7 +41,7 @@ impl Fulgur {
         spec: RemoteSpec,
     ) {
         if let Some(tab_index) = self.find_tab_by_remote_spec(&spec) {
-            self.active_tab_index = Some(tab_index);
+            self.active_tab_id = self.tabs.get(tab_index).map(crate::fulgur::tab::Tab::id);
             self.focus_active_tab(window, cx);
             cx.notify();
             return;
@@ -61,7 +62,7 @@ impl Fulgur {
         window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
         mut spec: RemoteSpec,
-        target_tab_id: Option<usize>,
+        target_tab_id: Option<TabId>,
     ) {
         let ssh_session_cache = Arc::clone(&Fulgur::shared_state(cx).ssh_session_cache);
         let ssh_session_pool = Arc::clone(&Fulgur::shared_state(cx).ssh_session_pool);
@@ -158,7 +159,7 @@ impl Fulgur {
         &mut self,
         window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
-        tab_id: usize,
+        tab_id: TabId,
         spec: RemoteSpec,
     ) {
         self.open_remote_file_with_target(window, cx, spec, Some(tab_id));
@@ -449,7 +450,7 @@ impl Fulgur {
     pub(super) fn publish_remote_open_outcome(
         open_finished: &AtomicBool,
         pending_remote: &Mutex<Vec<PendingRemoteOpenOutcome>>,
-        target_tab_id: Option<usize>,
+        target_tab_id: Option<TabId>,
         target_request_id: Option<u64>,
         outcome: Result<RemoteOpenResult, String>,
     ) -> bool {

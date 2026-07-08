@@ -1,5 +1,6 @@
 //! `Fulgur` user actions and the log-view activation lifecycle.
 
+use crate::fulgur::ui::tabs::tab::TabId;
 use gpui::{AppContext, Context, Window};
 use gpui_component::notification::NotificationType;
 
@@ -118,7 +119,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(crate) fn activate_log_view(
         &mut self,
-        tab_id: usize,
+        tab_id: TabId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -152,7 +153,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `tab_id`: The tab to deactivate log view on
     /// - `cx`: The application context
-    pub(crate) fn deactivate_log_view(&mut self, tab_id: usize, cx: &mut Context<Self>) {
+    pub(crate) fn deactivate_log_view(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
         self.stop_log_poll_task(tab_id);
         self.log_tail_state.remove(&tab_id);
         if let Some(editor) = self.editor_tab_mut(tab_id) {
@@ -173,7 +174,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(crate) fn resume_log_view(
         &mut self,
-        tab_id: usize,
+        tab_id: TabId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -192,7 +193,7 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `tab_id`: The removed tab id
-    pub(crate) fn clear_log_tail(&mut self, tab_id: usize) {
+    pub(crate) fn clear_log_tail(&mut self, tab_id: TabId) {
         self.stop_log_poll_task(tab_id);
         self.log_tail_state.remove(&tab_id);
     }

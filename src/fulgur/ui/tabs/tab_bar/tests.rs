@@ -173,7 +173,7 @@ fn test_on_next_tab_advances_active_index_by_one(cx: &mut TestAppContext) {
             // Three tabs: move to index 0, then advance
             this.set_active_tab(0, window, cx);
             this.on_next_tab(window, cx);
-            assert_eq!(this.active_tab_index, Some(1));
+            assert_eq!(this.active_tab_index(), Some(1));
         });
     });
 }
@@ -189,7 +189,7 @@ fn test_on_next_tab_wraps_around_from_last_to_first(cx: &mut TestAppContext) {
             let last = this.tabs.len() - 1;
             this.set_active_tab(last, window, cx);
             this.on_next_tab(window, cx);
-            assert_eq!(this.active_tab_index, Some(0));
+            assert_eq!(this.active_tab_index(), Some(0));
         });
     });
 }
@@ -200,9 +200,9 @@ fn test_on_next_tab_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
 
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
-            this.active_tab_index = None;
+            this.active_tab_id = None;
             this.on_next_tab(window, cx);
-            assert_eq!(this.active_tab_index, None);
+            assert_eq!(this.active_tab_index(), None);
         });
     });
 }
@@ -219,7 +219,7 @@ fn test_on_previous_tab_moves_to_previous_index(cx: &mut TestAppContext) {
             let last = this.tabs.len() - 1;
             this.set_active_tab(last, window, cx);
             this.on_previous_tab(window, cx);
-            assert_eq!(this.active_tab_index, Some(last - 1));
+            assert_eq!(this.active_tab_index(), Some(last - 1));
         });
     });
 }
@@ -234,7 +234,7 @@ fn test_on_previous_tab_wraps_around_from_first_to_last(cx: &mut TestAppContext)
             this.set_active_tab(0, window, cx);
             this.on_previous_tab(window, cx);
             let last = this.tabs.len() - 1;
-            assert_eq!(this.active_tab_index, Some(last));
+            assert_eq!(this.active_tab_index(), Some(last));
         });
     });
 }
@@ -244,9 +244,9 @@ fn test_on_previous_tab_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
-            this.active_tab_index = None;
+            this.active_tab_id = None;
             this.on_previous_tab(window, cx);
-            assert_eq!(this.active_tab_index, None);
+            assert_eq!(this.active_tab_index(), None);
         });
     });
 }

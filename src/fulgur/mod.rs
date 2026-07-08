@@ -21,7 +21,7 @@ use gpui::{
 use gpui_component::{input::InputState, menu::PopupMenu, notification::NotificationType};
 use settings::Settings;
 use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
-use tab::Tab;
+use tab::{Tab, TabId};
 use ui::log_view::LogTailState;
 use ui::{
     bars::color_picker_bar::ColorPickerBarState,
@@ -39,8 +39,8 @@ pub struct Fulgur {
     focus_handle: FocusHandle,                       // The focus handle for the application
     title_bar: Entity<CustomTitleBar>,               // The title bar of the application
     tabs: Vec<Tab>,                                  // The tabs in the application
-    active_tab_index: Option<usize>,                 // Index of the active tab
-    next_tab_id: usize,                              // The next tab ID
+    active_tab_id: Option<TabId>,                    // Stable ID of the active tab
+    next_tab_id: TabId,                              // The next tab ID
     pub search_state: SearchState,                   // Search and replace functionality state
     pub color_picker_bar_state: ColorPickerBarState, // Color picker bar state
     pub jump_to_line_input: Entity<InputState>,      // Input for jumping to a line in the editor
@@ -48,16 +48,16 @@ pub struct Fulgur {
     pub settings: Settings, // The settings for the application (local snapshot, refreshed by the SharedAppState observer)
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
     _shared_state_observation: Subscription, // Global observer keeping the local settings snapshot in sync with SharedAppState
-    rendered_tabs: HashSet<usize>,           // Track which tabs have been rendered
-    tabs_pending_update: HashSet<usize>,     // Track tabs that need settings update on next render
-    editor_modified_subscriptions: HashMap<usize, (EntityId, Subscription)>, // Per-editor (subscribed content entity id, subscription) for incremental modified-state updates
-    markdown_preview_cache: HashMap<usize, SharedString>, // Cached markdown source text keyed by source editor tab id
-    markdown_preview_to_refresh: HashSet<usize>, // Source tab ids whose cached preview text is stale and must be refreshed on next read
-    markdown_preview_subscriptions: HashMap<usize, (EntityId, Subscription)>, // Per-source (subscribed content entity id, subscription) for markdown preview cache updates
-    log_tail_state: HashMap<usize, LogTailState>, // Per-log-tab tail bookkeeping (byte offset, dropped lines, pending text) keyed by tab id
-    log_tail_cancel: HashMap<usize, Arc<AtomicBool>>, // Cancellation flag for the per-active-log-tab poll task keyed by tab id
+    rendered_tabs: HashSet<TabId>,           // Track which tabs have been rendered
+    tabs_pending_update: HashSet<TabId>,     // Track tabs that need settings update on next render
+    editor_modified_subscriptions: HashMap<TabId, (EntityId, Subscription)>, // Per-editor (subscribed content entity id, subscription) for incremental modified-state updates
+    markdown_preview_cache: HashMap<TabId, SharedString>, // Cached markdown source text keyed by source editor tab id
+    markdown_preview_to_refresh: HashSet<TabId>, // Source tab ids whose cached preview text is stale and must be refreshed on next read
+    markdown_preview_subscriptions: HashMap<TabId, (EntityId, Subscription)>, // Per-source (subscribed content entity id, subscription) for markdown preview cache updates
+    log_tail_state: HashMap<TabId, LogTailState>, // Per-log-tab tail bookkeeping (byte offset, dropped lines, pending text) keyed by tab id
+    log_tail_cancel: HashMap<TabId, Arc<AtomicBool>>, // Cancellation flag for the per-active-log-tab poll task keyed by tab id
     tab_scroll_handle: ScrollHandle, // Scroll handle for the tab bar to scroll active tab into view
-    pending_tab_scroll: Option<usize>, // Deferred scroll-to-tab request (needs one render cycle for layout)
+    pending_tab_scroll: Option<TabId>, // Deferred scroll-to-tab request (needs one render cycle for layout)
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
     pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
     save_failed_once: bool, // Flag: save already failed once, allow force-close on next attempt
@@ -71,16 +71,16 @@ pub struct Fulgur {
     cached_tab_filename_counts: HashMap<String, usize>, // Cached tab filename frequency map (refreshed when tabs change)
     tab_filename_fp: u64, // Fingerprint of the tab list used to detect when cached_tab_filename_counts is stale
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
-    pending_tab_removal: Option<usize>, // Tab ID to remove after it has been sent to another window
+    pending_tab_removal: Option<TabId>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
     pending_remote_open: Arc<parking_lot::Mutex<Vec<PendingRemoteOpenOutcome>>>, // Queue for SSH background threads to deliver loaded remote files
     next_remote_request_id: u64, // Monotonic identifier for remote open/save operations targeting existing tabs
-    latest_remote_open_request_by_tab: HashMap<usize, u64>, // Latest remote-open request id expected per tab id
-    latest_remote_save_request_by_tab: HashMap<usize, u64>, // Latest remote-save request id expected per tab id
+    latest_remote_open_request_by_tab: HashMap<TabId, u64>, // Latest remote-open request id expected per tab id
+    latest_remote_save_request_by_tab: HashMap<TabId, u64>, // Latest remote-save request id expected per tab id
     last_failed_remote_open_url: Option<String>, // Last attempted remote URL kept for retry prefill after connection/open failures
-    pending_remote_restore: HashSet<usize>, // Restored remote tab ids that should lazily reconnect on first activation/save
-    inflight_remote_restore: HashSet<usize>, // Restored remote tabs currently running a reconnect task
-    pending_initial_active_tab: Option<usize>, // Active tab to re-activate after first render so dialogs can open safely
+    pending_remote_restore: HashSet<TabId>, // Restored remote tab ids that should lazily reconnect on first activation/save
+    inflight_remote_restore: HashSet<TabId>, // Restored remote tabs currently running a reconnect task
+    pending_initial_active_tab: Option<TabId>, // Active tab to re-activate after first render so dialogs can open safely
     has_rendered_once: bool, // Tracks first render completion for startup actions that require mounted Root layers
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     local_window_menu_fingerprint: u64, // Cached local menu-state fingerprint published to WindowManager

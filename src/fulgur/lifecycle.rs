@@ -4,7 +4,7 @@ use crate::fulgur::{
     languages,
     settings::Settings,
     shared_state, sync,
-    tab::Tab,
+    tab::{Tab, TabId},
     ui::{
         bars::color_picker_bar::ColorPickerBarState,
         bars::search_bar::SearchState,
@@ -80,8 +80,8 @@ impl Fulgur {
                 focus_handle: cx.focus_handle(),
                 title_bar,
                 tabs: vec![],
-                active_tab_index: None,
-                next_tab_id: 0,
+                active_tab_id: None,
+                next_tab_id: TabId(0),
                 search_state: SearchState::new(search_input, replace_input, search_subscription),
                 color_picker_bar_state: ColorPickerBarState::new(window, cx),
                 jump_to_line_input,
@@ -143,20 +143,20 @@ impl Fulgur {
             }
             if window_index == usize::MAX {
                 let initial_tab = Tab::Editor(editor_tab::EditorTab::new(
-                    0,
+                    TabId(0),
                     crate::fulgur::ui::components_utils::UNTITLED,
                     window,
                     cx,
                     &this.settings.editor_settings,
                 ));
+                this.active_tab_id = Some(initial_tab.id());
                 this.tabs.push(initial_tab);
-                this.active_tab_index = Some(0);
-                this.next_tab_id = 1;
+                this.next_tab_id = TabId(1);
             } else if window_index < usize::MAX - 1 {
                 // usize::MAX - 1 means new window receiving a tab transfer: skip initial tab
                 this.load_state(window, cx, window_index);
-                this.pending_tab_scroll = this.active_tab_index;
-                this.pending_initial_active_tab = this.active_tab_index;
+                this.pending_tab_scroll = this.active_tab_id;
+                this.pending_initial_active_tab = this.active_tab_id;
             }
             if this.settings.editor_settings.watch_files {
                 this.start_file_watcher();

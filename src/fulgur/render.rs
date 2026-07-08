@@ -47,7 +47,7 @@ impl Render for Fulgur {
         self.process_pending_remote_files(window, cx);
         self.process_pending_share_sheet(window, cx);
         if self.tabs.is_empty() {
-            self.active_tab_index = None;
+            self.active_tab_id = None;
         }
         self.update_search_if_needed(window, cx);
         self.propagate_settings_to_tabs(window, cx);
@@ -61,7 +61,7 @@ impl Render for Fulgur {
         self.process_pending_tab_scroll(cx);
         self.refresh_tab_filename_counts();
         self.refresh_status_bar_labels(cx);
-        let app_content = self.build_app_content_with_actions(self.active_tab_index, window, cx);
+        let app_content = self.build_app_content_with_actions(self.active_tab_index(), window, cx);
         self.assemble_ui_tree(app_content, window, cx)
     }
 }
@@ -152,9 +152,7 @@ impl Fulgur {
             .children(self.render_csv_toolbar(cx))
             .children(self.render_search_bar(cx))
             .children(self.render_color_picker_bar(cx));
-        if let Some(index) = self.active_tab_index
-            && let Some(Tab::Editor(_)) = self.tabs.get(index)
-        {
+        if let Some(Tab::Editor(_)) = self.active_tab() {
             app_content = app_content.child(self.render_status_bar(cx));
         }
         app_content = app_content.child(Self::render_external_file_drop_overlay(cx));
@@ -234,7 +232,9 @@ impl Fulgur {
             return;
         }
 
-        if let Some(index) = self.pending_initial_active_tab.take() {
+        if let Some(tab_id) = self.pending_initial_active_tab.take()
+            && let Some(index) = self.tab_index_of(tab_id)
+        {
             self.set_active_tab(index, window, cx);
         }
     }
@@ -249,7 +249,11 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     fn process_pending_tab_scroll(&mut self, cx: &mut Context<Self>) {
-        if let Some(index) = self.pending_tab_scroll {
+        if let Some(tab_id) = self.pending_tab_scroll {
+            let Some(index) = self.tab_index_of(tab_id) else {
+                self.pending_tab_scroll = None;
+                return;
+            };
             if self.tab_scroll_handle.bounds_for_item(0).is_some() {
                 self.tab_scroll_handle.scroll_to_item(index);
                 self.pending_tab_scroll = None;

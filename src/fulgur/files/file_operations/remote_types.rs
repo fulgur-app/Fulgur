@@ -2,6 +2,7 @@ use crate::fulgur::sync::ssh::{
     self, credentials::SshCredKey, pool::SshSessionPool, session::HostKeyDecision,
     sftp::RemoteDirectoryEntry, url::RemoteSpec,
 };
+use crate::fulgur::ui::tabs::tab::TabId;
 use parking_lot::Mutex;
 use std::{
     sync::{
@@ -43,7 +44,7 @@ pub enum RemoteOpenResult {
 
 /// A queued remote-open outcome consumed by `Fulgur::process_pending_remote_files`.
 pub struct PendingRemoteOpenOutcome {
-    pub target_tab_id: Option<usize>,
+    pub target_tab_id: Option<TabId>,
     pub target_request_id: Option<u64>,
     pub result: Result<RemoteOpenResult, String>,
 }
@@ -55,7 +56,7 @@ pub struct RemoteOpenTaskParams {
     pub credential_key: SshCredKey,
     pub ssh_session_cache: Arc<Mutex<ssh::credentials::SshCredentialCache>>,
     pub ssh_session_pool: Arc<SshSessionPool>,
-    pub target_tab_id: Option<usize>,
+    pub target_tab_id: Option<TabId>,
     pub target_request_id: Option<u64>,
 }
 
@@ -102,7 +103,7 @@ pub fn format_remote_endpoint_label(prefix: &str, host: &str, port: u16, user: &
 
 /// Inputs required to execute a remote save in the SSH worker thread.
 pub struct RemoteSaveTaskParams {
-    pub tab_id: usize,
+    pub tab_id: TabId,
     pub request_id: u64,
     pub spec: RemoteSpec,
     pub saved_content: Arc<String>,

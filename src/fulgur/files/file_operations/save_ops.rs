@@ -1,4 +1,5 @@
 use super::{EncodedContents, encode_for_save};
+use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur, editor_tab::TabLocation, tab::Tab, ui::components_utils::UNTITLED,
     utils::atomic_write::atomic_write_file,
@@ -17,7 +18,7 @@ impl Fulgur {
         if self.tabs.is_empty() {
             return;
         }
-        let Some(active_tab_index) = self.active_tab_index else {
+        let Some(active_tab_index) = self.active_tab_index() else {
             return;
         };
         let active_tab = &self.tabs[active_tab_index];
@@ -99,7 +100,7 @@ impl Fulgur {
         if self.tabs.is_empty() {
             return;
         }
-        let Some(active_tab_index) = self.active_tab_index else {
+        let Some(active_tab_index) = self.active_tab_index() else {
             return;
         };
         let (tab_id, encoding, directory, suggested_filename) = match &self.tabs[active_tab_index] {
@@ -175,7 +176,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(crate) fn finalize_save_as(
         &mut self,
-        tab_id: usize,
+        tab_id: TabId,
         path: &Path,
         bytes: &[u8],
         encoding: String,
@@ -306,7 +307,7 @@ impl Fulgur {
     /// - `window`: The window containing the editor
     /// - `cx`: The application context
     pub fn print_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(active_tab_index) = self.active_tab_index else {
+        let Some(active_tab_index) = self.active_tab_index() else {
             return;
         };
         let (title, content) = match &self.tabs[active_tab_index] {
@@ -372,7 +373,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn handle_pending_jump_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(jump) = self.pending_jump.take()
-            && let Some(index) = self.active_tab_index
+            && let Some(index) = self.active_tab_index()
             && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
         {
             editor_tab.jump_to_line(window, cx, jump);
@@ -443,7 +444,7 @@ mod tests {
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                this.active_tab_index = None;
+                this.active_tab_id = None;
                 this.save_file(window, cx); // Must not panic
             });
         });

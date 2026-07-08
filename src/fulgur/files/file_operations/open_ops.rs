@@ -178,7 +178,7 @@ impl Fulgur {
             );
         }
 
-        self.active_tab_index = Some(tab_index);
+        self.active_tab_id = self.tabs.get(tab_index).map(Tab::id);
         self.focus_active_tab(window, cx);
         cx.notify();
     }
@@ -253,9 +253,10 @@ impl Fulgur {
         window
             .update(|window, cx| {
                 _ = view.update(cx, |this, cx| {
+                    let new_tab_id = this.allocate_tab_id();
                     let mut editor_tab = EditorTab::from_file(
                         FromFileParams {
-                            id: this.next_tab_id,
+                            id: new_tab_id,
                             path: path.to_path_buf(),
                             contents: decoded.content,
                             encoding: decoded.encoding,
@@ -268,7 +269,6 @@ impl Fulgur {
                     editor_tab.lossy_decode = decoded.lossy;
                     let editor_tab_index =
                         this.place_editor_tab_reusing_scratch(Tab::Editor(editor_tab), window, cx);
-                    this.next_tab_id += 1;
                     this.maybe_open_markdown_preview_for_editor(editor_tab_index, cx);
                     this.watch_file(path);
                     if crate::fulgur::ui::log_view::opens_as_log_by_default(path)
@@ -1009,7 +1009,7 @@ mod tests {
                     tab_count_before,
                     "remote recent should focus existing tab instead of creating a duplicate"
                 );
-                assert_eq!(this.active_tab_index, Some(0));
+                assert_eq!(this.active_tab_index(), Some(0));
             });
         });
     }

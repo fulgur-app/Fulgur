@@ -34,7 +34,9 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.close_tabs_to_left(action.0, window, cx);
+        if let Some(index) = self.tab_index_of(action.0) {
+            self.close_tabs_to_left(index, window, cx);
+        }
     }
 
     /// Handle close tabs to right action from context menu
@@ -49,7 +51,9 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.close_tabs_to_right(action.0, window, cx);
+        if let Some(index) = self.tab_index_of(action.0) {
+            self.close_tabs_to_right(index, window, cx);
+        }
     }
 
     /// Handle close all tabs action from context menu
@@ -92,7 +96,7 @@ impl Fulgur {
     /// universal "reveal file" command across desktop environments.
     ///
     /// ### Arguments
-    /// - `action`: The action carrying the tab index
+    /// - `action`: The action carrying the tab ID
     /// - `_window`: The window context
     /// - `_cx`: The application context
     pub fn on_show_in_file_manager(
@@ -101,7 +105,7 @@ impl Fulgur {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) {
-        let Some(tab) = self.tabs.get(action.0) else {
+        let Some(tab) = self.tabs.iter().find(|t| t.id() == action.0) else {
             return;
         };
         let Some(editor_tab) = tab.as_editor() else {
@@ -120,7 +124,7 @@ impl Fulgur {
     /// Handle copy path action from context menu.
     ///
     /// ### Arguments
-    /// - `action`: The action carrying the tab index
+    /// - `action`: The action carrying the tab ID
     /// - `_window`: The window context
     /// - `cx`: The application context
     pub fn on_copy_path(
@@ -129,7 +133,7 @@ impl Fulgur {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(tab) = self.tabs.get(action.0) else {
+        let Some(tab) = self.tabs.iter().find(|t| t.id() == action.0) else {
             return;
         };
         let Some(editor_tab) = tab.as_editor() else {
@@ -147,7 +151,7 @@ impl Fulgur {
     /// Handle duplicate tab action from context menu
     ///
     /// ### Arguments
-    /// - `action`: The action carrying the tab index
+    /// - `action`: The action carrying the tab ID
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn on_duplicate_tab(
@@ -156,7 +160,9 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.duplicate_tab(action.0, window, cx);
+        if let Some(index) = self.tab_index_of(action.0) {
+            self.duplicate_tab(index, window, cx);
+        }
     }
 
     /// Handle next tab action
@@ -165,7 +171,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn on_next_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(active_index) = self.active_tab_index {
+        if let Some(active_index) = self.active_tab_index() {
             let next_index = (active_index + 1) % self.tabs.len();
             self.set_active_tab(next_index, window, cx);
         }
@@ -177,7 +183,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn on_previous_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(active_index) = self.active_tab_index {
+        if let Some(active_index) = self.active_tab_index() {
             let previous_index = (active_index + self.tabs.len() - 1) % self.tabs.len();
             self.set_active_tab(previous_index, window, cx);
         }

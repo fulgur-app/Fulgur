@@ -8,6 +8,7 @@ use crate::fulgur::languages::supported_languages::{
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
+use crate::fulgur::ui::tabs::tab::TabId;
 use gpui::{App, AppContext, SharedString, Window};
 use std::time::SystemTime;
 
@@ -24,7 +25,7 @@ impl EditorTab {
     /// ### Returns
     /// - `EditorTab`: The new tab
     pub fn new(
-        id: usize,
+        id: TabId,
         title: impl Into<SharedString>,
         window: &mut Window,
         cx: &mut App,
@@ -81,7 +82,7 @@ impl EditorTab {
     /// ### Returns
     /// - `EditorTab`: The new tab
     pub fn from_content(
-        id: usize,
+        id: TabId,
         contents: &str,
         file_name: String,
         window: &mut Window,
@@ -263,7 +264,7 @@ impl EditorTab {
     /// ### Returns
     /// - `EditorTab`: The new tab
     pub fn from_remote(
-        id: usize,
+        id: TabId,
         spec: RemoteSpec,
         window: &mut Window,
         cx: &mut App,
@@ -325,7 +326,7 @@ impl EditorTab {
     /// ### Returns
     /// - `EditorTab`: The new tab with remote file content
     pub fn from_remote_loaded(
-        id: usize,
+        id: TabId,
         result: RemoteFileResult,
         window: &mut Window,
         cx: &mut App,
@@ -393,7 +394,7 @@ impl EditorTab {
     /// ### Returns
     /// - `EditorTab`: The newly created tab, ready to be pushed onto the tab list
     pub fn from_transfer(
-        id: usize,
+        id: TabId,
         data: TabTransferData,
         window: &mut Window,
         cx: &mut App,

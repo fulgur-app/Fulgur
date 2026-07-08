@@ -1,3 +1,4 @@
+use crate::fulgur::ui::tabs::tab::TabId;
 use std::path::PathBuf;
 
 use gpui::{Context, ParentElement, Styled, Window, div, px};
@@ -15,7 +16,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn show_lossy_save_dialog(
         &self,
-        tab_id: usize,
+        tab_id: TabId,
         encoding: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -72,7 +73,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn show_lossy_save_as_dialog(
         &self,
-        tab_id: usize,
+        tab_id: TabId,
         path: PathBuf,
         contents: String,
         encoding: &str,

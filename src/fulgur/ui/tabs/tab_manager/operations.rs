@@ -1,4 +1,7 @@
-use crate::fulgur::{Fulgur, tab::Tab};
+use crate::fulgur::{
+    Fulgur,
+    tab::{Tab, TabId},
+};
 use gpui::{Context, Window};
 use gpui_component::input::InputEvent;
 use std::collections::HashSet;
@@ -12,7 +15,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     pub fn update_modified_status(&mut self, cx: &mut Context<Self>) {
-        let active_editor_ids: HashSet<usize> = self
+        let active_editor_ids: HashSet<TabId> = self
             .tabs
             .iter()
             .filter_map(|tab| match tab {
@@ -90,17 +93,6 @@ impl Fulgur {
         // After removing `from`, the effective insert position shifts down by 1 when to > from.
         let insert_at = if to > from { to - 1 } else { to };
         self.tabs.insert(insert_at, tab);
-        if let Some(active) = self.active_tab_index {
-            self.active_tab_index = Some(if from == active {
-                insert_at
-            } else if from < active && insert_at >= active {
-                active - 1
-            } else if from > active && insert_at <= active {
-                active + 1
-            } else {
-                active
-            });
-        }
         self.save_state_async(cx, window);
         cx.notify();
     }
@@ -121,6 +113,8 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.reorder_tab(dragged.tab_index, slot_index, window, cx);
+        if let Some(from) = self.tab_index_of(dragged.tab_id) {
+            self.reorder_tab(from, slot_index, window, cx);
+        }
     }
 }

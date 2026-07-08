@@ -46,7 +46,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     pub(crate) fn refresh_status_bar_labels(&mut self, cx: &Context<Self>) {
-        let (cursor_pos, language, encoding) = match self.active_tab_index {
+        let (cursor_pos, language, encoding) = match self.active_tab_index() {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
                     let cursor = editor_tab.content.read(cx).cursor_position();
@@ -64,7 +64,7 @@ impl Fulgur {
         };
 
         // Return early when the inputs match the previously cached values.
-        if self.status_bar_cache.active_tab_index == self.active_tab_index
+        if self.status_bar_cache.active_tab_index == self.active_tab_index()
             && self.status_bar_cache.cursor_line == cursor_pos.line
             && self.status_bar_cache.cursor_character == cursor_pos.character
             && self.status_bar_cache.language == language
@@ -77,13 +77,14 @@ impl Fulgur {
             Some(lang) => pretty_name(lang),
             None => EMPTY.to_string(),
         };
-        let encoding_label = match self.active_tab_index {
+        let active_tab_index = self.active_tab_index();
+        let encoding_label = match active_tab_index {
             Some(_) => encoding.clone(),
             None => UTF_8.to_string(),
         };
 
         let cache = &mut self.status_bar_cache;
-        cache.active_tab_index = self.active_tab_index;
+        cache.active_tab_index = active_tab_index;
         cache.cursor_line = cursor_pos.line;
         cache.cursor_character = cursor_pos.character;
         cache.language = language;
@@ -334,7 +335,7 @@ mod tests {
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                this.active_tab_index = None;
+                this.active_tab_id = None;
 
                 this.refresh_status_bar_labels(cx);
                 assert_eq!(this.status_bar_cache.cursor_line, 0);

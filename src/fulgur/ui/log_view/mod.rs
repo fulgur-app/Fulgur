@@ -20,6 +20,7 @@ mod tail;
 pub use tail::{log_toggle_available, opens_as_log_by_default};
 
 use crate::fulgur::Fulgur;
+use crate::fulgur::ui::tabs::tab::TabId;
 
 /// Maximum number of trailing lines kept in the log view before trimming.
 pub const LOG_LINE_CAP: usize = 10_000;
@@ -61,7 +62,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(&EditorTab)`: The matching editor tab
     /// - `None`: If no editor tab has that id
-    fn editor_tab(&self, tab_id: usize) -> Option<&crate::fulgur::editor_tab::EditorTab> {
+    fn editor_tab(&self, tab_id: TabId) -> Option<&crate::fulgur::editor_tab::EditorTab> {
         self.tabs
             .iter()
             .find_map(|tab| tab.as_editor().filter(|editor| editor.id == tab_id))
@@ -77,7 +78,7 @@ impl Fulgur {
     /// - `None`: If no editor tab has that id
     fn editor_tab_mut(
         &mut self,
-        tab_id: usize,
+        tab_id: TabId,
     ) -> Option<&mut crate::fulgur::editor_tab::EditorTab> {
         self.tabs
             .iter_mut()

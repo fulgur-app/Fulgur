@@ -504,7 +504,7 @@ fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppC
                     .update(cx, |_, window, cx| {
                         other_fulgur.update(cx, |this, cx| {
                             this.new_tab(window, cx);
-                            this.active_tab_index = Some(0);
+                            this.active_tab_id = this.tabs.first().map(crate::fulgur::tab::Tab::id);
                             if let Some(editor) =
                                 this.tabs.get_mut(1).and_then(|tab| tab.as_editor_mut())
                             {
@@ -525,7 +525,7 @@ fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppC
     cx.update(|cx| {
         let other = other_fulgur.read(cx);
         assert_eq!(
-            other.active_tab_index,
+            other.active_tab_index(),
             Some(1),
             "dock activation by path should activate the matching tab in the other window"
         );
@@ -547,7 +547,7 @@ fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut
                     .update(cx, |_, window, cx| {
                         other_fulgur.update(cx, |this, cx| {
                             this.new_tab(window, cx);
-                            this.active_tab_index = Some(0);
+                            this.active_tab_id = this.tabs.first().map(crate::fulgur::tab::Tab::id);
                             if let Some(editor) =
                                 this.tabs.get_mut(1).and_then(|tab| tab.as_editor_mut())
                             {
@@ -566,7 +566,7 @@ fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut
     cx.update(|cx| {
         let other = other_fulgur.read(cx);
         assert_eq!(
-            other.active_tab_index,
+            other.active_tab_index(),
             Some(1),
             "dock activation by title should activate the matching tab in the other window"
         );
