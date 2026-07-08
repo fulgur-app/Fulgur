@@ -1,7 +1,7 @@
-use crate::fulgur::Fulgur;
 use crate::fulgur::settings::{Settings, Themes};
+use crate::fulgur::shared_state::SharedAppState;
 
-use gpui::{Action, App, Entity};
+use gpui::{Action, App, BorrowAppContext};
 use gpui_component::{Theme, ThemeMode, ThemeRegistry};
 use rust_embed::RustEmbed;
 use std::fs;
@@ -83,14 +83,12 @@ pub fn themes_directory_path() -> anyhow::Result<PathBuf> {
     crate::fulgur::utils::paths::config_subdir("themes")
 }
 
-/// Reload themes and update the Fulgur instance: this function initializes the theme registry, reloads themes from disk, updates the Fulgur entity's themes field, and refreshes the window.
+/// Reload themes and publish them to `SharedAppState`: this function initializes the theme registry, reloads themes from disk, and publishes the theme catalog through `cx.update_global` so every window's observer picks it up.
 ///
 /// ### Arguments
 /// - `settings`: The application settings
-/// - `entity`: The Fulgur entity to update
 /// - `cx`: The application context
-pub fn reload_themes_and_update(settings: &Settings, entity: &Entity<Fulgur>, cx: &mut App) {
-    let entity_clone = entity.clone();
+pub fn reload_themes_and_update(settings: &Settings, cx: &mut App) {
     init(settings, cx, move |cx| {
         let themes = match Themes::load() {
             Ok(themes) => Some(themes),
@@ -100,9 +98,8 @@ pub fn reload_themes_and_update(settings: &Settings, entity: &Entity<Fulgur>, cx
             }
         };
         if let Some(themes) = themes {
-            entity_clone.update(cx, |_, cx| {
-                let shared = Fulgur::shared_state(cx);
-                *shared.themes.lock() = Some(themes);
+            cx.update_global::<SharedAppState, _>(|shared, _| {
+                shared.themes = Some(themes);
             });
         }
     });
@@ -184,7 +181,9 @@ mod gpui_tests {
     use crate::fulgur::{
         Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
-    use gpui::{AppContext, Entity, SharedString, TestAppContext, WindowId, WindowOptions};
+    use gpui::{
+        AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId, WindowOptions,
+    };
     use gpui_component::ActiveTheme;
     use gpui_component::ThemeRegistry;
     use parking_lot::Mutex;
@@ -311,18 +310,16 @@ mod gpui_tests {
         let (_, fulgur) = open_window_with_fulgur(cx);
         let settings = cx.update(|cx| fulgur.read(cx).settings.clone());
         cx.update(|cx| {
-            let shared = cx.global::<SharedAppState>();
-            *shared.themes.lock() = None;
+            cx.update_global::<SharedAppState, _>(|shared, _| {
+                shared.themes = None;
+            });
         });
         cx.update(|cx| {
-            reload_themes_and_update(&settings, &fulgur, cx);
+            reload_themes_and_update(&settings, cx);
         });
         assert!(
             wait_until(cx, 80, Duration::from_millis(25), |cx| {
-                cx.update(|cx| {
-                    let shared = cx.global::<SharedAppState>();
-                    shared.themes.lock().is_some()
-                })
+                cx.update(|cx| cx.global::<SharedAppState>().themes.is_some())
             }),
             "reloading themes should repopulate shared theme catalog"
         );

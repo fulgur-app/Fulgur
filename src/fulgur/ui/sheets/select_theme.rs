@@ -156,7 +156,6 @@ impl Fulgur {
             prompt: Some("Select theme".into()),
         });
         let settings = self.settings.clone();
-        let entity = cx.entity();
         cx.spawn_in(window, async move |_view, window| {
             let paths = path_future.await.ok()?.ok()??;
             let theme_path = paths.first()?.clone();
@@ -206,7 +205,7 @@ impl Fulgur {
                                 filename.to_string_lossy()
                             ));
                             window.push_notification((NotificationType::Success, notification), cx);
-                            reload_themes_and_update(&settings, &entity, cx);
+                            reload_themes_and_update(&settings, cx);
                         })
                         .ok()?;
                 }

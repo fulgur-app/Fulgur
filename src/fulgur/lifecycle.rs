@@ -51,7 +51,7 @@ impl Fulgur {
     ) -> Entity<Self> {
         let title_bar = CustomTitleBar::new(window, cx);
         let shared = cx.global::<shared_state::SharedAppState>();
-        let settings = shared.settings.lock().clone();
+        let settings = shared.settings.clone();
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
         let jump_to_line_input =
@@ -64,6 +64,16 @@ impl Fulgur {
                     {
                         cx.notify();
                     }
+                });
+
+            let shared_state_observation =
+                cx.observe_global::<shared_state::SharedAppState>(|this: &mut Self, cx| {
+                    let shared = cx.global::<shared_state::SharedAppState>();
+                    if this.settings != shared.settings {
+                        this.settings = shared.settings.clone();
+                        this.settings_changed = true;
+                    }
+                    cx.notify();
                 });
             Self {
                 window_id,
@@ -78,7 +88,7 @@ impl Fulgur {
                 pending_jump: None,
                 settings,
                 settings_changed: false,
-                local_settings_version: 0,
+                _shared_state_observation: shared_state_observation,
                 rendered_tabs: HashSet::new(),
                 tabs_pending_update: HashSet::new(),
                 editor_modified_subscriptions: HashMap::new(),
