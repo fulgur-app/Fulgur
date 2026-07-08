@@ -4,6 +4,7 @@ use super::{
 };
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
 use crate::fulgur::settings::EditorSettings;
+use crate::fulgur::ui::tabs::tab::TabId;
 use gpui::{
     AppContext, Context, IntoElement, Render, SharedString, TestAppContext, Window, WindowOptions,
     div,
@@ -60,8 +61,8 @@ fn test_editor_tab_new_construction(cx: &mut TestAppContext) {
 
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
-            let tab = EditorTab::new(7, "Scratch", window, cx, &settings);
-            assert_eq!(tab.id, 7);
+            let tab = EditorTab::new(TabId(7), "Scratch", window, cx, &settings);
+            assert_eq!(tab.id, TabId(7));
             assert_eq!(tab.title, SharedString::from("Scratch"));
             assert!(tab.file_path().is_none());
             assert!(!tab.modified);
@@ -100,14 +101,14 @@ fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_content(
-                9,
+                TabId(9),
                 &contents,
                 "shared.rs".to_string(),
                 window,
                 cx,
                 &settings,
             );
-            assert_eq!(tab.id, 9);
+            assert_eq!(tab.id, TabId(9));
             assert_eq!(tab.title, SharedString::from("shared.rs"));
             assert!(tab.file_path().is_none());
             assert!(tab.modified);
@@ -136,7 +137,7 @@ fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
     let path = temp_test_path("test_file.md");
     let contents = "# title\nbody".to_string();
     let params = FromFileParams {
-        id: 13,
+        id: TabId(13),
         path: path.clone(),
         contents: contents.clone(),
         encoding: "UTF-8".to_string(),
@@ -146,7 +147,7 @@ fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_file(params, window, cx, &settings);
-            assert_eq!(tab.id, 13);
+            assert_eq!(tab.id, TabId(13));
             assert_eq!(tab.title, SharedString::from("test_file.md •"));
             assert_eq!(tab.file_path().cloned(), Some(path));
             assert!(tab.modified);
@@ -171,7 +172,7 @@ fn test_editor_tab_from_duplicate_construction(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     let params = FromDuplicateParams {
-        id: 22,
+        id: TabId(22),
         title: SharedString::from("copy.rs"),
         current_content: "let value = 42;".to_string(),
         encoding: "UTF-8".to_string(),
@@ -182,7 +183,7 @@ fn test_editor_tab_from_duplicate_construction(cx: &mut TestAppContext) {
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_duplicate(params, window, cx, &settings);
-            assert_eq!(tab.id, 22);
+            assert_eq!(tab.id, TabId(22));
             assert_eq!(tab.title, SharedString::from("copy.rs"));
             assert!(tab.file_path().is_none());
             assert!(tab.modified);
@@ -207,7 +208,7 @@ fn test_editor_tab_check_modified_and_mark_as_saved(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
-        id: 31,
+        id: TabId(31),
         path: temp_test_path("modified_state.md"),
         contents: "original".to_string(),
         encoding: "UTF-8".to_string(),
@@ -251,7 +252,7 @@ fn test_editor_tab_check_modified_detects_same_length_content_change(cx: &mut Te
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
-        id: 32,
+        id: TabId(32),
         path: temp_test_path("modified_same_len.md"),
         contents: "abcd".to_string(),
         encoding: "UTF-8".to_string(),
@@ -276,7 +277,7 @@ fn test_editor_tab_check_modified_handles_multibyte_utf8_content(cx: &mut TestAp
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
-        id: 33,
+        id: TabId(33),
         path: temp_test_path("modified_utf8.md"),
         contents: "\u{00E9}\u{1F642}\u{6F22}".to_string(),
         encoding: "UTF-8".to_string(),
@@ -308,14 +309,14 @@ fn test_editor_tab_from_file_title_indicator_clean_and_dirty(cx: &mut TestAppCon
     let settings = EditorSettings::new();
 
     let clean = FromFileParams {
-        id: 41,
+        id: TabId(41),
         path: temp_test_path("clean.md"),
         contents: "clean".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
     };
     let dirty = FromFileParams {
-        id: 42,
+        id: TabId(42),
         path: temp_test_path("dirty.md"),
         contents: "dirty".to_string(),
         encoding: "UTF-8".to_string(),
@@ -341,7 +342,7 @@ fn test_editor_tab_get_suggested_filename_trims_modified_indicator(cx: &mut Test
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
-        id: 51,
+        id: TabId(51),
         path: temp_test_path("suggested_name.md"),
         contents: "content".to_string(),
         encoding: "UTF-8".to_string(),
@@ -371,8 +372,9 @@ fn test_from_transfer_preserves_all_fields(cx: &mut TestAppContext) {
     let settings = EditorSettings::new();
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
-            let tab = EditorTab::from_transfer(99, make_transfer_data(), window, cx, &settings);
-            assert_eq!(tab.id, 99);
+            let tab =
+                EditorTab::from_transfer(TabId(99), make_transfer_data(), window, cx, &settings);
+            assert_eq!(tab.id, TabId(99));
             assert_eq!(tab.title, SharedString::from("transfer.rs"));
             assert_eq!(
                 tab.file_path().cloned(),
@@ -403,9 +405,11 @@ fn test_from_transfer_assigns_new_id(cx: &mut TestAppContext) {
     let settings = EditorSettings::new();
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
-            let tab = EditorTab::from_transfer(77, make_transfer_data(), window, cx, &settings);
+            let tab =
+                EditorTab::from_transfer(TabId(77), make_transfer_data(), window, cx, &settings);
             assert_eq!(
-                tab.id, 77,
+                tab.id,
+                TabId(77),
                 "id must be the parameter, not from transfer data"
             );
             cx.new(|_| EmptyView)
@@ -439,7 +443,7 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
-            let tab = EditorTab::from_transfer(1, data, window, cx, &settings);
+            let tab = EditorTab::from_transfer(TabId(1), data, window, cx, &settings);
             assert!(tab.file_path().is_none());
             assert!(tab.file_size_bytes.is_none());
             assert!(tab.file_last_modified.is_none());
@@ -475,7 +479,7 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
-            let tab = EditorTab::from_transfer(2, data, window, cx, &settings);
+            let tab = EditorTab::from_transfer(TabId(2), data, window, cx, &settings);
             assert!(tab.modified, "modified flag must be preserved");
             assert_eq!(
                 tab.original_content_hash,
@@ -514,7 +518,7 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
-            let tab = EditorTab::from_transfer(3, data, window, cx, &settings);
+            let tab = EditorTab::from_transfer(TabId(3), data, window, cx, &settings);
             assert_eq!(tab.language, SupportedLanguage::Python);
             cx.new(|_| EmptyView)
         })
@@ -547,7 +551,7 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
-            let tab = EditorTab::from_transfer(4, data, window, cx, &settings);
+            let tab = EditorTab::from_transfer(TabId(4), data, window, cx, &settings);
             assert!(tab.show_markdown_toolbar);
             assert!(tab.show_markdown_preview);
             cx.new(|_| EmptyView)
@@ -561,7 +565,7 @@ fn test_editor_tab_from_file_csv_defaults_to_table(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
-        id: 70,
+        id: TabId(70),
         path: temp_test_path("data.csv"),
         contents: "name,age\nAlice,30\n".to_string(),
         encoding: "UTF-8".to_string(),
@@ -585,7 +589,7 @@ fn test_editor_tab_from_file_csv_detects_semicolon(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
-        id: 71,
+        id: TabId(71),
         path: temp_test_path("euro.csv"),
         contents: "name;age\nAlice;30\n".to_string(),
         encoding: "UTF-8".to_string(),
@@ -607,7 +611,7 @@ fn test_csv_table_insert_row_commits_to_buffer(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
-        id: 72,
+        id: TabId(72),
         path: temp_test_path("grid.csv"),
         contents: "a,b\n1,2\n".to_string(),
         encoding: "UTF-8".to_string(),
@@ -634,7 +638,7 @@ fn test_csv_table_move_column_reorders_data(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
-        id: 73,
+        id: TabId(73),
         path: temp_test_path("reorder.csv"),
         contents: "a,b,c\n1,2,3\n".to_string(),
         encoding: "UTF-8".to_string(),

@@ -1,3 +1,4 @@
+use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur, languages::supported_languages::SupportedLanguage, settings::MarkdownPreviewMode,
     tab::Tab, ui::tabs::markdown_preview_tab::MarkdownPreviewTab,
@@ -19,8 +20,7 @@ impl Fulgur {
         {
             return;
         }
-        let active_tab = self.active_tab_index.and_then(|index| self.tabs.get(index));
-        let editor_id = match active_tab {
+        let editor_id = match self.active_tab() {
             Some(Tab::Editor(editor_tab)) => editor_tab.id,
             Some(Tab::MarkdownPreview(preview_tab)) => preview_tab.source_tab_id,
             _ => return,
@@ -38,17 +38,16 @@ impl Fulgur {
             };
             let title = SharedString::from(format!("Preview - {}", editor_tab.title));
             let content = editor_tab.content.clone();
-            let editor_pos = self.active_tab_index.unwrap_or(0);
+            let editor_pos = self.active_tab_index().unwrap_or(0);
             let view_state = cx.new(|cx| TextViewState::markdown("", cx));
             let preview_tab = Tab::MarkdownPreview(MarkdownPreviewTab {
-                id: self.next_tab_id,
+                id: self.allocate_tab_id(),
                 title,
                 source_tab_id: editor_id,
                 content,
                 view_state,
             });
             self.tabs.insert(editor_pos + 1, preview_tab);
-            self.next_tab_id += 1;
             self.set_active_tab(editor_pos + 1, window, cx);
         }
     }
@@ -80,14 +79,13 @@ impl Fulgur {
             if let Some((editor_id, title, content)) = info {
                 let view_state = cx.new(|cx| TextViewState::markdown("", cx));
                 let preview_tab = Tab::MarkdownPreview(MarkdownPreviewTab {
-                    id: self.next_tab_id,
+                    id: self.allocate_tab_id(),
                     title: SharedString::from(format!("Preview - {title}")),
                     source_tab_id: editor_id,
                     content,
                     view_state,
                 });
                 self.tabs.insert(actual_idx + 1, preview_tab);
-                self.next_tab_id += 1;
                 offset += 1;
             }
         }
@@ -121,14 +119,13 @@ impl Fulgur {
         if let Some((editor_id, title, content)) = info {
             let view_state = cx.new(|cx| TextViewState::markdown("", cx));
             let preview_tab = Tab::MarkdownPreview(MarkdownPreviewTab {
-                id: self.next_tab_id,
+                id: self.allocate_tab_id(),
                 title: SharedString::from(format!("Preview - {title}")),
                 source_tab_id: editor_id,
                 content,
                 view_state,
             });
             self.tabs.insert(editor_tab_index + 1, preview_tab);
-            self.next_tab_id += 1;
         }
     }
 
@@ -156,7 +153,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     pub(crate) fn prune_markdown_preview_cache(&mut self, cx: &mut Context<Self>) {
-        let source_ids: HashSet<usize> = self
+        let source_ids: HashSet<TabId> = self
             .tabs
             .iter()
             .filter_map(|tab| match tab {
@@ -199,7 +196,7 @@ impl Fulgur {
     /// - `SharedString`: Cached markdown source text for rendering
     pub(crate) fn markdown_preview_text_for(
         &mut self,
-        source_tab_id: usize,
+        source_tab_id: TabId,
         content: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> SharedString {

@@ -1,6 +1,6 @@
 use crate::fulgur::{
     Fulgur,
-    tab::Tab,
+    tab::{Tab, TabId},
     ui::{
         components_utils::UNTITLED,
         tabs::{
@@ -19,17 +19,17 @@ impl Fulgur {
     /// - `window`: The window to create the tab in
     /// - `cx`: The application context
     pub fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let id = self.allocate_tab_id();
         let tab = Tab::Editor(EditorTab::new(
-            self.next_tab_id,
-            format!("{} {}", UNTITLED, self.next_tab_id),
+            id,
+            format!("{UNTITLED} {id}"),
             window,
             cx,
             &self.settings.editor_settings,
         ));
         self.tabs.push(tab);
-        self.active_tab_index = Some(self.tabs.len() - 1);
-        self.pending_tab_scroll = Some(self.tabs.len() - 1);
-        self.next_tab_id += 1;
+        self.active_tab_id = Some(id);
+        self.pending_tab_scroll = Some(id);
         self.focus_active_tab(window, cx);
         self.save_state_async(cx, window);
         cx.notify();
@@ -41,9 +41,9 @@ impl Fulgur {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some(usize)`: The id of the reusable last editor tab.
+    /// - `Some(TabId)`: The id of the reusable last editor tab.
     /// - `None`: If the last tab is missing, not an editor, has a file, or has non-whitespace content.
-    fn reusable_scratch_tab_id(&self, cx: &App) -> Option<usize> {
+    fn reusable_scratch_tab_id(&self, cx: &App) -> Option<TabId> {
         let Tab::Editor(editor) = self.tabs.last()? else {
             return None;
         };
@@ -78,11 +78,11 @@ impl Fulgur {
         if let Some(scratch_id) = self.reusable_scratch_tab_id(cx) {
             self.remove_tab_by_id(scratch_id, window, cx);
         }
+        let id = tab.id();
         self.tabs.push(tab);
-        let index = self.tabs.len() - 1;
-        self.active_tab_index = Some(index);
-        self.pending_tab_scroll = Some(index);
-        index
+        self.active_tab_id = Some(id);
+        self.pending_tab_scroll = Some(id);
+        self.tabs.len() - 1
     }
 
     /// Open settings in a new tab or switch to existing settings tab
@@ -94,12 +94,8 @@ impl Fulgur {
         if let Some(index) = self.tabs.iter().position(|t| matches!(t, Tab::Settings(_))) {
             self.set_active_tab(index, window, cx);
         } else {
-            let tab = SettingsTab::new(
-                self.next_tab_id,
-                &self.settings.editor_settings.font_family,
-                window,
-                cx,
-            );
+            let id = self.allocate_tab_id();
+            let tab = SettingsTab::new(id, &self.settings.editor_settings.font_family, window, cx);
             let font_select_subscription = cx.subscribe(
                 &tab.font_family_select,
                 |this: &mut Self,
@@ -115,9 +111,8 @@ impl Fulgur {
             self.font_select_subscription = Some(font_select_subscription);
             let settings_tab = Tab::Settings(tab);
             self.tabs.push(settings_tab);
-            self.active_tab_index = Some(self.tabs.len() - 1);
-            self.pending_tab_scroll = Some(self.tabs.len() - 1);
-            self.next_tab_id += 1;
+            self.active_tab_id = Some(id);
+            self.pending_tab_scroll = Some(id);
             self.save_state_async(cx, window);
             cx.notify();
         }
@@ -144,9 +139,10 @@ impl Fulgur {
         let lossy_decode = editor_tab.lossy_decode;
         let settings = self.settings.editor_settings.clone();
         let clean_title: SharedString = raw_title.trim_end_matches(" •").trim().to_string().into();
+        let id = self.allocate_tab_id();
         let new_tab = Tab::Editor(EditorTab::from_duplicate(
             FromDuplicateParams {
-                id: self.next_tab_id,
+                id,
                 title: clean_title,
                 current_content,
                 encoding,
@@ -159,9 +155,8 @@ impl Fulgur {
         ));
         let insert_pos = index + 1;
         self.tabs.insert(insert_pos, new_tab);
-        self.active_tab_index = Some(insert_pos);
-        self.pending_tab_scroll = Some(insert_pos);
-        self.next_tab_id += 1;
+        self.active_tab_id = Some(id);
+        self.pending_tab_scroll = Some(id);
         self.focus_active_tab(window, cx);
         self.save_state_async(cx, window);
         cx.notify();

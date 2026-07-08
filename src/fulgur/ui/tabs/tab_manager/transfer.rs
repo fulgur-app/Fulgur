@@ -1,6 +1,6 @@
 use crate::fulgur::{
     Fulgur,
-    tab::Tab,
+    tab::{Tab, TabId},
     ui::tabs::editor_tab::{EditorTab, TabTransferData},
 };
 use gpui::{App, Context, Window};
@@ -15,7 +15,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(TabTransferData)`: Snapshot of all transferable tab state
     /// - `None`: If `tab_id` does not refer to an existing editor tab
-    pub fn extract_tab_transfer_data(&self, tab_id: usize, cx: &App) -> Option<TabTransferData> {
+    pub fn extract_tab_transfer_data(&self, tab_id: TabId, cx: &App) -> Option<TabTransferData> {
         let tab = self.tabs.iter().find(|t| t.id() == tab_id)?;
         let editor = tab.as_editor()?;
         let content_state = editor.content.read(cx);
@@ -51,26 +51,20 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn handle_pending_tab_transfer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(data) = self.pending_tab_transfer.take() {
-            let id = self.next_tab_id;
-            self.next_tab_id += 1;
+            let id = self.allocate_tab_id();
             let local_path = data.location.local_path().cloned();
             let cursor_position = data.cursor_position;
             let tab =
                 EditorTab::from_transfer(id, data, window, cx, &self.settings.editor_settings);
+            let is_log_view = tab.log_view;
             self.tabs.push(Tab::Editor(tab));
-            let new_index = self.tabs.len() - 1;
-            self.active_tab_index = Some(new_index);
-            self.pending_tab_scroll = Some(new_index);
+            self.active_tab_id = Some(id);
+            self.pending_tab_scroll = Some(id);
             self.pending_transfer_scroll = Some(cursor_position);
             if let Some(path) = local_path {
                 self.watch_file(&path);
             }
-            if self
-                .tabs
-                .get(new_index)
-                .and_then(Tab::as_editor)
-                .is_some_and(|editor| editor.log_view)
-            {
+            if is_log_view {
                 self.activate_log_view(id, window, cx);
             }
             self.focus_active_tab(window, cx);
@@ -91,8 +85,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn handle_pending_transfer_scroll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(position) = self.pending_transfer_scroll.take()
-            && let Some(index) = self.active_tab_index
-            && let Some(Tab::Editor(editor_tab)) = self.tabs.get(index)
+            && let Some(Tab::Editor(editor_tab)) = self.active_tab()
         {
             editor_tab.content.clone().update(cx, |state, cx| {
                 state.set_cursor_position(position, window, cx);

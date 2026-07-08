@@ -1,4 +1,5 @@
 use super::{RemoteFileResult, RemoteOpenResult};
+use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{Fulgur, editor_tab, tab::Tab, ui::menus::build_menus};
 use gpui::{Context, Window};
 use gpui_component::notification::NotificationType;
@@ -56,15 +57,15 @@ impl Fulgur {
                             remote_file.spec.host,
                             remote_file.spec.path
                         );
+                        let new_tab_id = self.allocate_tab_id();
                         let editor_tab = editor_tab::EditorTab::from_remote_loaded(
-                            self.next_tab_id,
+                            new_tab_id,
                             remote_file,
                             window,
                             cx,
                             &self.settings.editor_settings,
                         );
                         self.place_editor_tab_reusing_scratch(Tab::Editor(editor_tab), window, cx);
-                        self.next_tab_id += 1;
                         self.focus_active_tab(window, cx);
                         if let Err(e) = self.settings.add_file(PathBuf::from(recent_remote_url)) {
                             log::error!("Failed to add remote file to recent files: {e}");
@@ -111,7 +112,7 @@ impl Fulgur {
     /// - `cx`: The application context
     fn apply_remote_reload_to_existing_tab(
         &mut self,
-        tab_id: usize,
+        tab_id: TabId,
         remote_file: RemoteFileResult,
         window: &mut Window,
         cx: &mut Context<Self>,

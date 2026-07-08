@@ -42,7 +42,7 @@ impl Fulgur {
                         .wrapping_add(u64::from(*byte));
                 }
             }
-            hash ^= tab.id() as u64;
+            hash ^= tab.id().0;
             hash = hash.rotate_left(17);
         }
         hash
@@ -280,8 +280,9 @@ impl Fulgur {
     fn render_tabs_with_slots(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let ghost = if cx.has_active_drag() {
             self.drag_ghost.as_ref().and_then(|(slot, dragged)| {
-                let from = dragged.tab_index;
-                let is_noop = *slot == from || *slot == from + 1;
+                let is_noop = self
+                    .tab_index_of(dragged.tab_id)
+                    .is_some_and(|from| *slot == from || *slot == from + 1);
                 if is_noop {
                     None
                 } else {
@@ -329,10 +330,7 @@ impl Fulgur {
         use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
 
         let tab_id = tab.id();
-        let is_active = match self.active_tab_index {
-            Some(active_index) => index == active_index,
-            None => false,
-        };
+        let is_active = self.active_tab_id == Some(tab_id);
         let has_tabs_on_left = index > 0;
         let has_tabs_on_right = index < self.tabs.len() - 1;
         let total_tabs = self.tabs.len();
@@ -368,7 +366,7 @@ impl Fulgur {
             .and_then(|editor_tab| editor_tab.file_last_modified)
             .and_then(components_utils::format_system_time);
         let mut tab_div = div()
-            .id(("tab", tab_id))
+            .id(("tab", tab_id.0))
             .flex()
             .items_center()
             .h(TAB_BAR_HEIGHT)
@@ -380,7 +378,7 @@ impl Fulgur {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _, window, cx: &mut Context<'_, Fulgur>| {
-                    if !is_active {
+                    if !is_active && let Some(index) = this.tab_index_of(tab_id) {
                         this.set_active_tab(index, window, cx);
                     }
                 }),
@@ -476,7 +474,7 @@ impl Fulgur {
         let mut tab_with_content = tab_div
             .child(title_container)
             .child(
-                Button::new(("close-tab", tab_id))
+                Button::new(("close-tab", tab_id.0))
                     .icon(CustomIcon::Close)
                     .ghost()
                     .xsmall()
@@ -497,14 +495,14 @@ impl Fulgur {
                 && self
                     .drag_ghost
                     .as_ref()
-                    .is_some_and(|(_, d)| d.tab_index == index);
+                    .is_some_and(|(_, d)| d.tab_id == tab_id);
             if is_source {
                 tab_with_content = tab_with_content.opacity(0.45);
             }
             tab_with_content = tab_with_content
                 .on_drag(
                     DraggedTab {
-                        tab_index: index,
+                        tab_id,
                         title,
                         is_modified,
                     },
@@ -543,13 +541,13 @@ impl Fulgur {
             let this = this
                 .menu_with_disabled(
                     crate::fulgur::ui::components_utils::reveal_in_file_manager_label(),
-                    Box::new(ShowInFileManager(index)),
+                    Box::new(ShowInFileManager(tab_id)),
                     !has_file_path,
                 )
-                .menu_with_disabled("Copy path", Box::new(CopyPath(index)), !has_file_path)
+                .menu_with_disabled("Copy path", Box::new(CopyPath(tab_id)), !has_file_path)
                 .menu_with_disabled(
                     "Duplicate Tab",
-                    Box::new(DuplicateTab(index)),
+                    Box::new(DuplicateTab(tab_id)),
                     !is_editor_tab,
                 );
             let this = if is_editor_tab {
@@ -609,12 +607,12 @@ impl Fulgur {
                 .menu("Close Tab", Box::new(CloseTabAction(tab_id)))
                 .menu_with_disabled(
                     "Close Tabs to the Left",
-                    Box::new(CloseTabsToLeft(index)),
+                    Box::new(CloseTabsToLeft(tab_id)),
                     !has_tabs_on_left,
                 )
                 .menu_with_disabled(
                     "Close Tabs to the Right",
-                    Box::new(CloseTabsToRight(index)),
+                    Box::new(CloseTabsToRight(tab_id)),
                     !has_tabs_on_right,
                 )
                 .separator()
@@ -625,7 +623,7 @@ impl Fulgur {
                 )
                 .menu_with_disabled(
                     "Close All Other Tabs",
-                    Box::new(CloseAllOtherTabs(index)),
+                    Box::new(CloseAllOtherTabs(tab_id)),
                     total_tabs <= 1,
                 )
         });

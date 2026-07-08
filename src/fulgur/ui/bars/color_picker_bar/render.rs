@@ -30,7 +30,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(index) = self.active_tab_index
+        if let Some(index) = self.active_tab_index()
             && let Some(crate::fulgur::tab::Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
         {
             editor_tab.content.update(cx, |input_state, cx| {
@@ -381,7 +381,7 @@ mod gpui_tests {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                this.active_tab_index = None;
+                this.active_tab_id = None;
                 this.insert_color_value("#FF0000".to_string(), window, cx);
             });
         });

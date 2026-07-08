@@ -1,5 +1,6 @@
 //! The `Fulgur` tail engine: the background poll task and chunk application.
 
+use crate::fulgur::ui::tabs::tab::TabId;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,7 +21,7 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `tab_id`: The tab whose poll task should stop
-    pub(crate) fn stop_log_poll_task(&mut self, tab_id: usize) {
+    pub(crate) fn stop_log_poll_task(&mut self, tab_id: TabId) {
         if let Some(flag) = self.log_tail_cancel.remove(&tab_id) {
             flag.store(true, Ordering::Release);
         }
@@ -35,7 +36,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn start_log_poll_task(
         &mut self,
-        tab_id: usize,
+        tab_id: TabId,
         path: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -91,7 +92,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(u64)`: The byte offset when the tab is still in log view
     /// - `None`: When the tab is gone or no longer in log view (poll should stop)
-    fn log_tail_offset(&self, tab_id: usize) -> Option<u64> {
+    fn log_tail_offset(&self, tab_id: TabId) -> Option<u64> {
         let editor = self.editor_tab(tab_id)?;
         if !editor.log_view {
             return None;
@@ -112,7 +113,7 @@ impl Fulgur {
     /// - `cx`: The application context
     fn apply_log_tail_chunk(
         &mut self,
-        tab_id: usize,
+        tab_id: TabId,
         text: &str,
         new_offset: u64,
         truncated: bool,
@@ -186,7 +187,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn flush_log_follow(
         &mut self,
-        tab_id: usize,
+        tab_id: TabId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -225,7 +226,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `tab_id`: The tab to update
     /// - `follow`: The new follow state
-    pub(super) fn set_log_follow(&mut self, tab_id: usize, follow: bool) {
+    pub(super) fn set_log_follow(&mut self, tab_id: TabId, follow: bool) {
         if let Some(editor) = self.editor_tab_mut(tab_id) {
             editor.log_follow = follow;
         }

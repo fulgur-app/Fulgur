@@ -11,17 +11,14 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn set_active_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
-            let previous_active_id = self
-                .active_tab_index
-                .and_then(|prev| self.tabs.get(prev))
-                .map(Tab::id);
+            let previous_active_id = self.active_tab_id;
             let new_tab_id = self.tabs.get(index).map(Tab::id);
             if let Some(prev_id) = previous_active_id
                 && previous_active_id != new_tab_id
             {
                 self.stop_log_poll_task(prev_id);
             }
-            self.active_tab_index = Some(index);
+            self.active_tab_id = new_tab_id;
             self.tab_scroll_handle.scroll_to_item(index);
             let pending_path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) {
                 if let Some(path) = editor_tab.file_path() {
@@ -88,9 +85,7 @@ impl Fulgur {
     /// - `window`: The window to focus the tab in
     /// - `cx`: The application context
     pub fn focus_active_tab(&self, window: &mut Window, cx: &mut App) {
-        if let Some(active_tab_index) = self.active_tab_index
-            && let Some(active_tab) = self.tabs.get(active_tab_index)
-        {
+        if let Some(active_tab) = self.active_tab() {
             match active_tab {
                 Tab::Editor(editor_tab) => {
                     let focus_handle = editor_tab.content.read(cx).focus_handle(cx);

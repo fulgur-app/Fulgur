@@ -10,35 +10,36 @@ use gpui_component::button::Button;
 use crate::fulgur::ui::{
     components_utils::{TAB_BAR_BUTTON_SIZE, button_factory},
     icons::CustomIcon,
+    tabs::tab::TabId,
 };
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
-pub struct CloseTabAction(pub usize);
+pub struct CloseTabAction(pub TabId);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
-pub struct CloseTabsToLeft(pub usize);
+pub struct CloseTabsToLeft(pub TabId);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
-pub struct CloseTabsToRight(pub usize);
+pub struct CloseTabsToRight(pub TabId);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
-pub struct CloseAllOtherTabs(pub usize);
+pub struct CloseAllOtherTabs(pub TabId);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
-pub struct ShowInFileManager(pub usize);
+pub struct ShowInFileManager(pub TabId);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
-pub struct CopyPath(pub usize);
+pub struct CopyPath(pub TabId);
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
-pub struct DuplicateTab(pub usize);
+pub struct DuplicateTab(pub TabId);
 
 gpui::actions!(fulgur, [CloseAllTabsAction, SendTabToWindowNoOp]);
 

@@ -388,7 +388,7 @@ impl Fulgur {
         {
             if editor_tab.modified {
                 let tab_id = editor_tab.id;
-                let is_active = self.active_tab_index == Some(tab_index);
+                let is_active = self.active_tab_index() == Some(tab_index);
 
                 if is_active {
                     self.show_file_conflict_dialog(path, tab_id, window, cx);
@@ -840,7 +840,7 @@ mod tests {
                         input_state.set_value("local-edits", window, cx);
                     });
                 }
-                this.active_tab_index = Some(0);
+                this.active_tab_id = this.tabs.first().map(crate::fulgur::tab::Tab::id);
                 this.handle_file_watch_event(FileWatchEvent::Modified(path.clone()), window, cx);
                 assert!(
                     !this.file_watch_state.pending_conflicts.contains_key(&path),

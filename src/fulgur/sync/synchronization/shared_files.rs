@@ -42,8 +42,7 @@ impl Fulgur {
                 std::mem::take(&mut *pending)
             };
             for decrypted in decrypted_files {
-                let tab_id = self.next_tab_id;
-                self.next_tab_id += 1;
+                let tab_id = self.allocate_tab_id();
                 let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
                     tab_id,
                     &decrypted.content,
@@ -53,8 +52,8 @@ impl Fulgur {
                     &self.settings.editor_settings,
                 ));
                 self.tabs.push(new_tab);
-                self.active_tab_index = Some(self.tabs.len() - 1);
-                self.pending_tab_scroll = Some(self.tabs.len() - 1);
+                self.active_tab_id = Some(tab_id);
+                self.pending_tab_scroll = Some(tab_id);
                 log::info!("Opened shared file: {}", decrypted.file_name);
             }
         }

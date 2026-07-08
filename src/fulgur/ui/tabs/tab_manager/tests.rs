@@ -60,7 +60,7 @@ fn test_new_tab_adds_tab_and_sets_as_active(cx: &mut TestAppContext) {
             let initial_count = this.tabs.len();
             this.new_tab(window, cx);
             assert_eq!(this.tabs.len(), initial_count + 1);
-            assert_eq!(this.active_tab_index, Some(this.tabs.len() - 1));
+            assert_eq!(this.active_tab_index(), Some(this.tabs.len() - 1));
         });
     });
 }
@@ -73,9 +73,9 @@ fn test_new_tab_increments_next_tab_id(cx: &mut TestAppContext) {
         fulgur.update(cx, |this, cx| {
             let id_before = this.next_tab_id;
             this.new_tab(window, cx);
-            assert_eq!(this.next_tab_id, id_before + 1);
+            assert_eq!(this.next_tab_id, id_before.next());
             this.new_tab(window, cx);
-            assert_eq!(this.next_tab_id, id_before + 2);
+            assert_eq!(this.next_tab_id, id_before.next().next());
         });
     });
 }
@@ -150,7 +150,7 @@ fn test_close_tab_is_noop_for_unknown_id(cx: &mut TestAppContext) {
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             let count_before = this.tabs.len();
-            this.close_tab(usize::MAX, window, cx);
+            this.close_tab(crate::fulgur::tab::TabId(u64::MAX), window, cx);
             assert_eq!(this.tabs.len(), count_before);
         });
     });
@@ -165,14 +165,14 @@ fn test_close_tab_keeps_active_index_valid_when_closing_before_active(cx: &mut T
             // Start with one tab (index 0). Add a second tab (index 1) and switch to it.
             this.new_tab(window, cx);
             this.set_active_tab(1, window, cx);
-            assert_eq!(this.active_tab_index, Some(1));
+            assert_eq!(this.active_tab_index(), Some(1));
 
             // Close the tab at index 0 (before the active one).
             let first_id = this.tabs[0].id();
             this.close_tab(first_id, window, cx);
 
             // Active index must have shifted left by one.
-            assert_eq!(this.active_tab_index, Some(0));
+            assert_eq!(this.active_tab_index(), Some(0));
         });
     });
 }
@@ -187,7 +187,7 @@ fn test_close_last_tab_leaves_no_active_index(cx: &mut TestAppContext) {
             let tab_id = this.tabs[0].id();
             this.close_tab(tab_id, window, cx);
             assert!(this.tabs.is_empty());
-            assert_eq!(this.active_tab_index, None);
+            assert_eq!(this.active_tab_index(), None);
         });
     });
 }
@@ -202,9 +202,9 @@ fn test_set_active_tab_changes_active_index(cx: &mut TestAppContext) {
         fulgur.update(cx, |this, cx| {
             this.new_tab(window, cx);
             this.set_active_tab(0, window, cx);
-            assert_eq!(this.active_tab_index, Some(0));
+            assert_eq!(this.active_tab_index(), Some(0));
             this.set_active_tab(1, window, cx);
-            assert_eq!(this.active_tab_index, Some(1));
+            assert_eq!(this.active_tab_index(), Some(1));
         });
     });
 }
@@ -215,9 +215,9 @@ fn test_set_active_tab_is_noop_out_of_bounds(cx: &mut TestAppContext) {
 
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
-            let active_before = this.active_tab_index;
+            let active_before = this.active_tab_index();
             this.set_active_tab(usize::MAX, window, cx);
-            assert_eq!(this.active_tab_index, active_before);
+            assert_eq!(this.active_tab_index(), active_before);
         });
     });
 }
@@ -240,7 +240,7 @@ fn test_close_other_tabs_leaves_only_active_tab(cx: &mut TestAppContext) {
 
             assert_eq!(this.tabs.len(), 1);
             assert_eq!(this.tabs[0].id(), active_id);
-            assert_eq!(this.active_tab_index, Some(0));
+            assert_eq!(this.active_tab_index(), Some(0));
         });
     });
 }
@@ -274,7 +274,7 @@ fn test_duplicate_tab_inserts_copy_after_original_and_becomes_active(cx: &mut Te
             assert_eq!(this.tabs.len(), 2);
             assert_eq!(this.tabs[0].id(), original_id);
             assert_ne!(this.tabs[1].id(), original_id);
-            assert_eq!(this.active_tab_index, Some(1));
+            assert_eq!(this.active_tab_index(), Some(1));
         });
     });
 }
@@ -342,7 +342,7 @@ fn test_open_markdown_preview_tab_preview_is_inserted_after_editor(cx: &mut Test
             if let Some(editor) = this.get_active_editor_tab_mut() {
                 editor.language = SupportedLanguage::Markdown;
             }
-            let editor_index = this.active_tab_index.expect("expected active tab");
+            let editor_index = this.active_tab_index().expect("expected active tab");
             this.open_markdown_preview_tab(window, cx);
             assert!(matches!(
                 this.tabs.get(editor_index + 1),
@@ -392,7 +392,7 @@ fn test_open_markdown_preview_tab_is_noop_without_active_tab(cx: &mut TestAppCon
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
-            this.active_tab_index = None;
+            this.active_tab_id = None;
             let count_before = this.tabs.len();
             this.open_markdown_preview_tab(window, cx);
             assert_eq!(this.tabs.len(), count_before);
@@ -843,9 +843,11 @@ fn test_reorder_tab_noop_when_to_equals_from(cx: &mut TestAppContext) {
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             this.new_tab(window, cx);
-            let ids_before: Vec<usize> = this.tabs.iter().map(super::super::tab::Tab::id).collect();
+            let ids_before: Vec<crate::fulgur::tab::TabId> =
+                this.tabs.iter().map(super::super::tab::Tab::id).collect();
             this.reorder_tab(1, 1, window, cx);
-            let ids_after: Vec<usize> = this.tabs.iter().map(super::super::tab::Tab::id).collect();
+            let ids_after: Vec<crate::fulgur::tab::TabId> =
+                this.tabs.iter().map(super::super::tab::Tab::id).collect();
             assert_eq!(ids_before, ids_after, "to == from should be a no-op");
         });
     });
@@ -857,10 +859,12 @@ fn test_reorder_tab_noop_when_to_equals_from_plus_one(cx: &mut TestAppContext) {
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             this.new_tab(window, cx);
-            let ids_before: Vec<usize> = this.tabs.iter().map(super::super::tab::Tab::id).collect();
+            let ids_before: Vec<crate::fulgur::tab::TabId> =
+                this.tabs.iter().map(super::super::tab::Tab::id).collect();
             // to == from+1 means inserting immediately after the tab, which is its current position
             this.reorder_tab(1, 2, window, cx);
-            let ids_after: Vec<usize> = this.tabs.iter().map(super::super::tab::Tab::id).collect();
+            let ids_after: Vec<crate::fulgur::tab::TabId> =
+                this.tabs.iter().map(super::super::tab::Tab::id).collect();
             assert_eq!(ids_before, ids_after, "to == from+1 should be a no-op");
         });
     });
@@ -902,7 +906,7 @@ fn test_reorder_tab_active_index_follows_moved_tab(cx: &mut TestAppContext) {
             this.reorder_tab(0, 3, window, cx);
             // After remove: [1, 2]; insert_at = 3-1 = 2 → [1, 2, 0*]; active should be 2
             assert_eq!(
-                this.active_tab_index,
+                this.active_tab_index(),
                 Some(2),
                 "active index should follow the moved tab"
             );
@@ -922,7 +926,7 @@ fn test_reorder_tab_active_index_decrements_when_earlier_tab_moves_past(cx: &mut
             this.reorder_tab(0, 3, window, cx);
             // from(0) < active(1), insert_at(2) >= active(1) → active - 1 = 0
             assert_eq!(
-                this.active_tab_index,
+                this.active_tab_index(),
                 Some(0),
                 "active index should decrement when a preceding tab moves past it"
             );
@@ -942,7 +946,7 @@ fn test_reorder_tab_active_index_increments_when_later_tab_moves_before(cx: &mut
             this.reorder_tab(2, 0, window, cx);
             // from(2) > active(1), insert_at(0) <= active(1) → active + 1 = 2
             assert_eq!(
-                this.active_tab_index,
+                this.active_tab_index(),
                 Some(2),
                 "active index should increment when a following tab moves before it"
             );
@@ -962,7 +966,7 @@ fn test_handle_tab_drop_reorders_tab_to_target_slot(cx: &mut TestAppContext) {
             this.new_tab(window, cx);
             let id_2 = this.tabs[2].id();
             let dragged = DraggedTab {
-                tab_index: 2,
+                tab_id: id_2,
                 title: "test.rs".into(),
                 is_modified: false,
             };
@@ -1005,7 +1009,9 @@ fn make_transfer_data() -> TabTransferData {
 fn test_extract_transfer_data_returns_none_for_missing_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
-        let result = fulgur.update(cx, |this, cx| this.extract_tab_transfer_data(9999, cx));
+        let result = fulgur.update(cx, |this, cx| {
+            this.extract_tab_transfer_data(crate::fulgur::tab::TabId(9999), cx)
+        });
         assert!(result.is_none(), "unknown tab id must return None");
     });
 }
@@ -1016,7 +1022,9 @@ fn test_extract_transfer_data_captures_content_and_metadata(cx: &mut TestAppCont
     visual_cx.update(|_window, cx| {
         // The initial tab created by setup_fulgur has id=0 and empty content
         let data = fulgur
-            .update(cx, |this, cx| this.extract_tab_transfer_data(0, cx))
+            .update(cx, |this, cx| {
+                this.extract_tab_transfer_data(crate::fulgur::tab::TabId(0), cx)
+            })
             .expect("should extract data from the initial tab");
         assert_eq!(data.content, "");
         assert!(data.location.is_untitled());
@@ -1065,7 +1073,7 @@ fn test_handle_pending_tab_transfer_sets_as_active(cx: &mut TestAppContext) {
             this.pending_tab_transfer = Some(make_transfer_data());
             this.handle_pending_tab_transfer(window, cx);
             assert_eq!(
-                this.active_tab_index,
+                this.active_tab_index(),
                 Some(this.tabs.len() - 1),
                 "transferred tab must become the active tab"
             );
@@ -1130,7 +1138,7 @@ fn test_handle_pending_tab_transfer_increments_tab_id(cx: &mut TestAppContext) {
             this.handle_pending_tab_transfer(window, cx);
             assert_eq!(
                 this.next_tab_id,
-                id_before + 1,
+                id_before.next(),
                 "next_tab_id must increment after transfer"
             );
         });

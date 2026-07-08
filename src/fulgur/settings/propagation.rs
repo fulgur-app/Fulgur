@@ -52,16 +52,20 @@ impl Fulgur {
     pub fn propagate_settings_to_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.tabs_pending_update.is_empty() {
             let settings = self.settings.editor_settings.clone();
-            for tab_index in self.tabs_pending_update.drain() {
-                if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
+            for tab_id in self.tabs_pending_update.drain().collect::<Vec<_>>() {
+                if let Some(Tab::Editor(editor_tab)) =
+                    self.tabs.iter_mut().find(|tab| tab.id() == tab_id)
+                {
                     editor_tab.update_settings(window, cx, &settings);
                 }
             }
         }
         if self.settings_changed {
             let settings = self.settings.editor_settings.clone();
-            for tab_index in self.rendered_tabs.iter().copied().collect::<Vec<_>>() {
-                if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
+            for tab_id in self.rendered_tabs.iter().copied().collect::<Vec<_>>() {
+                if let Some(Tab::Editor(editor_tab)) =
+                    self.tabs.iter_mut().find(|tab| tab.id() == tab_id)
+                {
                     editor_tab.update_settings(window, cx, &settings);
                 }
             }
@@ -74,11 +78,11 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     pub fn track_newly_rendered_tabs(&mut self, cx: &mut Context<Self>) {
-        if let Some(index) = self.active_tab_index {
-            let is_newly_rendered = !self.rendered_tabs.contains(&index);
-            self.rendered_tabs.insert(index);
+        if let Some(tab_id) = self.active_tab_id {
+            let is_newly_rendered = !self.rendered_tabs.contains(&tab_id);
+            self.rendered_tabs.insert(tab_id);
             if is_newly_rendered {
-                self.tabs_pending_update.insert(index);
+                self.tabs_pending_update.insert(tab_id);
                 cx.notify();
             }
         }

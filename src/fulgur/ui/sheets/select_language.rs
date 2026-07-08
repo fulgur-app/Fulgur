@@ -100,7 +100,7 @@ impl Fulgur {
     /// - `Some(SupportedLanguage)`: Active editor tab language, or `Plain` for non-editor tabs.
     /// - `None`: If there is no active tab.
     fn current_sheet_language(&self) -> Option<SupportedLanguage> {
-        match self.active_tab_index {
+        match self.active_tab_index() {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
                     Some(editor_tab.language)
@@ -124,7 +124,7 @@ impl Fulgur {
         cx: &mut Context<Self>,
         language: SupportedLanguage,
     ) {
-        if let Some(index) = self.active_tab_index
+        if let Some(index) = self.active_tab_index()
             && let Some(tab) = self.tabs.get_mut(index)
             && let Some(editor_tab) = tab.as_editor_mut()
         {
@@ -244,7 +244,7 @@ mod tests {
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                this.active_tab_index = None;
+                this.active_tab_id = None;
                 this.switch_active_tab_language(window, cx, SupportedLanguage::Rust);
             });
         });

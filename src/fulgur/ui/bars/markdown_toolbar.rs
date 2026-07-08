@@ -43,7 +43,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(index) = self.active_tab_index
+        if let Some(index) = self.active_tab_index()
             && let Some(crate::fulgur::tab::Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
         {
             editor_tab.content.update(cx, |input_state, cx| {

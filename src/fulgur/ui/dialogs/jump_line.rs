@@ -181,7 +181,7 @@ mod tests {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                this.active_tab_index = None;
+                this.active_tab_id = None;
                 this.pending_jump = Some(Jump {
                     line: 5,
                     character: None,

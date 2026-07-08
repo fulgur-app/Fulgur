@@ -247,7 +247,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub(super) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_state.show_search = false;
-        if let Some(active_index) = self.active_tab_index
+        if let Some(active_index) = self.active_tab_index()
             && let Some(tab) = self.tabs.get(active_index)
             && let Some(editor_tab) = tab.as_editor()
         {
@@ -301,7 +301,7 @@ impl Fulgur {
         self.search_state.last_search_match_whole_word = match_whole_word;
         self.search_state.search_matches.clear();
         self.search_state.current_match_index = None;
-        if let Some(active_index) = self.active_tab_index
+        if let Some(active_index) = self.active_tab_index()
             && let Some(content_entity) = self
                 .tabs
                 .get(active_index)
@@ -436,7 +436,7 @@ impl Fulgur {
     fn highlight_current_match(&self, window: &mut Window, cx: &mut App) {
         if let Some(match_index) = self.search_state.current_match_index
             && let Some(search_match) = self.search_state.search_matches.get(match_index)
-            && let Some(active_index) = self.active_tab_index
+            && let Some(active_index) = self.active_tab_index()
             && let Some(tab) = self.tabs.get(active_index)
             && let Some(editor_tab) = tab.as_editor()
         {
@@ -475,7 +475,7 @@ impl Fulgur {
         self.force_perform_search(window, cx);
         if let Some(match_index) = self.search_state.current_match_index
             && let Some(search_match) = self.search_state.search_matches.get(match_index).cloned()
-            && let Some(active_index) = self.active_tab_index
+            && let Some(active_index) = self.active_tab_index()
             && let Some(tab) = self.tabs.get_mut(active_index)
             && let Some(editor_tab) = tab.as_editor_mut()
         {
@@ -524,7 +524,7 @@ impl Fulgur {
         if self.search_state.search_matches.is_empty() {
             return;
         }
-        if let Some(active_index) = self.active_tab_index {
+        if let Some(active_index) = self.active_tab_index() {
             let replace_text = self.search_state.replace_input.read(cx).text().to_string();
             let search_query = self.search_state.search_input.read(cx).text().to_string();
             let match_case = self.search_state.match_case;

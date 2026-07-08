@@ -542,7 +542,7 @@ impl Fulgur {
     /// - `SupportedLanguage`: The active tab's language
     #[must_use]
     pub fn get_current_language(&self) -> SupportedLanguage {
-        match self.active_tab_index {
+        match self.active_tab_index() {
             Some(index) => {
                 if let Some(editor_tab) = self.tabs[index].as_editor() {
                     editor_tab.language

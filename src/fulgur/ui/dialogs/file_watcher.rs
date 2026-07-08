@@ -1,3 +1,4 @@
+use crate::fulgur::ui::tabs::tab::TabId;
 use std::path::Path;
 
 use gpui::{Context, ParentElement, Styled, Window, div, px};
@@ -16,7 +17,7 @@ impl Fulgur {
     /// - `cx`: The application context
     fn reload_watched_tab_by_id(
         &mut self,
-        tab_id: usize,
+        tab_id: TabId,
         path: &Path,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -45,7 +46,7 @@ impl Fulgur {
     pub fn show_file_conflict_dialog(
         &self,
         path: &Path,
-        tab_id: usize,
+        tab_id: TabId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -102,7 +103,7 @@ impl Fulgur {
     pub fn show_reopen_modified_file_dialog(
         &self,
         path: &Path,
-        tab_id: usize,
+        tab_id: TabId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
