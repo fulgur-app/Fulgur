@@ -2,53 +2,71 @@ use super::widgets::SyncButtonState;
 use crate::fulgur::{
     Fulgur,
     languages::supported_languages::{SupportedLanguage, pretty_name},
+    settings::{MarkdownPreviewMode, ServerProfile},
     sync::synchronization::SynchronizationStatus,
     ui::components_utils::{EMPTY, UTF_8},
 };
-use gpui::Context;
+use gpui::{App, Context, EventEmitter, WeakEntity, Window};
 use gpui_component::input::Position;
 use std::time::{Duration, Instant};
 
 /// Delay before showing the connecting spinner (to avoid flickering on fast connections)
 const CONNECTING_SPINNER_DELAY: Duration = Duration::from_millis(500);
 
-/// Cached status bar label strings
-pub(crate) struct StatusBarCache {
-    active_tab_index: Option<usize>,
-    cursor_line: u32,
-    cursor_character: u32,
-    language: Option<SupportedLanguage>,
-    encoding: String,
+/// The status bar at the bottom of the window, rendered as its own entity
+pub(crate) struct StatusBar {
+    pub(super) fulgur: WeakEntity<Fulgur>,
+}
+
+/// Typed events emitted by the status bar toward the owning `Fulgur` window
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StatusBarEvent {
+    JumpToLine,
+    SelectLanguage,
+    ToggleMarkdownPreview,
+    ToggleMarkdownToolbar,
+    ToggleCsvView,
+    ToggleLogView,
+    ToggleLogFollow,
+    LoadFullLog,
+    OpenShareSheet,
+    ToggleColorPicker,
+}
+
+impl EventEmitter<StatusBarEvent> for StatusBar {}
+
+/// Display label strings derived from the active tab
+pub(super) struct StatusBarLabels {
     pub(super) line_col: String,
     pub(super) language_label: String,
     pub(super) encoding_label: String,
 }
 
-impl Default for StatusBarCache {
-    fn default() -> Self {
-        Self {
-            active_tab_index: Some(usize::MAX),
-            cursor_line: 0,
-            cursor_character: 0,
-            language: None,
-            encoding: String::new(),
-            line_col: String::new(),
-            language_label: String::new(),
-            encoding_label: String::new(),
-        }
-    }
-}
-
-impl Fulgur {
-    /// Refresh the cached status-bar label strings when the active tab's cursor, language, or
-    /// encoding has changed since the last render.
+impl StatusBar {
+    /// Create a new status bar view
     ///
     /// ### Arguments
+    /// - `fulgur`: Weak handle to the owning window entity the bar reads its state from
+    ///
+    /// ### Returns
+    /// - `StatusBar`: The new status bar view
+    pub(crate) fn new(fulgur: WeakEntity<Fulgur>) -> Self {
+        Self { fulgur }
+    }
+
+    /// Compute the status bar label strings from the active tab's cursor, language, and encoding
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The owning window to derive the labels from
     /// - `cx`: The application context
-    pub(crate) fn refresh_status_bar_labels(&mut self, cx: &Context<Self>) {
-        let (cursor_pos, language, encoding) = match self.active_tab_index() {
+    ///
+    /// ### Returns
+    /// - `StatusBarLabels`: The line/column, language, and encoding labels
+    pub(super) fn compute_labels(fulgur: &Fulgur, cx: &App) -> StatusBarLabels {
+        let active_tab_index = fulgur.active_tab_index();
+        let (cursor_pos, language, encoding) = match active_tab_index {
             Some(index) => {
-                if let Some(editor_tab) = self.tabs[index].as_editor() {
+                if let Some(editor_tab) = fulgur.tabs[index].as_editor() {
                     let cursor = editor_tab.content.read(cx).cursor_position();
                     let enc = editor_tab.encoding.clone();
                     (cursor, Some(editor_tab.language), enc)
@@ -63,39 +81,24 @@ impl Fulgur {
             None => (Position::default(), None, String::new()),
         };
 
-        // Return early when the inputs match the previously cached values.
-        if self.status_bar_cache.active_tab_index == self.active_tab_index()
-            && self.status_bar_cache.cursor_line == cursor_pos.line
-            && self.status_bar_cache.cursor_character == cursor_pos.character
-            && self.status_bar_cache.language == language
-            && self.status_bar_cache.encoding == encoding
-        {
-            return;
-        }
-
         let language_label = match &language {
             Some(lang) => pretty_name(lang),
             None => EMPTY.to_string(),
         };
-        let active_tab_index = self.active_tab_index();
         let encoding_label = match active_tab_index {
-            Some(_) => encoding.clone(),
+            Some(_) => encoding,
             None => UTF_8.to_string(),
         };
 
-        let cache = &mut self.status_bar_cache;
-        cache.active_tab_index = active_tab_index;
-        cache.cursor_line = cursor_pos.line;
-        cache.cursor_character = cursor_pos.character;
-        cache.language = language;
-        cache.encoding = encoding;
-        cache.line_col = format!(
-            "Ln {}, Col {}",
-            cursor_pos.line + 1,
-            cursor_pos.character + 1
-        );
-        cache.language_label = language_label;
-        cache.encoding_label = encoding_label;
+        StatusBarLabels {
+            line_col: format!(
+                "Ln {}, Col {}",
+                cursor_pos.line + 1,
+                cursor_pos.character + 1
+            ),
+            language_label,
+            encoding_label,
+        }
     }
 
     /// Aggregate sync button state across all active profiles.
@@ -104,16 +107,16 @@ impl Fulgur {
     /// shown once the earliest connecting-since timestamp has exceeded
     /// `CONNECTING_SPINNER_DELAY`.
     ///
-    /// ### Parameters:
-    /// - `cx`: The application context.
+    /// ### Arguments
+    /// - `profiles`: The configured server profiles to aggregate over
+    /// - `cx`: The application context
     ///
-    /// ### Returns:
+    /// ### Returns
     /// - `(SyncButtonState, bool)`: The aggregated state and whether to show the spinner.
-    pub(super) fn status_bar_sync_button_state(
-        &self,
-        cx: &Context<Self>,
+    pub(super) fn sync_button_state(
+        profiles: &[ServerProfile],
+        cx: &App,
     ) -> (SyncButtonState, bool) {
-        let profiles = &self.settings.app_settings.synchronization_settings.profiles;
         let shared = Fulgur::shared_state(cx);
         let sync_states = shared.sync_states.read();
 
@@ -154,13 +157,16 @@ impl Fulgur {
 
     /// Collect per-profile tooltip data for all active profiles.
     ///
-    /// ### Parameters:
-    /// - `cx`: The application context.
+    /// ### Arguments
+    /// - `profiles`: The configured server profiles to collect tooltip data for
+    /// - `cx`: The application context
     ///
-    /// ### Returns:
+    /// ### Returns
     /// - `Vec<(String, String)>`: Profile name and its human-readable status label.
-    pub(super) fn sync_profiles_tooltip_data(&self, cx: &Context<Self>) -> Vec<(String, String)> {
-        let profiles = &self.settings.app_settings.synchronization_settings.profiles;
+    pub(super) fn sync_profiles_tooltip_data(
+        profiles: &[ServerProfile],
+        cx: &App,
+    ) -> Vec<(String, String)> {
         let shared = Fulgur::shared_state(cx);
         let sync_states = shared.sync_states.read();
 
@@ -183,9 +189,55 @@ impl Fulgur {
     }
 }
 
+impl Fulgur {
+    /// Dispatch a status bar event to the matching window-level handler
+    ///
+    /// ### Arguments
+    /// - `event`: The status bar event to handle
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub(crate) fn on_status_bar_event(
+        &mut self,
+        event: StatusBarEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            StatusBarEvent::JumpToLine => self.show_jump_to_line_dialog(window, cx),
+            StatusBarEvent::SelectLanguage => self.render_select_language_sheet(window, cx),
+            StatusBarEvent::ToggleMarkdownPreview => {
+                if self.settings.editor_settings.markdown_settings.preview_mode
+                    == MarkdownPreviewMode::DedicatedTab
+                {
+                    self.open_markdown_preview_tab(window, cx);
+                } else {
+                    if let Some(active_editor_tab) = self.get_active_editor_tab_mut() {
+                        active_editor_tab.show_markdown_preview =
+                            !active_editor_tab.show_markdown_preview;
+                    }
+                    cx.notify();
+                }
+            }
+            StatusBarEvent::ToggleMarkdownToolbar => {
+                if let Some(active_editor_tab) = self.get_active_editor_tab_mut() {
+                    active_editor_tab.show_markdown_toolbar =
+                        !active_editor_tab.show_markdown_toolbar;
+                }
+                cx.notify();
+            }
+            StatusBarEvent::ToggleCsvView => self.toggle_csv_view_mode(window, cx),
+            StatusBarEvent::ToggleLogView => self.toggle_log_view(window, cx),
+            StatusBarEvent::ToggleLogFollow => self.toggle_log_follow(window, cx),
+            StatusBarEvent::LoadFullLog => self.load_full_log(window, cx),
+            StatusBarEvent::OpenShareSheet => self.open_share_file_sheet(window, cx),
+            StatusBarEvent::ToggleColorPicker => self.toggle_color_picker(window, cx),
+        }
+    }
+}
+
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
-    use super::{Fulgur, SyncButtonState};
+    use super::{Fulgur, StatusBar, StatusBarEvent, SyncButtonState};
     use crate::fulgur::{
         languages::supported_languages::SupportedLanguage,
         settings::{ServerProfile, Settings},
@@ -319,32 +371,49 @@ mod tests {
                     );
                 });
 
-                this.refresh_status_bar_labels(cx);
-                assert_eq!(this.status_bar_cache.cursor_line, 1);
-                assert_eq!(this.status_bar_cache.cursor_character, 4);
-                assert_eq!(this.status_bar_cache.language_label, "Rust");
-                assert_eq!(this.status_bar_cache.encoding_label, "ISO-8859-1");
-                assert_eq!(this.status_bar_cache.line_col, "Ln 2, Col 5");
+                let labels = StatusBar::compute_labels(this, cx);
+                assert_eq!(labels.language_label, "Rust");
+                assert_eq!(labels.encoding_label, "ISO-8859-1");
+                assert_eq!(labels.line_col, "Ln 2, Col 5");
             });
         });
     }
 
     #[gpui::test]
-    fn test_status_bar_cache_uses_defaults_without_active_tab(cx: &mut TestAppContext) {
+    fn test_status_bar_labels_use_defaults_without_active_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.active_tab_id = None;
 
-                this.refresh_status_bar_labels(cx);
-                assert_eq!(this.status_bar_cache.cursor_line, 0);
-                assert_eq!(this.status_bar_cache.cursor_character, 0);
-                assert!(this.status_bar_cache.language_label.is_empty());
-                assert_eq!(this.status_bar_cache.encoding_label, UTF_8);
-                assert_eq!(this.status_bar_cache.line_col, "Ln 1, Col 1");
+                let labels = StatusBar::compute_labels(this, cx);
+                assert!(labels.language_label.is_empty());
+                assert_eq!(labels.encoding_label, UTF_8);
+                assert_eq!(labels.line_col, "Ln 1, Col 1");
             });
         });
+    }
+
+    #[gpui::test]
+    fn test_status_bar_events_are_routed_to_the_window(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let (status_bar, initial) = visual_cx.update(|_window, cx| {
+            let this = fulgur.read(cx);
+            (
+                this.status_bar.clone(),
+                this.color_picker_bar_state.show_color_picker,
+            )
+        });
+        visual_cx.update(|_window, cx| {
+            status_bar.update(cx, |_, cx| cx.emit(StatusBarEvent::ToggleColorPicker));
+        });
+        visual_cx.run_until_parked();
+
+        let after = visual_cx
+            .update(|_window, cx| fulgur.read(cx).color_picker_bar_state.show_color_picker);
+        assert_eq!(after, !initial);
     }
 
     #[gpui::test]
@@ -357,7 +426,8 @@ mod tests {
                 *state.connection_status.lock() = SynchronizationStatus::Connected;
                 *state.connecting_since.lock() = None;
 
-                let (state, show_spinner) = this.status_bar_sync_button_state(cx);
+                let profiles = &this.settings.app_settings.synchronization_settings.profiles;
+                let (state, show_spinner) = StatusBar::sync_button_state(profiles, cx);
                 assert_eq!(state, SyncButtonState::Connected);
                 assert!(!show_spinner);
             });
@@ -378,7 +448,8 @@ mod tests {
                         .unwrap(),
                 );
 
-                let (btn_state, show_spinner) = this.status_bar_sync_button_state(cx);
+                let profiles = &this.settings.app_settings.synchronization_settings.profiles;
+                let (btn_state, show_spinner) = StatusBar::sync_button_state(profiles, cx);
                 assert_eq!(btn_state, SyncButtonState::Connecting);
                 assert!(show_spinner);
             });
@@ -399,7 +470,8 @@ mod tests {
                         .unwrap(),
                 );
 
-                let (btn_state, show_spinner) = this.status_bar_sync_button_state(cx);
+                let profiles = &this.settings.app_settings.synchronization_settings.profiles;
+                let (btn_state, show_spinner) = StatusBar::sync_button_state(profiles, cx);
                 assert_eq!(btn_state, SyncButtonState::Connecting);
                 assert!(!show_spinner);
             });
@@ -417,7 +489,8 @@ mod tests {
                 *state.connecting_since.lock() =
                     Some(Instant::now().checked_sub(Duration::from_secs(2)).unwrap());
 
-                let (btn_state, show_spinner) = this.status_bar_sync_button_state(cx);
+                let profiles = &this.settings.app_settings.synchronization_settings.profiles;
+                let (btn_state, show_spinner) = StatusBar::sync_button_state(profiles, cx);
                 assert_eq!(btn_state, SyncButtonState::Disconnected);
                 assert!(!show_spinner);
             });
@@ -480,7 +553,8 @@ mod tests {
                 *shared.sync_state_for(&id_b).connection_status.lock() =
                     SynchronizationStatus::Connecting;
 
-                let (btn_state, _) = this.status_bar_sync_button_state(cx);
+                let profiles = &this.settings.app_settings.synchronization_settings.profiles;
+                let (btn_state, _) = StatusBar::sync_button_state(profiles, cx);
                 assert_eq!(btn_state, SyncButtonState::Connected);
             });
         });

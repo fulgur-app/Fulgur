@@ -4,7 +4,7 @@
 pub const DEFAULT_DELIMITER: u8 = b',';
 
 /// Candidate delimiters considered by [`detect_delimiter`], in priority order.
-const CANDIDATE_DELIMITERS: [u8; 3] = [b',', b';', b'\t'];
+const CANDIDATE_DELIMITERS: [u8; 3] = *b",;\t";
 
 /// A rectangular view of a CSV file: a header row plus data rows.
 #[derive(Debug, Clone, Default, PartialEq)]
