@@ -1,7 +1,9 @@
 //! The bottom toolbar shown for CSV tabs in table view.
 
-use gpui::{Context, Div, Entity, ParentElement, Styled, Window, div};
-use gpui_component::{ActiveTheme, h_flex, notification::NotificationType, table::TableState};
+use gpui::{Context, Div, Entity, ParentElement, SharedString, Styled, Window, div};
+use gpui_component::{
+    ActiveTheme, WindowExt, h_flex, notification::NotificationType, table::TableState,
+};
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
@@ -146,7 +148,7 @@ impl Fulgur {
             None
         };
         if let Some(message) = warning {
-            self.pending_notification = Some((NotificationType::Warning, message.into()));
+            window.push_notification((NotificationType::Warning, SharedString::from(message)), cx);
         }
         cx.notify();
     }

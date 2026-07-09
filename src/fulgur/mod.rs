@@ -18,7 +18,7 @@ use gpui::{
     Entity, EntityId, FocusHandle, Pixels, Point, ScrollHandle, SharedString, Subscription,
     WindowId,
 };
-use gpui_component::{input::InputState, menu::PopupMenu, notification::NotificationType};
+use gpui_component::{input::InputState, menu::PopupMenu};
 use settings::Settings;
 use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
 use tab::{Tab, TabId};
@@ -59,7 +59,6 @@ pub struct Fulgur {
     tab_scroll_handle: ScrollHandle, // Scroll handle for the tab bar to scroll active tab into view
     pending_tab_scroll: Option<TabId>, // Deferred scroll-to-tab request (needs one render cycle for layout)
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
-    pub pending_notification: Option<(NotificationType, SharedString)>, // Pending notification to display on next render
     save_failed_once: bool, // Flag: save already failed once, allow force-close on next attempt
     pub share_sheet_state: Option<Arc<ui::sheets::share_file::ShareSheetState>>, // When Some, a share sheet is open and devices are being fetched per profile
     cached_window_bounds: Option<state::SerializedWindowBounds>, // Cached window bounds for cross-window saves

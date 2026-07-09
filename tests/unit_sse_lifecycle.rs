@@ -238,7 +238,7 @@ fn test_set_sync_server_connection_status_thread_safe() {
 fn test_connect_sse_fails_without_server_url() {
     // connect_sse must return Err(ServerUrlMissing) immediately and not spawn a thread.
     let profile = ServerProfile::new("Test"); // server_url = None
-    let (tx, _rx) = std::sync::mpsc::channel();
+    let (tx, _rx) = futures::channel::mpsc::unbounded();
     let shutdown_flag = Arc::new(AtomicBool::new(false));
     let status = make_connection_status(SynchronizationStatus::Disconnected);
     let token_manager = Arc::new(TokenStateManager::new());
@@ -271,7 +271,7 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
     // spawned thread checks the flag at the top of its loop and exits without
     // performing any network I/O or sleeping.
     let profile = profile_with_server_url();
-    let (tx, _rx) = std::sync::mpsc::channel();
+    let (tx, _rx) = futures::channel::mpsc::unbounded();
     let shutdown_flag = Arc::new(AtomicBool::new(true)); // pre-set
     let status = make_connection_status(SynchronizationStatus::Disconnected);
     let token_manager = Arc::new(TokenStateManager::new());
@@ -307,7 +307,7 @@ fn test_connect_sse_returns_ok_handle_with_valid_settings() {
     // Verify that connect_sse returns Ok(JoinHandle) when the server URL is present,
     // regardless of whether the connection succeeds later.
     let profile = profile_with_server_url();
-    let (tx, _rx) = std::sync::mpsc::channel();
+    let (tx, _rx) = futures::channel::mpsc::unbounded();
     let shutdown_flag = Arc::new(AtomicBool::new(true)); // shut down immediately
     let status = make_connection_status(SynchronizationStatus::Disconnected);
     let token_manager = Arc::new(TokenStateManager::new());

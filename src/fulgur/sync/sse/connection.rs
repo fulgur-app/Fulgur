@@ -15,6 +15,7 @@ use crate::fulgur::{
     utils::retry::{BackoffCalculator, interruptible_sleep},
 };
 use fulgur_common::api::shares::SharedFileResponse;
+use futures::channel::mpsc::UnboundedSender;
 use parking_lot::Mutex;
 use std::{
     collections::HashSet,
@@ -22,7 +23,6 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc::Sender,
     },
     thread,
     time::{Duration, Instant},
@@ -371,7 +371,7 @@ fn fetch_pending_shares_v2_into(
 /// - `Err(SynchronizationError)`: If required profile fields are missing
 pub fn connect_sse(
     profile: &ServerProfile,
-    event_tx: Sender<SseEvent>,
+    event_tx: UnboundedSender<SseEvent>,
     shutdown_flag: Arc<AtomicBool>,
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
     token_state: &Arc<TokenStateManager>,
@@ -441,7 +441,7 @@ pub fn connect_sse(
                         &sync_server_connection_status,
                         SynchronizationStatus::Disconnected,
                     );
-                    event_tx.send(SseEvent::Error(e.to_string())).ok();
+                    event_tx.unbounded_send(SseEvent::Error(e.to_string())).ok();
                     if shutdown_flag.load(Ordering::Relaxed) {
                         log::info!("SSE connection shutdown requested, stopping...");
                         break;
@@ -559,7 +559,7 @@ pub fn connect_sse(
                                     );
                                 }
                             }
-                            if let Err(e) = event_tx.send(event) {
+                            if let Err(e) = event_tx.unbounded_send(event) {
                                 log::error!("Failed to send SSE event: {e}");
                                 receiver_gone = true;
                                 break;
@@ -582,7 +582,7 @@ pub fn connect_sse(
                             &sync_server_connection_status,
                             SynchronizationStatus::Disconnected,
                         );
-                        event_tx.send(SseEvent::Error(e.to_string())).ok();
+                        event_tx.unbounded_send(SseEvent::Error(e.to_string())).ok();
                         break;
                     }
                 }

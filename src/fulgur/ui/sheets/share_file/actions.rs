@@ -211,17 +211,8 @@ pub(super) fn handle_share_file(
     }
     let share_context = capture_share_context(entity, cx);
     let http_agent = entity.update(cx, |_, cx| Arc::clone(&Fulgur::shared_state(cx).http_agent));
-    let pending_notification = entity.update(cx, |_, cx| {
-        let first_profile_id = bundles
-            .first()
-            .map(|b| b.profile.id.clone())
-            .unwrap_or_default();
-        Arc::clone(
-            &Fulgur::shared_state(cx)
-                .sync_state_for(&first_profile_id)
-                .pending_notification,
-        )
-    });
+    let notification_tx =
+        entity.update(cx, |_, cx| Fulgur::shared_state(cx).notification_tx.clone());
     state
         .active
         .store(false, std::sync::atomic::Ordering::Release);
@@ -272,9 +263,7 @@ pub(super) fn handle_share_file(
         });
         let summary = format_multi_profile_summary(&outcomes);
         let notification_type = aggregate_notification_type(&outcomes);
-        pending_notification
-            .lock()
-            .push((notification_type, SharedString::from(summary)));
+        let _ = notification_tx.unbounded_send((notification_type, SharedString::from(summary)));
     });
 }
 

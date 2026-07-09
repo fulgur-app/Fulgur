@@ -2,7 +2,7 @@
 
 use crate::fulgur::ui::tabs::tab::TabId;
 use gpui::{AppContext, Context, Window};
-use gpui_component::notification::NotificationType;
+use gpui_component::{WindowExt, notification::NotificationType};
 
 use super::input::{make_log_input_state, write_log_to_bottom};
 use super::tail::{log_toggle_available, trim_to_last_lines};
@@ -82,19 +82,26 @@ impl Fulgur {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(error) => {
-                self.pending_notification = Some((
-                    NotificationType::Error,
-                    format!("Failed to load full log: {error}").into(),
-                ));
-                cx.notify();
+                window.push_notification(
+                    (
+                        NotificationType::Error,
+                        gpui::SharedString::from(format!("Failed to load full log: {error}")),
+                    ),
+                    cx,
+                );
                 return;
             }
         };
         if bytes.len() as u64 > LOAD_FULL_WARN_BYTES {
-            self.pending_notification = Some((
-                NotificationType::Warning,
-                "Loading a very large log file may use significant memory.".into(),
-            ));
+            window.push_notification(
+                (
+                    NotificationType::Warning,
+                    gpui::SharedString::from(
+                        "Loading a very large log file may use significant memory.",
+                    ),
+                ),
+                cx,
+            );
         }
         let new_offset = bytes.len() as u64;
         let full = String::from_utf8_lossy(&bytes).into_owned();

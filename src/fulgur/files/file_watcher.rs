@@ -1,12 +1,13 @@
 use crate::fulgur::Fulgur;
 use crate::fulgur::editor_tab::TabLocation;
 use crate::fulgur::tab::Tab;
-use crate::fulgur::utils::utilities::collect_events;
-use gpui::{Context, Window};
+use futures::StreamExt;
+use futures::channel::mpsc::{Receiver, Sender, channel};
+use futures::future::Either;
+use gpui::{Context, Task, Window};
 use notify::{Error as NotifyError, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -19,7 +20,8 @@ const PENDING_RENAME_TIMEOUT: Duration = Duration::from_millis(500);
 /// File watching state for external file change detection
 pub struct FileWatchState {
     pub file_watcher: Option<FileWatcher>,
-    pub file_watch_events: Option<Receiver<FileWatchEvent>>,
+    /// Consumer task awaiting file watch events; dropping it cancels the consumer.
+    pub consumer_task: Option<Task<()>>,
     pub last_file_events: HashMap<PathBuf, Instant>,
     pub last_file_saves: HashMap<PathBuf, Instant>,
     pub pending_conflicts: HashMap<PathBuf, usize>,
@@ -44,7 +46,7 @@ impl FileWatchState {
     pub fn new() -> Self {
         Self {
             file_watcher: None,
-            file_watch_events: None,
+            consumer_task: None,
             last_file_events: HashMap::new(),
             last_file_saves: HashMap::new(),
             pending_conflicts: HashMap::new(),
@@ -63,7 +65,7 @@ pub enum FileWatchEvent {
 pub struct FileWatcher {
     watcher: Option<RecommendedWatcher>,
     watched_paths: HashMap<PathBuf, SystemTime>,
-    event_tx: SyncSender<FileWatchEvent>,
+    event_tx: Sender<FileWatchEvent>,
     /// Pending rename source path for Linux inotify, which splits rename events
     /// into separate From and To notifications rather than a single two-path event.
     pending_rename_from: Arc<Mutex<Option<(PathBuf, Instant)>>>,
@@ -78,7 +80,7 @@ impl FileWatcher {
     ///   - `Receiver<FileWatchEvent>`: The event receiver to receive the file watch events from the file watcher
     #[must_use]
     pub fn new() -> (Self, Receiver<FileWatchEvent>) {
-        let (event_tx, event_rx) = sync_channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
+        let (event_tx, event_rx) = channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let watcher = Self {
             watcher: None,
             watched_paths: HashMap::new(),
@@ -100,15 +102,15 @@ impl FileWatcher {
         if self.watcher.is_some() {
             return Ok(());
         }
-        let event_tx = self.event_tx.clone();
+        let mut event_tx = self.event_tx.clone();
         let pending_rename_from = Arc::clone(&self.pending_rename_from);
         let watcher =
             notify::recommended_watcher(move |res: Result<Event, NotifyError>| match res {
                 Ok(event) => {
-                    Self::handle_notify_event(event, &event_tx, &pending_rename_from);
+                    Self::handle_notify_event(event, &mut event_tx, &pending_rename_from);
                 }
                 Err(e) => {
-                    Self::send_event(&event_tx, FileWatchEvent::Error(e.to_string()));
+                    Self::send_event(&mut event_tx, FileWatchEvent::Error(e.to_string()));
                 }
             })?;
         self.watcher = Some(watcher);
@@ -120,9 +122,14 @@ impl FileWatcher {
     /// ### Arguments
     /// - `event_tx`: The bounded event sender
     /// - `event`: The file watch event to send
-    fn send_event(event_tx: &SyncSender<FileWatchEvent>, event: FileWatchEvent) {
-        if let Err(TrySendError::Full(dropped)) = event_tx.try_send(event) {
-            log::warn!("File watch event channel full, dropping event: {dropped:?}");
+    fn send_event(event_tx: &mut Sender<FileWatchEvent>, event: FileWatchEvent) {
+        if let Err(e) = event_tx.try_send(event)
+            && e.is_full()
+        {
+            log::warn!(
+                "File watch event channel full, dropping event: {:?}",
+                e.into_inner()
+            );
         }
     }
 
@@ -134,7 +141,7 @@ impl FileWatcher {
     /// - `event_tx`: The event sender used to emit the synthesized `Deleted` event
     fn expire_pending_rename_from(
         pending_rename_from: &Mutex<Option<(PathBuf, Instant)>>,
-        event_tx: &SyncSender<FileWatchEvent>,
+        event_tx: &mut Sender<FileWatchEvent>,
     ) {
         let stale = pending_rename_from.lock().ok().and_then(|mut pending| {
             let is_stale = pending
@@ -148,8 +155,8 @@ impl FileWatcher {
     }
 
     /// Flush a stale pending rename `From` if it has exceeded `PENDING_RENAME_TIMEOUT`.
-    pub fn flush_expired_pending_rename(&self) {
-        Self::expire_pending_rename_from(&self.pending_rename_from, &self.event_tx);
+    pub fn flush_expired_pending_rename(&mut self) {
+        Self::expire_pending_rename_from(&self.pending_rename_from, &mut self.event_tx);
     }
 
     /// Handles a notify event and converts it to a `FileWatchEvent`
@@ -175,7 +182,7 @@ impl FileWatcher {
     /// - `pending_rename_from`: Accumulator for the Linux split-rename `From` path
     fn handle_notify_event(
         event: Event,
-        event_tx: &SyncSender<FileWatchEvent>,
+        event_tx: &mut Sender<FileWatchEvent>,
         pending_rename_from: &Mutex<Option<(PathBuf, Instant)>>,
     ) {
         use notify::event::{ModifyKind, RenameMode};
@@ -489,8 +496,11 @@ impl Fulgur {
         }
     }
 
-    /// Start the file watcher and watch all open files
-    pub fn start_file_watcher(&mut self) {
+    /// Start the file watcher, watch all open files, and spawn the event consumer task
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context used to spawn the consumer task
+    pub fn start_file_watcher(&mut self, cx: &mut Context<Self>) {
         let (mut watcher, receiver) = FileWatcher::new();
         if let Err(e) = watcher.start() {
             log::error!("Failed to start file watcher: {e}");
@@ -504,16 +514,19 @@ impl Fulgur {
                 log::warn!("Failed to watch file {}: {}", path.display(), e);
             }
         }
+        let pending_rename_from = Arc::clone(&watcher.pending_rename_from);
+        let flush_tx = watcher.event_tx.clone();
         self.file_watch_state.file_watcher = Some(watcher);
-        self.file_watch_state.file_watch_events = Some(receiver);
+        self.file_watch_state.consumer_task =
+            Some(self.spawn_file_watch_consumer(receiver, pending_rename_from, flush_tx, cx));
     }
 
-    /// Stop the file watcher
+    /// Stop the file watcher and cancel the event consumer task
     pub fn stop_file_watcher(&mut self) {
         if let Some(mut watcher) = self.file_watch_state.file_watcher.take() {
             watcher.stop();
         }
-        self.file_watch_state.file_watch_events = None;
+        self.file_watch_state.consumer_task = None;
         self.clear_file_watch_bookkeeping();
     }
 
@@ -540,22 +553,66 @@ impl Fulgur {
         self.prune_file_watch_bookkeeping_for_path(path);
     }
 
-    /// Collect and process file watch events:
-    /// - Modified: File content changed externally (may trigger auto-reload or conflict dialog)
-    /// - Deleted: File was deleted externally (shows notification)
-    /// - Renamed: File was moved/renamed (updates tab path and continues watching)
+    /// Spawn the task that consumes file watch events for this window
     ///
     /// ### Arguments
-    /// - `window`: The window containing the tabs with watched files
-    /// - `cx`: The application context
-    pub fn process_file_watch_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(watcher) = &self.file_watch_state.file_watcher {
-            watcher.flush_expired_pending_rename();
-        }
-        let events = collect_events(&self.file_watch_state.file_watch_events);
-        for event in events {
-            self.handle_file_watch_event(event, window, cx);
-        }
+    /// - `events`: The receiver side of the watcher's event channel
+    /// - `pending_rename_from`: The watcher's pending split-rename accumulator
+    /// - `flush_tx`: Sender used to emit the synthesized `Deleted` event on expiry
+    /// - `cx`: The application context used to spawn the task
+    ///
+    /// ### Returns
+    /// - `Task<()>`: The consumer task; dropping it cancels the consumer
+    fn spawn_file_watch_consumer(
+        &self,
+        mut events: Receiver<FileWatchEvent>,
+        pending_rename_from: Arc<Mutex<Option<(PathBuf, Instant)>>>,
+        mut flush_tx: Sender<FileWatchEvent>,
+        cx: &mut Context<Self>,
+    ) -> Task<()> {
+        let window_id = self.window_id;
+        cx.spawn(async move |view, cx| {
+            loop {
+                let has_pending_rename = pending_rename_from
+                    .lock()
+                    .is_ok_and(|pending| pending.is_some());
+                let event = if has_pending_rename {
+                    let timer = cx.background_executor().timer(PENDING_RENAME_TIMEOUT);
+                    match futures::future::select(events.next(), std::pin::pin!(timer)).await {
+                        Either::Left((event, _)) => event,
+                        Either::Right(((), _)) => {
+                            FileWatcher::expire_pending_rename_from(
+                                &pending_rename_from,
+                                &mut flush_tx,
+                            );
+                            continue;
+                        }
+                    }
+                } else {
+                    events.next().await
+                };
+                let Some(event) = event else {
+                    break;
+                };
+                let handle = cx.update(|cx| {
+                    cx.windows()
+                        .into_iter()
+                        .find(|handle| handle.window_id() == window_id)
+                });
+                let Some(handle) = handle else {
+                    break;
+                };
+                let delivered = handle.update(cx, |_, window, cx| {
+                    view.update(cx, |this, cx| {
+                        this.handle_file_watch_event(event, window, cx);
+                        cx.notify();
+                    })
+                });
+                if !matches!(delivered, Ok(Ok(()))) {
+                    break;
+                }
+            }
+        })
     }
 }
 
@@ -566,6 +623,7 @@ mod tests {
         Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
         tab::Tab, window_manager::WindowManager,
     };
+    use futures::channel::mpsc::{TryRecvError, channel};
     use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     use notify::{
         Event, EventKind,
@@ -575,10 +633,7 @@ mod tests {
     use std::{
         cell::RefCell,
         path::PathBuf,
-        sync::{
-            Arc, Mutex,
-            mpsc::{TryRecvError, sync_channel},
-        },
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     };
     use tempfile::TempDir;
@@ -625,12 +680,12 @@ mod tests {
 
     #[gpui::test]
     fn test_handle_notify_event_maps_modify_to_modified(_cx: &mut TestAppContext) {
-        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
+        let (mut event_tx, mut event_rx) = channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
         let path = temp_test_path("fulgur_notify_modify.txt");
         let event = Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
             .add_path(path.clone());
-        FileWatcher::handle_notify_event(event, &event_tx, &pending_rename_from);
+        FileWatcher::handle_notify_event(event, &mut event_tx, &pending_rename_from);
         assert!(matches!(
             event_rx.try_recv(),
             Ok(FileWatchEvent::Modified(actual)) if actual == path
@@ -639,11 +694,11 @@ mod tests {
 
     #[gpui::test]
     fn test_handle_notify_event_maps_remove_to_deleted(_cx: &mut TestAppContext) {
-        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
+        let (mut event_tx, mut event_rx) = channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
         let path = temp_test_path("fulgur_notify_deleted.txt");
         let event = Event::new(EventKind::Remove(RemoveKind::File)).add_path(path.clone());
-        FileWatcher::handle_notify_event(event, &event_tx, &pending_rename_from);
+        FileWatcher::handle_notify_event(event, &mut event_tx, &pending_rename_from);
         assert!(matches!(
             event_rx.try_recv(),
             Ok(FileWatchEvent::Deleted(actual)) if actual == path
@@ -652,14 +707,14 @@ mod tests {
 
     #[gpui::test]
     fn test_handle_notify_event_maps_macos_rename_any_to_deleted(_cx: &mut TestAppContext) {
-        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
+        let (mut event_tx, mut event_rx) = channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
         let path = temp_test_path("fulgur_notify_rename_any.txt");
         // macOS FSEvents reports a delete-to-Trash, move, or rename of a watched
         // file as a single-path `RenameMode::Any` with no destination.
         let event =
             Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Any))).add_path(path.clone());
-        FileWatcher::handle_notify_event(event, &event_tx, &pending_rename_from);
+        FileWatcher::handle_notify_event(event, &mut event_tx, &pending_rename_from);
         assert!(
             matches!(event_rx.try_recv(), Ok(FileWatchEvent::Deleted(actual)) if actual == path),
             "a single-path RenameMode::Any should map to a Deleted event for the source path"
@@ -668,14 +723,14 @@ mod tests {
 
     #[gpui::test]
     fn test_handle_notify_event_maps_rename_both_to_renamed(_cx: &mut TestAppContext) {
-        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
+        let (mut event_tx, mut event_rx) = channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
         let from = temp_test_path("fulgur_notify_old.txt");
         let to = temp_test_path("fulgur_notify_new.txt");
         let event = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
             .add_path(from.clone())
             .add_path(to.clone());
-        FileWatcher::handle_notify_event(event, &event_tx, &pending_rename_from);
+        FileWatcher::handle_notify_event(event, &mut event_tx, &pending_rename_from);
         assert!(matches!(
             event_rx.try_recv(),
             Ok(FileWatchEvent::Renamed {
@@ -687,17 +742,17 @@ mod tests {
 
     #[gpui::test]
     fn test_handle_notify_event_pairs_linux_split_rename(_cx: &mut TestAppContext) {
-        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
+        let (mut event_tx, mut event_rx) = channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
         let from = temp_test_path("fulgur_notify_linux_from.txt");
         let to = temp_test_path("fulgur_notify_linux_to.txt");
         let from_event = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::From)))
             .add_path(from.clone());
-        FileWatcher::handle_notify_event(from_event, &event_tx, &pending_rename_from);
+        FileWatcher::handle_notify_event(from_event, &mut event_tx, &pending_rename_from);
         assert!(matches!(event_rx.try_recv(), Err(TryRecvError::Empty)));
         let to_event =
             Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::To))).add_path(to.clone());
-        FileWatcher::handle_notify_event(to_event, &event_tx, &pending_rename_from);
+        FileWatcher::handle_notify_event(to_event, &mut event_tx, &pending_rename_from);
         assert!(matches!(
             event_rx.try_recv(),
             Ok(FileWatchEvent::Renamed {
@@ -709,7 +764,7 @@ mod tests {
 
     #[gpui::test]
     fn test_handle_notify_event_expires_stale_pending_rename(_cx: &mut TestAppContext) {
-        let (event_tx, event_rx) = sync_channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
+        let (mut event_tx, mut event_rx) = channel(super::FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let stale_from = temp_test_path("fulgur_notify_stale_from.txt");
         let stored_at = Instant::now()
             .checked_sub(Duration::from_secs(1))
@@ -718,7 +773,7 @@ mod tests {
         let unrelated = temp_test_path("fulgur_notify_unrelated_modify.txt");
         let event = Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
             .add_path(unrelated.clone());
-        FileWatcher::handle_notify_event(event, &event_tx, &pending_rename_from);
+        FileWatcher::handle_notify_event(event, &mut event_tx, &pending_rename_from);
         assert!(
             matches!(event_rx.try_recv(), Ok(FileWatchEvent::Deleted(actual)) if actual == stale_from),
             "a stale pending From should be flushed as Deleted on the next event"
@@ -734,7 +789,7 @@ mod tests {
 
     #[gpui::test]
     fn test_flush_expired_pending_rename_emits_deleted(_cx: &mut TestAppContext) {
-        let (watcher, event_rx) = FileWatcher::new();
+        let (mut watcher, mut event_rx) = FileWatcher::new();
         let stale_from = temp_test_path("fulgur_flush_stale_from.txt");
         let stored_at = Instant::now()
             .checked_sub(Duration::from_secs(1))
@@ -744,7 +799,7 @@ mod tests {
         watcher.flush_expired_pending_rename();
         assert!(
             matches!(event_rx.try_recv(), Ok(FileWatchEvent::Deleted(actual)) if actual == stale_from),
-            "render-loop flush should expire a never-completed rename From"
+            "flush should expire a never-completed rename From"
         );
         assert!(
             watcher

@@ -151,6 +151,7 @@ fn invoke_do_open_file(
 /// - `cx`: The GPUI test application context.
 /// - `window_id`: The target window ID where the render-phase processing should run.
 /// - `fulgur`: The `Fulgur` entity that owns the processing method.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn invoke_process_window_state_updates(
     cx: &mut TestAppContext,
     window_id: WindowId,
@@ -408,55 +409,41 @@ fn test_on_window_close_requested_non_last_window_closes_even_with_confirm_exit_
 }
 
 #[gpui::test]
-fn test_process_window_state_updates_drains_local_and_sync_pending_notifications(
-    cx: &mut TestAppContext,
-) {
+fn test_notification_consumer_delivers_channel_notifications_to_window(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (window_id, fulgur) = open_window_with_fulgur(cx);
     register_window_in_global_manager(cx, window_id, &fulgur);
 
     cx.update(|cx| {
-        fulgur.update(cx, |this, cx| {
-            this.pending_notification = Some((
-                NotificationType::Warning,
-                "pending from current window".into(),
-            ));
-            Fulgur::shared_state(cx)
-                .primary_sync_state()
-                .pending_notification
-                .lock()
-                .push((
-                    NotificationType::Success,
-                    "pending from sync background task".into(),
-                ));
-        });
+        crate::fulgur::shared_state::spawn_notification_consumer(cx);
+        Fulgur::shared_state(cx).notify((
+            NotificationType::Warning,
+            "notification from app channel".into(),
+        ));
+        Fulgur::shared_state(cx).primary_sync_state().notify((
+            NotificationType::Success,
+            "notification from sync background task".into(),
+        ));
     });
+    cx.run_until_parked();
 
-    invoke_process_window_state_updates(cx, window_id, &fulgur);
-
-    cx.update(|cx| {
-        fulgur.update(cx, |this, cx| {
-            assert!(
-                this.pending_notification.is_none(),
-                "window-local pending notification must be drained during render processing"
-            );
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .pending_notification
-                    .lock()
-                    .is_empty(),
-                "sync pending notification must be drained during render processing"
-            );
-        });
-
-        let manager = cx.global::<WindowManager>();
-        assert_eq!(
-            manager.get_last_focused(),
-            Some(window_id),
-            "process_window_state_updates should keep focus tracking in sync"
-        );
+    let displayed = cx.update(|cx| {
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|w| w.window_id() == window_id)
+            .expect("test window should still be open");
+        handle
+            .update(cx, |_, window, cx| {
+                use gpui_component::WindowExt;
+                window.notifications(cx).len()
+            })
+            .expect("failed to update test window")
     });
+    assert_eq!(
+        displayed, 2,
+        "both app-level and per-profile notifications must be delivered by the consumer task"
+    );
 }
 
 #[gpui::test]

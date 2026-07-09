@@ -15,7 +15,7 @@ use crate::fulgur::{
     tab::Tab,
     ui::notifications::progress::{CancelCallback, start_progress},
 };
-use gpui_component::notification::NotificationType;
+use gpui_component::{WindowExt, notification::NotificationType};
 use parking_lot::Mutex;
 use std::{
     sync::{
@@ -274,13 +274,14 @@ impl Fulgur {
                 if let Some(result) = save_result {
                     let saved_content = Arc::clone(&saved_content);
                     async_cx
-                        .update(|_, cx| {
+                        .update(|window, cx| {
                             _ = view.update(cx, |fulgur, cx| {
                                 fulgur.handle_remote_save_result(
                                     tab_id,
                                     request_id,
                                     saved_content.as_str(),
                                     result,
+                                    window,
                                     cx,
                                 );
                             });
@@ -343,6 +344,7 @@ impl Fulgur {
         request_id: u64,
         saved_content: &str,
         result: Result<(), String>,
+        window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) {
         if self.latest_remote_save_request_by_tab.get(&tab_id).copied() != Some(request_id) {
@@ -370,11 +372,13 @@ impl Fulgur {
                 }
             }
             Err(msg) => {
-                self.pending_notification = Some((
-                    NotificationType::Error,
-                    format!("Failed to save: {msg}").into(),
-                ));
-                cx.notify();
+                window.push_notification(
+                    (
+                        NotificationType::Error,
+                        gpui::SharedString::from(format!("Failed to save: {msg}")),
+                    ),
+                    cx,
+                );
             }
         }
     }

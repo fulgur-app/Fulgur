@@ -42,8 +42,6 @@ impl Render for Fulgur {
         #[cfg(target_os = "windows")]
         self.process_pending_ipc_commands(window, cx);
         self.process_shared_files_from_sync(window, cx);
-        self.process_file_watch_events(window, cx);
-        self.process_sse_events(window, cx);
         self.process_pending_remote_files(window, cx);
         self.process_pending_share_sheet(window, cx);
         if self.tabs.is_empty() {
