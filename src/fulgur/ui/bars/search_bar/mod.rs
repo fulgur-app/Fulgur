@@ -5,7 +5,7 @@ mod state;
 #[cfg(test)]
 mod tests;
 
-pub use state::SearchState;
+pub(crate) use state::{SearchBar, SearchBarEvent};
 
 use crate::fulgur::ui::{
     components_utils::{SEARCH_BAR_BUTTON_SIZE, button_factory},

@@ -1,10 +1,10 @@
 use crate::fulgur::Fulgur;
-use gpui::{App, Context, Focusable, Window};
-use gpui_component::input::Position;
+use gpui::{App, Context, Entity, Focusable, Window};
+use gpui_component::input::{InputState, Position};
 use lsp_types::{Diagnostic, DiagnosticSeverity};
 use std::borrow::Cow;
 
-use super::SearchMatch;
+use super::{SearchBar, SearchBarEvent, SearchMatch};
 
 /// Refresh the newline-offset scratch buffer for fast line/column lookup.
 ///
@@ -178,7 +178,7 @@ fn advance_past_char(text: &str, pos: usize) -> usize {
 }
 
 /// Get line and column from byte position using precomputed newline offsets
-///  
+///
 /// ### Arguments
 /// - `text`: The text
 /// - `byte_pos`: The byte position
@@ -239,74 +239,106 @@ pub(super) fn apply_replacements(
     result
 }
 
-impl Fulgur {
-    /// Close the search bar and clear highlighting
+impl SearchBar {
+    /// Toggle the search bar open or closed
     ///
     /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
     /// - `window`: The window context
-    /// - `cx`: The application context
-    pub(super) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.search_state.show_search = false;
-        if let Some(active_index) = self.active_tab_index()
-            && let Some(tab) = self.tabs.get(active_index)
-            && let Some(editor_tab) = tab.as_editor()
-        {
-            editor_tab.content.update(cx, |content, _cx| {
+    /// - `cx`: The search bar context
+    pub(super) fn toggle(
+        &mut self,
+        content: Option<Entity<InputState>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.show_search {
+            self.close(content, cx);
+        } else {
+            self.show_search = true;
+            let search_focus = self.search_input.read(cx).focus_handle(cx);
+            window.focus(&search_focus, cx);
+            self.perform_search(content, window, cx);
+            cx.notify();
+        }
+    }
+
+    /// Close the search bar, clear highlighting, and notify the owning window
+    ///
+    /// ### Arguments
+    /// - `content`: The active editor tab's content to clear highlighting from, if any
+    /// - `cx`: The search bar context
+    pub(super) fn close(&mut self, content: Option<Entity<InputState>>, cx: &mut Context<Self>) {
+        self.show_search = false;
+        if let Some(content) = content {
+            content.update(cx, |content, _cx| {
                 if let Some(diagnostics) = content.diagnostics_mut() {
                     diagnostics.clear();
                 }
             });
         }
-        self.search_state.search_matches.clear();
-        self.search_state.current_match_index = None;
-        self.focus_active_tab(window, cx);
+        self.search_matches.clear();
+        self.current_match_index = None;
+        cx.emit(SearchBarEvent::Closed);
         cx.notify();
     }
 
-    /// Find in file
+    /// Re-run the search after the query text changed
     ///
     /// ### Arguments
     /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn find_in_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.search_state.show_search = !self.search_state.show_search;
-        if self.search_state.show_search {
-            let search_focus = self.search_state.search_input.read(cx).focus_handle(cx);
-            window.focus(&search_focus, cx);
-            self.perform_search(window, cx);
-        } else {
-            self.close_search(window, cx);
-        }
-        cx.notify();
+    /// - `cx`: The search bar context
+    pub(super) fn on_query_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let content = self.active_editor_content(cx);
+        self.perform_search(content, window, cx);
+        let search_focus = self.search_input.read(cx).focus_handle(cx);
+        window.focus(&search_focus, cx);
     }
 
-    /// Perform search in the active tab
+    /// Clear the current matches and search the given editor content afresh
     ///
     /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
     /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let query = self.search_state.search_input.read(cx).text().to_string();
-        let match_case = self.search_state.match_case;
-        let match_whole_word = self.search_state.match_whole_word;
-        if query == self.search_state.last_search_query
-            && match_case == self.search_state.last_search_match_case
-            && match_whole_word == self.search_state.last_search_match_whole_word
-            && !self.search_state.search_matches.is_empty()
+    /// - `cx`: The search bar context
+    pub(crate) fn refresh_matches(
+        &mut self,
+        content: Option<Entity<InputState>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.search_matches.clear();
+        self.perform_search(content, window, cx);
+    }
+
+    /// Perform search in the given editor content
+    ///
+    /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
+    /// - `window`: The window context
+    /// - `cx`: The search bar context
+    pub(super) fn perform_search(
+        &mut self,
+        content: Option<Entity<InputState>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let query = self.search_input.read(cx).text().to_string();
+        let match_case = self.match_case;
+        let match_whole_word = self.match_whole_word;
+        if query == self.last_search_query
+            && match_case == self.last_search_match_case
+            && match_whole_word == self.last_search_match_whole_word
+            && !self.search_matches.is_empty()
         {
             return;
         }
-        self.search_state.last_search_query.clone_from(&query);
-        self.search_state.last_search_match_case = match_case;
-        self.search_state.last_search_match_whole_word = match_whole_word;
-        self.search_state.search_matches.clear();
-        self.search_state.current_match_index = None;
-        if let Some(active_index) = self.active_tab_index()
-            && let Some(content_entity) = self
-                .tabs
-                .get(active_index)
-                .and_then(|tab| tab.as_editor().map(|editor_tab| editor_tab.content.clone()))
-        {
+        self.last_search_query.clone_from(&query);
+        self.last_search_match_case = match_case;
+        self.last_search_match_whole_word = match_whole_word;
+        self.search_matches.clear();
+        self.current_match_index = None;
+        if let Some(content_entity) = content {
             content_entity.update(cx, |content, _cx| {
                 if let Some(diagnostics) = content.diagnostics_mut() {
                     diagnostics.clear();
@@ -316,8 +348,7 @@ impl Fulgur {
                 cx.notify();
                 return;
             }
-            let mut search_text_scratch =
-                std::mem::take(&mut self.search_state.search_text_scratch);
+            let mut search_text_scratch = std::mem::take(&mut self.search_text_scratch);
             let cursor_pos = {
                 let content = content_entity.read(cx);
                 search_text_scratch.clear();
@@ -331,15 +362,15 @@ impl Fulgur {
                 &query,
                 match_case,
                 match_whole_word,
-                &mut self.search_state.search_newline_offsets_scratch,
-                &mut self.search_state.search_lowercase_text_scratch,
-                &mut self.search_state.search_lowercase_offsets_scratch,
+                &mut self.search_newline_offsets_scratch,
+                &mut self.search_lowercase_text_scratch,
+                &mut self.search_lowercase_offsets_scratch,
             );
-            self.search_state.search_text_scratch = search_text_scratch;
-            self.search_state.search_matches = matches;
+            self.search_text_scratch = search_text_scratch;
+            self.search_matches = matches;
             content_entity.update(cx, |content, cx| {
                 if let Some(diagnostics) = content.diagnostics_mut() {
-                    for search_match in &self.search_state.search_matches {
+                    for search_match in &self.search_matches {
                         let diagnostic = Diagnostic {
                             range: lsp_types::Range {
                                 start: Position {
@@ -368,19 +399,19 @@ impl Fulgur {
                 }
                 cx.notify();
             });
-            if !self.search_state.search_matches.is_empty() {
+            if !self.search_matches.is_empty() {
                 let mut found_after_cursor = false;
-                for (idx, m) in self.search_state.search_matches.iter().enumerate() {
+                for (idx, m) in self.search_matches.iter().enumerate() {
                     if m.start >= cursor_pos {
-                        self.search_state.current_match_index = Some(idx);
+                        self.current_match_index = Some(idx);
                         found_after_cursor = true;
                         break;
                     }
                 }
                 if !found_after_cursor {
-                    self.search_state.current_match_index = Some(0);
+                    self.current_match_index = Some(0);
                 }
-                self.highlight_current_match(window, cx);
+                self.highlight_current_match(&content_entity, window, cx);
             }
         }
 
@@ -390,57 +421,75 @@ impl Fulgur {
     /// Navigate to the next search match
     ///
     /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
     /// - `window`: The window context
-    /// - `cx`: The application context
-    pub(super) fn search_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.search_state.search_matches.is_empty() {
+    /// - `cx`: The search bar context
+    pub(super) fn search_next(
+        &mut self,
+        content: Option<Entity<InputState>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.search_matches.is_empty() {
             return;
         }
-        if let Some(current) = self.search_state.current_match_index {
-            self.search_state.current_match_index =
-                Some((current + 1) % self.search_state.search_matches.len());
+        if let Some(current) = self.current_match_index {
+            self.current_match_index = Some((current + 1) % self.search_matches.len());
         } else {
-            self.search_state.current_match_index = Some(0);
+            self.current_match_index = Some(0);
         }
-        self.highlight_current_match(window, cx);
+        if let Some(content) = content {
+            self.highlight_current_match(&content, window, cx);
+        }
         cx.notify();
     }
 
     /// Navigate to the previous search match
     ///
     /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
     /// - `window`: The window context
-    /// - `cx`: The application context
-    pub(super) fn search_previous(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.search_state.search_matches.is_empty() {
+    /// - `cx`: The search bar context
+    pub(super) fn search_previous(
+        &mut self,
+        content: Option<Entity<InputState>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.search_matches.is_empty() {
             return;
         }
-        if let Some(current) = self.search_state.current_match_index {
-            self.search_state.current_match_index = Some(if current == 0 {
-                self.search_state.search_matches.len() - 1
+        if let Some(current) = self.current_match_index {
+            self.current_match_index = Some(if current == 0 {
+                self.search_matches.len() - 1
             } else {
                 current - 1
             });
         } else {
-            self.search_state.current_match_index = Some(0);
+            self.current_match_index = Some(0);
         }
-        self.highlight_current_match(window, cx);
+        if let Some(content) = content {
+            self.highlight_current_match(&content, window, cx);
+        }
         cx.notify();
     }
 
-    /// Highlight the current search match
+    /// Move the editor cursor to the current search match
     ///
     /// ### Arguments
+    /// - `content`: The active editor tab's content
     /// - `window`: The window context
     /// - `cx`: The application context
-    fn highlight_current_match(&self, window: &mut Window, cx: &mut App) {
-        if let Some(match_index) = self.search_state.current_match_index
-            && let Some(search_match) = self.search_state.search_matches.get(match_index)
-            && let Some(active_index) = self.active_tab_index()
-            && let Some(tab) = self.tabs.get(active_index)
-            && let Some(editor_tab) = tab.as_editor()
+    fn highlight_current_match(
+        &self,
+        content: &Entity<InputState>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if let Some(match_index) = self.current_match_index
+            && let Some(search_match) = self.search_matches.get(match_index)
         {
-            editor_tab.content.update(cx, |content, cx| {
+            content.update(cx, |content, cx| {
                 content.set_cursor_position(
                     Position {
                         line: u32::try_from(search_match.line).unwrap_or(u32::MAX),
@@ -456,31 +505,41 @@ impl Fulgur {
     /// Force a fresh search, bypassing the query/option dedup cache
     ///
     /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
     /// - `window`: The window context
-    /// - `cx`: The application context
-    fn force_perform_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.search_state.last_search_query.clear();
-        self.search_state.search_matches.clear();
-        self.perform_search(window, cx);
+    /// - `cx`: The search bar context
+    fn force_perform_search(
+        &mut self,
+        content: Option<Entity<InputState>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.last_search_query.clear();
+        self.search_matches.clear();
+        self.perform_search(content, window, cx);
     }
 
     /// Replace the current search match
     ///
     /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
     /// - `window`: The window context
-    /// - `cx`: The application context
-    pub(super) fn replace_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// - `cx`: The search bar context
+    pub(super) fn replace_current(
+        &mut self,
+        content: Option<Entity<InputState>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Recompute matches against the current buffer before slicing: the cached
         // offsets may be stale if the document was edited since the last search.
-        self.force_perform_search(window, cx);
-        if let Some(match_index) = self.search_state.current_match_index
-            && let Some(search_match) = self.search_state.search_matches.get(match_index).cloned()
-            && let Some(active_index) = self.active_tab_index()
-            && let Some(tab) = self.tabs.get_mut(active_index)
-            && let Some(editor_tab) = tab.as_editor_mut()
+        self.force_perform_search(content.clone(), window, cx);
+        if let Some(match_index) = self.current_match_index
+            && let Some(search_match) = self.search_matches.get(match_index).cloned()
+            && let Some(content_entity) = content
         {
-            let replace_text = self.search_state.replace_input.read(cx).text().to_string();
-            let text = editor_tab.content.read(cx).text().to_string();
+            let replace_text = self.replace_input.read(cx).text().to_string();
+            let text = content_entity.read(cx).text().to_string();
             // Defensive guard against stale offsets: bail out instead of slicing
             // out of bounds or on a non-char-boundary if the buffer changed.
             if search_match.end > text.len()
@@ -495,18 +554,18 @@ impl Fulgur {
             new_text.push_str(&text[..search_match.start]);
             new_text.push_str(&replace_text);
             new_text.push_str(&text[search_match.end..]);
-            editor_tab.content.update(cx, |content, cx| {
+            content_entity.update(cx, |content, cx| {
                 content.set_value(&new_text, window, cx);
             });
-            self.search_state.search_matches.clear();
-            self.perform_search(window, cx);
-            if !self.search_state.search_matches.is_empty() {
-                if match_index < self.search_state.search_matches.len() {
-                    self.search_state.current_match_index = Some(match_index);
+            self.search_matches.clear();
+            self.perform_search(Some(content_entity.clone()), window, cx);
+            if !self.search_matches.is_empty() {
+                if match_index < self.search_matches.len() {
+                    self.current_match_index = Some(match_index);
                 } else {
-                    self.search_state.current_match_index = Some(0);
+                    self.current_match_index = Some(0);
                 }
-                self.highlight_current_match(window, cx);
+                self.highlight_current_match(&content_entity, window, cx);
             }
         }
         cx.notify();
@@ -515,40 +574,54 @@ impl Fulgur {
     /// Replace all search matches
     ///
     /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
     /// - `window`: The window context
-    /// - `cx`: The application context
-    pub(super) fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// - `cx`: The search bar context
+    pub(super) fn replace_all(
+        &mut self,
+        content: Option<Entity<InputState>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Recompute matches against the current buffer before slicing: the cached
         // offsets may be stale if the document was edited since the last search.
-        self.force_perform_search(window, cx);
-        if self.search_state.search_matches.is_empty() {
+        self.force_perform_search(content.clone(), window, cx);
+        if self.search_matches.is_empty() {
             return;
         }
-        if let Some(active_index) = self.active_tab_index() {
-            let replace_text = self.search_state.replace_input.read(cx).text().to_string();
-            let search_query = self.search_state.search_input.read(cx).text().to_string();
-            let match_case = self.search_state.match_case;
-            let match_whole_word = self.search_state.match_whole_word;
-            if let Some(tab) = self.tabs.get(active_index)
-                && let Some(editor_tab) = tab.as_editor()
-            {
-                let text = editor_tab.content.read(cx).text().to_string();
-                let new_text = if match_case && !match_whole_word {
-                    text.replace(&search_query, &replace_text)
-                } else {
-                    apply_replacements(&self.search_state.search_matches, &text, &replace_text)
-                };
-                if let Some(tab) = self.tabs.get_mut(active_index)
-                    && let Some(editor_tab_mut) = tab.as_editor_mut()
-                {
-                    editor_tab_mut.content.update(cx, |content, cx| {
-                        content.set_value(&new_text, window, cx);
-                    });
-                }
-                self.search_state.search_matches.clear();
-                self.search_state.current_match_index = None;
-            }
+        if let Some(content_entity) = content {
+            let replace_text = self.replace_input.read(cx).text().to_string();
+            let search_query = self.search_input.read(cx).text().to_string();
+            let match_case = self.match_case;
+            let match_whole_word = self.match_whole_word;
+            let text = content_entity.read(cx).text().to_string();
+            let new_text = if match_case && !match_whole_word {
+                text.replace(&search_query, &replace_text)
+            } else {
+                apply_replacements(&self.search_matches, &text, &replace_text)
+            };
+            content_entity.update(cx, |content, cx| {
+                content.set_value(&new_text, window, cx);
+            });
+            self.search_matches.clear();
+            self.current_match_index = None;
         }
+        cx.notify();
+    }
+}
+
+impl Fulgur {
+    /// Toggle the search bar in this window
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn find_in_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let content = self
+            .get_active_editor_tab()
+            .map(|editor_tab| editor_tab.content.clone());
+        self.search_bar
+            .update(cx, |bar, cx| bar.toggle(content, window, cx));
         cx.notify();
     }
 }

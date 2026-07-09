@@ -47,7 +47,6 @@ impl Render for Fulgur {
         if self.tabs.is_empty() {
             self.active_tab_id = None;
         }
-        self.update_search_if_needed(window, cx);
         self.propagate_settings_to_tabs(window, cx);
         self.track_newly_rendered_tabs(cx);
         self.handle_pending_transfer_scroll(window, cx);
@@ -142,12 +141,13 @@ impl Fulgur {
             app_content.on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                 this.handle_external_paths_drop(paths, window, cx);
             }));
+        let search_bar_visible = self.search_bar.read(cx).is_visible();
         app_content = app_content
             .child(self.render_tab_bar(cx))
             .child(self.render_content_area(active_tab_index, window, cx))
             .children(self.render_markdown_bar(cx))
             .children(self.render_csv_toolbar(cx))
-            .children(self.render_search_bar(cx))
+            .children(search_bar_visible.then(|| self.search_bar.clone()))
             .children(self.render_color_picker_bar(cx));
         if let Some(Tab::Editor(_)) = self.active_tab() {
             app_content = app_content.child(self.status_bar.clone());

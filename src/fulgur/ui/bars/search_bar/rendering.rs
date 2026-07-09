@@ -1,46 +1,44 @@
-use super::{search_bar_button_factory, search_bar_toggle_button_factory};
-use crate::fulgur::{
-    Fulgur,
-    ui::{
-        components_utils::{CORNERS_SIZE, LINE_HEIGHT, SEARCH_BAR_HEIGHT, TEXT_SIZE},
-        icons::CustomIcon,
-    },
+use super::{SearchBar, search_bar_button_factory, search_bar_toggle_button_factory};
+use crate::fulgur::ui::{
+    components_utils::{CORNERS_SIZE, LINE_HEIGHT, SEARCH_BAR_HEIGHT, TEXT_SIZE},
+    icons::CustomIcon,
 };
-use gpui::{Context, Div, ParentElement, Styled, div};
+use gpui::{Context, Div, IntoElement, ParentElement, Render, Styled, Window, div};
 use gpui_component::{ActiveTheme, StyledExt, input::Input};
 
-impl Fulgur {
+impl Render for SearchBar {
     /// Render the search bar
     ///
     /// ### Arguments
+    /// - `_window`: The window to render the search bar in
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some(Div)`: The rendered search bar element
-    /// - `None`: If the search bar is not shown
-    pub fn render_search_bar(&self, cx: &mut Context<Self>) -> Option<Div> {
-        if !self.search_state.show_search {
-            return None;
+    /// - `impl IntoElement`: The rendered search bar, or an empty element when hidden
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.show_search {
+            return div().into_any_element();
         }
-        Some(
-            div()
-                .flex()
-                .justify_between()
-                .items_center()
-                .bg(cx.theme().tab_bar)
-                .p_0()
-                .m_0()
-                .w_full()
-                .h(SEARCH_BAR_HEIGHT)
-                .border_t_1()
-                .border_color(cx.theme().border)
-                .child(self.render_search_input_section(cx))
-                .child(self.render_search_navigation_section(cx))
-                .child(self.render_replace_section(cx))
-                .child(Self::render_search_close_button(cx)),
-        )
+        div()
+            .flex()
+            .justify_between()
+            .items_center()
+            .bg(cx.theme().tab_bar)
+            .p_0()
+            .m_0()
+            .w_full()
+            .h(SEARCH_BAR_HEIGHT)
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .child(self.render_search_input_section(cx))
+            .child(self.render_search_navigation_section(cx))
+            .child(self.render_replace_section(cx))
+            .child(Self::render_search_close_button(cx))
+            .into_any_element()
     }
+}
 
+impl SearchBar {
     /// Render the search input section (left part of search bar)
     ///
     /// ### Arguments
@@ -59,7 +57,7 @@ impl Fulgur {
             .bg(cx.theme().background)
             .text_color(cx.theme().muted_foreground)
             .child(
-                Input::new(&self.search_state.search_input)
+                Input::new(&self.search_input)
                     .flex_1()
                     .text_size(TEXT_SIZE)
                     .line_height(LINE_HEIGHT)
@@ -93,12 +91,13 @@ impl Fulgur {
                             cx.theme().border,
                             cx.theme().tab_bar,
                             cx.theme().accent,
-                            self.search_state.match_case,
+                            self.match_case,
                         )
                         .line_height(LINE_HEIGHT)
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.search_state.match_case = !this.search_state.match_case;
-                            this.perform_search(window, cx);
+                            this.match_case = !this.match_case;
+                            let content = this.active_editor_content(cx);
+                            this.perform_search(content, window, cx);
                         })),
                     )
                     .child(
@@ -109,13 +108,13 @@ impl Fulgur {
                             cx.theme().border,
                             cx.theme().tab_bar,
                             cx.theme().accent,
-                            self.search_state.match_whole_word,
+                            self.match_whole_word,
                         )
                         .line_height(LINE_HEIGHT)
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.search_state.match_whole_word =
-                                !this.search_state.match_whole_word;
-                            this.perform_search(window, cx);
+                            this.match_whole_word = !this.match_whole_word;
+                            let content = this.active_editor_content(cx);
+                            this.perform_search(content, window, cx);
                         })),
                     ),
             )
@@ -139,16 +138,12 @@ impl Fulgur {
                     .text_xs()
                     .px_2()
                     .text_color(cx.theme().muted_foreground)
-                    .child(if self.search_state.search_matches.is_empty() {
+                    .child(if self.search_matches.is_empty() {
                         "No matches".to_string()
-                    } else if let Some(current) = self.search_state.current_match_index {
-                        format!(
-                            "{} of {}",
-                            current + 1,
-                            self.search_state.search_matches.len()
-                        )
+                    } else if let Some(current) = self.current_match_index {
+                        format!("{} of {}", current + 1, self.search_matches.len())
                     } else {
-                        format!("{} matches", self.search_state.search_matches.len())
+                        format!("{} matches", self.search_matches.len())
                     }),
             )
             .child(
@@ -159,7 +154,8 @@ impl Fulgur {
                     cx.theme().border,
                 )
                 .on_click(cx.listener(|this, _, window, cx| {
-                    this.search_previous(window, cx);
+                    let content = this.active_editor_content(cx);
+                    this.search_previous(content, window, cx);
                 })),
             )
             .child(
@@ -170,7 +166,8 @@ impl Fulgur {
                     cx.theme().tab_bar,
                 )
                 .on_click(cx.listener(|this, _, window, cx| {
-                    this.search_next(window, cx);
+                    let content = this.active_editor_content(cx);
+                    this.search_next(content, window, cx);
                 })),
             )
     }
@@ -195,7 +192,7 @@ impl Fulgur {
             .border_l_1()
             .border_color(cx.theme().border)
             .child(
-                Input::new(&self.search_state.replace_input)
+                Input::new(&self.replace_input)
                     .flex_1()
                     .text_size(TEXT_SIZE)
                     .line_height(LINE_HEIGHT)
@@ -227,7 +224,8 @@ impl Fulgur {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.replace_current(window, cx);
+                            let content = this.active_editor_content(cx);
+                            this.replace_current(content, window, cx);
                         })),
                     )
                     .child(
@@ -238,7 +236,8 @@ impl Fulgur {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.replace_all(window, cx);
+                            let content = this.active_editor_content(cx);
+                            this.replace_all(content, window, cx);
                         })),
                     ),
             )
@@ -266,8 +265,9 @@ impl Fulgur {
                     CustomIcon::Close,
                     cx.theme().border,
                 )
-                .on_click(cx.listener(|this, _, window, cx| {
-                    this.close_search(window, cx);
+                .on_click(cx.listener(|this, _, _window, cx| {
+                    let content = this.active_editor_content(cx);
+                    this.close(content, cx);
                 })),
             )
     }
