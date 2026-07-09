@@ -151,6 +151,7 @@ fn invoke_do_open_file(
 /// - `cx`: The GPUI test application context.
 /// - `window_id`: The target window ID where the render-phase processing should run.
 /// - `fulgur`: The `Fulgur` entity that owns the processing method.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn invoke_process_window_state_updates(
     cx: &mut TestAppContext,
     window_id: WindowId,
