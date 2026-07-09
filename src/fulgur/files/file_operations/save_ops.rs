@@ -187,11 +187,13 @@ impl Fulgur {
         if let Err(e) = atomic_write_file(path, bytes) {
             log::error!("Failed to save file {}: {e}", path.display());
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-            self.pending_notification = Some((
-                NotificationType::Error,
-                SharedString::from(format!("Failed to save '{file_name}': {e}")),
-            ));
-            cx.notify();
+            window.push_notification(
+                (
+                    NotificationType::Error,
+                    SharedString::from(format!("Failed to save '{file_name}': {e}")),
+                ),
+                cx,
+            );
             return;
         }
         log::debug!("File saved successfully as: {}", path.display());

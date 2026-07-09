@@ -2,6 +2,7 @@ use super::WindowManager;
 use crate::fulgur::Fulgur;
 use crate::fulgur::ui::tabs::editor_tab::TabTransferData;
 use gpui::{AppContext, BorrowAppContext, Context, Window, WindowOptions};
+use gpui_component::WindowExt;
 use gpui_component::notification::NotificationType;
 
 impl Fulgur {
@@ -35,14 +36,15 @@ impl Fulgur {
                         log::warn!("Save failed again - allowing force-close");
                     } else {
                         self.save_failed_once = true;
-                        self.pending_notification = Some((
-                            NotificationType::Error,
-                            format!(
-                                "Failed to save application state: {e}. Close again to force-close."
-                            )
-                            .into(),
-                        ));
-                        cx.notify();
+                        window.push_notification(
+                            (
+                                NotificationType::Error,
+                                gpui::SharedString::from(format!(
+                                    "Failed to save application state: {e}. Close again to force-close."
+                                )),
+                            ),
+                            cx,
+                        );
                         return false;
                     }
                 }
@@ -63,14 +65,15 @@ impl Fulgur {
                     log::warn!("Save failed again, allowing force-close");
                 } else {
                     self.save_failed_once = true;
-                    self.pending_notification = Some((
-                        NotificationType::Error,
-                        format!(
-                            "Failed to save application state: {e}. Close again to force-close."
-                        )
-                        .into(),
-                    ));
-                    cx.notify();
+                    window.push_notification(
+                        (
+                            NotificationType::Error,
+                            gpui::SharedString::from(format!(
+                                "Failed to save application state: {e}. Close again to force-close."
+                            )),
+                        ),
+                        cx,
+                    );
                     return false;
                 }
             }

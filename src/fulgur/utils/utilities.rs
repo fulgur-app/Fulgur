@@ -1,28 +1,3 @@
-use std::sync::mpsc::Receiver;
-
-/// Collect all available events from an optional receiver
-///
-/// This helper drains all pending events from a channel using `try_recv()`.
-/// It's used for both file watch events and SSE events to avoid code duplication.
-///
-/// ### Arguments
-/// - `receiver`: Optional reference to a receiver channel
-///
-/// ### Returns
-/// - `Vec<T>`: Vector containing all available events, or empty vec if receiver is None
-#[must_use]
-pub fn collect_events<T>(receiver: &Option<Receiver<T>>) -> Vec<T> {
-    if let Some(rx) = receiver {
-        let mut events = Vec::new();
-        while let Ok(event) = rx.try_recv() {
-            events.push(event);
-        }
-        events
-    } else {
-        Vec::new()
-    }
-}
-
 /// Macro to simplify action handler registration
 ///
 /// This macro reduces boilerplate for simple action handlers that just call a method.

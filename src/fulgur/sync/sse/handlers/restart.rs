@@ -8,6 +8,7 @@ use crate::fulgur::{
         set_sync_server_connection_status, store_server_max_file_size,
     },
 };
+use futures::channel::mpsc::UnboundedSender;
 use gpui::{Context, SharedString, Window};
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
@@ -15,7 +16,6 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::Sender,
     },
     thread,
     time::{Duration, Instant},
@@ -32,7 +32,7 @@ const SSE_THREAD_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 /// Resources produced by the common SSE restart setup phase.
 struct SseRestartSetup {
     old_handle: Option<thread::JoinHandle<()>>,
-    sse_tx: Sender<SseEvent>,
+    sse_tx: UnboundedSender<SseEvent>,
     sse_shutdown_flag: Arc<AtomicBool>,
     handle_storage: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
     profile: ServerProfile,
@@ -75,6 +75,8 @@ impl Fulgur {
         profile_id: &str,
         cx: &mut Context<Self>,
     ) -> Option<SseRestartSetup> {
+        // Ensure the app-scope consumer task for this profile's events is running.
+        Self::spawn_sse_event_consumer(profile_id, cx);
         let sync_state = Fulgur::shared_state(cx).sync_state_for(profile_id);
         let (sse_tx, sse_shutdown_flag, handle_storage, old_handle) = {
             let mut sse = sync_state.sse.lock();
@@ -249,7 +251,7 @@ impl Fulgur {
         let sse_http_agent = Arc::clone(&shared.sse_http_agent);
         let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
         let pending_ack_share_ids = Arc::clone(&sync_state.pending_ack_share_ids);
-        let pending_notification = Arc::clone(&sync_state.pending_notification);
+        let notification_tx = sync_state.notification_tx.clone();
         let device_name = sync_state.device_name.clone();
         let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
         let server_version = Arc::clone(&sync_state.server_version);
@@ -359,7 +361,7 @@ impl Fulgur {
             };
             set_sync_server_connection_status(&connection_status, status);
             *connecting_since.lock() = None;
-            pending_notification.lock().push(notification);
+            let _ = notification_tx.unbounded_send(notification);
             done_for_thread.store(true, Ordering::Release);
         });
 

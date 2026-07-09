@@ -1,19 +1,16 @@
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::{
-    sync::{
-        Arc,
-        atomic::AtomicBool,
-        mpsc::{Receiver, Sender},
-    },
+    sync::{Arc, atomic::AtomicBool},
     thread,
     time::Instant,
 };
 
 /// Server-Sent Events state for sync functionality
 pub struct SseState {
-    pub sse_events: Option<Receiver<SseEvent>>,
-    pub sse_event_tx: Option<Sender<SseEvent>>,
+    pub sse_events: Option<UnboundedReceiver<SseEvent>>,
+    pub sse_event_tx: Option<UnboundedSender<SseEvent>>,
     pub sse_shutdown_flag: Option<Arc<AtomicBool>>,
     pub last_sse_event: Option<Instant>,
     /// Handle to the current SSE background thread for lifecycle tracking.
@@ -52,7 +49,7 @@ impl SseState {
     /// `Self`: a new `SseState` with `sse_event_tx`/`sse_events` wired up.
     #[must_use]
     pub fn with_channel() -> Self {
-        let (sse_tx, sse_rx) = std::sync::mpsc::channel();
+        let (sse_tx, sse_rx) = unbounded();
         Self {
             sse_events: Some(sse_rx),
             sse_event_tx: Some(sse_tx),

@@ -67,7 +67,7 @@ pub fn perform_ping_with_progress(
 ) {
     let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
     let sync_state = shared.sync_state_for(&profile.id);
-    let pending_notification = sync_state.pending_notification.clone();
+    let notification_tx = sync_state.notification_tx.clone();
     let token_state = Arc::clone(&sync_state.token_state);
     let http_agent = Arc::clone(&shared.http_agent);
 
@@ -98,7 +98,7 @@ pub fn perform_ping_with_progress(
                 SharedString::from(format!("{display_name}: Ping failed: {e}")),
             ),
         };
-        pending_notification.lock().push(notification);
+        let _ = notification_tx.unbounded_send(notification);
         done_for_thread.store(true, Ordering::Release);
     });
 

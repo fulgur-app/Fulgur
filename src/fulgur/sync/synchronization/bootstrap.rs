@@ -56,7 +56,10 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
     let http_agent = Arc::clone(&shared.http_agent);
     let sse_http_agent = Arc::clone(&shared.sse_http_agent);
     for profile in active_profiles {
-        let sync_state = shared.sync_state_for(&profile.id);
+        crate::fulgur::Fulgur::spawn_sse_event_consumer(&profile.id, cx);
+        let sync_state = cx
+            .global::<crate::fulgur::shared_state::SharedAppState>()
+            .sync_state_for(&profile.id);
         let (sse_tx, sse_shutdown_flag, sse_thread_handle) = {
             let mut sse = sync_state.sse.lock();
             let sse_tx = sse.sse_event_tx.clone();
@@ -79,37 +82,6 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
             );
         });
     }
-    nudge_windows_during_startup_sync(cx);
-}
-
-/// Periodically re-render all windows for a few seconds after startup sync begins.
-///
-/// ### Description
-/// The startup bootstrap runs on background threads that cannot trigger a GPUI
-/// render, so any notification they queue (such as a version-mismatch warning)
-/// would sit undrained until an unrelated render occurs.
-///
-/// ### Arguments
-/// - `cx`: The application context used to spawn the foreground task.
-fn nudge_windows_during_startup_sync(cx: &mut gpui::App) {
-    cx.spawn(async move |cx| {
-        for _ in 0..12 {
-            cx.background_executor()
-                .timer(Duration::from_millis(250))
-                .await;
-            cx.update(|cx| {
-                for weak in cx
-                    .global::<crate::fulgur::window_manager::WindowManager>()
-                    .get_all_windows()
-                {
-                    if let Some(entity) = weak.upgrade() {
-                        entity.update(cx, |_, cx| cx.notify());
-                    }
-                }
-            });
-        }
-    })
-    .detach();
 }
 
 /// Run the bootstrap sequence for a single profile in a background thread.
@@ -125,7 +97,7 @@ fn nudge_windows_during_startup_sync(cx: &mut gpui::App) {
 fn run_profile_bootstrap(
     profile: &ServerProfile,
     sync_state: &Arc<SyncState>,
-    sse_tx: Option<std::sync::mpsc::Sender<crate::fulgur::sync::sse::SseEvent>>,
+    sse_tx: Option<futures::channel::mpsc::UnboundedSender<crate::fulgur::sync::sse::SseEvent>>,
     sse_shutdown_flag: Option<Arc<AtomicBool>>,
     sse_thread_handle: Option<Arc<Mutex<Option<thread::JoinHandle<()>>>>>,
     http_agent: &Arc<ureq::Agent>,
@@ -183,8 +155,8 @@ fn run_profile_bootstrap(
                 min_fulgur_version,
                 fulgurant_version,
             );
-            if !notifications.is_empty() {
-                sync_state.pending_notification.lock().extend(notifications);
+            for notification in notifications {
+                sync_state.notify(notification);
             }
             {
                 let mut device_name = sync_state.device_name.lock();
@@ -380,7 +352,7 @@ pub fn perform_initial_synchronization(profile: ServerProfile, cx: &mut App) {
     let device_name = sync_state.device_name.clone();
     let pending_shared_files = sync_state.pending_shared_files.clone();
     let pending_ack_share_ids = sync_state.pending_ack_share_ids.clone();
-    let pending_notification = sync_state.pending_notification.clone();
+    let notification_tx = sync_state.notification_tx.clone();
     let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
     let server_min_fulgur_version = sync_state.server_min_fulgur_version.clone();
     let server_version = sync_state.server_version.clone();
@@ -433,7 +405,9 @@ pub fn perform_initial_synchronization(profile: ServerProfile, cx: &mut App) {
         };
         set_sync_server_connection_status(&connection_status, status);
         *connecting_since.lock() = None;
-        pending_notification.lock().extend(notifications);
+        for notification in notifications {
+            let _ = notification_tx.unbounded_send(notification);
+        }
     });
 }
 
@@ -463,7 +437,7 @@ pub fn perform_initial_synchronization_with_progress(
     let device_name = sync_state.device_name.clone();
     let pending_shared_files = sync_state.pending_shared_files.clone();
     let pending_ack_share_ids = sync_state.pending_ack_share_ids.clone();
-    let pending_notification = sync_state.pending_notification.clone();
+    let notification_tx = sync_state.notification_tx.clone();
     let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
     let server_min_fulgur_version = sync_state.server_min_fulgur_version.clone();
     let server_version = sync_state.server_version.clone();
@@ -542,7 +516,9 @@ pub fn perform_initial_synchronization_with_progress(
         };
         set_sync_server_connection_status(&connection_status, status);
         *connecting_since.lock() = None;
-        pending_notification.lock().extend(notifications);
+        for notification in notifications {
+            let _ = notification_tx.unbounded_send(notification);
+        }
         done_for_thread.store(true, Ordering::Release);
     });
 

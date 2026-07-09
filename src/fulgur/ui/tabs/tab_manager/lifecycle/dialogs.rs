@@ -69,14 +69,15 @@ impl Fulgur {
                             entity_ok_footer.update(cx, |this, cx| this.save_state(cx, window));
                         if let Err(e) = save_result {
                             log::error!("Failed to save app state on quit: {e}");
-                            entity_ok_footer.update(cx, |this, _cx| {
-                                this.pending_notification = Some((
+                            window.push_notification(
+                                (
                                     gpui_component::notification::NotificationType::Error,
-                                    format!("Failed to save application state: {e}. Quit anyway?")
-                                        .into(),
-                                ));
-                            });
-                            cx.refresh_windows();
+                                    gpui::SharedString::from(format!(
+                                        "Failed to save application state: {e}. Quit anyway?"
+                                    )),
+                                ),
+                                cx,
+                            );
                             return false; // Don't quit, show notification
                         }
                         cx.quit();
@@ -95,11 +96,15 @@ impl Fulgur {
         }
         if let Err(e) = self.save_state(cx, window) {
             log::error!("Failed to save app state on quit: {e}");
-            self.pending_notification = Some((
-                gpui_component::notification::NotificationType::Error,
-                format!("Failed to save application state: {e}. Try again or close the app to quit without saving.").into(),
-            ));
-            cx.notify();
+            window.push_notification(
+                (
+                    gpui_component::notification::NotificationType::Error,
+                    gpui::SharedString::from(format!(
+                        "Failed to save application state: {e}. Try again or close the app to quit without saving."
+                    )),
+                ),
+                cx,
+            );
             return; // Don't quit, show notification and let user try again
         }
         cx.quit();

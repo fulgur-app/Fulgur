@@ -1,9 +1,10 @@
 use crate::fulgur::{
     Fulgur, settings::ProfileId, sync::synchronization::SynchronizationStatus,
-    utils::utilities::collect_events,
+    window_manager::WindowManager,
 };
-use gpui::{App, Context, SharedString, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
+use futures::StreamExt;
+use gpui::{App, SharedString};
+use gpui_component::notification::NotificationType;
 use std::time::{Duration, Instant};
 
 use super::super::types::SseEvent;
@@ -22,22 +23,36 @@ impl Fulgur {
             .any(|s| s.connection_status.lock().is_connected())
     }
 
+    /// Spawn the app-scope task that consumes one profile's SSE events.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The profile whose events should be consumed.
+    /// - `cx`: The application context.
+    pub fn spawn_sse_event_consumer(profile_id: &str, cx: &mut App) {
+        let sync_state = Fulgur::shared_state(cx).sync_state_for(profile_id);
+        let Some(mut events) = sync_state.sse.lock().sse_events.take() else {
+            return;
+        };
+        let profile_id: ProfileId = profile_id.to_string();
+        cx.spawn(async move |cx| {
+            while let Some(event) = events.next().await {
+                cx.update(|cx| Self::handle_sse_event_for_profile(&profile_id, event, cx));
+            }
+        })
+        .detach();
+    }
+
     /// Handle a single SSE event for a specific profile on the UI thread.
     ///
-    /// Runs on the main/UI thread (it needs `window` and `cx`) and only performs UI-facing reactions.
+    /// Runs at application scope: state updates go to the profile's shared sync
+    /// state, user-facing notifications go through the app notification channel,
+    /// and windows are re-rendered when the event changed something they display.
     ///
     /// ### Arguments
     /// - `profile_id`: The profile that produced the event.
     /// - `event`: The SSE event to handle.
-    /// - `window`: The window to show notifications in.
     /// - `cx`: The application context.
-    pub fn handle_sse_event_for(
-        &mut self,
-        profile_id: &ProfileId,
-        event: SseEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn handle_sse_event_for_profile(profile_id: &ProfileId, event: SseEvent, cx: &mut App) {
         let now = Instant::now();
         let sync_state = Fulgur::shared_state(cx).sync_state_for(profile_id);
         {
@@ -59,15 +74,20 @@ impl Fulgur {
                     log::info!(
                         "Profile '{profile_id}': connection restored on heartbeat after timeout"
                     );
+                    Self::notify_all_windows(cx);
                 }
             }
             SseEvent::ShareAvailable(notification) => {
                 log::debug!(
-                    "Share doorbell on UI tick (share_id={})",
+                    "Share doorbell received on consumer task (share_id={})",
                     notification.share_id
                 );
-                let message = SharedString::from("New file received".to_string());
-                window.push_notification((NotificationType::Info, message), cx);
+                Fulgur::shared_state(cx).notify((
+                    NotificationType::Info,
+                    SharedString::from("New file received"),
+                ));
+                // Wake every window so the queued share is decrypted and opened.
+                Self::notify_all_windows(cx);
             }
             SseEvent::Error(err) => {
                 log::error!("SSE error for profile '{profile_id}': {err}");
@@ -75,48 +95,18 @@ impl Fulgur {
         }
     }
 
-    /// Handle an SSE event using the primary profile, on the UI thread. Performs UI-facing reactions and never downloads shares.
+    /// Request a re-render of every open window.
     ///
     /// ### Arguments
-    /// - `event`: The SSE event to handle.
-    /// - `window`: The window to show notifications in.
     /// - `cx`: The application context.
-    pub fn handle_sse_event(
-        &mut self,
-        event: SseEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let primary_id = self
-            .settings
-            .app_settings
-            .synchronization_settings
-            .primary_profile()
-            .map(|p| p.id.clone())
-            .unwrap_or_default();
-        self.handle_sse_event_for(&primary_id, event, window, cx);
-    }
-
-    /// Drain pending SSE events from every profile's channel and dispatch them on the UI thread.
-    ///
-    /// ### Arguments
-    /// - `window`: The window to handle events in.
-    /// - `cx`: The application context.
-    pub fn process_sse_events(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let drained: Vec<(ProfileId, Vec<SseEvent>)> = {
-            let shared = Fulgur::shared_state(cx);
-            let states = shared.sync_states.read();
-            states
-                .iter()
-                .map(|(profile_id, sync_state)| {
-                    let events = collect_events(&sync_state.sse.lock().sse_events);
-                    (profile_id.clone(), events)
-                })
-                .collect()
+    fn notify_all_windows(cx: &mut App) {
+        let windows = match cx.try_global::<WindowManager>() {
+            Some(manager) => manager.get_all_windows(),
+            None => return,
         };
-        for (profile_id, events) in drained {
-            for event in events {
-                self.handle_sse_event_for(&profile_id, event, window, cx);
+        for weak in windows {
+            if let Some(entity) = weak.upgrade() {
+                entity.update(cx, |_, cx| cx.notify());
             }
         }
     }

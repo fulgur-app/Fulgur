@@ -468,7 +468,7 @@ pub fn create_editor_page(
                             entity.update(cx, |this, cx| {
                                 this.settings.editor_settings.watch_files = val;
                                 if val {
-                                    this.start_file_watcher();
+                                    this.start_file_watcher(cx);
                                 } else {
                                     this.stop_file_watcher();
                                 }

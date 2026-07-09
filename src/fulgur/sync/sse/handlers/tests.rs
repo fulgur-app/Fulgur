@@ -46,6 +46,10 @@ fn make_share_notification(share_id: &str) -> ShareNotification {
     }
 }
 
+fn test_profile_id() -> String {
+    String::new()
+}
+
 // --- SseState construction (no GPUI context needed) ---
 
 #[test]
@@ -58,214 +62,206 @@ fn test_sse_state_new_is_fully_empty() {
     assert!(state.sse_thread_handle.lock().is_none());
 }
 
-// --- handle_sse_event: Heartbeat ---
+// --- handle_sse_event_for_profile: Heartbeat ---
 
 #[gpui::test]
 fn test_handle_heartbeat_sets_last_heartbeat(cx: &mut TestAppContext) {
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|window, cx| {
-        fulgur.update(cx, |this, cx| {
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .last_heartbeat
-                    .lock()
-                    .is_none(),
-                "last_heartbeat should start as None"
-            );
-            this.handle_sse_event(
-                SseEvent::Heartbeat {
-                    timestamp: "2024-01-01T00:00:00Z".to_string(),
-                },
-                window,
-                cx,
-            );
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .last_heartbeat
-                    .lock()
-                    .is_some(),
-                "last_heartbeat must be set after a heartbeat event"
-            );
-        });
+    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .last_heartbeat
+                .lock()
+                .is_none(),
+            "last_heartbeat should start as None"
+        );
+        Fulgur::handle_sse_event_for_profile(
+            &test_profile_id(),
+            SseEvent::Heartbeat {
+                timestamp: "2024-01-01T00:00:00Z".to_string(),
+            },
+            cx,
+        );
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .last_heartbeat
+                .lock()
+                .is_some(),
+            "last_heartbeat must be set after a heartbeat event"
+        );
     });
 }
 
 #[gpui::test]
 fn test_handle_heartbeat_when_disconnected_restores_connected_status(cx: &mut TestAppContext) {
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|window, cx| {
-        fulgur.update(cx, |this, cx| {
-            *Fulgur::shared_state(cx)
+    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        *Fulgur::shared_state(cx)
+            .primary_sync_state()
+            .connection_status
+            .lock() = SynchronizationStatus::Disconnected;
+        Fulgur::handle_sse_event_for_profile(
+            &test_profile_id(),
+            SseEvent::Heartbeat {
+                timestamp: "ts".to_string(),
+            },
+            cx,
+        );
+        assert!(
+            Fulgur::shared_state(cx)
                 .primary_sync_state()
                 .connection_status
-                .lock() = SynchronizationStatus::Disconnected;
-            this.handle_sse_event(
-                SseEvent::Heartbeat {
-                    timestamp: "ts".to_string(),
-                },
-                window,
-                cx,
-            );
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .connection_status
-                    .lock()
-                    .is_connected(),
-                "Heartbeat while Disconnected must restore Connected status"
-            );
-        });
+                .lock()
+                .is_connected(),
+            "Heartbeat while Disconnected must restore Connected status"
+        );
     });
 }
 
 #[gpui::test]
 fn test_handle_heartbeat_when_connected_keeps_connected_status(cx: &mut TestAppContext) {
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|window, cx| {
-        fulgur.update(cx, |this, cx| {
-            *Fulgur::shared_state(cx)
+    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        *Fulgur::shared_state(cx)
+            .primary_sync_state()
+            .connection_status
+            .lock() = SynchronizationStatus::Connected;
+        Fulgur::handle_sse_event_for_profile(
+            &test_profile_id(),
+            SseEvent::Heartbeat {
+                timestamp: "ts".to_string(),
+            },
+            cx,
+        );
+        assert!(
+            Fulgur::shared_state(cx)
                 .primary_sync_state()
                 .connection_status
-                .lock() = SynchronizationStatus::Connected;
-            this.handle_sse_event(
-                SseEvent::Heartbeat {
-                    timestamp: "ts".to_string(),
-                },
-                window,
-                cx,
-            );
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .connection_status
-                    .lock()
-                    .is_connected(),
-                "Heartbeat while already Connected must keep Connected status"
-            );
-        });
+                .lock()
+                .is_connected(),
+            "Heartbeat while already Connected must keep Connected status"
+        );
     });
 }
 
-// --- handle_sse_event: debounce ---
+// --- handle_sse_event_for_profile: debounce ---
 
 #[gpui::test]
 fn test_handle_sse_event_debounce_ignores_rapid_second_event(cx: &mut TestAppContext) {
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|window, cx| {
-        fulgur.update(cx, |this, cx| {
-            this.handle_sse_event(
-                SseEvent::Heartbeat {
-                    timestamp: "ts1".to_string(),
-                },
-                window,
-                cx,
-            );
-            *Fulgur::shared_state(cx)
+    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        Fulgur::handle_sse_event_for_profile(
+            &test_profile_id(),
+            SseEvent::Heartbeat {
+                timestamp: "ts1".to_string(),
+            },
+            cx,
+        );
+        *Fulgur::shared_state(cx)
+            .primary_sync_state()
+            .connection_status
+            .lock() = SynchronizationStatus::Disconnected;
+        Fulgur::handle_sse_event_for_profile(
+            &test_profile_id(),
+            SseEvent::Heartbeat {
+                timestamp: "ts2".to_string(),
+            },
+            cx,
+        );
+        assert!(
+            !Fulgur::shared_state(cx)
                 .primary_sync_state()
                 .connection_status
-                .lock() = SynchronizationStatus::Disconnected;
-            this.handle_sse_event(
-                SseEvent::Heartbeat {
-                    timestamp: "ts2".to_string(),
-                },
-                window,
-                cx,
-            );
-            assert!(
-                !Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .connection_status
-                    .lock()
-                    .is_connected(),
-                "Second event within the 500ms debounce window must be ignored"
-            );
-        });
+                .lock()
+                .is_connected(),
+            "Second event within the 500ms debounce window must be ignored"
+        );
     });
 }
 
-// --- handle_sse_event: ShareAvailable ---
+// --- handle_sse_event_for_profile: ShareAvailable ---
 
 #[gpui::test]
 fn test_handle_share_available_does_not_touch_pending_files(cx: &mut TestAppContext) {
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|window, cx| {
-        fulgur.update(cx, |this, cx| {
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .pending_shared_files
-                    .lock()
-                    .is_empty(),
-                "pending_shared_files should start empty"
-            );
-            let notification = make_share_notification("share-abc");
-            this.handle_sse_event(SseEvent::ShareAvailable(notification), window, cx);
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .pending_shared_files
-                    .lock()
-                    .is_empty(),
-                "UI doorbell handler must not push into pending_shared_files; \
-                 the SSE worker drains via /api/shares instead"
-            );
-        });
+    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .pending_shared_files
+                .lock()
+                .is_empty(),
+            "pending_shared_files should start empty"
+        );
+        let notification = make_share_notification("share-abc");
+        Fulgur::handle_sse_event_for_profile(
+            &test_profile_id(),
+            SseEvent::ShareAvailable(notification),
+            cx,
+        );
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .pending_shared_files
+                .lock()
+                .is_empty(),
+            "UI doorbell handler must not push into pending_shared_files; \
+             the SSE worker drains via /api/shares instead"
+        );
     });
 }
 
-// --- handle_sse_event: Error ---
+// --- handle_sse_event_for_profile: Error ---
 
 #[gpui::test]
 fn test_handle_error_event_does_not_change_shared_state(cx: &mut TestAppContext) {
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|window, cx| {
-        fulgur.update(cx, |this, cx| {
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .last_heartbeat
-                    .lock()
-                    .is_none()
-            );
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .pending_shared_files
-                    .lock()
-                    .is_empty()
-            );
-            this.handle_sse_event(
-                SseEvent::Error("connection timeout".to_string()),
-                window,
-                cx,
-            );
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .last_heartbeat
-                    .lock()
-                    .is_none()
-            );
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .pending_shared_files
-                    .lock()
-                    .is_empty()
-            );
-        });
+    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .last_heartbeat
+                .lock()
+                .is_none()
+        );
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .pending_shared_files
+                .lock()
+                .is_empty()
+        );
+        Fulgur::handle_sse_event_for_profile(
+            &test_profile_id(),
+            SseEvent::Error("connection timeout".to_string()),
+            cx,
+        );
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .last_heartbeat
+                .lock()
+                .is_none()
+        );
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .pending_shared_files
+                .lock()
+                .is_empty()
+        );
     });
 }
 
-// --- process_sse_events ---
+// --- spawn_sse_event_consumer ---
 
 /// Install a fresh SSE channel on the shared sync state for the empty profile
 /// id used by the Phase 1 single-profile tests. Returns the `Sender` for the
 /// test to emit events through.
-fn install_test_sse_channel(cx: &gpui::App) -> std::sync::mpsc::Sender<SseEvent> {
-    let (tx, rx) = std::sync::mpsc::channel();
+fn install_test_sse_channel(cx: &gpui::App) -> futures::channel::mpsc::UnboundedSender<SseEvent> {
+    let (tx, rx) = futures::channel::mpsc::unbounded();
     let sync_state = Fulgur::shared_state(cx).sync_state_for("");
     let mut sse = sync_state.sse.lock();
     sse.sse_event_tx = Some(tx.clone());
@@ -274,73 +270,75 @@ fn install_test_sse_channel(cx: &gpui::App) -> std::sync::mpsc::Sender<SseEvent>
 }
 
 #[gpui::test]
-fn test_process_sse_events_dispatches_heartbeat_from_channel(cx: &mut TestAppContext) {
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|window, cx| {
-        fulgur.update(cx, |this, cx| {
-            let tx = install_test_sse_channel(cx);
-            tx.send(SseEvent::Heartbeat {
-                timestamp: "ts".to_string(),
-            })
-            .unwrap();
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .last_heartbeat
-                    .lock()
-                    .is_none()
-            );
-            this.process_sse_events(window, cx);
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .last_heartbeat
-                    .lock()
-                    .is_some(),
-                "Heartbeat from channel must be dispatched by process_sse_events"
-            );
-        });
+fn test_sse_consumer_dispatches_heartbeat_from_channel(cx: &mut TestAppContext) {
+    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        let tx = install_test_sse_channel(cx);
+        Fulgur::spawn_sse_event_consumer("", cx);
+        tx.unbounded_send(SseEvent::Heartbeat {
+            timestamp: "ts".to_string(),
+        })
+        .unwrap();
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .last_heartbeat
+                .lock()
+                .is_none(),
+            "the consumer task has not run yet, so the heartbeat must not be applied"
+        );
+    });
+    visual_cx.run_until_parked();
+    visual_cx.update(|_window, cx| {
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .last_heartbeat
+                .lock()
+                .is_some(),
+            "Heartbeat from channel must be dispatched by the consumer task"
+        );
     });
 }
 
 #[gpui::test]
-fn test_process_sse_events_with_empty_channel_is_a_no_op(cx: &mut TestAppContext) {
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|window, cx| {
-        fulgur.update(cx, |this, cx| {
-            let _tx = install_test_sse_channel(cx);
-            this.process_sse_events(window, cx);
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .last_heartbeat
-                    .lock()
-                    .is_none(),
-                "No events in channel means no heartbeat should be set"
-            );
-        });
+fn test_sse_consumer_spawn_is_idempotent(cx: &mut TestAppContext) {
+    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        let _tx = install_test_sse_channel(cx);
+        Fulgur::spawn_sse_event_consumer("", cx);
+        // The receiver was taken by the first consumer; a second spawn is a no-op.
+        Fulgur::spawn_sse_event_consumer("", cx);
+        assert!(
+            Fulgur::shared_state(cx)
+                .sync_state_for("")
+                .sse
+                .lock()
+                .sse_events
+                .is_none(),
+            "the consumer task must take the receiver out of the shared state"
+        );
     });
+    visual_cx.run_until_parked();
 }
 
 #[gpui::test]
-fn test_process_sse_events_with_closed_channel_is_a_no_op(cx: &mut TestAppContext) {
-    // Fulgur::new always creates a channel, so sse_events is never None after
-    // construction. Replace it with a receiver whose sender has been dropped
-    // (closed channel) to verify process_sse_events handles EOF gracefully.
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|window, cx| {
-        fulgur.update(cx, |this, cx| {
-            let tx = install_test_sse_channel(cx);
-            drop(tx);
-            this.process_sse_events(window, cx);
-            assert!(
-                Fulgur::shared_state(cx)
-                    .primary_sync_state()
-                    .last_heartbeat
-                    .lock()
-                    .is_none(),
-                "No events dispatched from closed channel"
-            );
-        });
+fn test_sse_consumer_with_closed_channel_is_a_no_op(cx: &mut TestAppContext) {
+    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        let tx = install_test_sse_channel(cx);
+        drop(tx);
+        Fulgur::spawn_sse_event_consumer("", cx);
+    });
+    visual_cx.run_until_parked();
+    visual_cx.update(|_window, cx| {
+        assert!(
+            Fulgur::shared_state(cx)
+                .primary_sync_state()
+                .last_heartbeat
+                .lock()
+                .is_none(),
+            "No events dispatched from closed channel"
+        );
     });
 }

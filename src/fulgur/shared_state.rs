@@ -11,13 +11,20 @@ use crate::fulgur::{
     settings::Settings, settings::Themes, sync::synchronization::SynchronizationStatus,
 };
 use fulgur_common::api::shares::SharedFileResponse;
-use gpui::SharedString;
+use futures::StreamExt;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use gpui::{App, AsyncApp, SharedString};
+use gpui_component::WindowExt;
 use gpui_component::notification::NotificationType;
 use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::time::Duration;
+
+/// A user-facing notification: severity plus message.
+pub type AppNotification = (NotificationType, SharedString);
 
 /// Result of a background device fetch: either a list of devices or an error message,
 /// paired with a boolean indicating whether SSE reconnection is needed.
@@ -48,8 +55,9 @@ pub struct SyncState {
     pub token_state: Arc<crate::fulgur::sync::access_token::TokenStateManager>,
     /// Last heartbeat time received from this profile's SSE stream.
     pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
-    /// Pending notifications queued by background sync operations, drained in the render loop.
-    pub pending_notification: Arc<Mutex<Vec<(NotificationType, SharedString)>>>,
+    /// Sender for user-facing notifications produced by background sync operations,
+    /// delivered by the app-scope consumer task (see `spawn_notification_consumer`).
+    pub notification_tx: UnboundedSender<AppNotification>,
     /// Last emitted receive-error signature for shared-file processing (error deduplication).
     pub last_share_receive_error_signature: Arc<Mutex<Option<String>>>,
     /// Pending devices list from background fetch (checked in render loop to open share sheet).
@@ -71,11 +79,15 @@ impl SyncState {
     ///
     /// ### Arguments
     /// - `connection_status`: The initial sync server connection status.
+    /// - `notification_tx`: The app-wide notification sender (cloned from `SharedAppState`).
     ///
     /// ### Returns
     /// - `Self`: The new sync state.
     #[must_use]
-    pub fn new(connection_status: SynchronizationStatus) -> Self {
+    pub fn new(
+        connection_status: SynchronizationStatus,
+        notification_tx: UnboundedSender<AppNotification>,
+    ) -> Self {
         Self {
             connection_status: Arc::new(Mutex::new(connection_status)),
             connecting_since: Arc::new(Mutex::new(None)),
@@ -86,13 +98,23 @@ impl SyncState {
             decrypt_in_flight: Arc::new(AtomicBool::new(false)),
             token_state: Arc::new(crate::fulgur::sync::access_token::TokenStateManager::new()),
             last_heartbeat: Arc::new(Mutex::new(None)),
-            pending_notification: Arc::new(Mutex::new(Vec::new())),
+            notification_tx,
             last_share_receive_error_signature: Arc::new(Mutex::new(None)),
             pending_devices: Arc::new(Mutex::new(None)),
             max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),
             server_version: Arc::new(Mutex::new(None)),
             server_min_fulgur_version: Arc::new(Mutex::new(None)),
             sse: Arc::new(Mutex::new(SseState::with_channel())),
+        }
+    }
+
+    /// Queue a user-facing notification for delivery to the focused window.
+    ///
+    /// ### Arguments
+    /// - `notification`: The notification type and message to deliver.
+    pub fn notify(&self, notification: AppNotification) {
+        if self.notification_tx.unbounded_send(notification).is_err() {
+            log::warn!("Notification channel closed, dropping sync notification");
         }
     }
 }
@@ -137,6 +159,10 @@ pub struct SharedAppState {
     /// `save_state` landing between a window's spawn and its restore can no
     /// longer change what that window sees.
     pub restore_state: Arc<Mutex<Option<WindowsState>>>,
+    /// Sender for user-facing notifications produced anywhere in the app.
+    pub notification_tx: UnboundedSender<AppNotification>,
+    /// Receiver side of the notification channel, taken exactly once by `spawn_notification_consumer`.
+    notification_rx: Mutex<Option<UnboundedReceiver<AppNotification>>>,
 }
 
 impl gpui::Global for SharedAppState {}
@@ -160,7 +186,9 @@ impl SharedAppState {
         let (settings, sync_error) = Self::validate_settings(settings);
         let themes = Self::load_themes();
         let synchronization_status = Self::determine_initial_sync_status(&settings);
-        let sync_states = Self::seed_sync_states(&settings, synchronization_status);
+        let (notification_tx, notification_rx) = unbounded();
+        let sync_states =
+            Self::seed_sync_states(&settings, synchronization_status, &notification_tx);
 
         Self {
             settings,
@@ -188,6 +216,18 @@ impl SharedAppState {
             ssh_session_pool: Arc::new(SshSessionPool::new()),
             state_writer: Arc::new(StateWriter::new()),
             restore_state: Arc::new(Mutex::new(restore_state)),
+            notification_tx,
+            notification_rx: Mutex::new(Some(notification_rx)),
+        }
+    }
+
+    /// Queue a user-facing notification for delivery to the focused window.
+    ///
+    /// ### Arguments
+    /// - `notification`: The notification type and message to deliver.
+    pub fn notify(&self, notification: AppNotification) {
+        if self.notification_tx.unbounded_send(notification).is_err() {
+            log::warn!("Notification channel closed, dropping notification");
         }
     }
 
@@ -266,12 +306,14 @@ impl SharedAppState {
     /// - `settings`: The application settings.
     /// - `default_status`: The status assigned to profiles flagged as active
     ///   when the master switch is on; ignored otherwise.
+    /// - `notification_tx`: The app-wide notification sender cloned into each state.
     ///
     /// ### Returns
     /// - `HashMap<ProfileId, Arc<SyncState>>`: Map keyed by profile id.
     fn seed_sync_states(
         settings: &Settings,
         default_status: SynchronizationStatus,
+        notification_tx: &UnboundedSender<AppNotification>,
     ) -> HashMap<ProfileId, Arc<SyncState>> {
         let master_on = settings
             .app_settings
@@ -288,7 +330,10 @@ impl SharedAppState {
                 } else {
                     SynchronizationStatus::NotActivated
                 };
-                (profile.id.clone(), Arc::new(SyncState::new(status)))
+                (
+                    profile.id.clone(),
+                    Arc::new(SyncState::new(status, notification_tx.clone())),
+                )
             })
             .collect()
     }
@@ -307,10 +352,12 @@ impl SharedAppState {
             return Arc::clone(existing);
         }
         let mut map = self.sync_states.write();
-        Arc::clone(
-            map.entry(profile_id.to_string())
-                .or_insert_with(|| Arc::new(SyncState::new(SynchronizationStatus::NotActivated))),
-        )
+        Arc::clone(map.entry(profile_id.to_string()).or_insert_with(|| {
+            Arc::new(SyncState::new(
+                SynchronizationStatus::NotActivated,
+                self.notification_tx.clone(),
+            ))
+        }))
     }
 
     /// Get the `SyncState` for the first configured profile.
@@ -343,4 +390,75 @@ impl SharedAppState {
     pub fn remove_sync_state(&self, profile_id: &str) -> Option<Arc<SyncState>> {
         self.sync_states.write().remove(profile_id)
     }
+}
+
+/// Maximum delivery attempts before a notification with no window to show it in is dropped.
+const NOTIFICATION_DELIVERY_MAX_ATTEMPTS: usize = 60;
+
+/// Delay between notification delivery attempts while no window is available.
+const NOTIFICATION_DELIVERY_RETRY_DELAY: Duration = Duration::from_millis(500);
+
+/// Spawn the app-scope task that delivers queued notifications to the focused window.
+///
+/// ### Arguments
+/// - `cx`: The application context.
+pub fn spawn_notification_consumer(cx: &mut App) {
+    let Some(mut rx) = cx.global::<SharedAppState>().notification_rx.lock().take() else {
+        return;
+    };
+    cx.spawn(async move |cx| {
+        while let Some(notification) = rx.next().await {
+            deliver_notification(notification, cx).await;
+        }
+    })
+    .detach();
+}
+
+/// Deliver one notification to the focused window, retrying while no window exists.
+///
+/// ### Arguments
+/// - `notification`: The notification to deliver.
+/// - `cx`: The async application context.
+async fn deliver_notification(notification: AppNotification, cx: &mut AsyncApp) {
+    for attempt in 0..NOTIFICATION_DELIVERY_MAX_ATTEMPTS {
+        if attempt > 0 {
+            cx.background_executor()
+                .timer(NOTIFICATION_DELIVERY_RETRY_DELAY)
+                .await;
+        }
+        if cx.update(|cx| push_notification_to_focused_window(notification.clone(), cx)) {
+            return;
+        }
+    }
+    log::warn!(
+        "No window available to display notification, dropping: {}",
+        notification.1
+    );
+}
+
+/// Push a notification to the focused window, falling back to any open window.
+///
+/// ### Arguments
+/// - `notification`: The notification to display.
+/// - `cx`: The application context.
+///
+/// ### Returns
+/// - `true`: The notification was pushed to a window.
+/// - `false`: No window is currently available.
+fn push_notification_to_focused_window(notification: AppNotification, cx: &mut App) -> bool {
+    let focused_window_id = cx
+        .try_global::<crate::fulgur::window_manager::WindowManager>()
+        .and_then(super::window_manager::WindowManager::get_last_focused);
+    let windows = cx.windows();
+    let handle = focused_window_id
+        .and_then(|id| windows.iter().find(|w| w.window_id() == id).copied())
+        .or_else(|| windows.first().copied());
+    let Some(handle) = handle else {
+        return false;
+    };
+    handle
+        .update(cx, |_, window, cx| {
+            window.push_notification(notification, cx);
+        })
+        .is_ok()
 }

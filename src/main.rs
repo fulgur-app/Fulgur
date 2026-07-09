@@ -273,6 +273,7 @@ fn main() {
             fulgur::utils::single_instance::start_ipc_listener(pf, pic);
         }
         cx.set_global(fulgur::window_manager::WindowManager::new());
+        fulgur::shared_state::spawn_notification_consumer(cx);
         if restore_bounds.is_empty() {
             log::info!("No saved state, creating initial window");
             cx.spawn(async move |cx| create_window(cx, 0, None, &cli_file_paths))

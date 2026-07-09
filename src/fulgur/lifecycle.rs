@@ -100,7 +100,6 @@ impl Fulgur {
                 tab_scroll_handle: ScrollHandle::new(),
                 pending_tab_scroll: None,
                 file_watch_state: FileWatchState::new(),
-                pending_notification: None,
                 save_failed_once: false,
                 share_sheet_state: None,
                 cached_window_bounds: None,
@@ -138,8 +137,7 @@ impl Fulgur {
         entity.update(cx, |this, cx| {
             let shared = cx.global::<shared_state::SharedAppState>();
             if let Some(error_msg) = shared.sync_error.lock().as_ref() {
-                this.pending_notification =
-                    Some((NotificationType::Error, error_msg.clone().into()));
+                shared.notify((NotificationType::Error, error_msg.clone().into()));
             }
             if window_index == usize::MAX {
                 let initial_tab = Tab::Editor(editor_tab::EditorTab::new(
@@ -159,7 +157,7 @@ impl Fulgur {
                 this.pending_initial_active_tab = this.active_tab_id;
             }
             if this.settings.editor_settings.watch_files {
-                this.start_file_watcher();
+                this.start_file_watcher(cx);
             }
         });
         sync::synchronization::begin_synchronization(&entity, cx);

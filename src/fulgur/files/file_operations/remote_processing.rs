@@ -2,7 +2,7 @@ use super::{RemoteFileResult, RemoteOpenResult};
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{Fulgur, editor_tab, tab::Tab, ui::menus::build_menus};
 use gpui::{Context, Window};
-use gpui_component::notification::NotificationType;
+use gpui_component::{WindowExt, notification::NotificationType};
 use std::path::PathBuf;
 
 impl Fulgur {
@@ -85,10 +85,15 @@ impl Fulgur {
                 Ok(RemoteOpenResult::Browse(browse)) => {
                     if let Some(tab_id) = target_tab_id {
                         self.pending_remote_restore.insert(tab_id);
-                        self.pending_notification = Some((
-                            NotificationType::Error,
-                            "Restored remote tab path is no longer a file".into(),
-                        ));
+                        window.push_notification(
+                            (
+                                NotificationType::Error,
+                                gpui::SharedString::from(
+                                    "Restored remote tab path is no longer a file",
+                                ),
+                            ),
+                            cx,
+                        );
                     } else {
                         self.show_remote_path_browser_dialog(window, cx, &browse);
                     }
@@ -97,7 +102,10 @@ impl Fulgur {
                     if let Some(tab_id) = target_tab_id {
                         self.pending_remote_restore.insert(tab_id);
                     }
-                    self.pending_notification = Some((NotificationType::Error, msg.into()));
+                    window.push_notification(
+                        (NotificationType::Error, gpui::SharedString::from(msg)),
+                        cx,
+                    );
                 }
             }
         }

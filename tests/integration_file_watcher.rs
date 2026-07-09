@@ -12,6 +12,7 @@ use tempfile::TempDir;
 
 // Import from the main crate
 use fulgur::fulgur::files::file_watcher::{FileWatchEvent, FileWatcher};
+use futures::channel::mpsc::Receiver;
 
 /// Create a temporary test file with given content
 ///
@@ -54,7 +55,7 @@ fn paths_equal(path1: &Path, path2: &Path) -> bool {
 /// - `Some(FileWatchEvent)`: The matching event if found within timeout
 /// - `None`: If timeout was reached or no matching event found
 fn wait_for_event<F>(
-    rx: &std::sync::mpsc::Receiver<FileWatchEvent>,
+    rx: &mut Receiver<FileWatchEvent>,
     timeout_ms: u64,
     predicate: F,
 ) -> Option<FileWatchEvent>
@@ -92,7 +93,7 @@ where
 /// - `Some(FileWatchEvent)`: Any event if received within timeout
 /// - `None`: If timeout was reached
 fn wait_for_any_event(
-    rx: &std::sync::mpsc::Receiver<FileWatchEvent>,
+    rx: &mut Receiver<FileWatchEvent>,
     timeout_ms: u64,
 ) -> Option<FileWatchEvent> {
     wait_for_event(rx, timeout_ms, |_| true)
@@ -154,7 +155,7 @@ fn test_unwatch_file() {
 fn test_detect_file_modification() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let file_path = create_test_file(&temp_dir, "test.txt", "initial content");
-    let (mut watcher, rx) = FileWatcher::new();
+    let (mut watcher, mut rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
     watcher
         .watch_file(&file_path)
@@ -164,7 +165,7 @@ fn test_detect_file_modification() {
     fs::write(&file_path, "modified content").expect("Failed to modify file");
     let file_path_clone = file_path.clone();
     let event = wait_for_event(
-        &rx,
+        &mut rx,
         5000,
         |event| matches!(event, FileWatchEvent::Modified(path) if paths_equal(path, &file_path_clone)),
     );
@@ -178,7 +179,7 @@ fn test_detect_file_modification() {
 fn test_detect_file_deletion() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let file_path = create_test_file(&temp_dir, "test.txt", "initial content");
-    let (mut watcher, rx) = FileWatcher::new();
+    let (mut watcher, mut rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
     watcher
         .watch_file(&file_path)
@@ -188,7 +189,7 @@ fn test_detect_file_deletion() {
     fs::remove_file(&file_path).expect("Failed to delete file");
     let file_path_clone = file_path.clone();
     let event = wait_for_event(
-        &rx,
+        &mut rx,
         5000,
         |event| matches!(event, FileWatchEvent::Deleted(path) if paths_equal(path, &file_path_clone)),
     );
@@ -203,7 +204,7 @@ fn test_detect_file_rename() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let from_path = create_test_file(&temp_dir, "old_name.txt", "content");
     let to_path_uncanonicalized = temp_dir.path().join("new_name.txt");
-    let (mut watcher, rx) = FileWatcher::new();
+    let (mut watcher, mut rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
     watcher
         .watch_file(&from_path)
@@ -214,7 +215,7 @@ fn test_detect_file_rename() {
     let to_path = to_path_uncanonicalized
         .canonicalize()
         .unwrap_or(to_path_uncanonicalized);
-    let event = wait_for_any_event(&rx, 5000);
+    let event = wait_for_any_event(&mut rx, 5000);
 
     if event.is_none() {
         eprintln!(
@@ -258,7 +259,7 @@ fn test_watch_multiple_files() {
     let file1 = create_test_file(&temp_dir, "file1.txt", "content1");
     let file2 = create_test_file(&temp_dir, "file2.txt", "content2");
     let file3 = create_test_file(&temp_dir, "file3.txt", "content3");
-    let (mut watcher, rx) = FileWatcher::new();
+    let (mut watcher, mut rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
     watcher.watch_file(&file1).expect("Failed to watch file1");
     watcher.watch_file(&file2).expect("Failed to watch file2");
@@ -268,7 +269,7 @@ fn test_watch_multiple_files() {
     fs::write(&file2, "modified content2").expect("Failed to modify file2");
     let file2_clone = file2.clone();
     let event = wait_for_event(
-        &rx,
+        &mut rx,
         5000,
         |event| matches!(event, FileWatchEvent::Modified(path) if paths_equal(path, &file2_clone)),
     );
@@ -282,7 +283,7 @@ fn test_watch_multiple_files() {
 fn test_stop_watcher() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let file_path = create_test_file(&temp_dir, "test.txt", "initial content");
-    let (mut watcher, rx) = FileWatcher::new();
+    let (mut watcher, mut rx) = FileWatcher::new();
     watcher.start().expect("Failed to start watcher");
     watcher
         .watch_file(&file_path)
@@ -312,7 +313,7 @@ fn test_stop_watcher() {
 fn test_watcher_drop_cleanup() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let file_path = create_test_file(&temp_dir, "test.txt", "initial content");
-    let rx = {
+    let mut rx = {
         let (mut watcher, rx) = FileWatcher::new();
         watcher.start().expect("Failed to start watcher");
         watcher

@@ -1,7 +1,6 @@
 use super::WindowManager;
 use crate::fulgur::{Fulgur, state};
 use gpui::{BorrowAppContext, Context, Window};
-use gpui_component::WindowExt;
 
 impl Fulgur {
     /// Process window state updates during the render cycle:
@@ -9,7 +8,6 @@ impl Fulgur {
     /// 2. Update the global `WindowManager` to track this window as focused, but
     ///    only when it is the OS-active window (renders also fire for background
     ///    windows, so render order is not a reliable focus signal)
-    /// 3. Display any pending notifications that were queued during event processing
     ///
     /// ### Arguments
     /// - `window`: The window being rendered
@@ -26,23 +24,6 @@ impl Fulgur {
             cx.update_global::<WindowManager, _>(|manager, _| {
                 manager.set_focused(self.window_id);
             });
-        }
-        if let Some((notification_type, message)) = self.pending_notification.take() {
-            window.push_notification((notification_type, message), cx);
-        }
-        // Drain every queued notification from every profile's sync state.
-        let pending_notifications: Vec<(
-            gpui_component::notification::NotificationType,
-            gpui::SharedString,
-        )> = {
-            let states = Fulgur::shared_state(cx).sync_states.read();
-            states
-                .values()
-                .flat_map(|state| std::mem::take(&mut *state.pending_notification.lock()))
-                .collect()
-        };
-        for (notification_type, message) in pending_notifications {
-            window.push_notification((notification_type, message), cx);
         }
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         self.publish_window_menu_fingerprint_if_changed(cx);

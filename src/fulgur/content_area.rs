@@ -4,10 +4,10 @@ use crate::fulgur::{
 };
 use gpui::{
     AnyElement, Context, DismissEvent, Entity, Focusable, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, ParentElement, Styled, Window, div, px,
+    MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, Window, div, px,
 };
 use gpui_component::{
-    ActiveTheme,
+    ActiveTheme, WindowExt,
     input::{Input, InputState},
     menu::PopupMenu,
     notification::NotificationType,
@@ -130,7 +130,7 @@ impl Fulgur {
             None
         };
         if let Some(message) = csv_table_warning {
-            self.pending_notification = Some((NotificationType::Warning, message.into()));
+            window.push_notification((NotificationType::Warning, SharedString::from(message)), cx);
         }
 
         let tabs_ref = &self.tabs;

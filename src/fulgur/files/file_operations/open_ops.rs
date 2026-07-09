@@ -236,15 +236,16 @@ impl Fulgur {
                     .unwrap_or("file")
                     .to_string();
                 window
-                    .update(|_, cx| {
-                        _ = view.update(cx, |this, cx| {
-                            this.pending_notification = Some((
+                    .update(|window, cx| {
+                        window.push_notification(
+                            (
                                 NotificationType::Warning,
-                                format!("Cannot open '{file_name}': appears to be a binary file")
-                                    .into(),
-                            ));
-                            cx.notify();
-                        });
+                                SharedString::from(format!(
+                                    "Cannot open '{file_name}': appears to be a binary file"
+                                )),
+                            ),
+                            cx,
+                        );
                     })
                     .ok();
                 return None;
@@ -404,15 +405,16 @@ impl Fulgur {
             match parse_remote_url(recent_value.as_ref()) {
                 Ok(spec) => self.do_open_remote_file(window, cx, spec),
                 Err(error) => {
-                    self.pending_notification = Some((
-                        NotificationType::Error,
-                        format!(
-                            "Failed to open remote recent file: {}",
-                            error.user_message()
-                        )
-                        .into(),
-                    ));
-                    cx.notify();
+                    window.push_notification(
+                        (
+                            NotificationType::Error,
+                            SharedString::from(format!(
+                                "Failed to open remote recent file: {}",
+                                error.user_message()
+                            )),
+                        ),
+                        cx,
+                    );
                 }
             }
             return;
