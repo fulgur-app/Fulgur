@@ -7,7 +7,7 @@ use crate::fulgur::{
     tab::{Tab, TabId},
     ui::{
         bars::color_picker_bar::ColorPickerBarState,
-        bars::search_bar::SearchState,
+        bars::search_bar::{SearchBar, SearchBarEvent},
         bars::status_bar::{StatusBar, StatusBarEvent},
         bars::titlebar::CustomTitleBar,
         menus::{build_default_key_bindings, build_menus},
@@ -16,7 +16,7 @@ use crate::fulgur::{
     window_manager,
 };
 use gpui::{App, AppContext, Context, Entity, ScrollHandle, Window, WindowId};
-use gpui_component::input::{InputEvent, InputState};
+use gpui_component::input::InputState;
 use gpui_component::notification::NotificationType;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -52,21 +52,19 @@ impl Fulgur {
         let title_bar = CustomTitleBar::new(window, cx);
         let shared = cx.global::<shared_state::SharedAppState>();
         let settings = shared.settings.clone();
-        let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
-        let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
         let jump_to_line_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
         let entity = cx.new(|cx| {
-            let search_subscription =
-                cx.subscribe(&search_input, |this: &mut Self, _, ev: &InputEvent, cx| {
-                    if let InputEvent::Change = ev
-                        && this.search_state.show_search
-                    {
-                        cx.notify();
-                    }
-                });
-
             let weak_fulgur = cx.weak_entity();
+            let search_bar = cx.new(|cx| SearchBar::new(weak_fulgur.clone(), window, cx));
+            let search_bar_subscription = cx.subscribe_in(
+                &search_bar,
+                window,
+                |this: &mut Self, _, event: &SearchBarEvent, window, cx| {
+                    this.on_search_bar_event(*event, window, cx);
+                },
+            );
+
             let status_bar = cx.new(|_| StatusBar::new(weak_fulgur));
             let status_bar_subscription = cx.subscribe_in(
                 &status_bar,
@@ -92,7 +90,8 @@ impl Fulgur {
                 tabs: vec![],
                 active_tab_id: None,
                 next_tab_id: TabId(0),
-                search_state: SearchState::new(search_input, replace_input, search_subscription),
+                search_bar,
+                _search_bar_subscription: search_bar_subscription,
                 color_picker_bar_state: ColorPickerBarState::new(window, cx),
                 jump_to_line_input,
                 pending_jump: None,

@@ -71,9 +71,12 @@ impl Fulgur {
             {
                 self.resume_log_view(new_id, window, cx);
             }
-            if self.search_state.show_search {
-                self.search_state.search_matches.clear();
-                self.perform_search(window, cx);
+            if self.search_bar.read(cx).is_visible() {
+                let content = self
+                    .get_active_editor_tab()
+                    .map(|editor_tab| editor_tab.content.clone());
+                self.search_bar
+                    .update(cx, |bar, cx| bar.refresh_matches(content, window, cx));
             }
             cx.notify();
         }

@@ -25,7 +25,7 @@ use tab::{Tab, TabId};
 use ui::log_view::LogTailState;
 use ui::{
     bars::color_picker_bar::ColorPickerBarState,
-    bars::search_bar::SearchState,
+    bars::search_bar::SearchBar,
     bars::status_bar::StatusBar,
     bars::titlebar::CustomTitleBar,
     tabs::{editor_tab, tab},
@@ -41,10 +41,11 @@ pub struct Fulgur {
     tabs: Vec<Tab>,                                  // The tabs in the application
     active_tab_id: Option<TabId>,                    // Stable ID of the active tab
     next_tab_id: TabId,                              // The next tab ID
-    pub search_state: SearchState,                   // Search and replace functionality state
+    search_bar: Entity<SearchBar>,                   // The search and replace bar view
+    _search_bar_subscription: Subscription, // Routes SearchBarEvent from the search bar to window-level handlers
     pub color_picker_bar_state: ColorPickerBarState, // Color picker bar state
-    pub jump_to_line_input: Entity<InputState>,      // Input for jumping to a line in the editor
-    pending_jump: Option<editor_tab::Jump>,          // Pending jump to line action
+    pub jump_to_line_input: Entity<InputState>, // Input for jumping to a line in the editor
+    pending_jump: Option<editor_tab::Jump>, // Pending jump to line action
     pub settings: Settings, // The settings for the application (local snapshot, refreshed by the SharedAppState observer)
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
     _shared_state_observation: Subscription, // Global observer keeping the local settings snapshot in sync with SharedAppState

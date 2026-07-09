@@ -4,7 +4,7 @@ use crate::fulgur::{
     Fulgur, editor_tab::TabLocation, tab::Tab, ui::components_utils::UNTITLED,
     utils::atomic_write::atomic_write_file,
 };
-use gpui::{Context, Focusable, SharedString, Window};
+use gpui::{Context, SharedString, Window};
 use gpui_component::{WindowExt, notification::NotificationType};
 use std::path::Path;
 
@@ -280,23 +280,6 @@ impl Fulgur {
         let new_name = to.file_name().and_then(|n| n.to_str()).unwrap_or("file");
         let message = SharedString::from(format!("File renamed: {old_name} → {new_name}"));
         window.push_notification((NotificationType::Info, message), cx);
-    }
-
-    /// Update search results if the search query has changed
-    ///
-    /// ### Arguments
-    /// - `window`: The window containing the search bar and editor
-    /// - `cx`: The application context
-    pub fn update_search_if_needed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.search_state.show_search {
-            let current_query = self.search_state.search_input.read(cx).text().to_string();
-            if current_query != self.search_state.last_search_query {
-                self.perform_search(window, cx);
-                // Restore focus to the search input after perform_search
-                let search_focus = self.search_state.search_input.read(cx).focus_handle(cx);
-                window.focus(&search_focus, cx);
-            }
-        }
     }
 
     /// Open the native OS print dialog for the current document
