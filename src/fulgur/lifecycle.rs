@@ -8,7 +8,7 @@ use crate::fulgur::{
     ui::{
         bars::color_picker_bar::ColorPickerBarState,
         bars::search_bar::SearchState,
-        bars::status_bar::StatusBarCache,
+        bars::status_bar::{StatusBar, StatusBarEvent},
         bars::titlebar::CustomTitleBar,
         menus::{build_default_key_bindings, build_menus},
         themes,
@@ -66,6 +66,16 @@ impl Fulgur {
                     }
                 });
 
+            let weak_fulgur = cx.weak_entity();
+            let status_bar = cx.new(|_| StatusBar::new(weak_fulgur));
+            let status_bar_subscription = cx.subscribe_in(
+                &status_bar,
+                window,
+                |this: &mut Self, _, event: &StatusBarEvent, window, cx| {
+                    this.on_status_bar_event(*event, window, cx);
+                },
+            );
+
             let shared_state_observation =
                 cx.observe_global::<shared_state::SharedAppState>(|this: &mut Self, cx| {
                     let shared = cx.global::<shared_state::SharedAppState>();
@@ -107,7 +117,8 @@ impl Fulgur {
                 editor_context_menu: None,
                 editor_context_menu_subscription: None,
                 drag_ghost: None,
-                status_bar_cache: StatusBarCache::default(),
+                status_bar,
+                _status_bar_subscription: status_bar_subscription,
                 cached_tab_filename_counts: HashMap::new(),
                 tab_filename_fp: u64::MAX, // sentinel: differs from fingerprint of any real tab list
                 pending_tab_transfer: None,

@@ -58,7 +58,6 @@ impl Render for Fulgur {
         self.prune_markdown_preview_cache(cx);
         self.process_pending_tab_scroll(cx);
         self.refresh_tab_filename_counts();
-        self.refresh_status_bar_labels(cx);
         let app_content = self.build_app_content_with_actions(self.active_tab_index(), window, cx);
         self.assemble_ui_tree(app_content, window, cx)
     }
@@ -151,7 +150,7 @@ impl Fulgur {
             .children(self.render_search_bar(cx))
             .children(self.render_color_picker_bar(cx));
         if let Some(Tab::Editor(_)) = self.active_tab() {
-            app_content = app_content.child(self.render_status_bar(cx));
+            app_content = app_content.child(self.status_bar.clone());
         }
         app_content = app_content.child(Self::render_external_file_drop_overlay(cx));
         app_content

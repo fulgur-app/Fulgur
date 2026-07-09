@@ -26,7 +26,7 @@ use ui::log_view::LogTailState;
 use ui::{
     bars::color_picker_bar::ColorPickerBarState,
     bars::search_bar::SearchState,
-    bars::status_bar::StatusBarCache,
+    bars::status_bar::StatusBar,
     bars::titlebar::CustomTitleBar,
     tabs::{editor_tab, tab},
 };
@@ -66,7 +66,8 @@ pub struct Fulgur {
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
     editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
     drag_ghost: Option<(usize, ui::tabs::tab_drag::DraggedTab)>, // Ghost tab shown at insertion point during tab drag
-    status_bar_cache: StatusBarCache, // Cached status bar label strings (refreshed each render)
+    status_bar: Entity<StatusBar>, // The status bar view at the bottom of the window
+    _status_bar_subscription: Subscription, // Routes StatusBarEvent from the status bar to window-level handlers
     cached_tab_filename_counts: HashMap<String, usize>, // Cached tab filename frequency map (refreshed when tabs change)
     tab_filename_fp: u64, // Fingerprint of the tab list used to detect when cached_tab_filename_counts is stale
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
