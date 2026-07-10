@@ -139,7 +139,11 @@ impl EditorTab {
     pub fn ensure_csv_table(&mut self, window: &mut Window, cx: &mut App) -> Option<String> {
         let text = self.content.read(cx).value().to_string();
         let (hash, _len) = content_fingerprint_from_str(&text);
-        if self.csv_table.is_some() && self.csv_table_source_hash == hash {
+        if let Some(table) = &self.csv_table
+            && (self.csv_table_source_hash == hash
+                || table.read(cx).delegate().last_commit_hash() == Some(hash))
+        {
+            self.csv_table_source_hash = hash;
             return None;
         }
 
@@ -163,6 +167,7 @@ impl EditorTab {
                 .row_selectable(true)
                 .row_header(false)
         });
+        CsvTableDelegate::attach_selection_tracking(&table, cx);
 
         self.csv_table = Some(table);
         self.csv_table_source_hash = hash;

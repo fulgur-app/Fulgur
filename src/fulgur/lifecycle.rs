@@ -7,6 +7,7 @@ use crate::fulgur::{
     tab::{Tab, TabId},
     ui::{
         bars::color_picker_bar::ColorPickerBarState,
+        bars::csv_toolbar::CsvToolbar,
         bars::markdown_toolbar::MarkdownToolbar,
         bars::search_bar::{SearchBar, SearchBarEvent},
         bars::status_bar::{StatusBar, StatusBarEvent},
@@ -78,6 +79,8 @@ impl Fulgur {
 
             let markdown_toolbar = cx.new(|_| MarkdownToolbar::new(weak_fulgur.clone()));
 
+            let csv_toolbar = cx.new(|_| CsvToolbar::new(weak_fulgur.clone()));
+
             let tab_bar = cx.new(|_| TabBar::new(weak_fulgur));
             let tab_bar_subscription = cx.subscribe_in(
                 &tab_bar,
@@ -106,6 +109,7 @@ impl Fulgur {
                 search_bar,
                 _search_bar_subscription: search_bar_subscription,
                 markdown_toolbar,
+                csv_toolbar,
                 color_picker_bar_state: ColorPickerBarState::new(window, cx),
                 jump_to_line_input,
                 pending_jump: None,

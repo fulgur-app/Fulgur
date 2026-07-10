@@ -33,16 +33,15 @@ impl CsvTableDelegate {
     /// Insert an empty column before the selected column (or at the end).
     ///
     /// ### Arguments
-    /// - `selected`: The currently selected `(row, grid column)`, if any
     /// - `window`: The active window
     /// - `cx`: The table state context
     pub fn insert_column_before(
         &mut self,
-        selected: Option<(usize, usize)>,
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        Self::insert_column_before_in(&mut self.headers, &mut self.rows, selected);
+        let selected_col = self.selected_data_column_index();
+        Self::insert_column_before_in(&mut self.headers, &mut self.rows, selected_col);
         self.commit_and_refresh(window, cx);
     }
 
@@ -51,30 +50,25 @@ impl CsvTableDelegate {
     /// ### Arguments
     /// - `headers`: The column headers to mutate
     /// - `rows`: The data rows to mutate
-    /// - `selected`: The currently selected `(row, grid column)`, if any; when
+    /// - `selected_col`: The currently selected data column, if any; when
     ///   `None` the column is appended at the end
     pub(super) fn insert_column_before_in(
         headers: &mut Vec<String>,
         rows: &mut [Vec<String>],
-        selected: Option<(usize, usize)>,
+        selected_col: Option<usize>,
     ) {
-        let index = Self::selected_data_column(selected).unwrap_or(headers.len());
+        let index = selected_col.unwrap_or(headers.len());
         Self::insert_column_at_in(headers, rows, index);
     }
 
     /// Insert an empty column after the selected column (or at the end).
     ///
     /// ### Arguments
-    /// - `selected`: The currently selected `(row, grid column)`, if any
     /// - `window`: The active window
     /// - `cx`: The table state context
-    pub fn insert_column_after(
-        &mut self,
-        selected: Option<(usize, usize)>,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        Self::insert_column_after_in(&mut self.headers, &mut self.rows, selected);
+    pub fn insert_column_after(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+        let selected_col = self.selected_data_column_index();
+        Self::insert_column_after_in(&mut self.headers, &mut self.rows, selected_col);
         self.commit_and_refresh(window, cx);
     }
 
@@ -83,30 +77,25 @@ impl CsvTableDelegate {
     /// ### Arguments
     /// - `headers`: The column headers to mutate
     /// - `rows`: The data rows to mutate
-    /// - `selected`: The currently selected `(row, grid column)`, if any; when
+    /// - `selected_col`: The currently selected data column, if any; when
     ///   `None` the column is appended at the end
     pub(super) fn insert_column_after_in(
         headers: &mut Vec<String>,
         rows: &mut [Vec<String>],
-        selected: Option<(usize, usize)>,
+        selected_col: Option<usize>,
     ) {
-        let index = Self::selected_data_column(selected).map_or(headers.len(), |col| col + 1);
+        let index = selected_col.map_or(headers.len(), |col| col + 1);
         Self::insert_column_at_in(headers, rows, index);
     }
 
     /// Delete the selected column, or the last column if none is selected.
     ///
     /// ### Arguments
-    /// - `selected`: The currently selected `(row, grid column)`, if any
     /// - `window`: The active window
     /// - `cx`: The table state context
-    pub fn delete_column(
-        &mut self,
-        selected: Option<(usize, usize)>,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        if Self::delete_column_in(&mut self.headers, &mut self.rows, selected) {
+    pub fn delete_column(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+        let selected_col = self.selected_data_column_index();
+        if Self::delete_column_in(&mut self.headers, &mut self.rows, selected_col) {
             self.commit_and_refresh(window, cx);
         }
     }
@@ -117,7 +106,7 @@ impl CsvTableDelegate {
     /// ### Arguments
     /// - `headers`: The column headers to mutate
     /// - `rows`: The data rows to mutate
-    /// - `selected`: The currently selected `(row, grid column)`, if any; when
+    /// - `selected_col`: The currently selected data column, if any; when
     ///   `None` the last column is removed
     ///
     /// ### Returns
@@ -126,15 +115,13 @@ impl CsvTableDelegate {
     pub(super) fn delete_column_in(
         headers: &mut Vec<String>,
         rows: &mut [Vec<String>],
-        selected: Option<(usize, usize)>,
+        selected_col: Option<usize>,
     ) -> bool {
         if headers.is_empty() {
             return false;
         }
         let last = headers.len() - 1;
-        let index = Self::selected_data_column(selected)
-            .unwrap_or(last)
-            .min(last);
+        let index = selected_col.unwrap_or(last).min(last);
         headers.remove(index);
         for row in rows {
             if index < row.len() {

@@ -624,7 +624,7 @@ fn test_csv_table_insert_row_commits_to_buffer(cx: &mut TestAppContext) {
             tab.ensure_csv_table(window, cx);
             let table = tab.csv_table.clone().expect("table should be built");
             table.update(cx, |state, cx| {
-                state.delegate_mut().insert_row_below(None, window, cx);
+                state.delegate_mut().insert_row_below(window, cx);
             });
             assert_eq!(tab.content.read(cx).text().to_string(), "a,b\n1,2\n,\n");
             cx.new(|_| EmptyView)
