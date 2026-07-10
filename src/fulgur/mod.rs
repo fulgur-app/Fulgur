@@ -14,10 +14,7 @@ pub mod window_manager;
 use crate::fulgur::files::{
     file_operations::PendingRemoteOpenOutcome, file_watcher::FileWatchState,
 };
-use gpui::{
-    Entity, EntityId, FocusHandle, Pixels, Point, ScrollHandle, SharedString, Subscription,
-    WindowId,
-};
+use gpui::{Entity, EntityId, FocusHandle, Pixels, Point, SharedString, Subscription, WindowId};
 use gpui_component::{input::InputState, menu::PopupMenu};
 use settings::Settings;
 use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
@@ -28,7 +25,7 @@ use ui::{
     bars::search_bar::SearchBar,
     bars::status_bar::StatusBar,
     bars::titlebar::CustomTitleBar,
-    tabs::{editor_tab, tab},
+    tabs::{editor_tab, tab, tab_bar::TabBar},
 };
 
 // Re-export so descendant modules can keep using `crate::fulgur::themes::...`.
@@ -57,8 +54,6 @@ pub struct Fulgur {
     markdown_preview_subscriptions: HashMap<TabId, (EntityId, Subscription)>, // Per-source (subscribed content entity id, subscription) for markdown preview cache updates
     log_tail_state: HashMap<TabId, LogTailState>, // Per-log-tab tail bookkeeping (byte offset, dropped lines, pending text) keyed by tab id
     log_tail_cancel: HashMap<TabId, Arc<AtomicBool>>, // Cancellation flag for the per-active-log-tab poll task keyed by tab id
-    tab_scroll_handle: ScrollHandle, // Scroll handle for the tab bar to scroll active tab into view
-    pending_tab_scroll: Option<TabId>, // Deferred scroll-to-tab request (needs one render cycle for layout)
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
     save_failed_once: bool, // Flag: save already failed once, allow force-close on next attempt
     pub share_sheet_state: Option<Arc<ui::sheets::share_file::ShareSheetState>>, // When Some, a share sheet is open and devices are being fetched per profile
@@ -66,11 +61,10 @@ pub struct Fulgur {
     font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
     editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
-    drag_ghost: Option<(usize, ui::tabs::tab_drag::DraggedTab)>, // Ghost tab shown at insertion point during tab drag
     status_bar: Entity<StatusBar>, // The status bar view at the bottom of the window
     _status_bar_subscription: Subscription, // Routes StatusBarEvent from the status bar to window-level handlers
-    cached_tab_filename_counts: HashMap<String, usize>, // Cached tab filename frequency map (refreshed when tabs change)
-    tab_filename_fp: u64, // Fingerprint of the tab list used to detect when cached_tab_filename_counts is stale
+    tab_bar: Entity<TabBar>,                // The tab bar view at the top of the window
+    _tab_bar_subscription: Subscription, // Routes TabBarEvent from the tab bar to window-level handlers
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
     pending_tab_removal: Option<TabId>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)

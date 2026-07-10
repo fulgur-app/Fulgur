@@ -53,7 +53,7 @@ impl Fulgur {
                 ));
                 self.tabs.push(new_tab);
                 self.active_tab_id = Some(tab_id);
-                self.pending_tab_scroll = Some(tab_id);
+                self.request_tab_scroll(tab_id, cx);
                 log::info!("Opened shared file: {}", decrypted.file_name);
             }
         }

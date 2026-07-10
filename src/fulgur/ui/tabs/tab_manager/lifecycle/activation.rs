@@ -19,7 +19,7 @@ impl Fulgur {
                 self.stop_log_poll_task(prev_id);
             }
             self.active_tab_id = new_tab_id;
-            self.tab_scroll_handle.scroll_to_item(index);
+            self.tab_bar.update(cx, |bar, _| bar.scroll_to_index(index));
             let pending_path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) {
                 if let Some(path) = editor_tab.file_path() {
                     if self
