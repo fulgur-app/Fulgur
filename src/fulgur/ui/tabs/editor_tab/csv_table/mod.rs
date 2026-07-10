@@ -7,12 +7,13 @@ mod rows;
 #[cfg(test)]
 mod tests;
 
-use gpui::{Context, Entity, SharedString, Window, px};
+use gpui::{App, Context, Entity, SharedString, Window, px};
 use gpui_component::{
     input::{InputEvent, InputState},
-    table::{Column, TableState},
+    table::{Column, TableEvent, TableState},
 };
 
+use super::content_fingerprint_from_str;
 use crate::fulgur::files::csv_support::{CsvData, serialize_csv};
 
 /// Fixed width of the synthetic row-number column.
@@ -35,6 +36,17 @@ enum EditTarget {
     Cell(usize, usize),
 }
 
+/// The most recent selection made in the table, in grid coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CsvSelection {
+    /// A single cell at `(row, grid column)`.
+    Cell(usize, usize),
+    /// A whole column at the given grid column index.
+    Column(usize),
+    /// A whole row at the given row index.
+    Row(usize),
+}
+
 /// A [`TableDelegate`] that renders and edits CSV data over a canonical buffer.
 pub struct CsvTableDelegate {
     headers: Vec<String>,
@@ -43,6 +55,11 @@ pub struct CsvTableDelegate {
     delimiter: u8,
     content: Entity<InputState>,
     dialog_input: Entity<InputState>,
+    /// The most recent selection event received via `attach_selection_tracking`.
+    last_selection: Option<CsvSelection>,
+    /// Fingerprint of the last text this delegate committed to the buffer, so
+    /// `ensure_csv_table` can tell the table's own commits from external edits.
+    last_commit_hash: Option<u64>,
 }
 
 impl CsvTableDelegate {
@@ -70,7 +87,32 @@ impl CsvTableDelegate {
             delimiter,
             content,
             dialog_input,
+            last_selection: None,
+            last_commit_hash: None,
         }
+    }
+
+    /// Record the table's selection events on the delegate.
+    ///
+    /// ### Arguments
+    /// - `table`: The freshly built table state entity to observe
+    /// - `cx`: The application context
+    pub(super) fn attach_selection_tracking(table: &Entity<TableState<Self>>, cx: &mut App) {
+        cx.subscribe(table, |table, event: &TableEvent, cx| {
+            let selection = match event {
+                TableEvent::SelectCell(row_ix, col_ix) => {
+                    Some(CsvSelection::Cell(*row_ix, *col_ix))
+                }
+                TableEvent::SelectColumn(col_ix) => Some(CsvSelection::Column(*col_ix)),
+                TableEvent::SelectRow(row_ix) => Some(CsvSelection::Row(*row_ix)),
+                TableEvent::ClearSelection => None,
+                _ => return,
+            };
+            table.update(cx, |state, _| {
+                state.delegate_mut().last_selection = selection;
+            });
+        })
+        .detach();
     }
 
     /// Build the grid columns: a synthetic row-number column plus one column
@@ -122,17 +164,64 @@ impl CsvTableDelegate {
         self.columns = Self::compute_columns(&self.headers, &self.rows);
     }
 
-    /// Map a selected grid cell to a data column index, ignoring the synthetic
+    /// Resolve a selection to a row index.
+    ///
+    /// ### Arguments
+    /// - `selection`: The most recent selection, if any
+    ///
+    /// ### Returns
+    /// - `Some(usize)`: The row index when a cell or a row is selected
+    /// - `None`: When nothing or a column is selected
+    fn selected_row_of(selection: Option<CsvSelection>) -> Option<usize> {
+        match selection {
+            Some(CsvSelection::Cell(row, _) | CsvSelection::Row(row)) => Some(row),
+            Some(CsvSelection::Column(_)) | None => None,
+        }
+    }
+
+    /// Resolve a selection to a data column index, ignoring the synthetic
     /// row-number column.
     ///
     /// ### Arguments
-    /// - `selected`: The selected `(row, grid column)`, if any
+    /// - `selection`: The most recent selection, if any
     ///
     /// ### Returns
-    /// - `Some(usize)`: The data column index when a data column is selected
-    /// - `None`: When nothing or only the row-number column is selected
-    fn selected_data_column(selected: Option<(usize, usize)>) -> Option<usize> {
-        selected.and_then(|(_, grid_col)| grid_col.checked_sub(1))
+    /// - `Some(usize)`: The data column index when a cell or a data column is selected
+    /// - `None`: When nothing, a row, or only the row-number column is selected
+    fn selected_data_column_of(selection: Option<CsvSelection>) -> Option<usize> {
+        match selection {
+            Some(CsvSelection::Cell(_, grid_col) | CsvSelection::Column(grid_col)) => {
+                grid_col.checked_sub(1)
+            }
+            Some(CsvSelection::Row(_)) | None => None,
+        }
+    }
+
+    /// Resolve the most recent selection to a row index.
+    ///
+    /// ### Returns
+    /// - `Some(usize)`: The row index when a cell or a row is selected
+    /// - `None`: When nothing or a column is selected
+    fn selected_row_index(&self) -> Option<usize> {
+        Self::selected_row_of(self.last_selection)
+    }
+
+    /// Resolve the most recent selection to a data column index.
+    ///
+    /// ### Returns
+    /// - `Some(usize)`: The data column index when a cell or a data column is selected
+    /// - `None`: When nothing, a row, or only the row-number column is selected
+    fn selected_data_column_index(&self) -> Option<usize> {
+        Self::selected_data_column_of(self.last_selection)
+    }
+
+    /// Fingerprint of the last text this delegate committed to the buffer.
+    ///
+    /// ### Returns
+    /// - `Some(u64)`: The fingerprint of the last committed text
+    /// - `None`: If the delegate has not committed yet
+    pub(super) fn last_commit_hash(&self) -> Option<u64> {
+        self.last_commit_hash
     }
 
     /// Serialize the current model back into the canonical text buffer.
@@ -140,7 +229,7 @@ impl CsvTableDelegate {
     /// ### Arguments
     /// - `window`: The active window
     /// - `cx`: The table state context
-    fn commit_to_buffer(&self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
+    fn commit_to_buffer(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
         let text = match serialize_csv(&self.headers, &self.rows, self.delimiter) {
             Ok(text) => text,
             Err(error) => {
@@ -148,6 +237,8 @@ impl CsvTableDelegate {
                 return;
             }
         };
+        let (hash, _len) = content_fingerprint_from_str(&text);
+        self.last_commit_hash = Some(hash);
         self.content.update(cx, |state, cx| {
             state.set_value(text, window, cx);
             cx.emit(InputEvent::Change);

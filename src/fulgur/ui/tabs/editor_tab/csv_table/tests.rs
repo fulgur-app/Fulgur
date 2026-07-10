@@ -1,4 +1,4 @@
-use super::{CsvTableDelegate, EditTarget};
+use super::{CsvSelection, CsvTableDelegate, EditTarget};
 use crate::fulgur::files::csv_support::serialize_csv;
 
 /// Build a `Vec<String>` from string literals for terser test fixtures.
@@ -19,16 +19,48 @@ fn test_compute_columns_has_row_number_plus_one_per_header() {
 }
 
 #[test]
-fn test_selected_data_column_ignores_row_number_column() {
-    assert_eq!(CsvTableDelegate::selected_data_column(None), None);
-    assert_eq!(CsvTableDelegate::selected_data_column(Some((0, 0))), None);
+fn test_selected_data_column_of_ignores_row_number_column_and_rows() {
+    assert_eq!(CsvTableDelegate::selected_data_column_of(None), None);
     assert_eq!(
-        CsvTableDelegate::selected_data_column(Some((0, 1))),
+        CsvTableDelegate::selected_data_column_of(Some(CsvSelection::Cell(0, 0))),
+        None
+    );
+    assert_eq!(
+        CsvTableDelegate::selected_data_column_of(Some(CsvSelection::Cell(0, 1))),
         Some(0)
     );
     assert_eq!(
-        CsvTableDelegate::selected_data_column(Some((3, 2))),
+        CsvTableDelegate::selected_data_column_of(Some(CsvSelection::Cell(3, 2))),
         Some(1)
+    );
+    assert_eq!(
+        CsvTableDelegate::selected_data_column_of(Some(CsvSelection::Column(0))),
+        None
+    );
+    assert_eq!(
+        CsvTableDelegate::selected_data_column_of(Some(CsvSelection::Column(2))),
+        Some(1)
+    );
+    assert_eq!(
+        CsvTableDelegate::selected_data_column_of(Some(CsvSelection::Row(3))),
+        None
+    );
+}
+
+#[test]
+fn test_selected_row_of_ignores_column_selections() {
+    assert_eq!(CsvTableDelegate::selected_row_of(None), None);
+    assert_eq!(
+        CsvTableDelegate::selected_row_of(Some(CsvSelection::Cell(3, 1))),
+        Some(3)
+    );
+    assert_eq!(
+        CsvTableDelegate::selected_row_of(Some(CsvSelection::Row(2))),
+        Some(2)
+    );
+    assert_eq!(
+        CsvTableDelegate::selected_row_of(Some(CsvSelection::Column(1))),
+        None
     );
 }
 
@@ -118,12 +150,12 @@ fn test_insert_row_above_and_below_resolve_selection() {
     let (headers, _) = sample();
 
     let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
-    CsvTableDelegate::insert_row_above_in(&headers, &mut rows, Some((1, 1)));
+    CsvTableDelegate::insert_row_above_in(&headers, &mut rows, Some(1));
     assert_eq!(rows[1], row(&["", ""]));
     assert_eq!(rows[2], row(&["3", "4"]));
 
     let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
-    CsvTableDelegate::insert_row_below_in(&headers, &mut rows, Some((0, 1)));
+    CsvTableDelegate::insert_row_below_in(&headers, &mut rows, Some(0));
     assert_eq!(rows[1], row(&["", ""]));
     assert_eq!(rows[0], row(&["1", "2"]));
 
@@ -136,7 +168,7 @@ fn test_insert_row_above_and_below_resolve_selection() {
 #[test]
 fn test_delete_row_in_selected_last_and_empty() {
     let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
-    assert!(CsvTableDelegate::delete_row_in(&mut rows, Some((0, 1))));
+    assert!(CsvTableDelegate::delete_row_in(&mut rows, Some(0)));
     assert_eq!(rows, vec![row(&["3", "4"])]);
 
     let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
@@ -145,7 +177,7 @@ fn test_delete_row_in_selected_last_and_empty() {
 
     // Out-of-bounds selection clamps to the last row.
     let mut rows = vec![row(&["1", "2"]), row(&["3", "4"])];
-    assert!(CsvTableDelegate::delete_row_in(&mut rows, Some((9, 1))));
+    assert!(CsvTableDelegate::delete_row_in(&mut rows, Some(9)));
     assert_eq!(rows, vec![row(&["1", "2"])]);
 
     let mut rows: Vec<Vec<String>> = Vec::new();
@@ -167,13 +199,13 @@ fn test_insert_column_at_in_shifts_cells_and_pads_ragged_rows() {
 fn test_insert_column_before_and_after_resolve_selection() {
     let mut headers = row(&["a", "b"]);
     let mut rows = vec![row(&["1", "2"])];
-    CsvTableDelegate::insert_column_before_in(&mut headers, &mut rows, Some((0, 2)));
+    CsvTableDelegate::insert_column_before_in(&mut headers, &mut rows, Some(1));
     assert_eq!(headers, row(&["a", "", "b"]));
     assert_eq!(rows[0], row(&["1", "", "2"]));
 
     let mut headers = row(&["a", "b"]);
     let mut rows = vec![row(&["1", "2"])];
-    CsvTableDelegate::insert_column_after_in(&mut headers, &mut rows, Some((0, 1)));
+    CsvTableDelegate::insert_column_after_in(&mut headers, &mut rows, Some(0));
     assert_eq!(headers, row(&["a", "", "b"]));
     assert_eq!(rows[0], row(&["1", "", "2"]));
 
@@ -191,7 +223,7 @@ fn test_delete_column_in_selected_last_and_empty() {
     assert!(CsvTableDelegate::delete_column_in(
         &mut headers,
         &mut rows,
-        Some((0, 2))
+        Some(1)
     ));
     assert_eq!(headers, row(&["a", "c"]));
     assert_eq!(rows[0], row(&["1", "3"]));
@@ -263,7 +295,7 @@ fn test_move_column_in_rejects_row_number_column_and_noops() {
 #[test]
 fn test_edits_round_trip_through_serialize_csv() {
     let (mut headers, mut rows) = sample();
-    CsvTableDelegate::insert_row_below_in(&headers, &mut rows, Some((0, 1)));
+    CsvTableDelegate::insert_row_below_in(&headers, &mut rows, Some(0));
     CsvTableDelegate::apply_edit_in(
         &mut headers,
         &mut rows,

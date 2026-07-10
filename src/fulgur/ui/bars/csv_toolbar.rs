@@ -16,12 +16,8 @@ use crate::fulgur::ui::icons::CustomIcon;
 use crate::fulgur::ui::tabs::editor_tab::{CsvTableDelegate, CsvViewMode};
 
 /// The signature shared by all `CsvTableDelegate` structural-edit methods
-type CsvTableEdit = fn(
-    &mut CsvTableDelegate,
-    Option<(usize, usize)>,
-    &mut Window,
-    &mut Context<TableState<CsvTableDelegate>>,
-);
+type CsvTableEdit =
+    fn(&mut CsvTableDelegate, &mut Window, &mut Context<TableState<CsvTableDelegate>>);
 
 /// The CSV structural-edit toolbar, rendered as its own entity
 pub(crate) struct CsvToolbar {
@@ -57,7 +53,8 @@ impl CsvToolbar {
         editor.csv_table.clone()
     }
 
-    /// Apply a structural edit to the active tab's CSV table at its selected cell
+    /// Apply a structural edit to the active tab's CSV table at its most
+    /// recent selection (cell, column header, or row)
     ///
     /// ### Arguments
     /// - `edit`: The `CsvTableDelegate` edit to apply (e.g. `CsvTableDelegate::insert_row_above`)
@@ -73,8 +70,7 @@ impl CsvToolbar {
             return;
         };
         table.update(cx, |state, cx| {
-            let selected = state.selected_cell();
-            edit(state.delegate_mut(), selected, window, cx);
+            edit(state.delegate_mut(), window, cx);
         });
     }
 }
@@ -350,5 +346,119 @@ mod tests {
                 .to_string();
             assert_eq!(text, "a,b\n1,2\n,\n");
         });
+    }
+
+    /// Read the active editor tab's CSV table entity.
+    #[cfg(feature = "gpui-test-support")]
+    fn active_csv_table(
+        fulgur: &Entity<Fulgur>,
+        visual_cx: &mut VisualTestContext,
+    ) -> Entity<gpui_component::table::TableState<CsvTableDelegate>> {
+        visual_cx.update(|_window, cx| {
+            fulgur
+                .read(cx)
+                .get_active_editor_tab()
+                .expect("expected active editor tab")
+                .csv_table
+                .clone()
+                .expect("expected built CSV table")
+        })
+    }
+
+    /// Read the active editor tab's buffer text.
+    #[cfg(feature = "gpui-test-support")]
+    fn active_tab_text(fulgur: &Entity<Fulgur>, visual_cx: &mut VisualTestContext) -> String {
+        visual_cx.update(|_window, cx| {
+            fulgur
+                .read(cx)
+                .get_active_editor_tab()
+                .expect("expected active editor tab")
+                .content
+                .read(cx)
+                .text()
+                .to_string()
+        })
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_edit_active_table_inserts_column_at_selected_cell(cx: &mut TestAppContext) {
+        let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
+        let table = active_csv_table(&fulgur, &mut visual_cx);
+
+        visual_cx.update(|_window, cx| {
+            table.update(cx, |state, cx| {
+                state.set_selected_cell(0, 2, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|window, cx| {
+            toolbar.update(cx, |bar, cx| {
+                bar.edit_active_table(CsvTableDelegate::insert_column_before, window, cx);
+            });
+        });
+
+        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), "a,,b\n1,,2\n");
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_column_ops_follow_column_header_selection(cx: &mut TestAppContext) {
+        let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
+        let table = active_csv_table(&fulgur, &mut visual_cx);
+
+        // Grid column 1 is data column 0 ("a"); grid column 0 is the
+        // synthetic row-number column.
+        visual_cx.update(|_window, cx| {
+            table.update(cx, |state, cx| {
+                state.set_selected_col(1, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|window, cx| {
+            toolbar.update(cx, |bar, cx| {
+                bar.edit_active_table(CsvTableDelegate::insert_column_before, window, cx);
+            });
+        });
+        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), ",a,b\n,1,2\n");
+
+        visual_cx.update(|window, cx| {
+            toolbar.update(cx, |bar, cx| {
+                bar.edit_active_table(CsvTableDelegate::delete_column, window, cx);
+            });
+        });
+        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), "a,b\n1,2\n");
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_table_survives_its_own_commits(cx: &mut TestAppContext) {
+        let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
+        let table_before = active_csv_table(&fulgur, &mut visual_cx);
+
+        visual_cx.update(|window, cx| {
+            toolbar.update(cx, |bar, cx| {
+                bar.edit_active_table(CsvTableDelegate::insert_row_below, window, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        // The next ensure pass (normally triggered by the window render) must
+        // keep the table the edit was made through instead of rebuilding it,
+        // which would drop the selection and scroll state.
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor = this
+                    .get_active_editor_tab_mut()
+                    .expect("expected active editor tab");
+                let warning = editor.ensure_csv_table(window, cx);
+                assert!(warning.is_none());
+            });
+        });
+
+        let table_after = active_csv_table(&fulgur, &mut visual_cx);
+        assert_eq!(table_before.entity_id(), table_after.entity_id());
     }
 }
