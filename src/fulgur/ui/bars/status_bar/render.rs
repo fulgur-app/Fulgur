@@ -209,7 +209,7 @@ impl Render for StatusBar {
                 .build(window, cx)
             })
         });
-        let color_picker_active = fulgur.color_picker_bar_state.show_color_picker;
+        let color_picker_active = fulgur.color_picker_bar.read(cx).is_visible();
         let color_button = status_bar_toggle_button_factory(
             "Color".to_string(),
             cx.theme().border,

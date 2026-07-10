@@ -2,4 +2,4 @@ mod color;
 mod render;
 mod state;
 
-pub use state::ColorPickerBarState;
+pub(crate) use state::{ColorPickerBar, ColorPickerBarEvent};

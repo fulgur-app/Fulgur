@@ -403,7 +403,7 @@ mod tests {
             let this = fulgur.read(cx);
             (
                 this.status_bar.clone(),
-                this.color_picker_bar_state.show_color_picker,
+                this.color_picker_bar.read(cx).is_visible(),
             )
         });
         visual_cx.update(|_window, cx| {
@@ -411,8 +411,8 @@ mod tests {
         });
         visual_cx.run_until_parked();
 
-        let after = visual_cx
-            .update(|_window, cx| fulgur.read(cx).color_picker_bar_state.show_color_picker);
+        let after =
+            visual_cx.update(|_window, cx| fulgur.read(cx).color_picker_bar.read(cx).is_visible());
         assert_eq!(after, !initial);
     }
 

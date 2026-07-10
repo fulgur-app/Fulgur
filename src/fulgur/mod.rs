@@ -21,7 +21,7 @@ use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::A
 use tab::{Tab, TabId};
 use ui::log_view::LogTailState;
 use ui::{
-    bars::color_picker_bar::ColorPickerBarState,
+    bars::color_picker_bar::ColorPickerBar,
     bars::csv_toolbar::CsvToolbar,
     bars::markdown_toolbar::MarkdownToolbar,
     bars::search_bar::SearchBar,
@@ -34,19 +34,20 @@ use ui::{
 pub(crate) use ui::themes;
 
 pub struct Fulgur {
-    pub window_id: WindowId,                         // The ID of this window
-    focus_handle: FocusHandle,                       // The focus handle for the application
-    title_bar: Entity<CustomTitleBar>,               // The title bar of the application
-    tabs: Vec<Tab>,                                  // The tabs in the application
-    active_tab_id: Option<TabId>,                    // Stable ID of the active tab
-    next_tab_id: TabId,                              // The next tab ID
-    search_bar: Entity<SearchBar>,                   // The search and replace bar view
+    pub window_id: WindowId,                      // The ID of this window
+    focus_handle: FocusHandle,                    // The focus handle for the application
+    title_bar: Entity<CustomTitleBar>,            // The title bar of the application
+    tabs: Vec<Tab>,                               // The tabs in the application
+    active_tab_id: Option<TabId>,                 // Stable ID of the active tab
+    next_tab_id: TabId,                           // The next tab ID
+    search_bar: Entity<SearchBar>,                // The search and replace bar view
     _search_bar_subscription: Subscription, // Routes SearchBarEvent from the search bar to window-level handlers
     markdown_toolbar: Entity<MarkdownToolbar>, // The markdown formatting toolbar view (acts directly on the active editor, emits no events)
     csv_toolbar: Entity<CsvToolbar>, // The CSV structural-edit toolbar view (acts directly on the active tab's table, emits no events)
-    pub color_picker_bar_state: ColorPickerBarState, // Color picker bar state
-    pub jump_to_line_input: Entity<InputState>, // Input for jumping to a line in the editor
-    pending_jump: Option<editor_tab::Jump>, // Pending jump to line action
+    color_picker_bar: Entity<ColorPickerBar>, // The color picker bar view (owns the picker widget and its three text inputs)
+    _color_picker_bar_subscription: Subscription, // Routes ColorPickerBarEvent from the color picker bar to window-level handlers
+    pub jump_to_line_input: Entity<InputState>,   // Input for jumping to a line in the editor
+    pending_jump: Option<editor_tab::Jump>,       // Pending jump to line action
     pub settings: Settings, // The settings for the application (local snapshot, refreshed by the SharedAppState observer)
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
     _shared_state_observation: Subscription, // Global observer keeping the local settings snapshot in sync with SharedAppState

@@ -1,6 +1,9 @@
 use crate::fulgur::Fulgur;
 
-use gpui::{AppContext, Context, Entity, Hsla, Subscription, Window};
+use gpui::{
+    App, AppContext, Context, Entity, EntityInputHandler, EventEmitter, Hsla, Subscription,
+    WeakEntity, Window,
+};
 use gpui_component::{
     color_picker::{ColorPickerEvent, ColorPickerState},
     input::{InputEvent, InputState},
@@ -23,15 +26,15 @@ impl ColorInput {
     /// Borrow the input state entity backing this format.
     ///
     /// ### Arguments
-    /// - `state`: The color picker bar state holding the inputs
+    /// - `bar`: The color picker bar holding the inputs
     ///
     /// ### Returns
     /// - `&Entity<InputState>`: The input entity for this format
-    fn input(self, state: &ColorPickerBarState) -> &Entity<InputState> {
+    fn input(self, bar: &ColorPickerBar) -> &Entity<InputState> {
         match self {
-            ColorInput::Hex => &state.hex_input,
-            ColorInput::Oklch => &state.oklch_input,
-            ColorInput::Hsla => &state.hsla_input,
+            ColorInput::Hex => &bar.hex_input,
+            ColorInput::Oklch => &bar.oklch_input,
+            ColorInput::Hsla => &bar.hsla_input,
         }
     }
 
@@ -67,36 +70,47 @@ impl ColorInput {
     }
 }
 
-/// State for the color picker bar.
-pub struct ColorPickerBarState {
-    pub color_picker_state: Entity<ColorPickerState>,
-    pub show_color_picker: bool,
-    pub hex_input: Entity<InputState>,
-    pub oklch_input: Entity<InputState>,
-    pub hsla_input: Entity<InputState>,
+/// The color picker bar, rendered as its own entity
+pub(crate) struct ColorPickerBar {
+    pub(super) fulgur: WeakEntity<Fulgur>,
+    pub(super) show_color_picker: bool,
+    pub(super) color_picker_state: Entity<ColorPickerState>,
+    pub(super) hex_input: Entity<InputState>,
+    pub(super) oklch_input: Entity<InputState>,
+    pub(super) hsla_input: Entity<InputState>,
     pub(super) cached_hex: String,
     pub(super) cached_oklch: String,
     pub(super) cached_hsla: String,
-    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
-    color_picker_subscription: Subscription,
-    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
-    hex_input_subscription: Subscription,
-    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
-    oklch_input_subscription: Subscription,
-    #[allow(dead_code, reason = "RAII guard: keeps the subscription alive")]
-    hsla_input_subscription: Subscription,
+    _color_picker_subscription: Subscription,
+    _hex_input_subscription: Subscription,
+    _oklch_input_subscription: Subscription,
+    _hsla_input_subscription: Subscription,
 }
 
-impl ColorPickerBarState {
-    /// Create a new `ColorPickerBarState`.
+/// Typed events emitted by the color picker bar toward the owning `Fulgur` window
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ColorPickerBarEvent {
+    Closed,
+    ToggleHighlightColors,
+}
+
+impl EventEmitter<ColorPickerBarEvent> for ColorPickerBar {}
+
+impl ColorPickerBar {
+    /// Create a new color picker bar view owning the picker and its three text inputs
     ///
     /// ### Arguments
+    /// - `fulgur`: Weak handle to the owning window entity the bar reads the active editor from
     /// - `window`: The window context
-    /// - `cx`: The application context
+    /// - `cx`: The color picker bar context
     ///
     /// ### Returns
-    /// - `Self`: A new `ColorPickerBarState` initialized to white
-    pub fn new(window: &mut Window, cx: &mut Context<Fulgur>) -> Self {
+    /// - `ColorPickerBar`: The new color picker bar view initialized to white
+    pub(crate) fn new(
+        fulgur: WeakEntity<Fulgur>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let color_picker_state =
             cx.new(|cx| ColorPickerState::new(window, cx).default_value(gpui::white()));
         let initial = gpui::white();
@@ -111,32 +125,24 @@ impl ColorPickerBarState {
         let color_picker_subscription = cx.subscribe_in(
             &color_picker_state,
             window,
-            |this: &mut Fulgur, _, event: &ColorPickerEvent, window, cx| {
+            |this: &mut Self, _, event: &ColorPickerEvent, window, cx| {
                 if let ColorPickerEvent::Change(Some(color)) = event {
                     let color = *color;
                     let hex = gpui_component::Colorize::to_hex(&color);
                     let oklch = format_oklch(color);
                     let hsla_str = format_hsla(color);
-                    this.color_picker_bar_state.cached_hex.clone_from(&hex);
-                    this.color_picker_bar_state.cached_oklch.clone_from(&oklch);
-                    this.color_picker_bar_state
-                        .cached_hsla
-                        .clone_from(&hsla_str);
-                    this.color_picker_bar_state
-                        .hex_input
-                        .update(cx, |state, cx| {
-                            state.set_value(hex, window, cx);
-                        });
-                    this.color_picker_bar_state
-                        .oklch_input
-                        .update(cx, |state, cx| {
-                            state.set_value(oklch, window, cx);
-                        });
-                    this.color_picker_bar_state
-                        .hsla_input
-                        .update(cx, |state, cx| {
-                            state.set_value(hsla_str, window, cx);
-                        });
+                    this.cached_hex.clone_from(&hex);
+                    this.cached_oklch.clone_from(&oklch);
+                    this.cached_hsla.clone_from(&hsla_str);
+                    this.hex_input.update(cx, |state, cx| {
+                        state.set_value(hex, window, cx);
+                    });
+                    this.oklch_input.update(cx, |state, cx| {
+                        state.set_value(oklch, window, cx);
+                    });
+                    this.hsla_input.update(cx, |state, cx| {
+                        state.set_value(hsla_str, window, cx);
+                    });
                 }
                 cx.notify();
             },
@@ -146,63 +152,131 @@ impl ColorPickerBarState {
         let hex_input_subscription = cx.subscribe_in(
             &hex_input,
             window,
-            |this: &mut Fulgur, _, event: &InputEvent, window, cx| {
-                Self::handle_input_event(this, ColorInput::Hex, event, window, cx);
+            |this: &mut Self, _, event: &InputEvent, window, cx| {
+                this.handle_input_event(ColorInput::Hex, event, window, cx);
             },
         );
         let oklch_input_subscription = cx.subscribe_in(
             &oklch_input,
             window,
-            |this: &mut Fulgur, _, event: &InputEvent, window, cx| {
-                Self::handle_input_event(this, ColorInput::Oklch, event, window, cx);
+            |this: &mut Self, _, event: &InputEvent, window, cx| {
+                this.handle_input_event(ColorInput::Oklch, event, window, cx);
             },
         );
         let hsla_input_subscription = cx.subscribe_in(
             &hsla_input,
             window,
-            |this: &mut Fulgur, _, event: &InputEvent, window, cx| {
-                Self::handle_input_event(this, ColorInput::Hsla, event, window, cx);
+            |this: &mut Self, _, event: &InputEvent, window, cx| {
+                this.handle_input_event(ColorInput::Hsla, event, window, cx);
             },
         );
         Self {
-            color_picker_state,
+            fulgur,
             show_color_picker: false,
+            color_picker_state,
             hex_input,
             oklch_input,
             hsla_input,
             cached_hex: initial_hex,
             cached_oklch: initial_oklch,
             cached_hsla: initial_hsla,
-            color_picker_subscription,
-            hex_input_subscription,
-            oklch_input_subscription,
-            hsla_input_subscription,
+            _color_picker_subscription: color_picker_subscription,
+            _hex_input_subscription: hex_input_subscription,
+            _oklch_input_subscription: oklch_input_subscription,
+            _hsla_input_subscription: hsla_input_subscription,
+        }
+    }
+
+    /// Whether the color picker bar is currently shown
+    ///
+    /// ### Returns
+    /// - `bool`: True if the bar is visible
+    pub(crate) fn is_visible(&self) -> bool {
+        self.show_color_picker
+    }
+
+    /// Toggle the color picker bar visibility
+    ///
+    /// ### Arguments
+    /// - `cx`: The color picker bar context
+    pub(crate) fn toggle(&mut self, cx: &mut Context<Self>) {
+        self.show_color_picker = !self.show_color_picker;
+        cx.notify();
+    }
+
+    /// Hide the color picker bar and tell the owning window to unmount it
+    ///
+    /// ### Arguments
+    /// - `cx`: The color picker bar context
+    pub(super) fn close(&mut self, cx: &mut Context<Self>) {
+        self.show_color_picker = false;
+        cx.emit(ColorPickerBarEvent::Closed);
+        cx.notify();
+    }
+
+    /// Get the active editor's content entity from the owning window
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some(Entity<InputState>)`: The active editor tab's content
+    /// - `None`: If the window is gone or the active tab is not an editor
+    fn active_editor_content(&self, cx: &App) -> Option<Entity<InputState>> {
+        let fulgur = self.fulgur.upgrade()?;
+        fulgur
+            .read(cx)
+            .get_active_editor_tab()
+            .map(|editor_tab| editor_tab.content.clone())
+    }
+
+    /// Insert a value at the cursor position in the active editor tab, replacing the current selection if any.
+    ///
+    /// ### Arguments
+    /// - `value`: The string to insert
+    /// - `window`: The window context
+    /// - `cx`: The color picker bar context
+    pub(super) fn insert_color_value(
+        &mut self,
+        value: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(content) = self.active_editor_content(cx) {
+            content.update(cx, |input_state, cx| {
+                let selection = input_state.selected_text_range(true, window, cx);
+                if selection.is_some() {
+                    input_state.replace(value, window, cx);
+                } else {
+                    input_state.insert(value, window, cx);
+                }
+                cx.notify();
+            });
         }
     }
 
     /// Handle a change event from one of the color text inputs.
     ///
     /// ### Arguments
-    /// - `this`: The owning `Fulgur` instance
     /// - `source`: The input format that emitted the event
     /// - `event`: The input event to handle
     /// - `window`: The window context
-    /// - `cx`: The application context
+    /// - `cx`: The color picker bar context
     fn handle_input_event(
-        this: &mut Fulgur,
+        &mut self,
         source: ColorInput,
         event: &InputEvent,
         window: &mut Window,
-        cx: &mut Context<Fulgur>,
+        cx: &mut Context<Self>,
     ) {
-        let value = source.input(&this.color_picker_bar_state).read(cx).value();
+        let value = source.input(self).read(cx).value();
         let Some(color) = source.parse(&value) else {
             return;
         };
         match event {
-            InputEvent::Change => Self::apply_input_color(this, source, color, false, window, cx),
+            InputEvent::Change => self.apply_input_color(source, color, false, window, cx),
             InputEvent::PressEnter { .. } | InputEvent::Blur => {
-                Self::apply_input_color(this, source, color, true, window, cx);
+                self.apply_input_color(source, color, true, window, cx);
             }
             InputEvent::Focus => {}
         }
@@ -211,25 +285,22 @@ impl ColorPickerBarState {
     /// Apply a color parsed from one of the text inputs.
     ///
     /// ### Arguments
-    /// - `this`: The owning `Fulgur` instance
     /// - `source`: The input format the color originated from
     /// - `color`: The parsed color to apply
     /// - `sync_siblings`: Whether to rewrite the other two inputs
     /// - `window`: The window context
-    /// - `cx`: The application context
+    /// - `cx`: The color picker bar context
     fn apply_input_color(
-        this: &mut Fulgur,
+        &mut self,
         source: ColorInput,
         color: Hsla,
         sync_siblings: bool,
         window: &mut Window,
-        cx: &mut Context<Fulgur>,
+        cx: &mut Context<Self>,
     ) {
-        this.color_picker_bar_state
-            .color_picker_state
-            .update(cx, |state, cx| {
-                state.set_value(color, window, cx);
-            });
+        self.color_picker_state.update(cx, |state, cx| {
+            state.set_value(color, window, cx);
+        });
         if !sync_siblings {
             return;
         }
@@ -238,11 +309,43 @@ impl ColorPickerBarState {
                 continue;
             }
             let formatted = target.format(color);
-            target
-                .input(&this.color_picker_bar_state)
-                .update(cx, |state, cx| {
-                    state.set_value(formatted, window, cx);
-                });
+            target.input(self).update(cx, |state, cx| {
+                state.set_value(formatted, window, cx);
+            });
         }
+    }
+}
+
+impl Fulgur {
+    /// Dispatch a color picker bar event to the matching window-level handler
+    ///
+    /// ### Arguments
+    /// - `event`: The color picker bar event to handle
+    /// - `_window`: The window context
+    /// - `cx`: The application context
+    pub(crate) fn on_color_picker_bar_event(
+        &mut self,
+        event: ColorPickerBarEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ColorPickerBarEvent::Closed => cx.notify(),
+            ColorPickerBarEvent::ToggleHighlightColors => {
+                self.settings.editor_settings.highlight_colors =
+                    !self.settings.editor_settings.highlight_colors;
+                let _ = self.update_and_propagate_settings(cx);
+            }
+        }
+    }
+
+    /// Toggle the color picker bar visibility.
+    ///
+    /// ### Arguments
+    /// - `_window`: The window context
+    /// - `cx`: The application context
+    pub fn toggle_color_picker(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.color_picker_bar.update(cx, ColorPickerBar::toggle);
+        cx.notify();
     }
 }
