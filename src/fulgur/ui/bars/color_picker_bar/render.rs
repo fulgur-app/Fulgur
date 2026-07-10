@@ -1,14 +1,12 @@
-use crate::fulgur::{
-    Fulgur,
-    ui::{
-        components_utils::SEARCH_BAR_HEIGHT, copy_button::CopyButton, icons::CustomIcon,
-        insert_button::InsertButton,
-    },
+use super::state::{ColorPickerBar, ColorPickerBarEvent};
+use crate::fulgur::ui::{
+    components_utils::SEARCH_BAR_HEIGHT, copy_button::CopyButton, icons::CustomIcon,
+    insert_button::InsertButton,
 };
 
 use gpui::{
-    Anchor, Context, Div, Entity, EntityInputHandler, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    Anchor, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::{
     ActiveTheme, h_flex,
@@ -17,116 +15,75 @@ use gpui_component::{
 
 use super::super::search_bar::{search_bar_button_factory, search_bar_toggle_button_factory};
 
-impl Fulgur {
-    /// Insert a value at the cursor position in the active editor tab, replacing the current selection if any.
+impl Render for ColorPickerBar {
+    /// Render the color picker bar
     ///
     /// ### Arguments
-    /// - `value`: The string to insert
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn insert_color_value(
-        &mut self,
-        value: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(index) = self.active_tab_index()
-            && let Some(crate::fulgur::tab::Tab::Editor(editor_tab)) = self.tabs.get_mut(index)
-        {
-            editor_tab.content.update(cx, |input_state, cx| {
-                let selection = input_state.selected_text_range(true, window, cx);
-                if selection.is_some() {
-                    input_state.replace(value, window, cx);
-                } else {
-                    input_state.insert(value, window, cx);
-                }
-                cx.notify();
-            });
-        }
-    }
-
-    /// Toggle the color picker bar visibility.
-    ///
-    /// ### Arguments
-    /// - `_window`: The window context
-    /// - `cx`: The application context
-    pub fn toggle_color_picker(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self.color_picker_bar_state.show_color_picker =
-            !self.color_picker_bar_state.show_color_picker;
-        cx.notify();
-    }
-
-    /// Render the color picker bar.
-    ///
-    /// ### Arguments
+    /// - `_window`: The window to render the color picker bar in
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some(Div)`: The rendered color picker bar
-    /// - `None`: If the color picker bar is hidden
-    pub fn render_color_picker_bar(&self, cx: &mut Context<Self>) -> Option<Div> {
-        if !self.color_picker_bar_state.show_color_picker {
-            return None;
+    /// - `impl IntoElement`: The rendered color picker bar, or an empty element when hidden
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.show_color_picker {
+            return div().into_any_element();
         }
-        let hex_value = &self.color_picker_bar_state.cached_hex;
-        let oklch_value = &self.color_picker_bar_state.cached_oklch;
-        let hsla_value = &self.color_picker_bar_state.cached_hsla;
-        Some(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .bg(cx.theme().tab_bar)
-                .p_0()
-                .m_0()
-                .w_full()
-                .h(SEARCH_BAR_HEIGHT)
-                .border_t_1()
-                .border_color(cx.theme().border)
-                .child(
-                    div()
-                        .id("color-picker-scroll-container")
-                        .flex()
-                        .flex_1()
-                        .overflow_x_scroll()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_1()
-                                .items_center()
-                                .h(SEARCH_BAR_HEIGHT)
-                                .child(self.render_color_picker_section(cx))
-                                .child(Self::render_color_value_section(
-                                    "Hex",
-                                    hex_value,
-                                    &self.color_picker_bar_state.hex_input,
-                                    cx,
-                                ))
-                                .child(Self::render_color_value_section(
-                                    "OkLCH",
-                                    oklch_value,
-                                    &self.color_picker_bar_state.oklch_input,
-                                    cx,
-                                ))
-                                .child(Self::render_color_value_section(
-                                    "HSLA",
-                                    hsla_value,
-                                    &self.color_picker_bar_state.hsla_input,
-                                    cx,
-                                ))
-                                .child(self.render_highlight_toggle_button(cx)),
-                        ),
-                )
-                .child(Self::render_color_picker_close_button(cx)),
-        )
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .bg(cx.theme().tab_bar)
+            .p_0()
+            .m_0()
+            .w_full()
+            .h(SEARCH_BAR_HEIGHT)
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .child(
+                div()
+                    .id("color-picker-scroll-container")
+                    .flex()
+                    .flex_1()
+                    .overflow_x_scroll()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_1()
+                            .items_center()
+                            .h(SEARCH_BAR_HEIGHT)
+                            .child(self.render_color_picker_section(cx))
+                            .child(Self::render_color_value_section(
+                                "Hex",
+                                &self.cached_hex,
+                                &self.hex_input,
+                                cx,
+                            ))
+                            .child(Self::render_color_value_section(
+                                "OkLCH",
+                                &self.cached_oklch,
+                                &self.oklch_input,
+                                cx,
+                            ))
+                            .child(Self::render_color_value_section(
+                                "HSLA",
+                                &self.cached_hsla,
+                                &self.hsla_input,
+                                cx,
+                            ))
+                            .child(self.render_highlight_toggle_button(cx)),
+                    ),
+            )
+            .child(Self::render_close_button(cx))
+            .into_any_element()
     }
+}
 
+impl ColorPickerBar {
     /// Render the color picker section (left part with the color picker widget).
     ///
     /// ### Returns
     /// - `impl IntoElement`: The rendered color picker section
     fn render_color_picker_section(&self, _cx: &mut Context<Self>) -> impl IntoElement {
-        let color_picker_state = &self.color_picker_bar_state.color_picker_state;
         h_flex()
             .items_center()
             .flex_shrink_0()
@@ -134,7 +91,7 @@ impl Fulgur {
             .gap_2()
             .h(SEARCH_BAR_HEIGHT)
             .child(
-                gpui_component::color_picker::ColorPicker::new(color_picker_state)
+                gpui_component::color_picker::ColorPicker::new(&self.color_picker_state)
                     .anchor(Anchor::BottomLeft),
             )
     }
@@ -143,7 +100,7 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `label`: The label for the color format (e.g. "Hex", "`OkLCH`", "HSLA")
-    /// - `value`: The current formatted color value string (used for the clipboard button)
+    /// - `value`: The current formatted color value string (used for the insert and clipboard buttons)
     /// - `input_state`: The input state entity for this field
     /// - `cx`: The application context
     ///
@@ -200,7 +157,10 @@ impl Fulgur {
     /// ### Returns
     /// - `Div`: The rendered toggle button
     fn render_highlight_toggle_button(&self, cx: &mut Context<Self>) -> Div {
-        let highlight_colors = self.settings.editor_settings.highlight_colors;
+        let highlight_colors = self
+            .fulgur
+            .upgrade()
+            .is_some_and(|fulgur| fulgur.read(cx).settings.editor_settings.highlight_colors);
         div()
             .flex()
             .items_center()
@@ -218,10 +178,8 @@ impl Fulgur {
                     cx.theme().accent,
                     highlight_colors,
                 )
-                .on_click(cx.listener(|this, _, _window, cx| {
-                    this.settings.editor_settings.highlight_colors =
-                        !this.settings.editor_settings.highlight_colors;
-                    let _ = this.update_and_propagate_settings(cx);
+                .on_click(cx.listener(|_, _, _window, cx| {
+                    cx.emit(ColorPickerBarEvent::ToggleHighlightColors);
                 })),
             )
     }
@@ -233,7 +191,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `Div`: The rendered close button
-    fn render_color_picker_close_button(cx: &mut Context<Self>) -> Div {
+    fn render_close_button(cx: &mut Context<Self>) -> Div {
         div()
             .flex()
             .items_center()
@@ -249,8 +207,7 @@ impl Fulgur {
                     cx.theme().border,
                 )
                 .on_click(cx.listener(|this, _, _window, cx| {
-                    this.color_picker_bar_state.show_color_picker = false;
-                    cx.notify();
+                    this.close(cx);
                 })),
             )
     }
@@ -258,9 +215,9 @@ impl Fulgur {
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod gpui_tests {
-    use super::Fulgur;
+    use super::super::state::ColorPickerBarEvent;
     use crate::fulgur::{
-        settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
+        Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
     use gpui::{
         AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
@@ -312,10 +269,7 @@ mod gpui_tests {
     fn test_color_picker_bar_hidden_by_default(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, cx| {
-                assert!(!this.color_picker_bar_state.show_color_picker);
-                assert!(this.render_color_picker_bar(cx).is_none());
-            });
+            assert!(!fulgur.read(cx).color_picker_bar.read(cx).is_visible());
         });
     }
 
@@ -325,8 +279,8 @@ mod gpui_tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.toggle_color_picker(window, cx);
-                assert!(this.color_picker_bar_state.show_color_picker);
             });
+            assert!(fulgur.read(cx).color_picker_bar.read(cx).is_visible());
         });
     }
 
@@ -336,11 +290,31 @@ mod gpui_tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.toggle_color_picker(window, cx);
-                assert!(this.color_picker_bar_state.show_color_picker);
-
-                this.toggle_color_picker(window, cx);
-                assert!(!this.color_picker_bar_state.show_color_picker);
             });
+            assert!(fulgur.read(cx).color_picker_bar.read(cx).is_visible());
+
+            fulgur.update(cx, |this, cx| {
+                this.toggle_color_picker(window, cx);
+            });
+            assert!(!fulgur.read(cx).color_picker_bar.read(cx).is_visible());
+        });
+    }
+
+    #[gpui::test]
+    fn test_close_event_hides_bar(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let bar = visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.toggle_color_picker(window, cx);
+                this.color_picker_bar.clone()
+            })
+        });
+        visual_cx.update(|_window, cx| {
+            bar.update(cx, super::super::state::ColorPickerBar::close);
+        });
+        visual_cx.run_until_parked();
+        visual_cx.update(|_window, cx| {
+            assert!(!bar.read(cx).is_visible());
         });
     }
 
@@ -348,7 +322,7 @@ mod gpui_tests {
     fn test_insert_color_value_inserts_at_cursor(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
+            let bar = fulgur.update(cx, |this, cx| {
                 let editor = this
                     .get_active_editor_tab_mut()
                     .expect("expected active editor tab");
@@ -363,16 +337,20 @@ mod gpui_tests {
                         cx,
                     );
                 });
-                this.insert_color_value("#FF0000".to_string(), window, cx);
-                let text = this
-                    .get_active_editor_tab()
-                    .expect("expected active editor tab")
-                    .content
-                    .read(cx)
-                    .text()
-                    .to_string();
-                assert_eq!(text, "color: #FF0000;");
+                this.color_picker_bar.clone()
             });
+            bar.update(cx, |bar, cx| {
+                bar.insert_color_value("#FF0000".to_string(), window, cx);
+            });
+            let text = fulgur
+                .read(cx)
+                .get_active_editor_tab()
+                .expect("expected active editor tab")
+                .content
+                .read(cx)
+                .text()
+                .to_string();
+            assert_eq!(text, "color: #FF0000;");
         });
     }
 
@@ -380,30 +358,34 @@ mod gpui_tests {
     fn test_insert_color_value_no_active_tab_does_not_panic(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
+            let bar = fulgur.update(cx, |this, _cx| {
                 this.active_tab_id = None;
-                this.insert_color_value("#FF0000".to_string(), window, cx);
+                this.color_picker_bar.clone()
+            });
+            bar.update(cx, |bar, cx| {
+                bar.insert_color_value("#FF0000".to_string(), window, cx);
             });
         });
     }
 
     #[gpui::test]
-    fn test_highlight_toggle_reflects_editor_setting(cx: &mut TestAppContext) {
+    fn test_toggle_highlight_colors_event_flips_setting(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let (bar, initial) = visual_cx.update(|_window, cx| {
+            let this = fulgur.read(cx);
+            (
+                this.color_picker_bar.clone(),
+                this.settings.editor_settings.highlight_colors,
+            )
+        });
         visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, _cx| {
-                let initial = this.settings.editor_settings.highlight_colors;
-                this.settings.editor_settings.highlight_colors = !initial;
-                assert_ne!(
-                    this.settings.editor_settings.highlight_colors, initial,
-                    "toggling highlight_colors should change the setting"
-                );
-                this.settings.editor_settings.highlight_colors = initial;
-                assert_eq!(
-                    this.settings.editor_settings.highlight_colors, initial,
-                    "reverting should restore original value"
-                );
+            bar.update(cx, |_, cx| {
+                cx.emit(ColorPickerBarEvent::ToggleHighlightColors);
             });
         });
+        visual_cx.run_until_parked();
+        let after = visual_cx
+            .update(|_window, cx| fulgur.read(cx).settings.editor_settings.highlight_colors);
+        assert_eq!(after, !initial);
     }
 }

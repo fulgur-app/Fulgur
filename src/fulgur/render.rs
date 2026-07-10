@@ -143,13 +143,14 @@ impl Fulgur {
         let search_bar_visible = self.search_bar.read(cx).is_visible();
         let markdown_toolbar_visible = self.markdown_toolbar_visible();
         let csv_toolbar_visible = self.csv_toolbar_visible();
+        let color_picker_bar_visible = self.color_picker_bar.read(cx).is_visible();
         app_content = app_content
             .child(self.tab_bar.clone())
             .child(self.render_content_area(active_tab_index, window, cx))
             .children(markdown_toolbar_visible.then(|| self.markdown_toolbar.clone()))
             .children(csv_toolbar_visible.then(|| self.csv_toolbar.clone()))
             .children(search_bar_visible.then(|| self.search_bar.clone()))
-            .children(self.render_color_picker_bar(cx));
+            .children(color_picker_bar_visible.then(|| self.color_picker_bar.clone()));
         if let Some(Tab::Editor(_)) = self.active_tab() {
             app_content = app_content.child(self.status_bar.clone());
         }
