@@ -3,7 +3,7 @@ use crate::fulgur::{
     files::file_watcher::FileWatchState,
     languages,
     settings::Settings,
-    shared_state, sync,
+    shared_state,
     tab::{Tab, TabId},
     ui::{
         bars::color_picker_bar::ColorPickerBarState,
@@ -179,7 +179,9 @@ impl Fulgur {
                 this.start_file_watcher(cx);
             }
         });
-        sync::synchronization::begin_synchronization(&entity, cx);
+        // Skip real sync under `cargo test`.
+        #[cfg(not(test))]
+        crate::fulgur::sync::synchronization::begin_synchronization(&entity, cx);
         entity
     }
 
