@@ -22,6 +22,7 @@ use tab::{Tab, TabId};
 use ui::log_view::LogTailState;
 use ui::{
     bars::color_picker_bar::ColorPickerBarState,
+    bars::csv_toolbar::CsvToolbar,
     bars::markdown_toolbar::MarkdownToolbar,
     bars::search_bar::SearchBar,
     bars::status_bar::StatusBar,
@@ -42,9 +43,10 @@ pub struct Fulgur {
     search_bar: Entity<SearchBar>,                   // The search and replace bar view
     _search_bar_subscription: Subscription, // Routes SearchBarEvent from the search bar to window-level handlers
     markdown_toolbar: Entity<MarkdownToolbar>, // The markdown formatting toolbar view (acts directly on the active editor, emits no events)
+    csv_toolbar: Entity<CsvToolbar>, // The CSV structural-edit toolbar view (acts directly on the active tab's table, emits no events)
     pub color_picker_bar_state: ColorPickerBarState, // Color picker bar state
     pub jump_to_line_input: Entity<InputState>, // Input for jumping to a line in the editor
-    pending_jump: Option<editor_tab::Jump>,    // Pending jump to line action
+    pending_jump: Option<editor_tab::Jump>, // Pending jump to line action
     pub settings: Settings, // The settings for the application (local snapshot, refreshed by the SharedAppState observer)
     settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
     _shared_state_observation: Subscription, // Global observer keeping the local settings snapshot in sync with SharedAppState
