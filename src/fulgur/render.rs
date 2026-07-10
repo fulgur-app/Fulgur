@@ -141,10 +141,11 @@ impl Fulgur {
                 this.handle_external_paths_drop(paths, window, cx);
             }));
         let search_bar_visible = self.search_bar.read(cx).is_visible();
+        let markdown_toolbar_visible = self.markdown_toolbar_visible();
         app_content = app_content
             .child(self.tab_bar.clone())
             .child(self.render_content_area(active_tab_index, window, cx))
-            .children(self.render_markdown_bar(cx))
+            .children(markdown_toolbar_visible.then(|| self.markdown_toolbar.clone()))
             .children(self.render_csv_toolbar(cx))
             .children(search_bar_visible.then(|| self.search_bar.clone()))
             .children(self.render_color_picker_bar(cx));
