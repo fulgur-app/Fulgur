@@ -24,6 +24,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # GPUI tests have large stack frames; the default 2 MiB libtest thread stack
+  # overflows on Windows (1 MiB main stack) and aborts with STATUS_STACK_BUFFER_OVERRUN
+  # (0xc0000409). Raise the minimum thread stack so test threads inherit 16 MiB.
+  RUST_MIN_STACK: '16777216'
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   BRANCH: ${{ github.ref_name }}
