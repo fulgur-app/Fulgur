@@ -29,7 +29,7 @@ impl Fulgur {
         ));
         self.tabs.push(tab);
         self.active_tab_id = Some(id);
-        self.pending_tab_scroll = Some(id);
+        self.request_tab_scroll(id, cx);
         self.focus_active_tab(window, cx);
         self.save_state_async(cx, window);
         cx.notify();
@@ -81,7 +81,7 @@ impl Fulgur {
         let id = tab.id();
         self.tabs.push(tab);
         self.active_tab_id = Some(id);
-        self.pending_tab_scroll = Some(id);
+        self.request_tab_scroll(id, cx);
         self.tabs.len() - 1
     }
 
@@ -112,7 +112,7 @@ impl Fulgur {
             let settings_tab = Tab::Settings(tab);
             self.tabs.push(settings_tab);
             self.active_tab_id = Some(id);
-            self.pending_tab_scroll = Some(id);
+            self.request_tab_scroll(id, cx);
             self.save_state_async(cx, window);
             cx.notify();
         }
@@ -156,7 +156,7 @@ impl Fulgur {
         let insert_pos = index + 1;
         self.tabs.insert(insert_pos, new_tab);
         self.active_tab_id = Some(id);
-        self.pending_tab_scroll = Some(id);
+        self.request_tab_scroll(id, cx);
         self.focus_active_tab(window, cx);
         self.save_state_async(cx, window);
         cx.notify();

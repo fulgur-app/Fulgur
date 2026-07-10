@@ -1,8 +1,11 @@
 mod actions;
 mod rendering;
+mod state;
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;
+
+pub(crate) use state::{TabBar, TabBarEvent};
 
 use gpui::{Action, Hsla, Styled};
 use gpui_component::button::Button;

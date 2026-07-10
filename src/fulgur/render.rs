@@ -55,8 +55,7 @@ impl Render for Fulgur {
         self.handle_pending_jump_to_line(window, cx);
         self.update_modified_status(cx);
         self.prune_markdown_preview_cache(cx);
-        self.process_pending_tab_scroll(cx);
-        self.refresh_tab_filename_counts();
+        self.refresh_window_title(cx);
         let app_content = self.build_app_content_with_actions(self.active_tab_index(), window, cx);
         self.assemble_ui_tree(app_content, window, cx)
     }
@@ -143,7 +142,7 @@ impl Fulgur {
             }));
         let search_bar_visible = self.search_bar.read(cx).is_visible();
         app_content = app_content
-            .child(self.render_tab_bar(cx))
+            .child(self.tab_bar.clone())
             .child(self.render_content_area(active_tab_index, window, cx))
             .children(self.render_markdown_bar(cx))
             .children(self.render_csv_toolbar(cx))
@@ -236,27 +235,14 @@ impl Fulgur {
         }
     }
 
-    /// Process a deferred scroll-to-tab request
-    ///
-    /// GPUI's `ScrollHandle` needs one render cycle to populate child bounds and overflow
-    /// state before `scroll_to_item` can work. On the first frame, layout hasn't happened
-    /// yet so the scroll is silently dropped. This method waits until child bounds are
-    /// available (meaning layout has completed at least once), then issues the scroll.
+    /// Refresh the window title from the active tab's title
     ///
     /// ### Arguments
     /// - `cx`: The application context
-    fn process_pending_tab_scroll(&mut self, cx: &mut Context<Self>) {
-        if let Some(tab_id) = self.pending_tab_scroll {
-            let Some(index) = self.tab_index_of(tab_id) else {
-                self.pending_tab_scroll = None;
-                return;
-            };
-            if self.tab_scroll_handle.bounds_for_item(0).is_some() {
-                self.tab_scroll_handle.scroll_to_item(index);
-                self.pending_tab_scroll = None;
-            } else {
-                cx.notify();
-            }
+    fn refresh_window_title(&self, cx: &mut Context<Self>) {
+        let title = self.active_tab().map(|tab| tab.title().to_string());
+        if let Some(title) = title {
+            self.set_title(Some(title), cx);
         }
     }
 

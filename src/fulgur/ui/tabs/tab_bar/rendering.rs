@@ -1,19 +1,19 @@
 use super::{
     CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
-    CopyPath, DuplicateTab, SendTabToWindowNoOp, ShowInFileManager, tab_bar_button_factory,
+    CopyPath, DuplicateTab, SendTabToWindowNoOp, ShowInFileManager, TabBar, TabBarEvent,
+    tab_bar_button_factory,
 };
 use crate::fulgur::{
     Fulgur,
     tab::Tab,
-    ui::tabs::editor_tab::TabLocation,
     ui::tabs::tab_drag::DraggedTab,
     ui::{components_utils, icons::CustomIcon},
     window_manager::WindowManager,
 };
 use gpui::{
-    AnyElement, AppContext, ClickEvent, Context, Div, DragMoveEvent, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, SharedString, StatefulInteractiveElement, Styled,
-    WeakEntity, div, px,
+    AnyElement, AppContext, ClickEvent, Context, DragMoveEvent, InteractiveElement, IntoElement,
+    MouseButton, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    WeakEntity, Window, div, px,
 };
 use gpui_component::{
     ActiveTheme, Sizable, StyledExt,
@@ -25,122 +25,32 @@ use gpui_component::{
 };
 use std::collections::HashMap;
 
-impl Fulgur {
-    /// Compute a fingerprint that changes whenever the set of open file paths changes.
-    ///
-    /// ### Returns
-    /// - `u64`: The computed fingerprint value.
-    fn compute_tab_filename_fingerprint(&self) -> u64 {
-        let mut hash: u64 = self.tabs.len() as u64;
-        for tab in &self.tabs {
-            if let Some(editor) = tab.as_editor()
-                && let Some(path) = editor.file_path()
-            {
-                for byte in path.as_os_str().as_encoded_bytes() {
-                    hash = hash
-                        .wrapping_mul(0x0000_0100_0000_01b3)
-                        .wrapping_add(u64::from(*byte));
-                }
-            }
-            hash ^= tab.id().0;
-            hash = hash.rotate_left(17);
-        }
-        hash
-    }
-
-    /// Rebuild the cached tab filename frequency map only when the tab list has changed.
-    pub(crate) fn refresh_tab_filename_counts(&mut self) {
-        let fp = self.compute_tab_filename_fingerprint();
-        if fp == self.tab_filename_fp {
-            return;
-        }
-        self.tab_filename_fp = fp;
-        self.cached_tab_filename_counts = self.build_tab_filename_counts();
-    }
-
-    /// Resolve the optional tab badge label for remote editor tabs.
+impl Render for TabBar {
+    /// Render the tab bar from the owning window's current tab list
     ///
     /// ### Arguments
-    /// - `tab`: The tab to inspect.
+    /// - `_window`: The window to render the tab bar in
+    /// - `cx`: The tab bar context
     ///
     /// ### Returns
-    /// - `Some(&'static str)`: `"R"` when the tab points to a remote location.
-    /// - `None`: For local, untitled, settings, and markdown preview tabs.
-    pub(crate) fn remote_tab_indicator_label(tab: &Tab) -> Option<&'static str> {
-        let editor_tab = tab.as_editor()?;
-        if matches!(editor_tab.location, TabLocation::Remote(_)) {
-            Some("R")
-        } else {
-            None
-        }
-    }
-
-    /// Build a per-filename tab count map for disambiguation.
-    ///
-    /// ### Returns
-    /// - `HashMap<String, usize>`: Map of filename to number of open tabs with that filename
-    pub(crate) fn build_tab_filename_counts(&self) -> HashMap<String, usize> {
-        let mut filename_counts = HashMap::new();
-        for tab in &self.tabs {
-            if let Some(editor_tab) = tab.as_editor()
-                && let Some(path) = editor_tab.file_path()
-                && let Some(filename) = path.file_name().and_then(|n| n.to_str())
-            {
-                *filename_counts.entry(filename.to_string()).or_insert(0) += 1;
-            }
-        }
-        filename_counts
-    }
-
-    /// Get the display title for a tab, including parent folder when duplicated.
-    ///
-    /// ### Arguments
-    /// - `tab`: The tab to get the title for
-    /// - `filename_counts`: Precomputed filename frequencies for all open tabs
-    ///
-    /// ### Returns
-    /// - `(String, Option<String>)`: A tuple of (filename, optional parent folder)
-    pub(crate) fn get_tab_display_title(
-        tab: &Tab,
-        filename_counts: &HashMap<String, usize>,
-    ) -> (String, Option<String>) {
-        let base_title = tab.title();
-        if let Some(editor_tab) = tab.as_editor()
-            && let Some(path) = editor_tab.file_path()
-        {
-            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let duplicate_count = filename_counts.get(filename).copied().unwrap_or(0);
-            if duplicate_count > 1
-                && let Some(parent) = path.parent()
-                && let Some(parent_name) = parent.file_name().and_then(|n| n.to_str())
-            {
-                return (filename.to_string(), Some(format!("../{parent_name}")));
-            }
-
-            return (filename.to_string(), None);
-        }
-        (base_title.to_string(), None)
-    }
-
-    /// Render the full tab bar
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    ///
-    /// ### Returns
-    /// - `Div`: The fully composed tab bar element
-    pub fn render_tab_bar(&self, cx: &mut Context<Self>) -> Div {
+    /// - `impl IntoElement`: The rendered tab bar element
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
-        let mut tab_bar = div()
+
+        let Some(fulgur_entity) = self.fulgur.upgrade() else {
+            return div().into_any_element();
+        };
+        self.process_pending_scroll(&fulgur_entity, cx);
+        let fulgur = fulgur_entity.read(cx);
+        div()
             .flex()
             .items_center()
             .h(TAB_BAR_HEIGHT)
-            .bg(cx.theme().tab_bar);
-        tab_bar = tab_bar
+            .bg(cx.theme().tab_bar)
             .child(
                 tab_bar_button_factory("new-tab", "New Tab", CustomIcon::Plus, cx.theme().border)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.new_tab(window, cx);
+                    .on_click(cx.listener(|_, _, _window, cx| {
+                        cx.emit(TabBarEvent::NewTab);
                     })),
             )
             .child(
@@ -150,11 +60,11 @@ impl Fulgur {
                     CustomIcon::FolderOpen,
                     cx.theme().border,
                 )
-                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
                     if event.modifiers().shift {
-                        this.show_open_from_path_dialog(window, cx);
+                        cx.emit(TabBarEvent::OpenPath);
                     } else {
-                        this.open_file(window, cx);
+                        cx.emit(TabBarEvent::OpenFile);
                     }
                 })),
             )
@@ -166,11 +76,11 @@ impl Fulgur {
                     cx.theme().border,
                 )
                 .border_r_1()
-                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
                     if event.modifiers().shift {
-                        this.save_file_as(window, cx);
+                        cx.emit(TabBarEvent::SaveFileAs);
                     } else {
-                        this.save_file(window, cx);
+                        cx.emit(TabBarEvent::SaveFile);
                     }
                 })),
             )
@@ -178,11 +88,11 @@ impl Fulgur {
                 div()
                     .id("tab-scroll-container")
                     .overflow_x_scroll()
-                    .track_scroll(&self.tab_scroll_handle)
+                    .track_scroll(&self.scroll_handle)
                     .flex()
                     .flex_1()
                     .items_center()
-                    .children(self.render_tabs_with_slots(cx))
+                    .children(self.render_tabs_with_slots(fulgur, cx))
                     .child(
                         div()
                             .id("tab-bar-trailing")
@@ -191,9 +101,9 @@ impl Fulgur {
                             .border_b_1()
                             .border_color(cx.theme().border)
                             .h(TAB_BAR_HEIGHT)
-                            .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                            .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
                                 if event.click_count() == 2 {
-                                    this.new_tab(window, cx);
+                                    cx.emit(TabBarEvent::NewTab);
                                 }
                             }))
                             .on_drag_move::<DraggedTab>(cx.listener(
@@ -207,22 +117,30 @@ impl Fulgur {
                                     {
                                         return;
                                     }
-                                    let slot = this.tabs.len();
+                                    let Some(fulgur) = this.fulgur.upgrade() else {
+                                        return;
+                                    };
+                                    let slot = fulgur.read(cx).tabs.len();
                                     let dragged = event.drag(cx).clone();
                                     this.drag_ghost = Some((slot, dragged));
                                     cx.notify();
                                 },
                             ))
-                            .on_drop(cx.listener(|this, dragged: &DraggedTab, window, cx| {
+                            .on_drop(cx.listener(|this, dragged: &DraggedTab, _window, cx| {
                                 if let Some((slot, _)) = this.drag_ghost.take() {
-                                    this.handle_tab_drop(dragged, slot, window, cx);
+                                    cx.emit(TabBarEvent::Drop {
+                                        dragged: dragged.clone(),
+                                        slot,
+                                    });
                                 }
                             })),
                     ),
-            );
-        tab_bar
+            )
+            .into_any_element()
     }
+}
 
+impl TabBar {
     /// Render a ghost tab shown at the insertion point during a drag operation.
     ///
     /// The ghost tab previews where the dragged tab will land when dropped. It uses
@@ -231,11 +149,11 @@ impl Fulgur {
     /// ### Arguments
     /// - `slot`: The insertion slot index
     /// - `dragged`: The dragged tab data (used for title and modified state)
-    /// - `cx`: The application context
+    /// - `cx`: The tab bar context
     ///
     /// ### Returns
     /// - `AnyElement`: The rendered ghost tab element
-    fn render_ghost_tab(slot: usize, dragged: &DraggedTab, cx: &mut Context<Self>) -> AnyElement {
+    fn render_ghost_tab(slot: usize, dragged: &DraggedTab, cx: &Context<Self>) -> AnyElement {
         use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
 
         let modified_indicator = if dragged.is_modified { " •" } else { "" };
@@ -258,9 +176,12 @@ impl Fulgur {
                     .text_color(cx.theme().tab_active_foreground)
                     .child(format!("{}{}", dragged.title, modified_indicator)),
             )
-            .on_drop(cx.listener(|this, dragged: &DraggedTab, window, cx| {
+            .on_drop(cx.listener(|this, dragged: &DraggedTab, _window, cx| {
                 if let Some((slot, _)) = this.drag_ghost.take() {
-                    this.handle_tab_drop(dragged, slot, window, cx);
+                    cx.emit(TabBarEvent::Drop {
+                        dragged: dragged.clone(),
+                        slot,
+                    });
                 }
             }))
             .into_any_element()
@@ -273,14 +194,15 @@ impl Fulgur {
     /// positions (where the tab would not actually move).
     ///
     /// ### Arguments
-    /// - `cx`: The application context
+    /// - `fulgur`: The owning window to read the tab list from
+    /// - `cx`: The tab bar context
     ///
     /// ### Returns
     /// - `Vec<AnyElement>`: Tab elements, with a ghost tab inserted at the drag target
-    fn render_tabs_with_slots(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn render_tabs_with_slots(&self, fulgur: &Fulgur, cx: &Context<Self>) -> Vec<AnyElement> {
         let ghost = if cx.has_active_drag() {
             self.drag_ghost.as_ref().and_then(|(slot, dragged)| {
-                let is_noop = self
+                let is_noop = fulgur
                     .tab_index_of(dragged.tab_id)
                     .is_some_and(|from| *slot == from || *slot == from + 1);
                 if is_noop {
@@ -292,14 +214,14 @@ impl Fulgur {
         } else {
             None
         };
-        let filename_counts = &self.cached_tab_filename_counts;
-        let capacity = self.tabs.len() + usize::from(ghost.is_some());
+        let filename_counts = Self::build_tab_filename_counts(&fulgur.tabs);
+        let capacity = fulgur.tabs.len() + usize::from(ghost.is_some());
         let mut elements: Vec<AnyElement> = Vec::with_capacity(capacity);
         if let Some((0, dragged)) = ghost {
             elements.push(Self::render_ghost_tab(0, dragged, cx));
         }
-        for (index, tab) in self.tabs.iter().enumerate() {
-            elements.push(self.render_tab(index, tab, filename_counts, cx));
+        for (index, tab) in fulgur.tabs.iter().enumerate() {
+            elements.push(self.render_tab(fulgur, index, tab, &filename_counts, cx));
             if let Some((slot, dragged)) = ghost
                 && slot == index + 1
             {
@@ -312,28 +234,30 @@ impl Fulgur {
     /// Render a single tab in the tab bar
     ///
     /// ### Arguments
-    /// - `index`: Position of the tab in `self.tabs`
+    /// - `fulgur`: The owning window to read tab and window state from
+    /// - `index`: Position of the tab in the owning window's tab list
     /// - `tab`: The tab to render
     /// - `filename_counts`: Precomputed map of filename to occurrence count, used to show a
     ///   disambiguating folder segment when multiple open tabs share the same filename
-    /// - `cx`: The application context
+    /// - `cx`: The tab bar context
     ///
     /// ### Returns
     /// - `AnyElement`: The fully composed tab element ready to be inserted into the tab bar
-    pub fn render_tab(
+    fn render_tab(
         &self,
+        fulgur: &Fulgur,
         index: usize,
         tab: &Tab,
         filename_counts: &HashMap<String, usize>,
-        cx: &mut Context<Self>,
+        cx: &Context<Self>,
     ) -> AnyElement {
         use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
 
         let tab_id = tab.id();
-        let is_active = self.active_tab_id == Some(tab_id);
+        let is_active = fulgur.active_tab_id == Some(tab_id);
         let has_tabs_on_left = index > 0;
-        let has_tabs_on_right = index < self.tabs.len() - 1;
-        let total_tabs = self.tabs.len();
+        let has_tabs_on_right = index < fulgur.tabs.len() - 1;
+        let total_tabs = fulgur.tabs.len();
         let file_path = tab.as_editor().and_then(|editor_tab| {
             editor_tab
                 .file_path()
@@ -343,7 +267,7 @@ impl Fulgur {
         let is_editor_tab = tab.as_editor().is_some();
         let other_windows: Vec<(String, WeakEntity<Fulgur>)> = {
             let manager = cx.global::<WindowManager>();
-            let current_window_id = self.window_id;
+            let current_window_id = fulgur.window_id;
             manager
                 .get_all_window_ids()
                 .into_iter()
@@ -356,7 +280,7 @@ impl Fulgur {
                 })
                 .collect()
         };
-        let source_entity = cx.entity().downgrade();
+        let source_entity = self.fulgur.clone();
         let cached_file_size = tab
             .as_editor()
             .and_then(|editor_tab| editor_tab.file_size_bytes)
@@ -377,15 +301,14 @@ impl Fulgur {
             .border_color(cx.theme().border)
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |this, _, window, cx: &mut Context<'_, Fulgur>| {
-                    if !is_active && let Some(index) = this.tab_index_of(tab_id) {
-                        this.set_active_tab(index, window, cx);
+                cx.listener(move |_, _, _window, cx| {
+                    if !is_active {
+                        cx.emit(TabBarEvent::Activate(tab_id));
                     }
                 }),
             );
         if is_active {
             tab_div = tab_div.bg(cx.theme().tab_active).border_b_0();
-            self.set_title(Some(tab.title().to_string()), cx);
         } else {
             tab_div = tab_div
                 .bg(cx.theme().tab)
@@ -479,15 +402,15 @@ impl Fulgur {
                     .ghost()
                     .xsmall()
                     .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, window, cx| {
+                    .on_click(cx.listener(move |_, _, _window, cx| {
                         cx.stop_propagation();
-                        this.close_tab(tab_id, window, cx);
+                        cx.emit(TabBarEvent::Close(tab_id));
                     })),
             )
             .on_mouse_down(
                 MouseButton::Middle,
-                cx.listener(move |this, _, window, cx| {
-                    this.close_tab(tab_id, window, cx);
+                cx.listener(move |_, _, _window, cx| {
+                    cx.emit(TabBarEvent::Close(tab_id));
                 }),
             );
         if !is_markdown_preview {
@@ -529,9 +452,12 @@ impl Fulgur {
                         cx.notify();
                     },
                 ))
-                .on_drop(cx.listener(|this, dragged: &DraggedTab, window, cx| {
+                .on_drop(cx.listener(|this, dragged: &DraggedTab, _window, cx| {
                     if let Some((slot, _)) = this.drag_ghost.take() {
-                        this.handle_tab_drop(dragged, slot, window, cx);
+                        cx.emit(TabBarEvent::Drop {
+                            dragged: dragged.clone(),
+                            slot,
+                        });
                     }
                 }));
         }

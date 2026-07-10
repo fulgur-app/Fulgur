@@ -59,7 +59,7 @@ impl Fulgur {
             let is_log_view = tab.log_view;
             self.tabs.push(Tab::Editor(tab));
             self.active_tab_id = Some(id);
-            self.pending_tab_scroll = Some(id);
+            self.request_tab_scroll(id, cx);
             self.pending_transfer_scroll = Some(cursor_position);
             if let Some(path) = local_path {
                 self.watch_file(&path);

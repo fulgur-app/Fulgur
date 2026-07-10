@@ -11,11 +11,12 @@ use crate::fulgur::{
         bars::status_bar::{StatusBar, StatusBarEvent},
         bars::titlebar::CustomTitleBar,
         menus::{build_default_key_bindings, build_menus},
+        tabs::tab_bar::{TabBar, TabBarEvent},
         themes,
     },
     window_manager,
 };
-use gpui::{App, AppContext, Context, Entity, ScrollHandle, Window, WindowId};
+use gpui::{App, AppContext, Context, Entity, Window, WindowId};
 use gpui_component::input::InputState;
 use gpui_component::notification::NotificationType;
 use std::collections::{HashMap, HashSet};
@@ -65,12 +66,21 @@ impl Fulgur {
                 },
             );
 
-            let status_bar = cx.new(|_| StatusBar::new(weak_fulgur));
+            let status_bar = cx.new(|_| StatusBar::new(weak_fulgur.clone()));
             let status_bar_subscription = cx.subscribe_in(
                 &status_bar,
                 window,
                 |this: &mut Self, _, event: &StatusBarEvent, window, cx| {
                     this.on_status_bar_event(*event, window, cx);
+                },
+            );
+
+            let tab_bar = cx.new(|_| TabBar::new(weak_fulgur));
+            let tab_bar_subscription = cx.subscribe_in(
+                &tab_bar,
+                window,
+                |this: &mut Self, _, event: &TabBarEvent, window, cx| {
+                    this.on_tab_bar_event(event, window, cx);
                 },
             );
 
@@ -106,8 +116,6 @@ impl Fulgur {
                 markdown_preview_subscriptions: HashMap::new(),
                 log_tail_state: HashMap::new(),
                 log_tail_cancel: HashMap::new(),
-                tab_scroll_handle: ScrollHandle::new(),
-                pending_tab_scroll: None,
                 file_watch_state: FileWatchState::new(),
                 save_failed_once: false,
                 share_sheet_state: None,
@@ -115,11 +123,10 @@ impl Fulgur {
                 font_select_subscription: None,
                 editor_context_menu: None,
                 editor_context_menu_subscription: None,
-                drag_ghost: None,
                 status_bar,
                 _status_bar_subscription: status_bar_subscription,
-                cached_tab_filename_counts: HashMap::new(),
-                tab_filename_fp: u64::MAX, // sentinel: differs from fingerprint of any real tab list
+                tab_bar,
+                _tab_bar_subscription: tab_bar_subscription,
                 pending_tab_transfer: None,
                 pending_tab_removal: None,
                 pending_transfer_scroll: None,
@@ -163,7 +170,9 @@ impl Fulgur {
             } else if window_index < usize::MAX - 1 {
                 // usize::MAX - 1 means new window receiving a tab transfer: skip initial tab
                 this.load_state(window, cx, window_index);
-                this.pending_tab_scroll = this.active_tab_id;
+                if let Some(tab_id) = this.active_tab_id {
+                    this.request_tab_scroll(tab_id, cx);
+                }
                 this.pending_initial_active_tab = this.active_tab_id;
             }
             if this.settings.editor_settings.watch_files {
