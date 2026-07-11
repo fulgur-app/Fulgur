@@ -1,4 +1,5 @@
 use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress};
+use crate::fulgur::utils::worker::{Worker, WorkerHooks};
 use crate::fulgur::{
     Fulgur,
     settings::ServerProfile,
@@ -11,7 +12,6 @@ use crate::fulgur::{
 use futures::channel::mpsc::UnboundedSender;
 use gpui::{Context, SharedString, Window};
 use gpui_component::notification::NotificationType;
-use parking_lot::Mutex;
 use std::{
     sync::{
         Arc,
@@ -23,45 +23,20 @@ use std::{
 
 use super::super::{
     connection::{SseAgents, SseShareState, connect_sse},
-    types::SseEvent,
+    types::{SSE_WORKER_JOIN_TIMEOUT, SseEvent},
 };
-
-/// Maximum time to wait for the previous SSE thread to exit before starting a new one
-const SSE_THREAD_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Resources produced by the common SSE restart setup phase.
 struct SseRestartSetup {
-    old_handle: Option<thread::JoinHandle<()>>,
+    old_worker: Option<Worker>,
     sse_tx: UnboundedSender<SseEvent>,
-    sse_shutdown_flag: Arc<AtomicBool>,
-    handle_storage: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+    new_worker_hooks: WorkerHooks,
     profile: ServerProfile,
 }
 
-/// Wait for a previous SSE background thread to stop before proceeding.
-///
-/// ### Arguments
-/// - `old_handle`: The join handle from the previous SSE thread, if any.
-fn wait_for_previous_sse_thread(old_handle: Option<thread::JoinHandle<()>>) {
-    let Some(handle) = old_handle else { return };
-    let deadline = Instant::now() + SSE_THREAD_SHUTDOWN_TIMEOUT;
-    while !handle.is_finished() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(100));
-    }
-    if handle.is_finished() {
-        let _ = handle.join();
-        log::info!("Previous SSE thread exited");
-    } else {
-        log::warn!(
-            "Previous SSE thread still running after {SSE_THREAD_SHUTDOWN_TIMEOUT:?}, proceeding with new connection"
-        );
-    }
-}
-
 impl Fulgur {
-    /// Signal the old SSE worker's shutdown flag, rotate in a fresh shutdown
-    /// flag on the shared SSE state, and validate that the profile is ready to
-    /// connect.
+    /// Signal the old SSE worker, rotate a fresh `Worker` into the shared SSE
+    /// state, and validate that the profile is ready to connect.
     ///
     /// ### Arguments
     /// - `profile_id`: The profile to restart.
@@ -78,21 +53,22 @@ impl Fulgur {
         // Ensure the app-scope consumer task for this profile's events is running.
         Self::spawn_sse_event_consumer(profile_id, cx);
         let sync_state = Fulgur::shared_state(cx).sync_state_for(profile_id);
-        let (sse_tx, sse_shutdown_flag, handle_storage, old_handle) = {
+        let (sse_tx, new_worker_hooks, old_worker) = {
             let mut sse = sync_state.sse.lock();
-            if let Some(ref shutdown_flag) = sse.sse_shutdown_flag {
+            let old_worker = sse.worker.take();
+            if let Some(ref worker) = old_worker {
                 log::info!("Profile '{profile_id}': signaling SSE shutdown");
-                shutdown_flag.store(true, Ordering::Relaxed);
+                worker.signal_shutdown();
             }
-            let old_handle = sse.sse_thread_handle.lock().take();
             let sse_tx = sse
                 .sse_event_tx
                 .clone()
                 .expect("shared SSE state must own a live event sender");
-            let sse_shutdown_flag = Arc::new(AtomicBool::new(false));
-            sse.sse_shutdown_flag = Some(Arc::clone(&sse_shutdown_flag));
-            let handle_storage = Arc::clone(&sse.sse_thread_handle);
-            (sse_tx, sse_shutdown_flag, handle_storage, old_handle)
+            let new_worker =
+                Worker::new(format!("fulgur-sse-{profile_id}"), SSE_WORKER_JOIN_TIMEOUT);
+            let new_worker_hooks = new_worker.hooks();
+            sse.worker = Some(new_worker);
+            (sse_tx, new_worker_hooks, old_worker)
         };
 
         let profile = if let Some(p) = self
@@ -121,10 +97,9 @@ impl Fulgur {
             return None;
         }
         Some(SseRestartSetup {
-            old_handle,
+            old_worker,
             sse_tx,
-            sse_shutdown_flag,
-            handle_storage,
+            new_worker_hooks,
             profile,
         })
     }
@@ -136,10 +111,9 @@ impl Fulgur {
     /// - `cx`: The context of the application.
     pub fn restart_sse_connection_for(&mut self, profile_id: &str, cx: &mut Context<Self>) {
         let Some(SseRestartSetup {
-            old_handle,
+            old_worker,
             sse_tx,
-            sse_shutdown_flag,
-            handle_storage,
+            new_worker_hooks,
             profile,
         }) = self.prepare_sse_restart(profile_id, cx)
         else {
@@ -157,7 +131,7 @@ impl Fulgur {
         let server_version = Arc::clone(&sync_state.server_version);
         let server_min_fulgur_version = Arc::clone(&sync_state.server_min_fulgur_version);
         thread::spawn(move || {
-            wait_for_previous_sse_thread(old_handle);
+            drop(old_worker);
             thread::sleep(Duration::from_millis(200));
             match initial_synchronization(
                 &profile,
@@ -191,21 +165,16 @@ impl Fulgur {
                         max_file_size_bytes: Arc::clone(&max_file_size_bytes),
                         server_version: Arc::clone(&server_version),
                     };
-                    match connect_sse(
+                    if let Err(e) = connect_sse(
                         &profile,
                         sse_tx,
-                        sse_shutdown_flag,
+                        &new_worker_hooks,
                         sync_status,
                         &token_state,
                         &agents,
                         &share_state,
                     ) {
-                        Ok(new_handle) => {
-                            *handle_storage.lock() = Some(new_handle);
-                        }
-                        Err(e) => {
-                            log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
-                        }
+                        log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
                     }
                 }
                 Err(e) => {
@@ -233,10 +202,9 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         let Some(SseRestartSetup {
-            old_handle,
+            old_worker,
             sse_tx,
-            sse_shutdown_flag,
-            handle_storage,
+            new_worker_hooks,
             profile,
         }) = self.prepare_sse_restart(profile_id, cx)
         else {
@@ -281,7 +249,7 @@ impl Fulgur {
         let cancel_flag_for_thread = Arc::clone(&cancel_flag);
 
         thread::spawn(move || {
-            wait_for_previous_sse_thread(old_handle);
+            drop(old_worker);
             thread::sleep(Duration::from_millis(200));
 
             if cancel_flag_for_thread.load(Ordering::Acquire) {
@@ -324,21 +292,16 @@ impl Fulgur {
                         max_file_size_bytes: Arc::clone(&max_file_size_bytes),
                         server_version: Arc::clone(&server_version),
                     };
-                    match connect_sse(
+                    if let Err(e) = connect_sse(
                         &profile,
                         sse_tx,
-                        sse_shutdown_flag,
+                        &new_worker_hooks,
                         connection_status.clone(),
                         &token_state,
                         &agents,
                         &share_state,
                     ) {
-                        Ok(new_handle) => {
-                            *handle_storage.lock() = Some(new_handle);
-                        }
-                        Err(e) => {
-                            log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
-                        }
+                        log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
                     }
                     let notification = update_notification.unwrap_or_else(|| {
                         (

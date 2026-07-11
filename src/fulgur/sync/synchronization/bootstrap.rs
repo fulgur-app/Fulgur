@@ -7,9 +7,10 @@ use super::version::{
 };
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::SyncState;
-use crate::fulgur::sync::sse::{SseAgents, SseShareState, connect_sse};
+use crate::fulgur::sync::sse::{SSE_WORKER_JOIN_TIMEOUT, SseAgents, SseShareState, connect_sse};
 use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
+use crate::fulgur::utils::worker::{Worker, WorkerHooks};
 use gpui::{App, SharedString, Window};
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
@@ -60,13 +61,16 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
         let sync_state = cx
             .global::<crate::fulgur::shared_state::SharedAppState>()
             .sync_state_for(&profile.id);
-        let (sse_tx, sse_shutdown_flag, sse_thread_handle) = {
+        let (sse_tx, sse_worker_hooks) = {
             let mut sse = sync_state.sse.lock();
             let sse_tx = sse.sse_event_tx.clone();
-            let shutdown_flag = Arc::new(AtomicBool::new(false));
-            sse.sse_shutdown_flag = Some(Arc::clone(&shutdown_flag));
-            let thread_handle = Arc::clone(&sse.sse_thread_handle);
-            (sse_tx, Some(shutdown_flag), Some(thread_handle))
+            let worker = Worker::new(
+                format!("fulgur-sse-{}", profile.name),
+                SSE_WORKER_JOIN_TIMEOUT,
+            );
+            let hooks = worker.hooks();
+            sse.worker = Some(worker);
+            (sse_tx, Some(hooks))
         };
         let http_agent_clone = Arc::clone(&http_agent);
         let sse_http_agent_clone = Arc::clone(&sse_http_agent);
@@ -75,8 +79,7 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
                 &profile,
                 &sync_state,
                 sse_tx,
-                sse_shutdown_flag,
-                sse_thread_handle,
+                sse_worker_hooks,
                 &http_agent_clone,
                 &sse_http_agent_clone,
             );
@@ -90,16 +93,15 @@ pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &
 /// - `profile`: The profile being bootstrapped.
 /// - `sync_state`: Shared per-profile sync state.
 /// - `sse_tx`: Optional SSE event sender; `None` skips the SSE step.
-/// - `sse_shutdown_flag`: Shutdown flag signalled by `restart_sse_connection`.
-/// - `sse_thread_handle`: Slot for the SSE worker thread handle.
+/// - `sse_worker_hooks`: Hooks of the `Worker` stored in the profile's `SseState`;
+///   the spawned SSE thread polls its shutdown flag and attaches its handle.
 /// - `http_agent`: Shared HTTP agent for short-lived REST calls.
 /// - `sse_http_agent`: Dedicated long-timeout HTTP agent for the SSE stream.
 fn run_profile_bootstrap(
     profile: &ServerProfile,
     sync_state: &Arc<SyncState>,
     sse_tx: Option<futures::channel::mpsc::UnboundedSender<crate::fulgur::sync::sse::SseEvent>>,
-    sse_shutdown_flag: Option<Arc<AtomicBool>>,
-    sse_thread_handle: Option<Arc<Mutex<Option<thread::JoinHandle<()>>>>>,
+    sse_worker_hooks: Option<WorkerHooks>,
     http_agent: &Arc<ureq::Agent>,
     sse_http_agent: &Arc<ureq::Agent>,
 ) {
@@ -166,9 +168,7 @@ fn run_profile_bootstrap(
                 let mut files = sync_state.pending_shared_files.lock();
                 *files = begin_response.shares;
             }
-            if let (Some(tx), Some(shutdown), Some(handle_storage)) =
-                (sse_tx, sse_shutdown_flag, sse_thread_handle)
-            {
+            if let (Some(tx), Some(hooks)) = (sse_tx, sse_worker_hooks) {
                 log::info!(
                     "Profile '{}': starting SSE connection for real-time updates",
                     profile.name
@@ -183,21 +183,16 @@ fn run_profile_bootstrap(
                     max_file_size_bytes: Arc::clone(&sync_state.max_file_size_bytes),
                     server_version: Arc::clone(&sync_state.server_version),
                 };
-                match connect_sse(
+                if let Err(e) = connect_sse(
                     profile,
                     tx,
-                    shutdown,
+                    &hooks,
                     sync_state.connection_status.clone(),
                     &sync_state.token_state,
                     &agents,
                     &share_state,
                 ) {
-                    Ok(handle) => {
-                        *handle_storage.lock() = Some(handle);
-                    }
-                    Err(e) => {
-                        log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
-                    }
+                    log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
                 }
             } else {
                 log::warn!(

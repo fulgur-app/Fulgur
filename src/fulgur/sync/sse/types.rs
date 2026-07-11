@@ -1,20 +1,17 @@
+use crate::fulgur::utils::worker::Worker;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
-use parking_lot::Mutex;
 use serde::Serialize;
-use std::{
-    sync::{Arc, atomic::AtomicBool},
-    thread,
-    time::Instant,
-};
+use std::time::{Duration, Instant};
+
+/// Maximum time a dropped SSE worker is joined before being detached.
+pub const SSE_WORKER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Server-Sent Events state for sync functionality
 pub struct SseState {
     pub sse_events: Option<UnboundedReceiver<SseEvent>>,
     pub sse_event_tx: Option<UnboundedSender<SseEvent>>,
-    pub sse_shutdown_flag: Option<Arc<AtomicBool>>,
     pub last_sse_event: Option<Instant>,
-    /// Handle to the current SSE background thread for lifecycle tracking.
-    pub sse_thread_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+    pub worker: Option<Worker>,
 }
 
 impl Default for SseState {
@@ -37,9 +34,8 @@ impl SseState {
         Self {
             sse_events: None,
             sse_event_tx: None,
-            sse_shutdown_flag: None,
             last_sse_event: None,
-            sse_thread_handle: Arc::new(Mutex::new(None)),
+            worker: None,
         }
     }
 
@@ -53,9 +49,8 @@ impl SseState {
         Self {
             sse_events: Some(sse_rx),
             sse_event_tx: Some(sse_tx),
-            sse_shutdown_flag: None,
             last_sse_event: None,
-            sse_thread_handle: Arc::new(Mutex::new(None)),
+            worker: None,
         }
     }
 }

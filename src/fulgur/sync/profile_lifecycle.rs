@@ -125,13 +125,18 @@ impl Fulgur {
         if !exists {
             return Ok(false);
         }
-        if let Some(ref shutdown_flag) = Fulgur::shared_state(cx)
+        let sse_worker = Fulgur::shared_state(cx)
             .sync_state_for(profile_id)
             .sse
             .lock()
-            .sse_shutdown_flag
-        {
-            shutdown_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            .worker
+            .take();
+        if let Some(worker) = sse_worker {
+            worker.signal_shutdown();
+            // Drop off the UI thread: Worker::drop joins with a bounded timeout.
+            cx.background_executor()
+                .spawn(async move { drop(worker) })
+                .detach();
         }
         if let Err(e) = save_private_key_to_keychain(profile_id, None) {
             log::warn!("Failed to remove private key for profile '{profile_id}': {e}");

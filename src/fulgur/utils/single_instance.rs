@@ -12,16 +12,22 @@
 //! `CMD:new-window` line instead of a file path. The listener pushes these into
 //! `pending_ipc_commands` and the render loop dispatches them in-process.
 
+use crate::fulgur::utils::worker::Worker;
 use parking_lot::Mutex;
 use std::{
     io::{BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, atomic::Ordering},
+    time::Duration,
 };
 
 /// Loopback port used for Fulgur IPC. Chosen to be unlikely to conflict.
 const IPC_PORT: u16 = 29764;
+
+/// Maximum time a dropped IPC listener worker is joined before being detached.
+/// The wakeup self-connect unblocks `accept` immediately, so this is short.
+const IPC_WORKER_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Prefix used to distinguish command messages from file-path messages.
 const CMD_PREFIX: &str = "CMD:";
@@ -89,43 +95,65 @@ pub fn try_send_command_to_existing_instance(cmd: &str) -> bool {
 /// ### Arguments
 /// - `pending_files`: Shared queue to receive file paths forwarded by other instances
 /// - `pending_ipc_commands`: Shared queue to receive command strings forwarded by other instances
+///
+/// ### Returns
+/// - `Some(Worker)`: The Drop-owned listener worker; dropping it stops the
+///   listener (the wakeup self-connects to unblock the pending `accept`).
+/// - `None`: The loopback port could not be bound.
+#[must_use]
 pub fn start_ipc_listener(
     pending_files: Arc<Mutex<Vec<PathBuf>>>,
     pending_ipc_commands: Arc<Mutex<Vec<String>>>,
-) {
+) -> Option<Worker> {
     let listener = match TcpListener::bind(("127.0.0.1", IPC_PORT)) {
         Ok(l) => l,
         Err(e) => {
             log::warn!("Could not start single-instance IPC listener: {e}");
-            return;
+            return None;
         }
     };
 
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    let reader = BufReader::new(stream);
-                    for line in reader.lines().map_while(Result::ok) {
-                        if line.is_empty() {
-                            continue;
-                        }
-                        if let Some(cmd) = line.strip_prefix(CMD_PREFIX) {
-                            log::info!("IPC: received command '{cmd}'");
-                            pending_ipc_commands.lock().push(cmd.to_string());
-                        } else {
-                            let path = PathBuf::from(&line);
-                            if path.exists() {
-                                log::info!("IPC: queuing file from jump list: {}", path.display());
-                                pending_files.lock().push(path);
+    let worker = Worker::spawn(
+        "fulgur-ipc-listener",
+        IPC_WORKER_JOIN_TIMEOUT,
+        move |shutdown| {
+            for stream in listener.incoming() {
+                if shutdown.load(Ordering::Relaxed) {
+                    log::info!("IPC listener shutdown requested, stopping");
+                    break;
+                }
+                match stream {
+                    Ok(stream) => {
+                        let reader = BufReader::new(stream);
+                        for line in reader.lines().map_while(Result::ok) {
+                            if line.is_empty() {
+                                continue;
+                            }
+                            if let Some(cmd) = line.strip_prefix(CMD_PREFIX) {
+                                log::info!("IPC: received command '{cmd}'");
+                                pending_ipc_commands.lock().push(cmd.to_string());
+                            } else {
+                                let path = PathBuf::from(&line);
+                                if path.exists() {
+                                    log::info!(
+                                        "IPC: queuing file from jump list: {}",
+                                        path.display()
+                                    );
+                                    pending_files.lock().push(path);
+                                }
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    log::warn!("IPC listener accept error: {e}");
+                    Err(e) => {
+                        log::warn!("IPC listener accept error: {e}");
+                    }
                 }
             }
-        }
+        },
+    )
+    .with_wakeup(|| {
+        // Unblock the pending accept so the loop observes the shutdown flag.
+        let _ = TcpStream::connect(("127.0.0.1", IPC_PORT));
     });
+    Some(worker)
 }
