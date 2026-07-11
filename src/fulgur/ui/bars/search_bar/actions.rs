@@ -618,7 +618,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn find_in_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let content = self
-            .get_active_editor_tab()
+            .get_active_editor_tab(cx)
             .map(|editor_tab| editor_tab.content.clone());
         self.search_bar
             .update(cx, |bar, cx| bar.toggle(content, window, cx));

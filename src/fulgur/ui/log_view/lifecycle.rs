@@ -8,7 +8,6 @@ use super::input::{make_log_input_state, write_log_to_bottom};
 use super::tail::{log_toggle_available, trim_to_last_lines};
 use super::{LOG_LINE_CAP, LogTailState};
 use crate::fulgur::Fulgur;
-use crate::fulgur::tab::Tab;
 
 /// File size beyond which "Load full file" warns the user about memory use.
 const LOAD_FULL_WARN_BYTES: u64 = 50 * 1024 * 1024;
@@ -20,7 +19,7 @@ impl Fulgur {
     /// - `window`: The active window
     /// - `cx`: The application context
     pub fn toggle_log_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(editor) = self.get_active_editor_tab() else {
+        let Some(editor) = self.get_active_editor_tab(cx) else {
             return;
         };
         let Some(path) = editor.file_path() else {
@@ -44,7 +43,7 @@ impl Fulgur {
     /// - `window`: The active window
     /// - `cx`: The application context
     pub fn toggle_log_follow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(editor) = self.get_active_editor_tab() else {
+        let Some(editor) = self.get_active_editor_tab(cx) else {
             return;
         };
         if !editor.log_view {
@@ -52,7 +51,7 @@ impl Fulgur {
         }
         let tab_id = editor.id;
         let enable = !editor.log_follow;
-        self.set_log_follow(tab_id, enable);
+        self.set_log_follow(tab_id, enable, cx);
         if enable {
             // Flush any text buffered while paused and snap to the bottom.
             self.flush_log_follow(tab_id, window, cx);
@@ -66,7 +65,7 @@ impl Fulgur {
     /// - `window`: The active window
     /// - `cx`: The application context
     pub fn load_full_log(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(editor) = self.get_active_editor_tab() else {
+        let Some(editor) = self.get_active_editor_tab(cx) else {
             return;
         };
         if !editor.log_view {
@@ -111,10 +110,10 @@ impl Fulgur {
             state.dropped_lines = false;
             state.pending.clear();
         }
-        if let Some(editor) = self.editor_tab_mut(tab_id) {
+        self.update_editor_tab(tab_id, cx, |editor, _| {
             editor.log_full = true;
             editor.log_follow = true;
-        }
+        });
         cx.notify();
     }
 
@@ -130,26 +129,23 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(pos) = self.tabs.iter().position(|tab| tab.id() == tab_id) else {
-            return;
-        };
-        let (path, seed) = match self.tabs.get(pos) {
-            Some(Tab::Editor(editor)) => match editor.file_path().cloned() {
+        let (path, seed) = match self.editor_tab(tab_id, cx) {
+            Some(editor) => match editor.file_path().cloned() {
                 Some(path) => (path, editor.content.read(cx).text().to_string()),
                 None => return,
             },
-            _ => return,
+            None => return,
         };
         let byte_offset = std::fs::metadata(&path).map_or(0, |m| m.len());
         let (display, dropped) = trim_to_last_lines(seed, LOG_LINE_CAP);
         let soft_wrap = self.settings.editor_settings.soft_wrap;
         let log_content = cx.new(|cx| make_log_input_state(window, cx, &display, soft_wrap));
-        if let Some(Tab::Editor(editor)) = self.tabs.get_mut(pos) {
+        self.update_editor_tab(tab_id, cx, |editor, _| {
             editor.log_view = true;
             editor.log_follow = true;
             editor.log_full = false;
             editor.log_content = Some(log_content);
-        }
+        });
         self.log_tail_state
             .insert(tab_id, LogTailState::new(byte_offset, dropped));
         self.start_log_poll_task(tab_id, path, window, cx);
@@ -163,11 +159,11 @@ impl Fulgur {
     pub(crate) fn deactivate_log_view(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
         self.stop_log_poll_task(tab_id);
         self.log_tail_state.remove(&tab_id);
-        if let Some(editor) = self.editor_tab_mut(tab_id) {
+        self.update_editor_tab(tab_id, cx, |editor, _| {
             editor.log_view = false;
             editor.log_full = false;
             editor.log_content = None;
-        }
+        });
         cx.notify();
     }
 
@@ -186,9 +182,11 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         let needs_seed = self
-            .editor_tab(tab_id)
+            .editor_tab(tab_id, cx)
             .is_some_and(|editor| editor.log_content.is_none());
-        let path = self.editor_tab(tab_id).and_then(|e| e.file_path().cloned());
+        let path = self
+            .editor_tab(tab_id, cx)
+            .and_then(|e| e.file_path().cloned());
         if needs_seed {
             self.activate_log_view(tab_id, window, cx);
         } else if let Some(path) = path {

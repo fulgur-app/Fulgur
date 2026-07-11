@@ -256,7 +256,7 @@ impl WindowManager {
 
             if let Some(entity) = weak_entity.upgrade() {
                 let read = entity.read(cx);
-                if read.find_tab_by_path(path).is_some() {
+                if read.find_tab_by_path(path, cx).is_some() {
                     return Some(*window_id);
                 }
             }

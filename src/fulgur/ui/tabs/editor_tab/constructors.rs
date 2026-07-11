@@ -65,6 +65,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            content_subscription: None,
         }
     }
 
@@ -124,6 +125,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            content_subscription: None,
         }
     }
 
@@ -192,6 +194,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            content_subscription: None,
         }
     }
 
@@ -249,6 +252,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            content_subscription: None,
         }
     }
 
@@ -311,6 +315,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            content_subscription: None,
         }
     }
 
@@ -375,6 +380,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            content_subscription: None,
         }
     }
 
@@ -436,6 +442,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            content_subscription: None,
         }
     }
 }

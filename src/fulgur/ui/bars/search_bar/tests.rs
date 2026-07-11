@@ -100,7 +100,7 @@ fn setup_search(
     let (search_bar, content) = visual_cx.update(|_window, cx| {
         let this = fulgur.read(cx);
         let content = this
-            .get_active_editor_tab()
+            .get_active_editor_tab(cx)
             .expect("expected active editor tab")
             .content
             .clone();

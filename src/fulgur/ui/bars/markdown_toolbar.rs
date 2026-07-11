@@ -60,7 +60,7 @@ impl MarkdownToolbar {
         let fulgur = self.fulgur.upgrade()?;
         fulgur
             .read(cx)
-            .get_active_editor_tab()
+            .get_active_editor_tab(cx)
             .map(|editor_tab| editor_tab.content.clone())
     }
 
@@ -101,12 +101,15 @@ impl MarkdownToolbar {
 impl Fulgur {
     /// Whether the markdown toolbar should be mounted for the active tab
     ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
     /// ### Returns
     /// - `bool`: True if the active tab is markdown and its toolbar is enabled
-    pub(crate) fn markdown_toolbar_visible(&self) -> bool {
-        self.is_markdown()
+    pub(crate) fn markdown_toolbar_visible(&self, cx: &gpui::App) -> bool {
+        self.is_markdown(cx)
             && self
-                .get_active_editor_tab()
+                .get_active_editor_tab(cx)
                 .is_some_and(|editor_tab| editor_tab.show_markdown_toolbar)
     }
 }
@@ -428,25 +431,23 @@ mod tests {
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                {
-                    let editor = this
-                        .get_active_editor_tab_mut()
-                        .expect("expected active editor tab");
+                this.update_active_editor_tab(cx, |editor, cx| {
                     editor.content.update(cx, |content, cx| {
                         content.set_value("hello", window, cx);
                     });
-                }
+                })
+                .expect("expected active editor tab");
 
                 this.focus_active_tab(window, cx);
                 let focus = this
-                    .get_active_editor_tab()
+                    .get_active_editor_tab(cx)
                     .expect("expected active editor tab")
                     .content
                     .read(cx)
                     .focus_handle(cx);
                 focus.dispatch_action(&SelectAll, window, cx);
                 let selected = this
-                    .get_active_editor_tab()
+                    .get_active_editor_tab(cx)
                     .expect("expected active editor tab")
                     .content
                     .read(cx)
@@ -461,7 +462,7 @@ mod tests {
 
             let text = fulgur
                 .read(cx)
-                .get_active_editor_tab()
+                .get_active_editor_tab(cx)
                 .expect("expected active editor tab")
                 .content
                 .read(cx)
@@ -478,20 +479,20 @@ mod tests {
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                let editor = this
-                    .get_active_editor_tab_mut()
-                    .expect("expected active editor tab");
-                editor.content.update(cx, |content, cx| {
-                    content.set_value("hello", window, cx);
-                    content.set_cursor_position(
-                        Position {
-                            line: 0,
-                            character: 5,
-                        },
-                        window,
-                        cx,
-                    );
-                });
+                this.update_active_editor_tab(cx, |editor, cx| {
+                    editor.content.update(cx, |content, cx| {
+                        content.set_value("hello", window, cx);
+                        content.set_cursor_position(
+                            Position {
+                                line: 0,
+                                character: 5,
+                            },
+                            window,
+                            cx,
+                        );
+                    });
+                })
+                .expect("expected active editor tab");
             });
 
             toolbar.update(cx, |bar, cx| {
@@ -500,7 +501,7 @@ mod tests {
 
             let text = fulgur
                 .read(cx)
-                .get_active_editor_tab()
+                .get_active_editor_tab(cx)
                 .expect("expected active editor tab")
                 .content
                 .read(cx)

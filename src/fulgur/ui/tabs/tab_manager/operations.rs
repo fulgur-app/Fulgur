@@ -1,70 +1,7 @@
-use crate::fulgur::{
-    Fulgur,
-    tab::{Tab, TabId},
-};
+use crate::fulgur::Fulgur;
 use gpui::{Context, Window};
-use gpui_component::input::InputEvent;
-use std::collections::HashSet;
 
 impl Fulgur {
-    /// Update the modified status of the tabs
-    ///
-    /// Uses per-editor input subscriptions so modified state is updated only when
-    /// text changes, avoiding a full tab scan on every frame.
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    pub fn update_modified_status(&mut self, cx: &mut Context<Self>) {
-        let active_editor_ids: HashSet<TabId> = self
-            .tabs
-            .iter()
-            .filter_map(|tab| match tab {
-                Tab::Editor(editor_tab) => Some(editor_tab.id),
-                _ => None,
-            })
-            .collect();
-
-        self.editor_modified_subscriptions
-            .retain(|tab_id, _| active_editor_ids.contains(tab_id));
-
-        let mut tabs_to_subscribe = Vec::new();
-        for tab in &self.tabs {
-            let Tab::Editor(editor_tab) = tab else {
-                continue;
-            };
-            let current_entity_id = editor_tab.content.entity_id();
-            if self
-                .editor_modified_subscriptions
-                .get(&editor_tab.id)
-                .is_some_and(|(entity_id, _)| *entity_id == current_entity_id)
-            {
-                continue;
-            }
-            tabs_to_subscribe.push((editor_tab.id, editor_tab.content.clone()));
-        }
-
-        for (tab_id, content) in tabs_to_subscribe {
-            let entity_id = content.entity_id();
-            let subscription =
-                cx.subscribe(&content, move |this: &mut Self, _, ev: &InputEvent, cx| {
-                    if !matches!(ev, InputEvent::Change) {
-                        return;
-                    }
-                    if let Some(tab) = this.tabs.iter_mut().find(|tab| tab.id() == tab_id)
-                        && let Tab::Editor(editor_tab) = tab
-                    {
-                        let old_modified = editor_tab.modified;
-                        editor_tab.check_modified(cx);
-                        if editor_tab.modified != old_modified {
-                            cx.notify();
-                        }
-                    }
-                });
-            self.editor_modified_subscriptions
-                .insert(tab_id, (entity_id, subscription));
-        }
-    }
-
     /// Reorder a tab from one index to another within this window.
     ///
     /// `to` is the logical insertion slot (0 = before all tabs, N = after all tabs).
@@ -113,7 +50,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(from) = self.tab_index_of(dragged.tab_id) {
+        if let Some(from) = self.tab_index_of(dragged.tab_id, cx) {
             self.reorder_tab(from, slot_index, window, cx);
         }
     }

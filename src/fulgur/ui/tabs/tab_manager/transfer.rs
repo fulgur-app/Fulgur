@@ -16,7 +16,11 @@ impl Fulgur {
     /// - `Some(TabTransferData)`: Snapshot of all transferable tab state
     /// - `None`: If `tab_id` does not refer to an existing editor tab
     pub fn extract_tab_transfer_data(&self, tab_id: TabId, cx: &App) -> Option<TabTransferData> {
-        let tab = self.tabs.iter().find(|t| t.id() == tab_id)?;
+        let tab = self
+            .tabs
+            .iter()
+            .map(|t| t.read(cx))
+            .find(|t| t.id() == tab_id)?;
         let editor = tab.as_editor()?;
         let content_state = editor.content.read(cx);
         Some(TabTransferData {
@@ -57,7 +61,7 @@ impl Fulgur {
             let tab =
                 EditorTab::from_transfer(id, data, window, cx, &self.settings.editor_settings);
             let is_log_view = tab.log_view;
-            self.tabs.push(Tab::Editor(tab));
+            self.tabs.push(Tab::Editor(tab).into_entity(cx));
             self.active_tab_id = Some(id);
             self.request_tab_scroll(id, cx);
             self.pending_transfer_scroll = Some(cursor_position);
@@ -85,9 +89,11 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn handle_pending_transfer_scroll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(position) = self.pending_transfer_scroll.take()
-            && let Some(Tab::Editor(editor_tab)) = self.active_tab()
+            && let Some(content) = self
+                .get_active_editor_tab(cx)
+                .map(|editor_tab| editor_tab.content.clone())
         {
-            editor_tab.content.clone().update(cx, |state, cx| {
+            content.update(cx, |state, cx| {
                 state.set_cursor_position(position, window, cx);
             });
         }

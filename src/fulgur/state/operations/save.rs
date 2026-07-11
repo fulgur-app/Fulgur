@@ -91,7 +91,7 @@ impl Fulgur {
     fn build_tab_states(&self, cx: &App) -> Vec<TabState> {
         let mut tab_states = Vec::new();
         for tab in &self.tabs {
-            if let Some(editor_tab) = tab.as_editor() {
+            if let Some(editor_tab) = tab.read(cx).as_editor() {
                 let tab_state = match &editor_tab.location {
                     TabLocation::Local(path) => {
                         if editor_tab.content_differs_from_original(cx) {
@@ -156,12 +156,15 @@ impl Fulgur {
     /// Preview tabs are not saved, so the persisted active index must refer to an editor tab.
     /// If the active tab is a preview tab, the index of its source editor tab is returned.
     ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
     /// ### Returns
     /// - `Some(usize)`: the active editor tab index
     /// - `None`: if the active tab is a Settings tab (not persisted).
-    fn active_editor_index_for_state(&self) -> Option<usize> {
-        let active = self.active_tab_index()?;
-        let active_tab = self.tabs.get(active)?;
+    fn active_editor_index_for_state(&self, cx: &App) -> Option<usize> {
+        let active = self.active_tab_index(cx)?;
+        let active_tab = self.tabs.get(active)?.read(cx);
         let editor_tab_id = match active_tab {
             Tab::Editor(et) => et.id,
             Tab::MarkdownPreview(pt) => pt.source_tab_id,
@@ -169,7 +172,7 @@ impl Fulgur {
         };
         let mut editor_index = 0;
         for tab in &self.tabs {
-            if let Tab::Editor(et) = tab {
+            if let Tab::Editor(et) = tab.read(cx) {
                 if et.id == editor_tab_id {
                     return Some(editor_index);
                 }
@@ -190,7 +193,7 @@ impl Fulgur {
         let window_bounds = self.cached_window_bounds.clone().unwrap_or_default();
         WindowState {
             tabs: self.build_tab_states(cx),
-            active_tab_index: self.active_editor_index_for_state(),
+            active_tab_index: self.active_editor_index_for_state(cx),
             window_bounds,
         }
     }
@@ -211,7 +214,7 @@ impl Fulgur {
             SerializedWindowBounds::from_gpui_bounds(window.window_bounds(), display_id);
         WindowState {
             tabs: self.build_tab_states(cx),
-            active_tab_index: self.active_editor_index_for_state(),
+            active_tab_index: self.active_editor_index_for_state(cx),
             window_bounds,
         }
     }

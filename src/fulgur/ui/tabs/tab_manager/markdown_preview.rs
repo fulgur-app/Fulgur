@@ -1,12 +1,9 @@
-use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur, languages::supported_languages::SupportedLanguage, settings::MarkdownPreviewMode,
     tab::Tab, ui::tabs::markdown_preview_tab::MarkdownPreviewTab,
 };
-use gpui::{AppContext, Context, Entity, SharedString, Window};
-use gpui_component::input::{InputEvent, InputState};
+use gpui::{AppContext, Context, SharedString, Window};
 use gpui_component::text::TextViewState;
-use std::collections::HashSet;
 
 impl Fulgur {
     /// Open or close the Markdown preview tab.
@@ -20,25 +17,24 @@ impl Fulgur {
         {
             return;
         }
-        let editor_id = match self.active_tab() {
+        let editor_id = match self.active_tab(cx) {
             Some(Tab::Editor(editor_tab)) => editor_tab.id,
             Some(Tab::MarkdownPreview(preview_tab)) => preview_tab.source_tab_id,
             _ => return,
         };
-        if let Some(preview_id) = self
-            .tabs
-            .iter()
-            .find(|t| matches!(t, Tab::MarkdownPreview(p) if p.source_tab_id == editor_id))
-            .map(super::super::tab::Tab::id)
-        {
+        let existing_preview_id = self.tabs.iter().map(|t| t.read(cx)).find_map(|t| match t {
+            Tab::MarkdownPreview(p) if p.source_tab_id == editor_id => Some(p.id),
+            _ => None,
+        });
+        if let Some(preview_id) = existing_preview_id {
             self.remove_tab_by_id(preview_id, window, cx);
         } else {
-            let Some(editor_tab) = self.get_active_editor_tab() else {
+            let Some(editor_tab) = self.get_active_editor_tab(cx) else {
                 return;
             };
             let title = SharedString::from(format!("Preview - {}", editor_tab.title));
             let content = editor_tab.content.clone();
-            let editor_pos = self.active_tab_index().unwrap_or(0);
+            let editor_pos = self.active_tab_index(cx).unwrap_or(0);
             let view_state = cx.new(|cx| TextViewState::markdown("", cx));
             let preview_tab = Tab::MarkdownPreview(MarkdownPreviewTab {
                 id: self.allocate_tab_id(),
@@ -47,7 +43,8 @@ impl Fulgur {
                 content,
                 view_state,
             });
-            self.tabs.insert(editor_pos + 1, preview_tab);
+            self.tabs
+                .insert(editor_pos + 1, preview_tab.into_entity(cx));
             self.set_active_tab(editor_pos + 1, window, cx);
         }
     }
@@ -67,7 +64,7 @@ impl Fulgur {
         let mut offset = 0;
         for orig_idx in 0..original_count {
             let actual_idx = orig_idx + offset;
-            let info = match self.tabs.get(actual_idx) {
+            let info = match self.tabs.get(actual_idx).map(|tab| tab.read(cx)) {
                 Some(Tab::Editor(et))
                     if et.language == SupportedLanguage::Markdown
                         || et.language == SupportedLanguage::MarkdownInline =>
@@ -85,7 +82,8 @@ impl Fulgur {
                     content,
                     view_state,
                 });
-                self.tabs.insert(actual_idx + 1, preview_tab);
+                self.tabs
+                    .insert(actual_idx + 1, preview_tab.into_entity(cx));
                 offset += 1;
             }
         }
@@ -107,7 +105,7 @@ impl Fulgur {
         {
             return;
         }
-        let info = match self.tabs.get(editor_tab_index) {
+        let info = match self.tabs.get(editor_tab_index).map(|tab| tab.read(cx)) {
             Some(Tab::Editor(et))
                 if et.language == SupportedLanguage::Markdown
                     || et.language == SupportedLanguage::MarkdownInline =>
@@ -125,146 +123,8 @@ impl Fulgur {
                 content,
                 view_state,
             });
-            self.tabs.insert(editor_tab_index + 1, preview_tab);
+            self.tabs
+                .insert(editor_tab_index + 1, preview_tab.into_entity(cx));
         }
-    }
-
-    /// Check whether an editor tab should be tracked as a markdown preview source.
-    ///
-    /// ### Arguments
-    /// - `language`: The editor tab language
-    /// - `show_markdown_preview`: Per-tab markdown preview toggle
-    ///
-    /// ### Returns
-    /// - `True` when this tab should keep markdown preview cache/subscriptions alive
-    fn should_track_markdown_preview_source(
-        language: SupportedLanguage,
-        show_markdown_preview: bool,
-    ) -> bool {
-        show_markdown_preview
-            && matches!(
-                language,
-                SupportedLanguage::Markdown | SupportedLanguage::MarkdownInline
-            )
-    }
-
-    /// Remove markdown preview cache entries for tabs that no longer exist.
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    pub(crate) fn prune_markdown_preview_cache(&mut self, cx: &mut Context<Self>) {
-        let source_ids: HashSet<TabId> = self
-            .tabs
-            .iter()
-            .filter_map(|tab| match tab {
-                Tab::MarkdownPreview(preview_tab) => Some(preview_tab.source_tab_id),
-                Tab::Editor(editor_tab)
-                    if Self::should_track_markdown_preview_source(
-                        editor_tab.language,
-                        editor_tab.show_markdown_preview,
-                    ) =>
-                {
-                    Some(editor_tab.id)
-                }
-                _ => None,
-            })
-            .collect();
-
-        let before_cache = self.markdown_preview_cache.len();
-        let before_subs = self.markdown_preview_subscriptions.len();
-        self.markdown_preview_cache
-            .retain(|tab_id, _| source_ids.contains(tab_id));
-        self.markdown_preview_subscriptions
-            .retain(|tab_id, _| source_ids.contains(tab_id));
-        self.markdown_preview_to_refresh
-            .retain(|tab_id| source_ids.contains(tab_id));
-        if self.markdown_preview_cache.len() != before_cache
-            || self.markdown_preview_subscriptions.len() != before_subs
-        {
-            cx.notify();
-        }
-    }
-
-    /// Get cached markdown text for a source tab, refreshing lazily on demand.
-    ///
-    /// ### Arguments
-    /// - `source_tab_id`: Source editor tab id for this preview
-    /// - `content`: Source editor content entity
-    /// - `cx`: The application context
-    ///
-    /// ### Returns
-    /// - `SharedString`: Cached markdown source text for rendering
-    pub(crate) fn markdown_preview_text_for(
-        &mut self,
-        source_tab_id: TabId,
-        content: &Entity<InputState>,
-        cx: &mut Context<Self>,
-    ) -> SharedString {
-        let current_entity_id = content.entity_id();
-        let entity_changed = self
-            .markdown_preview_subscriptions
-            .get(&source_tab_id)
-            .is_none_or(|(entity_id, _)| *entity_id != current_entity_id);
-        if entity_changed {
-            let subscription =
-                cx.subscribe(content, move |this: &mut Self, _, ev: &InputEvent, cx| {
-                    if !matches!(ev, InputEvent::Change) {
-                        return;
-                    }
-                    this.markdown_preview_to_refresh.insert(source_tab_id);
-                    cx.notify();
-                });
-            self.markdown_preview_subscriptions
-                .insert(source_tab_id, (current_entity_id, subscription));
-        }
-        let refresh_requested = self.markdown_preview_to_refresh.remove(&source_tab_id);
-        let needs_refresh = entity_changed
-            || refresh_requested
-            || !self.markdown_preview_cache.contains_key(&source_tab_id);
-        if needs_refresh {
-            self.markdown_preview_cache
-                .insert(source_tab_id, content.read(cx).value());
-        }
-        self.markdown_preview_cache
-            .get(&source_tab_id)
-            .cloned()
-            .unwrap_or_default()
-    }
-}
-
-#[cfg(test)]
-mod markdown_preview_cache_unit_tests {
-    use super::*;
-
-    #[test]
-    fn test_should_track_markdown_preview_source_for_markdown() {
-        assert!(Fulgur::should_track_markdown_preview_source(
-            SupportedLanguage::Markdown,
-            true
-        ));
-    }
-
-    #[test]
-    fn test_should_track_markdown_preview_source_for_markdown_inline() {
-        assert!(Fulgur::should_track_markdown_preview_source(
-            SupportedLanguage::MarkdownInline,
-            true
-        ));
-    }
-
-    #[test]
-    fn test_should_not_track_markdown_preview_source_when_toggle_disabled() {
-        assert!(!Fulgur::should_track_markdown_preview_source(
-            SupportedLanguage::Markdown,
-            false
-        ));
-    }
-
-    #[test]
-    fn test_should_not_track_markdown_preview_source_for_non_markdown() {
-        assert!(!Fulgur::should_track_markdown_preview_source(
-            SupportedLanguage::Plain,
-            true
-        ));
     }
 }

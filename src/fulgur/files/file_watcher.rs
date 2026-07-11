@@ -390,12 +390,12 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(tab_index) = self.find_tab_by_path(path)
-            && let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index)
+        if let Some(tab_index) = self.find_tab_by_path(path, cx)
+            && let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index).map(|t| t.read(cx))
         {
             if editor_tab.modified {
                 let tab_id = editor_tab.id;
-                let is_active = self.active_tab_index() == Some(tab_index);
+                let is_active = self.active_tab_index(cx) == Some(tab_index);
 
                 if is_active {
                     self.show_file_conflict_dialog(path, tab_id, window, cx);
@@ -415,12 +415,19 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `path`: The path of the file that was deleted externally
-    fn mark_tab_deleted_externally(&mut self, path: &PathBuf) {
+    /// - `cx`: The application context
+    fn mark_tab_deleted_externally(&mut self, path: &PathBuf, cx: &mut gpui::App) {
         self.file_watch_state.pending_conflicts.remove(path);
-        if let Some(tab_index) = self.find_tab_by_path(path)
-            && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index)
+        if let Some(tab_entity) = self
+            .find_tab_by_path(path, cx)
+            .and_then(|tab_index| self.tabs.get(tab_index).cloned())
         {
-            editor_tab.modified = true;
+            tab_entity.update(cx, |tab, cx| {
+                if let Some(editor_tab) = tab.as_editor_mut() {
+                    editor_tab.modified = true;
+                    cx.notify();
+                }
+            });
         }
     }
 
@@ -468,25 +475,31 @@ impl Fulgur {
                     self.apply_external_modification(&path, window, cx);
                     return;
                 }
-                self.mark_tab_deleted_externally(&path);
+                self.mark_tab_deleted_externally(&path, cx);
                 Self::show_notification_file_deleted(&path, window, cx);
             }
             FileWatchEvent::Renamed { from, to } => {
                 if self.should_suppress_file_watch_event(&from) {
                     return;
                 }
-                if let Some(tab_index) = self.find_tab_by_path(&from) {
+                if let Some(tab_entity) = self
+                    .find_tab_by_path(&from, cx)
+                    .and_then(|tab_index| self.tabs.get(tab_index).cloned())
+                {
                     self.unwatch_file(&from);
                     self.watch_file(&to);
-                    if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
-                        editor_tab.location = TabLocation::Local(to.clone());
-                        editor_tab.title = to
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("Untitled")
-                            .to_string()
-                            .into();
-                    }
+                    tab_entity.update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(to.clone());
+                            editor_tab.title = to
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("Untitled")
+                                .to_string()
+                                .into();
+                            cx.notify();
+                        }
+                    });
                     Self::show_notification_file_renamed(&from, &to, window, cx);
                 }
             }
@@ -507,7 +520,7 @@ impl Fulgur {
             return;
         }
         for tab in &self.tabs {
-            if let Tab::Editor(editor_tab) = tab
+            if let Tab::Editor(editor_tab) = tab.read(cx)
                 && let Some(path) = editor_tab.file_path()
                 && let Err(e) = watcher.watch_file(path)
             {
@@ -621,7 +634,7 @@ mod tests {
     use super::{FileWatchEvent, FileWatcher};
     use crate::fulgur::{
         Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
-        tab::Tab, window_manager::WindowManager,
+        window_manager::WindowManager,
     };
     use futures::channel::mpsc::{TryRecvError, channel};
     use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
@@ -818,14 +831,20 @@ mod tests {
         std::fs::write(&path, "content-from-disk").expect("failed to write test file");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.location = TabLocation::Local(path.clone());
-                    editor_tab.content.update(cx, |input_state, cx| {
-                        input_state.set_value("stale-content", window, cx);
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.content.update(cx, |input_state, cx| {
+                                input_state.set_value("stale-content", window, cx);
+                            });
+                            editor_tab.set_original_content_from_str("stale-content");
+                            editor_tab.modified = false;
+                        }
                     });
-                    editor_tab.set_original_content_from_str("stale-content");
-                    editor_tab.modified = false;
-                }
                 this.handle_file_watch_event(FileWatchEvent::Modified(path.clone()), window, cx);
                 assert!(
                     this.file_watch_state.last_file_events.contains_key(&path),
@@ -841,7 +860,7 @@ mod tests {
                 let content = this
                     .tabs
                     .first()
-                    .and_then(Tab::as_editor)
+                    .and_then(|t| t.read(cx).as_editor())
                     .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
                     .unwrap_or_default();
                 assert_eq!(content, "content-from-disk");
@@ -857,14 +876,20 @@ mod tests {
         std::fs::write(&path, "content-from-disk").expect("failed to write test file");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.location = TabLocation::Local(path.clone());
-                    editor_tab.content.update(cx, |input_state, cx| {
-                        input_state.set_value("local-content", window, cx);
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.content.update(cx, |input_state, cx| {
+                                input_state.set_value("local-content", window, cx);
+                            });
+                            editor_tab.set_original_content_from_str("local-content");
+                            editor_tab.modified = false;
+                        }
                     });
-                    editor_tab.set_original_content_from_str("local-content");
-                    editor_tab.modified = false;
-                }
                 this.file_watch_state
                     .last_file_events
                     .insert(path.clone(), Instant::now());
@@ -872,7 +897,7 @@ mod tests {
                 let content = this
                     .tabs
                     .first()
-                    .and_then(Tab::as_editor)
+                    .and_then(|t| t.read(cx).as_editor())
                     .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
                     .unwrap_or_default();
                 assert_eq!(content, "local-content");
@@ -888,14 +913,20 @@ mod tests {
         let path = temp_test_path("fulgur_conflict_active.txt");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.location = TabLocation::Local(path.clone());
-                    editor_tab.modified = true;
-                    editor_tab.content.update(cx, |input_state, cx| {
-                        input_state.set_value("local-edits", window, cx);
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.modified = true;
+                            editor_tab.content.update(cx, |input_state, cx| {
+                                input_state.set_value("local-edits", window, cx);
+                            });
+                        }
                     });
-                }
-                this.active_tab_id = this.tabs.first().map(crate::fulgur::tab::Tab::id);
+                this.active_tab_id = this.tabs.first().map(|t| t.read(cx).id());
                 this.handle_file_watch_event(FileWatchEvent::Modified(path.clone()), window, cx);
                 assert!(
                     !this.file_watch_state.pending_conflicts.contains_key(&path),
@@ -914,10 +945,16 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.new_tab(window, cx);
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.location = TabLocation::Local(deferred_path.clone());
-                    editor_tab.modified = true;
-                }
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, _cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(deferred_path.clone());
+                            editor_tab.modified = true;
+                        }
+                    });
                 this.set_active_tab(1, window, cx);
                 this.handle_file_watch_event(
                     FileWatchEvent::Modified(deferred_path.clone()),
@@ -947,19 +984,21 @@ mod tests {
         let path = temp_test_path("fulgur_deleted_branch.txt");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.location = TabLocation::Local(path.clone());
-                    editor_tab.content.update(cx, |input_state, cx| {
-                        input_state.set_value("current-content", window, cx);
-                    });
-                    editor_tab.set_original_content_from_str("current-content");
-                    editor_tab.title = "deleted_branch.txt".into();
-                }
+                this.tabs.first().expect("expected at least one tab").clone().update(cx, |tab, cx| {
+                    if let Some(editor_tab) = tab.as_editor_mut() {
+                        editor_tab.location = TabLocation::Local(path.clone());
+                        editor_tab.content.update(cx, |input_state, cx| {
+                            input_state.set_value("current-content", window, cx);
+                        });
+                        editor_tab.set_original_content_from_str("current-content");
+                        editor_tab.title = "deleted_branch.txt".into();
+                    }
+                });
                 this.handle_file_watch_event(FileWatchEvent::Deleted(path.clone()), window, cx);
                 let (current_path, current_title, current_content, current_modified) = this
                     .tabs
                     .first()
-                    .and_then(Tab::as_editor)
+                    .and_then(|t| t.read(cx).as_editor())
                     .map(|editor_tab| {
                         (
                             editor_tab.file_path().cloned(),
@@ -988,14 +1027,20 @@ mod tests {
         std::fs::write(&path, "content-from-disk").expect("failed to write test file");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.location = TabLocation::Local(path.clone());
-                    editor_tab.content.update(cx, |input_state, cx| {
-                        input_state.set_value("stale-content", window, cx);
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.content.update(cx, |input_state, cx| {
+                                input_state.set_value("stale-content", window, cx);
+                            });
+                            editor_tab.set_original_content_from_str("stale-content");
+                            editor_tab.modified = false;
+                        }
                     });
-                    editor_tab.set_original_content_from_str("stale-content");
-                    editor_tab.modified = false;
-                }
                 this.handle_file_watch_event(FileWatchEvent::Deleted(path.clone()), window, cx);
             });
         });
@@ -1007,7 +1052,7 @@ mod tests {
                 let content = this
                     .tabs
                     .first()
-                    .and_then(Tab::as_editor)
+                    .and_then(|t| t.read(cx).as_editor())
                     .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
                     .unwrap_or_default();
                 assert_eq!(
@@ -1026,14 +1071,20 @@ mod tests {
         std::fs::write(&path, "content-from-disk").expect("failed to write test file");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.location = TabLocation::Local(path.clone());
-                    editor_tab.content.update(cx, |input_state, cx| {
-                        input_state.set_value("local-content", window, cx);
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.content.update(cx, |input_state, cx| {
+                                input_state.set_value("local-content", window, cx);
+                            });
+                            editor_tab.set_original_content_from_str("local-content");
+                            editor_tab.modified = false;
+                        }
                     });
-                    editor_tab.set_original_content_from_str("local-content");
-                    editor_tab.modified = false;
-                }
                 this.file_watch_state
                     .last_file_saves
                     .insert(path.clone(), Instant::now());
@@ -1041,7 +1092,7 @@ mod tests {
                 let content = this
                     .tabs
                     .first()
-                    .and_then(Tab::as_editor)
+                    .and_then(|t| t.read(cx).as_editor())
                     .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
                     .unwrap_or_default();
                 assert_eq!(
@@ -1059,10 +1110,16 @@ mod tests {
         let to = temp_test_path("fulgur_rename_to.rs");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.location = TabLocation::Local(from.clone());
-                    editor_tab.title = "fulgur_rename_from.rs".into();
-                }
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, _cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(from.clone());
+                            editor_tab.title = "fulgur_rename_from.rs".into();
+                        }
+                    });
                 // Seed stale bookkeeping (older than the 500 ms suppression
                 // window): a genuine external rename happens long after any
                 // prior save, so it must still be processed and prune these.
@@ -1089,7 +1146,7 @@ mod tests {
                 let (current_path, current_title) = this
                     .tabs
                     .first()
-                    .and_then(Tab::as_editor)
+                    .and_then(|t| t.read(cx).as_editor())
                     .map(|editor_tab| {
                         (
                             editor_tab.file_path().cloned(),

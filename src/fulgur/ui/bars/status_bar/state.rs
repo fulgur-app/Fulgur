@@ -63,10 +63,10 @@ impl StatusBar {
     /// ### Returns
     /// - `StatusBarLabels`: The line/column, language, and encoding labels
     pub(super) fn compute_labels(fulgur: &Fulgur, cx: &App) -> StatusBarLabels {
-        let active_tab_index = fulgur.active_tab_index();
+        let active_tab_index = fulgur.active_tab_index(cx);
         let (cursor_pos, language, encoding) = match active_tab_index {
             Some(index) => {
-                if let Some(editor_tab) = fulgur.tabs[index].as_editor() {
+                if let Some(editor_tab) = fulgur.tabs[index].read(cx).as_editor() {
                     let cursor = editor_tab.content.read(cx).cursor_position();
                     let enc = editor_tab.encoding.clone();
                     (cursor, Some(editor_tab.language), enc)
@@ -211,18 +211,20 @@ impl Fulgur {
                 {
                     self.open_markdown_preview_tab(window, cx);
                 } else {
-                    if let Some(active_editor_tab) = self.get_active_editor_tab_mut() {
+                    self.update_active_editor_tab(cx, |active_editor_tab, cx| {
                         active_editor_tab.show_markdown_preview =
                             !active_editor_tab.show_markdown_preview;
-                    }
+                        cx.notify();
+                    });
                     cx.notify();
                 }
             }
             StatusBarEvent::ToggleMarkdownToolbar => {
-                if let Some(active_editor_tab) = self.get_active_editor_tab_mut() {
+                self.update_active_editor_tab(cx, |active_editor_tab, cx| {
                     active_editor_tab.show_markdown_toolbar =
                         !active_editor_tab.show_markdown_toolbar;
-                }
+                    cx.notify();
+                });
                 cx.notify();
             }
             StatusBarEvent::ToggleCsvView => self.toggle_csv_view_mode(window, cx),
@@ -354,22 +356,22 @@ mod tests {
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                let editor = this
-                    .get_active_editor_tab_mut()
-                    .expect("expected active editor tab");
-                editor.language = SupportedLanguage::Rust;
-                editor.encoding = "ISO-8859-1".to_string();
-                editor.content.update(cx, |content, cx| {
-                    content.set_value("first line\nsecond line", window, cx);
-                    content.set_cursor_position(
-                        Position {
-                            line: 1,
-                            character: 4,
-                        },
-                        window,
-                        cx,
-                    );
-                });
+                this.update_active_editor_tab(cx, |editor, cx| {
+                    editor.language = SupportedLanguage::Rust;
+                    editor.encoding = "ISO-8859-1".to_string();
+                    editor.content.update(cx, |content, cx| {
+                        content.set_value("first line\nsecond line", window, cx);
+                        content.set_cursor_position(
+                            Position {
+                                line: 1,
+                                character: 4,
+                            },
+                            window,
+                            cx,
+                        );
+                    });
+                })
+                .expect("expected active editor tab");
 
                 let labels = StatusBar::compute_labels(this, cx);
                 assert_eq!(labels.language_label, "Rust");

@@ -5,7 +5,6 @@ use gpui::{Context, ParentElement, Styled, Window, div, px};
 use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, v_flex};
 
 use crate::fulgur::Fulgur;
-use crate::fulgur::ui::tabs::tab::Tab;
 
 impl Fulgur {
     /// Reload a tab from disk after a watcher dialog, resolving the tab by stable id.
@@ -22,13 +21,13 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(tab_index) = self.tabs.iter().position(|tab| tab.id() == tab_id) else {
+        let Some(tab_index) = self.tab_index_of(tab_id, cx) else {
             return;
         };
         let path_matches = self
             .tabs
             .get(tab_index)
-            .and_then(Tab::as_editor)
+            .and_then(|tab| tab.read(cx).as_editor())
             .and_then(|editor_tab| editor_tab.file_path())
             .is_some_and(|p| p == path);
         if path_matches {

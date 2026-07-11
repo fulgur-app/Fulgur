@@ -1,4 +1,4 @@
-use crate::fulgur::{Fulgur, shared_state::SharedAppState, ui::tabs::tab::Tab};
+use crate::fulgur::{Fulgur, shared_state::SharedAppState};
 use gpui::{BorrowAppContext, Context, Window};
 use gpui_component::notification::NotificationType;
 
@@ -8,6 +8,10 @@ impl Fulgur {
     /// This method should be called whenever settings are changed. It will:
     /// 1. Save settings to disk
     /// 2. Publish the settings to `SharedAppState` via `cx.update_global`
+    ///
+    /// Every window (including this one) observes the global with
+    /// `observe_global_in` and applies the new editor settings to its tabs
+    /// from that observer.
     ///
     /// ### Arguments
     /// - `cx`: The application context
@@ -32,10 +36,6 @@ impl Fulgur {
             return Err(e);
         }
 
-        // Mark settings as changed for this window so the next render pushes
-        // the new editor settings into this window's tabs.
-        self.settings_changed = true;
-
         let settings = self.settings.clone();
         cx.update_global::<SharedAppState, _>(|shared, _| {
             shared.settings = settings;
@@ -44,47 +44,17 @@ impl Fulgur {
         Ok(())
     }
 
-    /// Propagate settings changes to tabs
+    /// Apply the current editor settings to every tab in this window
     ///
     /// ### Arguments
     /// - `window`: The window containing the tabs
     /// - `cx`: The application context
-    pub fn propagate_settings_to_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.tabs_pending_update.is_empty() {
-            let settings = self.settings.editor_settings.clone();
-            for tab_id in self.tabs_pending_update.drain().collect::<Vec<_>>() {
-                if let Some(Tab::Editor(editor_tab)) =
-                    self.tabs.iter_mut().find(|tab| tab.id() == tab_id)
-                {
-                    editor_tab.update_settings(window, cx, &settings);
-                }
-            }
-        }
-        if self.settings_changed {
-            let settings = self.settings.editor_settings.clone();
-            for tab_id in self.rendered_tabs.iter().copied().collect::<Vec<_>>() {
-                if let Some(Tab::Editor(editor_tab)) =
-                    self.tabs.iter_mut().find(|tab| tab.id() == tab_id)
-                {
-                    editor_tab.update_settings(window, cx, &settings);
-                }
-            }
-            self.settings_changed = false;
-        }
-    }
-
-    /// Track newly rendered tabs and mark them for settings update
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    pub fn track_newly_rendered_tabs(&mut self, cx: &mut Context<Self>) {
-        if let Some(tab_id) = self.active_tab_id {
-            let is_newly_rendered = !self.rendered_tabs.contains(&tab_id);
-            self.rendered_tabs.insert(tab_id);
-            if is_newly_rendered {
-                self.tabs_pending_update.insert(tab_id);
-                cx.notify();
-            }
+    pub fn apply_editor_settings_to_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let settings = self.settings.editor_settings.clone();
+        for tab in self.tabs.clone() {
+            tab.update(cx, |tab, cx| {
+                tab.update_settings(window, cx, &settings);
+            });
         }
     }
 }

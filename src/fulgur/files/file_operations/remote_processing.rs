@@ -125,35 +125,38 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(editor_tab) = self.tabs.iter_mut().find_map(|tab| match tab {
-            Tab::Editor(editor_tab) if editor_tab.id == tab_id => Some(editor_tab),
-            _ => None,
-        }) else {
+        let Some(tab_entity) = self.tab_entity_of(tab_id, cx) else {
             return;
         };
-
-        editor_tab.content.update(cx, |input_state, cx| {
-            input_state.set_value(&remote_file.content, window, cx);
+        let settings = self.settings.editor_settings.clone();
+        tab_entity.update(cx, |tab, cx| {
+            let Some(editor_tab) = tab.as_editor_mut() else {
+                return;
+            };
+            editor_tab.content.update(cx, |input_state, cx| {
+                input_state.set_value(&remote_file.content, window, cx);
+            });
+            editor_tab.location =
+                crate::fulgur::editor_tab::TabLocation::Remote(remote_file.spec.clone());
+            editor_tab.encoding = remote_file.encoding;
+            editor_tab.set_original_content_from_str(&remote_file.content);
+            editor_tab.modified = false;
+            editor_tab.update_file_tooltip_cache(remote_file.file_size);
+            let filename = remote_file
+                .spec
+                .path
+                .rsplit('/')
+                .next()
+                .unwrap_or(&remote_file.spec.path)
+                .to_string();
+            editor_tab.title = filename.into();
+            let language = crate::fulgur::languages::supported_languages::language_from_content(
+                editor_tab.title.as_ref(),
+                &remote_file.content,
+            );
+            tab.force_language(window, cx, language, &settings);
+            cx.notify();
         });
-        editor_tab.location =
-            crate::fulgur::editor_tab::TabLocation::Remote(remote_file.spec.clone());
-        editor_tab.encoding = remote_file.encoding;
-        editor_tab.set_original_content_from_str(&remote_file.content);
-        editor_tab.modified = false;
-        editor_tab.update_file_tooltip_cache(remote_file.file_size);
-        let filename = remote_file
-            .spec
-            .path
-            .rsplit('/')
-            .next()
-            .unwrap_or(&remote_file.spec.path)
-            .to_string();
-        editor_tab.title = filename.into();
-        let language = crate::fulgur::languages::supported_languages::language_from_content(
-            editor_tab.title.as_ref(),
-            &remote_file.content,
-        );
-        editor_tab.force_language(window, cx, language, &self.settings.editor_settings);
         cx.notify();
     }
 }

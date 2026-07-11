@@ -323,20 +323,20 @@ mod gpui_tests {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
             let bar = fulgur.update(cx, |this, cx| {
-                let editor = this
-                    .get_active_editor_tab_mut()
-                    .expect("expected active editor tab");
-                editor.content.update(cx, |content, cx| {
-                    content.set_value("color: ;", window, cx);
-                    content.set_cursor_position(
-                        Position {
-                            line: 0,
-                            character: 7,
-                        },
-                        window,
-                        cx,
-                    );
-                });
+                this.update_active_editor_tab(cx, |editor, cx| {
+                    editor.content.update(cx, |content, cx| {
+                        content.set_value("color: ;", window, cx);
+                        content.set_cursor_position(
+                            Position {
+                                line: 0,
+                                character: 7,
+                            },
+                            window,
+                            cx,
+                        );
+                    });
+                })
+                .expect("expected active editor tab");
                 this.color_picker_bar.clone()
             });
             bar.update(cx, |bar, cx| {
@@ -344,7 +344,7 @@ mod gpui_tests {
             });
             let text = fulgur
                 .read(cx)
-                .get_active_editor_tab()
+                .get_active_editor_tab(cx)
                 .expect("expected active editor tab")
                 .content
                 .read(cx)

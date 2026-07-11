@@ -27,7 +27,7 @@ impl Fulgur {
             cx,
             &self.settings.editor_settings,
         ));
-        self.tabs.push(tab);
+        self.tabs.push(tab.into_entity(cx));
         self.active_tab_id = Some(id);
         self.request_tab_scroll(id, cx);
         self.focus_active_tab(window, cx);
@@ -44,7 +44,7 @@ impl Fulgur {
     /// - `Some(TabId)`: The id of the reusable last editor tab.
     /// - `None`: If the last tab is missing, not an editor, has a file, or has non-whitespace content.
     fn reusable_scratch_tab_id(&self, cx: &App) -> Option<TabId> {
-        let Tab::Editor(editor) = self.tabs.last()? else {
+        let Tab::Editor(editor) = self.tabs.last()?.read(cx) else {
             return None;
         };
         let is_blank = editor
@@ -79,7 +79,7 @@ impl Fulgur {
             self.remove_tab_by_id(scratch_id, window, cx);
         }
         let id = tab.id();
-        self.tabs.push(tab);
+        self.tabs.push(tab.into_entity(cx));
         self.active_tab_id = Some(id);
         self.request_tab_scroll(id, cx);
         self.tabs.len() - 1
@@ -91,7 +91,11 @@ impl Fulgur {
     /// - `window`: The window to open settings in
     /// - `cx`: The application context
     pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(index) = self.tabs.iter().position(|t| matches!(t, Tab::Settings(_))) {
+        if let Some(index) = self
+            .tabs
+            .iter()
+            .position(|t| matches!(t.read(cx), Tab::Settings(_)))
+        {
             self.set_active_tab(index, window, cx);
         } else {
             let id = self.allocate_tab_id();
@@ -110,7 +114,7 @@ impl Fulgur {
             );
             self.font_select_subscription = Some(font_select_subscription);
             let settings_tab = Tab::Settings(tab);
-            self.tabs.push(settings_tab);
+            self.tabs.push(settings_tab.into_entity(cx));
             self.active_tab_id = Some(id);
             self.request_tab_scroll(id, cx);
             self.save_state_async(cx, window);
@@ -129,7 +133,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn duplicate_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Tab::Editor(editor_tab)) = self.tabs.get(index) else {
+        let Some(Tab::Editor(editor_tab)) = self.tabs.get(index).map(|tab| tab.read(cx)) else {
             return;
         };
         let current_content = editor_tab.content.read(cx).text().to_string();
@@ -154,7 +158,7 @@ impl Fulgur {
             &settings,
         ));
         let insert_pos = index + 1;
-        self.tabs.insert(insert_pos, new_tab);
+        self.tabs.insert(insert_pos, new_tab.into_entity(cx));
         self.active_tab_id = Some(id);
         self.request_tab_scroll(id, cx);
         self.focus_active_tab(window, cx);

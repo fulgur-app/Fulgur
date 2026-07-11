@@ -47,16 +47,13 @@ impl Render for Fulgur {
         if self.tabs.is_empty() {
             self.active_tab_id = None;
         }
-        self.propagate_settings_to_tabs(window, cx);
-        self.track_newly_rendered_tabs(cx);
         self.handle_pending_transfer_scroll(window, cx);
         self.handle_pending_tab_transfer(window, cx);
         self.handle_pending_tab_removal(window, cx);
         self.handle_pending_jump_to_line(window, cx);
-        self.update_modified_status(cx);
-        self.prune_markdown_preview_cache(cx);
         self.refresh_window_title(cx);
-        let app_content = self.build_app_content_with_actions(self.active_tab_index(), window, cx);
+        let active_tab_index = self.active_tab_index(cx);
+        let app_content = self.build_app_content_with_actions(active_tab_index, window, cx);
         self.assemble_ui_tree(app_content, window, cx)
     }
 }
@@ -141,8 +138,8 @@ impl Fulgur {
                 this.handle_external_paths_drop(paths, window, cx);
             }));
         let search_bar_visible = self.search_bar.read(cx).is_visible();
-        let markdown_toolbar_visible = self.markdown_toolbar_visible();
-        let csv_toolbar_visible = self.csv_toolbar_visible();
+        let markdown_toolbar_visible = self.markdown_toolbar_visible(cx);
+        let csv_toolbar_visible = self.csv_toolbar_visible(cx);
         let color_picker_bar_visible = self.color_picker_bar.read(cx).is_visible();
         app_content = app_content
             .child(self.tab_bar.clone())
@@ -151,7 +148,7 @@ impl Fulgur {
             .children(csv_toolbar_visible.then(|| self.csv_toolbar.clone()))
             .children(search_bar_visible.then(|| self.search_bar.clone()))
             .children(color_picker_bar_visible.then(|| self.color_picker_bar.clone()));
-        if let Some(Tab::Editor(_)) = self.active_tab() {
+        if let Some(Tab::Editor(_)) = self.active_tab(cx) {
             app_content = app_content.child(self.status_bar.clone());
         }
         app_content = app_content.child(Self::render_external_file_drop_overlay(cx));
@@ -232,7 +229,7 @@ impl Fulgur {
         }
 
         if let Some(tab_id) = self.pending_initial_active_tab.take()
-            && let Some(index) = self.tab_index_of(tab_id)
+            && let Some(index) = self.tab_index_of(tab_id, cx)
         {
             self.set_active_tab(index, window, cx);
         }
@@ -243,7 +240,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     fn refresh_window_title(&self, cx: &mut Context<Self>) {
-        let title = self.active_tab().map(|tab| tab.title().to_string());
+        let title = self.active_tab(cx).map(|tab| tab.title().to_string());
         if let Some(title) = title {
             self.set_title(Some(title), cx);
         }

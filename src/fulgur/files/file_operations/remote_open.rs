@@ -40,8 +40,8 @@ impl Fulgur {
         cx: &mut gpui::Context<Self>,
         spec: RemoteSpec,
     ) {
-        if let Some(tab_index) = self.find_tab_by_remote_spec(&spec) {
-            self.active_tab_id = self.tabs.get(tab_index).map(crate::fulgur::tab::Tab::id);
+        if let Some(tab_index) = self.find_tab_by_remote_spec(&spec, cx) {
+            self.active_tab_id = self.tabs.get(tab_index).map(|t| t.read(cx).id());
             self.focus_active_tab(window, cx);
             cx.notify();
             return;

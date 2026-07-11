@@ -837,9 +837,7 @@ mod gpui_settings_propagation_tests {
     }
 
     #[gpui::test]
-    fn test_update_and_propagate_settings_publishes_to_shared_state_and_marks_window(
-        cx: &mut TestAppContext,
-    ) {
+    fn test_update_and_propagate_settings_publishes_to_shared_state(cx: &mut TestAppContext) {
         setup_test_globals(cx);
         let (window_id, fulgur) = open_window_with_fulgur(cx);
         register_window_in_global_manager(cx, window_id, &fulgur);
@@ -847,14 +845,51 @@ mod gpui_settings_propagation_tests {
             fulgur.update(cx, |this, cx| {
                 this.settings.app_settings.theme = "Tokyo Night".into();
                 this.settings.app_settings.confirm_exit = false;
-                this.settings_changed = false;
                 this.update_and_propagate_settings(cx)
                     .expect("settings update should succeed");
-                assert!(this.settings_changed);
             });
             let shared_settings = cx.global::<SharedAppState>().settings.clone();
             assert_eq!(shared_settings.app_settings.theme, "Tokyo Night");
             assert!(!shared_settings.app_settings.confirm_exit);
+        });
+    }
+
+    #[gpui::test]
+    fn test_settings_observer_applies_editor_settings_to_publisher_tabs(cx: &mut TestAppContext) {
+        setup_test_globals(cx);
+        let (window_id, fulgur) = open_window_with_fulgur(cx);
+        register_window_in_global_manager(cx, window_id, &fulgur);
+        let content_before = cx.update(|cx| {
+            fulgur
+                .read(cx)
+                .get_active_editor_tab(cx)
+                .expect("expected initial editor tab")
+                .content
+                .entity_id()
+        });
+        cx.update(|cx| {
+            fulgur.update(cx, |this, cx| {
+                // Toggling highlight_colors forces an InputState rebuild, which is
+                // observable from outside via the content entity id. The rebuild
+                // must happen through the publisher's own global observer.
+                this.settings.editor_settings.highlight_colors =
+                    !this.settings.editor_settings.highlight_colors;
+                this.update_and_propagate_settings(cx)
+                    .expect("settings update should succeed");
+            });
+        });
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let content_after = fulgur
+                .read(cx)
+                .get_active_editor_tab(cx)
+                .expect("expected initial editor tab")
+                .content
+                .entity_id();
+            assert_ne!(
+                content_before, content_after,
+                "the publishing window's observer must apply editor settings to its own tabs"
+            );
         });
     }
 
@@ -864,9 +899,6 @@ mod gpui_settings_propagation_tests {
         let (_window_id_one, fulgur_one) = open_window_with_fulgur(cx);
         let (_window_id_two, fulgur_two) = open_window_with_fulgur(cx);
         cx.update(|cx| {
-            fulgur_two.update(cx, |this, _cx| {
-                this.settings_changed = false;
-            });
             fulgur_one.update(cx, |this, cx| {
                 this.settings.app_settings.theme = "Catppuccin Frappe".into();
                 this.settings.editor_settings.show_line_numbers = false;
@@ -879,21 +911,15 @@ mod gpui_settings_propagation_tests {
             let target = fulgur_two.read(cx);
             assert_eq!(target.settings.app_settings.theme, "Catppuccin Frappe");
             assert!(!target.settings.editor_settings.show_line_numbers);
-            assert!(
-                !target.settings_changed,
-                "the render triggered by the observer should have consumed settings_changed by propagating settings to tabs"
-            );
         });
     }
 
     #[gpui::test]
-    fn test_theme_only_global_update_does_not_mark_settings_changed(cx: &mut TestAppContext) {
+    fn test_theme_only_global_update_keeps_settings_snapshot_identical(cx: &mut TestAppContext) {
         setup_test_globals(cx);
         let (_, fulgur) = open_window_with_fulgur(cx);
+        let before = cx.update(|cx| fulgur.read(cx).settings.clone());
         cx.update(|cx| {
-            fulgur.update(cx, |this, _cx| {
-                this.settings_changed = false;
-            });
             cx.update_global::<SharedAppState, _>(|shared, _| {
                 shared.themes = None;
             });
@@ -902,8 +928,8 @@ mod gpui_settings_propagation_tests {
         cx.update(|cx| {
             let this = fulgur.read(cx);
             assert!(
-                !this.settings_changed,
-                "a global update that leaves settings identical should not trigger settings propagation"
+                this.settings == before,
+                "a global update that leaves settings identical should not change the window snapshot"
             );
         });
     }

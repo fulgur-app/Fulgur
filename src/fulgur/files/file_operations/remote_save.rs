@@ -12,7 +12,6 @@ use crate::fulgur::{
         session::{HostKeyDecision, HostKeyRequest},
         url::RemoteSpec,
     },
-    tab::Tab,
     ui::notifications::progress::{CancelCallback, start_progress},
 };
 use gpui_component::{WindowExt, notification::NotificationType};
@@ -107,11 +106,15 @@ impl Fulgur {
                         cache_for_callback
                             .lock()
                             .insert(cache_key.clone(), password.clone());
-                        if let Some(Tab::Editor(editor_tab)) =
-                            fulgur.tabs.iter_mut().find(|tab| tab.id() == tab_id)
-                            && let TabLocation::Remote(remote_spec) = &mut editor_tab.location
-                        {
-                            remote_spec.user = Some(resolved_user.clone());
+                        if let Some(tab_entity) = fulgur.tab_entity_of(tab_id, cx) {
+                            tab_entity.update(cx, |tab, _| {
+                                if let Some(editor_tab) = tab.as_editor_mut()
+                                    && let TabLocation::Remote(remote_spec) =
+                                        &mut editor_tab.location
+                                {
+                                    remote_spec.user = Some(resolved_user.clone());
+                                }
+                            });
                         }
                         let request_id = fulgur.next_remote_request_id;
                         fulgur.next_remote_request_id =
@@ -354,18 +357,17 @@ impl Fulgur {
 
         match result {
             Ok(()) => {
-                if let Some(editor_tab) = self.tabs.iter_mut().find_map(|tab| {
-                    if let Tab::Editor(editor_tab) = tab {
-                        (editor_tab.id == tab_id).then_some(editor_tab)
-                    } else {
-                        None
-                    }
-                }) {
-                    // Keep async save semantics correct: if content changed after dispatch,
-                    // this remains dirty because baseline is set to the persisted snapshot.
-                    editor_tab.set_original_content_from_str(saved_content);
-                    editor_tab.modified = editor_tab.content_differs_from_original(cx);
-                    editor_tab.update_file_tooltip_cache(saved_content.len());
+                let updated = self
+                    .update_editor_tab(tab_id, cx, |editor_tab, cx| {
+                        // Keep async save semantics correct: if content changed after dispatch,
+                        // this remains dirty because baseline is set to the persisted snapshot.
+                        editor_tab.set_original_content_from_str(saved_content);
+                        editor_tab.modified = editor_tab.content_differs_from_original(cx);
+                        editor_tab.update_file_tooltip_cache(saved_content.len());
+                        cx.notify();
+                    })
+                    .is_some();
+                if updated {
                     self.pending_remote_restore.remove(&tab_id);
                     self.inflight_remote_restore.remove(&tab_id);
                     cx.notify();

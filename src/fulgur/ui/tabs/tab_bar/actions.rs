@@ -34,7 +34,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(index) = self.tab_index_of(action.0) {
+        if let Some(index) = self.tab_index_of(action.0, cx) {
             self.close_tabs_to_left(index, window, cx);
         }
     }
@@ -51,7 +51,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(index) = self.tab_index_of(action.0) {
+        if let Some(index) = self.tab_index_of(action.0, cx) {
             self.close_tabs_to_right(index, window, cx);
         }
     }
@@ -103,9 +103,14 @@ impl Fulgur {
         &mut self,
         action: &ShowInFileManager,
         _window: &mut Window,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
-        let Some(tab) = self.tabs.iter().find(|t| t.id() == action.0) else {
+        let Some(tab) = self
+            .tabs
+            .iter()
+            .map(|t| t.read(cx))
+            .find(|t| t.id() == action.0)
+        else {
             return;
         };
         let Some(editor_tab) = tab.as_editor() else {
@@ -133,7 +138,12 @@ impl Fulgur {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(tab) = self.tabs.iter().find(|t| t.id() == action.0) else {
+        let Some(tab) = self
+            .tabs
+            .iter()
+            .map(|t| t.read(cx))
+            .find(|t| t.id() == action.0)
+        else {
             return;
         };
         let Some(editor_tab) = tab.as_editor() else {
@@ -160,7 +170,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(index) = self.tab_index_of(action.0) {
+        if let Some(index) = self.tab_index_of(action.0, cx) {
             self.duplicate_tab(index, window, cx);
         }
     }
@@ -171,7 +181,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn on_next_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(active_index) = self.active_tab_index() {
+        if let Some(active_index) = self.active_tab_index(cx) {
             let next_index = (active_index + 1) % self.tabs.len();
             self.set_active_tab(next_index, window, cx);
         }
@@ -183,7 +193,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn on_previous_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(active_index) = self.active_tab_index() {
+        if let Some(active_index) = self.active_tab_index(cx) {
             let previous_index = (active_index + self.tabs.len() - 1) % self.tabs.len();
             self.set_active_tab(previous_index, window, cx);
         }
