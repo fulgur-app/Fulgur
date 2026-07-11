@@ -92,6 +92,7 @@ impl Fulgur {
     ) -> impl IntoElement + use<> {
         let mut app_content = div()
             .id("app-content")
+            .key_context(ui::menus::KEY_CONTEXT_FULGUR)
             .size_full()
             .relative()
             .group("")

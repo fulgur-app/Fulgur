@@ -85,14 +85,14 @@ impl Fulgur {
     /// - `window`: The window to focus the tab in
     /// - `cx`: The application context
     pub fn focus_active_tab(&self, window: &mut Window, cx: &mut App) {
-        // Settings and preview tabs have no focusable input content, so only
-        // editor tabs move the focus.
         let content = self
             .get_active_editor_tab(cx)
             .map(|editor_tab| editor_tab.content.clone());
         if let Some(content) = content {
             let focus_handle = content.read(cx).focus_handle(cx);
             window.focus(&focus_handle, cx);
+        } else {
+            window.focus(&self.focus_handle, cx);
         }
     }
 }
