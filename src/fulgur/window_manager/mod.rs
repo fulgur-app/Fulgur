@@ -1,11 +1,13 @@
 mod dock_menu;
 mod lifecycle;
 mod render;
+pub mod system_menus;
 
 use crate::fulgur::Fulgur;
 use gpui::{App, Global, WeakEntity, WindowId};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use system_menus::WindowMenuTab;
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;
@@ -20,10 +22,8 @@ pub struct WindowManager {
     window_names: HashMap<WindowId, String>,
     /// Monotonically increasing counter used to assign unique names; never resets or reuses
     next_name_index: usize,
-    /// Per-window fingerprint used to detect dock menu / jump list relevant changes
-    window_menu_fingerprints: HashMap<WindowId, u64>,
-    /// Global revision incremented whenever dock menu / jump list input state changes
-    menu_state_revision: u64,
+    /// Menu-relevant tab snapshots published per window, consumed by the system menu observers
+    window_menu_tabs: HashMap<WindowId, Vec<WindowMenuTab>>,
 }
 
 /// Convert a zero-based index to an alphabetic window name (A, B, ..., Z, AA, AB, ...).
@@ -65,17 +65,8 @@ impl WindowManager {
             last_focused: None,
             window_names: HashMap::new(),
             next_name_index: 0,
-            window_menu_fingerprints: HashMap::new(),
-            menu_state_revision: 0,
+            window_menu_tabs: HashMap::new(),
         }
-    }
-
-    /// Bump the global menu-state revision.
-    ///
-    /// This revision is consumed by per-window render code to avoid rebuilding
-    /// dock/jump list data when no window state relevant to those menus changed.
-    fn bump_menu_state_revision(&mut self) {
-        self.menu_state_revision = self.menu_state_revision.wrapping_add(1);
     }
 
     /// Register a new window
@@ -90,7 +81,6 @@ impl WindowManager {
         let name = index_to_name(self.next_name_index);
         self.next_name_index += 1;
         self.window_names.insert(window_id, name);
-        self.bump_menu_state_revision();
     }
 
     /// Unregister a window when it closes
@@ -101,13 +91,12 @@ impl WindowManager {
         log::debug!("Unregistering window {window_id:?}");
         self.windows.remove(&window_id);
         self.window_names.remove(&window_id);
-        self.window_menu_fingerprints.remove(&window_id);
+        self.window_menu_tabs.remove(&window_id);
 
         // Update last_focused if this was the focused window
         if self.last_focused == Some(window_id) {
             self.last_focused = self.windows.keys().next().copied();
         }
-        self.bump_menu_state_revision();
     }
 
     /// Update last focused window
@@ -186,51 +175,59 @@ impl WindowManager {
         self.windows.get(&window_id).cloned()
     }
 
-    /// Update the dock menu / jump list fingerprint for one window.
+    /// Publish the menu-relevant tab snapshot for one window.
     ///
     /// ### Arguments
-    /// - `window_id`: The window whose fingerprint is being published
-    /// - `fingerprint`: Hash of all menu-relevant local window state
+    /// - `window_id`: The window whose snapshot is being published
+    /// - `tabs`: Menu-relevant snapshot of the window's tabs, in tab order
     ///
     /// ### Returns
-    /// - `true`: Fingerprint changed and global menu revision was bumped
-    /// - `false`: Fingerprint unchanged or window is no longer registered
-    pub fn update_window_menu_fingerprint(
+    /// - `true`: Snapshot changed and was stored
+    /// - `false`: Snapshot unchanged or window is no longer registered
+    pub fn publish_window_menu_tabs(
         &mut self,
         window_id: WindowId,
-        fingerprint: u64,
+        tabs: Vec<WindowMenuTab>,
     ) -> bool {
         if !self.windows.contains_key(&window_id) {
             return false;
         }
-        if self.window_menu_fingerprints.get(&window_id) == Some(&fingerprint) {
+        if self.window_menu_tabs.get(&window_id) == Some(&tabs) {
             return false;
         }
-        self.window_menu_fingerprints.insert(window_id, fingerprint);
-        self.bump_menu_state_revision();
+        self.window_menu_tabs.insert(window_id, tabs);
         true
     }
 
-    /// Get the latest published fingerprint for a specific window.
+    /// Get the latest published menu tab snapshot for a specific window.
     ///
     /// ### Arguments
     /// - `window_id`: The target window ID
     ///
     /// ### Returns
-    /// - `Some(u64)`: Last known fingerprint for this window
+    /// - `Some(&[WindowMenuTab])`: Last published snapshot for this window
     /// - `None`: Window has not published one yet
     #[must_use]
-    pub fn get_window_menu_fingerprint(&self, window_id: WindowId) -> Option<u64> {
-        self.window_menu_fingerprints.get(&window_id).copied()
+    pub fn get_window_menu_tabs(&self, window_id: WindowId) -> Option<&[WindowMenuTab]> {
+        self.window_menu_tabs.get(&window_id).map(Vec::as_slice)
     }
 
-    /// Get the current global dock menu / jump list state revision.
+    /// Get the published menu tab snapshots of all windows, in registration order.
     ///
     /// ### Returns
-    /// - `u64`: Monotonic revision that changes when menu input state changes
+    /// - `Vec<Vec<WindowMenuTab>>`: One snapshot per window that has published one
     #[must_use]
-    pub fn menu_state_revision(&self) -> u64 {
-        self.menu_state_revision
+    pub fn ordered_window_menu_tabs(&self) -> Vec<Vec<WindowMenuTab>> {
+        let mut named_ids: Vec<(&String, WindowId)> = self
+            .window_names
+            .iter()
+            .map(|(window_id, name)| (name, *window_id))
+            .collect();
+        named_ids.sort_by(|(a, _), (b, _)| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
+        named_ids
+            .into_iter()
+            .filter_map(|(_, window_id)| self.window_menu_tabs.get(&window_id).cloned())
+            .collect()
     }
 
     /// Find window that has file open

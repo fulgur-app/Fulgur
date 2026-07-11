@@ -577,71 +577,84 @@ fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut
 }
 
 #[gpui::test]
-fn test_update_window_menu_fingerprint_bumps_revision_only_on_change(cx: &mut TestAppContext) {
+fn test_publish_window_menu_tabs_stores_only_changes(cx: &mut TestAppContext) {
+    use super::system_menus::WindowMenuTab;
+
     setup_test_globals(cx);
     let (window_id, fulgur) = open_window_with_fulgur(cx);
     cx.update(|_| {
         let mut manager = WindowManager::new();
+        let snapshot = vec![WindowMenuTab {
+            path: Some(std::path::PathBuf::from("/tmp/menu-tab.rs")),
+            title: "menu-tab.rs".into(),
+        }];
+        assert!(
+            !manager.publish_window_menu_tabs(window_id, snapshot.clone()),
+            "publishing for an unregistered window must be rejected"
+        );
         manager.register(window_id, fulgur.downgrade());
-        let revision_after_register = manager.menu_state_revision();
         assert!(
-            manager.update_window_menu_fingerprint(window_id, 42),
-            "first fingerprint publication must bump menu revision"
-        );
-        let revision_after_first_publish = manager.menu_state_revision();
-        assert_ne!(
-            revision_after_first_publish, revision_after_register,
-            "menu revision should change after first fingerprint publication"
+            manager.publish_window_menu_tabs(window_id, snapshot.clone()),
+            "first snapshot publication must be stored"
         );
         assert!(
-            !manager.update_window_menu_fingerprint(window_id, 42),
-            "publishing an unchanged fingerprint must not bump menu revision"
+            !manager.publish_window_menu_tabs(window_id, snapshot.clone()),
+            "publishing an unchanged snapshot must report no change"
+        );
+        let changed_snapshot = vec![WindowMenuTab {
+            path: None,
+            title: "Untitled".into(),
+        }];
+        assert!(
+            manager.publish_window_menu_tabs(window_id, changed_snapshot.clone()),
+            "a changed snapshot must be stored"
         );
         assert_eq!(
-            manager.menu_state_revision(),
-            revision_after_first_publish,
-            "menu revision should remain stable when fingerprint does not change"
-        );
-        assert!(
-            manager.update_window_menu_fingerprint(window_id, 99),
-            "changed fingerprint must bump menu revision"
+            manager.get_window_menu_tabs(window_id),
+            Some(changed_snapshot.as_slice()),
+            "window manager should store the latest published snapshot"
         );
         assert_eq!(
-            manager.get_window_menu_fingerprint(window_id),
-            Some(99),
-            "window manager should store the latest published fingerprint"
+            manager.ordered_window_menu_tabs(),
+            vec![changed_snapshot],
+            "ordered snapshots should contain the published window"
+        );
+        manager.unregister(window_id);
+        assert_eq!(
+            manager.get_window_menu_tabs(window_id),
+            None,
+            "unregistering a window must drop its published snapshot"
         );
     });
 }
 
 #[gpui::test]
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-fn test_process_window_state_updates_updates_menu_fingerprint_on_tab_change(
-    cx: &mut TestAppContext,
-) {
+fn test_process_window_state_updates_publishes_menu_tabs_on_tab_change(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (window_id, fulgur) = open_window_with_fulgur(cx);
     register_window_in_global_manager(cx, window_id, &fulgur);
 
     invoke_process_window_state_updates(cx, window_id, &fulgur);
-    let (initial_revision, initial_fingerprint) = cx.update(|cx| {
-        let manager = cx.global::<WindowManager>();
-        (
-            manager.menu_state_revision(),
-            manager.get_window_menu_fingerprint(window_id),
-        )
+    let initial_snapshot = cx.update(|cx| {
+        cx.global::<WindowManager>()
+            .get_window_menu_tabs(window_id)
+            .map(<[_]>::to_vec)
     });
     assert!(
-        initial_fingerprint.is_some(),
-        "first render processing should publish a menu fingerprint"
+        initial_snapshot.is_some(),
+        "first render processing should publish a menu tab snapshot"
     );
 
     invoke_process_window_state_updates(cx, window_id, &fulgur);
-    let revision_after_no_change =
-        cx.update(|cx| cx.global::<WindowManager>().menu_state_revision());
+    let snapshot_after_no_change = cx.update(|cx| {
+        cx.global::<WindowManager>()
+            .get_window_menu_tabs(window_id)
+            .map(<[_]>::to_vec)
+    });
     assert_eq!(
-        revision_after_no_change, initial_revision,
-        "menu revision should not change when tab state is unchanged"
+        snapshot_after_no_change, initial_snapshot,
+        "snapshot should be unchanged when tab state is unchanged"
     );
 
     cx.update(|cx| {
@@ -659,19 +672,19 @@ fn test_process_window_state_updates_updates_menu_fingerprint_on_tab_change(
         });
     });
     invoke_process_window_state_updates(cx, window_id, &fulgur);
-    let (updated_revision, updated_fingerprint) = cx.update(|cx| {
-        let manager = cx.global::<WindowManager>();
-        (
-            manager.menu_state_revision(),
-            manager.get_window_menu_fingerprint(window_id),
-        )
+    let updated_snapshot = cx.update(|cx| {
+        cx.global::<WindowManager>()
+            .get_window_menu_tabs(window_id)
+            .map(<[_]>::to_vec)
     });
     assert_ne!(
-        updated_revision, initial_revision,
-        "menu revision should change after tab state update"
+        updated_snapshot, initial_snapshot,
+        "published snapshot should change after tab state update"
     );
-    assert_ne!(
-        updated_fingerprint, initial_fingerprint,
-        "published fingerprint should change after tab state update"
+    assert!(
+        updated_snapshot.as_deref().is_some_and(|tabs| tabs
+            .iter()
+            .any(|t| t.title.as_ref() == "menu-state-changed.md")),
+        "published snapshot should carry the new tab title"
     );
 }

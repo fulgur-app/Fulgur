@@ -153,16 +153,6 @@ impl Fulgur {
                 inflight_remote_restore: HashSet::new(),
                 pending_initial_active_tab: None,
                 has_rendered_once: false,
-                #[cfg(any(target_os = "macos", target_os = "windows"))]
-                local_window_menu_fingerprint: 0,
-                #[cfg(target_os = "macos")]
-                last_dock_menu_revision: 0,
-                #[cfg(target_os = "macos")]
-                last_dock_menu_hash: 0,
-                #[cfg(target_os = "windows")]
-                last_jump_list_revision: 0,
-                #[cfg(target_os = "windows")]
-                last_jump_list_hash: 0,
             }
         });
         entity.update(cx, |this, cx| {
