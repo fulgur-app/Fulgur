@@ -75,14 +75,4 @@ pub struct Fulgur {
     inflight_remote_restore: HashSet<TabId>, // Restored remote tabs currently running a reconnect task
     pending_initial_active_tab: Option<TabId>, // Active tab to re-activate after first render so dialogs can open safely
     has_rendered_once: bool, // Tracks first render completion for startup actions that require mounted Root layers
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    local_window_menu_fingerprint: u64, // Cached local menu-state fingerprint published to WindowManager
-    #[cfg(target_os = "macos")]
-    last_dock_menu_revision: u64, // Last global menu-state revision processed by dock menu updater
-    #[cfg(target_os = "macos")]
-    last_dock_menu_hash: u64, // Hash of the last dock menu state to avoid unnecessary rebuilds
-    #[cfg(target_os = "windows")]
-    last_jump_list_revision: u64, // Last global menu-state revision processed by jump list updater
-    #[cfg(target_os = "windows")]
-    last_jump_list_hash: u64, // Hash of the last jump list state to avoid unnecessary rebuilds
 }

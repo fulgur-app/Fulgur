@@ -20,16 +20,16 @@ impl Fulgur {
             window.window_bounds(),
             display_id,
         ));
-        if window.is_window_active() {
+        // Gate on an actual change so the per-render call does not fire the
+        // WindowManager global observers (system menu rebuild) on every frame.
+        if window.is_window_active()
+            && cx.global::<WindowManager>().get_last_focused() != Some(self.window_id)
+        {
             cx.update_global::<WindowManager, _>(|manager, _| {
                 manager.set_focused(self.window_id);
             });
         }
         #[cfg(any(target_os = "macos", target_os = "windows"))]
-        self.publish_window_menu_fingerprint_if_changed(cx);
-        #[cfg(target_os = "macos")]
-        self.update_dock_menu_if_changed(cx);
-        #[cfg(target_os = "windows")]
-        self.update_jump_list_if_changed(cx);
+        self.publish_window_menu_tabs_if_changed(cx);
     }
 }
