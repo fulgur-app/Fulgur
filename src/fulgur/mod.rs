@@ -14,7 +14,7 @@ pub mod window_manager;
 use crate::fulgur::files::{
     file_operations::PendingRemoteOpenOutcome, file_watcher::FileWatchState,
 };
-use gpui::{Entity, EntityId, FocusHandle, Pixels, Point, SharedString, Subscription, WindowId};
+use gpui::{Entity, FocusHandle, Pixels, Point, Subscription, WindowId};
 use gpui_component::{input::InputState, menu::PopupMenu};
 use settings::Settings;
 use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
@@ -34,13 +34,13 @@ use ui::{
 pub(crate) use ui::themes;
 
 pub struct Fulgur {
-    pub window_id: WindowId,                      // The ID of this window
-    focus_handle: FocusHandle,                    // The focus handle for the application
-    title_bar: Entity<CustomTitleBar>,            // The title bar of the application
-    tabs: Vec<Tab>,                               // The tabs in the application
-    active_tab_id: Option<TabId>,                 // Stable ID of the active tab
-    next_tab_id: TabId,                           // The next tab ID
-    search_bar: Entity<SearchBar>,                // The search and replace bar view
+    pub window_id: WindowId,                          // The ID of this window
+    focus_handle: FocusHandle,                        // The focus handle for the application
+    title_bar: Entity<CustomTitleBar>,                // The title bar of the application
+    tabs: Vec<Entity<Tab>>, // The tabs in the application, each its own entity
+    active_tab_id: Option<TabId>, // Stable ID of the active tab
+    next_tab_id: TabId,     // The next tab ID
+    search_bar: Entity<SearchBar>, // The search and replace bar view
     _search_bar_subscription: Subscription, // Routes SearchBarEvent from the search bar to window-level handlers
     markdown_toolbar: Entity<MarkdownToolbar>, // The markdown formatting toolbar view (acts directly on the active editor, emits no events)
     csv_toolbar: Entity<CsvToolbar>, // The CSV structural-edit toolbar view (acts directly on the active tab's table, emits no events)
@@ -49,14 +49,7 @@ pub struct Fulgur {
     pub jump_to_line_input: Entity<InputState>,   // Input for jumping to a line in the editor
     pending_jump: Option<editor_tab::Jump>,       // Pending jump to line action
     pub settings: Settings, // The settings for the application (local snapshot, refreshed by the SharedAppState observer)
-    settings_changed: bool, // Flag to indicate that the settings have been changed and need to be saved
-    _shared_state_observation: Subscription, // Global observer keeping the local settings snapshot in sync with SharedAppState
-    rendered_tabs: HashSet<TabId>,           // Track which tabs have been rendered
-    tabs_pending_update: HashSet<TabId>,     // Track tabs that need settings update on next render
-    editor_modified_subscriptions: HashMap<TabId, (EntityId, Subscription)>, // Per-editor (subscribed content entity id, subscription) for incremental modified-state updates
-    markdown_preview_cache: HashMap<TabId, SharedString>, // Cached markdown source text keyed by source editor tab id
-    markdown_preview_to_refresh: HashSet<TabId>, // Source tab ids whose cached preview text is stale and must be refreshed on next read
-    markdown_preview_subscriptions: HashMap<TabId, (EntityId, Subscription)>, // Per-source (subscribed content entity id, subscription) for markdown preview cache updates
+    _shared_state_observation: Subscription, // Global observer keeping the local settings snapshot in sync with SharedAppState and applying editor settings to tabs
     log_tail_state: HashMap<TabId, LogTailState>, // Per-log-tab tail bookkeeping (byte offset, dropped lines, pending text) keyed by tab id
     log_tail_cancel: HashMap<TabId, Arc<AtomicBool>>, // Cancellation flag for the per-active-log-tab poll task keyed by tab id
     pub file_watch_state: FileWatchState, // File watching state for external file change detection

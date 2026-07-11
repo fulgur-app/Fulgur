@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use gpui::{Context, ParentElement, Styled, Window, div, px};
 use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, v_flex};
 
-use crate::fulgur::{Fulgur, tab::Tab, ui::components_utils::UTF_8};
+use crate::fulgur::{Fulgur, ui::components_utils::UTF_8};
 
 impl Fulgur {
     /// Show a confirmation dialog when saving would lose data through encoding.
@@ -48,12 +48,10 @@ impl Fulgur {
                 )
                 .on_ok(move |_, window, cx| {
                     entity_for_ok.update(cx, |this, cx| {
-                        if let Some(Tab::Editor(editor_tab)) =
-                            this.tabs.iter_mut().find(|tab| tab.id() == tab_id)
-                        {
+                        this.update_editor_tab(tab_id, cx, |editor_tab, _| {
                             editor_tab.encoding = UTF_8.to_string();
                             editor_tab.lossy_decode = false;
-                        }
+                        });
                         this.save_file(window, cx);
                     });
                     true

@@ -76,7 +76,7 @@ impl TabBar {
         cx: &mut Context<Self>,
     ) {
         if let Some(tab_id) = self.pending_scroll {
-            let Some(index) = fulgur_entity.read(cx).tab_index_of(tab_id) else {
+            let Some(index) = fulgur_entity.read(cx).tab_index_of(tab_id, cx) else {
                 self.pending_scroll = None;
                 return;
             };
@@ -93,13 +93,17 @@ impl TabBar {
     ///
     /// ### Arguments
     /// - `tabs`: The open tabs to count filenames over
+    /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `HashMap<String, usize>`: Map of filename to number of open tabs with that filename
-    pub(crate) fn build_tab_filename_counts(tabs: &[Tab]) -> HashMap<String, usize> {
+    pub(crate) fn build_tab_filename_counts(
+        tabs: &[gpui::Entity<Tab>],
+        cx: &gpui::App,
+    ) -> HashMap<String, usize> {
         let mut filename_counts = HashMap::new();
         for tab in tabs {
-            if let Some(editor_tab) = tab.as_editor()
+            if let Some(editor_tab) = tab.read(cx).as_editor()
                 && let Some(path) = editor_tab.file_path()
                 && let Some(filename) = path.file_name().and_then(|n| n.to_str())
             {
@@ -177,7 +181,7 @@ impl Fulgur {
             TabBarEvent::SaveFile => self.save_file(window, cx),
             TabBarEvent::SaveFileAs => self.save_file_as(window, cx),
             TabBarEvent::Activate(tab_id) => {
-                if let Some(index) = self.tab_index_of(*tab_id) {
+                if let Some(index) = self.tab_index_of(*tab_id, cx) {
                     self.set_active_tab(index, window, cx);
                 }
             }

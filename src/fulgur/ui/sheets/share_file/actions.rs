@@ -41,7 +41,7 @@ struct ProfileShareResources {
 /// - `ShareContext`: The captured file content, name, and optional file path.
 fn capture_share_context(entity: &Entity<Fulgur>, cx: &mut App) -> ShareContext {
     entity.update(cx, |this, cx| {
-        let active_tab = this.get_active_editor_tab();
+        let active_tab = this.get_active_editor_tab(cx);
         let content: Arc<str> = active_tab.as_ref().map_or_else(
             || Arc::from(""),
             |tab| Arc::from(tab.content.read(cx).value().as_str()),

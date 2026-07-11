@@ -4,7 +4,6 @@ use gpui_component::input::InputState;
 use gpui_component::text::TextViewState;
 
 /// A read-only tab that renders a live Markdown preview for a linked editor tab.
-#[derive(Clone)]
 pub struct MarkdownPreviewTab {
     pub id: TabId,
     pub title: SharedString,

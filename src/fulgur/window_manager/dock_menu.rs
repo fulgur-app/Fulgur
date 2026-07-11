@@ -14,12 +14,16 @@ impl Fulgur {
     /// Includes all local tabs (id/title/path) and recent files to detect when
     /// system menu state may need rebuilding.
     ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
     /// ### Returns
     /// - `u64`: Fingerprint of this window's menu-relevant state
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-    fn compute_local_menu_fingerprint(&mut self) -> u64 {
+    fn compute_local_menu_fingerprint(&mut self, cx: &gpui::App) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         for tab in &self.tabs {
+            let tab = tab.read(cx);
             tab.id().hash(&mut hasher);
             tab.title().hash(&mut hasher);
             if let Some(path) = tab.as_editor().and_then(|editor| editor.file_path()) {
@@ -38,7 +42,7 @@ impl Fulgur {
     /// - `cx`: The application context
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     pub(super) fn publish_window_menu_fingerprint_if_changed(&mut self, cx: &mut Context<Self>) {
-        let fingerprint = self.compute_local_menu_fingerprint();
+        let fingerprint = self.compute_local_menu_fingerprint(cx);
         let already_published = cx
             .global::<WindowManager>()
             .get_window_menu_fingerprint(self.window_id)
@@ -84,6 +88,7 @@ impl Fulgur {
             .tabs
             .iter()
             .map(|tab| {
+                let tab = tab.read(cx);
                 let path = tab.as_editor().and_then(|e| e.file_path().cloned());
                 if let Some(ref p) = path {
                     p.hash(&mut hasher);
@@ -110,6 +115,7 @@ impl Fulgur {
                     .tabs
                     .iter()
                     .map(|tab| {
+                        let tab = tab.read(cx);
                         let path = tab.as_editor().and_then(|e| e.file_path().cloned());
                         if let Some(ref p) = path {
                             p.hash(&mut hasher);
@@ -209,6 +215,7 @@ impl Fulgur {
             .tabs
             .iter()
             .map(|tab| {
+                let tab = tab.read(cx);
                 let path = tab.as_editor().and_then(|e| e.file_path().cloned());
                 if let Some(ref p) = path {
                     p.hash(&mut hasher);
@@ -235,6 +242,7 @@ impl Fulgur {
                     .tabs
                     .iter()
                     .map(|tab| {
+                        let tab = tab.read(cx);
                         let path = tab.as_editor().and_then(|e| e.file_path().cloned());
                         if let Some(ref p) = path {
                             p.hash(&mut hasher);
@@ -317,7 +325,7 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         let path = action.0.clone();
-        if let Some(tab_index) = self.find_tab_by_path(&path) {
+        if let Some(tab_index) = self.find_tab_by_path(&path, cx) {
             self.set_active_tab(tab_index, window, cx);
             self.focus_active_tab(window, cx);
             cx.notify();
@@ -334,7 +342,7 @@ impl Fulgur {
         for weak in other_windows {
             if let Some(entity) = weak.upgrade() {
                 let other = entity.read(cx);
-                if other.find_tab_by_path(&path).is_some() {
+                if other.find_tab_by_path(&path, cx).is_some() {
                     target = Some((other.window_id, entity.clone()));
                     break;
                 }
@@ -352,7 +360,7 @@ impl Fulgur {
                                         .update(cx, |_, target_window, cx| {
                                             target_entity.update(cx, |fulgur, cx| {
                                                 if let Some(tab_index) =
-                                                    fulgur.find_tab_by_path(&path)
+                                                    fulgur.find_tab_by_path(&path, cx)
                                                 {
                                                     fulgur.set_active_tab(
                                                         tab_index,
@@ -389,7 +397,7 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         let title = action.0.clone();
-        if let Some(tab_index) = self.tabs.iter().position(|t| t.title() == title) {
+        if let Some(tab_index) = self.tabs.iter().position(|t| t.read(cx).title() == title) {
             self.set_active_tab(tab_index, window, cx);
             self.focus_active_tab(window, cx);
             cx.notify();
@@ -406,7 +414,7 @@ impl Fulgur {
         for weak in other_windows {
             if let Some(entity) = weak.upgrade() {
                 let other = entity.read(cx);
-                if other.tabs.iter().any(|t| t.title() == title) {
+                if other.tabs.iter().any(|t| t.read(cx).title() == title) {
                     target = Some((other.window_id, entity.clone()));
                     break;
                 }
@@ -425,7 +433,7 @@ impl Fulgur {
                                                 if let Some(tab_index) = fulgur
                                                     .tabs
                                                     .iter()
-                                                    .position(|t| t.title() == title)
+                                                    .position(|t| t.read(cx).title() == title)
                                                 {
                                                     fulgur.set_active_tab(
                                                         tab_index,

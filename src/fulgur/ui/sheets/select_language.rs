@@ -96,20 +96,17 @@ fn make_select_language_list(
 impl Fulgur {
     /// Get the language that should be highlighted as current in the select-language sheet.
     ///
+    /// ### Parameters:
+    /// - `cx`: The application context.
+    ///
     /// ### Returns:
     /// - `Some(SupportedLanguage)`: Active editor tab language, or `Plain` for non-editor tabs.
     /// - `None`: If there is no active tab.
-    fn current_sheet_language(&self) -> Option<SupportedLanguage> {
-        match self.active_tab_index() {
-            Some(index) => {
-                if let Some(editor_tab) = self.tabs[index].as_editor() {
-                    Some(editor_tab.language)
-                } else {
-                    Some(SupportedLanguage::Plain)
-                }
-            }
-            None => None,
-        }
+    fn current_sheet_language(&self, cx: &gpui::App) -> Option<SupportedLanguage> {
+        self.active_tab(cx).map(|tab| {
+            tab.as_editor()
+                .map_or(SupportedLanguage::Plain, |editor_tab| editor_tab.language)
+        })
     }
 
     /// Force the active editor tab language from the select-language sheet.
@@ -124,11 +121,11 @@ impl Fulgur {
         cx: &mut Context<Self>,
         language: SupportedLanguage,
     ) {
-        if let Some(index) = self.active_tab_index()
-            && let Some(tab) = self.tabs.get_mut(index)
-            && let Some(editor_tab) = tab.as_editor_mut()
-        {
-            editor_tab.force_language(window, cx, language, &self.settings.editor_settings);
+        if let Some(tab_entity) = self.active_tab_entity(cx) {
+            let settings = self.settings.editor_settings.clone();
+            tab_entity.update(cx, |tab, cx| {
+                tab.force_language(window, cx, language, &settings);
+            });
         }
     }
 
@@ -139,7 +136,7 @@ impl Fulgur {
     /// - `cx`: The context to render the sheet in.
     pub fn render_select_language_sheet(&self, window: &mut Window, cx: &mut Context<Self>) {
         let entity = cx.entity();
-        let current_language = self.current_sheet_language();
+        let current_language = self.current_sheet_language(cx);
         let viewport_height = window.viewport_size().height;
         let max_height = px((viewport_height - px(100.0)).into()); //TODO: Make this dynamic based on the content
         window.open_sheet_at(Placement::Left, cx, move |sheet, _window, cx| {
@@ -222,8 +219,7 @@ mod tests {
     fn test_current_sheet_language_reflects_active_editor_language(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
-        let initial_language =
-            fulgur.read_with(&visual_cx, |this, _| this.current_sheet_language());
+        let initial_language = fulgur.read_with(&visual_cx, Fulgur::current_sheet_language);
         assert_eq!(initial_language, Some(SupportedLanguage::Plain));
 
         visual_cx.update(|window, cx| {
@@ -232,8 +228,7 @@ mod tests {
             });
         });
 
-        let switched_language =
-            fulgur.read_with(&visual_cx, |this, _| this.current_sheet_language());
+        let switched_language = fulgur.read_with(&visual_cx, Fulgur::current_sheet_language);
         assert_eq!(switched_language, Some(SupportedLanguage::Rust));
     }
 
@@ -249,8 +244,7 @@ mod tests {
             });
         });
 
-        let current_language =
-            fulgur.read_with(&visual_cx, |this, _| this.current_sheet_language());
+        let current_language = fulgur.read_with(&visual_cx, Fulgur::current_sheet_language);
         assert_eq!(current_language, None);
     }
 }

@@ -100,15 +100,17 @@ impl Fulgur {
                 },
             );
 
-            let shared_state_observation =
-                cx.observe_global::<shared_state::SharedAppState>(|this: &mut Self, cx| {
+            let shared_state_observation = cx.observe_global_in::<shared_state::SharedAppState>(
+                window,
+                |this: &mut Self, window, cx| {
                     let shared = cx.global::<shared_state::SharedAppState>();
                     if this.settings != shared.settings {
                         this.settings = shared.settings.clone();
-                        this.settings_changed = true;
                     }
+                    this.apply_editor_settings_to_tabs(window, cx);
                     cx.notify();
-                });
+                },
+            );
             Self {
                 window_id,
                 focus_handle: cx.focus_handle(),
@@ -125,14 +127,7 @@ impl Fulgur {
                 jump_to_line_input,
                 pending_jump: None,
                 settings,
-                settings_changed: false,
                 _shared_state_observation: shared_state_observation,
-                rendered_tabs: HashSet::new(),
-                tabs_pending_update: HashSet::new(),
-                editor_modified_subscriptions: HashMap::new(),
-                markdown_preview_cache: HashMap::new(),
-                markdown_preview_to_refresh: HashSet::new(),
-                markdown_preview_subscriptions: HashMap::new(),
                 log_tail_state: HashMap::new(),
                 log_tail_cancel: HashMap::new(),
                 file_watch_state: FileWatchState::new(),
@@ -184,7 +179,7 @@ impl Fulgur {
                     &this.settings.editor_settings,
                 ));
                 this.active_tab_id = Some(initial_tab.id());
-                this.tabs.push(initial_tab);
+                this.tabs.push(initial_tab.into_entity(cx));
                 this.next_tab_id = TabId(1);
             } else if window_index < usize::MAX - 1 {
                 // usize::MAX - 1 means new window receiving a tab transfer: skip initial tab

@@ -281,13 +281,17 @@ fn test_find_window_with_file_returns_other_window_with_matching_tab(cx: &mut Te
     let (other_window_id, other_fulgur) = open_window_with_fulgur(cx);
     let target_path = temp_test_path("fulgur_window_manager_cross_window_lookup.md");
     cx.update(|cx| {
-        other_fulgur.update(cx, |fulgur, _| {
-            let editor = fulgur
+        other_fulgur.update(cx, |fulgur, cx| {
+            let tab = fulgur
                 .tabs
-                .first_mut()
-                .and_then(|tab| tab.as_editor_mut())
-                .expect("expected initial editor tab");
-            editor.location = TabLocation::Local(target_path.clone());
+                .first()
+                .expect("expected initial editor tab")
+                .clone();
+            tab.update(cx, |tab, _| {
+                if let Some(editor) = tab.as_editor_mut() {
+                    editor.location = TabLocation::Local(target_path.clone());
+                }
+            });
         });
         let mut manager = WindowManager::new();
         manager.register(current_window_id, current_fulgur.downgrade());
@@ -307,13 +311,17 @@ fn test_find_window_with_file_skips_current_window_and_returns_none_on_miss(
     let current_only_path = temp_test_path("fulgur_window_manager_current_only.rs");
     let missing_path = temp_test_path("fulgur_window_manager_missing.rs");
     cx.update(|cx| {
-        current_fulgur.update(cx, |fulgur, _| {
-            let editor = fulgur
+        current_fulgur.update(cx, |fulgur, cx| {
+            let tab = fulgur
                 .tabs
-                .first_mut()
-                .and_then(|tab| tab.as_editor_mut())
-                .expect("expected initial editor tab");
-            editor.location = TabLocation::Local(current_only_path.clone());
+                .first()
+                .expect("expected initial editor tab")
+                .clone();
+            tab.update(cx, |tab, _| {
+                if let Some(editor) = tab.as_editor_mut() {
+                    editor.location = TabLocation::Local(current_only_path.clone());
+                }
+            });
         });
         let mut manager = WindowManager::new();
         manager.register(current_window_id, current_fulgur.downgrade());
@@ -457,13 +465,17 @@ fn test_do_open_file_does_not_open_duplicate_when_file_exists_in_another_window(
     register_window_in_global_manager(cx, other_window_id, &other_fulgur);
     let shared_path = temp_test_path("fulgur_cross_window_existing_file.rs");
     cx.update(|cx| {
-        other_fulgur.update(cx, |fulgur, _| {
-            let editor = fulgur
+        other_fulgur.update(cx, |fulgur, cx| {
+            let tab = fulgur
                 .tabs
-                .first_mut()
-                .and_then(|tab| tab.as_editor_mut())
-                .expect("expected initial editor tab");
-            editor.location = TabLocation::Local(shared_path.clone());
+                .first()
+                .expect("expected initial editor tab")
+                .clone();
+            tab.update(cx, |tab, _| {
+                if let Some(editor) = tab.as_editor_mut() {
+                    editor.location = TabLocation::Local(shared_path.clone());
+                }
+            });
         });
     });
     let tab_count_before = cx.update(|cx| current_fulgur.read(cx).tabs.len());
@@ -491,12 +503,14 @@ fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppC
                     .update(cx, |_, window, cx| {
                         other_fulgur.update(cx, |this, cx| {
                             this.new_tab(window, cx);
-                            this.active_tab_id = this.tabs.first().map(crate::fulgur::tab::Tab::id);
-                            if let Some(editor) =
-                                this.tabs.get_mut(1).and_then(|tab| tab.as_editor_mut())
-                            {
-                                editor.location = TabLocation::Local(target_path.clone());
-                                editor.title = "dock-target.rs".into();
+                            this.active_tab_id = this.tabs.first().map(|t| t.read(cx).id());
+                            if let Some(tab) = this.tabs.get(1).cloned() {
+                                tab.update(cx, |tab, _| {
+                                    if let Some(editor) = tab.as_editor_mut() {
+                                        editor.location = TabLocation::Local(target_path.clone());
+                                        editor.title = "dock-target.rs".into();
+                                    }
+                                });
                             }
                         });
                     })
@@ -512,7 +526,7 @@ fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppC
     cx.update(|cx| {
         let other = other_fulgur.read(cx);
         assert_eq!(
-            other.active_tab_index(),
+            other.active_tab_index(cx),
             Some(1),
             "dock activation by path should activate the matching tab in the other window"
         );
@@ -534,11 +548,13 @@ fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut
                     .update(cx, |_, window, cx| {
                         other_fulgur.update(cx, |this, cx| {
                             this.new_tab(window, cx);
-                            this.active_tab_id = this.tabs.first().map(crate::fulgur::tab::Tab::id);
-                            if let Some(editor) =
-                                this.tabs.get_mut(1).and_then(|tab| tab.as_editor_mut())
-                            {
-                                editor.title = target_title.clone();
+                            this.active_tab_id = this.tabs.first().map(|t| t.read(cx).id());
+                            if let Some(tab) = this.tabs.get(1).cloned() {
+                                tab.update(cx, |tab, _| {
+                                    if let Some(editor) = tab.as_editor_mut() {
+                                        editor.title = target_title.clone();
+                                    }
+                                });
                             }
                         });
                     })
@@ -553,7 +569,7 @@ fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut
     cx.update(|cx| {
         let other = other_fulgur.read(cx);
         assert_eq!(
-            other.active_tab_index(),
+            other.active_tab_index(cx),
             Some(1),
             "dock activation by title should activate the matching tab in the other window"
         );
@@ -629,13 +645,17 @@ fn test_process_window_state_updates_updates_menu_fingerprint_on_tab_change(
     );
 
     cx.update(|cx| {
-        fulgur.update(cx, |this, _| {
-            let editor = this
+        fulgur.update(cx, |this, cx| {
+            let tab = this
                 .tabs
-                .first_mut()
-                .and_then(|tab| tab.as_editor_mut())
-                .expect("expected initial editor tab");
-            editor.title = "menu-state-changed.md".into();
+                .first()
+                .expect("expected initial editor tab")
+                .clone();
+            tab.update(cx, |tab, _| {
+                if let Some(editor) = tab.as_editor_mut() {
+                    editor.title = "menu-state-changed.md".into();
+                }
+            });
         });
     });
     invoke_process_window_state_updates(cx, window_id, &fulgur);

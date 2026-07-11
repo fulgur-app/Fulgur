@@ -538,29 +538,28 @@ impl SupportedLanguage {
 impl Fulgur {
     /// Get the current language of the active tab
     ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
     /// ### Returns
     /// - `SupportedLanguage`: The active tab's language
     #[must_use]
-    pub fn get_current_language(&self) -> SupportedLanguage {
-        match self.active_tab_index() {
-            Some(index) => {
-                if let Some(editor_tab) = self.tabs[index].as_editor() {
-                    editor_tab.language
-                } else {
-                    SupportedLanguage::Plain
-                }
-            }
-            None => SupportedLanguage::Plain,
-        }
+    pub fn get_current_language(&self, cx: &gpui::App) -> SupportedLanguage {
+        self.active_tab(cx)
+            .and_then(crate::fulgur::tab::Tab::as_editor)
+            .map_or(SupportedLanguage::Plain, |editor_tab| editor_tab.language)
     }
 
     /// Check if the current active tab's language is a Markdown language
     ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
     /// ### Returns
     /// - `True` if the active tab's language is a Markdown language, `False` otherwise
     #[must_use]
-    pub fn is_markdown(&self) -> bool {
-        let current_language = self.get_current_language();
+    pub fn is_markdown(&self, cx: &gpui::App) -> bool {
+        let current_language = self.get_current_language(cx);
         current_language == SupportedLanguage::Markdown
             || current_language == SupportedLanguage::MarkdownInline
     }

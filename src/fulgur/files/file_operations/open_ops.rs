@@ -28,14 +28,15 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `path`: The path to search for
+    /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `Some(usize)`: The index of the tab if found
     /// - `None`: If the tab was not found
     #[must_use]
-    pub fn find_tab_by_path(&self, path: &PathBuf) -> Option<usize> {
+    pub fn find_tab_by_path(&self, path: &PathBuf, cx: &gpui::App) -> Option<usize> {
         self.tabs.iter().position(|tab| {
-            if let Tab::Editor(editor_tab) = tab {
+            if let Tab::Editor(editor_tab) = tab.read(cx) {
                 editor_tab.file_path().is_some_and(|p| p == path)
             } else {
                 false
@@ -47,14 +48,15 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `spec`: Remote location to search for.
+    /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `Some(usize)`: The index of the matching remote tab.
     /// - `None`: If no tab matches this remote location.
     #[must_use]
-    pub fn find_tab_by_remote_spec(&self, spec: &RemoteSpec) -> Option<usize> {
+    pub fn find_tab_by_remote_spec(&self, spec: &RemoteSpec, cx: &gpui::App) -> Option<usize> {
         self.tabs.iter().position(|tab| {
-            if let Tab::Editor(editor_tab) = tab
+            if let Tab::Editor(editor_tab) = tab.read(cx)
                 && let TabLocation::Remote(existing_spec) = &editor_tab.location
             {
                 existing_spec.host == spec.host
@@ -79,7 +81,9 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let path = if let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index) {
+        let path = if let Some(Tab::Editor(editor_tab)) =
+            self.tabs.get(tab_index).map(|tab| tab.read(cx))
+        {
             editor_tab.file_path().cloned()
         } else {
             None
@@ -126,10 +130,17 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(tab_index) = self.find_tab_by_path(&path.to_path_buf()) else {
+        let Some(tab_index) = self.find_tab_by_path(&path.to_path_buf(), cx) else {
             return;
         };
-        if let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(tab_index) {
+        let Some(tab_entity) = self.tabs.get(tab_index).cloned() else {
+            return;
+        };
+        let settings = self.settings.editor_settings.clone();
+        tab_entity.update(cx, |tab, cx| {
+            let Some(editor_tab) = tab.as_editor_mut() else {
+                return;
+            };
             editor_tab.content.update(cx, |input_state, cx| {
                 input_state.set_value(&decoded.content, window, cx);
             });
@@ -138,9 +149,9 @@ impl Fulgur {
             editor_tab.lossy_decode = decoded.lossy;
             editor_tab.modified = false;
             editor_tab.update_file_tooltip_cache(decoded.byte_len);
-            editor_tab.update_language(window, cx, &self.settings.editor_settings);
+            tab.update_language(window, cx, &settings);
             log::debug!("Tab reloaded successfully from disk: {}", path.display());
-        }
+        });
     }
 
     /// Focus an existing tab for a local path and resolve modified-content conflicts.
@@ -160,7 +171,7 @@ impl Fulgur {
         let is_modified = self
             .tabs
             .get(tab_index)
-            .and_then(Tab::as_editor)
+            .and_then(|tab| tab.read(cx).as_editor())
             .is_some_and(|editor_tab| editor_tab.modified);
 
         if is_modified {
@@ -168,7 +179,7 @@ impl Fulgur {
                 "Tab for {} has unsaved changes; asking user which version to keep",
                 path.display()
             );
-            if let Some(tab_id) = self.tabs.get(tab_index).map(Tab::id) {
+            if let Some(tab_id) = self.tabs.get(tab_index).map(|tab| tab.read(cx).id()) {
                 self.show_reopen_modified_file_dialog(path, tab_id, window, cx);
             }
         } else {
@@ -178,7 +189,7 @@ impl Fulgur {
             );
         }
 
-        self.active_tab_id = self.tabs.get(tab_index).map(Tab::id);
+        self.active_tab_id = self.tabs.get(tab_index).map(|tab| tab.read(cx).id());
         self.focus_active_tab(window, cx);
         cx.notify();
     }
@@ -273,7 +284,8 @@ impl Fulgur {
                     this.maybe_open_markdown_preview_for_editor(editor_tab_index, cx);
                     this.watch_file(path);
                     if crate::fulgur::ui::log_view::opens_as_log_by_default(path)
-                        && let Some(tab_id) = this.tabs.get(editor_tab_index).map(Tab::id)
+                        && let Some(tab_id) =
+                            this.tabs.get(editor_tab_index).map(|tab| tab.read(cx).id())
                     {
                         this.activate_log_view(tab_id, window, cx);
                     }
@@ -323,7 +335,7 @@ impl Fulgur {
             let should_open_new = window
                 .update(|window, cx| {
                     view.update(cx, |this, cx| {
-                        if let Some(tab_index) = this.find_tab_by_path(&path) {
+                        if let Some(tab_index) = this.find_tab_by_path(&path, cx) {
                             log::debug!(
                                 "Tab already exists for {} at index {tab_index}, focusing existing tab",
                                 path.display()
@@ -358,7 +370,7 @@ impl Fulgur {
     /// - `path`: The path to the file to open
     pub fn do_open_file(&mut self, window: &mut Window, cx: &mut Context<Self>, path: PathBuf) {
         let path = std::fs::canonicalize(&path).unwrap_or(path);
-        if let Some(tab_index) = self.find_tab_by_path(&path) {
+        if let Some(tab_index) = self.find_tab_by_path(&path, cx) {
             log::debug!(
                 "Tab already exists for {} at index {tab_index}, focusing existing tab",
                 path.display()
@@ -587,11 +599,17 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.new_tab(window, cx);
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
-                    editor_tab.location = TabLocation::Local(path.clone());
-                }
+                this.tabs
+                    .last()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, _cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                        }
+                    });
                 let expected_index = this.tabs.len() - 1;
-                let result = this.find_tab_by_path(&path);
+                let result = this.find_tab_by_path(&path, cx);
                 assert_eq!(result, Some(expected_index));
             });
         });
@@ -603,8 +621,8 @@ mod tests {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
         visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, _cx| {
-                let result = this.find_tab_by_path(&PathBuf::from("/nonexistent/path.txt"));
+            fulgur.update(cx, |this, cx| {
+                let result = this.find_tab_by_path(&PathBuf::from("/nonexistent/path.txt"), cx);
                 assert_eq!(result, None);
             });
         });
@@ -619,8 +637,8 @@ mod tests {
             fulgur.update(cx, |this, cx| {
                 this.open_settings(window, cx);
                 // Remove all editor tabs so only settings tabs remain
-                this.tabs.retain(|t| matches!(t, Tab::Settings(_)));
-                let result = this.find_tab_by_path(&PathBuf::from("/any/path.txt"));
+                this.tabs.retain(|t| matches!(t.read(cx), Tab::Settings(_)));
+                let result = this.find_tab_by_path(&PathBuf::from("/any/path.txt"), cx);
                 assert_eq!(result, None);
             });
         });
@@ -641,11 +659,17 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.new_tab(window, cx);
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
-                    editor_tab.location = TabLocation::Remote(spec.clone());
-                }
+                this.tabs
+                    .last()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, _cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Remote(spec.clone());
+                        }
+                    });
                 let expected_index = this.tabs.len() - 1;
-                let result = this.find_tab_by_remote_spec(&spec);
+                let result = this.find_tab_by_remote_spec(&spec, cx);
                 assert_eq!(result, Some(expected_index));
             });
         });
@@ -664,8 +688,8 @@ mod tests {
         };
 
         visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, _cx| {
-                let result = this.find_tab_by_remote_spec(&spec);
+            fulgur.update(cx, |this, cx| {
+                let result = this.find_tab_by_remote_spec(&spec, cx);
                 assert_eq!(result, None);
             });
         });
@@ -682,11 +706,17 @@ mod tests {
         std::fs::write(&path, "initial content").expect("failed to write initial file");
 
         visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, _cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
-                    editor_tab.location = TabLocation::Local(path.clone());
-                    editor_tab.set_original_content_from_str("initial content");
-                }
+            fulgur.update(cx, |this, cx| {
+                this.tabs
+                    .last()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, _cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.set_original_content_from_str("initial content");
+                        }
+                    });
             });
         });
 
@@ -706,14 +736,14 @@ mod tests {
                 let content = this
                     .tabs
                     .first()
-                    .and_then(|t| t.as_editor())
+                    .and_then(|t| t.read(cx).as_editor())
                     .map(|e| e.content.read(cx).text().to_string())
                     .unwrap_or_default();
                 assert_eq!(content, "updated content");
                 let modified = this
                     .tabs
                     .first()
-                    .and_then(|t| t.as_editor())
+                    .and_then(|t| t.read(cx).as_editor())
                     .is_none_or(|e| e.modified);
                 assert!(!modified, "tab should not be marked modified after reload");
             });
@@ -731,14 +761,14 @@ mod tests {
                 let initial_content = this
                     .tabs
                     .first()
-                    .and_then(|t| t.as_editor())
+                    .and_then(|t| t.read(cx).as_editor())
                     .map(|e| e.content.read(cx).text().to_string())
                     .unwrap_or_default();
                 this.reload_tab_from_disk(0, window, cx);
                 let content_after = this
                     .tabs
                     .first()
-                    .and_then(|t| t.as_editor())
+                    .and_then(|t| t.read(cx).as_editor())
                     .map(|e| e.content.read(cx).text().to_string())
                     .unwrap_or_default();
                 assert_eq!(content_after, initial_content);
@@ -756,9 +786,15 @@ mod tests {
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.last_mut() {
-                    editor_tab.location = TabLocation::Local(path.clone());
-                }
+                this.tabs
+                    .last()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, _cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                        }
+                    });
                 let count_before = this.tabs.len();
                 this.do_open_file(window, cx, path.clone());
                 assert_eq!(
@@ -782,18 +818,27 @@ mod tests {
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.location = TabLocation::Local(path.clone());
-                    editor_tab.content.update(cx, |input_state, cx| {
-                        input_state.set_value("local unsaved edits", window, cx);
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.content.update(cx, |input_state, cx| {
+                                input_state.set_value("local unsaved edits", window, cx);
+                            });
+                            editor_tab.set_original_content_from_str("content on disk");
+                            editor_tab.modified = true;
+                        }
                     });
-                    editor_tab.set_original_content_from_str("content on disk");
-                    editor_tab.modified = true;
-                }
 
                 this.do_open_file(window, cx, path.clone());
 
-                let editor_tab = this.tabs[0].as_editor().expect("expected editor tab");
+                let editor_tab = this.tabs[0]
+                    .read(cx)
+                    .as_editor()
+                    .expect("expected editor tab");
                 assert_eq!(
                     editor_tab.content.read(cx).text(),
                     "local unsaved edits",
@@ -831,10 +876,10 @@ mod tests {
             "opening a file should reuse the empty scratch tab instead of adding one"
         );
 
-        let tab_path = fulgur.read_with(&visual_cx, |this, _| {
+        let tab_path = fulgur.read_with(&visual_cx, |this, cx| {
             this.tabs
                 .last()
-                .and_then(|t| t.as_editor())
+                .and_then(|t| t.read(cx).as_editor())
                 .and_then(|e| e.file_path().cloned())
         });
         // Canonicalize both sides since macOS may resolve /var/ -> /private/var/
@@ -856,8 +901,9 @@ mod tests {
 
         // Type into the default scratch tab so it is no longer empty.
         let editor_content = visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, _cx| {
+            fulgur.update(cx, |this, cx| {
                 this.tabs[0]
+                    .read(cx)
                     .as_editor()
                     .expect("expected editor tab")
                     .content
@@ -898,8 +944,9 @@ mod tests {
 
         // Fill the default scratch tab with whitespace only; it should still be reused.
         let editor_content = visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, _cx| {
+            fulgur.update(cx, |this, cx| {
                 this.tabs[0]
+                    .read(cx)
                     .as_editor()
                     .expect("expected editor tab")
                     .content
@@ -946,7 +993,7 @@ mod tests {
         });
 
         let count_before = fulgur.read_with(&visual_cx, |this, _| this.tabs.len());
-        let first_tab_id = fulgur.read_with(&visual_cx, |this, _| this.tabs[0].id());
+        let first_tab_id = fulgur.read_with(&visual_cx, |this, cx| this.tabs[0].read(cx).id());
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
@@ -963,16 +1010,16 @@ mod tests {
 
         let (first_id_after, first_is_blank, last_has_path) =
             fulgur.read_with(&visual_cx, |this, cx| {
-                let first_blank = this.tabs[0].as_editor().is_some_and(|e| {
+                let first_blank = this.tabs[0].read(cx).as_editor().is_some_and(|e| {
                     e.location.is_untitled() && e.content.read(cx).text().len() == 0
                 });
                 let last_path = this
                     .tabs
                     .last()
-                    .and_then(|t| t.as_editor())
+                    .and_then(|t| t.read(cx).as_editor())
                     .and_then(|e| e.file_path().cloned())
                     .is_some();
-                (this.tabs[0].id(), first_blank, last_path)
+                (this.tabs[0].read(cx).id(), first_blank, last_path)
             });
         assert_eq!(
             first_id_after, first_tab_id,
@@ -1000,9 +1047,15 @@ mod tests {
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.location = TabLocation::Remote(spec.clone());
-                }
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, _cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Remote(spec.clone());
+                        }
+                    });
                 this.new_tab(window, cx);
                 let tab_count_before = this.tabs.len();
                 this.do_open_recent_file(window, cx, remote_recent.clone());
@@ -1011,7 +1064,7 @@ mod tests {
                     tab_count_before,
                     "remote recent should focus existing tab instead of creating a duplicate"
                 );
-                assert_eq!(this.active_tab_index(), Some(0));
+                assert_eq!(this.active_tab_index(cx), Some(0));
             });
         });
     }
@@ -1063,7 +1116,8 @@ mod tests {
             let canonical_expected =
                 std::fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
             let has_file = fulgur_two.read(cx).tabs.iter().any(|tab| {
-                tab.as_editor()
+                tab.read(cx)
+                    .as_editor()
                     .and_then(|e| e.file_path().cloned())
                     .and_then(|p| std::fs::canonicalize(&p).ok())
                     .is_some_and(|p| p == canonical_expected)

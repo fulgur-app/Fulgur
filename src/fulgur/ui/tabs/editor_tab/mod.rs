@@ -32,7 +32,6 @@ pub enum CsvViewMode {
 }
 
 /// A single editor tab with its content and file metadata
-#[derive(Clone)]
 pub struct EditorTab {
     pub id: TabId,
     pub title: SharedString,
@@ -67,6 +66,10 @@ pub struct EditorTab {
     /// log view first activates. Kept separate from the editable `content` so the
     /// line cap never truncates the saveable buffer.
     pub log_content: Option<Entity<InputState>>,
+    /// Subscription to the content entity keeping `modified` current. Owned by
+    /// the tab entity, attached by `Tab::attach_content_subscription`, and
+    /// replaced whenever the content entity is swapped.
+    pub(crate) content_subscription: Option<gpui::Subscription>,
 }
 
 /// All state required to transfer an editor tab between windows

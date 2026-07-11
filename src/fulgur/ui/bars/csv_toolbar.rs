@@ -46,7 +46,7 @@ impl CsvToolbar {
     /// - `None`: If the window is gone or the active tab is not a CSV tab with a built table
     fn active_csv_table(&self, cx: &App) -> Option<Entity<TableState<CsvTableDelegate>>> {
         let fulgur = self.fulgur.upgrade()?;
-        let editor = fulgur.read(cx).get_active_editor_tab()?;
+        let editor = fulgur.read(cx).get_active_editor_tab(cx)?;
         if editor.language != SupportedLanguage::Csv {
             return None;
         }
@@ -78,10 +78,13 @@ impl CsvToolbar {
 impl Fulgur {
     /// Whether the CSV toolbar should be mounted for the active tab
     ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
     /// ### Returns
     /// - `bool`: True if the active tab is a CSV tab in table view
-    pub(crate) fn csv_toolbar_visible(&self) -> bool {
-        self.get_active_editor_tab().is_some_and(|editor| {
+    pub(crate) fn csv_toolbar_visible(&self, cx: &gpui::App) -> bool {
+        self.get_active_editor_tab(cx).is_some_and(|editor| {
             editor.language == SupportedLanguage::Csv && editor.csv_view_mode == CsvViewMode::Table
         })
     }
@@ -92,20 +95,23 @@ impl Fulgur {
     /// - `window`: The active window
     /// - `cx`: The application context
     pub fn toggle_csv_view_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(editor) = self.get_active_editor_tab_mut() else {
+        let warning = self.update_active_editor_tab(cx, |editor, cx| {
+            if editor.language != SupportedLanguage::Csv {
+                return None;
+            }
+            editor.csv_view_mode = match editor.csv_view_mode {
+                CsvViewMode::Table => CsvViewMode::Text,
+                CsvViewMode::Text => CsvViewMode::Table,
+            };
+            cx.notify();
+            if editor.csv_view_mode == CsvViewMode::Table {
+                editor.ensure_csv_table(window, cx)
+            } else {
+                None
+            }
+        });
+        let Some(warning) = warning else {
             return;
-        };
-        if editor.language != SupportedLanguage::Csv {
-            return;
-        }
-        editor.csv_view_mode = match editor.csv_view_mode {
-            CsvViewMode::Table => CsvViewMode::Text,
-            CsvViewMode::Text => CsvViewMode::Table,
-        };
-        let warning = if editor.csv_view_mode == CsvViewMode::Table {
-            editor.ensure_csv_table(window, cx)
-        } else {
-            None
         };
         if let Some(message) = warning {
             window.push_notification((NotificationType::Warning, SharedString::from(message)), cx);
@@ -279,16 +285,14 @@ mod tests {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                {
-                    let editor = this
-                        .get_active_editor_tab_mut()
-                        .expect("expected active editor tab");
+                this.update_active_editor_tab(cx, |editor, cx| {
                     editor.language = SupportedLanguage::Csv;
                     editor.csv_delimiter = b',';
                     editor.content.update(cx, |content, cx| {
                         content.set_value("a,b\n1,2", window, cx);
                     });
-                }
+                })
+                .expect("expected active editor tab");
                 this.toggle_csv_view_mode(window, cx);
             });
         });
@@ -303,25 +307,23 @@ mod tests {
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                assert!(!this.csv_toolbar_visible());
+                assert!(!this.csv_toolbar_visible(cx));
 
-                {
-                    let editor = this
-                        .get_active_editor_tab_mut()
-                        .expect("expected active editor tab");
+                this.update_active_editor_tab(cx, |editor, cx| {
                     editor.language = SupportedLanguage::Csv;
                     editor.csv_delimiter = b',';
                     editor.content.update(cx, |content, cx| {
                         content.set_value("a,b\n1,2", window, cx);
                     });
-                }
-                assert!(!this.csv_toolbar_visible());
+                })
+                .expect("expected active editor tab");
+                assert!(!this.csv_toolbar_visible(cx));
 
                 this.toggle_csv_view_mode(window, cx);
-                assert!(this.csv_toolbar_visible());
+                assert!(this.csv_toolbar_visible(cx));
 
                 this.toggle_csv_view_mode(window, cx);
-                assert!(!this.csv_toolbar_visible());
+                assert!(!this.csv_toolbar_visible(cx));
             });
         });
     }
@@ -338,7 +340,7 @@ mod tests {
 
             let text = fulgur
                 .read(cx)
-                .get_active_editor_tab()
+                .get_active_editor_tab(cx)
                 .expect("expected active editor tab")
                 .content
                 .read(cx)
@@ -357,7 +359,7 @@ mod tests {
         visual_cx.update(|_window, cx| {
             fulgur
                 .read(cx)
-                .get_active_editor_tab()
+                .get_active_editor_tab(cx)
                 .expect("expected active editor tab")
                 .csv_table
                 .clone()
@@ -371,7 +373,7 @@ mod tests {
         visual_cx.update(|_window, cx| {
             fulgur
                 .read(cx)
-                .get_active_editor_tab()
+                .get_active_editor_tab(cx)
                 .expect("expected active editor tab")
                 .content
                 .read(cx)
@@ -450,10 +452,9 @@ mod tests {
         // which would drop the selection and scroll state.
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                let editor = this
-                    .get_active_editor_tab_mut()
+                let warning = this
+                    .update_active_editor_tab(cx, |editor, cx| editor.ensure_csv_table(window, cx))
                     .expect("expected active editor tab");
-                let warning = editor.ensure_csv_table(window, cx);
                 assert!(warning.is_none());
             });
         });

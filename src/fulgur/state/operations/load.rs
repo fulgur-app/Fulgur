@@ -43,21 +43,22 @@ impl Fulgur {
             for tab_state in &window_state.tabs {
                 let tab = self.restore_tab_from_state(tab_state.clone(), tab_id, window, cx);
                 if let Some(editor_tab) = tab {
-                    self.tabs.push(Tab::Editor(editor_tab));
+                    self.tabs.push(Tab::Editor(editor_tab).into_entity(cx));
                     tab_id = tab_id.next();
                 }
             }
             let saved_active_editor_id: Option<TabId> = window_state
                 .active_tab_index
                 .and_then(|idx| self.tabs.get(idx))
-                .and_then(|t| t.as_editor())
+                .and_then(|t| t.read(cx).as_editor())
                 .map(|et| et.id);
             self.next_tab_id = tab_id;
             self.insert_preview_tabs_for_markdown(cx);
-            self.active_tab_id = saved_active_editor_id.or_else(|| self.tabs.first().map(Tab::id));
+            self.active_tab_id =
+                saved_active_editor_id.or_else(|| self.tabs.first().map(|t| t.read(cx).id()));
 
             let active_log_tab_id = self
-                .active_tab()
+                .active_tab(cx)
                 .and_then(Tab::as_editor)
                 .filter(|editor| editor.log_view)
                 .map(|editor| editor.id);
@@ -79,12 +80,16 @@ impl Fulgur {
                 &self.settings.editor_settings,
             ));
             self.active_tab_id = Some(initial_tab.id());
-            self.tabs.push(initial_tab);
+            self.tabs.push(initial_tab.into_entity(cx));
             self.next_tab_id = TabId(1);
         }
         self.settings.editor_settings.show_indent_guides = original_indent_guides;
         if original_indent_guides {
-            self.settings_changed = true;
+            // Indent guides were disabled during restoration; push the real
+            // settings into every restored tab once this update cycle is done.
+            cx.defer_in(window, |this, window, cx| {
+                this.apply_editor_settings_to_tabs(window, cx);
+            });
         }
     }
 
@@ -238,6 +243,7 @@ impl Fulgur {
                 log_follow: true,
                 log_full: false,
                 log_content: None,
+                content_subscription: None,
             }
         };
 

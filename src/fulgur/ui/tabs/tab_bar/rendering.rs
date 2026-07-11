@@ -203,7 +203,7 @@ impl TabBar {
         let ghost = if cx.has_active_drag() {
             self.drag_ghost.as_ref().and_then(|(slot, dragged)| {
                 let is_noop = fulgur
-                    .tab_index_of(dragged.tab_id)
+                    .tab_index_of(dragged.tab_id, cx)
                     .is_some_and(|from| *slot == from || *slot == from + 1);
                 if is_noop {
                     None
@@ -214,14 +214,14 @@ impl TabBar {
         } else {
             None
         };
-        let filename_counts = Self::build_tab_filename_counts(&fulgur.tabs);
+        let filename_counts = Self::build_tab_filename_counts(&fulgur.tabs, cx);
         let capacity = fulgur.tabs.len() + usize::from(ghost.is_some());
         let mut elements: Vec<AnyElement> = Vec::with_capacity(capacity);
         if let Some((0, dragged)) = ghost {
             elements.push(Self::render_ghost_tab(0, dragged, cx));
         }
         for (index, tab) in fulgur.tabs.iter().enumerate() {
-            elements.push(self.render_tab(fulgur, index, tab, &filename_counts, cx));
+            elements.push(self.render_tab(fulgur, index, tab.read(cx), &filename_counts, cx));
             if let Some((slot, dragged)) = ghost
                 && slot == index + 1
             {

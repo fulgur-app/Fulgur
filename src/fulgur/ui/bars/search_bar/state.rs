@@ -103,7 +103,7 @@ impl SearchBar {
         let fulgur = self.fulgur.upgrade()?;
         fulgur
             .read(cx)
-            .get_active_editor_tab()
+            .get_active_editor_tab(cx)
             .map(|editor_tab| editor_tab.content.clone())
     }
 }

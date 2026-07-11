@@ -98,7 +98,7 @@ impl Fulgur {
             .tabs
             .iter()
             .find_map(|t| {
-                if let Tab::Settings(s) = t {
+                if let Tab::Settings(s) = t.read(cx) {
                     Some(s.font_family_select.clone())
                 } else {
                     None

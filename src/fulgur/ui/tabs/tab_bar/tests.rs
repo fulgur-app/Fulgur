@@ -3,7 +3,7 @@ use crate::fulgur::Fulgur;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::tabs::editor_tab::TabLocation;
 use crate::fulgur::{
-    settings::Settings, shared_state::SharedAppState, tab::Tab, window_manager::WindowManager,
+    settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
 };
 use gpui::{
     AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext, Window,
@@ -62,12 +62,22 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
 fn test_get_tab_display_title_returns_filename_for_unique_path(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
-        fulgur.update(cx, |this, _cx| {
-            if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
-                e.location = TabLocation::Local(PathBuf::from("/projects/foo/main.rs"));
-            }
-            let filename_counts = TabBar::build_tab_filename_counts(&this.tabs);
-            let tab = this.tabs.first().unwrap();
+        fulgur.update(cx, |this, cx| {
+            this.tabs
+                .first()
+                .expect("expected at least one tab")
+                .clone()
+                .update(cx, |tab, _cx| {
+                    if let Some(e) = tab.as_editor_mut() {
+                        e.location = TabLocation::Local(PathBuf::from("/projects/foo/main.rs"));
+                    }
+                });
+            let filename_counts = TabBar::build_tab_filename_counts(&this.tabs, cx);
+            let tab = this
+                .tabs
+                .first()
+                .expect("expected at least one tab")
+                .read(cx);
             let (filename, folder) = TabBar::get_tab_display_title(tab, &filename_counts);
             assert_eq!(filename, "main.rs");
             assert!(
@@ -83,15 +93,27 @@ fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(cx: &m
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
-            if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
-                e.location = TabLocation::Local(PathBuf::from("/projects/a/main.rs"));
-            }
+            this.tabs
+                .first()
+                .expect("expected at least one tab")
+                .clone()
+                .update(cx, |tab, _cx| {
+                    if let Some(e) = tab.as_editor_mut() {
+                        e.location = TabLocation::Local(PathBuf::from("/projects/a/main.rs"));
+                    }
+                });
             this.new_tab(window, cx);
-            if let Some(Tab::Editor(e)) = this.tabs.get_mut(1) {
-                e.location = TabLocation::Local(PathBuf::from("/projects/b/main.rs"));
-            }
-            let filename_counts = TabBar::build_tab_filename_counts(&this.tabs);
-            let tab0 = this.tabs.first().unwrap();
+            this.tabs[1].clone().update(cx, |tab, _cx| {
+                if let Some(e) = tab.as_editor_mut() {
+                    e.location = TabLocation::Local(PathBuf::from("/projects/b/main.rs"));
+                }
+            });
+            let filename_counts = TabBar::build_tab_filename_counts(&this.tabs, cx);
+            let tab0 = this
+                .tabs
+                .first()
+                .expect("expected at least one tab")
+                .read(cx);
             let (filename0, folder0) = TabBar::get_tab_display_title(tab0, &filename_counts);
             assert_eq!(filename0, "main.rs");
             assert_eq!(
@@ -99,7 +121,7 @@ fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(cx: &m
                 Some("../a"),
                 "first tab should show its parent folder when filename is shared"
             );
-            let tab1 = this.tabs.get(1).unwrap();
+            let tab1 = this.tabs.get(1).expect("expected second tab").read(cx);
             let (filename1, folder1) = TabBar::get_tab_display_title(tab1, &filename_counts);
             assert_eq!(filename1, "main.rs");
             assert_eq!(
@@ -115,10 +137,14 @@ fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(cx: &m
 fn test_get_tab_display_title_returns_tab_title_for_untitled_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
-        fulgur.update(cx, |this, _cx| {
+        fulgur.update(cx, |this, cx| {
             // The default tab has no file_path; its display title should be the tab's own title
-            let filename_counts = TabBar::build_tab_filename_counts(&this.tabs);
-            let tab = this.tabs.first().unwrap();
+            let filename_counts = TabBar::build_tab_filename_counts(&this.tabs, cx);
+            let tab = this
+                .tabs
+                .first()
+                .expect("expected at least one tab")
+                .read(cx);
             let tab_title = tab.title().to_string();
             let (display_title, folder) = TabBar::get_tab_display_title(tab, &filename_counts);
             assert_eq!(display_title, tab_title);
@@ -131,17 +157,27 @@ fn test_get_tab_display_title_returns_tab_title_for_untitled_tab(cx: &mut TestAp
 fn test_remote_tab_indicator_label_returns_ssh_for_remote_editor_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
-        fulgur.update(cx, |this, _cx| {
-            if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
-                e.location = TabLocation::Remote(RemoteSpec {
-                    host: "example.com".to_string(),
-                    port: 22,
-                    user: Some("alice".to_string()),
-                    path: "/tmp/test.txt".to_string(),
-                    password_in_url: None,
+        fulgur.update(cx, |this, cx| {
+            this.tabs
+                .first()
+                .expect("expected at least one tab")
+                .clone()
+                .update(cx, |tab, _cx| {
+                    if let Some(e) = tab.as_editor_mut() {
+                        e.location = TabLocation::Remote(RemoteSpec {
+                            host: "example.com".to_string(),
+                            port: 22,
+                            user: Some("alice".to_string()),
+                            path: "/tmp/test.txt".to_string(),
+                            password_in_url: None,
+                        });
+                    }
                 });
-            }
-            let tab = this.tabs.first().expect("default tab should exist");
+            let tab = this
+                .tabs
+                .first()
+                .expect("default tab should exist")
+                .read(cx);
             assert_eq!(TabBar::remote_tab_indicator_label(tab), Some("R"));
         });
     });
@@ -151,11 +187,21 @@ fn test_remote_tab_indicator_label_returns_ssh_for_remote_editor_tab(cx: &mut Te
 fn test_remote_tab_indicator_label_is_none_for_local_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
-        fulgur.update(cx, |this, _cx| {
-            if let Some(Tab::Editor(e)) = this.tabs.first_mut() {
-                e.location = TabLocation::Local(PathBuf::from("/tmp/local.txt"));
-            }
-            let tab = this.tabs.first().expect("default tab should exist");
+        fulgur.update(cx, |this, cx| {
+            this.tabs
+                .first()
+                .expect("expected at least one tab")
+                .clone()
+                .update(cx, |tab, _cx| {
+                    if let Some(e) = tab.as_editor_mut() {
+                        e.location = TabLocation::Local(PathBuf::from("/tmp/local.txt"));
+                    }
+                });
+            let tab = this
+                .tabs
+                .first()
+                .expect("default tab should exist")
+                .read(cx);
             assert_eq!(TabBar::remote_tab_indicator_label(tab), None);
         });
     });
@@ -187,7 +233,12 @@ fn test_tab_bar_activate_event_switches_active_tab(cx: &mut TestAppContext) {
     let (tab_bar, first_tab_id) = visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             this.new_tab(window, cx);
-            let first_tab_id = this.tabs.first().unwrap().id();
+            let first_tab_id = this
+                .tabs
+                .first()
+                .expect("expected at least one tab")
+                .read(cx)
+                .id();
             (this.tab_bar.clone(), first_tab_id)
         })
     });
@@ -213,7 +264,7 @@ fn test_on_next_tab_advances_active_index_by_one(cx: &mut TestAppContext) {
             // Three tabs: move to index 0, then advance
             this.set_active_tab(0, window, cx);
             this.on_next_tab(window, cx);
-            assert_eq!(this.active_tab_index(), Some(1));
+            assert_eq!(this.active_tab_index(cx), Some(1));
         });
     });
 }
@@ -229,7 +280,7 @@ fn test_on_next_tab_wraps_around_from_last_to_first(cx: &mut TestAppContext) {
             let last = this.tabs.len() - 1;
             this.set_active_tab(last, window, cx);
             this.on_next_tab(window, cx);
-            assert_eq!(this.active_tab_index(), Some(0));
+            assert_eq!(this.active_tab_index(cx), Some(0));
         });
     });
 }
@@ -242,7 +293,7 @@ fn test_on_next_tab_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
         fulgur.update(cx, |this, cx| {
             this.active_tab_id = None;
             this.on_next_tab(window, cx);
-            assert_eq!(this.active_tab_index(), None);
+            assert_eq!(this.active_tab_index(cx), None);
         });
     });
 }
@@ -259,7 +310,7 @@ fn test_on_previous_tab_moves_to_previous_index(cx: &mut TestAppContext) {
             let last = this.tabs.len() - 1;
             this.set_active_tab(last, window, cx);
             this.on_previous_tab(window, cx);
-            assert_eq!(this.active_tab_index(), Some(last - 1));
+            assert_eq!(this.active_tab_index(cx), Some(last - 1));
         });
     });
 }
@@ -274,7 +325,7 @@ fn test_on_previous_tab_wraps_around_from_first_to_last(cx: &mut TestAppContext)
             this.set_active_tab(0, window, cx);
             this.on_previous_tab(window, cx);
             let last = this.tabs.len() - 1;
-            assert_eq!(this.active_tab_index(), Some(last));
+            assert_eq!(this.active_tab_index(cx), Some(last));
         });
     });
 }
@@ -286,7 +337,7 @@ fn test_on_previous_tab_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
         fulgur.update(cx, |this, cx| {
             this.active_tab_id = None;
             this.on_previous_tab(window, cx);
-            assert_eq!(this.active_tab_index(), None);
+            assert_eq!(this.active_tab_index(cx), None);
         });
     });
 }

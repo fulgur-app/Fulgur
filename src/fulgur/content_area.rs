@@ -1,4 +1,3 @@
-use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
 };
@@ -39,7 +38,7 @@ impl Fulgur {
         }
         cx.stop_propagation();
 
-        let Some(Tab::Editor(editor_tab)) = self.active_tab() else {
+        let Some(Tab::Editor(editor_tab)) = self.active_tab(cx) else {
             return;
         };
         let active_tab_id = editor_tab.id;
@@ -99,7 +98,6 @@ impl Fulgur {
     ) -> AnyElement {
         enum ActiveTabRenderData {
             Editor {
-                tab_id: TabId,
                 language: SupportedLanguage,
                 show_markdown_preview: bool,
                 content: Entity<InputState>,
@@ -110,7 +108,6 @@ impl Fulgur {
             },
             Settings,
             MarkdownPreview {
-                source_tab_id: TabId,
                 content: Entity<InputState>,
                 view_state: Entity<gpui_component::text::TextViewState>,
             },
@@ -121,11 +118,17 @@ impl Fulgur {
         // lossy, `ensure_csv_table` falls back to text mode and returns a
         // warning to surface to the user.
         let csv_table_warning = if let Some(active_index) = active_tab_index
-            && let Some(Tab::Editor(editor_tab)) = self.tabs.get_mut(active_index)
-            && editor_tab.language == SupportedLanguage::Csv
-            && editor_tab.csv_view_mode == editor_tab::CsvViewMode::Table
+            && let Some(tab_entity) = self.tabs.get(active_index).cloned()
         {
-            editor_tab.ensure_csv_table(window, cx)
+            tab_entity.update(cx, |tab, cx| match tab {
+                Tab::Editor(editor_tab)
+                    if editor_tab.language == SupportedLanguage::Csv
+                        && editor_tab.csv_view_mode == editor_tab::CsvViewMode::Table =>
+                {
+                    editor_tab.ensure_csv_table(window, cx)
+                }
+                _ => None,
+            })
         } else {
             None
         };
@@ -135,9 +138,8 @@ impl Fulgur {
 
         let tabs_ref = &self.tabs;
         let active_tab = active_tab_index.and_then(|active_index| {
-            tabs_ref.get(active_index).map(|tab| match tab {
+            tabs_ref.get(active_index).map(|tab| match tab.read(cx) {
                 Tab::Editor(editor_tab) => ActiveTabRenderData::Editor {
-                    tab_id: editor_tab.id,
                     language: editor_tab.language,
                     show_markdown_preview: editor_tab.show_markdown_preview,
                     content: editor_tab.content.clone(),
@@ -148,10 +150,9 @@ impl Fulgur {
                 },
                 Tab::Settings(_) => ActiveTabRenderData::Settings,
                 Tab::MarkdownPreview(preview_tab) => ActiveTabRenderData::MarkdownPreview {
-                    source_tab_id: preview_tab.source_tab_id,
                     content: tabs_ref
                         .iter()
-                        .find_map(|t| match t {
+                        .find_map(|t| match t.read(cx) {
                             Tab::Editor(editor_tab)
                                 if editor_tab.id == preview_tab.source_tab_id =>
                             {
@@ -168,7 +169,6 @@ impl Fulgur {
         if let Some(tab) = active_tab {
             match tab {
                 ActiveTabRenderData::Editor {
-                    tab_id,
                     language,
                     show_markdown_preview,
                     content,
@@ -218,7 +218,9 @@ impl Fulgur {
                         && self.settings.editor_settings.markdown_settings.preview_mode
                             == crate::fulgur::settings::MarkdownPreviewMode::Panel
                     {
-                        let preview_text = self.markdown_preview_text_for(tab_id, &content, cx);
+                        // Reading the content entity here tracks it for this
+                        // window, so edits re-render the panel automatically.
+                        let preview_text = content.read(cx).value();
                         return v_flex()
                             .w_full()
                             .flex_1()
@@ -264,11 +266,10 @@ impl Fulgur {
                         .into_any_element();
                 }
                 ActiveTabRenderData::MarkdownPreview {
-                    source_tab_id,
                     content,
                     view_state,
                 } => {
-                    let preview_text = self.markdown_preview_text_for(source_tab_id, &content, cx);
+                    let preview_text = content.read(cx).value();
                     view_state.update(cx, |state, cx| {
                         state.set_text(preview_text.as_ref(), cx);
                     });

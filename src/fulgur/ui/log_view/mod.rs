@@ -58,30 +58,20 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `tab_id`: The tab id to look up
+    /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `Some(&EditorTab)`: The matching editor tab
     /// - `None`: If no editor tab has that id
-    fn editor_tab(&self, tab_id: TabId) -> Option<&crate::fulgur::editor_tab::EditorTab> {
-        self.tabs
-            .iter()
-            .find_map(|tab| tab.as_editor().filter(|editor| editor.id == tab_id))
-    }
-
-    /// Mutably borrow an editor tab by id.
-    ///
-    /// ### Arguments
-    /// - `tab_id`: The tab id to look up
-    ///
-    /// ### Returns
-    /// - `Some(&mut EditorTab)`: The matching editor tab
-    /// - `None`: If no editor tab has that id
-    fn editor_tab_mut(
-        &mut self,
+    fn editor_tab<'a>(
+        &self,
         tab_id: TabId,
-    ) -> Option<&mut crate::fulgur::editor_tab::EditorTab> {
-        self.tabs
-            .iter_mut()
-            .find_map(|tab| tab.as_editor_mut().filter(|editor| editor.id == tab_id))
+        cx: &'a gpui::App,
+    ) -> Option<&'a crate::fulgur::editor_tab::EditorTab> {
+        self.tabs.iter().find_map(|tab| {
+            tab.read(cx)
+                .as_editor()
+                .filter(|editor| editor.id == tab_id)
+        })
     }
 }

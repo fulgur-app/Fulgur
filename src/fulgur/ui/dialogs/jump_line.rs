@@ -64,10 +64,7 @@ impl Fulgur {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     use crate::fulgur::{
-        Fulgur,
-        settings::Settings,
-        shared_state::SharedAppState,
-        ui::tabs::{editor_tab::Jump, tab::Tab},
+        Fulgur, settings::Settings, shared_state::SharedAppState, ui::tabs::editor_tab::Jump,
         window_manager::WindowManager,
     };
     use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
@@ -128,11 +125,17 @@ mod tests {
         // Set multi-line content in the active editor tab
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                if let Some(Tab::Editor(editor_tab)) = this.tabs.first_mut() {
-                    editor_tab.content.update(cx, |input, cx| {
-                        input.set_value("line one\nline two\nline three", window, cx);
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.content.update(cx, |input, cx| {
+                                input.set_value("line one\nline two\nline three", window, cx);
+                            });
+                        }
                     });
-                }
             });
         });
         // Jump to line 2 (0-indexed: line = 1)
@@ -148,7 +151,7 @@ mod tests {
         let cursor_line = fulgur.read_with(&visual_cx, |this, cx| {
             this.tabs
                 .first()
-                .and_then(|t| t.as_editor())
+                .and_then(|t| t.read(cx).as_editor())
                 .map(|e| e.content.read(cx).cursor_position().line)
         });
         assert_eq!(cursor_line, Some(1), "cursor should be on line index 1");
@@ -166,7 +169,7 @@ mod tests {
         let cursor_line = fulgur.read_with(&visual_cx, |this, cx| {
             this.tabs
                 .first()
-                .and_then(|t| t.as_editor())
+                .and_then(|t| t.read(cx).as_editor())
                 .map(|e| e.content.read(cx).cursor_position().line)
         });
         assert_eq!(

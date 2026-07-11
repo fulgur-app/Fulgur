@@ -55,8 +55,8 @@ impl Fulgur {
                 if cancel.load(Ordering::Acquire) {
                     break;
                 }
-                let Ok(Ok(Some(offset))) =
-                    window.update(|_, cx| view.update(cx, |this, _| this.log_tail_offset(tab_id)))
+                let Ok(Ok(Some(offset))) = window
+                    .update(|_, cx| view.update(cx, |this, cx| this.log_tail_offset(tab_id, cx)))
                 else {
                     break;
                 };
@@ -92,8 +92,8 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(u64)`: The byte offset when the tab is still in log view
     /// - `None`: When the tab is gone or no longer in log view (poll should stop)
-    fn log_tail_offset(&self, tab_id: TabId) -> Option<u64> {
-        let editor = self.editor_tab(tab_id)?;
+    fn log_tail_offset(&self, tab_id: TabId, cx: &gpui::App) -> Option<u64> {
+        let editor = self.editor_tab(tab_id, cx)?;
         if !editor.log_view {
             return None;
         }
@@ -120,7 +120,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (log_content, log_full, follow) = match self.editor_tab(tab_id) {
+        let (log_content, log_full, follow) = match self.editor_tab(tab_id, cx) {
             Some(editor) => match editor.log_content.clone() {
                 Some(log_content) => (log_content, editor.log_full, editor.log_follow),
                 None => return,
@@ -191,7 +191,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (log_content, log_full) = match self.editor_tab(tab_id) {
+        let (log_content, log_full) = match self.editor_tab(tab_id, cx) {
             Some(editor) => match editor.log_content.clone() {
                 Some(log_content) => (log_content, editor.log_full),
                 None => return,
@@ -226,9 +226,10 @@ impl Fulgur {
     /// ### Arguments
     /// - `tab_id`: The tab to update
     /// - `follow`: The new follow state
-    pub(super) fn set_log_follow(&mut self, tab_id: TabId, follow: bool) {
-        if let Some(editor) = self.editor_tab_mut(tab_id) {
+    /// - `cx`: The application context
+    pub(super) fn set_log_follow(&mut self, tab_id: TabId, follow: bool, cx: &mut gpui::App) {
+        self.update_editor_tab(tab_id, cx, |editor, _| {
             editor.log_follow = follow;
-        }
+        });
     }
 }
