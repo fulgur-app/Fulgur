@@ -10,3 +10,4 @@ pub mod sanitize;
 pub mod single_instance;
 pub mod updater;
 pub mod utilities;
+pub mod worker;

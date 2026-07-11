@@ -264,14 +264,14 @@ fn main() {
         );
         cx.set_global(shared_state);
         // On Windows, start the IPC listener now that SharedAppState is registered.
-        // We grab the two arcs from the global so there's a single source of truth.
+        // We grab the two arcs from the global so there's a single source of truth,
+        // and store the Drop-owned worker back on it so the listener has an owner.
         #[cfg(target_os = "windows")]
-        {
-            let shared = cx.global::<fulgur::shared_state::SharedAppState>();
+        cx.update_global::<fulgur::shared_state::SharedAppState, _>(|shared, _| {
             let pf = shared.pending_files_from_macos.clone();
             let pic = shared.pending_ipc_commands.clone();
-            fulgur::utils::single_instance::start_ipc_listener(pf, pic);
-        }
+            shared.ipc_listener = fulgur::utils::single_instance::start_ipc_listener(pf, pic);
+        });
         cx.set_global(fulgur::window_manager::WindowManager::new());
         fulgur::shared_state::spawn_notification_consumer(cx);
         if restore_bounds.is_empty() {

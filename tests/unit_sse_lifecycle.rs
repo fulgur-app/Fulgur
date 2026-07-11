@@ -14,11 +14,12 @@ use fulgur::fulgur::sync::sse::{SseAgents, SseEvent, SseShareState, SseState, co
 use fulgur::fulgur::sync::synchronization::{
     SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
 };
+use fulgur::fulgur::utils::worker::Worker;
 use fulgur_common::api::shares::SharedFileResponse;
 use parking_lot::Mutex;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU64},
+    atomic::{AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
 
@@ -65,9 +66,8 @@ fn test_sse_state_new_all_fields_none() {
     let state = SseState::new();
     assert!(state.sse_events.is_none());
     assert!(state.sse_event_tx.is_none());
-    assert!(state.sse_shutdown_flag.is_none());
     assert!(state.last_sse_event.is_none());
-    assert!(state.sse_thread_handle.lock().is_none());
+    assert!(state.worker.is_none());
 }
 
 #[test]
@@ -76,18 +76,19 @@ fn test_sse_state_default_matches_new() {
     let b = SseState::default();
     // Both should be in the same empty state.
     assert!(a.sse_events.is_none() && b.sse_events.is_none());
-    assert!(a.sse_shutdown_flag.is_none() && b.sse_shutdown_flag.is_none());
+    assert!(a.worker.is_none() && b.worker.is_none());
     assert!(a.last_sse_event.is_none() && b.last_sse_event.is_none());
 }
 
 #[test]
-fn test_sse_state_thread_handle_is_arc_shared() {
-    // The Arc around the thread handle allows other threads to store the handle
-    // once connect_sse has returned. Verify the Arc can be cloned and the lock shared.
-    let state = SseState::new();
-    let handle_clone = Arc::clone(&state.sse_thread_handle);
-    assert!(state.sse_thread_handle.lock().is_none());
-    assert!(handle_clone.lock().is_none());
+fn test_sse_worker_hooks_share_the_shutdown_flag() {
+    // The hooks handed to connect_sse observe shutdown requests made on the
+    // Worker stored in SseState.
+    let worker = Worker::new("test-sse-worker", Duration::from_secs(1));
+    let hooks = worker.hooks();
+    assert!(!hooks.shutdown_flag.load(Ordering::Relaxed));
+    worker.signal_shutdown();
+    assert!(hooks.shutdown_flag.load(Ordering::Relaxed));
 }
 
 // ---------------------------------------------------------------------------
@@ -239,7 +240,8 @@ fn test_connect_sse_fails_without_server_url() {
     // connect_sse must return Err(ServerUrlMissing) immediately and not spawn a thread.
     let profile = ServerProfile::new("Test"); // server_url = None
     let (tx, _rx) = futures::channel::mpsc::unbounded();
-    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let worker = Worker::new("test-sse", Duration::from_secs(1));
+    let hooks = worker.hooks();
     let status = make_connection_status(SynchronizationStatus::Disconnected);
     let token_manager = Arc::new(TokenStateManager::new());
     let agents = make_sse_agents();
@@ -247,7 +249,7 @@ fn test_connect_sse_fails_without_server_url() {
     let result = connect_sse(
         &profile,
         tx,
-        shutdown_flag,
+        &hooks,
         status,
         &token_manager,
         &agents,
@@ -258,6 +260,10 @@ fn test_connect_sse_fails_without_server_url() {
         matches!(result, Err(SynchronizationError::ServerUrlMissing)),
         "Expected ServerUrlMissing, got: {:?}",
         result.err()
+    );
+    assert!(
+        hooks.handle_slot.lock().is_none(),
+        "no thread must be attached when connect_sse fails"
     );
 }
 
@@ -272,21 +278,29 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
     // performing any network I/O or sleeping.
     let profile = profile_with_server_url();
     let (tx, _rx) = futures::channel::mpsc::unbounded();
-    let shutdown_flag = Arc::new(AtomicBool::new(true)); // pre-set
+    let worker = Worker::new("test-sse", Duration::from_secs(2));
+    let hooks = worker.hooks();
+    hooks.shutdown_flag.store(true, Ordering::Relaxed); // pre-set
     let status = make_connection_status(SynchronizationStatus::Disconnected);
     let token_manager = Arc::new(TokenStateManager::new());
     let agents = make_sse_agents();
 
-    let handle = connect_sse(
+    connect_sse(
         &profile,
         tx,
-        shutdown_flag,
+        &hooks,
         status,
         &token_manager,
         &agents,
         &make_sse_share_state(),
     )
     .expect("connect_sse should succeed with a server URL");
+
+    let handle = hooks
+        .handle_slot
+        .lock()
+        .take()
+        .expect("connect_sse must attach the thread handle to the worker's slot");
 
     // The thread should exit in the first iteration - no sleep, no network.
     // Give it a generous deadline to avoid flakiness on slow CI runners.
@@ -303,12 +317,15 @@ fn test_connect_sse_exits_immediately_when_shutdown_pre_set() {
 }
 
 #[test]
-fn test_connect_sse_returns_ok_handle_with_valid_settings() {
-    // Verify that connect_sse returns Ok(JoinHandle) when the server URL is present,
-    // regardless of whether the connection succeeds later.
+fn test_connect_sse_attaches_handle_to_worker_with_valid_settings() {
+    // Verify that connect_sse returns Ok(()) and attaches the thread handle to
+    // the worker's slot when the server URL is present, regardless of whether
+    // the connection succeeds later. Dropping the Worker then joins the thread.
     let profile = profile_with_server_url();
     let (tx, _rx) = futures::channel::mpsc::unbounded();
-    let shutdown_flag = Arc::new(AtomicBool::new(true)); // shut down immediately
+    let worker = Worker::new("test-sse", Duration::from_secs(2));
+    let hooks = worker.hooks();
+    hooks.shutdown_flag.store(true, Ordering::Relaxed); // shut down immediately
     let status = make_connection_status(SynchronizationStatus::Disconnected);
     let token_manager = Arc::new(TokenStateManager::new());
     let agents = make_sse_agents();
@@ -316,22 +333,21 @@ fn test_connect_sse_returns_ok_handle_with_valid_settings() {
     let result = connect_sse(
         &profile,
         tx,
-        shutdown_flag,
+        &hooks,
         status,
         &token_manager,
         &agents,
         &make_sse_share_state(),
     );
 
+    assert!(result.is_ok(), "Expected Ok(()), got: {:?}", result.err());
     assert!(
-        result.is_ok(),
-        "Expected Ok(JoinHandle), got: {:?}",
-        result.err()
+        hooks.handle_slot.lock().is_some(),
+        "connect_sse must attach the thread handle to the worker's slot"
     );
-    let handle = result.unwrap();
 
-    // Clean up: wait for the pre-shutdown thread to exit.
-    let _ = handle.join();
+    // Clean up: dropping the worker joins the pre-shutdown thread.
+    drop(worker);
 }
 
 // ---------------------------------------------------------------------------

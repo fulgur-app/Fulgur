@@ -1,7 +1,8 @@
 use super::persistence::WindowsState;
+use crate::fulgur::utils::worker::Worker;
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::thread;
+use std::time::Duration;
 
 /// Bounded channel capacity for pending save requests.
 ///
@@ -9,6 +10,10 @@ use std::thread;
 /// callers typically wait on the reply before issuing the next save. A full queue
 /// indicates an abnormal backlog and makes callers back off naturally.
 const CHANNEL_CAPACITY: usize = 16;
+
+/// Maximum time a dropped `StateWriter` waits for the worker to flush queued
+/// saves before detaching it.
+const WRITER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A request sent from a UI thread to the writer thread: a serialized snapshot,
 /// the destination path, and an optional reply channel the writer uses to report
@@ -22,6 +27,7 @@ struct WriteRequest {
 /// Dedicated background writer that serializes all `WindowsState` persistence.
 pub struct StateWriter {
     sender: mpsc::SyncSender<WriteRequest>,
+    _worker: Worker,
 }
 
 impl StateWriter {
@@ -36,11 +42,17 @@ impl StateWriter {
     #[must_use]
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::sync_channel::<WriteRequest>(CHANNEL_CAPACITY);
-        thread::Builder::new()
-            .name("fulgur-state-writer".to_string())
-            .spawn(move || Self::run(&receiver))
-            .expect("failed to spawn state writer thread");
-        Self { sender }
+        let worker = Worker::spawn(
+            "fulgur-state-writer",
+            WRITER_JOIN_TIMEOUT,
+            move |_shutdown| {
+                Self::run(&receiver);
+            },
+        );
+        Self {
+            sender,
+            _worker: worker,
+        }
     }
 
     /// Worker-thread loop that processes save requests one at a time.

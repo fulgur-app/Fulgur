@@ -12,7 +12,10 @@ use crate::fulgur::{
             version_supports_per_id_fetch, version_supports_v2_share_flow,
         },
     },
-    utils::retry::{BackoffCalculator, interruptible_sleep},
+    utils::{
+        retry::{BackoffCalculator, interruptible_sleep},
+        worker::WorkerHooks,
+    },
 };
 use fulgur_common::api::shares::SharedFileResponse;
 use futures::channel::mpsc::UnboundedSender;
@@ -356,7 +359,7 @@ fn fetch_pending_shares_v2_into(
 /// ### Arguments
 /// - `profile`: The server profile (URL, email, id) to connect to
 /// - `event_tx`: Channel sender for sending SSE events to the main thread
-/// - `shutdown_flag`: Atomic boolean flag to signal the SSE thread to shutdown
+/// - `hooks`: Shutdown flag polled by the thread and slot receiving its `JoinHandle`
 /// - `sync_server_connection_status`: Arc-wrapped connection status to update on connection/disconnection
 /// - `token_state`: Arc to the per-profile token state manager for authentication
 /// - `agents`: HTTP agents for the SSE stream and its REST calls
@@ -364,20 +367,20 @@ fn fetch_pending_shares_v2_into(
 ///
 /// ### Errors
 /// Returns a `SynchronizationError` if required profile fields (server URL,
-/// email) are missing.
+/// email) are missing or the OS refuses to spawn the thread.
 ///
 /// ### Returns
-/// - `Ok(thread::JoinHandle<()>)`: If the SSE connection thread was spawned successfully
-/// - `Err(SynchronizationError)`: If required profile fields are missing
+/// - `Ok(())`: The SSE connection thread was spawned and attached to the hooks
+/// - `Err(SynchronizationError)`: Required profile fields are missing or the spawn failed
 pub fn connect_sse(
     profile: &ServerProfile,
     event_tx: UnboundedSender<SseEvent>,
-    shutdown_flag: Arc<AtomicBool>,
+    hooks: &WorkerHooks,
     sync_server_connection_status: Arc<Mutex<SynchronizationStatus>>,
     token_state: &Arc<TokenStateManager>,
     agents: &SseAgents,
     share_state: &SseShareState,
-) -> Result<thread::JoinHandle<()>, SynchronizationError> {
+) -> Result<(), SynchronizationError> {
     let server_url = profile
         .server_url
         .clone()
@@ -393,7 +396,10 @@ pub fn connect_sse(
         max_file_size_bytes: Arc::clone(&share_state.max_file_size_bytes),
         server_version: Arc::clone(&share_state.server_version),
     };
-    let handle = thread::spawn(move || {
+    let shutdown_flag = Arc::clone(&hooks.shutdown_flag);
+    let handle = thread::Builder::new()
+        .name(format!("fulgur-sse-{}", profile.name))
+        .spawn(move || {
         let mut backoff = BackoffCalculator::default_settings();
 
         loop {
@@ -606,8 +612,10 @@ pub fn connect_sse(
                 break;
             }
         }
-    });
-    Ok(handle)
+    })
+        .map_err(|e| SynchronizationError::Other(format!("failed to spawn SSE thread: {e}")))?;
+    *hooks.handle_slot.lock() = Some(handle);
+    Ok(())
 }
 
 #[cfg(test)]

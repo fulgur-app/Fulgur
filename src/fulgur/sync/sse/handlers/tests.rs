@@ -57,9 +57,8 @@ fn test_sse_state_new_is_fully_empty() {
     let state = SseState::new();
     assert!(state.sse_events.is_none());
     assert!(state.sse_event_tx.is_none());
-    assert!(state.sse_shutdown_flag.is_none());
     assert!(state.last_sse_event.is_none());
-    assert!(state.sse_thread_handle.lock().is_none());
+    assert!(state.worker.is_none());
 }
 
 // --- handle_sse_event_for_profile: Heartbeat ---

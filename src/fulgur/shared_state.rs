@@ -138,6 +138,10 @@ pub struct SharedAppState {
     /// Pending IPC commands from Windows jump list ("new-tab", "new-window")
     #[cfg(target_os = "windows")]
     pub pending_ipc_commands: Arc<Mutex<Vec<String>>>,
+    /// Drop-owned handle to the single-instance IPC listener thread, set once
+    /// at startup by `main.rs`.
+    #[cfg(target_os = "windows")]
+    pub ipc_listener: Option<crate::fulgur::utils::worker::Worker>,
     /// Shared HTTP agent for connection pooling across all short-lived REST
     /// requests (token, ping, share fetch). Carries a 10s global timeout.
     pub http_agent: Arc<ureq::Agent>,
@@ -200,6 +204,8 @@ impl SharedAppState {
             pending_files_from_macos,
             #[cfg(target_os = "windows")]
             pending_ipc_commands: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(target_os = "windows")]
+            ipc_listener: None,
             http_agent: Arc::new(ureq::Agent::new_with_config(
                 ureq::config::Config::builder()
                     .timeout_connect(Some(std::time::Duration::from_secs(5)))
