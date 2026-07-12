@@ -49,7 +49,7 @@ keyring-core = "1.0.0"
 
 # Networking
 ureq = { version = "3.3.0", features = ["json"] }
-ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+ssh2 = { version = "0.9.6", features = ["vendored-openssl"] }
 
 # Encoding
 chardetng = "1.0.0"
@@ -62,7 +62,7 @@ url = "2.5.8"
 log = "0.4.33"
 
 # Time
-time = { version = "0.3.51", features = ["serde", "macros", "formatting", "parsing"] }
+time = { version = "0.3.53", features = ["serde", "macros", "formatting", "parsing"] }
 
 # Error handling
 anyhow = "1.0.103"
@@ -78,12 +78,12 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component", feature
 
 # Filesystem
 notify = "8.2.0"
-open = "5.3.6"
+open = "5.4.0"
 flate2 = "1.1.9"
 
 # Security - forcing minimum versions for transitive dependencies
 # Fix RUSTSEC-2026-0007: Integer overflow in BytesMut::reserve
-bytes = "1.12.0"
+bytes = "1.12.1"
 # Fix RUSTSEC-2026-0098/0099: Name constraint bypass in rustls-webpki
 rustls-webpki = "0.103.13"
 # Fix RUSTSEC-2026-0186: Unchecked pointer offset in memmap2 (via fontdb -> usvg -> gpui)
@@ -118,14 +118,14 @@ tree-sitter-fsharp = "0.3.0"
 tree-sitter-r = "1.3.0"
 
 # Others
-rust-embed = "8.11.0"
-regex = "1.12.4"
+rust-embed = "8.12.0"
+regex = "1.13.0"
 ropey = "=2.0.0-beta.1"
 semver = "1.0.28"
 parking_lot = "0.12.5"
 color-lsp = "0.2.0"
 flexi_logger = "0.31.9"
-uuid = { version = "1.23.4", features = ["v4"] }
+uuid = { version = "1.23.5", features = ["v4"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6.1"
@@ -152,7 +152,7 @@ windows = { version = "0.61", features = [
 tempfile = "3.27.0"
 
 [build-dependencies]
-embed-resource = "3.0.9"
+embed-resource = "3.0.11"
 
 
 # Builds the dependencies with optimisations even during debug builds, commented by default
