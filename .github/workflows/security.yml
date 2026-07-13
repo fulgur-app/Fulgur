@@ -43,7 +43,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           # Ignore unmaintained transitive dependencies that come from external crates and are outside of Fulgur's control.
           # Keep this list in sync with `[advisories].ignore` in deny.toml.
-          ignore: RUSTSEC-2025-0052,RUSTSEC-2024-0384,RUSTSEC-2024-0436,RUSTSEC-2026-0105,RUSTSEC-2026-0173,RUSTSEC-2026-0192,RUSTSEC-2026-0194,RUSTSEC-2026-0195,RUSTSEC-2026-0206
+          ignore: RUSTSEC-2025-0052,RUSTSEC-2024-0384,RUSTSEC-2024-0436,RUSTSEC-2026-0105,RUSTSEC-2026-0173,RUSTSEC-2026-0192,RUSTSEC-2026-0194,RUSTSEC-2026-0195,RUSTSEC-2026-0206,RUSTSEC-2025-0134
 
       - name: Cargo deny
         uses: EmbarkStudios/cargo-deny-action@v2
