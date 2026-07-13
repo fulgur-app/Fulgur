@@ -59,6 +59,7 @@ ignore = [
     "RUSTSEC-2026-0173",  # proc-macro-error2 - unmaintained (from gpui via stacksafe-macro, and from age via i18n-embed-fl)
     "RUSTSEC-2026-0192",  # ttf-parser - unmaintained; no safe upgrade available (from gpui via fontdb/cosmic-text/usvg/rustybuzz)
     "RUSTSEC-2026-0206",  # rustybuzz - unmaintained; no safe upgrade available (from gpui via usvg/resvg, pinned Zed revision)
+    "RUSTSEC-2025-0134",  # rustls-pemfile - unmaintained; no safe upgrade available (from Zed's reqwest fork via zed-reqwest -> gpui-component-assets)
     # quick-xml DoS advisories - Linux-only, build/protocol XML parsing of trusted local data, not the untrusted remote XML in the advisory threat model.
     # Cannot upgrade: xcb (^0.30) and wayland-scanner (^0.39) pin incompatible ranges and are locked via the pinned gpui/Zed revision.
     "RUSTSEC-2026-0194",  # quick-xml - quadratic runtime on duplicate attribute names (from gpui via xcb and wayland-scanner)
