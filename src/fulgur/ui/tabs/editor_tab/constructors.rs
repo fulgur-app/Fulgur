@@ -40,6 +40,7 @@ impl EditorTab {
                 language_registry_name(&language),
                 None,
                 settings,
+                false,
             )
         });
         Self {
@@ -57,6 +58,7 @@ impl EditorTab {
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: None,
             file_last_modified: None,
+            large_file: false,
             csv_view_mode: super::CsvViewMode::Text,
             csv_delimiter: crate::fulgur::files::csv_support::DEFAULT_DELIMITER,
             csv_table: None,
@@ -91,6 +93,7 @@ impl EditorTab {
         settings: &EditorSettings,
     ) -> Self {
         let language = language_from_content(&file_name, contents);
+        let large_file = super::is_large_file(contents.len());
         let (csv_view_mode, csv_delimiter) = initial_csv_state(language, contents);
         let (original_content_hash, original_content_len) = super::content_fingerprint_from_str("");
         let content = cx.new(|cx| {
@@ -100,6 +103,7 @@ impl EditorTab {
                 language_registry_name(&language),
                 Some(contents.to_string()),
                 settings,
+                large_file,
             )
         });
         Self {
@@ -117,6 +121,7 @@ impl EditorTab {
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: None,
             file_last_modified: None,
+            large_file,
             csv_view_mode,
             csv_delimiter,
             csv_table: None,
@@ -156,6 +161,7 @@ impl EditorTab {
             .to_string();
 
         let language = language_from_content(&file_name, &params.contents);
+        let large_file = super::is_large_file(content_len);
         let (csv_view_mode, csv_delimiter) = initial_csv_state(language, &params.contents);
         let content = cx.new(|cx| {
             super::make_input_state(
@@ -164,6 +170,7 @@ impl EditorTab {
                 language_registry_name(&language),
                 Some(params.contents.clone()),
                 settings,
+                large_file,
             )
         });
         let title = format!(
@@ -186,6 +193,7 @@ impl EditorTab {
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: Some(content_len as u64),
             file_last_modified: Some(SystemTime::now()),
+            large_file,
             csv_view_mode,
             csv_delimiter,
             csv_table: None,
@@ -217,6 +225,7 @@ impl EditorTab {
         cx: &mut App,
         settings: &EditorSettings,
     ) -> Self {
+        let large_file = super::is_large_file(params.current_content.len());
         let (csv_view_mode, csv_delimiter) =
             initial_csv_state(params.language, &params.current_content);
         let (original_content_hash, original_content_len) = super::content_fingerprint_from_str("");
@@ -227,6 +236,7 @@ impl EditorTab {
                 language_registry_name(&params.language),
                 Some(params.current_content),
                 settings,
+                large_file,
             )
         });
         Self {
@@ -244,6 +254,7 @@ impl EditorTab {
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: None,
             file_last_modified: None,
+            large_file,
             csv_view_mode,
             csv_delimiter,
             csv_table: None,
@@ -290,6 +301,7 @@ impl EditorTab {
                 language_registry_name(&language),
                 None,
                 settings,
+                false,
             )
         });
         Self {
@@ -307,6 +319,7 @@ impl EditorTab {
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: None,
             file_last_modified: None,
+            large_file: false,
             csv_view_mode,
             csv_delimiter,
             csv_table: None,
@@ -348,6 +361,7 @@ impl EditorTab {
         let (csv_view_mode, csv_delimiter) = initial_csv_state(language, &result.content);
         let (original_content_hash, original_content_len) =
             super::content_fingerprint_from_str(&result.content);
+        let large_file = super::is_large_file(original_content_len);
         let content = cx.new(|cx| {
             super::make_input_state(
                 window,
@@ -355,6 +369,7 @@ impl EditorTab {
                 language_registry_name(&language),
                 Some(result.content),
                 settings,
+                large_file,
             )
         });
         Self {
@@ -372,6 +387,7 @@ impl EditorTab {
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: Some(result.file_size as u64),
             file_last_modified: Some(SystemTime::now()),
+            large_file,
             csv_view_mode,
             csv_delimiter,
             csv_table: None,
@@ -407,6 +423,7 @@ impl EditorTab {
         settings: &EditorSettings,
     ) -> Self {
         let cursor_position = data.cursor_position;
+        let large_file = super::is_large_file(data.content.len());
         let content = cx.new(|cx| {
             super::make_input_state(
                 window,
@@ -414,6 +431,7 @@ impl EditorTab {
                 language_registry_name(&data.language),
                 Some(data.content),
                 settings,
+                large_file,
             )
         });
         content.update(cx, |state, cx| {
@@ -434,6 +452,7 @@ impl EditorTab {
             show_markdown_preview: data.show_markdown_preview,
             file_size_bytes: data.file_size_bytes,
             file_last_modified: data.file_last_modified,
+            large_file,
             csv_view_mode: data.csv_view_mode,
             csv_delimiter: data.csv_delimiter,
             csv_table: None,

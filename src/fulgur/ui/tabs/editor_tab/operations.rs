@@ -31,17 +31,18 @@ impl EditorTab {
         settings: &EditorSettings,
     ) {
         let has_provider = self.content.read(cx).lsp.document_color_provider.is_some();
-        let wants_provider = settings.highlight_colors;
+        let wants_provider = settings.highlight_colors && !self.large_file;
 
         if has_provider != wants_provider {
             self.rebuild_input_state(window, cx, settings);
             return;
         }
 
+        let large_file = self.large_file;
         self.content.update(cx, |input_state, cx| {
             input_state.set_line_number(settings.show_line_numbers, window, cx);
             input_state.set_indent_guides(settings.show_indent_guides, window, cx);
-            input_state.set_soft_wrap(settings.soft_wrap, window, cx);
+            input_state.set_soft_wrap(settings.soft_wrap && !large_file, window, cx);
             input_state.set_show_whitespaces(settings.show_whitespaces, window, cx);
         });
     }
@@ -64,6 +65,7 @@ impl EditorTab {
     ) {
         let cursor = self.content.read(cx).cursor_position();
         let current_content = self.content.read(cx).text().to_string();
+        let large_file = self.large_file;
         self.content = cx.new(|cx| {
             super::make_input_state(
                 window,
@@ -71,6 +73,7 @@ impl EditorTab {
                 language_registry_name(&self.language),
                 Some(current_content),
                 settings,
+                large_file,
             )
         });
         self.content.update(cx, |state, cx| {
@@ -185,6 +188,7 @@ impl EditorTab {
         let cursor = self.content.read(cx).cursor_position();
         let current_content = self.content.read(cx).text().to_string();
         self.language = language;
+        let large_file = self.large_file;
         self.content = cx.new(|cx| {
             super::make_input_state(
                 window,
@@ -192,6 +196,7 @@ impl EditorTab {
                 language_registry_name(&language),
                 Some(current_content),
                 settings,
+                large_file,
             )
         });
         self.content.update(cx, |state, cx| {

@@ -20,9 +20,24 @@ use std::rc::Rc;
 use std::time::SystemTime;
 
 use crate::fulgur::files::csv_support::{DEFAULT_DELIMITER, detect_delimiter, parse_csv};
-use crate::fulgur::languages::supported_languages::SupportedLanguage;
+use crate::fulgur::languages::supported_languages::{SupportedLanguage, language_registry_name};
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::tabs::tab::TabId;
+
+/// Byte-size threshold for large file mode.
+pub const LARGE_FILE_THRESHOLD_BYTES: u64 = 50 * 1024 * 1024;
+
+/// Whether a decoded buffer of the given byte length should open in large-file
+/// mode.
+///
+/// ### Arguments
+/// - `content_len`: Decoded content length in bytes
+///
+/// ### Returns
+/// - `bool`: `true` when the length exceeds `LARGE_FILE_THRESHOLD_BYTES`
+pub fn is_large_file(content_len: usize) -> bool {
+    content_len as u64 > LARGE_FILE_THRESHOLD_BYTES
+}
 
 /// Which surface a CSV-language tab is currently editing through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +63,7 @@ pub struct EditorTab {
     pub show_markdown_preview: bool,
     pub file_size_bytes: Option<u64>,
     pub file_last_modified: Option<SystemTime>,
+    pub large_file: bool,
     /// Which surface a CSV tab edits through. Always `Text` for non-CSV tabs.
     pub csv_view_mode: CsvViewMode,
     /// The delimiter detected on open and preserved on save (CSV tabs only).
@@ -235,6 +251,7 @@ pub struct FromFileParams {
 /// - `language_name`: The language registry name for syntax highlighting
 /// - `content`: The content of the input state
 /// - `settings`: The settings for the input state
+/// - `large_file`: Whether to open in large-file mode
 ///
 /// ### Returns
 /// - `InputState`: The new input state
@@ -244,20 +261,29 @@ fn make_input_state(
     language_name: &str,
     content: Option<String>,
     settings: &EditorSettings,
+    large_file: bool,
 ) -> InputState {
+    // In large-file mode, substitute a language with no registered grammar so
+    // the background tree-sitter parser short-circuits and never runs.
+    let language_name = if large_file {
+        language_registry_name(&SupportedLanguage::Plain)
+    } else {
+        language_name
+    };
     let mut state = InputState::new(window, cx)
         .code_editor(language_name.to_string())
         .line_number(settings.show_line_numbers)
-        .indent_guides(settings.show_indent_guides)
+        .indent_guides(settings.show_indent_guides && !large_file)
         .tab_size(TabSize {
             tab_size: settings.tab_size,
             hard_tabs: !settings.use_spaces,
         })
-        .soft_wrap(settings.soft_wrap)
-        .show_whitespaces(settings.show_whitespaces)
+        .soft_wrap(settings.soft_wrap && !large_file)
+        .folding(!large_file)
+        .show_whitespaces(settings.show_whitespaces && !large_file)
         .default_value(content.unwrap_or_default());
 
-    if settings.highlight_colors {
+    if settings.highlight_colors && !large_file {
         state.lsp.document_color_provider =
             Some(Rc::new(hex_color_provider::ColorHighlightProvider));
     }
