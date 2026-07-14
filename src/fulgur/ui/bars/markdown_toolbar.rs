@@ -426,6 +426,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_insert_or_surround_wraps_selected_text(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_toolbar(cx);
 
@@ -474,6 +478,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_insert_or_surround_inserts_at_cursor_when_no_selection(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_toolbar(cx);
 

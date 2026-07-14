@@ -202,6 +202,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_add_profile_inserts_and_allocates_sse_slot(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -229,6 +233,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_add_profile_generates_keypair_for_active_profile(cx: &mut TestAppContext) {
         // Reproduces the user-reported "Missing encryption key" path: a
         // freshly added active profile must have its keypair generated as
@@ -266,6 +274,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_add_profile_skips_keypair_generation_for_inactive_profile(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -295,6 +307,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_update_profile_generates_keypair_when_activating(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -337,6 +353,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_update_profile_returns_false_for_unknown_id(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -354,6 +374,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_update_profile_mutates_existing_entry(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -385,6 +409,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_delete_profile_removes_settings_state_and_keychain(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -431,6 +459,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_delete_profile_returns_false_for_unknown_id(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {

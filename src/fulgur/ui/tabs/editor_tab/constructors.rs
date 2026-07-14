@@ -151,8 +151,14 @@ impl EditorTab {
         settings: &EditorSettings,
     ) -> Self {
         let content_len = params.contents.len();
-        let (original_content_hash, original_content_len) =
-            super::content_fingerprint_from_str(&params.contents);
+        let large_file = super::is_large_file(content_len);
+        // Large-file tabs never consult the content hash (modified tracking is
+        // sticky), so skip the full-buffer pass at open.
+        let (original_content_hash, original_content_len) = if large_file {
+            (0, content_len)
+        } else {
+            super::content_fingerprint_from_str(&params.contents)
+        };
         let file_name = params
             .path
             .file_name()
@@ -161,14 +167,13 @@ impl EditorTab {
             .to_string();
 
         let language = language_from_content(&file_name, &params.contents);
-        let large_file = super::is_large_file(content_len);
         let (csv_view_mode, csv_delimiter) = initial_csv_state(language, &params.contents);
         let content = cx.new(|cx| {
             super::make_input_state(
                 window,
                 cx,
                 language_registry_name(&language),
-                Some(params.contents.clone()),
+                Some(params.contents),
                 settings,
                 large_file,
             )

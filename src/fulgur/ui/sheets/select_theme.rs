@@ -375,6 +375,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_switch_active_theme_from_sheet_updates_current_theme(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let current_theme = fulgur.read_with(&visual_cx, |this, _| {
@@ -416,6 +420,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_switch_active_theme_from_sheet_is_noop_for_unknown_theme(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let initial_theme = fulgur.read_with(&visual_cx, |this, _| {
