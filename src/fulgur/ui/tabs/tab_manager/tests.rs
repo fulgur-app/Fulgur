@@ -671,6 +671,130 @@ fn test_tab_entity_resubscribes_after_content_rebuild(cx: &mut TestAppContext) {
     });
 }
 
+#[gpui::test]
+fn test_large_file_tab_keeps_modified_after_restoring_original_content(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let editor_content = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_active_editor_tab(cx, |editor, _| {
+                editor.large_file = true;
+            });
+            this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab")
+                .content
+                .clone()
+        })
+    });
+
+    visual_cx.update(|window, cx| {
+        editor_content.update(cx, |input_state, cx| {
+            input_state.set_value("changed in large file", window, cx);
+            cx.emit(InputEvent::Change);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let editor = this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab");
+            assert!(
+                editor.modified,
+                "large-file tab should be marked modified on change"
+            );
+        });
+    });
+
+    // Restore the original (empty) content: the large-file flag must stay set
+    // because the per-change fingerprint is intentionally skipped.
+    visual_cx.update(|window, cx| {
+        editor_content.update(cx, |input_state, cx| {
+            input_state.set_value("", window, cx);
+            cx.emit(InputEvent::Change);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let editor = this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab");
+            assert!(
+                editor.modified,
+                "large-file modified flag must stay set until save or reload"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_modified_detected_for_same_length_edit(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let editor_content = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_active_editor_tab(cx, |editor, _| {
+                editor.set_original_content_from_str("abc");
+            });
+            this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab")
+                .content
+                .clone()
+        })
+    });
+
+    // Same byte length as the baseline: the length fast path cannot answer,
+    // so the content hash must still detect the difference.
+    visual_cx.update(|window, cx| {
+        editor_content.update(cx, |input_state, cx| {
+            input_state.set_value("abd", window, cx);
+            cx.emit(InputEvent::Change);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let editor = this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab");
+            assert!(
+                editor.modified,
+                "a same-length edit must still be detected as modified"
+            );
+        });
+    });
+
+    visual_cx.update(|window, cx| {
+        editor_content.update(cx, |input_state, cx| {
+            input_state.set_value("abc", window, cx);
+            cx.emit(InputEvent::Change);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let editor = this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab");
+            assert!(
+                !editor.modified,
+                "restoring the baseline content must clear the modified flag"
+            );
+        });
+    });
+}
+
 // ========== reorder_tab tests ==========
 
 #[gpui::test]

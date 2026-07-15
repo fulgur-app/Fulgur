@@ -4,7 +4,9 @@ use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
     files::file_operations::{RemoteFileResult, detect_encoding_and_decode},
-    languages::supported_languages::{language_from_content, language_registry_name},
+    languages::supported_languages::{
+        SupportedLanguage, language_from_content, language_registry_name,
+    },
     tab::{Tab, TabId},
     ui::components_utils::{UNTITLED, UTF_8},
 };
@@ -196,18 +198,25 @@ impl Fulgur {
             tab
         } else {
             let language = language_from_content(&tab_state.title, &content);
+            let large_file = crate::fulgur::ui::tabs::editor_tab::is_large_file(content.len());
+            // In large-file mode, substitute a language with no registered grammar so the background tree-sitter parser never runs.
+            let language_name = if large_file {
+                language_registry_name(&SupportedLanguage::Plain)
+            } else {
+                language_registry_name(&language)
+            };
             let (csv_view_mode, csv_delimiter) =
                 crate::fulgur::ui::tabs::editor_tab::initial_csv_state(language, &content);
             let content_entity = cx.new(|cx| {
                 gpui_component::input::InputState::new(window, cx)
-                    .code_editor(language_registry_name(&language))
+                    .code_editor(language_name)
                     .line_number(self.settings.editor_settings.show_line_numbers)
                     .indent_guides(self.settings.editor_settings.show_indent_guides)
                     .tab_size(TabSize {
                         tab_size: self.settings.editor_settings.tab_size,
                         hard_tabs: false,
                     })
-                    .soft_wrap(self.settings.editor_settings.soft_wrap)
+                    .soft_wrap(self.settings.editor_settings.soft_wrap && !large_file)
                     .show_whitespaces(self.settings.editor_settings.show_whitespaces)
                     .default_value(content)
             });
@@ -235,6 +244,7 @@ impl Fulgur {
                     .show_markdown_preview,
                 file_size_bytes: None,
                 file_last_modified: None,
+                large_file,
                 csv_view_mode,
                 csv_delimiter,
                 csv_table: None,

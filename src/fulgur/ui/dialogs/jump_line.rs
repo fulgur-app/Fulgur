@@ -104,6 +104,10 @@ mod tests {
     // ========== handle_pending_jump_to_line tests ==========
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_handle_pending_jump_consumes_pending_jump(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
@@ -120,6 +124,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_handle_pending_jump_applies_cursor_line(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         // Set multi-line content in the active editor tab
@@ -158,6 +166,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_handle_pending_jump_is_noop_without_pending_jump(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         // No pending_jump set, handler should do nothing
@@ -180,6 +192,10 @@ mod tests {
     }
 
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_handle_pending_jump_is_noop_without_active_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {

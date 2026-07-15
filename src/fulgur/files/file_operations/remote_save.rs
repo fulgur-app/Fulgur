@@ -362,6 +362,7 @@ impl Fulgur {
                         // Keep async save semantics correct: if content changed after dispatch,
                         // this remains dirty because baseline is set to the persisted snapshot.
                         editor_tab.set_original_content_from_str(saved_content);
+                        editor_tab.modified = false;
                         editor_tab.modified = editor_tab.content_differs_from_original(cx);
                         editor_tab.update_file_tooltip_cache(saved_content.len());
                         cx.notify();

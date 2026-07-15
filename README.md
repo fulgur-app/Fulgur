@@ -70,6 +70,7 @@ Fulgur is currently in alpha development. While it has been stable in testing, s
 * Embedded terminal
 * Drag and drop of tabs between windows
 * Various edge cases
+* Large files handling's performance
 
 **Note that breaking changes may occur in future releases until v1.0.0.**
 

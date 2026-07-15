@@ -268,6 +268,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_show_open_remote_dialog_does_not_panic(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {

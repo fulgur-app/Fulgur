@@ -239,6 +239,10 @@ fn invoke_dock_activate_tab_by_title(
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_register_unregister_and_focus_tracking(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
@@ -275,6 +279,10 @@ fn test_register_unregister_and_focus_tracking(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_find_window_with_file_returns_other_window_with_matching_tab(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
@@ -302,6 +310,10 @@ fn test_find_window_with_file_returns_other_window_with_matching_tab(cx: &mut Te
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_find_window_with_file_skips_current_window_and_returns_none_on_miss(
     cx: &mut TestAppContext,
 ) {
@@ -341,6 +353,10 @@ fn test_find_window_with_file_skips_current_window_and_returns_none_on_miss(
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_on_window_close_requested_last_window_with_confirm_exit_blocks_close(
     cx: &mut TestAppContext,
 ) {
@@ -365,6 +381,10 @@ fn test_on_window_close_requested_last_window_with_confirm_exit_blocks_close(
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_on_window_close_requested_last_window_without_confirm_exit_closes_and_unregisters(
     cx: &mut TestAppContext,
 ) {
@@ -389,6 +409,10 @@ fn test_on_window_close_requested_last_window_without_confirm_exit_closes_and_un
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_on_window_close_requested_non_last_window_closes_even_with_confirm_exit_enabled(
     cx: &mut TestAppContext,
 ) {
@@ -417,6 +441,10 @@ fn test_on_window_close_requested_non_last_window_closes_even_with_confirm_exit_
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_notification_consumer_delivers_channel_notifications_to_window(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (window_id, fulgur) = open_window_with_fulgur(cx);
@@ -455,6 +483,10 @@ fn test_notification_consumer_delivers_channel_notifications_to_window(cx: &mut 
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_do_open_file_does_not_open_duplicate_when_file_exists_in_another_window(
     cx: &mut TestAppContext,
 ) {
@@ -489,6 +521,10 @@ fn test_do_open_file_does_not_open_duplicate_when_file_exists_in_another_window(
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
@@ -534,6 +570,10 @@ fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppC
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
@@ -577,6 +617,10 @@ fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut
 }
 
 #[gpui::test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_publish_window_menu_tabs_stores_only_changes(cx: &mut TestAppContext) {
     use super::system_menus::WindowMenuTab;
 
@@ -630,6 +674,10 @@ fn test_publish_window_menu_tabs_stores_only_changes(cx: &mut TestAppContext) {
 
 #[gpui::test]
 #[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "known upstream a11y panic on gpui TestWindow"
+)]
 fn test_process_window_state_updates_publishes_menu_tabs_on_tab_change(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (window_id, fulgur) = open_window_with_fulgur(cx);

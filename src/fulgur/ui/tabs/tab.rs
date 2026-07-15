@@ -141,6 +141,13 @@ impl Tab {
                     return;
                 }
                 if let Tab::Editor(editor_tab) = this {
+                    if editor_tab.large_file {
+                        if !editor_tab.modified {
+                            editor_tab.modified = true;
+                            cx.notify();
+                        }
+                        return;
+                    }
                     let old_modified = editor_tab.modified;
                     editor_tab.check_modified(cx);
                     if editor_tab.modified != old_modified {

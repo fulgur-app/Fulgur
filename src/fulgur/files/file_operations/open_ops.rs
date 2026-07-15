@@ -211,6 +211,27 @@ impl Fulgur {
     ) -> Option<()> {
         log::debug!("Attempting to open file: {}", path.display());
         let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let file_size = std::fs::metadata(&canonical_path).map_or(0, |metadata| metadata.len());
+        if file_size > crate::fulgur::ui::tabs::editor_tab::LARGE_FILE_THRESHOLD_BYTES {
+            let file_name = canonical_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file")
+                .to_string();
+            window
+                .update(|window, cx| {
+                    window.push_notification(
+                        (
+                            NotificationType::Info,
+                            SharedString::from(format!(
+                                "Opening large file '{file_name}', this may take a moment..."
+                            )),
+                        ),
+                        cx,
+                    );
+                })
+                .ok();
+        }
         let read_path = canonical_path.clone();
         let outcome = window
             .background_executor()
@@ -808,6 +829,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_do_open_file_does_not_reload_modified_existing_tab_without_confirmation(
         cx: &mut TestAppContext,
     ) {

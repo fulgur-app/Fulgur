@@ -302,6 +302,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_csv_toolbar_visible_only_in_table_view(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -330,6 +334,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_edit_active_table_inserts_row_through_toolbar(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
 
@@ -384,6 +392,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_edit_active_table_inserts_column_at_selected_cell(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
         let table = active_csv_table(&fulgur, &mut visual_cx);
@@ -406,6 +418,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_column_ops_follow_column_header_selection(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
         let table = active_csv_table(&fulgur, &mut visual_cx);
@@ -436,6 +452,10 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_table_survives_its_own_commits(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
         let table_before = active_csv_table(&fulgur, &mut visual_cx);

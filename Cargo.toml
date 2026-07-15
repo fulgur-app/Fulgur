@@ -71,10 +71,9 @@ anyhow = "1.0.103"
 futures = "0.3.32"
 
 # GUI
-# Pinned to the Zed rev that gpui-component dbc038c8 (pre-a11y) requires. Drop the `rev`
-# once gpui-component HEAD's a11y hook stops panicking downstream test windows.
-gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe", features = ["runtime_shaders", "font-kit", "wayland", "x11"] }
+# Rev-less like gpui-component HEAD; Cargo.lock carries the compatible Zed pin
+gpui = { git = "https://github.com/zed-industries/zed" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["runtime_shaders", "font-kit", "wayland", "x11"] }
 gpui-macros = "0.2.2"
 gpui-component = { git = "https://github.com/longbridge/gpui-component", features = ["tree-sitter-languages"] }
 

@@ -91,6 +91,9 @@ impl Render for StatusBar {
                 (preview_button, toolbar_button)
             }
         };
+        let is_large_file = fulgur
+            .get_active_editor_tab(cx)
+            .is_some_and(|tab| tab.large_file);
         let is_csv = fulgur.get_current_language(cx) == SupportedLanguage::Csv;
         let csv_table_active = fulgur
             .get_active_editor_tab(cx)
@@ -242,7 +245,7 @@ impl Render for StatusBar {
                             .is_synchronization_activated,
                         |this| this.child(sync_button),
                     )
-                    .child(language_button)
+                    .when(!is_large_file, |this| this.child(language_button))
                     .when(is_markdown, |this| this.child(preview_button))
                     .when(is_markdown, |this| this.child(toolbar_button))
                     .when(is_csv, |this| this.child(csv_view_button))

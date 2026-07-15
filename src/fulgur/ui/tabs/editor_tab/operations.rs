@@ -31,18 +31,19 @@ impl EditorTab {
         settings: &EditorSettings,
     ) {
         let has_provider = self.content.read(cx).lsp.document_color_provider.is_some();
-        let wants_provider = settings.highlight_colors;
+        let wants_provider = settings.highlight_colors && !self.large_file;
 
         if has_provider != wants_provider {
             self.rebuild_input_state(window, cx, settings);
             return;
         }
 
+        let large_file = self.large_file;
         self.content.update(cx, |input_state, cx| {
             input_state.set_line_number(settings.show_line_numbers, window, cx);
-            input_state.set_indent_guides(settings.show_indent_guides, window, cx);
-            input_state.set_soft_wrap(settings.soft_wrap, window, cx);
-            input_state.set_show_whitespaces(settings.show_whitespaces, window, cx);
+            input_state.set_indent_guides(settings.show_indent_guides && !large_file, window, cx);
+            input_state.set_soft_wrap(settings.soft_wrap && !large_file, window, cx);
+            input_state.set_show_whitespaces(settings.show_whitespaces && !large_file, window, cx);
         });
     }
 
@@ -64,6 +65,7 @@ impl EditorTab {
     ) {
         let cursor = self.content.read(cx).cursor_position();
         let current_content = self.content.read(cx).text().to_string();
+        let large_file = self.large_file;
         self.content = cx.new(|cx| {
             super::make_input_state(
                 window,
@@ -71,6 +73,7 @@ impl EditorTab {
                 language_registry_name(&self.language),
                 Some(current_content),
                 settings,
+                large_file,
             )
         });
         self.content.update(cx, |state, cx| {
@@ -96,8 +99,10 @@ impl EditorTab {
     /// ### Arguments
     /// - `cx`: The application context
     pub fn mark_as_saved(&mut self, cx: &mut App) {
-        let (hash, len) = {
-            let current_text = self.content.read(cx).text();
+        let current_text = self.content.read(cx).text();
+        let (hash, len) = if self.large_file {
+            (0, current_text.len())
+        } else {
             super::content_fingerprint_from_rope(current_text)
         };
         self.original_content_hash = hash;
@@ -110,7 +115,11 @@ impl EditorTab {
     /// ### Arguments
     /// - `content`: Content to set as the new saved baseline
     pub fn set_original_content_from_str(&mut self, content: &str) {
-        let (hash, len) = super::content_fingerprint_from_str(content);
+        let (hash, len) = if self.large_file {
+            (0, content.len())
+        } else {
+            super::content_fingerprint_from_str(content)
+        };
         self.original_content_hash = hash;
         self.original_content_len = len;
     }
@@ -123,11 +132,15 @@ impl EditorTab {
     /// ### Returns
     /// - `True` when content differs from baseline, `False` otherwise
     pub fn content_differs_from_original(&self, cx: &App) -> bool {
-        let (current_hash, current_len) = {
-            let current_text = self.content.read(cx).text();
-            super::content_fingerprint_from_rope(current_text)
-        };
-        current_hash != self.original_content_hash || current_len != self.original_content_len
+        let current_text = self.content.read(cx).text();
+        if current_text.len() != self.original_content_len {
+            return true;
+        }
+        if self.large_file {
+            return self.modified;
+        }
+        let (current_hash, _) = super::content_fingerprint_from_rope(current_text);
+        current_hash != self.original_content_hash
     }
 
     /// Get suggested filename for "Save as..." dialog
@@ -185,6 +198,7 @@ impl EditorTab {
         let cursor = self.content.read(cx).cursor_position();
         let current_content = self.content.read(cx).text().to_string();
         self.language = language;
+        let large_file = self.large_file;
         self.content = cx.new(|cx| {
             super::make_input_state(
                 window,
@@ -192,6 +206,7 @@ impl EditorTab {
                 language_registry_name(&language),
                 Some(current_content),
                 settings,
+                large_file,
             )
         });
         self.content.update(cx, |state, cx| {
