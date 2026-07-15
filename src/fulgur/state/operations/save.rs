@@ -2,8 +2,24 @@ use super::super::persistence::{
     SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
     get_file_modified_time,
 };
-use crate::fulgur::{Fulgur, editor_tab::TabLocation, tab::Tab};
+use crate::fulgur::{
+    Fulgur,
+    editor_tab::{EditorTab, TabLocation, is_large_file},
+    tab::Tab,
+};
 use gpui::{App, Window};
+
+/// Whether a tab's content is too large to embed in the persisted state file.
+///
+/// ### Arguments
+/// - `editor_tab`: The editor tab to check
+/// - `cx`: The application context
+///
+/// ### Returns
+/// - `bool`: `true` if the content must not be persisted
+fn content_too_large_to_persist(editor_tab: &EditorTab, cx: &App) -> bool {
+    editor_tab.large_file || is_large_file(editor_tab.content.read(cx).text().len())
+}
 
 impl Fulgur {
     /// Save the current app state to disk (saves all windows in multi-window mode)
@@ -94,7 +110,9 @@ impl Fulgur {
             if let Some(editor_tab) = tab.read(cx).as_editor() {
                 let tab_state = match &editor_tab.location {
                     TabLocation::Local(path) => {
-                        if editor_tab.content_differs_from_original(cx) {
+                        if editor_tab.content_differs_from_original(cx)
+                            && !content_too_large_to_persist(editor_tab, cx)
+                        {
                             let current_content = editor_tab.content.read(cx).text().to_string();
                             TabState {
                                 title: editor_tab.title.to_string(),
@@ -116,7 +134,9 @@ impl Fulgur {
                         }
                     }
                     TabLocation::Remote(remote_spec) => {
-                        let content = if editor_tab.content_differs_from_original(cx) {
+                        let content = if editor_tab.content_differs_from_original(cx)
+                            && !content_too_large_to_persist(editor_tab, cx)
+                        {
                             Some(editor_tab.content.read(cx).text().to_string())
                         } else {
                             None
@@ -131,6 +151,13 @@ impl Fulgur {
                         }
                     }
                     TabLocation::Untitled => {
+                        if content_too_large_to_persist(editor_tab, cx) {
+                            log::warn!(
+                                "Not persisting untitled tab '{}': content exceeds the large-file threshold",
+                                editor_tab.title
+                            );
+                            continue;
+                        }
                         let current_content = editor_tab.content.read(cx).text().to_string();
                         if current_content.is_empty() {
                             continue;
