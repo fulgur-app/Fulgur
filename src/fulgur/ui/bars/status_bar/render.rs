@@ -31,7 +31,9 @@ impl Render for StatusBar {
             return div().into_any_element();
         };
         let fulgur = fulgur_entity.read(cx);
-        let labels = StatusBar::compute_labels(fulgur, cx);
+        let active_tab = fulgur.active_tab(cx);
+        let active_editor_tab = active_tab.and_then(Tab::as_editor);
+        let labels = StatusBar::compute_labels(active_tab, cx);
 
         let jump_to_line_button =
             status_bar_button_factory(labels.line_col, cx.theme().border, cx.theme().muted)
@@ -49,7 +51,7 @@ impl Render for StatusBar {
                         cx.emit(StatusBarEvent::SelectLanguage);
                     }),
                 );
-        let (preview_button, toolbar_button) = match fulgur.get_active_editor_tab(cx) {
+        let (preview_button, toolbar_button) = match active_editor_tab {
             None => (div(), div()),
             Some(active_editor_tab) => {
                 let editor_id = active_editor_tab.id;
@@ -91,13 +93,12 @@ impl Render for StatusBar {
                 (preview_button, toolbar_button)
             }
         };
-        let is_large_file = fulgur
-            .get_active_editor_tab(cx)
-            .is_some_and(|tab| tab.large_file);
-        let is_csv = fulgur.get_current_language(cx) == SupportedLanguage::Csv;
-        let csv_table_active = fulgur
-            .get_active_editor_tab(cx)
-            .is_some_and(|tab| tab.csv_view_mode == CsvViewMode::Table);
+        let is_large_file = active_editor_tab.is_some_and(|tab| tab.large_file);
+        let current_language =
+            active_editor_tab.map_or(SupportedLanguage::Plain, |tab| tab.language);
+        let is_csv = current_language == SupportedLanguage::Csv;
+        let csv_table_active =
+            active_editor_tab.is_some_and(|tab| tab.csv_view_mode == CsvViewMode::Table);
         let csv_view_button = status_bar_toggle_button_factory(
             "Table".to_string(),
             cx.theme().border,
@@ -110,18 +111,11 @@ impl Render for StatusBar {
                 cx.emit(StatusBarEvent::ToggleCsvView);
             }),
         );
-        let log_path = fulgur
-            .get_active_editor_tab(cx)
-            .and_then(|tab| tab.file_path().cloned());
+        let log_path = active_editor_tab.and_then(|tab| tab.file_path().cloned());
         let log_toggle_visible = log_path.as_deref().is_some_and(log_toggle_available);
-        let log_view_active = fulgur
-            .get_active_editor_tab(cx)
-            .is_some_and(|tab| tab.log_view);
-        let log_follow_active = fulgur
-            .get_active_editor_tab(cx)
-            .is_some_and(|tab| tab.log_follow);
-        let log_dropped = fulgur
-            .get_active_editor_tab(cx)
+        let log_view_active = active_editor_tab.is_some_and(|tab| tab.log_view);
+        let log_follow_active = active_editor_tab.is_some_and(|tab| tab.log_follow);
+        let log_dropped = active_editor_tab
             .map(|tab| tab.id)
             .and_then(|id| fulgur.log_tail_state.get(&id))
             .is_some_and(|state| state.dropped_lines);
@@ -157,7 +151,10 @@ impl Render for StatusBar {
                         cx.emit(StatusBarEvent::LoadFullLog);
                     }),
                 );
-        let is_markdown = fulgur.is_markdown(cx);
+        let is_markdown = matches!(
+            current_language,
+            SupportedLanguage::Markdown | SupportedLanguage::MarkdownInline
+        );
         let profiles = &fulgur
             .settings
             .app_settings

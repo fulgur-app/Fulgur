@@ -4,6 +4,7 @@ use crate::fulgur::{
     languages::supported_languages::{SupportedLanguage, pretty_name},
     settings::{MarkdownPreviewMode, ServerProfile},
     sync::synchronization::SynchronizationStatus,
+    tab::Tab,
     ui::components_utils::{EMPTY, UTF_8},
 };
 use gpui::{App, Context, EventEmitter, WeakEntity, Window};
@@ -57,16 +58,15 @@ impl StatusBar {
     /// Compute the status bar label strings from the active tab's cursor, language, and encoding
     ///
     /// ### Arguments
-    /// - `fulgur`: The owning window to derive the labels from
+    /// - `active_tab`: The active tab to derive the labels from, if any
     /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `StatusBarLabels`: The line/column, language, and encoding labels
-    pub(super) fn compute_labels(fulgur: &Fulgur, cx: &App) -> StatusBarLabels {
-        let active_tab_index = fulgur.active_tab_index(cx);
-        let (cursor_pos, language, encoding) = match active_tab_index {
-            Some(index) => {
-                if let Some(editor_tab) = fulgur.tabs[index].read(cx).as_editor() {
+    pub(super) fn compute_labels(active_tab: Option<&Tab>, cx: &App) -> StatusBarLabels {
+        let (cursor_pos, language, encoding) = match active_tab {
+            Some(tab) => {
+                if let Some(editor_tab) = tab.as_editor() {
                     let cursor = editor_tab.content.read(cx).cursor_position();
                     let enc = editor_tab.encoding.clone();
                     (cursor, Some(editor_tab.language), enc)
@@ -85,7 +85,7 @@ impl StatusBar {
             Some(lang) => pretty_name(lang),
             None => EMPTY.to_string(),
         };
-        let encoding_label = match active_tab_index {
+        let encoding_label = match active_tab {
             Some(_) => encoding,
             None => UTF_8.to_string(),
         };
@@ -373,7 +373,7 @@ mod tests {
                 })
                 .expect("expected active editor tab");
 
-                let labels = StatusBar::compute_labels(this, cx);
+                let labels = StatusBar::compute_labels(this.active_tab(cx), cx);
                 assert_eq!(labels.language_label, "Rust");
                 assert_eq!(labels.encoding_label, "ISO-8859-1");
                 assert_eq!(labels.line_col, "Ln 2, Col 5");
@@ -389,7 +389,7 @@ mod tests {
             fulgur.update(cx, |this, cx| {
                 this.active_tab_id = None;
 
-                let labels = StatusBar::compute_labels(this, cx);
+                let labels = StatusBar::compute_labels(this.active_tab(cx), cx);
                 assert!(labels.language_label.is_empty());
                 assert_eq!(labels.encoding_label, UTF_8);
                 assert_eq!(labels.line_col, "Ln 1, Col 1");
