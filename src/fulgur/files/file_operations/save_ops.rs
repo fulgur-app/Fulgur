@@ -6,7 +6,31 @@ use crate::fulgur::{
 };
 use gpui::{Context, SharedString, Window};
 use gpui_component::{WindowExt, notification::NotificationType};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Snapshot of a tab's saved-content baseline, captured before an optimistic
+/// save so a failed background write can restore it.
+struct SavedBaseline {
+    /// The tab's `original_content_hash` at dispatch time
+    hash: u64,
+    /// The tab's `original_content_len` at dispatch time
+    len: usize,
+    /// The tab's `modified` flag at dispatch time
+    modified: bool,
+}
+
+/// Dispatch-time context of a background save, handed back to the completion
+/// handler that runs on the UI thread once the write resolves.
+struct SaveCompletion {
+    /// Stable identifier of the editor tab being saved
+    tab_id: TabId,
+    /// Destination path of the write, as requested at dispatch
+    path: PathBuf,
+    /// Size of the written content in bytes
+    byte_len: usize,
+    /// Saved baseline captured at dispatch, restored if the write fails
+    previous_baseline: Option<SavedBaseline>,
+}
 
 impl Fulgur {
     /// Save a file
@@ -55,41 +79,178 @@ impl Fulgur {
         };
         match location {
             TabLocation::Local(path) => {
-                log::debug!("Saving file: {} ({} bytes)", path.display(), bytes.len());
-                if let Err(e) = atomic_write_file(&path, &bytes) {
-                    log::error!("Failed to save file {}: {e}", path.display());
-                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-                    window.push_notification(
-                        (
-                            NotificationType::Error,
-                            SharedString::from(format!("Failed to save '{file_name}': {e}")),
-                        ),
-                        cx,
-                    );
-                    return;
-                }
-                log::debug!("File saved successfully: {}", path.display());
-                // For Inode-based backends (Linux inotify, BSD kqueue).
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                {
-                    self.unwatch_file(&path);
-                    self.watch_file(&path);
-                }
-                self.file_watch_state
-                    .last_file_saves
-                    .insert(path.clone(), std::time::Instant::now());
-                self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
-                    editor_tab.mark_as_saved(cx);
-                    editor_tab.update_file_tooltip_cache(bytes.len());
-                    cx.notify();
-                });
-                cx.notify();
+                self.spawn_local_save(tab_id, path, bytes, window, cx);
             }
             TabLocation::Remote(spec) => {
                 self.save_remote_file(window, cx, tab_id, spec, contents, bytes);
             }
             TabLocation::Untitled => {}
         }
+    }
+
+    /// Dispatch a background atomic write of a local tab's encoded content.
+    ///
+    /// ### Description
+    /// The disk write (with its fsyncs) runs on the background executor so the
+    /// UI thread never blocks on I/O. The tab is optimistically marked as saved
+    /// at dispatch time, when the buffer still matches the written snapshot;
+    /// the tab's content subscription flips `modified` back on any edit made
+    /// while the write is in flight, and a failed write restores the previous
+    /// saved baseline. A tab with a save already in flight is skipped to keep
+    /// writes for one file strictly ordered. Registering the destination in
+    /// `inflight_saves` also suppresses the watcher echo of the write.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: Stable identifier of the editor tab being saved
+    /// - `path`: Destination path of the local file
+    /// - `bytes`: The already-encoded file contents
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn spawn_local_save(
+        &mut self,
+        tab_id: TabId,
+        path: PathBuf,
+        bytes: Vec<u8>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.inflight_saves.contains_key(&tab_id) {
+            log::debug!(
+                "Save already in flight for {}; skipping duplicate save",
+                path.display()
+            );
+            return;
+        }
+        log::debug!("Saving file: {} ({} bytes)", path.display(), bytes.len());
+        self.inflight_saves.insert(tab_id, path.clone());
+        let completion = SaveCompletion {
+            tab_id,
+            byte_len: bytes.len(),
+            previous_baseline: self.capture_saved_baseline(tab_id, cx),
+            path,
+        };
+        self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
+            editor_tab.mark_as_saved(cx);
+            cx.notify();
+        });
+        cx.notify();
+        cx.spawn_in(window, async move |view, window| {
+            let write_path = completion.path.clone();
+            let write_result = window
+                .background_executor()
+                .spawn(async move { atomic_write_file(&write_path, &bytes) })
+                .await;
+            window
+                .update(|window, cx| {
+                    _ = view.update(cx, |this, cx| {
+                        this.finish_local_save(completion, write_result, window, cx);
+                    });
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// Apply the outcome of a background local save back on the UI thread.
+    ///
+    /// ### Arguments
+    /// - `completion`: Dispatch-time context of the save being completed
+    /// - `write_result`: The result of the background `atomic_write_file` call
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn finish_local_save(
+        &mut self,
+        completion: SaveCompletion,
+        write_result: anyhow::Result<()>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.inflight_saves.remove(&completion.tab_id);
+        match write_result {
+            Ok(()) => {
+                log::debug!("File saved successfully: {}", completion.path.display());
+                // For Inode-based backends (Linux inotify, BSD kqueue).
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                {
+                    self.unwatch_file(&completion.path);
+                    self.watch_file(&completion.path);
+                }
+                self.file_watch_state
+                    .last_file_saves
+                    .insert(completion.path.clone(), std::time::Instant::now());
+                let byte_len = completion.byte_len;
+                self.update_editor_tab(completion.tab_id, cx, |editor_tab, cx| {
+                    editor_tab.update_file_tooltip_cache(byte_len);
+                    cx.notify();
+                });
+                cx.notify();
+            }
+            Err(e) => {
+                self.handle_failed_save(completion, &e, window, cx);
+            }
+        }
+    }
+
+    /// Capture a tab's saved-content baseline before an optimistic save.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: Stable identifier of the editor tab
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some(SavedBaseline)`: The tab's current baseline and modified flag
+    /// - `None`: If the tab no longer exists or is not an editor tab
+    fn capture_saved_baseline(&self, tab_id: TabId, cx: &Context<Self>) -> Option<SavedBaseline> {
+        self.tab_entity_of(tab_id, cx).and_then(|tab| {
+            tab.read(cx).as_editor().map(|editor_tab| SavedBaseline {
+                hash: editor_tab.original_content_hash,
+                len: editor_tab.original_content_len,
+                modified: editor_tab.modified,
+            })
+        })
+    }
+
+    /// Report a failed background save and roll back the optimistic saved state.
+    ///
+    /// ### Arguments
+    /// - `completion`: Dispatch-time context of the save that failed
+    /// - `error`: The write error to report
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn handle_failed_save(
+        &mut self,
+        completion: SaveCompletion,
+        error: &anyhow::Error,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        log::error!("Failed to save file {}: {error}", completion.path.display());
+        if let Some(baseline) = completion.previous_baseline {
+            self.update_editor_tab(completion.tab_id, cx, |editor_tab, cx| {
+                let edited_during_save = editor_tab.modified;
+                editor_tab.original_content_hash = baseline.hash;
+                editor_tab.original_content_len = baseline.len;
+                if editor_tab.large_file {
+                    editor_tab.modified = baseline.modified || edited_during_save;
+                } else {
+                    editor_tab.check_modified(cx);
+                }
+                cx.notify();
+            });
+        }
+        let file_name = completion
+            .path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file");
+        window.push_notification(
+            (
+                NotificationType::Error,
+                SharedString::from(format!("Failed to save '{file_name}': {error}")),
+            ),
+            cx,
+        );
+        cx.notify();
     }
 
     /// Save a file as
@@ -186,56 +347,108 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        log::debug!("Saving file as: {} ({} bytes)", path.display(), bytes.len());
-        if let Err(e) = atomic_write_file(path, bytes) {
-            log::error!("Failed to save file {}: {e}", path.display());
-            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-            window.push_notification(
-                (
-                    NotificationType::Error,
-                    SharedString::from(format!("Failed to save '{file_name}': {e}")),
-                ),
-                cx,
+        if self.inflight_saves.contains_key(&tab_id) {
+            log::debug!(
+                "Save already in flight for tab {tab_id}; skipping Save As to {}",
+                path.display()
             );
             return;
         }
-        log::debug!("File saved successfully as: {}", path.display());
-        let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        let path = canonical_path.as_path();
-        let Some(tab_entity) = self.tab_entity_of(tab_id, cx) else {
-            log::warn!("Save As destination selected, but tab {tab_id} no longer exists");
-            return;
+        log::debug!("Saving file as: {} ({} bytes)", path.display(), bytes.len());
+        self.inflight_saves.insert(tab_id, path.to_path_buf());
+        let completion = SaveCompletion {
+            tab_id,
+            byte_len: bytes.len(),
+            previous_baseline: self.capture_saved_baseline(tab_id, cx),
+            path: path.to_path_buf(),
         };
-        let old_path = tab_entity
-            .read(cx)
-            .as_editor()
-            .and_then(|editor_tab| editor_tab.file_path().cloned());
-        if let Some(old_path) = old_path {
-            self.unwatch_file(&old_path);
-        }
-        self.file_watch_state
-            .last_file_saves
-            .insert(path.to_path_buf(), std::time::Instant::now());
-        let settings = self.settings.editor_settings.clone();
-        tab_entity.update(cx, |tab, cx| {
-            let Some(editor_tab) = tab.as_editor_mut() else {
-                return;
-            };
-            editor_tab.location = TabLocation::Local(path.to_path_buf());
-            editor_tab.title = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(UNTITLED)
-                .to_string()
-                .into();
-            editor_tab.encoding = encoding;
+        self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
             editor_tab.mark_as_saved(cx);
-            editor_tab.update_file_tooltip_cache(bytes.len());
-            tab.update_language(window, cx, &settings);
             cx.notify();
         });
-        cx.notify();
-        self.watch_file(path);
+        let bytes = bytes.to_vec();
+        cx.spawn_in(window, async move |view, window| {
+            let write_path = completion.path.clone();
+            let write_result = window
+                .background_executor()
+                .spawn(async move {
+                    atomic_write_file(&write_path, &bytes).map(|()| {
+                        std::fs::canonicalize(&write_path).unwrap_or_else(|_| write_path.clone())
+                    })
+                })
+                .await;
+            window
+                .update(|window, cx| {
+                    _ = view.update(cx, |this, cx| {
+                        this.finish_save_as(completion, encoding, write_result, window, cx);
+                    });
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// Apply the outcome of a background "Save as" write back on the UI thread.
+    ///
+    /// ### Arguments
+    /// - `completion`: Dispatch-time context of the save being completed
+    /// - `encoding`: The encoding label the bytes were written in
+    /// - `write_result`: The canonicalized destination path, or the write error
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn finish_save_as(
+        &mut self,
+        completion: SaveCompletion,
+        encoding: String,
+        write_result: anyhow::Result<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let tab_id = completion.tab_id;
+        let byte_len = completion.byte_len;
+        self.inflight_saves.remove(&tab_id);
+        match write_result {
+            Ok(canonical_path) => {
+                let path = canonical_path.as_path();
+                log::debug!("File saved successfully as: {}", path.display());
+                let Some(tab_entity) = self.tab_entity_of(tab_id, cx) else {
+                    log::warn!("Save As completed, but tab {tab_id} no longer exists");
+                    return;
+                };
+                let old_path = tab_entity
+                    .read(cx)
+                    .as_editor()
+                    .and_then(|editor_tab| editor_tab.file_path().cloned());
+                if let Some(old_path) = old_path {
+                    self.unwatch_file(&old_path);
+                }
+                self.file_watch_state
+                    .last_file_saves
+                    .insert(path.to_path_buf(), std::time::Instant::now());
+                let settings = self.settings.editor_settings.clone();
+                tab_entity.update(cx, |tab, cx| {
+                    let Some(editor_tab) = tab.as_editor_mut() else {
+                        return;
+                    };
+                    editor_tab.location = TabLocation::Local(path.to_path_buf());
+                    editor_tab.title = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(UNTITLED)
+                        .to_string()
+                        .into();
+                    editor_tab.encoding = encoding;
+                    editor_tab.update_file_tooltip_cache(byte_len);
+                    tab.update_language(window, cx, &settings);
+                    cx.notify();
+                });
+                cx.notify();
+                self.watch_file(path);
+            }
+            Err(e) => {
+                self.handle_failed_save(completion, &e, window, cx);
+            }
+        }
     }
 
     /// Show notification when file is reloaded
@@ -406,6 +619,7 @@ mod tests {
                 this.save_file(window, cx);
             });
         });
+        visual_cx.run_until_parked();
 
         assert!(path.exists(), "file should exist after save_file");
     }
@@ -478,6 +692,7 @@ mod tests {
                 this.save_file(window, cx);
             });
         });
+        visual_cx.run_until_parked();
 
         let bytes = std::fs::read(&path).expect("file should exist after save");
         // "café" must be written as the single windows-1252 byte 0xE9, not the
@@ -494,7 +709,7 @@ mod tests {
         let renamed_path = dir.path().join("renamed.rs");
         let second_path = dir.path().join("second.txt");
 
-        visual_cx.update(|window, cx| {
+        let (first_tab_id, second_tab_id) = visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 let first_tab_id = this.tabs.first().expect("expected first tab").read(cx).id();
                 this.tabs
@@ -527,7 +742,13 @@ mod tests {
                     window,
                     cx,
                 );
+                (first_tab_id, second_tab_id)
+            })
+        });
+        visual_cx.run_until_parked();
 
+        visual_cx.update(|_, cx| {
+            fulgur.update(cx, |this, cx| {
                 let first_tab_path = this
                     .tabs
                     .iter()

@@ -351,14 +351,15 @@ impl Fulgur {
         self.file_watch_state.pending_conflicts.clear();
     }
 
-    /// Determine whether a watch event for a path should be ignored as a recent
-    /// self-save echo or a duplicate within the debounce window.
+    /// Determine whether a watch event for a path should be ignored as a
+    /// self-save echo (completed or still in flight) or a duplicate within the
+    /// debounce window.
     ///
     /// ### Arguments
     /// - `path`: The file path the event refers to
     ///
     /// ### Returns
-    /// - `true`: The event is a recent echo or duplicate and should be ignored
+    /// - `true`: The event is a self-save echo or duplicate and should be ignored
     /// - `false`: The event is new and the debounce timestamp has been recorded
     fn should_suppress_file_watch_event(&mut self, path: &PathBuf) -> bool {
         let now = Instant::now();
@@ -369,6 +370,16 @@ impl Fulgur {
         }
         if let Some(&save_time) = self.file_watch_state.last_file_saves.get(path)
             && now.duration_since(save_time) < Duration::from_millis(500)
+        {
+            return true;
+        }
+        // A background save may have already renamed the file into place while
+        // its completion handler (which records `last_file_saves`) has not run
+        // yet; treat events for such paths as self-save echoes too.
+        if self
+            .inflight_saves
+            .values()
+            .any(|save_path| save_path == path)
         {
             return true;
         }
