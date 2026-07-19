@@ -32,6 +32,9 @@ impl Fulgur {
             let Some(editor_tab) = self.get_active_editor_tab(cx) else {
                 return;
             };
+            if editor_tab.large_file {
+                return;
+            }
             let title = SharedString::from(format!("Preview - {}", editor_tab.title));
             let content = editor_tab.content.clone();
             let editor_pos = self.active_tab_index(cx).unwrap_or(0);
@@ -66,8 +69,9 @@ impl Fulgur {
             let actual_idx = orig_idx + offset;
             let info = match self.tabs.get(actual_idx).map(|tab| tab.read(cx)) {
                 Some(Tab::Editor(et))
-                    if et.language == SupportedLanguage::Markdown
-                        || et.language == SupportedLanguage::MarkdownInline =>
+                    if !et.large_file
+                        && (et.language == SupportedLanguage::Markdown
+                            || et.language == SupportedLanguage::MarkdownInline) =>
                 {
                     Some((et.id, et.title.clone(), et.content.clone()))
                 }
@@ -107,8 +111,9 @@ impl Fulgur {
         }
         let info = match self.tabs.get(editor_tab_index).map(|tab| tab.read(cx)) {
             Some(Tab::Editor(et))
-                if et.language == SupportedLanguage::Markdown
-                    || et.language == SupportedLanguage::MarkdownInline =>
+                if !et.large_file
+                    && (et.language == SupportedLanguage::Markdown
+                        || et.language == SupportedLanguage::MarkdownInline) =>
             {
                 Some((et.id, et.title.clone(), et.content.clone()))
             }

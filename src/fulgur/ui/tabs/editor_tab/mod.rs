@@ -129,7 +129,12 @@ pub struct FromDuplicateParams {
 /// - `(CsvViewMode, u8)`: The initial view mode and delimiter
 pub(crate) fn initial_csv_state(language: SupportedLanguage, content: &str) -> (CsvViewMode, u8) {
     if language == SupportedLanguage::Csv {
-        (CsvViewMode::Table, detect_delimiter(content))
+        let mode = if is_large_file(content.len()) {
+            CsvViewMode::Text
+        } else {
+            CsvViewMode::Table
+        };
+        (mode, detect_delimiter(content))
     } else {
         (CsvViewMode::Text, DEFAULT_DELIMITER)
     }
@@ -156,6 +161,12 @@ impl EditorTab {
     ///   safely and the tab fell back to text mode
     /// - `None`: When the table was built (or already current)
     pub fn ensure_csv_table(&mut self, window: &mut Window, cx: &mut App) -> Option<String> {
+        if self.large_file {
+            log::warn!("csv table requested for a large-file tab, falling back to text mode");
+            self.csv_view_mode = CsvViewMode::Text;
+            self.csv_table = None;
+            return None;
+        }
         let text = self.content.read(cx).value().to_string();
         let (hash, _len) = content_fingerprint_from_str(&text);
         if let Some(table) = &self.csv_table

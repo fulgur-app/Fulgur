@@ -584,6 +584,25 @@ fn test_editor_tab_from_file_csv_defaults_to_table(cx: &mut TestAppContext) {
     });
 }
 
+#[test]
+fn test_initial_csv_state_large_file_forces_text_mode() {
+    let mut content = String::from("name,age\n");
+    let threshold =
+        usize::try_from(super::LARGE_FILE_THRESHOLD_BYTES).expect("threshold fits in usize");
+    content.push_str(&"x".repeat(threshold));
+    let (mode, delimiter) = super::initial_csv_state(SupportedLanguage::Csv, &content);
+    assert_eq!(mode, super::CsvViewMode::Text);
+    assert_eq!(delimiter, b',');
+}
+
+#[test]
+fn test_initial_csv_state_small_file_uses_table_mode() {
+    let (mode, delimiter) =
+        super::initial_csv_state(SupportedLanguage::Csv, "name;age\nAlice;30\n");
+    assert_eq!(mode, super::CsvViewMode::Table);
+    assert_eq!(delimiter, b';');
+}
+
 #[gpui::test]
 fn test_editor_tab_from_file_csv_detects_semicolon(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
