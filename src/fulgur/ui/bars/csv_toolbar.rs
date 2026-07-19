@@ -96,7 +96,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn toggle_csv_view_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let warning = self.update_active_editor_tab(cx, |editor, cx| {
-            if editor.language != SupportedLanguage::Csv {
+            if editor.language != SupportedLanguage::Csv || editor.large_file {
                 return None;
             }
             editor.csv_view_mode = match editor.csv_view_mode {
