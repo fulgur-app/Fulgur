@@ -322,9 +322,9 @@ impl Fulgur {
                         update_link.as_deref(),
                     );
                     this.update_menus(menus, cx);
-                    let title = path
-                        .file_name()
-                        .map(|file_name| file_name.to_string_lossy().to_string());
+                    let title = path.file_name().map(|file_name| {
+                        SharedString::from(file_name.to_string_lossy().to_string())
+                    });
                     this.set_title(title, cx);
                     log::debug!("File opened successfully in new tab: {}", path.display());
                     this.save_state_async(cx, window);
