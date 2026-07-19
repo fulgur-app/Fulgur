@@ -100,6 +100,7 @@ impl Fulgur {
             Editor {
                 language: SupportedLanguage,
                 show_markdown_preview: bool,
+                large_file: bool,
                 content: Entity<InputState>,
                 csv_view_mode: editor_tab::CsvViewMode,
                 csv_table: Option<Entity<TableState<editor_tab::CsvTableDelegate>>>,
@@ -142,6 +143,7 @@ impl Fulgur {
                 Tab::Editor(editor_tab) => ActiveTabRenderData::Editor {
                     language: editor_tab.language,
                     show_markdown_preview: editor_tab.show_markdown_preview,
+                    large_file: editor_tab.large_file,
                     content: editor_tab.content.clone(),
                     csv_view_mode: editor_tab.csv_view_mode,
                     csv_table: editor_tab.csv_table.clone(),
@@ -171,6 +173,7 @@ impl Fulgur {
                 ActiveTabRenderData::Editor {
                     language,
                     show_markdown_preview,
+                    large_file,
                     content,
                     csv_view_mode,
                     csv_table,
@@ -215,6 +218,7 @@ impl Fulgur {
                         });
                     if language == SupportedLanguage::Markdown
                         && show_markdown_preview
+                        && !large_file
                         && self.settings.editor_settings.markdown_settings.preview_mode
                             == crate::fulgur::settings::MarkdownPreviewMode::Panel
                     {

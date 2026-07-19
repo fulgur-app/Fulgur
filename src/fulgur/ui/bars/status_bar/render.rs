@@ -246,7 +246,9 @@ impl Render for StatusBar {
                         |this| this.child(sync_button),
                     )
                     .when(!is_large_file, |this| this.child(language_button))
-                    .when(is_markdown, |this| this.child(preview_button))
+                    .when(is_markdown && !is_large_file, |this| {
+                        this.child(preview_button)
+                    })
                     .when(is_markdown, |this| this.child(toolbar_button))
                     .when(is_csv && !is_large_file, |this| this.child(csv_view_button))
                     .when(log_toggle_visible, |this| this.child(log_button))
