@@ -151,6 +151,7 @@ impl Fulgur {
                 last_failed_remote_open_url: None,
                 pending_remote_restore: HashSet::new(),
                 inflight_remote_restore: HashSet::new(),
+                inflight_saves: HashMap::new(),
                 pending_initial_active_tab: None,
                 has_rendered_once: false,
             }

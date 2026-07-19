@@ -17,7 +17,9 @@ use crate::fulgur::files::{
 use gpui::{Entity, FocusHandle, Pixels, Point, Subscription, WindowId};
 use gpui_component::{input::InputState, menu::PopupMenu};
 use settings::Settings;
-use std::{collections::HashMap, collections::HashSet, sync::Arc, sync::atomic::AtomicBool};
+use std::{
+    collections::HashMap, collections::HashSet, path::PathBuf, sync::Arc, sync::atomic::AtomicBool,
+};
 use tab::{Tab, TabId};
 use ui::log_view::LogTailState;
 use ui::{
@@ -73,6 +75,7 @@ pub struct Fulgur {
     last_failed_remote_open_url: Option<String>, // Last attempted remote URL kept for retry prefill after connection/open failures
     pending_remote_restore: HashSet<TabId>, // Restored remote tab ids that should lazily reconnect on first activation/save
     inflight_remote_restore: HashSet<TabId>, // Restored remote tabs currently running a reconnect task
+    inflight_saves: HashMap<TabId, PathBuf>, // Destination path of each background local-file write in flight, keyed by tab id; guards against overlapping saves and suppresses self-save watcher events
     pending_initial_active_tab: Option<TabId>, // Active tab to re-activate after first render so dialogs can open safely
     has_rendered_once: bool, // Tracks first render completion for startup actions that require mounted Root layers
 }
