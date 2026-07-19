@@ -1,8 +1,9 @@
 //! Read-only display-buffer helpers for the log view.
 
 use gpui::{Context, Entity, Window};
-use gpui_component::input::{InputState, Position};
+use gpui_component::input::{InputState, Position, RopeExt};
 
+use super::LOG_LINE_CAP;
 use crate::fulgur::Fulgur;
 
 /// Return the zero-based index of the last line in a buffer.
@@ -44,6 +45,54 @@ pub(super) fn write_log_to_bottom(
             cx,
         );
     });
+}
+
+/// Append text to a log buffer with incremental edits and snap to the bottom.
+///
+/// ### Arguments
+/// - `log_content`: The display input state to update
+/// - `text`: The newly appended text (may be empty; only the snap happens)
+/// - `log_full`: Whether the line cap is lifted for this tab
+/// - `window`: The active window
+/// - `cx`: The application context
+///
+/// ### Returns
+/// - `bool`: Whether the line cap dropped lines from the front on this write
+pub(super) fn append_log_to_bottom(
+    log_content: &Entity<InputState>,
+    text: &str,
+    log_full: bool,
+    window: &mut Window,
+    cx: &mut Context<Fulgur>,
+) -> bool {
+    log_content.update(cx, |state, cx| {
+        if !text.is_empty() {
+            let end = state.text().len();
+            state.set_selected_range(end..end, cx);
+            state.insert(text, window, cx);
+        }
+        let mut dropped = false;
+        if !log_full {
+            let newline_count = state.text().lines_len().saturating_sub(1);
+            if newline_count > LOG_LINE_CAP {
+                let cut = state.text().line_start_offset(newline_count - LOG_LINE_CAP);
+                state.set_selected_range(0..cut, cx);
+                state.replace("", window, cx);
+                dropped = true;
+            }
+        }
+        let last_line =
+            u32::try_from(state.text().lines_len().saturating_sub(1)).unwrap_or(u32::MAX);
+        state.set_cursor_position(
+            Position {
+                line: last_line,
+                character: 0,
+            },
+            window,
+            cx,
+        );
+        dropped
+    })
 }
 
 /// Build the read-only display `InputState` for a log view buffer.

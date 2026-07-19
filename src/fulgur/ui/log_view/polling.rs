@@ -9,7 +9,7 @@ use std::time::Duration;
 use gpui::{Context, Window};
 
 use super::LOG_LINE_CAP;
-use super::input::write_log_to_bottom;
+use super::input::{append_log_to_bottom, write_log_to_bottom};
 use super::tail::{read_new_log_bytes, trim_to_last_lines};
 use crate::fulgur::Fulgur;
 
@@ -164,14 +164,7 @@ impl Fulgur {
             .log_tail_state
             .get(&tab_id)
             .is_some_and(|state| state.dropped_lines);
-        let mut combined = log_content.read(cx).text().to_string();
-        combined.push_str(text);
-        let (display, dropped_now) = if log_full {
-            (combined, false)
-        } else {
-            trim_to_last_lines(combined, LOG_LINE_CAP)
-        };
-        write_log_to_bottom(&log_content, &display, window, cx);
+        let dropped_now = append_log_to_bottom(&log_content, text, log_full, window, cx);
         if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
             state.pending.clear();
             state.dropped_lines = dropped_before || dropped_now;
@@ -200,23 +193,15 @@ impl Fulgur {
         };
         let pending = self
             .log_tail_state
-            .get(&tab_id)
-            .map(|state| state.pending.clone())
+            .get_mut(&tab_id)
+            .map(|state| std::mem::take(&mut state.pending))
             .unwrap_or_default();
-        let mut combined = log_content.read(cx).text().to_string();
-        combined.push_str(&pending);
         let dropped_before = self
             .log_tail_state
             .get(&tab_id)
             .is_some_and(|state| state.dropped_lines);
-        let (display, dropped_now) = if log_full {
-            (combined, false)
-        } else {
-            trim_to_last_lines(combined, LOG_LINE_CAP)
-        };
-        write_log_to_bottom(&log_content, &display, window, cx);
+        let dropped_now = append_log_to_bottom(&log_content, &pending, log_full, window, cx);
         if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
-            state.pending.clear();
             state.dropped_lines = dropped_before || dropped_now;
         }
     }
