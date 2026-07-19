@@ -241,7 +241,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     fn refresh_window_title(&self, cx: &mut Context<Self>) {
-        let title = self.active_tab(cx).map(|tab| tab.title().to_string());
+        let title = self.active_tab(cx).map(Tab::title);
         if let Some(title) = title {
             self.set_title(Some(title), cx);
         }

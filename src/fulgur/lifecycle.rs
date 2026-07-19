@@ -18,7 +18,7 @@ use crate::fulgur::{
     },
     window_manager,
 };
-use gpui::{App, AppContext, Context, Entity, Window, WindowId};
+use gpui::{App, AppContext, Context, Entity, SharedString, Window, WindowId};
 use gpui_component::input::InputState;
 use gpui_component::notification::NotificationType;
 use std::collections::{HashMap, HashSet};
@@ -213,16 +213,24 @@ impl Fulgur {
     ///
     /// Looks up the current window name from the global `WindowManager` and passes it to
     /// `CustomTitleBar::set_title` so the suffix is automatically included when multiple
-    /// windows are open.
+    /// windows are open. Returns early without touching the title bar entity when the
+    /// displayed title already matches, since this runs on every render.
     ///
     /// ### Arguments
     /// - `title`: The title to set (if None, the default title is used)
     /// - `cx`: The application context
-    pub(super) fn set_title(&self, title: Option<String>, cx: &mut Context<Self>) {
+    pub(super) fn set_title(&self, title: Option<SharedString>, cx: &mut Context<Self>) {
         let window_name = cx
             .global::<window_manager::WindowManager>()
-            .get_window_name(self.window_id)
-            .map(std::string::ToString::to_string);
+            .get_window_name(self.window_id);
+        if self
+            .title_bar
+            .read(cx)
+            .title_matches(title.as_deref(), window_name)
+        {
+            return;
+        }
+        let window_name = window_name.map(std::string::ToString::to_string);
         self.title_bar.update(cx, |this, _cx| {
             this.set_title(title, window_name.as_deref());
         });
