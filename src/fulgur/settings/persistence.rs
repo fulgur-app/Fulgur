@@ -78,7 +78,7 @@ impl Settings {
         match serde_json::from_str::<Settings>(&json) {
             Ok(mut settings) => {
                 settings.validate();
-                Self::persist_after_legacy_migration(&settings, &json, path);
+                Self::persist_after_legacy_migration(&settings, path);
                 Ok(settings)
             }
             Err(primary_err) => {
@@ -98,7 +98,7 @@ impl Settings {
                     })?;
                 settings.validate();
                 log::warn!("Settings recovered from backup '{}'", backup.display());
-                Self::persist_after_legacy_migration(&settings, &bak_json, path);
+                Self::persist_after_legacy_migration(&settings, path);
                 Ok(settings)
             }
         }
@@ -109,10 +109,13 @@ impl Settings {
     ///
     /// ### Arguments
     /// - `settings`: The freshly migrated settings ready to be saved.
-    /// - `source_json`: The raw JSON that was just deserialized.
     /// - `path`: The file the settings should be written back to.
-    fn persist_after_legacy_migration(settings: &Settings, source_json: &str, path: &Path) {
-        if !json_has_legacy_synchronization_shape(source_json) {
+    fn persist_after_legacy_migration(settings: &Settings, path: &Path) {
+        if !settings
+            .app_settings
+            .synchronization_settings
+            .migrated_from_legacy
+        {
             return;
         }
         log::info!(
@@ -249,36 +252,6 @@ impl Settings {
         self.recent_files.add_file(file);
         self.save()
     }
-}
-
-/// Detect whether a settings JSON document still uses the legacy
-/// `synchronization_settings` shape (single-server fields, no `profiles`).
-///
-/// ### Arguments
-/// - `json`: Raw JSON contents of the settings file.
-///
-/// ### Returns
-/// - `true`: The document has legacy single-server fields and no `profiles`.
-/// - `false`: The document is in the new multi-profile shape, has no
-///   synchronization configuration, or could not be parsed as JSON.
-fn json_has_legacy_synchronization_shape(json: &str) -> bool {
-    let value: serde_json::Value = match serde_json::from_str(json) {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-    let Some(sync) = value
-        .get("app_settings")
-        .and_then(|v| v.get("synchronization_settings"))
-    else {
-        return false;
-    };
-    if sync.get("profiles").is_some() {
-        return false;
-    }
-    sync.get("server_url").is_some()
-        || sync.get("email").is_some()
-        || sync.get("public_key").is_some()
-        || sync.get("is_deduplication").is_some()
 }
 
 /// Check whether a string is a plausibly-valid email address.
