@@ -48,6 +48,9 @@ pub struct SyncState {
     pub pending_ack_share_ids: Arc<Mutex<HashSet<String>>>,
     /// Shares already decrypted off the UI thread, awaiting tab creation in the render loop.
     pub pending_decrypted_files: Arc<Mutex<Vec<crate::fulgur::sync::share::DecryptedShare>>>,
+    /// Per-share decryption retry bookkeeping keyed by share id (attempt count
+    /// and backoff deadline). Entries are removed on success or quarantine.
+    pub share_retry_state: Arc<Mutex<HashMap<String, crate::fulgur::sync::share::ShareRetryState>>>,
     /// Guard ensuring at most one background decryption worker runs per profile.
     pub decrypt_in_flight: Arc<AtomicBool>,
     /// JWT token state manager with condition variable for efficient token
@@ -95,6 +98,7 @@ impl SyncState {
             pending_shared_files: Arc::new(Mutex::new(Vec::new())),
             pending_ack_share_ids: Arc::new(Mutex::new(HashSet::new())),
             pending_decrypted_files: Arc::new(Mutex::new(Vec::new())),
+            share_retry_state: Arc::new(Mutex::new(HashMap::new())),
             decrypt_in_flight: Arc::new(AtomicBool::new(false)),
             token_state: Arc::new(crate::fulgur::sync::access_token::TokenStateManager::new()),
             last_heartbeat: Arc::new(Mutex::new(None)),

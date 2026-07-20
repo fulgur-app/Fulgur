@@ -6,7 +6,7 @@ pub(super) mod send;
 pub(super) mod types;
 
 pub use compression::decompress_content;
-pub use decrypt::{DecryptedShare, start_decryption_if_idle};
+pub use decrypt::{DecryptedShare, ShareRetryState, start_decryption_if_idle};
 pub use devices::{Device, get_devices, get_icon};
 pub use fetch::{
     acknowledge_share_download, fetch_pending_shares, fetch_share_by_id, fetch_share_by_id_v2,
