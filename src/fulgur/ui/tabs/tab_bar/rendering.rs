@@ -12,8 +12,8 @@ use crate::fulgur::{
 };
 use gpui::{
     AnyElement, AppContext, ClickEvent, Context, DragMoveEvent, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
-    WeakEntity, Window, div, px,
+    MouseButton, ParentElement, Render, StatefulInteractiveElement, Styled, WeakEntity, Window,
+    div, px,
 };
 use gpui_component::{
     ActiveTheme, Sizable, StyledExt,
@@ -392,7 +392,7 @@ impl TabBar {
             );
         }
         let is_markdown_preview = tab.as_markdown_preview().is_some();
-        let title: SharedString = tab.title().to_string().into();
+        let title = tab.title();
         let is_modified = tab.is_modified();
         let mut tab_with_content = tab_div
             .child(title_container)
