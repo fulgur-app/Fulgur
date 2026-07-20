@@ -29,8 +29,7 @@ fn make_select_language_item(
     cx: &App,
 ) -> impl Element {
     let pretty_name = pretty_name(&language);
-    let id = format!("Select_{}", pretty_name.clone().replace(' ', "_"));
-    let id = SharedString::from(id);
+    let id = SharedString::from(format!("Select_{}", pretty_name.replace(' ', "_")));
     h_flex()
         .id(id)
         .justify_between()
