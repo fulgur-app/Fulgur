@@ -19,6 +19,9 @@ on:
   # Manual trigger: runs clippy + test on windows-latest only, on whatever
   # branch is selected in the "Run workflow" dropdown.
   workflow_dispatch:
+  # Daily Windows-only run (clippy + test) on the default branch.
+  schedule:
+    - cron: '0 3 * * *'
 
 # Cancel superseded runs on the same ref. A PR ref (refs/pull/N/merge) and a
 # push-to-dev-X ref are distinct, so a dev-push smoke and a PR gate will run in
@@ -73,18 +76,20 @@ jobs:
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))
       || github.event_name == 'workflow_dispatch'
+      || github.event_name == 'schedule'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # Windows is opt-in: sole target on manual workflow_dispatch runs, and it
-        # joins the PR matrix only when the PR title contains "windows"
-        # (contains() is case-insensitive). Default PRs get ubuntu + macos;
-        # dev-* pushes stay ubuntu-only. The PR title is only read inside this
-        # expression, never in a run: script, so it cannot inject into a shell.
+        # Windows is opt-in: sole target on manual workflow_dispatch runs and on
+        # the daily schedule, and it joins the PR matrix only when the PR title
+        # contains "windows" (contains() is case-insensitive). Default PRs get
+        # ubuntu + macos; dev-* pushes stay ubuntu-only. The PR title is only read
+        # inside this expression, never in a run: script, so it cannot inject
+        # into a shell.
         os: >-
           ${{
-            github.event_name == 'workflow_dispatch' && fromJSON('["windows-latest"]')
+            (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && fromJSON('["windows-latest"]')
             || (github.event_name == 'pull_request' && contains(github.event.pull_request.title, 'windows')) && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]')
             || github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "macos-latest"]')
             || fromJSON('["ubuntu-latest"]')
@@ -145,6 +150,7 @@ jobs:
       github.event_name == 'pull_request'
       || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))
       || github.event_name == 'workflow_dispatch'
+      || github.event_name == 'schedule'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -152,7 +158,7 @@ jobs:
         # Same Windows opt-in logic as the clippy matrix above.
         os: >-
           ${{
-            github.event_name == 'workflow_dispatch' && fromJSON('["windows-latest"]')
+            (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && fromJSON('["windows-latest"]')
             || (github.event_name == 'pull_request' && contains(github.event.pull_request.title, 'windows')) && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]')
             || github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "macos-latest"]')
             || fromJSON('["ubuntu-latest"]')
