@@ -82,11 +82,20 @@ impl ServerProfile {
 }
 
 /// Top-level synchronization configuration.
-#[derive(Clone, Serialize, PartialEq)]
+#[derive(Clone, Serialize)]
 pub struct SynchronizationSettings {
     pub is_synchronization_activated: bool,
     #[serde(default)]
     pub profiles: Vec<ServerProfile>,
+    #[serde(skip)]
+    pub migrated_from_legacy: bool,
+}
+
+impl PartialEq for SynchronizationSettings {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_synchronization_activated == other.is_synchronization_activated
+            && self.profiles == other.profiles
+    }
 }
 
 impl Default for SynchronizationSettings {
@@ -106,6 +115,7 @@ impl SynchronizationSettings {
         Self {
             is_synchronization_activated: false,
             profiles: Vec::new(),
+            migrated_from_legacy: false,
         }
     }
 
@@ -223,6 +233,7 @@ impl<'de> Deserialize<'de> for SynchronizationSettings {
             return Ok(Self {
                 is_synchronization_activated: helper.is_synchronization_activated,
                 profiles,
+                migrated_from_legacy: false,
             });
         }
 
@@ -248,6 +259,7 @@ impl<'de> Deserialize<'de> for SynchronizationSettings {
         Ok(Self {
             is_synchronization_activated: helper.is_synchronization_activated,
             profiles,
+            migrated_from_legacy: has_legacy_data,
         })
     }
 }
