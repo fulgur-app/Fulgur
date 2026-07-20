@@ -12,14 +12,23 @@ on:
     branches: [main, dev-*]
   pull_request:
     branches: [main]
+    # `edited` is added to the default types so changing the PR title
+    # re-evaluates the Windows matrix gate (see the clippy/test matrix).
+    # Trade-off: editing the PR description also retriggers a full run.
+    types: [opened, synchronize, reopened, edited]
+  # Manual trigger: runs clippy + test on windows-latest only, on whatever
+  # branch is selected in the "Run workflow" dropdown.
+  workflow_dispatch:
 
 # Cancel superseded runs on the same ref. A PR ref (refs/pull/N/merge) and a
 # push-to-dev-X ref are distinct, so a dev-push smoke and a PR gate will run in
 # parallel when you push with an open PR - they have different scopes (smoke vs
 # full gate) and different notifications, so that is intentional, not duplicated
 # work. Main is excluded from cancellation so a docs deploy cannot be interrupted.
+# The event name is part of the group so a manual Windows dispatch on a branch
+# does not cancel (or get cancelled by) a regular push run on the same branch.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
@@ -42,7 +51,7 @@ jobs:
     name: Formatting
     # Merge-to-main gate disabled: fmt no longer runs on pull_request, only on dev-* pushes.
     # Restore the merge gate by prepending: github.event_name == 'pull_request' ||
-    if: startsWith(github.ref, 'refs/heads/dev-')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -58,15 +67,28 @@ jobs:
 
   clippy:
     name: Clippy - ${{ matrix.os }}
-    # Merge-to-main gate disabled: clippy no longer runs on pull_request, only on dev-* pushes.
+    # Merge-to-main gate disabled: clippy no longer runs on pull_request, only on
+    # dev-* pushes and manual (Windows) dispatch runs.
     # Restore the merge gate by prepending: github.event_name == 'pull_request' ||
-    if: startsWith(github.ref, 'refs/heads/dev-')
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))
+      || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # Full 3-OS matrix on PRs (catches cfg-gated platform code), ubuntu-only on dev-* pushes.
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        # Windows is opt-in: sole target on manual workflow_dispatch runs, and it
+        # joins the PR matrix only when the PR title contains "windows"
+        # (contains() is case-insensitive). Default PRs get ubuntu + macos;
+        # dev-* pushes stay ubuntu-only. The PR title is only read inside this
+        # expression, never in a run: script, so it cannot inject into a shell.
+        os: >-
+          ${{
+            github.event_name == 'workflow_dispatch' && fromJSON('["windows-latest"]')
+            || (github.event_name == 'pull_request' && contains(github.event.pull_request.title, 'windows')) && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]')
+            || github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "macos-latest"]')
+            || fromJSON('["ubuntu-latest"]')
+          }}
 
     steps:
       - name: Checkout code
@@ -119,12 +141,22 @@ jobs:
 
   test:
     name: Test - ${{ matrix.os }}
-    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/dev-')
+    if: >-
+      github.event_name == 'pull_request'
+      || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))
+      || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        # Same Windows opt-in logic as the clippy matrix above.
+        os: >-
+          ${{
+            github.event_name == 'workflow_dispatch' && fromJSON('["windows-latest"]')
+            || (github.event_name == 'pull_request' && contains(github.event.pull_request.title, 'windows')) && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]')
+            || github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "macos-latest"]')
+            || fromJSON('["ubuntu-latest"]')
+          }}
 
     steps:
       - name: Checkout code
@@ -293,7 +325,9 @@ jobs:
   ci:
     name: CI
     needs: [fmt, clippy, test, msrv, docs-validate]
-    if: ${{ always() && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/dev-')) }}
+    # Excludes workflow_dispatch: manual Windows runs report through their own
+    # job statuses (and the Telegram notification), not the branch-protection gate.
+    if: ${{ always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))) }}
     runs-on: ubuntu-latest
     steps:
       - name: Check gate results
