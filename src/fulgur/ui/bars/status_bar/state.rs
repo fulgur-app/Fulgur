@@ -7,7 +7,7 @@ use crate::fulgur::{
     tab::Tab,
     ui::components_utils::{EMPTY, UTF_8},
 };
-use gpui::{App, Context, EventEmitter, WeakEntity, Window};
+use gpui::{App, Context, EventEmitter, SharedString, WeakEntity, Window};
 use gpui_component::input::Position;
 use std::time::{Duration, Instant};
 
@@ -39,7 +39,7 @@ impl EventEmitter<StatusBarEvent> for StatusBar {}
 /// Display label strings derived from the active tab
 pub(super) struct StatusBarLabels {
     pub(super) line_col: String,
-    pub(super) language_label: String,
+    pub(super) language_label: SharedString,
     pub(super) encoding_label: String,
 }
 
@@ -82,8 +82,8 @@ impl StatusBar {
         };
 
         let language_label = match &language {
-            Some(lang) => pretty_name(lang),
-            None => EMPTY.to_string(),
+            Some(lang) => SharedString::new_static(pretty_name(lang)),
+            None => SharedString::new_static(EMPTY),
         };
         let encoding_label = match active_tab {
             Some(_) => encoding,
