@@ -18,6 +18,7 @@ use gpui_component::{
     v_flex,
 };
 use parking_lot::Mutex;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// Create a single device row in the share sheet.
@@ -201,6 +202,11 @@ pub(super) fn make_device_list(state: &Arc<ShareSheetState>, cx: &App) -> Div {
     let mut container = v_flex().gap_6();
     let mut row_idx: usize = 0;
     let map = state.per_profile.read();
+    let selected_guard = state.selected.lock();
+    let selected_keys: HashSet<(&str, &str)> = selected_guard
+        .iter()
+        .map(|(profile_id, device_id)| (profile_id.as_str(), device_id.as_str()))
+        .collect();
     for profile in &state.profiles {
         let mut group = div().child(make_profile_header(profile, cx));
         match map.get(&profile.id) {
@@ -215,11 +221,8 @@ pub(super) fn make_device_list(state: &Arc<ShareSheetState>, cx: &App) -> Div {
                     group = group.child(make_empty_section(cx));
                 } else {
                     for device in devices.iter() {
-                        let is_selected = state
-                            .selected
-                            .lock()
-                            .iter()
-                            .any(|(pid, did)| pid == &profile.id && did == &device.id);
+                        let is_selected =
+                            selected_keys.contains(&(profile.id.as_str(), device.id.as_str()));
                         group = group.child(make_device_item(
                             &profile.id,
                             device,
