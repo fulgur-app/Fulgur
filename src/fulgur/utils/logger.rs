@@ -7,17 +7,45 @@ use std::sync::OnceLock;
 
 static LOGGER_HANDLE: OnceLock<LoggerHandle> = OnceLock::new();
 
+thread_local! {
+    /// Compact thread id, computed once per thread instead of once per log record.
+    static THREAD_ID: String = compute_thread_id();
+}
+
 /// Convert `ThreadId(7)` debug output to plain `7`.
 ///
 /// ### Returns
 /// - `String`: The current thread id without the `ThreadId(...)` wrapper
-fn current_thread_id() -> String {
+fn compute_thread_id() -> String {
     let thread_id = format!("{:?}", std::thread::current().id());
     thread_id
         .strip_prefix("ThreadId(")
         .and_then(|s| s.strip_suffix(')'))
         .unwrap_or(&thread_id)
         .to_string()
+}
+
+/// Run a closure with the cached compact thread id of the current thread.
+///
+/// ### Description
+/// The id is stored in thread-local storage so the logging hot path performs no
+/// allocation after the first record emitted by a given thread. When the
+/// thread-local has already been destroyed (logging during thread teardown), the
+/// placeholder `?` is used instead.
+///
+/// ### Arguments
+/// - `f`: Receives the compact thread id as a string slice
+///
+/// ### Returns
+/// - `R`: Whatever the closure returns
+fn with_current_thread_id<R>(f: impl FnOnce(&str) -> R) -> R {
+    let mut f = Some(f);
+    match THREAD_ID.try_with(|id| f.take().expect("closure is called at most once")(id)) {
+        Ok(result) => result,
+        Err(_) => f
+            .take()
+            .expect("closure is unused when the thread local is gone")("?"),
+    }
 }
 
 /// File log formatter keeping the legacy style:
@@ -37,16 +65,17 @@ fn file_log_format(
     record: &log::Record,
 ) -> Result<(), std::io::Error> {
     let timestamp = now.format_rfc3339();
-    let thread_id = current_thread_id();
-    write!(
-        w,
-        "{} [{}] ({}) {}: {}",
-        timestamp,
-        record.level(),
-        thread_id,
-        record.target(),
-        record.args()
-    )
+    with_current_thread_id(|thread_id| {
+        write!(
+            w,
+            "{} [{}] ({}) {}: {}",
+            timestamp,
+            record.level(),
+            thread_id,
+            record.target(),
+            record.args()
+        )
+    })
 }
 
 /// Get the directory where log files are stored.
@@ -117,7 +146,7 @@ pub fn set_debug_mode(debug_mode: bool) {
 
 #[cfg(test)]
 mod tests {
-    use crate::fulgur::utils::logger::{current_thread_id, file_log_format, set_debug_mode};
+    use crate::fulgur::utils::logger::{file_log_format, set_debug_mode, with_current_thread_id};
     use flexi_logger::DeferredNow;
     use log::{Level, LevelFilter, Record};
     use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -145,16 +174,17 @@ mod tests {
 
     #[test]
     fn current_thread_id_is_compact() {
-        let id = current_thread_id();
-        assert!(!id.is_empty(), "Thread id should not be empty");
-        assert!(
-            !id.starts_with("ThreadId("),
-            "Thread id helper should strip debug wrapper syntax"
-        );
-        assert!(
-            !id.ends_with(')'),
-            "Thread id helper should not include trailing parenthesis"
-        );
+        with_current_thread_id(|id| {
+            assert!(!id.is_empty(), "Thread id should not be empty");
+            assert!(
+                !id.starts_with("ThreadId("),
+                "Thread id helper should strip debug wrapper syntax"
+            );
+            assert!(
+                !id.ends_with(')'),
+                "Thread id helper should not include trailing parenthesis"
+            );
+        });
     }
 
     #[test]
