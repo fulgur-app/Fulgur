@@ -1,102 +1,123 @@
+<div align="center">
+
+<img src="assets/icon_square.webp" width="128" alt="Fulgur logo" />
+
 # Fulgur
 
-![](assets/icon_square.webp)
+**A lightning-fast, native text editor with end-to-end encrypted sync you can self-host.**
 
-Your lightning fast, multiplatform, themable text editor, with synchronization between instances!
+Built in Rust on [GPUI](https://www.gpui.rs/), the GPU-accelerated UI framework powering Zed. No webviews, no JavaScript, pure speed.
 
-## About Fulgur
+[![Latest release](https://img.shields.io/github/v/release/fulgur-app/Fulgur?label=release)](https://github.com/fulgur-app/Fulgur/releases/latest)
+[![CI](https://github.com/fulgur-app/Fulgur/actions/workflows/ci.yml/badge.svg)](https://github.com/fulgur-app/Fulgur/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENCE)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#install)
 
-### What is Fulgur?
+[Website](https://fulgur.app) · [Download](#install) · [Sync server](https://github.com/fulgur-app/fulgurant) · [Releases](https://github.com/fulgur-app/Fulgur/releases)
 
-Fulgur is a **straightforward text editor** built for speed and reliability across multiple platforms. It's not designed to replace full-featured IDEs like VS Code, IntelliJ, or Zed, nor does it aim to match the extensive capabilities of editors like Emacs or Vim. 
+<img src="assets/readme/fulgur_1.webp" alt="Fulgur main window" />
 
-Fulgur focuses on being fast, dependable, and **built with modern technologies**. Fulgur is built with **Rust** and **GPUI**, a modern, GPU-accelerated UI framework for Rust developed for Zed. No embedded webviews, no Javascript, just pure, native performance.
+</div>
 
-Themes are a core part of the Fulgur experience, with several included by default.
+## Why Fulgur?
 
-### What's new in Fulgur?
+Sometimes you don't want an IDE. You want to open a file *now*, edit it, and get on with your day, without a splash screen, a plugin marketplace, or a gigabyte of RAM held hostage. That's Fulgur:
 
-Version 0.2.0 introduces Sync mode, allowing you to **securely send files between Fulgur instances** similar to how you share tabs between browsers. The best part: [Fulgurant](https://github.com/fulgur-app/fulgurant), **the open source sync server, is self-hostable**, keeping your data private.
+- **Actually native.** Rust + GPUI rendering straight to the GPU. Instant startup, instant typing, on macOS, Windows, and Linux.
+- **Sync without the cloud landlord.** Send files between your machines like browser tabs, end-to-end encrypted, through [Fulgurant](https://github.com/fulgur-app/fulgurant), an open source sync server you can self-host. The server never sees your plaintext.
+- **Power-user comforts, zero configuration.** Syntax highlighting for 60+ languages, SSH remote editing, CSV table view, live log following, Markdown preview, all out of the box.
 
-Version 0.3.0 introduces **multi-window support**, allowing you to open multiple Fulgur windows simultaneously, as well as a much more **robust and secure end-to-end encryption system** using the system's keychain. As a result it limits compatibility issues on some desktop environments on Linux.
+Fulgur doesn't try to replace VS Code, Zed, or Vim. It's the fast, dependable editor you reach for the other fifty times a day.
 
-Version 0.4.0 is more of a maintenance release, with a strong **focus on performance, security and code quality**. It also adds the support of the **syntax highlighting for 15 new languages**.
+## Features
 
-Version 0.5.0 introduces the support of **syntax highlighting for 13 new languages** as well as a much better support of PHP, Astro and Svelte. The editor now supports **code folding** and has a new **Markdown preview tab**. We've started to implement comfort features that require platform specific code such as the **Dock menu on macOS**. Talking about macOS, Fulgur is now signed an notarized, no more gatekeeper warnings! Finally, we've added many performance and security improvements which make the experience with Fulgur even nicer.
+### Editing
+- **Syntax highlighting for 60+ languages** via tree-sitter, with code folding
+- **Markdown preview** in a side tab, with a formatting toolbar
+- **CSV mode**: opens CSV files as an editable table
+- **LOG mode**: follows log files in real time as your app writes them
+- **Color tools**: a color picker and converter bar, plus inline color previews in your code
+- **Search**, jump to line, drag-and-drop files and reorderable tabs
 
-Version 0.6.0 finally introduces **drag and drop**! Open your files by just dragging and dropping them in Fulgur. **Tabs are also now reorderable** within the same window with drag and drop. Due to a current limitation of GPUI, drag and drop between windows is not supported but a new submenu in a tab's context menu allow to **send the tab to another window**. Colors are now first class citizen with **a powerful color picker and color converter bar** available for all tabs from the status bar, as well as a switchable **color preview within your files**. Last but not least, many improvements such as much nicer icons on Windows and Linux, a Windows taskbar menu and various performance improvements are part of this build.
+### Sync and remote
+- **End-to-end encrypted file sharing** between your devices: X25519 keys per device (stored in the system keychain), encryption via [age](https://github.com/FiloSottile/age), zero-knowledge server
+- **Self-hostable sync server**: [Fulgurant](https://github.com/fulgur-app/fulgurant) is open source; run your own, or several at once (e.g. personal + work)
+- **Edit files over SSH** directly on remote servers, with an integrated file browser
+- **File watching**: files changed on disk reload automatically, with conflict handling for unsaved edits
 
-Version 0.7.0 introduces a much anticipated feature, the **direct remote edition of files via SSH**. You can now edit files on a remote server directly from Fulgur, without needing to download them first. An **integrated file browser** allows you to navigate and edit files on the remote server if you don't know its path. The settings and state files now support **corruption recovery** by backing up their last known good state. And, as a preparation for the support of multiple Fulgurant servers, the **maximum size of a shared file is now directly obtained from the server** (Fulgurant 0.6.0+). Besides the many performance & security improvements, the **linter has been hardened** to `pedantic` to increase even more the code quality.
+### Workflow
+- **Multi-window** support, with tab transfer between windows
+- **Themes as a core feature**: 8 bundled, JSON-based, hot-reloaded on save, and easy to write your own
+- **State restoration**: windows, tabs, and even unsaved content survive restarts
+- Platform niceties: macOS Dock menu, Windows taskbar jump list, signed and notarized macOS builds
 
-Version 0.8.0 now allows **connecting to several Fulgurant instances at the same time** e.g. your own personnal instance and a work instance while keeping the same principles: end to end secure connection, SSE for each instance... The share sheet makes posible to **share on devices from several servers at once**. An **aggregated sync status in the status bar** makes it easy to know the state of each Fulgurant instance. Also, Fulgur now support Fulgurant's v0.7.0+ V2 API. For the contributors, a **developer mode** allows to use several user profiles. The **linter hardening** to `pedantic` continues.
+## Screenshots
 
-Version 0.9.0 introduces 2 new modes: CSV mode **opens CSV files into an easy to read table with edition capabilities**, and LOG mode, that **reads LOG files and update their content in real time** to follow your apps. Both are in their very first iteration and will be improved in future releases. Some useful but much smaller features were added such as **opening new tabs by double clicking in the tab bar**, easily **copy the path to a file** from the tab's context menu, **activation of Fulgurant sync servers from the servers' list**, and a **notification in case of Fulgurant/Fulgur mismatch**. Many fixes and improvements too.
+| | |
+|---|---|
+| ![Markdown preview](assets/readme/fulgur_2.webp) | ![Share panel](assets/readme/fulgur_3.webp) |
+| Markdown preview and toolbar | Sharing a file to your devices |
+| ![Theme selection](assets/readme/fulgur_4.webp) | ![Color toolbar](assets/readme/fulgur_5.webp) |
+| Theme selection | Color picker, converter, and inline color highlighting |
+| ![SSH file browser](assets/readme/fulgur_6.webp) | |
+| Browsing a remote server over SSH | |
 
-### Screenshots
+## Install
 
-![](assets/readme/fulgur_1.webp)
+Download the latest release for your platform from the [releases page](https://github.com/fulgur-app/Fulgur/releases/latest):
 
-↑ The main window.
+| Platform | Package |
+|---|---|
+| macOS (Apple Silicon) | `.dmg`, signed and notarized |
+| Windows (x86-64) | `-setup.exe` installer |
+| Linux (x86-64, aarch64) | `.AppImage` or `.deb` |
 
-![](assets/readme/fulgur_2.webp)
+On macOS you can also install with Homebrew:
 
-↑ Markdown preview and toolbar.
+```sh
+brew install --cask fulgur-app/tap/fulgur
+```
 
-![](assets/readme/fulgur_3.webp)
+On Linux, storing sync encryption keys requires a running Secret Service provider (GNOME Keyring, KWallet, or compatible). Everything else works without it.
 
-↑ The share panel when connected to  Fulgurant server.
+## Themes
 
-![](assets/readme/fulgur_4.webp)
+Fulgur themes use the `gpui-component` JSON format with hexadecimal color codes. Bundled themes (Catppuccin, Everforest, Tokyo Night, Solarized, and more) are extracted to `~/.fulgur/themes` (`%APPDATA%\Fulgur` on Windows) on first run. Edit a theme file and it hot-reloads on save; copy one to create your own.
 
-↑ The theme selection panel.
+## Self-hosted sync
 
-![](assets/readme/fulgur_5.webp)
+Fulgur's sync is built around [Fulgurant](https://github.com/fulgur-app/fulgurant), an open source, self-hostable server. Files are gzip-compressed and encrypted per target device before they leave your machine; private keys never leave your system keychain. Connect to multiple Fulgurant instances at once and share to devices across all of them from a single panel.
 
-↑ The color toolbar with the color picker and the color converter, and the automatic color highlighting of the source code.
+## Roadmap
 
-![](assets/readme/fulgur_6.webp)
+Fulgur is under active development. Highlights of what's coming:
 
-↑ The file browser for remote SSH connection if the full path is not known..
+- Embedded terminal
+- Drag-and-drop of tabs between windows (pending upstream GPUI support)
+- Continued performance work on very large files
 
-### Limitations
+See the [releases page](https://github.com/fulgur-app/Fulgur/releases) for what's new in each version.
 
-Fulgur is currently in alpha development. While it has been stable in testing, several features are still being implemented and issues remain to be resolved:
+## Build from source
 
-* DONE in 0.6.0 ~~Drag and drop support~~
-* DONE in 0.8.0 ~~Multi Fulgurant sync server support~~
-* DONE in 0.3.0 ~~Multi-windows support~~
-* CONTINUED in 0.5.0 Syntax highlighting for additional languages
-* DONE in 0.2.0 ~~Sync mode functionality~~
-* Embedded terminal
-* Drag and drop of tabs between windows
-* Various edge cases
-* Large files handling's performance
+<details>
+<summary>Prerequisites and build instructions</summary>
 
-**Note that breaking changes may occur in future releases until v1.0.0.**
-
-### Themes
-
-Fulgur themes use the `gpui-component` format, configured with JSON files and hexadecimal color codes. Bundled themes are located in `src/themes` and will be stored in `~/.fulgur/themes` when installed. You can modify existing themes or create your own.
-
-## Build
-
-### Prerequisites
-
-#### All platforms
+### All platforms
 
 [Rust](https://rust-lang.org/) 1.96.0 is the minimum supported version.
 
-Install [cargo-packager](https://github.com/crabnebula-dev/cargo-packager) with `cargo install cargo-packager --locked`. It will bundle the app with a nice icon for each platform.
+Install [cargo-packager](https://github.com/crabnebula-dev/cargo-packager) with `cargo install cargo-packager --locked`. It bundles the app with a proper icon for each platform.
 
-Install [cargo-about](https://github.com/EmbarkStudios/cargo-about) with `cargo install cargo-about --locked`. It will generate the list of third parties licenses, as per the Apache 2.0 license's terms.
+Install [cargo-about](https://github.com/EmbarkStudios/cargo-about) with `cargo install cargo-about --locked`. It generates the list of third-party licenses, as required by the Apache 2.0 license's terms.
 
-#### MacOS
+### macOS
 
-Xcode must be installed (e.g. from the App Store) as well as the Xcode command line tools: `xcode-select –-install`.
+Xcode must be installed (e.g. from the App Store) as well as the Xcode command line tools: `xcode-select --install`.
 
-#### Windows
+### Windows
 
-Install the [Windows SDK](https://developer.microsoft.com/en-us/windows/downloads/sdk-archive/) matching the version of your OS and make sure that `fxd.exe` (matching your architecture e.g. x86-64, arm...) is in the path.
+Install the [Windows SDK](https://developer.microsoft.com/en-us/windows/downloads/sdk-archive/) matching the version of your OS and make sure that `fxd.exe` (matching your architecture e.g. x86-64, arm) is in the path.
 
 Fulgur bundles OpenSSL for SSH remote file editing, which requires two additional build tools:
 
@@ -105,11 +126,11 @@ Fulgur bundles OpenSSL for SSH remote file editing, which requires two additiona
 
 Both must be on your `PATH` before running `cargo build`.
 
-#### Linux
+### Linux
 
 **System libraries**
 
-Fulgur stores its end-to-end encryption keys in the system keychain through the Secret Service API (GNOME Keyring, KWallet, or any compatible provider). Building the Linux version therefore requires the D-Bus development headers in addition to the usual GUI libraries:
+Fulgur stores its end-to-end encryption keys in the system keychain through the Secret Service API (GNOME Keyring, KWallet, or any compatible provider). Building the Linux version therefore requires the D-Bus development headers in addition to the usual GUI libraries.
 
 On Ubuntu/Debian:
 
@@ -133,19 +154,13 @@ Fulgur uses `mold` as the linker on Linux to reduce memory usage during compilat
 
 **Option 1: Install clang and mold**
 
-Install the required tools:
-- `clang`: required for the C compiler
-- `mold`: a faster linker that uses less memory
-
-On Ubuntu/Debian: `sudo apt install clang mold`
-
-On Fedora/RHEL: `sudo dnf install clang mold`
-
-On Arch: `sudo pacman -S clang mold`
+- On Ubuntu/Debian: `sudo apt install clang mold`
+- On Fedora/RHEL: `sudo dnf install clang mold`
+- On Arch: `sudo pacman -S clang mold`
 
 **Option 2: Use the default linker**
 
-If you prefer not to install additional tools, comment out lines 8–10 in `.cargo/config.toml`:
+If you prefer not to install additional tools, comment out lines 8-10 in `.cargo/config.toml`:
 
 ```toml
 # [target.x86_64-unknown-linux-gnu]
@@ -155,23 +170,21 @@ If you prefer not to install additional tools, comment out lines 8–10 in `.car
 
 Note that builds may consume more memory with the default linker, especially on systems with limited RAM.
 
-### Build Fulgur
+### Build
 
-Once all the prerequisites installed and set up:
+Once all the prerequisites are installed:
 
-* Run `cargo build --release` to build an optimized version of Fulgur. May take some time on older systems.
-* Run `cargo packager --release` to build an optimized version of Fulgur and make a pretty executable with an icon.
+- `cargo build --release` builds an optimized version of Fulgur
+- `cargo packager --release` additionally packages it into a distributable with an icon
+
+</details>
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
 ## License
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+Licensed under the [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0).
 
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
