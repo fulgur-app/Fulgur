@@ -30,9 +30,7 @@ fn resolve_target(path: &Path) -> PathBuf {
 fn resolve_target(path: &Path) -> PathBuf {
     match (path.parent(), path.file_name()) {
         (Some(parent), Some(filename)) if !parent.as_os_str().is_empty() => {
-            fs::canonicalize(parent)
-                .map(|dir| dir.join(filename))
-                .unwrap_or_else(|_| path.to_path_buf())
+            fs::canonicalize(parent).map_or_else(|_| path.to_path_buf(), |dir| dir.join(filename))
         }
         _ => path.to_path_buf(),
     }

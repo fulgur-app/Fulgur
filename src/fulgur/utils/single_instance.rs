@@ -45,6 +45,7 @@ const CMD_PREFIX: &str = "CMD:";
 /// ### Returns
 /// - `true`: Another instance was found and the paths were forwarded - caller should exit
 /// - `false`: No existing instance is running - caller should continue
+#[must_use]
 pub fn try_forward_to_existing_instance(paths: &[PathBuf]) -> bool {
     match TcpStream::connect(("127.0.0.1", IPC_PORT)) {
         Ok(mut stream) => {
@@ -74,6 +75,7 @@ pub fn try_forward_to_existing_instance(paths: &[PathBuf]) -> bool {
 /// ### Returns
 /// - `true`: Another instance was found and the command was forwarded - caller should exit
 /// - `false`: No existing instance is running - caller should continue
+#[must_use]
 pub fn try_send_command_to_existing_instance(cmd: &str) -> bool {
     match TcpStream::connect(("127.0.0.1", IPC_PORT)) {
         Ok(mut stream) => {
