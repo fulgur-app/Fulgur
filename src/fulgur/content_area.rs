@@ -224,7 +224,13 @@ impl Fulgur {
                     {
                         // Reading the content entity here tracks it for this
                         // window, so edits re-render the panel automatically.
-                        let preview_text = content.read(cx).value();
+                        // Multi-line raw-HTML blocks are collapsed first so the
+                        // Markdown renderer never shapes a run containing a
+                        // newline (see `sanitize_markdown_preview`).
+                        let preview_text =
+                            crate::fulgur::utils::sanitize::sanitize_markdown_preview(
+                                content.read(cx).value().as_ref(),
+                            );
                         return v_flex()
                             .w_full()
                             .flex_1()
@@ -273,9 +279,11 @@ impl Fulgur {
                     content,
                     view_state,
                 } => {
-                    let preview_text = content.read(cx).value();
+                    let preview_text = crate::fulgur::utils::sanitize::sanitize_markdown_preview(
+                        content.read(cx).value().as_ref(),
+                    );
                     view_state.update(cx, |state, cx| {
-                        state.set_text(preview_text.as_ref(), cx);
+                        state.set_text(&preview_text, cx);
                     });
                     return v_flex()
                         .w_full()
