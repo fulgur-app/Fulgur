@@ -77,6 +77,10 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["ru
 gpui-macros = "0.2.2"
 gpui-component = { git = "https://github.com/longbridge/gpui-component", features = ["tree-sitter-languages"] }
 
+# Markdown (same crate and version gpui-component parses with; used to locate
+# inline text spans so the preview stopgap only neutralizes soft-break newlines)
+markdown = "1.0.0"
+
 # Filesystem
 notify = "8.2.0"
 open = "5.4.0"
