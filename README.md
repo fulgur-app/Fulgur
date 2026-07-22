@@ -12,8 +12,9 @@ Built in Rust on [GPUI](https://www.gpui.rs/), the GPU-accelerated UI framework 
 [![CI](https://github.com/fulgur-app/Fulgur/actions/workflows/ci.yml/badge.svg)](https://github.com/fulgur-app/Fulgur/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENCE)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#install)
+[![Discord](https://img.shields.io/badge/Discord-join%20the%20server-5865F2?logo=discord&logoColor=white)](https://discord.gg/dMGy49JqRD)
 
-[Website](https://fulgur.app) · [Download](#install) · [Sync server](https://github.com/fulgur-app/fulgurant) · [Releases](https://github.com/fulgur-app/Fulgur/releases)
+[Website](https://fulgur.app) · [Download](#install) · [Discord](https://discord.gg/dMGy49JqRD) · [Sync server](https://github.com/fulgur-app/fulgurant) · [Releases](https://github.com/fulgur-app/Fulgur/releases)
 
 <img src="assets/readme/fulgur_1.webp" alt="Fulgur main window" />
 
@@ -53,9 +54,8 @@ Fulgur doesn't try to replace VS Code, Zed, or Vim. It's the fast, dependable ed
 
 ## Screenshots
 
-| | |
-|---|---|
 | ![Markdown preview](assets/readme/fulgur_2.webp) | ![Share panel](assets/readme/fulgur_3.webp) |
+|---|---|
 | Markdown preview and toolbar | Sharing a file to your devices |
 | ![Theme selection](assets/readme/fulgur_4.webp) | ![Color toolbar](assets/readme/fulgur_5.webp) |
 | Theme selection | Color picker, converter, and inline color highlighting |
