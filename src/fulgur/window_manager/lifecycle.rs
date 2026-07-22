@@ -1,5 +1,6 @@
 use super::WindowManager;
 use crate::fulgur::Fulgur;
+use crate::fulgur::ui::dialogs::large_file_close::CloseContinuation;
 use crate::fulgur::ui::tabs::editor_tab::TabTransferData;
 use gpui::{AppContext, BorrowAppContext, Context, Window, WindowOptions};
 use gpui_component::WindowExt;
@@ -25,6 +26,17 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) -> bool {
         let window_count = cx.global::<WindowManager>().window_count();
+        // Large, modified local files cannot be persisted, so warn about each before closing.
+        let large_modified = self.large_modified_local_tabs(cx);
+        if !large_modified.is_empty() {
+            let continuation = if window_count == 1 {
+                CloseContinuation::Quit
+            } else {
+                CloseContinuation::CloseWindow
+            };
+            self.drive_large_file_close_warnings(large_modified, continuation, window, cx);
+            return false;
+        }
         if window_count == 1 {
             if self.settings.app_settings.confirm_exit {
                 self.quit(window, cx);
@@ -88,6 +100,34 @@ impl Fulgur {
             }
             true
         }
+    }
+
+    /// Finish closing this window programmatically after close warnings.
+    ///
+    /// ### Arguments
+    /// - `window`: The window being closed
+    /// - `cx`: The application context
+    pub(crate) fn finish_window_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Err(e) = self.save_state(cx, window) {
+            log::error!("Failed to save app state on window close: {e}");
+            window.push_notification(
+                (
+                    NotificationType::Error,
+                    gpui::SharedString::from(format!("Failed to save application state: {e}.")),
+                ),
+                cx,
+            );
+            return;
+        }
+        cx.update_global::<WindowManager, _>(|manager, _| {
+            manager.unregister(self.window_id);
+        });
+        for weak in cx.global::<WindowManager>().get_all_windows() {
+            if let Some(entity) = weak.upgrade() {
+                entity.update(cx, |_, cx| cx.notify());
+            }
+        }
+        window.remove_window();
     }
 
     /// Open a new Fulgur window (completely empty)

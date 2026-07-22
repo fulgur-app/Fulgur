@@ -124,6 +124,17 @@ impl EditorTab {
         self.original_content_len = len;
     }
 
+    /// Whether this tab's content is too large to embed in the persisted state file.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the content must not be persisted
+    pub fn content_too_large_to_persist(&self, cx: &App) -> bool {
+        self.large_file || super::is_large_file(self.content.read(cx).text().len())
+    }
+
     /// Check whether current buffer content differs from the saved baseline.
     ///
     /// ### Arguments

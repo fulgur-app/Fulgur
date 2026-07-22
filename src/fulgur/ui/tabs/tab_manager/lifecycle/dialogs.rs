@@ -1,4 +1,5 @@
 use crate::fulgur::Fulgur;
+use crate::fulgur::ui::dialogs::large_file_close::CloseContinuation;
 use gpui::{App, Context, ParentElement, Styled, Window, div, px};
 use gpui_component::WindowExt;
 
@@ -49,12 +50,31 @@ impl Fulgur {
         });
     }
 
-    /// Quit the application. If `confirm_exit` is enabled, a modal will be shown to confirm the action.
+    /// Quit the application.
     ///
     /// ### Arguments
     /// - `window`: The window to quit the application in
     /// - `cx`: The application context
     pub fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let large_modified = self.large_modified_local_tabs(cx);
+        if large_modified.is_empty() {
+            self.quit_inner(window, cx);
+        } else {
+            self.drive_large_file_close_warnings(
+                large_modified,
+                CloseContinuation::Quit,
+                window,
+                cx,
+            );
+        }
+    }
+
+    /// Quit the application. If `confirm_exit` is enabled, a modal will be shown to confirm the action.
+    ///
+    /// ### Arguments
+    /// - `window`: The window to quit the application in
+    /// - `cx`: The application context
+    pub(crate) fn quit_inner(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.app_settings.confirm_exit {
             let entity = cx.entity().clone();
             window.open_alert_dialog(cx, move |modal, _, _| {
