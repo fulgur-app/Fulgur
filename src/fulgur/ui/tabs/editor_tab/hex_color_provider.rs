@@ -46,11 +46,12 @@ impl DocumentColorProvider for ColorHighlightProvider {
                 true
             })
             .map(|node| {
-                let start = Position::new(node.position.line, node.position.character);
+                let line = lines.get(node.position.line as usize).copied();
+                let character = corrected_character(line, &node.matched, node.position.character);
+                let start = Position::new(node.position.line, character);
                 let end = Position::new(
                     node.position.line,
-                    node.position.character
-                        + u32::try_from(node.matched.chars().count()).unwrap_or(0),
+                    character + u32::try_from(node.matched.chars().count()).unwrap_or(0),
                 );
                 let lsp_color = node.lsp_color();
                 ColorInformation {
@@ -68,8 +69,82 @@ impl DocumentColorProvider for ColorHighlightProvider {
     }
 }
 
+/// Correct the reported start column of a color match.
+///
+/// ### Description
+/// `color-lsp` 0.2.0 has an off-by-one in its function-color branch: a color
+/// starting at column 0 (for example `oklch(...)` or `hsla(...)` at the very start
+/// of a line) is reported one column too far right, leaving its first character
+/// unhighlighted.
+///
+/// ### Arguments
+/// - `line`: The source line the match was found on, if available
+/// - `matched`: The matched color text
+/// - `character`: The reported 0-based start column (character index)
+///
+/// ### Returns
+/// - `u32`: The corrected 0-based start column
+fn corrected_character(line: Option<&str>, matched: &str, character: u32) -> u32 {
+    let Some(line) = line else {
+        return character;
+    };
+    let byte_offset = |ch: u32| line.char_indices().nth(ch as usize).map(|(byte, _)| byte);
+    if let Some(byte) = byte_offset(character)
+        && line[byte..].starts_with(matched)
+    {
+        return character;
+    }
+    if character > 0
+        && let Some(byte) = byte_offset(character - 1)
+        && line[byte..].starts_with(matched)
+    {
+        return character - 1;
+    }
+    character
+}
+
 #[cfg(test)]
 mod tests {
+    use super::corrected_character;
+
+    #[test]
+    fn test_corrects_function_color_at_line_start() {
+        assert_eq!(
+            corrected_character(
+                Some("oklch(0.71 0.1435 254.6)"),
+                "oklch(0.71 0.1435 254.6)",
+                1
+            ),
+            0
+        );
+        assert_eq!(
+            corrected_character(
+                Some("hsla(142, 76%, 36%, 1.00)"),
+                "hsla(142, 76%, 36%, 1.00)",
+                1
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn test_leaves_correct_position_untouched() {
+        assert_eq!(corrected_character(Some("  #E9570C"), "#E9570C", 2), 2);
+        assert_eq!(
+            corrected_character(
+                Some("color: hsl(225, 100%, 70%);"),
+                "hsl(225, 100%, 70%)",
+                7
+            ),
+            7
+        );
+    }
+
+    #[test]
+    fn test_missing_line_returns_input() {
+        assert_eq!(corrected_character(None, "#FFF", 3), 3);
+    }
+
     /// Helper: run `color_lsp::parse` with our post-filter and return matched strings
     fn extract_colors(text: &str) -> Vec<String> {
         let lines: Vec<&str> = text.lines().collect();
