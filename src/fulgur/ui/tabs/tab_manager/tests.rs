@@ -1,6 +1,10 @@
 use crate::fulgur::{
-    Fulgur, languages::supported_languages::SupportedLanguage, settings::Settings,
-    shared_state::SharedAppState, tab::Tab, ui::tabs::editor_tab::TabTransferData,
+    Fulgur,
+    languages::supported_languages::SupportedLanguage,
+    settings::Settings,
+    shared_state::SharedAppState,
+    tab::Tab,
+    ui::tabs::editor_tab::{TabLocation, TabTransferData},
     window_manager::WindowManager,
 };
 use gpui::{
@@ -1248,6 +1252,93 @@ fn test_handle_pending_transfer_scroll_consumes_position(cx: &mut TestAppContext
             assert!(
                 this.pending_transfer_scroll.is_none(),
                 "position must be consumed after scrolling"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_large_modified_local_tabs_detects_modified_large_local_file(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let (tab_id, content) = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_active_editor_tab(cx, |editor, _| {
+                editor.large_file = true;
+                editor.location = TabLocation::Local(PathBuf::from("/tmp/huge.log"));
+            });
+            let editor = this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab");
+            (editor.id, editor.content.clone())
+        })
+    });
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |input_state, cx| {
+            input_state.set_value("edited large content", window, cx);
+            cx.emit(InputEvent::Change);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            assert_eq!(
+                this.large_modified_local_tabs(cx),
+                vec![tab_id],
+                "a modified large local tab must be flagged for a close warning"
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn test_large_modified_local_tabs_excludes_untitled_and_unmodified(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let content = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_active_editor_tab(cx, |editor, _| {
+                editor.large_file = true;
+            });
+            this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab")
+                .content
+                .clone()
+        })
+    });
+
+    // An untitled large modified tab has no on-disk destination, so it is not
+    // offered a save-before-close warning.
+    visual_cx.update(|window, cx| {
+        content.update(cx, |input_state, cx| {
+            input_state.set_value("edited untitled large content", window, cx);
+            cx.emit(InputEvent::Change);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            assert!(
+                this.large_modified_local_tabs(cx).is_empty(),
+                "untitled large tabs must not be flagged for a close warning"
+            );
+        });
+    });
+
+    // Give it a local path but mark it saved: an unmodified tab is not flagged.
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_active_editor_tab(cx, |editor, cx| {
+                editor.location = TabLocation::Local(PathBuf::from("/tmp/huge.log"));
+                editor.mark_as_saved(cx);
+            });
+            assert!(
+                this.large_modified_local_tabs(cx).is_empty(),
+                "an unmodified large local tab must not be flagged for a close warning"
             );
         });
     });
