@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="/assets/icon_square.webp" width="128" alt="Fulgur logo" />
+<img src="assets/icon_square.webp" width="128" alt="Fulgur logo" />
 
 # Fulgur
 
