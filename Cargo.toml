@@ -76,6 +76,8 @@ gpui = { git = "https://github.com/zed-industries/zed" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["runtime_shaders", "font-kit", "wayland", "x11"] }
 gpui-macros = "0.2.2"
 gpui-component = { git = "https://github.com/longbridge/gpui-component", features = ["tree-sitter-languages"] }
+http_client = { git = "https://github.com/zed-industries/zed" }
+reqwest_client = { git = "https://github.com/zed-industries/zed" }
 
 # Markdown (same crate and version gpui-component parses with; used to locate
 # inline text spans so the preview stopgap only neutralizes soft-break newlines)

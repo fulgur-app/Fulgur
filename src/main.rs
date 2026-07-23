@@ -227,6 +227,13 @@ fn main() {
     app.run(move |cx| {
         // This must be called before using any GPUI Component features.
         gpui_component::init(cx);
+
+        // Register an HTTP client so the GPUI image loader can fetch Markdown
+        // preview images; this one also serves `file://` URLs for local images.
+        match crate::fulgur::utils::http::FileAwareHttpClient::new() {
+            Ok(client) => cx.set_http_client(std::sync::Arc::new(client)),
+            Err(e) => log::error!("Failed to initialize HTTP client for image loading: {e}"),
+        }
         if is_first_run {
             let appearance = cx.window_appearance();
             let is_dark = matches!(

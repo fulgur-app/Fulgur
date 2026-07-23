@@ -1,8 +1,10 @@
 pub mod atomic_write;
 pub mod crypto_helper;
+pub mod http;
 #[cfg(target_os = "windows")]
 pub mod jump_list;
 pub mod logger;
+pub mod markdown_images;
 pub mod paths;
 pub mod retry;
 pub mod sanitize;

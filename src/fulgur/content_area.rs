@@ -102,6 +102,7 @@ impl Fulgur {
                 show_markdown_preview: bool,
                 large_file: bool,
                 content: Entity<InputState>,
+                path: Option<std::path::PathBuf>,
                 csv_view_mode: editor_tab::CsvViewMode,
                 csv_table: Option<Entity<TableState<editor_tab::CsvTableDelegate>>>,
                 log_view: bool,
@@ -110,6 +111,7 @@ impl Fulgur {
             Settings,
             MarkdownPreview {
                 content: Entity<InputState>,
+                source_path: Option<std::path::PathBuf>,
                 view_state: Entity<gpui_component::text::TextViewState>,
             },
         }
@@ -145,6 +147,7 @@ impl Fulgur {
                     show_markdown_preview: editor_tab.show_markdown_preview,
                     large_file: editor_tab.large_file,
                     content: editor_tab.content.clone(),
+                    path: editor_tab.location.local_path().cloned(),
                     csv_view_mode: editor_tab.csv_view_mode,
                     csv_table: editor_tab.csv_table.clone(),
                     log_view: editor_tab.log_view,
@@ -163,6 +166,12 @@ impl Fulgur {
                             _ => None,
                         })
                         .unwrap_or_else(|| preview_tab.content.clone()),
+                    source_path: tabs_ref.iter().find_map(|t| match t.read(cx) {
+                        Tab::Editor(editor_tab) if editor_tab.id == preview_tab.source_tab_id => {
+                            editor_tab.location.local_path().cloned()
+                        }
+                        _ => None,
+                    }),
                     view_state: preview_tab.view_state.clone(),
                 },
             })
@@ -175,6 +184,7 @@ impl Fulgur {
                     show_markdown_preview,
                     large_file,
                     content,
+                    path,
                     csv_view_mode,
                     csv_table,
                     log_view,
@@ -229,7 +239,10 @@ impl Fulgur {
                         // newline (see `sanitize_markdown_preview`).
                         let preview_text =
                             crate::fulgur::utils::sanitize::sanitize_markdown_preview(
-                                content.read(cx).value().as_ref(),
+                                &crate::fulgur::utils::markdown_images::rewrite_markdown_image_paths(
+                                    content.read(cx).value().as_ref(),
+                                    path.as_deref().and_then(std::path::Path::parent),
+                                ),
                             );
                         return v_flex()
                             .w_full()
@@ -277,10 +290,15 @@ impl Fulgur {
                 }
                 ActiveTabRenderData::MarkdownPreview {
                     content,
+                    source_path,
                     view_state,
                 } => {
+                    let base_dir = source_path.as_deref().and_then(std::path::Path::parent);
                     let preview_text = crate::fulgur::utils::sanitize::sanitize_markdown_preview(
-                        content.read(cx).value().as_ref(),
+                        &crate::fulgur::utils::markdown_images::rewrite_markdown_image_paths(
+                            content.read(cx).value().as_ref(),
+                            base_dir,
+                        ),
                     );
                     view_state.update(cx, |state, cx| {
                         state.set_text(&preview_text, cx);
