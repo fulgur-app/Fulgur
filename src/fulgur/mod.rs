@@ -59,8 +59,11 @@ pub struct Fulgur {
     pub share_sheet_state: Option<Arc<ui::sheets::share_file::ShareSheetState>>, // When Some, a share sheet is open and devices are being fetched per profile
     cached_window_bounds: Option<state::SerializedWindowBounds>, // Cached window bounds for cross-window saves
     font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
-    editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor
+    editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor and markdown preview
     editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
+    markdown_preview_focus: FocusHandle, // Stable dispatch target for the markdown preview context menu (Copy / Select All)
+    markdown_panel_view_state: Option<Entity<gpui_component::text::TextViewState>>, // Owned text view state backing the inline markdown preview panel, created lazily on render
+    markdown_preview_pending_copy: Option<String>, // Preview selection captured at right-click time, before the menu's own click clears it, consumed by the Copy action
     status_bar: Entity<StatusBar>, // The status bar view at the bottom of the window
     _status_bar_subscription: Subscription, // Routes StatusBarEvent from the status bar to window-level handlers
     tab_bar: Entity<TabBar>,                // The tab bar view at the top of the window
