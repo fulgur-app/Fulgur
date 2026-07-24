@@ -104,7 +104,9 @@ mod tests {
 
     #[test]
     fn read_file_uri_rejects_missing_file() {
-        let url = Url::from_file_path("/nonexistent/fulgur/image.png").expect("file url");
+        let missing = std::env::temp_dir().join("fulgur-nonexistent-image.png");
+        let _ = std::fs::remove_file(&missing);
+        let url = Url::from_file_path(&missing).expect("file url");
         assert!(read_file_uri(url.as_str()).is_err());
     }
 }
