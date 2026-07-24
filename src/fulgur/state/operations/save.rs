@@ -2,7 +2,7 @@ use super::super::persistence::{
     SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
     get_file_modified_time,
 };
-use crate::fulgur::{Fulgur, editor_tab::TabLocation, tab::Tab};
+use crate::fulgur::{Fulgur, editor_tab::TabLocation, tab::Tab, ui::components_utils::UNTITLED};
 use gpui::{App, Window};
 
 impl Fulgur {
@@ -146,7 +146,7 @@ impl Fulgur {
                             continue;
                         }
                         let current_content = editor_tab.content.read(cx).text().to_string();
-                        if current_content.is_empty() {
+                        if current_content.is_empty() && editor_tab.title.starts_with(UNTITLED) {
                             continue;
                         }
                         TabState {

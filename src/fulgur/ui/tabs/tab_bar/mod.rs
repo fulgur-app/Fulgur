@@ -48,6 +48,10 @@ pub struct DuplicateTab(pub TabId);
 #[action(namespace = fulgur, no_json)]
 pub struct SetTabColor(pub TabId, pub Option<ColorTag>);
 
+#[derive(Action, Clone, PartialEq)]
+#[action(namespace = fulgur, no_json)]
+pub struct RenameTab(pub TabId);
+
 gpui::actions!(fulgur, [CloseAllTabsAction, SendTabToWindowNoOp]);
 
 /// Create a tab bar button

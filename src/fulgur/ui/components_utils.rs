@@ -34,6 +34,8 @@ pub const LINE_HEIGHT: DefiniteLength = relative(1.1);
 pub const UTF_8: &str = "UTF-8";
 /// The untitled string
 pub const UNTITLED: &str = "Untitled";
+/// Maximum number of characters kept when renaming a tab
+pub const MAX_TAB_NAME_LENGTH: usize = 100;
 /// The empty string
 pub const EMPTY: &str = "";
 

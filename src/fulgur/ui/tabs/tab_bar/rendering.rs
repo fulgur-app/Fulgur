@@ -1,6 +1,6 @@
 use super::{
     CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
-    CopyPath, DuplicateTab, SendTabToWindowNoOp, SetTabColor, ShowInFileManager, TabBar,
+    CopyPath, DuplicateTab, RenameTab, SendTabToWindowNoOp, SetTabColor, ShowInFileManager, TabBar,
     TabBarEvent, tab_bar_button_factory,
 };
 use crate::fulgur::{
@@ -267,6 +267,9 @@ impl TabBar {
         });
         let has_file_path = file_path.is_some();
         let is_editor_tab = tab.as_editor().is_some();
+        let is_renameable = tab
+            .as_editor()
+            .is_some_and(crate::fulgur::editor_tab::EditorTab::is_renameable);
         let other_windows: Vec<(String, WeakEntity<Fulgur>)> = {
             let manager = cx.global::<WindowManager>();
             let current_window_id = fulgur.window_id;
@@ -505,7 +508,8 @@ impl TabBar {
                     "Duplicate Tab",
                     Box::new(DuplicateTab(tab_id)),
                     !is_editor_tab,
-                );
+                )
+                .menu_with_disabled("Rename Tab...", Box::new(RenameTab(tab_id)), !is_renameable);
             let this = if is_editor_tab {
                 this.submenu("Send to...", window, cx, move |sub, _window, _cx| {
                     let mut sub = sub;

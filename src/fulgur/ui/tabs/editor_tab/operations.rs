@@ -165,8 +165,16 @@ impl EditorTab {
         if cleaned.is_empty() || cleaned.starts_with(UNTITLED) {
             None
         } else {
-            Some(cleaned.to_string())
+            Some(crate::fulgur::utils::sanitize::sanitize_filename(cleaned))
         }
+    }
+
+    /// Whether this tab's title can be renamed by the user.
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the tab has no associated file
+    pub fn is_renameable(&self) -> bool {
+        self.location.is_untitled()
     }
 
     /// Update the language/syntax highlighting based on the file extension

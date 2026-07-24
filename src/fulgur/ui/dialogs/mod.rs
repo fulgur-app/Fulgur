@@ -8,5 +8,6 @@ pub mod open_path;
 pub mod open_remote;
 pub mod path_browser;
 pub mod remote_path_browser;
+pub mod rename_tab;
 pub mod ssh_host_fingerprint;
 pub mod ssh_password;
