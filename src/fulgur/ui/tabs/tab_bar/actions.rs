@@ -1,6 +1,6 @@
 use super::{
     CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
-    CopyPath, DuplicateTab, SetTabColor, ShowInFileManager,
+    CopyPath, DuplicateTab, RenameTab, SetTabColor, ShowInFileManager,
 };
 use crate::fulgur::Fulgur;
 use gpui::{ClipboardItem, Context, Window};
@@ -198,6 +198,21 @@ impl Fulgur {
         if updated.is_some() {
             self.save_state_async(cx, window);
         }
+    }
+
+    /// Handle rename tab action from the context menu.
+    ///
+    /// ### Arguments
+    /// - `action`: The action carrying the tab ID
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn on_rename_tab(
+        &mut self,
+        action: &RenameTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.show_rename_tab_dialog(action.0, window, cx);
     }
 
     /// Handle next tab action

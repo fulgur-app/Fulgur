@@ -198,6 +198,41 @@ impl Tab {
         self.reattach_if_content_swapped(content_before, cx);
     }
 
+    /// Rename an editor tab and re-detect its language from the new name
+    ///
+    /// ### Arguments
+    /// - `name`: The new name, expected to be already trimmed and non-empty
+    /// - `window`: The window context
+    /// - `cx`: The tab entity context
+    /// - `settings`: The editor settings used when the input state is rebuilt
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the tab was renamed, `false` when it is not a renameable editor tab
+    pub fn rename_editor(
+        &mut self,
+        name: &str,
+        window: &mut Window,
+        cx: &mut Context<Tab>,
+        settings: &EditorSettings,
+    ) -> bool {
+        let Some(editor_tab) = self.as_editor_mut() else {
+            return false;
+        };
+        if !editor_tab.is_renameable() {
+            return false;
+        }
+        editor_tab.title = SharedString::from(name.to_owned());
+        let content = editor_tab.content.read(cx).text().to_string();
+        let language =
+            crate::fulgur::languages::supported_languages::language_from_content(name, &content);
+        let language_changed = language != editor_tab.language;
+        if language_changed {
+            self.force_language(window, cx, language, settings);
+        }
+        cx.notify();
+        true
+    }
+
     /// Force the language, re-attaching the content subscription
     ///
     /// ### Arguments

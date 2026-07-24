@@ -57,6 +57,7 @@ impl Fulgur {
         let settings = shared.settings.clone();
         let jump_to_line_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
+        let rename_tab_input = cx.new(|cx| InputState::new(window, cx).placeholder("Tab name"));
         let entity = cx.new(|cx| {
             let weak_fulgur = cx.weak_entity();
             let search_bar = cx.new(|cx| SearchBar::new(weak_fulgur.clone(), window, cx));
@@ -125,6 +126,7 @@ impl Fulgur {
                 color_picker_bar,
                 _color_picker_bar_subscription: color_picker_bar_subscription,
                 jump_to_line_input,
+                rename_tab_input,
                 pending_jump: None,
                 settings,
                 _shared_state_observation: shared_state_observation,

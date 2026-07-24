@@ -49,6 +49,7 @@ pub struct Fulgur {
     color_picker_bar: Entity<ColorPickerBar>, // The color picker bar view (owns the picker widget and its three text inputs)
     _color_picker_bar_subscription: Subscription, // Routes ColorPickerBarEvent from the color picker bar to window-level handlers
     pub jump_to_line_input: Entity<InputState>,   // Input for jumping to a line in the editor
+    pub rename_tab_input: Entity<InputState>,     // Input for renaming an unsaved tab
     pending_jump: Option<editor_tab::Jump>,       // Pending jump to line action
     pub settings: Settings, // The settings for the application (local snapshot, refreshed by the SharedAppState observer)
     _shared_state_observation: Subscription, // Global observer keeping the local settings snapshot in sync with SharedAppState and applying editor settings to tabs
