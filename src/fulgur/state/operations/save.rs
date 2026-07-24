@@ -101,6 +101,7 @@ impl Fulgur {
                             TabState {
                                 title: editor_tab.title.to_string(),
                                 log_view: editor_tab.log_view,
+                                color_tag: editor_tab.color_tag.map(|c| c.key().to_string()),
                                 file_path: Some(path.clone()),
                                 content: Some(current_content),
                                 last_saved: get_file_modified_time(path),
@@ -110,6 +111,7 @@ impl Fulgur {
                             TabState {
                                 title: editor_tab.title.to_string(),
                                 log_view: editor_tab.log_view,
+                                color_tag: editor_tab.color_tag.map(|c| c.key().to_string()),
                                 file_path: Some(path.clone()),
                                 content: None,
                                 last_saved: None,
@@ -128,6 +130,7 @@ impl Fulgur {
                         TabState {
                             title: editor_tab.title.to_string(),
                             log_view: editor_tab.log_view,
+                            color_tag: editor_tab.color_tag.map(|c| c.key().to_string()),
                             file_path: None,
                             content,
                             last_saved: None,
@@ -149,6 +152,7 @@ impl Fulgur {
                         TabState {
                             title: editor_tab.title.to_string(),
                             log_view: editor_tab.log_view,
+                            color_tag: editor_tab.color_tag.map(|c| c.key().to_string()),
                             file_path: None,
                             content: Some(current_content),
                             last_saved: None,

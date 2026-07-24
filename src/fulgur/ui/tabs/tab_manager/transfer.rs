@@ -40,6 +40,7 @@ impl Fulgur {
             cursor_position: content_state.cursor_position(),
             csv_view_mode: editor.csv_view_mode,
             csv_delimiter: editor.csv_delimiter,
+            color_tag: editor.color_tag,
             log_view: editor.log_view,
         })
     }

@@ -9,6 +9,7 @@ use crate::fulgur::{
     },
     tab::{Tab, TabId},
     ui::components_utils::{UNTITLED, UTF_8},
+    ui::tabs::color_tag::ColorTag,
 };
 use gpui::{App, AppContext, Context, Window};
 use gpui_component::input::TabSize;
@@ -120,6 +121,7 @@ impl Fulgur {
     ) -> Option<EditorTab> {
         log::debug!("Restoring tab: {}", tab_state.title);
 
+        let color_tag = tab_state.color_tag.as_deref().and_then(ColorTag::from_key);
         let file_exists = tab_state.file_path.as_ref().is_some_and(|p| p.exists());
         let file_modified_time = tab_state
             .file_path
@@ -157,6 +159,7 @@ impl Fulgur {
                     &self.settings.editor_settings,
                 );
                 tab.modified = is_modified;
+                tab.color_tag = color_tag;
                 self.pending_remote_restore.insert(tab_id);
                 return Some(tab);
             }
@@ -249,6 +252,7 @@ impl Fulgur {
                 csv_delimiter,
                 csv_table: None,
                 csv_table_source_hash: 0,
+                color_tag: None,
                 log_view: false,
                 log_follow: true,
                 log_full: false,
@@ -263,6 +267,7 @@ impl Fulgur {
         if tab_state.log_view || opens_as_log {
             tab.log_view = true;
         }
+        tab.color_tag = color_tag;
         Some(tab)
     }
 }

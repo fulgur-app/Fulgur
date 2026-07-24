@@ -22,6 +22,7 @@ use std::time::SystemTime;
 use crate::fulgur::files::csv_support::{DEFAULT_DELIMITER, detect_delimiter, parse_csv};
 use crate::fulgur::languages::supported_languages::{SupportedLanguage, language_registry_name};
 use crate::fulgur::settings::EditorSettings;
+use crate::fulgur::ui::tabs::color_tag::ColorTag;
 use crate::fulgur::ui::tabs::tab::TabId;
 
 /// Byte-size threshold for large file mode.
@@ -72,6 +73,8 @@ pub struct EditorTab {
     pub csv_table: Option<Entity<TableState<CsvTableDelegate>>>,
     /// Fingerprint of the text the current `csv_table` was parsed from.
     pub csv_table_source_hash: u64,
+    /// Optional theme-relative color tag shown as the tab's border color.
+    pub color_tag: Option<ColorTag>,
     /// Whether the log view (live tail) is active for this tab.
     pub log_view: bool,
     /// Whether the log view auto-scrolls to follow newly appended lines.
@@ -106,6 +109,7 @@ pub struct TabTransferData {
     pub cursor_position: gpui_component::input::Position,
     pub csv_view_mode: CsvViewMode,
     pub csv_delimiter: u8,
+    pub color_tag: Option<ColorTag>,
     pub log_view: bool,
 }
 

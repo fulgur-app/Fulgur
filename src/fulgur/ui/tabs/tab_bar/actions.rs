@@ -1,6 +1,6 @@
 use super::{
     CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
-    CopyPath, DuplicateTab, ShowInFileManager,
+    CopyPath, DuplicateTab, SetTabColor, ShowInFileManager,
 };
 use crate::fulgur::Fulgur;
 use gpui::{ClipboardItem, Context, Window};
@@ -172,6 +172,31 @@ impl Fulgur {
     ) {
         if let Some(index) = self.tab_index_of(action.0, cx) {
             self.duplicate_tab(index, window, cx);
+        }
+    }
+
+    /// Handle set tab color action from the context menu.
+    ///
+    /// Applies the chosen color tag (or clears it when `None`) to the target
+    /// editor tab and persists the change to the state file.
+    ///
+    /// ### Arguments
+    /// - `action`: The action carrying the tab ID and the selected color tag
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn on_set_tab_color(
+        &mut self,
+        action: &SetTabColor,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let SetTabColor(tab_id, color) = action;
+        let updated = self.update_editor_tab(*tab_id, cx, |editor, cx| {
+            editor.color_tag = *color;
+            cx.notify();
+        });
+        if updated.is_some() {
+            self.save_state_async(cx, window);
         }
     }
 

@@ -170,6 +170,7 @@ mod tests {
             last_saved: last_saved.map(std::string::ToString::to_string),
             remote: None,
             log_view: false,
+            color_tag: None,
         }
     }
 
@@ -249,6 +250,7 @@ mod tests {
                         last_saved: None,
                         remote: None,
                         log_view: false,
+                        color_tag: None,
                     }],
                     active_tab_index: Some(0),
                     window_bounds: SerializedWindowBounds {

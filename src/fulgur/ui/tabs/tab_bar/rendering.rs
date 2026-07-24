@@ -1,11 +1,13 @@
 use super::{
     CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
-    CopyPath, DuplicateTab, SendTabToWindowNoOp, ShowInFileManager, TabBar, TabBarEvent,
-    tab_bar_button_factory,
+    CopyPath, DuplicateTab, SendTabToWindowNoOp, SetTabColor, ShowInFileManager, TabBar,
+    TabBarEvent, tab_bar_button_factory,
 };
 use crate::fulgur::{
     Fulgur,
+    settings::TabColorStyle,
     tab::Tab,
+    ui::tabs::color_tag::ColorTag,
     ui::tabs::tab_drag::DraggedTab,
     ui::{components_utils, icons::CustomIcon},
     window_manager::WindowManager,
@@ -289,6 +291,24 @@ impl TabBar {
             .as_editor()
             .and_then(|editor_tab| editor_tab.file_last_modified)
             .and_then(components_utils::format_system_time);
+        // A markdown preview tab inherits the color tag of its source editor tab.
+        let color_tag = if let Some(editor_tab) = tab.as_editor() {
+            editor_tab.color_tag
+        } else if let Some(preview) = tab.as_markdown_preview() {
+            let source_id = preview.source_tab_id;
+            fulgur
+                .tabs
+                .iter()
+                .find_map(|other| match other.read(cx) {
+                    Tab::Editor(editor_tab) if editor_tab.id == source_id => {
+                        Some(editor_tab.color_tag)
+                    }
+                    _ => None,
+                })
+                .flatten()
+        } else {
+            None
+        };
         let mut tab_div = div()
             .id(("tab", tab_id.0))
             .flex()
@@ -354,7 +374,21 @@ impl TabBar {
         }
         let (filename, folder) = Self::get_tab_display_title(tab, filename_counts);
         let modified_indicator = if tab.is_modified() { " •" } else { "" };
+        let color_style = fulgur.settings.app_settings.tab_color_style;
+        let theme_title_color = if is_active {
+            cx.theme().tab_active_foreground
+        } else {
+            cx.theme().tab_foreground
+        };
+        let title_color = match (color_tag, color_style) {
+            (Some(color), TabColorStyle::TextColor) => color.to_hsla(cx),
+            _ => theme_title_color,
+        };
         let mut title_container = div().flex().items_center().gap_1().pl_1();
+        if let (Some(color), TabColorStyle::Dot) = (color_tag, color_style) {
+            title_container =
+                title_container.child(div().size_2().rounded_full().mr_1().bg(color.to_hsla(cx)));
+        }
         if let Some(remote_indicator) = Self::remote_tab_indicator_label(tab) {
             title_container = title_container.child(
                 div()
@@ -371,11 +405,7 @@ impl TabBar {
         title_container = title_container.child(
             div()
                 .text_sm()
-                .text_color(if is_active {
-                    cx.theme().tab_active_foreground
-                } else {
-                    cx.theme().tab_foreground
-                })
+                .text_color(title_color)
                 .child(format!("{filename}{modified_indicator}")),
         );
         if let Some(folder_path) = folder {
@@ -528,6 +558,33 @@ impl TabBar {
                 })
             } else {
                 this.menu_with_disabled("Send to...", Box::new(SendTabToWindowNoOp), true)
+            };
+            let this = if is_editor_tab {
+                let current = color_tag;
+                this.submenu("Color Tag", window, cx, move |sub, _window, _cx| {
+                    let mut sub = sub;
+                    for color in ColorTag::all() {
+                        let checked = current == Some(color);
+                        sub = sub.menu_element_with_check(
+                            checked,
+                            Box::new(SetTabColor(tab_id, Some(color))),
+                            move |_window, cx| {
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(div().size_3().rounded_full().bg(color.to_hsla(cx)))
+                                    .child(color.label())
+                            },
+                        );
+                    }
+                    sub.separator().menu_with_check(
+                        "None",
+                        current.is_none(),
+                        Box::new(SetTabColor(tab_id, None)),
+                    )
+                })
+            } else {
+                this.menu_with_disabled("Color Tag", Box::new(SetTabColor(tab_id, None)), true)
             };
             this.separator()
                 .menu("Close Tab", Box::new(CloseTabAction(tab_id)))
