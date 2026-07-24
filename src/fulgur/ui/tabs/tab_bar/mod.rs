@@ -13,7 +13,7 @@ use gpui_component::button::Button;
 use crate::fulgur::ui::{
     components_utils::{TAB_BAR_BUTTON_SIZE, button_factory},
     icons::CustomIcon,
-    tabs::tab::TabId,
+    tabs::{color_tag::ColorTag, tab::TabId},
 };
 
 #[derive(Action, Clone, PartialEq)]
@@ -43,6 +43,10 @@ pub struct CopyPath(pub TabId);
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
 pub struct DuplicateTab(pub TabId);
+
+#[derive(Action, Clone, PartialEq)]
+#[action(namespace = fulgur, no_json)]
+pub struct SetTabColor(pub TabId, pub Option<ColorTag>);
 
 gpui::actions!(fulgur, [CloseAllTabsAction, SendTabToWindowNoOp]);
 

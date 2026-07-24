@@ -70,6 +70,9 @@ pub struct TabState {
     /// Whether the tab was in log view mode and should reopen in it.
     #[serde(default)]
     pub log_view: bool,
+    /// Stable key of the tab's color tag, if any. See `ColorTag::key`.
+    #[serde(default)]
+    pub color_tag: Option<String>,
 }
 
 #[cfg(test)]

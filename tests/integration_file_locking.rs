@@ -72,6 +72,7 @@ fn test_state_concurrent_writes_no_corruption() {
                         last_saved: None,
                         remote: None,
                         log_view: false,
+                        color_tag: None,
                     }],
                     active_tab_index: Some(0),
                     window_bounds: SerializedWindowBounds::default(),
@@ -188,6 +189,7 @@ fn test_state_concurrent_writes_large_data() {
                             last_saved: Some("2026-02-13T10:00:00Z".to_string()),
                             remote: None,
                             log_view: false,
+                            color_tag: None,
                         });
                     }
 

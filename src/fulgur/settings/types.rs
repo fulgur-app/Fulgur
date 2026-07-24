@@ -321,6 +321,16 @@ pub struct EditorSettings {
     pub highlight_colors: bool,
 }
 
+/// How a tab's color tag is shown in the tab bar.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum TabColorStyle {
+    /// Render the tab title in the tag color.
+    #[default]
+    TextColor,
+    /// Render a small colored dot before the tab title.
+    Dot,
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppSettings {
     pub confirm_exit: bool,
@@ -330,6 +340,9 @@ pub struct AppSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scrollbar_show: Option<ScrollbarShow>,
     pub synchronization_settings: SynchronizationSettings,
+    /// How a tab's color tag is displayed in the tab bar.
+    #[serde(default)]
+    pub tab_color_style: TabColorStyle,
 }
 
 /// Default value for `debug_mode` setting
@@ -425,6 +438,7 @@ impl AppSettings {
             scrollbar_show: None,
             synchronization_settings: SynchronizationSettings::new(),
             debug_mode: false,
+            tab_color_style: TabColorStyle::TextColor,
         }
     }
 }

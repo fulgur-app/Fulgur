@@ -1,3 +1,4 @@
+pub mod color_tag;
 pub mod editor_tab;
 pub mod markdown_preview_tab;
 pub mod settings_tab;

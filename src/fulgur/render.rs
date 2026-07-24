@@ -125,6 +125,7 @@ impl Fulgur {
         register_action!(app_content, cx, ui::tabs::tab_bar::ShowInFileManager => on_show_in_file_manager(&action));
         register_action!(app_content, cx, ui::tabs::tab_bar::CopyPath => on_copy_path(&action));
         register_action!(app_content, cx, ui::tabs::tab_bar::DuplicateTab => on_duplicate_tab(&action));
+        register_action!(app_content, cx, ui::tabs::tab_bar::SetTabColor => on_set_tab_color(&action));
         register_action!(app_content, cx, ui::menus::OpenRecentFile => do_open_recent_file(.0));
         register_action!(app_content, cx, ui::menus::CheckForUpdates => check_for_updates);
         register_action!(app_content, cx, ui::menus::GetTheme => call_no_args ui::tabs::tab_bar::open_theme_repository);

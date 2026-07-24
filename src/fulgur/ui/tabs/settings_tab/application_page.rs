@@ -1,6 +1,6 @@
 use crate::fulgur::{
     Fulgur,
-    settings::{AppSettings, MAX_PROFILES, ServerProfile},
+    settings::{AppSettings, MAX_PROFILES, ServerProfile, TabColorStyle},
     sync::synchronization::{
         FULGURANT_VERSION_WITHOUT_HEADER, RECOMMENDED_FULGURANT_VERSION, SynchronizationStatus,
         VersionCompatibility, compare_required_version,
@@ -9,7 +9,7 @@ use crate::fulgur::{
     utils::crypto_helper,
 };
 use gpui::{
-    App, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    Anchor, App, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::{
@@ -17,6 +17,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     label::Label,
+    menu::{DropdownMenu, PopupMenuItem},
     setting::{SettingField, SettingGroup, SettingItem, SettingPage},
     switch::Switch,
     tooltip::Tooltip,
@@ -81,6 +82,16 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                     .default_value(default_app_settings.debug_mode),
                 )
                 .description("Enables debug mode, showing more info in the logs."),
+                SettingItem::new(
+                    "Tab Color Style",
+                    SettingField::render({
+                        let entity = entity.clone();
+                        move |_options, _window, cx: &mut App| {
+                            render_tab_color_style_select(&entity, cx)
+                        }
+                    }),
+                )
+                .description("How a tab's color tag is shown: title text or a dot."),
             ]),
             SettingGroup::new().title("Synchronization").items(vec![
                 render_sync_error_banner(),
@@ -89,6 +100,61 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                 render_add_server_button(entity),
             ]),
         ])
+}
+
+/// Render the tab color style chooser as a compact dropdown.
+///
+/// ### Arguments
+/// - `entity`: The Fulgur entity, read for the current style and updated on change
+/// - `cx`: The application context
+///
+/// ### Returns
+/// - `impl IntoElement`: The small dropdown button reflecting the current style
+fn render_tab_color_style_select(entity: &Entity<Fulgur>, cx: &App) -> impl IntoElement + use<> {
+    let current = entity.read(cx).settings.app_settings.tab_color_style;
+    let label = match current {
+        TabColorStyle::TextColor => "Colored Title",
+        TabColorStyle::Dot => "Colored Dot",
+    };
+    let entity = entity.clone();
+    Button::new("tab-color-style")
+        .label(label)
+        .dropdown_caret(true)
+        .outline()
+        .small()
+        .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _window, _cx| {
+            let entity_text = entity.clone();
+            let entity_dot = entity.clone();
+            menu.item(
+                PopupMenuItem::new("Colored Title")
+                    .checked(current == TabColorStyle::TextColor)
+                    .on_click(move |_, _, cx| {
+                        set_tab_color_style(&entity_text, TabColorStyle::TextColor, cx);
+                    }),
+            )
+            .item(
+                PopupMenuItem::new("Colored Dot")
+                    .checked(current == TabColorStyle::Dot)
+                    .on_click(move |_, _, cx| {
+                        set_tab_color_style(&entity_dot, TabColorStyle::Dot, cx);
+                    }),
+            )
+        })
+}
+
+/// Persist a new tab color style selection and propagate it to open windows.
+///
+/// ### Arguments
+/// - `entity`: The Fulgur entity to update
+/// - `style`: The newly selected tab color style
+/// - `cx`: The application context
+fn set_tab_color_style(entity: &Entity<Fulgur>, style: TabColorStyle, cx: &mut App) {
+    entity.update(cx, |this, cx| {
+        this.settings.app_settings.tab_color_style = style;
+        if let Err(e) = this.update_and_propagate_settings(cx) {
+            log::error!("Failed to save settings: {e}");
+        }
+    });
 }
 
 /// Render the inline error banner shown when key initialization failed.

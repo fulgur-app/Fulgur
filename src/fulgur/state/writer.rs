@@ -151,6 +151,7 @@ mod tests {
                     last_saved: None,
                     remote: None,
                     log_view: false,
+                    color_tag: None,
                 }],
                 active_tab_index: Some(0),
                 window_bounds: SerializedWindowBounds::default(),
