@@ -169,6 +169,20 @@ impl EditorTab {
         }
     }
 
+    /// Get the file name used when sharing this tab with another device
+    ///
+    /// ### Returns
+    /// - `String`: The on-disk file name, the tab title, or `UNTITLED` when the
+    ///   title is still a default one
+    pub fn share_file_name(&self) -> String {
+        self.file_path()
+            .and_then(|path| path.file_name())
+            .and_then(std::ffi::OsStr::to_str)
+            .map(ToString::to_string)
+            .or_else(|| self.get_suggested_filename())
+            .unwrap_or_else(|| UNTITLED.to_string())
+    }
+
     /// Whether this tab's title can be renamed by the user.
     ///
     /// ### Returns

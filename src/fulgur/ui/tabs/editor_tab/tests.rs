@@ -365,6 +365,49 @@ fn test_editor_tab_get_suggested_filename_trims_modified_indicator(cx: &mut Test
     });
 }
 
+#[gpui::test]
+fn test_share_file_name_uses_local_file_name(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let settings = EditorSettings::new();
+    let params = FromFileParams {
+        id: TabId(52),
+        path: temp_test_path("shared_name.md"),
+        contents: "content".to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: true,
+    };
+
+    cx.update(|cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let tab = EditorTab::from_file(params, window, cx, &settings);
+            assert_eq!(tab.share_file_name(), "shared_name.md");
+
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
+#[gpui::test]
+fn test_share_file_name_uses_renamed_title_for_untitled_tab(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let settings = EditorSettings::new();
+
+    cx.update(|cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let renamed = EditorTab::new(TabId(53), "notes.md", window, cx, &settings);
+            assert!(renamed.file_path().is_none());
+            assert_eq!(renamed.share_file_name(), "notes.md");
+
+            let default_tab = EditorTab::new(TabId(54), "Untitled 2", window, cx, &settings);
+            assert_eq!(default_tab.share_file_name(), "Untitled");
+
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
 // ========== from_transfer() tests ==========
 
 #[gpui::test]

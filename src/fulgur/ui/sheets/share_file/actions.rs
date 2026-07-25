@@ -9,7 +9,7 @@ use crate::fulgur::{
         },
         synchronization::SynchronizationStatus,
     },
-    ui::notifications::progress::start_progress,
+    ui::{components_utils::UNTITLED, notifications::progress::start_progress},
 };
 use gpui::{App, Entity, SharedString, Window};
 use gpui_component::{WindowExt, notification::NotificationType};
@@ -47,12 +47,9 @@ fn capture_share_context(entity: &Entity<Fulgur>, cx: &mut App) -> ShareContext 
             |tab| Arc::from(tab.content.read(cx).value().as_str()),
         );
         let file_path = active_tab.as_ref().and_then(|tab| tab.file_path().cloned());
-        let file_name = file_path
+        let file_name = active_tab
             .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .unwrap_or("Untitled")
-            .to_string();
+            .map_or_else(|| UNTITLED.to_string(), |tab| tab.share_file_name());
         ShareContext {
             content,
             file_name,
