@@ -1,5 +1,5 @@
 use super::super::persistence::{
-    SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
+    SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
     get_file_modified_time,
 };
 use crate::fulgur::{Fulgur, editor_tab::TabLocation, tab::Tab, ui::components_utils::UNTITLED};
@@ -97,13 +97,13 @@ impl Fulgur {
                         if editor_tab.content_differs_from_original(cx)
                             && !editor_tab.content_too_large_to_persist(cx)
                         {
-                            let current_content = editor_tab.content.read(cx).text().to_string();
+                            let current_content = editor_tab.content.read(cx).text().clone();
                             TabState {
                                 title: editor_tab.title.to_string(),
                                 log_view: editor_tab.log_view,
                                 color_tag: editor_tab.color_tag.map(|c| c.key().to_string()),
                                 file_path: Some(path.clone()),
-                                content: Some(current_content),
+                                content: Some(TabContent::Rope(current_content)),
                                 last_saved: get_file_modified_time(path),
                                 remote: None,
                             }
@@ -123,7 +123,7 @@ impl Fulgur {
                         let content = if editor_tab.content_differs_from_original(cx)
                             && !editor_tab.content_too_large_to_persist(cx)
                         {
-                            Some(editor_tab.content.read(cx).text().to_string())
+                            Some(TabContent::Rope(editor_tab.content.read(cx).text().clone()))
                         } else {
                             None
                         };
@@ -145,7 +145,8 @@ impl Fulgur {
                             );
                             continue;
                         }
-                        let current_content = editor_tab.content.read(cx).text().to_string();
+                        let current_content =
+                            TabContent::Rope(editor_tab.content.read(cx).text().clone());
                         if current_content.is_empty() && editor_tab.title.starts_with(UNTITLED) {
                             continue;
                         }

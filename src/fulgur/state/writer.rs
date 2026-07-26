@@ -135,7 +135,9 @@ impl Default for StateWriter {
 
 #[cfg(test)]
 mod tests {
-    use super::super::persistence::{SerializedWindowBounds, TabState, WindowState, WindowsState};
+    use super::super::persistence::{
+        SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
+    };
     use super::*;
     use std::sync::Arc;
     use std::thread;
@@ -147,7 +149,7 @@ mod tests {
                 tabs: vec![TabState {
                     title: label.to_string(),
                     file_path: None,
-                    content: Some(label.to_string()),
+                    content: Some(TabContent::from(label)),
                     last_saved: None,
                     remote: None,
                     log_view: false,
@@ -185,6 +187,19 @@ mod tests {
             .unwrap();
         let reloaded = WindowsState::load_from_path(&path).unwrap();
         assert_eq!(reloaded.windows[0].tabs[0].title, "async");
+    }
+
+    #[test]
+    fn writer_flattens_rope_backed_content() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let writer = StateWriter::new();
+        let mut state = sample_state("rope");
+        let text = "ünsaved\ttext with \"quotes\"\nand a newline";
+        state.windows[0].tabs[0].content = Some(TabContent::Rope(ropey::Rope::from_str(text)));
+        writer.save_blocking(state, path.clone()).unwrap();
+        let reloaded = WindowsState::load_from_path(&path).unwrap();
+        assert_eq!(reloaded.windows[0].tabs[0].content.as_ref().unwrap(), text);
     }
 
     #[test]

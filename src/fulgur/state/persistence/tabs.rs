@@ -1,4 +1,5 @@
 use crate::fulgur::sync::ssh::url::RemoteSpec;
+use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -51,6 +52,101 @@ impl SerializedRemoteSpec {
     }
 }
 
+/// Buffer text attached to a persisted tab.
+#[derive(Debug, Clone)]
+pub enum TabContent {
+    /// Text already materialized as a `String`, typically loaded from a state file.
+    Text(String),
+    /// A cheap rope clone, flattened lazily during serialization.
+    Rope(Rope),
+}
+
+impl TabContent {
+    /// Whether the content holds no characters
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the content is empty
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Text(text) => text.is_empty(),
+            Self::Rope(rope) => rope.len() == 0,
+        }
+    }
+
+    /// Flatten the content into an owned `String`
+    ///
+    /// ### Returns
+    /// - `String`: The full buffer text
+    #[must_use]
+    pub fn into_string(self) -> String {
+        match self {
+            Self::Text(text) => text,
+            Self::Rope(rope) => rope.to_string(),
+        }
+    }
+}
+
+impl From<String> for TabContent {
+    fn from(text: String) -> Self {
+        Self::Text(text)
+    }
+}
+
+impl From<&str> for TabContent {
+    fn from(text: &str) -> Self {
+        Self::Text(text.to_string())
+    }
+}
+
+impl From<Rope> for TabContent {
+    fn from(rope: Rope) -> Self {
+        Self::Rope(rope)
+    }
+}
+
+impl PartialEq for TabContent {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Text(left), Self::Text(right)) => left == right,
+            (Self::Rope(left), Self::Rope(right)) => left == right,
+            (Self::Text(text), Self::Rope(rope)) | (Self::Rope(rope), Self::Text(text)) => {
+                rope == text.as_str()
+            }
+        }
+    }
+}
+
+impl PartialEq<str> for TabContent {
+    fn eq(&self, other: &str) -> bool {
+        match self {
+            Self::Text(text) => text == other,
+            Self::Rope(rope) => rope == other,
+        }
+    }
+}
+
+impl Serialize for TabContent {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Text(text) => serializer.serialize_str(text),
+            Self::Rope(rope) => serializer.collect_str(rope),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TabContent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(Self::Text)
+    }
+}
+
 /// Persisted state of a single editor tab
 ///
 /// Tab IDs are not persisted as they are assigned at runtime based on position.
@@ -61,7 +157,7 @@ pub struct TabState {
     /// Path to the file on disk, if the tab has an associated file. `None` for unsaved/new tabs.
     pub file_path: Option<PathBuf>,
     /// The text content of the tab, stored for unsaved tabs or when the file may have been modified since last save
-    pub content: Option<String>,
+    pub content: Option<TabContent>,
     /// ISO 8601 timestamp of when the content was last saved to disk. Used to detect if the file has been modified externally.
     pub last_saved: Option<String>,
     /// Serialized remote location metadata for SSH/SFTP tabs.
@@ -77,7 +173,56 @@ pub struct TabState {
 
 #[cfg(test)]
 mod tests {
-    use super::SerializedRemoteSpec;
+    use super::{SerializedRemoteSpec, TabContent};
+    use ropey::Rope;
+
+    /// Text exercising every JSON escape class plus multibyte and chunk-splitting input.
+    fn tricky_text() -> String {
+        let mut text = String::from("line1\n\t\"quoted\" \\ backslash\u{7}héllo 文档 🚀\r\n");
+        text.push_str(&"padding to force several rope chunks ".repeat(200));
+        text
+    }
+
+    #[test]
+    fn rope_content_serializes_identically_to_text_content() {
+        let text = tricky_text();
+        let as_text =
+            serde_json::to_string(&TabContent::Text(text.clone())).expect("serialize text content");
+        let as_rope = serde_json::to_string(&TabContent::Rope(Rope::from_str(&text)))
+            .expect("serialize rope content");
+        assert_eq!(as_text, as_rope);
+    }
+
+    #[test]
+    fn rope_content_roundtrips_through_json_as_text() {
+        let text = tricky_text();
+        let json = serde_json::to_string(&TabContent::Rope(Rope::from_str(&text)))
+            .expect("serialize rope content");
+        let restored: TabContent = serde_json::from_str(&json).expect("deserialize tab content");
+        assert!(matches!(restored, TabContent::Text(_)));
+        assert_eq!(restored.into_string(), text);
+    }
+
+    #[test]
+    fn rope_and_text_contents_compare_equal_for_the_same_text() {
+        let text = tricky_text();
+        assert_eq!(
+            TabContent::Text(text.clone()),
+            TabContent::Rope(Rope::from_str(&text))
+        );
+        assert_ne!(
+            TabContent::Text(text.clone()),
+            TabContent::Rope(Rope::from_str("other"))
+        );
+        assert_eq!(TabContent::Rope(Rope::from_str(&text)), *text.as_str());
+    }
+
+    #[test]
+    fn empty_content_is_reported_as_empty_for_both_variants() {
+        assert!(TabContent::Text(String::new()).is_empty());
+        assert!(TabContent::Rope(Rope::new()).is_empty());
+        assert!(!TabContent::Rope(Rope::from_str("x")).is_empty());
+    }
 
     #[test]
     fn test_serialized_remote_spec_roundtrip_omits_password() {

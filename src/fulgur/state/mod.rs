@@ -4,7 +4,7 @@ mod writer;
 
 pub use operations::{TabRestoreDecision, determine_tab_restore_strategy};
 pub use persistence::{
-    SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
+    SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
     get_file_modified_time, is_file_newer,
 };
 pub use writer::StateWriter;
