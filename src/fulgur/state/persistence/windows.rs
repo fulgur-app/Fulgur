@@ -62,7 +62,35 @@ impl WindowsState {
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved
     pub fn save_to_path(&self, path: &Path) -> anyhow::Result<()> {
-        let json = serde_json::to_string_pretty(self)?;
+        Self::write_json_to_path(&self.to_json()?, path)
+    }
+
+    /// Serialize the state into the JSON document written to disk
+    ///
+    /// ### Errors
+    /// - Returns an error if the state cannot be serialized to JSON.
+    ///
+    /// ### Returns
+    /// - `Ok(String)`: The pretty-printed state document
+    /// - `Err(anyhow::Error)`: If serialization failed
+    pub(crate) fn to_json(&self) -> anyhow::Result<String> {
+        serde_json::to_string_pretty(self)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize state: {e}"))
+    }
+
+    /// Write an already-serialized state document to disk
+    ///
+    /// ### Arguments
+    /// - `json`: The serialized state document, as produced by `to_json`
+    /// - `path`: The path to write the document to
+    ///
+    /// ### Errors
+    /// - Returns an error if the atomic write to the target path fails.
+    ///
+    /// ### Returns
+    /// - `Ok(())`: If the document was written successfully
+    /// - `Err(anyhow::Error)`: If the document could not be written
+    pub(crate) fn write_json_to_path(json: &str, path: &Path) -> anyhow::Result<()> {
         if path.exists() {
             let backup = crate::fulgur::utils::atomic_write::backup_path_for(path);
             if let Err(e) = fs::copy(path, &backup) {
