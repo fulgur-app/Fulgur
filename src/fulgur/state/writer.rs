@@ -1,15 +1,18 @@
 use super::persistence::WindowsState;
 use crate::fulgur::utils::worker::Worker;
+use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
-/// Bounded channel capacity for pending save requests.
+/// Bounded channel capacity for writer messages.
 ///
-/// Kept small because writes are serialized through a single thread and blocking
-/// callers typically wait on the reply before issuing the next save. A full queue
-/// indicates an abnormal backlog and makes callers back off naturally.
+/// Asynchronous snapshots never travel through this channel: they are coalesced
+/// in the `SnapshotMailbox`, so the queue only ever holds blocking requests,
+/// whose callers wait on the reply before issuing another one, plus zero-sized
+/// wakeups. A full queue therefore indicates an abnormal backlog of blocking
+/// saves and makes those callers back off naturally.
 const CHANNEL_CAPACITY: usize = 16;
 
 /// Maximum time a dropped `StateWriter` waits for the worker to flush queued
@@ -19,26 +22,73 @@ const WRITER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 /// Minimum delay between two consecutive asynchronous state writes.
 const SAVE_THROTTLE: Duration = Duration::from_millis(200);
 
-/// A request sent from a UI thread to the writer thread: a serialized snapshot,
-/// the destination path, and an optional reply channel the writer uses to report
-/// the I/O result.
-struct WriteRequest {
-    state: WindowsState,
-    path: PathBuf,
-    reply: Option<mpsc::Sender<anyhow::Result<()>>>,
+/// A message sent from a UI thread to the writer thread.
+enum WriterMessage {
+    /// A snapshot whose caller blocks until the writer reports the I/O result.
+    Blocking {
+        state: WindowsState,
+        path: PathBuf,
+        reply: mpsc::Sender<anyhow::Result<()>>,
+    },
+    /// Signals that the mailbox now holds a snapshot waiting to be written.
+    MailboxFilled,
 }
 
-/// An asynchronous request held back by the throttle until its window elapses.
+/// A snapshot waiting in the mailbox, together with its destination.
 struct PendingWrite {
     state: WindowsState,
     path: PathBuf,
-    deadline: Instant,
+}
+
+/// Coalescing hand-off for asynchronous snapshots.
+#[derive(Default)]
+struct SnapshotMailbox {
+    pending: Mutex<Vec<PendingWrite>>,
+}
+
+impl SnapshotMailbox {
+    /// Store a snapshot, replacing any snapshot already waiting for the same path.
+    ///
+    /// ### Arguments
+    /// - `state`: The snapshot to hand to the writer thread.
+    /// - `path`: Destination file path.
+    fn put(&self, state: WindowsState, path: PathBuf) {
+        let mut pending = self.pending.lock();
+        match pending.iter_mut().find(|entry| entry.path == path) {
+            Some(existing) => existing.state = state,
+            None => pending.push(PendingWrite { state, path }),
+        }
+    }
+
+    /// Drop the snapshot waiting for `path`, if any.
+    ///
+    /// ### Arguments
+    /// - `path`: Destination whose waiting snapshot is superseded.
+    fn discard(&self, path: &Path) {
+        self.pending.lock().retain(|entry| entry.path != path);
+    }
+
+    /// Take every waiting snapshot, oldest destination first.
+    ///
+    /// ### Returns
+    /// - `Vec<PendingWrite>`: The waiting snapshots, leaving the mailbox empty.
+    fn drain(&self) -> Vec<PendingWrite> {
+        std::mem::take(&mut *self.pending.lock())
+    }
+
+    /// Report whether at least one snapshot is waiting.
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the mailbox holds a snapshot to write.
+    fn has_pending(&self) -> bool {
+        !self.pending.lock().is_empty()
+    }
 }
 
 /// Writer-thread bookkeeping for throttling and de-duplicating writes.
 struct WriterState {
     throttle: Duration,
-    pending: Option<PendingWrite>,
+    mailbox: Arc<SnapshotMailbox>,
     last_write_at: Option<Instant>,
     last_written: Option<(PathBuf, [u8; 32])>,
 }
@@ -48,13 +98,14 @@ impl WriterState {
     ///
     /// ### Arguments
     /// - `throttle`: Minimum delay between two consecutive asynchronous writes.
+    /// - `mailbox`: Shared mailbox asynchronous snapshots are handed through.
     ///
     /// ### Returns
-    /// - `Self`: Bookkeeping with no pending request and no write history.
-    fn new(throttle: Duration) -> Self {
+    /// - `Self`: Bookkeeping with no write history.
+    fn new(throttle: Duration, mailbox: Arc<SnapshotMailbox>) -> Self {
         Self {
             throttle,
-            pending: None,
+            mailbox,
             last_write_at: None,
             last_written: None,
         }
@@ -109,35 +160,46 @@ impl WriterState {
         Ok(())
     }
 
-    /// Write the held-back request, if there is one, and clear it.
-    fn flush_pending(&mut self) {
-        let Some(pending) = self.pending.take() else {
-            return;
-        };
-        if let Err(e) = self.write(&pending.state, &pending.path) {
-            log::error!("State writer failed to save state: {e}");
+    /// Compute the earliest time the mailbox may be flushed.
+    ///
+    /// ### Returns
+    /// - `Some(Instant)`: A snapshot is waiting; the value is when the throttle
+    ///   allows writing it, which is in the past when it may be written now.
+    /// - `None`: The mailbox is empty, so there is nothing to wait for.
+    fn mailbox_deadline(&self) -> Option<Instant> {
+        if !self.mailbox.has_pending() {
+            return None;
+        }
+        Some(
+            self.last_write_at
+                .map_or_else(Instant::now, |last| last + self.throttle),
+        )
+    }
+
+    /// Write every snapshot waiting in the mailbox, ignoring the throttle.
+    fn flush_mailbox(&mut self) {
+        for pending in self.mailbox.drain() {
+            if let Err(e) = self.write(&pending.state, &pending.path) {
+                log::error!("State writer failed to save state: {e}");
+            }
         }
     }
 
-    /// Process one request from the channel.
+    /// Write a snapshot whose caller is waiting for the result.
     ///
     /// ### Arguments
-    /// - `request`: The request to process.
-    fn handle(&mut self, request: WriteRequest) {
-        let Some(reply) = request.reply else {
-            self.enqueue_throttled(request.state, request.path);
-            return;
-        };
-        if self
-            .pending
-            .as_ref()
-            .is_some_and(|pending| pending.path == request.path)
-        {
-            self.pending = None;
-        } else {
-            self.flush_pending();
-        }
-        let result = self.write(&request.state, &request.path);
+    /// - `state`: The snapshot to persist.
+    /// - `path`: Destination file path.
+    /// - `reply`: Channel the I/O result is reported on.
+    fn handle_blocking(
+        &mut self,
+        state: &WindowsState,
+        path: &Path,
+        reply: &mpsc::Sender<anyhow::Result<()>>,
+    ) {
+        self.mailbox.discard(path);
+        self.flush_mailbox();
+        let result = self.write(state, path);
         if let Err(ref e) = result {
             log::error!("State writer failed to save state: {e}");
         }
@@ -145,41 +207,12 @@ impl WriterState {
             log::warn!("State writer reply channel dropped before result was read");
         }
     }
-
-    /// Hold an asynchronous request back, or write it if the throttle allows.
-    ///
-    /// ### Arguments
-    /// - `state`: The snapshot to persist.
-    /// - `path`: Destination file path.
-    fn enqueue_throttled(&mut self, state: WindowsState, path: PathBuf) {
-        if let Some(pending) = self.pending.as_mut() {
-            if pending.path == path {
-                pending.state = state;
-                return;
-            }
-            self.flush_pending();
-        }
-        let ready_at = self.last_write_at.map(|last| last + self.throttle);
-        match ready_at {
-            Some(deadline) if deadline > Instant::now() => {
-                self.pending = Some(PendingWrite {
-                    state,
-                    path,
-                    deadline,
-                });
-            }
-            _ => {
-                if let Err(e) = self.write(&state, &path) {
-                    log::error!("State writer failed to save state: {e}");
-                }
-            }
-        }
-    }
 }
 
 /// Dedicated background writer that serializes all `WindowsState` persistence.
 pub struct StateWriter {
-    sender: mpsc::SyncSender<WriteRequest>,
+    sender: mpsc::SyncSender<WriterMessage>,
+    mailbox: Arc<SnapshotMailbox>,
     _worker: Worker,
 }
 
@@ -205,16 +238,19 @@ impl StateWriter {
     /// ### Returns
     /// - `Self`: A writer handle bound to the freshly spawned worker thread.
     fn with_throttle(throttle: Duration) -> Self {
-        let (sender, receiver) = mpsc::sync_channel::<WriteRequest>(CHANNEL_CAPACITY);
+        let (sender, receiver) = mpsc::sync_channel::<WriterMessage>(CHANNEL_CAPACITY);
+        let mailbox = Arc::new(SnapshotMailbox::default());
+        let writer_state = WriterState::new(throttle, Arc::clone(&mailbox));
         let worker = Worker::spawn(
             "fulgur-state-writer",
             WRITER_JOIN_TIMEOUT,
             move |_shutdown| {
-                Self::run(&receiver, throttle);
+                Self::run(&receiver, writer_state);
             },
         );
         Self {
             sender,
+            mailbox,
             _worker: worker,
         }
     }
@@ -222,31 +258,34 @@ impl StateWriter {
     /// Worker-thread loop that processes save requests one at a time.
     ///
     /// ### Arguments
-    /// - `receiver`: Channel of pending write requests.
-    /// - `throttle`: Minimum delay between two consecutive asynchronous writes.
-    fn run(receiver: &mpsc::Receiver<WriteRequest>, throttle: Duration) {
-        let mut writer_state = WriterState::new(throttle);
+    /// - `receiver`: Channel of blocking requests and mailbox wakeups.
+    /// - `writer_state`: Throttle and de-duplication bookkeeping, owning the
+    ///   writer's handle on the shared mailbox.
+    fn run(receiver: &mpsc::Receiver<WriterMessage>, mut writer_state: WriterState) {
         loop {
-            let next_request = match writer_state.pending.as_ref().map(|p| p.deadline) {
+            let next_message = match writer_state.mailbox_deadline() {
                 Some(deadline) => {
                     let wait = deadline.saturating_duration_since(Instant::now());
                     match receiver.recv_timeout(wait) {
-                        Ok(request) => Some(request),
+                        Ok(message) => Some(message),
                         Err(mpsc::RecvTimeoutError::Timeout) => None,
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     }
                 }
                 None => match receiver.recv() {
-                    Ok(request) => Some(request),
+                    Ok(message) => Some(message),
                     Err(mpsc::RecvError) => break,
                 },
             };
-            match next_request {
-                Some(request) => writer_state.handle(request),
-                None => writer_state.flush_pending(),
+            match next_message {
+                Some(WriterMessage::Blocking { state, path, reply }) => {
+                    writer_state.handle_blocking(&state, &path, &reply);
+                }
+                Some(WriterMessage::MailboxFilled) => {}
+                None => writer_state.flush_mailbox(),
             }
         }
-        writer_state.flush_pending();
+        writer_state.flush_mailbox();
         log::debug!("State writer thread exiting (no more senders)");
     }
 
@@ -277,10 +316,10 @@ impl StateWriter {
     pub fn save_blocking(&self, state: WindowsState, path: PathBuf) -> anyhow::Result<()> {
         let (reply_tx, reply_rx) = mpsc::channel();
         self.sender
-            .send(WriteRequest {
+            .send(WriterMessage::Blocking {
                 state,
                 path,
-                reply: Some(reply_tx),
+                reply: reply_tx,
             })
             .map_err(|_| anyhow::anyhow!("state writer thread has exited"))?;
         reply_rx
@@ -288,22 +327,19 @@ impl StateWriter {
             .map_err(|_| anyhow::anyhow!("state writer reply channel closed before result"))?
     }
 
-    /// Enqueue a snapshot without waiting for the write to complete.
+    /// Hand a snapshot to the writer without waiting for the write to complete.
     ///
     /// ### Arguments
     /// - `state`: The fully-assembled windows state snapshot to persist.
     /// - `path`: Destination file path (typically the user config `state.json`).
     pub fn save_async(&self, state: WindowsState, path: PathBuf) {
-        if self
-            .sender
-            .send(WriteRequest {
-                state,
-                path,
-                reply: None,
-            })
-            .is_err()
-        {
-            log::error!("State writer thread has exited; dropped async save request");
+        self.mailbox.put(state, path);
+        match self.sender.try_send(WriterMessage::MailboxFilled) {
+            Ok(()) | Err(mpsc::TrySendError::Full(_)) => {}
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                self.mailbox.drain();
+                log::error!("State writer thread has exited; dropped async save request");
+            }
         }
     }
 }
@@ -422,6 +458,11 @@ mod tests {
         let path = dir.path().join("state.json");
         let backup = crate::fulgur::utils::atomic_write::backup_path_for(&path);
         let writer = StateWriter::with_throttle(NEVER_ELAPSES);
+        // Seed the throttle so no snapshot of the burst can escape on the
+        // leading edge, which makes the number of writes deterministic.
+        writer
+            .save_blocking(sample_state("seed"), path.clone())
+            .unwrap();
         for i in 0..10 {
             writer.save_async(sample_state(&format!("burst-{i}")), path.clone());
         }
@@ -432,9 +473,60 @@ mod tests {
         assert_eq!(persisted_title(&path), "burst-9");
         assert_eq!(
             persisted_title(&backup),
-            "burst-0",
-            "the burst must cost two writes: the leading one and the coalesced one"
+            "seed",
+            "the burst must collapse into a single write"
         );
+    }
+
+    #[test]
+    fn writer_holds_at_most_one_snapshot_per_path() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let writer = StateWriter::with_throttle(NEVER_ELAPSES);
+        writer
+            .save_blocking(sample_state("seed"), path.clone())
+            .unwrap();
+        let burst = CHANNEL_CAPACITY * 4;
+        for i in 0..burst {
+            writer.save_async(sample_state(&format!("burst-{i}")), path.clone());
+        }
+        let held = writer.mailbox.drain();
+        assert_eq!(
+            held.len(),
+            1,
+            "a burst must not queue one snapshot per request"
+        );
+        assert_eq!(
+            held[0].state.windows[0].tabs[0].title,
+            format!("burst-{}", burst - 1),
+            "the surviving snapshot must be the newest one"
+        );
+    }
+
+    #[test]
+    fn mailbox_keeps_one_entry_per_destination_in_submission_order() {
+        let mailbox = SnapshotMailbox::default();
+        assert!(!mailbox.has_pending());
+        mailbox.put(sample_state("first-a"), PathBuf::from("a.json"));
+        mailbox.put(sample_state("b"), PathBuf::from("b.json"));
+        mailbox.put(sample_state("second-a"), PathBuf::from("a.json"));
+        assert!(mailbox.has_pending());
+        let drained = mailbox.drain();
+        assert_eq!(drained.len(), 2);
+        assert_eq!(drained[0].state.windows[0].tabs[0].title, "second-a");
+        assert_eq!(drained[1].state.windows[0].tabs[0].title, "b");
+        assert!(!mailbox.has_pending());
+    }
+
+    #[test]
+    fn mailbox_discards_only_the_named_destination() {
+        let mailbox = SnapshotMailbox::default();
+        mailbox.put(sample_state("a"), PathBuf::from("a.json"));
+        mailbox.put(sample_state("b"), PathBuf::from("b.json"));
+        mailbox.discard(Path::new("a.json"));
+        let drained = mailbox.drain();
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0].state.windows[0].tabs[0].title, "b");
     }
 
     #[test]
