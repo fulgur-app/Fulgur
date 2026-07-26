@@ -1,4 +1,4 @@
-use super::super::persistence::{TabState, get_file_modified_time};
+use super::super::persistence::{TabContent, TabState, get_file_modified_time};
 use super::decision::{TabRestoreDecision, determine_tab_restore_strategy};
 use crate::fulgur::{
     Fulgur,
@@ -135,7 +135,7 @@ impl Fulgur {
         let decision = determine_tab_restore_strategy(
             tab_state.file_path.clone(),
             tab_state.remote.clone(),
-            tab_state.content.clone(),
+            tab_state.content.map(TabContent::into_string),
             tab_state.last_saved,
             file_exists,
             file_modified_time,

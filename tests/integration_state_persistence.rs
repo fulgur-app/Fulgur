@@ -18,7 +18,7 @@ use tempfile::TempDir;
 
 // Import from the main crate
 use fulgur::fulgur::state::{
-    SerializedRemoteSpec, SerializedWindowBounds, TabState, WindowState, WindowsState,
+    SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
 };
 
 /// Create a temporary file path for testing
@@ -66,7 +66,9 @@ fn create_file_tab_modified() -> TabState {
     TabState {
         title: "document.md".to_string(),
         file_path: Some(path),
-        content: Some("# Modified Content\n\nThis has unsaved changes.".to_string()),
+        content: Some(TabContent::from(
+            "# Modified Content\n\nThis has unsaved changes.",
+        )),
         last_saved: Some("2024-01-15T10:30:00Z".to_string()),
         remote: None,
         log_view: false,
@@ -82,7 +84,7 @@ fn create_unsaved_tab() -> TabState {
     TabState {
         title: "Untitled".to_string(),
         file_path: None,
-        content: Some("New file content".to_string()),
+        content: Some(TabContent::from("New file content")),
         last_saved: None,
         remote: None,
         log_view: false,
@@ -389,7 +391,7 @@ fn test_state_roundtrip_with_real_temp_files() {
                 TabState {
                     title: "real_file2.rs".to_string(),
                     file_path: Some(file2_path.clone()),
-                    content: Some("Modified!".to_string()),
+                    content: Some(TabContent::from("Modified!")),
                     last_saved: Some("2024-01-01T00:00:00Z".to_string()),
                     remote: None,
                     log_view: false,
@@ -431,7 +433,7 @@ fn test_state_roundtrip_with_unicode_content() {
             tabs: vec![TabState {
                 title: unicode_title.to_string(),
                 file_path: Some(unicode_path),
-                content: Some(unicode_content.to_string()),
+                content: Some(TabContent::from(unicode_content)),
                 last_saved: Some("2024-01-01T00:00:00Z".to_string()),
                 remote: None,
                 log_view: false,
@@ -592,7 +594,7 @@ fn test_state_roundtrip_preserves_remote_spec_without_password_fields() {
             tabs: vec![TabState {
                 title: "remote.txt".to_string(),
                 file_path: None,
-                content: Some("cached remote content".to_string()),
+                content: Some(TabContent::from("cached remote content")),
                 last_saved: None,
                 remote: Some(SerializedRemoteSpec {
                     host: "example.com".to_string(),
@@ -640,7 +642,7 @@ fn test_state_preserves_window_order() {
             tabs: vec![TabState {
                 title: format!("Window {i} Marker"),
                 file_path: None,
-                content: Some(format!("This is window number {i}")),
+                content: Some(TabContent::from(format!("This is window number {i}"))),
                 last_saved: None,
                 remote: None,
                 log_view: false,

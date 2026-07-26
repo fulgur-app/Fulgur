@@ -143,6 +143,7 @@ impl WindowsState {
 
 #[cfg(test)]
 mod tests {
+    use super::super::TabContent;
     use super::{SerializedWindowBounds, TabState, WindowState, WindowsState};
     use std::fs;
     use tempfile::TempDir;
@@ -166,7 +167,7 @@ mod tests {
         TabState {
             title: title.to_string(),
             file_path: Some(std::env::temp_dir().join(file_name)),
-            content: content.map(std::string::ToString::to_string),
+            content: content.map(TabContent::from),
             last_saved: last_saved.map(std::string::ToString::to_string),
             remote: None,
             log_view: false,
@@ -246,7 +247,7 @@ mod tests {
                     tabs: vec![TabState {
                         title: "Untitled".to_string(),
                         file_path: None,
-                        content: Some("scratch content".to_string()),
+                        content: Some(TabContent::from("scratch content")),
                         last_saved: None,
                         remote: None,
                         log_view: false,
@@ -283,11 +284,11 @@ mod tests {
         assert_eq!(loaded.windows[1].tabs[0].title, "Untitled");
         assert_eq!(
             loaded.windows[0].tabs[1].content,
-            Some("# draft".to_string())
+            Some(TabContent::from("# draft"))
         );
         assert_eq!(
             loaded.windows[1].tabs[0].content,
-            Some("scratch content".to_string())
+            Some(TabContent::from("scratch content"))
         );
     }
 }
