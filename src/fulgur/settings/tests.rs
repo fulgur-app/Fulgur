@@ -158,6 +158,43 @@ fn recent_files_clear_empty_list() {
 }
 
 #[test]
+fn settings_load_without_persist_unsaved_buffers_field_defaults_to_enabled() {
+    // Settings files written before the option existed must keep the old behavior.
+    let json = r#"{
+        "editor_settings": {
+            "show_line_numbers": true,
+            "show_indent_guides": true,
+            "soft_wrap": false,
+            "font_size": 14.0,
+            "tab_size": 4,
+            "markdown_settings": {
+                "show_markdown_preview": true,
+                "show_markdown_toolbar": false
+            },
+            "watch_files": true
+        },
+        "app_settings": {
+            "confirm_exit": true,
+            "theme": "Default Light",
+            "synchronization_settings": {
+                "is_synchronization_activated": false,
+                "profiles": []
+            }
+        },
+        "recent_files": {
+            "files": [],
+            "max_files": 10
+        }
+    }"#;
+    let settings: Settings = serde_json::from_str(json).unwrap();
+    assert!(
+        settings.app_settings.persist_unsaved_buffers,
+        "persist_unsaved_buffers must default to true when missing from the settings file"
+    );
+    assert!(Settings::new().app_settings.persist_unsaved_buffers);
+}
+
+#[test]
 fn settings_load_without_is_deduplication_field_migrates_legacy_to_profile() {
     // For legacy single-server JSON (Fulgur <= 0.7.0).
     let json = r#"{

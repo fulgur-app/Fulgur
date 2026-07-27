@@ -89,12 +89,14 @@ impl Fulgur {
     /// ### Returns
     /// - `Vec<TabState>`: The tab states for all tabs
     fn build_tab_states(&self, cx: &App) -> Vec<TabState> {
+        let persist_unsaved = self.settings.app_settings.persist_unsaved_buffers;
         let mut tab_states = Vec::new();
         for tab in &self.tabs {
             if let Some(editor_tab) = tab.read(cx).as_editor() {
                 let tab_state = match &editor_tab.location {
                     TabLocation::Local(path) => {
-                        if editor_tab.content_differs_from_original(cx)
+                        if persist_unsaved
+                            && editor_tab.content_differs_from_original(cx)
                             && !editor_tab.content_too_large_to_persist(cx)
                         {
                             let current_content = editor_tab.content.read(cx).text().clone();
@@ -120,7 +122,8 @@ impl Fulgur {
                         }
                     }
                     TabLocation::Remote(remote_spec) => {
-                        let content = if editor_tab.content_differs_from_original(cx)
+                        let content = if persist_unsaved
+                            && editor_tab.content_differs_from_original(cx)
                             && !editor_tab.content_too_large_to_persist(cx)
                         {
                             Some(TabContent::Rope(editor_tab.content.read(cx).text().clone()))
@@ -138,6 +141,13 @@ impl Fulgur {
                         }
                     }
                     TabLocation::Untitled => {
+                        if !persist_unsaved {
+                            log::debug!(
+                                "Not persisting untitled tab '{}': unsaved buffer persistence is disabled",
+                                editor_tab.title
+                            );
+                            continue;
+                        }
                         if editor_tab.content_too_large_to_persist(cx) {
                             log::warn!(
                                 "Not persisting untitled tab '{}': content exceeds the large-file threshold",
@@ -233,5 +243,143 @@ impl Fulgur {
             active_tab_index: self.active_editor_index_for_state(cx),
             window_bounds,
         }
+    }
+}
+
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod tests {
+    use crate::fulgur::{
+        Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
+        state::persistence::TabState, window_manager::WindowManager,
+    };
+    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use parking_lot::Mutex;
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
+
+    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+        cx.update(gpui_component::init);
+        cx.update(|cx| {
+            cx.set_global(SharedAppState::new(
+                Settings::new(),
+                Arc::new(Mutex::new(Vec::new())),
+                None,
+            ));
+            cx.set_global(WindowManager::new());
+        });
+        let fulgur_slot: Rc<RefCell<Option<Entity<Fulgur>>>> = Rc::new(RefCell::new(None));
+        let slot = Rc::clone(&fulgur_slot);
+        let window = cx
+            .update(|cx| {
+                cx.open_window(WindowOptions::default(), |window, cx| {
+                    let window_id = window.window_handle().window_id();
+                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    *slot.borrow_mut() = Some(fulgur.clone());
+                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                })
+            })
+            .expect("failed to open test window");
+        let fulgur = fulgur_slot
+            .borrow_mut()
+            .take()
+            .expect("expected fulgur entity");
+        let visual_cx = VisualTestContext::from_window(window.into(), cx);
+        (fulgur, visual_cx)
+    }
+
+    /// Give the first tab a location and some dirty content, then snapshot the window.
+    fn tab_states_with(
+        fulgur: &Entity<Fulgur>,
+        cx: &mut VisualTestContext,
+        location: TabLocation,
+        persist_unsaved_buffers: bool,
+    ) -> Vec<TabState> {
+        cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.settings.app_settings.persist_unsaved_buffers = persist_unsaved_buffers;
+                let tab = this
+                    .tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone();
+                tab.update(cx, |tab, cx| {
+                    if let Some(editor_tab) = tab.as_editor_mut() {
+                        editor_tab.location = location;
+                        editor_tab.content.update(cx, |content, cx| {
+                            content.set_value("dirty content", window, cx);
+                        });
+                    }
+                });
+            });
+        });
+        fulgur.read_with(cx, |this, cx| {
+            this.build_window_state_without_bounds(cx).tabs
+        })
+    }
+
+    #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
+    fn dirty_file_tab_persists_content_when_setting_is_enabled(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = tab_states_with(
+            &fulgur,
+            &mut visual_cx,
+            TabLocation::Local("/tmp/notes.txt".into()),
+            true,
+        );
+        assert_eq!(tabs.len(), 1);
+        assert!(
+            tabs[0].content.is_some(),
+            "unsaved content must be persisted when the setting is enabled"
+        );
+    }
+
+    #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
+    fn dirty_file_tab_persists_path_only_when_setting_is_disabled(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = tab_states_with(
+            &fulgur,
+            &mut visual_cx,
+            TabLocation::Local("/tmp/notes.txt".into()),
+            false,
+        );
+        assert_eq!(tabs.len(), 1, "the tab itself must still be restored");
+        assert!(
+            tabs[0].content.is_none(),
+            "unsaved content must not be persisted when the setting is disabled"
+        );
+        assert!(tabs[0].file_path.is_some());
+    }
+
+    #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
+    fn untitled_tab_is_dropped_when_setting_is_disabled(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = tab_states_with(&fulgur, &mut visual_cx, TabLocation::Untitled, false);
+        assert!(
+            tabs.is_empty(),
+            "an untitled tab carries nothing but its unsaved content, so it must be dropped"
+        );
+    }
+
+    #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
+    fn untitled_tab_is_persisted_when_setting_is_enabled(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = tab_states_with(&fulgur, &mut visual_cx, TabLocation::Untitled, true);
+        assert_eq!(tabs.len(), 1);
+        assert!(tabs[0].content.is_some());
     }
 }
