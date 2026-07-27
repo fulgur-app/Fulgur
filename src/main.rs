@@ -252,12 +252,13 @@ fn main() {
             );
         }
         fulgur::Fulgur::init(cx, &mut settings);
-        // Load persisted window state once at startup. The snapshot is shared with
-        // every window via SharedAppState so each window restores from the same
-        // in-memory copy instead of re-reading and re-parsing state.json.
-        let windows_state = fulgur::state::WindowsState::load()
-            .ok()
-            .filter(|ws| !ws.windows.is_empty());
+        let (windows_state, state_db) = match fulgur::state::WindowsState::load_with_db() {
+            Ok((state, db)) => (Some(state).filter(|ws| !ws.windows.is_empty()), Some(db)),
+            Err(e) => {
+                log::error!("Failed to open the session state database: {e}");
+                (None, None)
+            }
+        };
         // Capture per-window bounds before moving the snapshot into shared state,
         // so window creation can position each window without the snapshot.
         let restore_bounds: Vec<fulgur::state::SerializedWindowBounds> = windows_state
@@ -268,6 +269,7 @@ fn main() {
             settings,
             pending_files.clone(),
             windows_state,
+            state_db,
         );
         cx.set_global(shared_state);
         // On Windows, start the IPC listener now that SharedAppState is registered.

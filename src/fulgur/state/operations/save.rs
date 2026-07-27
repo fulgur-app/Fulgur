@@ -13,8 +13,8 @@ impl Fulgur {
     /// - `window`: The window to save (needed for window bounds)
     ///
     /// ### Errors
-    /// - Returns an error if the state cannot be persisted to disk (path
-    ///   resolution, serialization, or file write failure).
+    /// - Returns an error if the state cannot be persisted (no state database
+    ///   available, or the transaction failed).
     ///
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
@@ -24,9 +24,8 @@ impl Fulgur {
         let windows_state = self.build_windows_state(cx, window);
         let window_count = windows_state.windows.len();
         let tab_count = self.tabs.len();
-        let path = WindowsState::state_file_path()?;
         let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-        shared.state_writer.save_blocking(windows_state, path)?;
+        shared.state_writer.save_blocking(windows_state)?;
         log::debug!(
             "Application state saved successfully ({window_count} windows, {tab_count} tabs in this window)"
         );
@@ -41,15 +40,8 @@ impl Fulgur {
     pub fn save_state_async(&self, cx: &App, window: &Window) {
         log::debug!("Saving application state (async)...");
         let windows_state = self.build_windows_state(cx, window);
-        let path = match WindowsState::state_file_path() {
-            Ok(path) => path,
-            Err(e) => {
-                log::error!("Failed to resolve state file path for async save: {e}");
-                return;
-            }
-        };
         let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-        shared.state_writer.save_async(windows_state, path);
+        shared.state_writer.save_async(windows_state);
     }
 
     /// Assemble the full multi-window state snapshot for persistence.
@@ -101,6 +93,7 @@ impl Fulgur {
                         {
                             let current_content = editor_tab.content.read(cx).text().clone();
                             TabState {
+                                tab_id: editor_tab.id.0,
                                 title: editor_tab.title.to_string(),
                                 log_view: editor_tab.log_view,
                                 color_tag: editor_tab.color_tag.map(|c| c.key().to_string()),
@@ -111,6 +104,7 @@ impl Fulgur {
                             }
                         } else {
                             TabState {
+                                tab_id: editor_tab.id.0,
                                 title: editor_tab.title.to_string(),
                                 log_view: editor_tab.log_view,
                                 color_tag: editor_tab.color_tag.map(|c| c.key().to_string()),
@@ -131,6 +125,7 @@ impl Fulgur {
                             None
                         };
                         TabState {
+                            tab_id: editor_tab.id.0,
                             title: editor_tab.title.to_string(),
                             log_view: editor_tab.log_view,
                             color_tag: editor_tab.color_tag.map(|c| c.key().to_string()),
@@ -161,6 +156,7 @@ impl Fulgur {
                             continue;
                         }
                         TabState {
+                            tab_id: editor_tab.id.0,
                             title: editor_tab.title.to_string(),
                             log_view: editor_tab.log_view,
                             color_tag: editor_tab.color_tag.map(|c| c.key().to_string()),
@@ -218,6 +214,7 @@ impl Fulgur {
     pub fn build_window_state_without_bounds(&self, cx: &App) -> WindowState {
         let window_bounds = self.cached_window_bounds.clone().unwrap_or_default();
         WindowState {
+            window_id: self.persistent_window_id,
             tabs: self.build_tab_states(cx),
             active_tab_index: self.active_editor_index_for_state(cx),
             window_bounds,
@@ -239,6 +236,7 @@ impl Fulgur {
         let window_bounds =
             SerializedWindowBounds::from_gpui_bounds(window.window_bounds(), display_id);
         WindowState {
+            window_id: self.persistent_window_id,
             tabs: self.build_tab_states(cx),
             active_tab_index: self.active_editor_index_for_state(cx),
             window_bounds,
@@ -262,6 +260,7 @@ mod tests {
             cx.set_global(SharedAppState::new(
                 Settings::new(),
                 Arc::new(Mutex::new(Vec::new())),
+                None,
                 None,
             ));
             cx.set_global(WindowManager::new());

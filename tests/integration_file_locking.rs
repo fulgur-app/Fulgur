@@ -67,7 +67,9 @@ fn test_state_concurrent_writes_no_corruption() {
             thread::spawn(move || {
                 let mut state = WindowsState { windows: vec![] };
                 let window = WindowState {
+                    window_id: 1,
                     tabs: vec![TabState {
+                        tab_id: 0,
                         title: format!("Thread {i}"),
                         file_path: None,
                         content: Some(TabContent::from(format!("Content from thread {i}"))),
@@ -181,10 +183,11 @@ fn test_state_concurrent_writes_large_data() {
                 let mut state = WindowsState { windows: vec![] };
 
                 // Create multiple windows with multiple tabs
-                for w in 0..3 {
+                for w in 0u32..3 {
                     let mut tabs = vec![];
-                    for t in 0..5 {
+                    for t in 0u32..5 {
                         tabs.push(TabState {
+                            tab_id: u64::from(t),
                             title: format!("Thread {i} Window {w} Tab {t}"),
                             file_path: Some(temp_test_path(&format!("thread_{i}_file_{t}.txt"))),
                             content: Some(TabContent::from("x".repeat(1000))), // 1KB of content per tab
@@ -196,6 +199,7 @@ fn test_state_concurrent_writes_large_data() {
                     }
 
                     state.windows.push(WindowState {
+                        window_id: i64::from(w) + 1,
                         tabs,
                         active_tab_index: Some(0),
                         window_bounds: SerializedWindowBounds {

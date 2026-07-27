@@ -3,7 +3,7 @@ use crate::fulgur::{
     files::file_watcher::FileWatchState,
     languages,
     settings::Settings,
-    shared_state,
+    shared_state, state,
     tab::{Tab, TabId},
     ui::{
         bars::color_picker_bar::{ColorPickerBar, ColorPickerBarEvent},
@@ -55,6 +55,14 @@ impl Fulgur {
         let title_bar = CustomTitleBar::new(window, cx);
         let shared = cx.global::<shared_state::SharedAppState>();
         let settings = shared.settings.clone();
+        // A restored window keeps the identity it was persisted under, so its row
+        // is updated in place instead of being deleted and reinserted.
+        let persistent_window_id = shared
+            .restore_state
+            .lock()
+            .as_ref()
+            .and_then(|state| state.windows.get(window_index))
+            .map_or_else(state::WindowState::allocate_id, |state| state.window_id);
         let jump_to_line_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
         let rename_tab_input = cx.new(|cx| InputState::new(window, cx).placeholder("Tab name"));
@@ -114,6 +122,7 @@ impl Fulgur {
             );
             Self {
                 window_id,
+                persistent_window_id,
                 focus_handle: cx.focus_handle(),
                 title_bar,
                 tabs: vec![],

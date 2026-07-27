@@ -1,7 +1,7 @@
 //! Integration tests for State Persistence (save/load roundtrip)
 //!
 //! These tests verify that `WindowsState` and its nested structures can be
-//! serialized to JSON, saved to disk, and deserialized back with full fidelity.
+//! written to the `SQLite` session store and read back with full fidelity.
 //! They run in CI/CD environments using temporary directories for isolation.
 //!
 //! ## Platform Independence
@@ -18,7 +18,8 @@ use tempfile::TempDir;
 
 // Import from the main crate
 use fulgur::fulgur::state::{
-    SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
+    SerializedRemoteSpec, SerializedWindowBounds, StateDb, TabContent, TabState, WindowState,
+    WindowsState, import_legacy_json,
 };
 
 /// Create a temporary file path for testing
@@ -27,22 +28,40 @@ use fulgur::fulgur::state::{
 /// - `temp_dir`: The temporary directory
 ///
 /// ### Returns
-/// - `PathBuf`: Path to a state.json file in the temp directory
+/// - `PathBuf`: Path to a state database in the temp directory
 fn temp_state_path(temp_dir: &TempDir) -> PathBuf {
-    temp_dir.path().join("state.json")
+    temp_dir.path().join("state.db")
+}
+
+/// Whether a byte slice contains the given subsequence
+///
+/// ### Arguments
+/// - `haystack`: The bytes to search
+/// - `needle`: The subsequence to look for
+///
+/// ### Returns
+/// - `bool`: `true` when `needle` appears anywhere in `haystack`
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 /// Create a `TabState` for a file-backed tab (unmodified)
 ///
+/// ### Arguments
+/// - `tab_id`: Identity of the tab within its window
+///
 /// ### Returns
 /// - `TabState`: A tab state with a file path and no modified content
-fn create_file_tab_unmodified() -> TabState {
+fn create_file_tab_unmodified(tab_id: u64) -> TabState {
     let mut path = PathBuf::new();
     path.push("path");
     path.push("to");
     path.push("test.rs");
 
     TabState {
+        tab_id,
         title: "test.rs".to_string(),
         file_path: Some(path),
         content: None,
@@ -55,15 +74,19 @@ fn create_file_tab_unmodified() -> TabState {
 
 /// Create a `TabState` for a file-backed tab (modified)
 ///
+/// ### Arguments
+/// - `tab_id`: Identity of the tab within its window
+///
 /// ### Returns
 /// - `TabState`: A tab state with a file path and modified content
-fn create_file_tab_modified() -> TabState {
+fn create_file_tab_modified(tab_id: u64) -> TabState {
     let mut path = PathBuf::new();
     path.push("home");
     path.push("user");
     path.push("document.md");
 
     TabState {
+        tab_id,
         title: "document.md".to_string(),
         file_path: Some(path),
         content: Some(TabContent::from(
@@ -78,10 +101,14 @@ fn create_file_tab_modified() -> TabState {
 
 /// Create a `TabState` for an unsaved tab
 ///
+/// ### Arguments
+/// - `tab_id`: Identity of the tab within its window
+///
 /// ### Returns
 /// - `TabState`: A tab state with no file path (unsaved)
-fn create_unsaved_tab() -> TabState {
+fn create_unsaved_tab(tab_id: u64) -> TabState {
     TabState {
+        tab_id,
         title: "Untitled".to_string(),
         file_path: None,
         content: Some(TabContent::from("New file content")),
@@ -165,10 +192,11 @@ fn test_state_roundtrip_single_window_with_mixed_tabs() {
     let state_path = temp_state_path(&temp_dir);
     let original = WindowsState {
         windows: vec![WindowState {
+            window_id: 1,
             tabs: vec![
-                create_file_tab_unmodified(),
-                create_file_tab_modified(),
-                create_unsaved_tab(),
+                create_file_tab_unmodified(0),
+                create_file_tab_modified(1),
+                create_unsaved_tab(2),
             ],
             active_tab_index: Some(1),
             window_bounds: SerializedWindowBounds {
@@ -204,7 +232,8 @@ fn test_state_roundtrip_multiple_windows() {
     let original = WindowsState {
         windows: vec![
             WindowState {
-                tabs: vec![create_file_tab_unmodified(), create_file_tab_modified()],
+                window_id: 2,
+                tabs: vec![create_file_tab_unmodified(0), create_file_tab_modified(1)],
                 active_tab_index: Some(0),
                 window_bounds: SerializedWindowBounds {
                     state: "Windowed".to_string(),
@@ -216,7 +245,8 @@ fn test_state_roundtrip_multiple_windows() {
                 },
             },
             WindowState {
-                tabs: vec![create_unsaved_tab()],
+                window_id: 3,
+                tabs: vec![create_unsaved_tab(0)],
                 active_tab_index: Some(0),
                 window_bounds: SerializedWindowBounds {
                     state: "Maximized".to_string(),
@@ -228,10 +258,11 @@ fn test_state_roundtrip_multiple_windows() {
                 },
             },
             WindowState {
+                window_id: 4,
                 tabs: vec![
-                    create_file_tab_unmodified(),
-                    create_unsaved_tab(),
-                    create_file_tab_modified(),
+                    create_file_tab_unmodified(0),
+                    create_unsaved_tab(1),
+                    create_file_tab_modified(2),
                 ],
                 active_tab_index: Some(2),
                 window_bounds: SerializedWindowBounds {
@@ -286,6 +317,7 @@ fn test_state_roundtrip_window_no_tabs() {
     let state_path = temp_state_path(&temp_dir);
     let original = WindowsState {
         windows: vec![WindowState {
+            window_id: 5,
             tabs: vec![],
             active_tab_index: None,
             window_bounds: SerializedWindowBounds::default(),
@@ -335,6 +367,7 @@ fn test_window_bounds_variants() {
     ] {
         let original = WindowsState {
             windows: vec![WindowState {
+                window_id: 6,
                 tabs: vec![],
                 active_tab_index: None,
                 window_bounds: bounds.clone(),
@@ -378,8 +411,10 @@ fn test_state_roundtrip_with_real_temp_files() {
     fs::write(&file2_path, "File 2 content").expect("Failed to create temp file 2");
     let original = WindowsState {
         windows: vec![WindowState {
+            window_id: 7,
             tabs: vec![
                 TabState {
+                    tab_id: 0,
                     title: "real_file1.txt".to_string(),
                     file_path: Some(file1_path.clone()),
                     content: None,
@@ -389,6 +424,7 @@ fn test_state_roundtrip_with_real_temp_files() {
                     color_tag: None,
                 },
                 TabState {
+                    tab_id: 1,
                     title: "real_file2.rs".to_string(),
                     file_path: Some(file2_path.clone()),
                     content: Some(TabContent::from("Modified!")),
@@ -430,7 +466,9 @@ fn test_state_roundtrip_with_unicode_content() {
     unicode_path.push("文档.txt");
     let original = WindowsState {
         windows: vec![WindowState {
+            window_id: 8,
             tabs: vec![TabState {
+                tab_id: 2,
                 title: unicode_title.to_string(),
                 file_path: Some(unicode_path),
                 content: Some(TabContent::from(unicode_content)),
@@ -456,13 +494,15 @@ fn test_state_roundtrip_with_unicode_content() {
 }
 
 #[test]
-fn test_state_backward_compatibility_missing_window_bounds() {
+fn test_legacy_json_document_is_imported_with_default_window_bounds() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let state_path = temp_state_path(&temp_dir);
     #[cfg(target_os = "windows")]
     let file_path_json = r"path\\to\\test.txt";
     #[cfg(not(target_os = "windows"))]
     let file_path_json = "path/to/test.txt";
+    // A minimal document as written by Fulgur 0.10 and earlier: no identity, and
+    // no window bounds either.
     let minimal_json = format!(
         r#"{{
         "windows": [
@@ -480,12 +520,20 @@ fn test_state_backward_compatibility_missing_window_bounds() {
         ]
     }}"#
     );
+    let legacy_path = temp_dir.path().join("state.json");
+    fs::write(&legacy_path, &minimal_json).expect("Failed to write minimal JSON");
 
-    fs::write(&state_path, &minimal_json).expect("Failed to write minimal JSON");
-    let loaded = WindowsState::load_from_path(&state_path).expect("Failed to load state");
+    let mut db = StateDb::open(&state_path).expect("Failed to open state database");
+    let imported = import_legacy_json(&legacy_path, &mut db).expect("import legacy");
+    assert_eq!(imported, 1);
+    let loaded = db.load().expect("Failed to load imported state");
 
     assert_eq!(loaded.windows.len(), 1);
     assert_eq!(loaded.windows[0].tabs.len(), 1);
+    assert!(
+        loaded.windows[0].window_id > 0,
+        "an imported window must be given an identity"
+    );
     // Window bounds should have default values
     assert_eq!(loaded.windows[0].window_bounds.state, "Windowed");
     assert!((loaded.windows[0].window_bounds.width - 1200.0_f32).abs() < f32::EPSILON);
@@ -497,7 +545,8 @@ fn test_state_multiple_save_load_cycles() {
     let state_path = temp_state_path(&temp_dir);
     let mut state = WindowsState {
         windows: vec![WindowState {
-            tabs: vec![create_file_tab_unmodified()],
+            window_id: 9,
+            tabs: vec![create_file_tab_unmodified(0)],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds::default(),
         }],
@@ -510,7 +559,10 @@ fn test_state_multiple_save_load_cycles() {
             .unwrap_or_else(|_| panic!("Failed to load on iteration {i}"));
         assert_eq!(state.windows.len(), loaded.windows.len());
         assert_window_state_equal(&state.windows[0], &loaded.windows[0], &format!("Cycle {i}"));
-        state.windows[0].tabs.push(create_unsaved_tab());
+        // Each cycle appends one more tab, and every tab in a window needs its
+        // own identity for the store to address its row.
+        let next_tab_id = u64::try_from(state.windows[0].tabs.len()).expect("tab count fits u64");
+        state.windows[0].tabs.push(create_unsaved_tab(next_tab_id));
         state.windows[0].window_bounds.x += 10.0;
         state = loaded;
     }
@@ -519,7 +571,7 @@ fn test_state_multiple_save_load_cycles() {
 #[test]
 fn test_state_load_nonexistent_file_returns_error() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let nonexistent_path = temp_dir.path().join("does_not_exist.json");
+    let nonexistent_path = temp_dir.path().join("nested").join("does_not_exist.db");
     let result = WindowsState::load_from_path(&nonexistent_path);
     assert!(
         result.is_err(),
@@ -528,24 +580,25 @@ fn test_state_load_nonexistent_file_returns_error() {
 }
 
 #[test]
-fn test_state_load_invalid_json_returns_error() {
+fn test_state_load_of_a_file_that_is_not_a_database_returns_error() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let invalid_path = temp_state_path(&temp_dir);
-    fs::write(&invalid_path, "{ this is not valid json }").expect("Failed to write invalid JSON");
+    fs::write(&invalid_path, "{ this is not a database }").expect("Failed to write invalid file");
     let result = WindowsState::load_from_path(&invalid_path);
     assert!(
         result.is_err(),
-        "Loading invalid JSON should return an error"
+        "Loading a file that is not a database should return an error"
     );
 }
 
 #[test]
-fn test_state_json_structure_validation() {
+fn test_state_is_written_as_a_sqlite_database() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let state_path = temp_state_path(&temp_dir);
     let state = WindowsState {
         windows: vec![WindowState {
-            tabs: vec![create_file_tab_modified()],
+            window_id: 10,
+            tabs: vec![create_file_tab_modified(0)],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds {
                 state: "Windowed".to_string(),
@@ -558,31 +611,28 @@ fn test_state_json_structure_validation() {
         }],
     };
     state.save_to_path(&state_path).expect("Failed to save");
-    let json_content = fs::read_to_string(&state_path).expect("Failed to read state file");
-    let parsed: serde_json::Value =
-        serde_json::from_str(&json_content).expect("JSON should be valid");
-    assert!(parsed["windows"].is_array(), "Should have windows array");
-    assert!(parsed["windows"][0].is_object(), "Window should be object");
+
+    let bytes = fs::read(&state_path).expect("Failed to read state file");
     assert!(
-        parsed["windows"][0]["tabs"].is_array(),
-        "Should have tabs array"
+        bytes.starts_with(b"SQLite format 3\0"),
+        "the session store must be a SQLite database"
     );
-    assert!(
-        parsed["windows"][0]["tabs"][0]["title"].is_string(),
-        "Tab title should be string"
-    );
-    assert!(
-        parsed["windows"][0]["window_bounds"].is_object(),
-        "Should have window_bounds object"
-    );
+    // Byte 18 of the header is the file format write version: 1 for a rollback
+    // journal, 2 for WAL. WAL is what gives atomic multi-statement saves and
+    // crash recovery, so it has to survive in the file itself, not just on the
+    // connection that created it.
     assert_eq!(
-        parsed["windows"][0]["window_bounds"]["state"].as_str(),
-        Some("Windowed")
+        bytes[18], 2,
+        "the database must be in WAL mode, which persists in the file header"
     );
-    assert_eq!(
-        parsed["windows"][0]["window_bounds"]["x"].as_f64(),
-        Some(100.0)
-    );
+
+    let loaded = WindowsState::load_from_path(&state_path).expect("Failed to load state");
+    assert_eq!(loaded.windows.len(), 1);
+    assert_eq!(loaded.windows[0].window_id, 10);
+    assert_eq!(loaded.windows[0].tabs[0].title, "document.md");
+    assert_eq!(loaded.windows[0].window_bounds.state, "Windowed");
+    assert!((loaded.windows[0].window_bounds.x - 100.0_f32).abs() < f32::EPSILON);
+    assert_eq!(loaded.windows[0].window_bounds.display_id, Some(1));
 }
 
 #[test]
@@ -591,7 +641,9 @@ fn test_state_roundtrip_preserves_remote_spec_without_password_fields() {
     let state_path = temp_state_path(&temp_dir);
     let original = WindowsState {
         windows: vec![WindowState {
+            window_id: 11,
             tabs: vec![TabState {
+                tab_id: 3,
                 title: "remote.txt".to_string(),
                 file_path: None,
                 content: Some(TabContent::from("cached remote content")),
@@ -625,10 +677,12 @@ fn test_state_roundtrip_preserves_remote_spec_without_password_fields() {
     assert_eq!(loaded_remote.user, "alice");
     assert_eq!(loaded_remote.path, "/srv/remote.txt");
 
-    let json_content = fs::read_to_string(&state_path).expect("Failed to read state file");
+    // Scan the raw database bytes, not just the decoded rows, so a password
+    // leaking into any column or into a stale page would still be caught.
+    let stored = fs::read(&state_path).expect("Failed to read state file");
     assert!(
-        !json_content.contains("password"),
-        "state.json must not persist SSH passwords"
+        !contains_bytes(&stored, b"password"),
+        "the session store must not persist SSH passwords"
     );
 }
 
@@ -639,7 +693,9 @@ fn test_state_preserves_window_order() {
     let mut windows = Vec::new();
     for i in 0u32..5 {
         windows.push(WindowState {
+            window_id: i64::from(i) + 12,
             tabs: vec![TabState {
+                tab_id: 4,
                 title: format!("Window {i} Marker"),
                 file_path: None,
                 content: Some(TabContent::from(format!("This is window number {i}"))),
@@ -685,37 +741,41 @@ fn test_state_windows_with_different_active_tabs() {
     let original = WindowsState {
         windows: vec![
             WindowState {
+                window_id: 13,
                 tabs: vec![
-                    create_file_tab_unmodified(),
-                    create_file_tab_modified(),
-                    create_unsaved_tab(),
+                    create_file_tab_unmodified(0),
+                    create_file_tab_modified(1),
+                    create_unsaved_tab(2),
                 ],
                 active_tab_index: Some(0), // First tab active
                 window_bounds: SerializedWindowBounds::default(),
             },
             WindowState {
+                window_id: 14,
                 tabs: vec![
-                    create_file_tab_unmodified(),
-                    create_file_tab_modified(),
-                    create_unsaved_tab(),
+                    create_file_tab_unmodified(0),
+                    create_file_tab_modified(1),
+                    create_unsaved_tab(2),
                 ],
                 active_tab_index: Some(1), // Second tab active
                 window_bounds: SerializedWindowBounds::default(),
             },
             WindowState {
+                window_id: 15,
                 tabs: vec![
-                    create_file_tab_unmodified(),
-                    create_file_tab_modified(),
-                    create_unsaved_tab(),
+                    create_file_tab_unmodified(0),
+                    create_file_tab_modified(1),
+                    create_unsaved_tab(2),
                 ],
                 active_tab_index: Some(2), // Third tab active
                 window_bounds: SerializedWindowBounds::default(),
             },
             WindowState {
+                window_id: 16,
                 tabs: vec![
-                    create_file_tab_unmodified(),
-                    create_file_tab_modified(),
-                    create_unsaved_tab(),
+                    create_file_tab_unmodified(0),
+                    create_file_tab_modified(1),
+                    create_unsaved_tab(2),
                 ],
                 active_tab_index: None, // No active tab
                 window_bounds: SerializedWindowBounds::default(),
@@ -740,7 +800,8 @@ fn test_state_windows_on_different_displays() {
     let original = WindowsState {
         windows: vec![
             WindowState {
-                tabs: vec![create_unsaved_tab()],
+                window_id: 17,
+                tabs: vec![create_unsaved_tab(0)],
                 active_tab_index: Some(0),
                 window_bounds: SerializedWindowBounds {
                     state: "Windowed".to_string(),
@@ -752,7 +813,8 @@ fn test_state_windows_on_different_displays() {
                 },
             },
             WindowState {
-                tabs: vec![create_unsaved_tab()],
+                window_id: 18,
+                tabs: vec![create_unsaved_tab(0)],
                 active_tab_index: Some(0),
                 window_bounds: SerializedWindowBounds {
                     state: "Maximized".to_string(),
@@ -764,7 +826,8 @@ fn test_state_windows_on_different_displays() {
                 },
             },
             WindowState {
-                tabs: vec![create_unsaved_tab()],
+                window_id: 19,
+                tabs: vec![create_unsaved_tab(0)],
                 active_tab_index: Some(0),
                 window_bounds: SerializedWindowBounds {
                     state: "Fullscreen".to_string(),
@@ -797,28 +860,32 @@ fn test_state_mixed_window_and_tab_counts() {
     let original = WindowsState {
         windows: vec![
             WindowState {
-                tabs: vec![create_file_tab_unmodified()], // 1 tab
+                window_id: 20,
+                tabs: vec![create_file_tab_unmodified(0)], // 1 tab
                 active_tab_index: Some(0),
                 window_bounds: SerializedWindowBounds::default(),
             },
             WindowState {
+                window_id: 21,
                 tabs: vec![
-                    create_file_tab_unmodified(),
-                    create_file_tab_modified(),
-                    create_unsaved_tab(),
-                    create_file_tab_unmodified(),
-                    create_file_tab_modified(),
+                    create_file_tab_unmodified(0),
+                    create_file_tab_modified(1),
+                    create_unsaved_tab(2),
+                    create_file_tab_unmodified(3),
+                    create_file_tab_modified(4),
                 ], // 5 tabs
                 active_tab_index: Some(2),
                 window_bounds: SerializedWindowBounds::default(),
             },
             WindowState {
+                window_id: 22,
                 tabs: vec![], // 0 tabs
                 active_tab_index: None,
                 window_bounds: SerializedWindowBounds::default(),
             },
             WindowState {
-                tabs: vec![create_file_tab_unmodified(), create_unsaved_tab()], // 2 tabs
+                window_id: 23,
+                tabs: vec![create_file_tab_unmodified(0), create_unsaved_tab(1)], // 2 tabs
                 active_tab_index: Some(1),
                 window_bounds: SerializedWindowBounds::default(),
             },
