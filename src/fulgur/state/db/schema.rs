@@ -11,29 +11,43 @@ pub const SCHEMA_VERSION: i64 = 1;
 /// `n + 1`, so a fresh database runs every step in order.
 const MIGRATIONS: &[&str] = &[include_str!("migrations/001_initial.sql")];
 
+/// How long a connection waits for a lock held by another connection.
+const BUSY_TIMEOUT_MS: i64 = 5_000;
+
 /// Apply the connection-scoped pragmas the state store relies on.
+///
+/// ### Description
+/// `busy_timeout` is set first, before any statement that takes a lock. Switching
+/// a database to WAL needs a brief exclusive lock, and without a busy handler
+/// already installed `SQLITE_BUSY` is returned immediately instead of being
+/// waited out, which happens whenever two processes open a not-yet-WAL database
+/// at the same time.
 ///
 /// ### Arguments
 /// - `conn`: The connection to configure
 ///
 /// ### Errors
-/// - Returns an error if any pragma cannot be applied.
+/// - Returns an error if any pragma other than `journal_mode` cannot be applied.
+///   Failing to reach WAL is only logged, because the store stays correct in the
+///   rollback-journal mode the database already has, and giving up here would
+///   cost the whole session its persistence.
 ///
 /// ### Returns
 /// - `Ok(())`: The connection is configured
 /// - `Err(anyhow::Error)`: A pragma could not be applied
 pub fn apply_pragmas(conn: &Connection) -> anyhow::Result<()> {
+    conn.pragma_update(None, "busy_timeout", BUSY_TIMEOUT_MS)
+        .map_err(|e| anyhow!("Failed to set busy timeout: {e}"))?;
     // `journal_mode` returns the resulting mode as a row, so it needs a query.
-    let mode: String = conn
-        .query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))
-        .map_err(|e| anyhow!("Failed to enable WAL journal mode: {e}"))?;
-    if !mode.eq_ignore_ascii_case("wal") {
-        log::warn!("State database journal mode is '{mode}' instead of WAL");
+    match conn.query_row("PRAGMA journal_mode = WAL", [], |row| {
+        row.get::<_, String>(0)
+    }) {
+        Ok(mode) if mode.eq_ignore_ascii_case("wal") => {}
+        Ok(mode) => log::warn!("State database journal mode is '{mode}' instead of WAL"),
+        Err(e) => log::warn!("Failed to enable WAL journal mode, keeping the current one: {e}"),
     }
     conn.pragma_update(None, "synchronous", "NORMAL")
         .map_err(|e| anyhow!("Failed to set synchronous mode: {e}"))?;
-    conn.pragma_update(None, "busy_timeout", 500)
-        .map_err(|e| anyhow!("Failed to set busy timeout: {e}"))?;
     conn.pragma_update(None, "foreign_keys", true)
         .map_err(|e| anyhow!("Failed to enable foreign key enforcement: {e}"))?;
     // Checkpoint every ~4 MB of WAL so the sidecar cannot outgrow the database

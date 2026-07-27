@@ -548,3 +548,34 @@ fn an_ephemeral_database_reports_itself_as_such() {
     let db = StateDb::open(&dir.path().join("state.db")).expect("open file database");
     assert!(!db.is_ephemeral());
 }
+
+#[test]
+fn concurrent_opens_of_a_fresh_database_all_succeed() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("state.db");
+    // Switching a database to WAL takes a brief exclusive lock, so several
+    // processes opening the same not-yet-WAL file at once all race for it. None
+    // of them may be turned away, otherwise a second Fulgur instance starting at
+    // the same moment loses its session persistence.
+    let threads: Vec<_> = (0..8)
+        .map(|i| {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                let mut db = StateDb::open(&path)?;
+                db.apply(&state_with(
+                    i64::from(i) + 1,
+                    vec![tab(0, "main.rs", Some("body"))],
+                ))?;
+                Ok::<(), anyhow::Error>(())
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread
+            .join()
+            .expect("state database opener panicked")
+            .expect("every concurrent open must succeed");
+    }
+    let windows = StateDb::open(&path).expect("reopen").load().expect("load");
+    assert_eq!(windows.windows.len(), 8);
+}
