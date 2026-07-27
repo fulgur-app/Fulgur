@@ -343,6 +343,8 @@ pub struct AppSettings {
     /// How a tab's color tag is displayed in the tab bar.
     #[serde(default)]
     pub tab_color_style: TabColorStyle,
+    #[serde(default = "default_persist_unsaved_buffers")]
+    pub persist_unsaved_buffers: bool,
 }
 
 /// Default value for `debug_mode` setting
@@ -379,6 +381,14 @@ fn default_font_family() -> String {
 /// ### Returns
 /// - `true`: enable hex color highlighting by default
 fn default_highlight_colors() -> bool {
+    true
+}
+
+/// Default value for `persist_unsaved_buffers` setting
+///
+/// ### Returns
+/// - `true`: persist unsaved buffer content across restarts by default
+fn default_persist_unsaved_buffers() -> bool {
     true
 }
 
@@ -439,6 +449,7 @@ impl AppSettings {
             synchronization_settings: SynchronizationSettings::new(),
             debug_mode: false,
             tab_color_style: TabColorStyle::TextColor,
+            persist_unsaved_buffers: default_persist_unsaved_buffers(),
         }
     }
 }

@@ -61,6 +61,36 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                 )
                 .description("Show confirmation dialog before exiting the application."),
                 SettingItem::new(
+                    "Persist Unsaved Changes",
+                    SettingField::switch(
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| {
+                                entity
+                                    .read(cx)
+                                    .settings
+                                    .app_settings
+                                    .persist_unsaved_buffers
+                            }
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: bool, cx: &mut App| {
+                                entity.update(cx, |this, cx| {
+                                    this.settings.app_settings.persist_unsaved_buffers = val;
+                                    if let Err(e) = this.update_and_propagate_settings(cx) {
+                                        log::error!("Failed to save settings: {e}");
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_app_settings.persist_unsaved_buffers),
+                )
+                .description(
+                    "Restore unsaved edits after a restart. When off, only file paths are kept and untitled tabs are discarded.",
+                ),
+                SettingItem::new(
                     "Debug mode",
                     SettingField::switch(
                         {
