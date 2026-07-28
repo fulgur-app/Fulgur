@@ -2,14 +2,11 @@ use crate::fulgur::{
     settings::ServerProfile,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
-        share::{
-            MAX_SYNC_SHARE_PAYLOAD_BYTES, fetch_pending_shares, fetch_share_by_id,
-            fetch_share_by_id_v2,
-        },
+        share::{MAX_SYNC_SHARE_PAYLOAD_BYTES, fetch_share_by_id},
         synchronization::{
-            FULGURANT_VERSION_HEADER, SynchronizationError, SynchronizationStatus,
-            list_pending_share_ids_v2, set_sync_server_connection_status,
-            version_supports_per_id_fetch, version_supports_v2_share_flow,
+            FULGURANT_VERSION_HEADER, MIN_SUPPORTED_FULGURANT_VERSION_DISPLAY,
+            SynchronizationError, SynchronizationStatus, list_pending_share_ids,
+            server_meets_minimum_version, set_sync_server_connection_status,
         },
     },
     utils::{
@@ -158,69 +155,13 @@ fn read_line_with_timeout<R: Read>(
     }
 }
 
-/// Fetch pending shares from the server into the shared queue.
-///
-/// Will be deprecated in 0.11.0.
+/// Fetch a single share by id via the read/ack flow into the shared queue.
 ///
 /// ### Arguments
 /// - `profile`: The server profile to fetch from
 /// - `token_state`: Arc to the per-profile token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
-/// - `share_state`: Per-profile queue and server-advertised max file size
-/// - `reason`: Short tag for logging ("reconnect" or "doorbell")
-fn fetch_pending_shares_into(
-    profile: &ServerProfile,
-    token_state: &Arc<TokenStateManager>,
-    http_agent: &Arc<ureq::Agent>,
-    share_state: &SseShareState,
-    reason: &str,
-) {
-    let server_max_file_size = share_state.max_file_size_bytes.load(Ordering::Acquire);
-    match fetch_pending_shares(profile, token_state, http_agent, server_max_file_size) {
-        Ok(shares) => {
-            if shares.is_empty() {
-                log::debug!("Fetch ({reason}): no pending shares");
-                return;
-            }
-            let count = shares.len();
-            let pending_ack = share_state.pending_ack_share_ids.lock();
-            let mut queue = share_state.pending_shared_files.lock();
-            for share in shares {
-                if pending_ack.contains(&share.id) {
-                    log::debug!(
-                        "Skipping bulk-drained share id {} from device {}: already in flight via v2 doorbell fetch",
-                        share.id,
-                        share.source_device_id
-                    );
-                    continue;
-                }
-                if share_payload_exceeds_limit(share.content.len(), server_max_file_size) {
-                    log::warn!(
-                        "Dropping shared file '{}' from device {}: encrypted payload ({} bytes) exceeds 2x the server max ({} bytes)",
-                        share.file_name,
-                        share.source_device_id,
-                        share.content.len(),
-                        server_max_file_size
-                    );
-                    continue;
-                }
-                queue.push(share);
-            }
-            log::info!("Fetch ({reason}): queued {count} pending share(s)");
-        }
-        Err(e) => {
-            log::warn!("Fetch ({reason}) failed: {e}");
-        }
-    }
-}
-
-/// Fetch a single share by id from a doorbell event into the shared queue.
-///
-/// ### Arguments
-/// - `profile`: The server profile to fetch from
-/// - `token_state`: Arc to the per-profile token state manager
-/// - `http_agent`: Shared HTTP agent for connection pooling
-/// - `share_state`: Per-profile queue and server-advertised max file size
+/// - `share_state`: Per-profile queue, ack set, and server-advertised max file size
 /// - `share_id`: The id announced by the doorbell event
 fn fetch_single_share_into(
     profile: &ServerProfile,
@@ -229,55 +170,12 @@ fn fetch_single_share_into(
     share_state: &SseShareState,
     share_id: &str,
 ) {
-    let server_max_file_size = share_state.max_file_size_bytes.load(Ordering::Acquire);
-    match fetch_share_by_id(
-        profile,
-        token_state,
-        http_agent,
-        share_id,
-        server_max_file_size,
-    ) {
-        Ok(share) => {
-            if share_payload_exceeds_limit(share.content.len(), server_max_file_size) {
-                log::warn!(
-                    "Dropping shared file '{}' from device {}: encrypted payload ({} bytes) exceeds 2x the server max ({} bytes)",
-                    share.file_name,
-                    share.source_device_id,
-                    share.content.len(),
-                    server_max_file_size
-                );
-                return;
-            }
-            share_state.pending_shared_files.lock().push(share);
-            log::info!("Fetch (doorbell): queued share id {share_id}");
-        }
-        Err(e) => {
-            log::warn!("Fetch (doorbell) for id {share_id} failed: {e}");
-        }
-    }
-}
-
-/// Fetch a single share by id via the v2 read/ack flow into the shared queue.
-///
-/// ### Arguments
-/// - `profile`: The server profile to fetch from
-/// - `token_state`: Arc to the per-profile token state manager
-/// - `http_agent`: Shared HTTP agent for connection pooling
-/// - `share_state`: Per-profile queue, ack set, and server-advertised max file size
-/// - `share_id`: The id announced by the doorbell event
-fn fetch_single_share_v2_into(
-    profile: &ServerProfile,
-    token_state: &Arc<TokenStateManager>,
-    http_agent: &Arc<ureq::Agent>,
-    share_state: &SseShareState,
-    share_id: &str,
-) {
     if share_state.pending_ack_share_ids.lock().contains(share_id) {
-        log::debug!("Fetch (doorbell v2): share id {share_id} already in flight, skipping");
+        log::debug!("Fetch (doorbell): share id {share_id} already in flight, skipping");
         return;
     }
     let server_max_file_size = share_state.max_file_size_bytes.load(Ordering::Acquire);
-    match fetch_share_by_id_v2(
+    match fetch_share_by_id(
         profile,
         token_state,
         http_agent,
@@ -300,22 +198,22 @@ fn fetch_single_share_v2_into(
                 .lock()
                 .insert(share.id.clone());
             share_state.pending_shared_files.lock().push(share);
-            log::info!("Fetch (doorbell v2): queued share id {share_id}, pending ack");
+            log::info!("Fetch (doorbell): queued share id {share_id}, pending ack");
         }
         Err(e) => {
-            log::warn!("Fetch (doorbell v2) for id {share_id} failed: {e}");
+            log::warn!("Fetch (doorbell) for id {share_id} failed: {e}");
         }
     }
 }
 
-/// Catch up on pending shares via the v2 read/ack flow after an SSE reconnect.
+/// Catch up on pending shares after an SSE reconnect.
 ///
 /// ### Description
 /// The server does not replay doorbell events for shares that arrived while the
-/// connection was down, so on a 0.8.0+ server the catch-up enumerates the
-/// device's pending share ids with the non-consuming `POST /api/v2/begin`
-/// (Fulgurant exposes no standalone listing endpoint) and routes each through
-/// `fetch_single_share_v2_into`, which deduplicates against in-flight doorbell
+/// connection was down, so the catch-up enumerates the device's pending share
+/// ids with the non-consuming `POST /api/v2/begin` (Fulgurant exposes no
+/// standalone listing endpoint) and routes each through
+/// `fetch_single_share_into`, which deduplicates against in-flight doorbell
 /// fetches and registers ids for acknowledgement after a successful download.
 ///
 /// ### Arguments
@@ -323,26 +221,26 @@ fn fetch_single_share_v2_into(
 /// - `token_state`: Arc to the per-profile token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
 /// - `share_state`: Per-profile queue, ack set, and server-advertised max file size
-fn fetch_pending_shares_v2_into(
+fn fetch_pending_shares_into(
     profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
     http_agent: &Arc<ureq::Agent>,
     share_state: &SseShareState,
 ) {
-    match list_pending_share_ids_v2(profile, token_state, http_agent) {
+    match list_pending_share_ids(profile, token_state, http_agent) {
         Ok(share_ids) => {
             if share_ids.is_empty() {
-                log::debug!("Fetch (reconnect v2): no pending shares");
+                log::debug!("Fetch (reconnect): no pending shares");
                 return;
             }
             let count = share_ids.len();
             for share_id in &share_ids {
-                fetch_single_share_v2_into(profile, token_state, http_agent, share_state, share_id);
+                fetch_single_share_into(profile, token_state, http_agent, share_state, share_id);
             }
-            log::info!("Fetch (reconnect v2): processed {count} pending share id(s)");
+            log::info!("Fetch (reconnect): processed {count} pending share id(s)");
         }
         Err(e) => {
-            log::warn!("Fetch (reconnect v2) failed: {e}");
+            log::warn!("Fetch (reconnect) failed: {e}");
         }
     }
 }
@@ -432,15 +330,7 @@ pub fn connect_sse(
                 .header("Accept", "text/event-stream")
                 .call()
             {
-                Ok(resp) => {
-                    set_sync_server_connection_status(
-                        &sync_server_connection_status,
-                        SynchronizationStatus::Connected,
-                    );
-                    log::info!("SSE connection established");
-                    backoff.record_success();
-                    resp
-                }
+                Ok(resp) => resp,
                 Err(e) => {
                     log::error!("SSE connection failed: {e}");
                     set_sync_server_connection_status(
@@ -468,36 +358,43 @@ pub fn connect_sse(
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_owned);
             (*share_state_clone.server_version.lock()).clone_from(&version_header);
-            let supports_v2_share_flow = version_supports_v2_share_flow(version_header.as_deref());
-            let supports_per_id_fetch = version_supports_per_id_fetch(version_header.as_deref());
-            if supports_v2_share_flow {
-                log::info!(
-                    "Server supports the v2 read/ack share flow; doorbell events fetch by id and acknowledge after download"
+            if !server_meets_minimum_version(version_header.as_deref()) {
+                let error = SynchronizationError::ServerTooOld {
+                    required: MIN_SUPPORTED_FULGURANT_VERSION_DISPLAY,
+                };
+                log::error!(
+                    "Server advertises Fulgurant version {}: {error}",
+                    version_header.as_deref().unwrap_or("<none>")
                 );
-            } else if supports_per_id_fetch {
-                log::info!("Server supports per-id share fetch; doorbell events fetch by id");
-            } else {
-                log::info!("Server lacks per-id share fetch; doorbell events use bulk drain");
+                set_sync_server_connection_status(
+                    &sync_server_connection_status,
+                    SynchronizationStatus::from_error(&error),
+                );
+                event_tx
+                    .unbounded_send(SseEvent::Error(error.to_string()))
+                    .ok();
+                let delay = backoff.record_failure();
+                log::info!("Retrying SSE connection after {delay:?}");
+                if interruptible_sleep(delay, || shutdown_flag.load(Ordering::Relaxed)) {
+                    log::info!("SSE connection shutdown requested during backoff, stopping...");
+                    break;
+                }
+                continue;
             }
+            set_sync_server_connection_status(
+                &sync_server_connection_status,
+                SynchronizationStatus::Connected,
+            );
+            log::info!("SSE connection established");
+            backoff.record_success();
             // Catch up on shares that arrived while the connection was down. The
             // server does not replay doorbell events for the downtime window.
-            if supports_v2_share_flow {
-                fetch_pending_shares_v2_into(
-                    &profile_clone,
-                    &token_state_clone,
-                    &http_agent_clone,
-                    &share_state_clone,
-                );
-            } else {
-                //TODO: Remove in 0.11.0
-                fetch_pending_shares_into(
-                    &profile_clone,
-                    &token_state_clone,
-                    &http_agent_clone,
-                    &share_state_clone,
-                    "reconnect",
-                );
-            }
+            fetch_pending_shares_into(
+                &profile_clone,
+                &token_state_clone,
+                &http_agent_clone,
+                &share_state_clone,
+            );
             let mut reader = std::io::BufReader::new(response.body_mut().as_reader());
             let mut current_event_type = String::new();
             let mut current_data = String::new();
@@ -537,33 +434,13 @@ pub fn connect_sse(
                                     "Share doorbell received (share_id={}), fetching share",
                                     notification.share_id
                                 );
-                                if supports_v2_share_flow {
-                                    fetch_single_share_v2_into(
-                                        &profile_clone,
-                                        &token_state_clone,
-                                        &http_agent_clone,
-                                        &share_state_clone,
-                                        &notification.share_id,
-                                    );
-                                } else if supports_per_id_fetch {
-                                    //TODO: Remove in 0.11.0
-                                    fetch_single_share_into(
-                                        &profile_clone,
-                                        &token_state_clone,
-                                        &http_agent_clone,
-                                        &share_state_clone,
-                                        &notification.share_id,
-                                    );
-                                } else {
-                                    //TODO: Remove in 0.11.0
-                                    fetch_pending_shares_into(
-                                        &profile_clone,
-                                        &token_state_clone,
-                                        &http_agent_clone,
-                                        &share_state_clone,
-                                        "doorbell",
-                                    );
-                                }
+                                fetch_single_share_into(
+                                    &profile_clone,
+                                    &token_state_clone,
+                                    &http_agent_clone,
+                                    &share_state_clone,
+                                    &notification.share_id,
+                                );
                             }
                             if let Err(e) = event_tx.unbounded_send(event) {
                                 log::error!("Failed to send SSE event: {e}");

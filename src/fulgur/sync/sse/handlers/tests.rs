@@ -227,7 +227,7 @@ fn test_handle_share_available_does_not_touch_pending_files(cx: &mut TestAppCont
                 .lock()
                 .is_empty(),
             "UI doorbell handler must not push into pending_shared_files; \
-             the SSE worker drains via /api/shares instead"
+             the SSE worker fetches via /api/v2/shares/:id instead"
         );
     });
 }
