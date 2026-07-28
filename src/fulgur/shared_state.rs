@@ -3,9 +3,7 @@ use crate::fulgur::state::{StateWriter, WindowsState};
 use crate::fulgur::sync::sse::SseState;
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::sync::ssh::pool::SshSessionPool;
-use crate::fulgur::utils::crypto_helper::{
-    check_private_public_keys, migrate_legacy_keychain_entries_if_present,
-};
+use crate::fulgur::utils::crypto_helper::check_private_public_keys;
 use crate::fulgur::utils::updater::UpdateInfo;
 use crate::fulgur::{
     settings::Settings, settings::Themes, sync::synchronization::SynchronizationStatus,
@@ -257,10 +255,6 @@ impl SharedAppState {
     /// - `(Settings, Option<String>)`: The validated settings and an optional error message
     ///   if key validation failed
     fn validate_settings(mut settings: Settings) -> (Settings, Option<String>) {
-        if let Err(e) = migrate_legacy_keychain_entries_if_present(&settings) {
-            //TODO: remove in 0.10.0
-            log::warn!("Legacy keychain migration failed: {e}");
-        }
         let sync_error = if settings
             .app_settings
             .synchronization_settings

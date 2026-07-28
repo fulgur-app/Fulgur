@@ -1,7 +1,7 @@
 use crate::fulgur::themes::{BundledThemes, themes_directory_path};
 use gpui::SharedString;
 use gpui_component::scroll::ScrollbarShow;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 
 /// Stable identifier for a server profile. Generated as a UUID v4 string
@@ -11,9 +11,8 @@ pub type ProfileId = String;
 /// Maximum number of server profiles a user can configure.
 pub const MAX_PROFILES: usize = 16;
 
-/// Default profile name used when creating a new profile through migration
-/// of legacy single-server config.
-pub const DEFAULT_LEGACY_PROFILE_NAME: &str = "Fulgurant";
+/// Default profile name assigned when a profile is created without an explicit name.
+pub const DEFAULT_PROFILE_NAME: &str = "Fulgurant";
 
 /// Generate a new unique profile id.
 ///
@@ -28,9 +27,9 @@ pub fn new_profile_id() -> ProfileId {
 /// (only happens with hand-edited config files).
 ///
 /// ### Returns
-/// - `String`: The default legacy profile name.
+/// - `String`: The default profile name.
 fn default_profile_name() -> String {
-    DEFAULT_LEGACY_PROFILE_NAME.to_string()
+    DEFAULT_PROFILE_NAME.to_string()
 }
 
 /// Configuration for a single Fulgurant sync server.
@@ -82,20 +81,12 @@ impl ServerProfile {
 }
 
 /// Top-level synchronization configuration.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct SynchronizationSettings {
+    #[serde(default)]
     pub is_synchronization_activated: bool,
     #[serde(default)]
     pub profiles: Vec<ServerProfile>,
-    #[serde(skip)]
-    pub migrated_from_legacy: bool,
-}
-
-impl PartialEq for SynchronizationSettings {
-    fn eq(&self, other: &Self) -> bool {
-        self.is_synchronization_activated == other.is_synchronization_activated
-            && self.profiles == other.profiles
-    }
 }
 
 impl Default for SynchronizationSettings {
@@ -115,7 +106,6 @@ impl SynchronizationSettings {
         Self {
             is_synchronization_activated: false,
             profiles: Vec::new(),
-            migrated_from_legacy: false,
         }
     }
 
@@ -145,8 +135,7 @@ impl SynchronizationSettings {
     ///   profile if the list was empty.
     pub fn ensure_primary_profile_mut(&mut self) -> &mut ServerProfile {
         if self.profiles.is_empty() {
-            self.profiles
-                .push(ServerProfile::new(DEFAULT_LEGACY_PROFILE_NAME));
+            self.profiles.push(ServerProfile::new(DEFAULT_PROFILE_NAME));
         }
         &mut self.profiles[0]
     }
@@ -193,73 +182,6 @@ impl SynchronizationSettings {
                 return false;
             }
             profile.name.trim().to_lowercase() == normalized
-        })
-    }
-}
-
-/// Custom deserializer that accepts both the legacy single-server JSON shape
-/// and the new multi-profile shape.
-///
-/// ### Description
-/// When the `profiles` field is present, the new shape is used as-is. When
-/// it is absent, the legacy fields are migrated into a single profile named
-/// `"Fulgurant"` if any of them carry data; otherwise an empty `profiles`
-/// list is produced.
-impl<'de> Deserialize<'de> for SynchronizationSettings {
-    //TODO: remove legacy support in 0.10.0
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Helper {
-            #[serde(default)]
-            is_synchronization_activated: bool,
-            // New shape
-            profiles: Option<Vec<ServerProfile>>,
-            // Legacy fields (single-server shape)
-            #[serde(default)]
-            server_url: Option<String>,
-            #[serde(default)]
-            email: Option<String>,
-            #[serde(default)]
-            public_key: Option<String>,
-            #[serde(default)]
-            is_deduplication: Option<bool>,
-        }
-
-        let helper = Helper::deserialize(deserializer)?;
-        if let Some(profiles) = helper.profiles {
-            return Ok(Self {
-                is_synchronization_activated: helper.is_synchronization_activated,
-                profiles,
-                migrated_from_legacy: false,
-            });
-        }
-
-        let has_legacy_data = helper.server_url.is_some()
-            || helper.email.is_some()
-            || helper.public_key.is_some()
-            || helper.is_deduplication.is_some();
-        let profiles = if has_legacy_data {
-            vec![ServerProfile {
-                id: new_profile_id(),
-                name: DEFAULT_LEGACY_PROFILE_NAME.to_string(),
-                is_active: helper.is_synchronization_activated,
-                server_url: helper.server_url,
-                email: helper.email,
-                public_key: helper.public_key,
-                is_deduplication: helper
-                    .is_deduplication
-                    .unwrap_or_else(default_is_deduplication),
-            }]
-        } else {
-            Vec::new()
-        };
-        Ok(Self {
-            is_synchronization_activated: helper.is_synchronization_activated,
-            profiles,
-            migrated_from_legacy: has_legacy_data,
         })
     }
 }

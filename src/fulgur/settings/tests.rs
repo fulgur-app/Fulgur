@@ -195,8 +195,7 @@ fn settings_load_without_persist_unsaved_buffers_field_defaults_to_enabled() {
 }
 
 #[test]
-fn settings_load_without_is_deduplication_field_migrates_legacy_to_profile() {
-    // For legacy single-server JSON (Fulgur <= 0.7.0).
+fn settings_load_without_is_deduplication_field_defaults_it_to_true() {
     let json = r#"{
         "editor_settings": {
             "show_line_numbers": true,
@@ -215,9 +214,16 @@ fn settings_load_without_is_deduplication_field_migrates_legacy_to_profile() {
             "theme": "Catppuccin Frappe",
             "synchronization_settings": {
                 "is_synchronization_activated": true,
-                "server_url": "http://localhost:3000",
-                "email": "test@example.com",
-                "public_key": "age1abc123"
+                "profiles": [
+                    {
+                        "id": "abc-123",
+                        "name": "Fulgurant",
+                        "is_active": true,
+                        "server_url": "http://localhost:3000",
+                        "email": "test@example.com",
+                        "public_key": "age1abc123"
+                    }
+                ]
             }
         },
         "recent_files": {
@@ -234,17 +240,13 @@ fn settings_load_without_is_deduplication_field_migrates_legacy_to_profile() {
             .is_synchronization_activated
     );
     let profiles = &settings.app_settings.synchronization_settings.profiles;
-    assert_eq!(
-        profiles.len(),
-        1,
-        "legacy JSON should migrate to a single profile"
-    );
+    assert_eq!(profiles.len(), 1);
     let profile = &profiles[0];
     assert_eq!(profile.name, "Fulgurant");
     assert!(profile.is_active);
     assert!(
         profile.is_deduplication,
-        "is_deduplication should default to true when missing from legacy JSON"
+        "is_deduplication should default to true when missing from the profile JSON"
     );
     assert_eq!(
         profile.server_url,
@@ -315,9 +317,9 @@ fn settings_load_with_new_profiles_shape() {
 }
 
 #[test]
-fn settings_load_with_no_legacy_data_yields_empty_profiles() {
-    // Legacy JSON with `is_synchronization_activated: false` and no other
-    // legacy fields produces an empty profiles list (no profile to migrate).
+fn settings_load_without_profiles_array_yields_empty_profiles() {
+    // A `synchronization_settings` object with no `profiles` key produces an
+    // empty profiles list rather than failing to deserialize.
     let json = r#"{
         "editor_settings": {
             "show_line_numbers": true,
@@ -350,7 +352,7 @@ fn settings_load_with_no_legacy_data_yields_empty_profiles() {
             .synchronization_settings
             .profiles
             .is_empty(),
-        "no legacy data should produce empty profiles"
+        "a missing profiles array should produce empty profiles"
     );
     assert!(
         !settings
@@ -649,80 +651,6 @@ fn synchronization_settings_name_collides_excludes_self() {
             .synchronization_settings
             .name_collides("Office", Some("other-id")),
         "non-matching exclude_id must still detect the collision"
-    );
-}
-
-#[test]
-fn load_from_path_persists_legacy_synchronization_migration() {
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("settings.json");
-    let legacy_json = r#"{
-        "editor_settings": {
-            "show_line_numbers": true,
-            "show_indent_guides": true,
-            "soft_wrap": false,
-            "font_size": 14.0,
-            "tab_size": 4,
-            "markdown_settings": {
-                "show_markdown_preview": true,
-                "show_markdown_toolbar": false
-            },
-            "watch_files": true
-        },
-        "app_settings": {
-            "confirm_exit": true,
-            "theme": "Default Light",
-            "synchronization_settings": {
-                "is_synchronization_activated": true,
-                "server_url": "https://example.com",
-                "email": "user@example.com",
-                "public_key": "age1abc"
-            }
-        },
-        "recent_files": {
-            "files": [],
-            "max_files": 10
-        }
-    }"#;
-    std::fs::write(&path, legacy_json).unwrap();
-
-    let first = Settings::load_from_path(&path).unwrap();
-    let migrated_id = first
-        .app_settings
-        .synchronization_settings
-        .profiles
-        .first()
-        .expect("legacy load should produce one profile")
-        .id
-        .clone();
-
-    let on_disk_value: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    let sync = on_disk_value
-        .get("app_settings")
-        .and_then(|v| v.get("synchronization_settings"))
-        .expect("synchronization_settings should still exist");
-    assert!(
-        sync.get("profiles").is_some(),
-        "settings file must be rewritten with the new `profiles` shape"
-    );
-    assert!(
-        sync.get("server_url").is_none(),
-        "legacy `server_url` must be gone after migration"
-    );
-
-    let second = Settings::load_from_path(&path).unwrap();
-    let second_id = second
-        .app_settings
-        .synchronization_settings
-        .profiles
-        .first()
-        .expect("second load should still find the profile")
-        .id
-        .clone();
-    assert_eq!(
-        migrated_id, second_id,
-        "profile id must be stable across reloads once the new shape is on disk"
     );
 }
 

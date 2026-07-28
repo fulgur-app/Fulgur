@@ -78,7 +78,6 @@ impl Settings {
         match serde_json::from_str::<Settings>(&json) {
             Ok(mut settings) => {
                 settings.validate();
-                Self::persist_after_legacy_migration(&settings, path);
                 Ok(settings)
             }
             Err(primary_err) => {
@@ -98,32 +97,8 @@ impl Settings {
                     })?;
                 settings.validate();
                 log::warn!("Settings recovered from backup '{}'", backup.display());
-                Self::persist_after_legacy_migration(&settings, path);
                 Ok(settings)
             }
-        }
-    }
-
-    /// Rewrite the settings file when the loaded JSON used the legacy
-    /// single-server `synchronization_settings` shape.
-    ///
-    /// ### Arguments
-    /// - `settings`: The freshly migrated settings ready to be saved.
-    /// - `path`: The file the settings should be written back to.
-    fn persist_after_legacy_migration(settings: &Settings, path: &Path) {
-        if !settings
-            .app_settings
-            .synchronization_settings
-            .migrated_from_legacy
-        {
-            return;
-        }
-        log::info!(
-            "Persisting settings after legacy synchronization migration to '{}'",
-            path.display()
-        );
-        if let Err(e) = settings.save_to_path(path) {
-            log::warn!("Failed to persist settings after legacy synchronization migration: {e}");
         }
     }
 

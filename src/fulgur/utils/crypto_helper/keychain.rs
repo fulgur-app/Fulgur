@@ -145,8 +145,10 @@ pub fn load_device_api_key_from_keychain(profile_id: &str) -> anyhow::Result<Opt
 /// - `user`: the user name (the entry to look for in the keychain)
 ///
 /// ### Returns
-/// - `Ok(Option<String>)`: The value if it exists, otherwise `None`
-/// - `Err(anyhow::Error)`: If the value could not be loaded
+/// - `Ok(Some(String))`: The stored non-empty value
+/// - `Ok(None)`: No entry exists, or the entry was empty and has been removed
+/// - `Err(anyhow::Error)`: If the value could not be loaded or the empty entry
+///   could not be removed
 pub(super) fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
     if should_use_in_memory_keychain() {
         return Ok(load_from_in_memory_keychain(user));
@@ -155,8 +157,6 @@ pub(super) fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
     let entry = Entry::new(SERVICE_NAME, user)?;
     match entry.get_password() {
         Ok(value) if value.is_empty() => {
-            // Legacy behavior stored empty strings instead of deleting credentials.
-            // TODO: remove this in further version.
             log::warn!(
                 "Keychain entry '{user}' is empty; treating as missing and removing stale credential"
             );
