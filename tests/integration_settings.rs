@@ -416,72 +416,11 @@ fn test_settings_backward_compatibility_with_missing_fields() {
             .synchronization_settings
             .profiles
             .is_empty(),
-        "no legacy data + no profiles array means profiles is empty"
+        "no profiles array means profiles is empty"
     );
     assert_eq!(
         loaded.app_settings.scrollbar_show, None,
         "scrollbar_show should default to None"
-    );
-}
-
-#[test]
-fn test_settings_backward_compatibility_migrates_legacy_single_server() {
-    let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let settings_path = temp_settings_path(&temp_dir);
-    let legacy_json = r#"{
-        "editor_settings": {
-            "show_line_numbers": true,
-            "show_indent_guides": true,
-            "soft_wrap": false,
-            "font_size": 14.0,
-            "tab_size": 4,
-            "markdown_settings": {
-                "show_markdown_preview": true,
-                "show_markdown_toolbar": false
-            }
-        },
-        "app_settings": {
-            "confirm_exit": true,
-            "theme": "Default Light",
-            "synchronization_settings": {
-                "is_synchronization_activated": true,
-                "server_url": "https://legacy.example.com",
-                "email": "legacy@example.com",
-                "public_key": "age1legacypublickey"
-            }
-        },
-        "recent_files": {
-            "files": [],
-            "max_files": 10
-        }
-    }"#;
-    std::fs::write(&settings_path, legacy_json).expect("Failed to write legacy JSON");
-    let loaded = Settings::load_from_path(&settings_path).expect("Failed to load settings");
-    assert!(
-        loaded
-            .app_settings
-            .synchronization_settings
-            .is_synchronization_activated,
-        "master switch should be carried over from legacy"
-    );
-    let profiles = &loaded.app_settings.synchronization_settings.profiles;
-    assert_eq!(
-        profiles.len(),
-        1,
-        "legacy single-server config migrates to one profile"
-    );
-    let profile = &profiles[0];
-    assert_eq!(profile.name, "Fulgurant");
-    assert!(profile.is_active);
-    assert_eq!(
-        profile.server_url,
-        Some("https://legacy.example.com".to_string())
-    );
-    assert_eq!(profile.email, Some("legacy@example.com".to_string()));
-    assert_eq!(profile.public_key, Some("age1legacypublickey".to_string()));
-    assert!(
-        profile.is_deduplication,
-        "is_deduplication defaults to true when absent from legacy JSON"
     );
 }
 
