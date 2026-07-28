@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 pub const MAX_SYNC_SHARE_PAYLOAD_BYTES: usize = 1024 * 1024;
 
-/// Maximum number of pending shares the client will accept in a single server response (`/api/begin`, `/api/shares`).
+/// Maximum number of pending share ids the client will accept in a single server response (`/api/v2/begin`).
 pub const MAX_PENDING_SHARES_PER_RESPONSE: usize = 1024;
 
 /// JSON framing overhead allowance per share (ids, filename, timestamps, quoting, separators).

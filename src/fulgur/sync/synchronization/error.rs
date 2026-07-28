@@ -78,6 +78,7 @@ pub enum SynchronizationError {
     MissingExpirationDate,
     Other(String),
     ServerError(u16),
+    ServerTooOld { required: &'static str },
     ServerUrlMissing,
     Timeout(String),
 }
@@ -121,6 +122,10 @@ impl fmt::Display for SynchronizationError {
                 write!(f, "Missing public key for device: {e}")
             }
             SynchronizationError::ServerError(e) => write!(f, "{e}"),
+            SynchronizationError::ServerTooOld { required } => write!(
+                f,
+                "Server is too old: Fulgurant {required} or newer is required"
+            ),
             SynchronizationError::ServerUrlMissing => write!(f, "Server URL is missing"),
             SynchronizationError::Timeout(timeout) => write!(f, "Timeout: {timeout}"),
         }
