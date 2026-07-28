@@ -6,7 +6,7 @@ pub const FULGURANT_VERSION_HEADER: &str = "x-fulgurant-version";
 /// Minimum Fulgurant `(major, minor)` version Fulgur can synchronize with.
 const MIN_SUPPORTED_FULGURANT_VERSION: (u64, u64) = (0, 8);
 
-/// Human-readable form of [`MIN_SUPPORTED_FULGURANT_VERSION`] for error messages.
+/// Human-readable form of `MIN_SUPPORTED_FULGURANT_VERSION` for error messages.
 pub const MIN_SUPPORTED_FULGURANT_VERSION_DISPLAY: &str = "0.8.0";
 
 /// Minimum Fulgurant version this build of Fulgur is best paired with.
