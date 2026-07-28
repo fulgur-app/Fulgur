@@ -161,7 +161,7 @@ pub struct SharedAppState {
     /// Dedicated background writer for `WindowsState` persistence.
     pub state_writer: Arc<StateWriter>,
     /// In-memory snapshot of `WindowsState` taken once at startup, used to
-    /// restore every window without re-reading `state.json` per window.
+    /// restore every window without re-reading the state database per window.
     ///
     /// Holding the snapshot read-only also closes the consistency window: a
     /// `save_state` landing between a window's spawn and its restore can no
@@ -183,6 +183,9 @@ impl SharedAppState {
     /// - `settings`: Already-loaded application settings
     /// - `pending_files_from_macos`: Arc to the pending files queue from macOS open events
     /// - `restore_state`: Startup snapshot of `WindowsState` shared with every window for restoration
+    /// - `state_db`: The open session-state database, handed to the writer thread
+    ///   which owns it for the lifetime of the process. `None` when none could be
+    ///   opened, in which case session state is not persisted.
     ///
     /// ### Returns
     /// - `Self`: The new shared app state
@@ -190,6 +193,7 @@ impl SharedAppState {
         settings: Settings,
         pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
         restore_state: Option<WindowsState>,
+        state_db: Option<crate::fulgur::state::StateDb>,
     ) -> Self {
         let (settings, sync_error) = Self::validate_settings(settings);
         let themes = Self::load_themes();
@@ -224,7 +228,7 @@ impl SharedAppState {
             )),
             ssh_session_cache: Arc::new(Mutex::new(SshCredentialCache::new())),
             ssh_session_pool: Arc::new(SshSessionPool::new()),
-            state_writer: Arc::new(StateWriter::new()),
+            state_writer: Arc::new(StateWriter::new(state_db)),
             restore_state: Arc::new(Mutex::new(restore_state)),
             notification_tx,
             notification_rx: Mutex::new(Some(notification_rx)),

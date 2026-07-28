@@ -1,14 +1,17 @@
 use super::{SerializedWindowBounds, TabState};
-use crate::fulgur::utils::atomic_write::atomic_write_file;
+use crate::fulgur::state::db::{LEGACY_STATE_FILE_NAME, STATE_DB_FILE_NAME, StateDb};
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicI64, Ordering};
+
+/// Last window identity handed out by `WindowState::allocate_id`.
+static LAST_WINDOW_ID: AtomicI64 = AtomicI64::new(0);
 
 /// Persisted state of a single application window
-///
-/// Tab IDs are assigned at runtime, so `next_tab_id` is not persisted.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WindowState {
+    #[serde(default)]
+    pub window_id: i64,
     /// All tabs in this window, in display order
     pub tabs: Vec<TabState>,
     /// Index of the currently active/visible tab, if any
@@ -18,15 +21,34 @@ pub struct WindowState {
     pub window_bounds: SerializedWindowBounds,
 }
 
+impl WindowState {
+    /// Allocate an identity for a window that has never been persisted.
+    ///
+    /// ### Returns
+    /// - `i64`: An identity not handed out before by this process
+    #[must_use]
+    pub fn allocate_id() -> i64 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| i64::try_from(elapsed.as_nanos()).unwrap_or(0));
+        LAST_WINDOW_ID.fetch_max(now, Ordering::Relaxed);
+        LAST_WINDOW_ID.fetch_add(1, Ordering::Relaxed) + 1
+    }
+}
+
 /// Top-level container for all persisted application state
 ///
-/// This struct is serialized to `state.json` and contains the complete
-/// state of all windows. On startup, each window in this list is restored
-/// with its tabs, positions, and content.
+/// Holds the complete state of all windows. On startup, each window in this list
+/// is restored with its tabs, positions, and content. The list is persisted as
+/// rows in a `SQLite` database rather than as one document, so a save costs what
+/// changed instead of everything that is open.
 ///
 /// File location:
-/// - Windows: `%APPDATA%\Fulgur\state.json`
-/// - macOS/Linux: `~/.fulgur/state.json`
+/// - Windows: `%APPDATA%\Fulgur\state.db`
+/// - macOS/Linux: `~/.fulgur/state.db`
+///
+/// `Serialize`/`Deserialize` remain only to read the legacy `state.json`
+/// document written by Fulgur 0.10 and earlier.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct WindowsState {
     /// All application windows to be restored
@@ -34,116 +56,67 @@ pub struct WindowsState {
 }
 
 impl WindowsState {
-    /// Get the path to the state file
+    /// Get the path to the state database
     ///
     /// ### Returns
-    /// - `Ok(PathBuf)`: The path to the state file
-    /// - `Err(anyhow::Error)`: If the state file path could not be determined
+    /// - `Ok(PathBuf)`: The path to the state database
+    /// - `Err(anyhow::Error)`: If the state database path could not be determined
     pub(crate) fn state_file_path() -> anyhow::Result<PathBuf> {
         let mut path = crate::fulgur::utils::paths::config_dir()?;
-        path.push("state.json");
+        path.push(STATE_DB_FILE_NAME);
         Ok(path)
     }
 
-    /// Save the app state to a specific path
+    /// Get the path to the legacy JSON state document
     ///
-    /// ### Description
-    /// Core implementation for saving window state. Uses atomic file writes to
-    /// prevent corruption when multiple windows write simultaneously.
+    /// ### Returns
+    /// - `Ok(PathBuf)`: The path to the legacy state document
+    /// - `Err(anyhow::Error)`: If the path could not be determined
+    fn legacy_state_file_path() -> anyhow::Result<PathBuf> {
+        let mut path = crate::fulgur::utils::paths::config_dir()?;
+        path.push(LEGACY_STATE_FILE_NAME);
+        Ok(path)
+    }
+
+    /// Save the app state to a database at a specific path
     ///
     /// ### Arguments
-    /// - `path`: The path to save the state to
+    /// - `path`: The path of the database to save into
     ///
     /// ### Errors
-    /// - Returns an error if JSON serialization fails or if the atomic write to
-    ///   the target path fails.
+    /// - Returns an error if the database cannot be opened or migrated, or if
+    ///   the rows cannot be written.
     ///
     /// ### Returns
     /// - `Ok(())`: If the app state was saved successfully
     /// - `Err(anyhow::Error)`: If the app state could not be saved
     pub fn save_to_path(&self, path: &Path) -> anyhow::Result<()> {
-        Self::write_json_to_path(&self.to_json()?, path)
+        let mut db = StateDb::open(path)?;
+        db.claim_persisted_windows()?;
+        db.apply(self)?;
+        Ok(())
     }
 
-    /// Serialize the state into the JSON document written to disk
-    ///
-    /// ### Errors
-    /// - Returns an error if the state cannot be serialized to JSON.
-    ///
-    /// ### Returns
-    /// - `Ok(String)`: The pretty-printed state document
-    /// - `Err(anyhow::Error)`: If serialization failed
-    pub(crate) fn to_json(&self) -> anyhow::Result<String> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize state: {e}"))
-    }
-
-    /// Write an already-serialized state document to disk
+    /// Load the windows state from a database at a specific path
     ///
     /// ### Arguments
-    /// - `json`: The serialized state document, as produced by `to_json`
-    /// - `path`: The path to write the document to
+    /// - `path`: The path of the database to load from
     ///
     /// ### Errors
-    /// - Returns an error if the atomic write to the target path fails.
-    ///
-    /// ### Returns
-    /// - `Ok(())`: If the document was written successfully
-    /// - `Err(anyhow::Error)`: If the document could not be written
-    pub(crate) fn write_json_to_path(json: &str, path: &Path) -> anyhow::Result<()> {
-        if path.exists() {
-            let backup = crate::fulgur::utils::atomic_write::backup_path_for(path);
-            if let Err(e) = fs::copy(path, &backup) {
-                log::warn!("Failed to back up state to '{}': {}", backup.display(), e);
-            }
-        }
-        atomic_write_file(path, json.as_bytes())
-    }
-
-    /// Load the windows state from a specific path
-    ///
-    /// ### Description
-    /// Core implementation for loading window state.
-    ///
-    /// ### Arguments
-    /// - `path`: The path to load the state from
-    ///
-    /// ### Errors
-    /// - Returns an error if the state file cannot be read and the backup file
-    ///   is also unavailable or corrupted, or if JSON deserialization fails on both.
+    /// - Returns an error if the database cannot be opened or migrated, or if
+    ///   the rows cannot be decoded.
     ///
     /// ### Returns
     /// - `Ok(WindowsState)`: The loaded windows state
     /// - `Err(anyhow::Error)`: If the windows state could not be loaded
-    pub fn load_from_path(path: &PathBuf) -> anyhow::Result<Self> {
-        let json = fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("Failed to read state file: {e}"))?;
-        match serde_json::from_str::<WindowsState>(&json) {
-            Ok(state) => Ok(state),
-            Err(primary_err) => {
-                let backup = crate::fulgur::utils::atomic_write::backup_path_for(path);
-                log::warn!(
-                    "State file is corrupted ({}), attempting recovery from '{}'",
-                    primary_err,
-                    backup.display()
-                );
-                let bak_json = fs::read_to_string(&backup)
-                    .map_err(|_| anyhow::anyhow!("Failed to parse state: {primary_err}"))?;
-                let state = serde_json::from_str::<WindowsState>(&bak_json).map_err(|bak_err| {
-                    anyhow::anyhow!(
-                        "State and backup are both corrupted: primary={primary_err}, backup={bak_err}"
-                    )
-                })?;
-                log::warn!("State recovered from backup '{}'", backup.display());
-                Ok(state)
-            }
-        }
+    pub fn load_from_path(path: &Path) -> anyhow::Result<Self> {
+        StateDb::open(path)?.load()
     }
 
-    /// Save the app state to the default state file location
+    /// Save the app state to the default state database location
     ///
     /// ### Errors
-    /// - Returns an error if the state file path cannot be resolved or if the
+    /// - Returns an error if the database path cannot be resolved or if the
     ///   underlying write fails.
     ///
     /// ### Returns
@@ -154,18 +127,38 @@ impl WindowsState {
         self.save_to_path(&path)
     }
 
-    /// Load the windows state from the default state file location
+    /// Load the windows state for this session from the default location
     ///
     /// ### Errors
-    /// - Returns an error if the state file path cannot be resolved or if the
-    ///   underlying load fails.
+    /// - Returns an error if the database path cannot be resolved, or if the
+    ///   database can neither be opened nor replaced by an ephemeral one.
     ///
     /// ### Returns
-    /// - `Ok(WindowsState)`: The loaded windows state
-    /// - `Err(anyhow::Error)`: If the windows state could not be loaded
-    pub fn load() -> anyhow::Result<Self> {
+    /// - `Ok((WindowsState, StateDb))`: The restored session and the open database
+    /// - `Err(anyhow::Error)`: If the session could not be restored
+    pub fn load_with_db() -> anyhow::Result<(Self, StateDb)> {
         let path = Self::state_file_path()?;
-        Self::load_from_path(&path)
+        let needs_legacy_import = !path.exists();
+        let mut db = StateDb::open_or_fallback(&path)
+            .ok_or_else(|| anyhow::anyhow!("Failed to open any state database"))?;
+        if needs_legacy_import && !db.is_ephemeral() {
+            match Self::legacy_state_file_path() {
+                Ok(legacy_path) if legacy_path.exists() => {
+                    if let Err(e) =
+                        crate::fulgur::state::db::import_legacy_json(&legacy_path, &mut db)
+                    {
+                        log::warn!("Failed to import the legacy state document: {e}");
+                    }
+                }
+                Ok(_) => log::debug!("No legacy state document to import"),
+                Err(e) => log::warn!("Failed to resolve the legacy state document path: {e}"),
+            }
+        }
+        let state = db.load()?;
+        // Windows restored now are this process's responsibility, so closing one
+        // deletes its row instead of leaving it to reappear on the next launch.
+        db.claim_persisted_windows()?;
+        Ok((state, db))
     }
 }
 
@@ -179,20 +172,23 @@ mod tests {
     /// Build a simple file-backed tab state for persistence tests.
     ///
     /// ### Parameters
+    /// - `tab_id`: Identity of the tab within its window.
     /// - `title`: The tab title.
     /// - `file_name`: The file name used to build a path under the temp directory.
     /// - `content`: Optional in-memory content to persist.
     /// - `last_saved`: Optional ISO 8601 last-saved timestamp.
     ///
     /// ### Returns
-    /// - `TabState`: A tab state ready to be serialized.
+    /// - `TabState`: A tab state ready to be persisted.
     fn file_tab_state(
+        tab_id: u64,
         title: &str,
         file_name: &str,
         content: Option<&str>,
         last_saved: Option<&str>,
     ) -> TabState {
         TabState {
+            tab_id,
             title: title.to_string(),
             file_path: Some(std::env::temp_dir().join(file_name)),
             content: content.map(TabContent::from),
@@ -204,57 +200,62 @@ mod tests {
     }
 
     #[test]
-    fn save_to_path_creates_backup_of_previous_state_file() {
+    fn load_from_path_rejects_a_file_that_is_not_a_database() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("state.json");
-        let backup = dir.path().join("state.json.bak");
+        let path = dir.path().join("state.db");
+        fs::write(&path, b"not a database at all").unwrap();
 
-        let state = WindowsState { windows: vec![] };
-        state.save_to_path(&path).unwrap();
-        assert!(!backup.exists(), "no backup before second save");
-
-        state.save_to_path(&path).unwrap();
-        assert!(backup.exists(), "backup created on second save");
+        assert!(WindowsState::load_from_path(&path).is_err());
     }
 
     #[test]
-    fn load_from_path_recovers_state_from_backup_when_primary_is_corrupted() {
+    fn an_unusable_database_degrades_to_an_ephemeral_one() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("state.json");
-        let backup = dir.path().join("state.json.bak");
+        let path = dir.path().join("state.db");
+        fs::write(&path, b"not a database at all").unwrap();
 
-        let state = WindowsState { windows: vec![] };
-        state.save_to_path(&backup).unwrap();
-
-        fs::write(&path, b"not valid json").unwrap();
-
-        let recovered = WindowsState::load_from_path(&path).unwrap();
-        assert_eq!(recovered.windows.len(), 0);
+        // Failing to start is worse than losing session restore for one run, so
+        // an unreadable database is replaced by an in-memory one.
+        let db = crate::fulgur::state::db::StateDb::open_or_fallback(&path)
+            .expect("a fallback database must always be available");
+        assert!(db.is_ephemeral());
+        assert!(db.load().expect("load from fallback").windows.is_empty());
     }
 
     #[test]
-    fn load_from_path_returns_error_when_both_state_and_backup_are_corrupted() {
+    fn save_to_path_removes_windows_that_are_gone_from_the_snapshot() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("state.json");
-        let backup = dir.path().join("state.json.bak");
+        let path = dir.path().join("state.db");
+        let original = WindowsState {
+            windows: vec![WindowState {
+                window_id: 1,
+                tabs: vec![file_tab_state(0, "a.rs", "fulgur_state_a.rs", None, None)],
+                active_tab_index: Some(0),
+                window_bounds: SerializedWindowBounds::default(),
+            }],
+        };
+        original.save_to_path(&path).unwrap();
 
-        fs::write(&path, b"bad primary").unwrap();
-        fs::write(&backup, b"bad backup").unwrap();
+        WindowsState { windows: vec![] }
+            .save_to_path(&path)
+            .unwrap();
 
-        let result = WindowsState::load_from_path(&path);
-        assert!(result.is_err());
+        let loaded = WindowsState::load_from_path(&path).unwrap();
+        assert!(loaded.windows.is_empty());
     }
 
     #[test]
     fn test_windows_state_save_load_roundtrip_multi_window_with_mixed_tabs_and_bounds() {
         let temp_dir = TempDir::new().expect("failed to create temporary directory");
-        let state_path = temp_dir.path().join("state.json");
+        let state_path = temp_dir.path().join("state.db");
         let original = WindowsState {
             windows: vec![
                 WindowState {
+                    window_id: 1,
                     tabs: vec![
-                        file_tab_state("main.rs", "fulgur_state_main.rs", None, None),
+                        file_tab_state(0, "main.rs", "fulgur_state_main.rs", None, None),
                         file_tab_state(
+                            1,
                             "notes.md",
                             "fulgur_state_notes.md",
                             Some("# draft"),
@@ -272,7 +273,9 @@ mod tests {
                     },
                 },
                 WindowState {
+                    window_id: 2,
                     tabs: vec![TabState {
+                        tab_id: 0,
                         title: "Untitled".to_string(),
                         file_path: None,
                         content: Some(TabContent::from("scratch content")),

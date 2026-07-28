@@ -102,6 +102,7 @@ mod tests {
                 Settings::new(),
                 Arc::new(Mutex::new(Vec::new())),
                 None,
+                None,
             ));
             cx.set_global(WindowManager::new());
         });

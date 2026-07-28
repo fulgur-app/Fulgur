@@ -1,6 +1,7 @@
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 /// Persisted SSH/SFTP tab location metadata.
@@ -85,6 +86,34 @@ impl TabContent {
             Self::Rope(rope) => rope.to_string(),
         }
     }
+
+    /// Borrow the content as text, flattening a rope only if necessary
+    ///
+    /// ### Returns
+    /// - `Cow<str>`: The buffer text, borrowed when it is already contiguous
+    #[must_use]
+    pub fn to_text(&self) -> Cow<'_, str> {
+        match self {
+            Self::Text(text) => Cow::Borrowed(text),
+            Self::Rope(rope) => Cow::Owned(rope.to_string()),
+        }
+    }
+
+    /// Fingerprint the content to detect whether it needs to be rewritten
+    ///
+    /// ### Returns
+    /// - `(u64, usize)`: `(hash, byte_len)` for the content
+    #[must_use]
+    pub fn fingerprint(&self) -> (u64, usize) {
+        match self {
+            Self::Text(text) => {
+                crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str(text)
+            }
+            Self::Rope(rope) => {
+                crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_rope(rope)
+            }
+        }
+    }
 }
 
 impl From<String> for TabContent {
@@ -148,10 +177,10 @@ impl<'de> Deserialize<'de> for TabContent {
 }
 
 /// Persisted state of a single editor tab
-///
-/// Tab IDs are not persisted as they are assigned at runtime based on position.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TabState {
+    #[serde(default)]
+    pub tab_id: u64,
     /// Display title shown in the tab bar (usually the filename)
     pub title: String,
     /// Path to the file on disk, if the tab has an associated file. `None` for unsaved/new tabs.

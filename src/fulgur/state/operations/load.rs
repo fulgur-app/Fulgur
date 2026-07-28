@@ -42,12 +42,16 @@ impl Fulgur {
             self.tabs.clear();
             self.pending_remote_restore.clear();
             self.inflight_remote_restore.clear();
-            let mut tab_id = TabId(0);
+            // Restored tabs keep the identity they were persisted under, so the
+            // first save of the session updates their rows in place rather than
+            // deleting and reinserting every buffer under a fresh identity.
+            let mut highest_tab_id = 0;
             for tab_state in &window_state.tabs {
+                let tab_id = TabId(tab_state.tab_id);
                 let tab = self.restore_tab_from_state(tab_state.clone(), tab_id, window, cx);
                 if let Some(editor_tab) = tab {
                     self.tabs.push(Tab::Editor(editor_tab).into_entity(cx));
-                    tab_id = tab_id.next();
+                    highest_tab_id = highest_tab_id.max(tab_state.tab_id);
                 }
             }
             let saved_active_editor_id: Option<TabId> = window_state
@@ -55,7 +59,7 @@ impl Fulgur {
                 .and_then(|idx| self.tabs.get(idx))
                 .and_then(|t| t.read(cx).as_editor())
                 .map(|et| et.id);
-            self.next_tab_id = tab_id;
+            self.next_tab_id = TabId(highest_tab_id.saturating_add(1));
             self.insert_preview_tabs_for_markdown(cx);
             self.active_tab_id =
                 saved_active_editor_id.or_else(|| self.tabs.first().map(|t| t.read(cx).id()));

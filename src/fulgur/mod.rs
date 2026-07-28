@@ -36,6 +36,8 @@ use ui::{
 pub(crate) use ui::themes;
 
 pub struct Fulgur {
+    // Identity of this window in the state database, stable across restarts
+    persistent_window_id: i64,
     pub window_id: WindowId,                          // The ID of this window
     focus_handle: FocusHandle,                        // The focus handle for the application
     title_bar: Entity<CustomTitleBar>,                // The title bar of the application
