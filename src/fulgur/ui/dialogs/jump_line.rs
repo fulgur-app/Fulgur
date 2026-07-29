@@ -59,6 +59,19 @@ impl Fulgur {
                 })
         });
     }
+
+    /// Handle pending jump-to-line action
+    ///
+    /// ### Arguments
+    /// - `window`: The window containing the editor
+    /// - `cx`: The application context
+    pub fn handle_pending_jump_to_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(jump) = self.pending_jump.take() {
+            self.update_active_editor_tab(cx, |editor_tab, cx| {
+                editor_tab.jump_to_line(window, cx, jump);
+            });
+        }
+    }
 }
 
 #[cfg(all(test, feature = "gpui-test-support"))]
