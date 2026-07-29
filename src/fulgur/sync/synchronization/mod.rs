@@ -8,6 +8,7 @@ mod version;
 
 pub use begin::{
     BeginOutcome, InitialSyncOutcome, initial_synchronization, list_pending_share_ids,
+    queue_pending_shares,
 };
 pub use bootstrap::{
     begin_synchronization, perform_initial_synchronization,

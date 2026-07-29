@@ -1,4 +1,4 @@
-use super::begin::{InitialSyncOutcome, initial_synchronization};
+use super::begin::{InitialSyncOutcome, initial_synchronization, queue_pending_shares};
 use super::error::SynchronizationStatus;
 use super::limits::store_server_max_file_size;
 use super::version::{
@@ -164,10 +164,7 @@ fn run_profile_bootstrap(
                 let mut device_name = sync_state.device_name.lock();
                 *device_name = Some(begin_response.device_name);
             }
-            {
-                let mut files = sync_state.pending_shared_files.lock();
-                *files = begin_response.shares;
-            }
+            queue_pending_shares(&sync_state.pending_shared_files, begin_response.shares);
             if let (Some(tx), Some(hooks)) = (sse_tx, sse_worker_hooks) {
                 log::info!(
                     "Profile '{}': starting SSE connection for real-time updates",
@@ -368,10 +365,7 @@ pub fn perform_initial_synchronization(profile: ServerProfile, cx: &mut App) {
                     let mut name = device_name.lock();
                     *name = Some(begin_response.device_name.clone());
                 }
-                {
-                    let mut files = pending_shared_files.lock();
-                    *files = begin_response.shares;
-                }
+                queue_pending_shares(&pending_shared_files, begin_response.shares);
                 let mut notifications = record_versions_and_build_notifications(
                     &server_min_fulgur_version,
                     &server_version,
@@ -479,10 +473,7 @@ pub fn perform_initial_synchronization_with_progress(
                     let mut name = device_name.lock();
                     *name = Some(begin_response.device_name.clone());
                 }
-                {
-                    let mut files = pending_shared_files.lock();
-                    *files = begin_response.shares;
-                }
+                queue_pending_shares(&pending_shared_files, begin_response.shares);
                 let mut notifications = record_versions_and_build_notifications(
                     &server_min_fulgur_version,
                     &server_version,
