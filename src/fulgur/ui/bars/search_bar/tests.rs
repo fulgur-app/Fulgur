@@ -1,5 +1,5 @@
 use super::SearchMatch;
-use super::actions::{
+use super::matching::{
     apply_replacements, find_matches, find_matches_with_scratch, get_line_col_fast,
 };
 use core::prelude::v1::test;
