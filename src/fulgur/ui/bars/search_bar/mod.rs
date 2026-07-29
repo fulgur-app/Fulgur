@@ -1,5 +1,7 @@
 mod actions;
+mod matching;
 mod rendering;
+mod replace;
 mod state;
 
 #[cfg(test)]
