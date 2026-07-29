@@ -150,6 +150,28 @@ pub fn list_pending_share_ids(
         .share_ids)
 }
 
+/// Queue freshly fetched shares for decryption, skipping ones already pending.
+///
+/// ### Arguments
+/// - `pending_shared_files`: The profile's queue of shares awaiting decryption
+/// - `shares`: The shares retrieved by the latest initial synchronization
+pub fn queue_pending_shares(
+    pending_shared_files: &Mutex<Vec<SharedFileResponse>>,
+    shares: Vec<SharedFileResponse>,
+) {
+    if shares.is_empty() {
+        return;
+    }
+    let mut pending = pending_shared_files.lock();
+    let already_queued: HashSet<&str> = pending.iter().map(|share| share.id.as_str()).collect();
+    let unseen: Vec<SharedFileResponse> = shares
+        .into_iter()
+        .filter(|share| !already_queued.contains(share.id.as_str()))
+        .collect();
+    drop(already_queued);
+    pending.extend(unseen);
+}
+
 /// Maximum number of concurrent share fetch worker threads.
 const MAX_FETCH_WORKERS: usize = 8;
 
@@ -259,4 +281,53 @@ pub fn initial_synchronization(
         min_fulgur_version,
         fulgurant_version: version_header,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn share(id: &str) -> SharedFileResponse {
+        SharedFileResponse {
+            id: id.to_string(),
+            source_device_id: "device".to_string(),
+            file_name: format!("{id}.txt"),
+            file_size: 0,
+            content: String::new(),
+            created_at: String::new(),
+            expires_at: String::new(),
+        }
+    }
+
+    fn queued_ids(pending: &Mutex<Vec<SharedFileResponse>>) -> Vec<String> {
+        pending.lock().iter().map(|s| s.id.clone()).collect()
+    }
+
+    #[test]
+    fn queue_pending_shares_fills_an_empty_queue() {
+        let pending = Mutex::new(Vec::new());
+        queue_pending_shares(&pending, vec![share("a"), share("b")]);
+        assert_eq!(queued_ids(&pending), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn queue_pending_shares_keeps_shares_the_server_no_longer_announces() {
+        let pending = Mutex::new(vec![share("a")]);
+        queue_pending_shares(&pending, vec![share("b")]);
+        assert_eq!(queued_ids(&pending), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn queue_pending_shares_does_not_duplicate_already_queued_shares() {
+        let pending = Mutex::new(vec![share("a"), share("b")]);
+        queue_pending_shares(&pending, vec![share("b"), share("c")]);
+        assert_eq!(queued_ids(&pending), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn queue_pending_shares_leaves_the_queue_untouched_when_nothing_was_fetched() {
+        let pending = Mutex::new(vec![share("a")]);
+        queue_pending_shares(&pending, Vec::new());
+        assert_eq!(queued_ids(&pending), vec!["a"]);
+    }
 }

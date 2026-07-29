@@ -4,7 +4,7 @@ use crate::fulgur::{
     Fulgur,
     settings::ServerProfile,
     sync::synchronization::{
-        InitialSyncOutcome, SynchronizationStatus, initial_synchronization,
+        InitialSyncOutcome, SynchronizationStatus, initial_synchronization, queue_pending_shares,
         record_fulgurant_version, record_server_min_fulgur_version,
         set_sync_server_connection_status, store_server_max_file_size,
     },
@@ -127,6 +127,7 @@ impl Fulgur {
         let sse_http_agent = Arc::clone(&shared.sse_http_agent);
         let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
         let pending_ack_share_ids = Arc::clone(&sync_state.pending_ack_share_ids);
+        let device_name = sync_state.device_name.clone();
         let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
         let server_version = Arc::clone(&sync_state.server_version);
         let server_min_fulgur_version = Arc::clone(&sync_state.server_min_fulgur_version);
@@ -140,10 +141,16 @@ impl Fulgur {
                 &pending_ack_share_ids,
             ) {
                 Ok(InitialSyncOutcome {
+                    begin: begin_response,
                     min_fulgur_version,
                     fulgurant_version,
-                    ..
                 }) => {
+                    store_server_max_file_size(
+                        &max_file_size_bytes,
+                        begin_response.max_file_size_bytes,
+                    );
+                    *device_name.lock() = Some(begin_response.device_name);
+                    queue_pending_shares(&pending_shared_files, begin_response.shares);
                     let _ = record_server_min_fulgur_version(
                         &server_min_fulgur_version,
                         &profile.name,
@@ -273,7 +280,7 @@ impl Fulgur {
                         begin_response.max_file_size_bytes,
                     );
                     *device_name.lock() = Some(begin_response.device_name.clone());
-                    *pending_shared_files.lock() = begin_response.shares;
+                    queue_pending_shares(&pending_shared_files, begin_response.shares);
                     let min_fulgur_notification = record_server_min_fulgur_version(
                         &server_min_fulgur_version,
                         &profile_name,
