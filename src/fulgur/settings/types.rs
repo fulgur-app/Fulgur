@@ -200,6 +200,8 @@ pub struct MarkdownSettings {
     pub preview_mode: MarkdownPreviewMode,
     pub show_markdown_preview: bool,
     pub show_markdown_toolbar: bool,
+    #[serde(default = "default_limit_preview_width")]
+    pub limit_preview_width: bool,
 }
 
 impl Default for MarkdownSettings {
@@ -219,6 +221,7 @@ impl MarkdownSettings {
             preview_mode: MarkdownPreviewMode::DedicatedTab,
             show_markdown_preview: true,
             show_markdown_toolbar: false,
+            limit_preview_width: true,
         }
     }
 }
@@ -282,6 +285,14 @@ fn default_debug_mode() -> bool {
 /// ### Returns
 /// - `true`: enable file watcher by default
 fn default_watch_files() -> bool {
+    true
+}
+
+/// Default value for `limit_preview_width` setting
+///
+/// ### Returns
+/// - `true`: cap and center the Markdown preview by default
+fn default_limit_preview_width() -> bool {
     true
 }
 

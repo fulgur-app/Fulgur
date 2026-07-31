@@ -453,6 +453,40 @@ pub fn create_editor_page(
                 ),
             )
             .description("Show toolbar by default when opening Markdown files."),
+            SettingItem::new(
+                "Limit Preview Width",
+                SettingField::switch(
+                    {
+                        let entity = entity.clone();
+                        move |cx: &App| {
+                            entity
+                                .read(cx)
+                                .settings
+                                .editor_settings
+                                .markdown_settings
+                                .limit_preview_width
+                        }
+                    },
+                    {
+                        let entity = entity.clone();
+                        move |val: bool, cx: &mut App| {
+                            entity.update(cx, |this, cx| {
+                                this.settings
+                                    .editor_settings
+                                    .markdown_settings
+                                    .limit_preview_width = val;
+                                let _ = this.update_and_propagate_settings(cx);
+                            });
+                        }
+                    },
+                )
+                .default_value(
+                    default_editor_settings
+                        .markdown_settings
+                        .limit_preview_width,
+                ),
+            )
+            .description("Cap the preview at 800px and center it in its panel."),
         ]),
         SettingGroup::new().title("File Monitoring").items(vec![
             SettingItem::new(
