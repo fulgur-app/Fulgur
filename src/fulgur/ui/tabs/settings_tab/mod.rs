@@ -87,24 +87,23 @@ impl Fulgur {
     /// - `cx`: The context
     ///
     /// ### Returns
-    /// - `Vec<SettingPage>`: The settings pages
+    /// - `Vec<SettingPage>`: The settings pages, or an empty vector when no settings tab is open
     fn create_settings_pages(
         &self,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<SettingPage> {
         let entity = cx.entity();
-        let font_family_select = self
-            .tabs
-            .iter()
-            .find_map(|t| {
-                if let Tab::Settings(s) = t.read(cx) {
-                    Some(s.font_family_select.clone())
-                } else {
-                    None
-                }
-            })
-            .expect("create_settings_pages called without a settings tab in self.tabs");
+        let Some(font_family_select) = self.tabs.iter().find_map(|t| {
+            if let Tab::Settings(s) = t.read(cx) {
+                Some(s.font_family_select.clone())
+            } else {
+                None
+            }
+        }) else {
+            log::error!("Cannot build the settings pages: no settings tab is open");
+            return Vec::new();
+        };
         let mut pages = vec![
             editor_page::create_editor_page(&entity, font_family_select),
             application_page::create_application_page(&entity),
