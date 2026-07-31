@@ -1,12 +1,13 @@
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
 };
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, App, AppContext, Context, DismissEvent, Entity, Focusable, InteractiveElement,
+    AnyElement, App, AppContext, Context, DismissEvent, Div, Entity, Focusable, InteractiveElement,
     IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, Window, div, px,
 };
 use gpui_component::{
-    ActiveTheme, WindowExt,
+    ActiveTheme, WindowExt, h_flex,
     input::{Input, InputState},
     menu::PopupMenu,
     notification::NotificationType,
@@ -16,6 +17,9 @@ use gpui_component::{
     text::{TextView, TextViewState},
     v_flex,
 };
+
+/// Reading width the Markdown preview is capped at when the width limit is enabled.
+const MARKDOWN_PREVIEW_MAX_WIDTH: f32 = 800.0;
 
 impl Fulgur {
     /// Handle a right-click in the editor area to show a custom context menu.
@@ -162,6 +166,26 @@ impl Fulgur {
             .clone();
         state.update(cx, |state, cx| state.set_text(text, cx));
         state
+    }
+
+    /// Lay out a markdown preview inside its container, honouring the width limit setting.
+    ///
+    /// ### Arguments
+    /// - `preview`: The preview text view to lay out
+    ///
+    /// ### Returns
+    /// - `Div`: A full-size container holding the preview, capped at
+    ///   `MARKDOWN_PREVIEW_MAX_WIDTH` and centered when the limit is enabled.
+    fn layout_markdown_preview(&self, preview: TextView) -> Div {
+        let limited = self
+            .settings
+            .editor_settings
+            .markdown_settings
+            .limit_preview_width;
+        h_flex()
+            .size_full()
+            .justify_center()
+            .child(preview.when(limited, |view| view.max_w(px(MARKDOWN_PREVIEW_MAX_WIDTH))))
     }
 
     /// Wrap a markdown preview element with its context-menu affordances.
@@ -361,12 +385,15 @@ impl Fulgur {
                                 ),
                             );
                         let preview_state = self.ensure_markdown_panel_state(&preview_text, cx);
-                        let preview = TextView::new(&preview_state)
-                            .flex_none()
-                            .py_0()
-                            .px_2()
-                            .scrollable(true)
-                            .selectable(true)
+                        let preview = self
+                            .layout_markdown_preview(
+                                TextView::new(&preview_state)
+                                    .flex_none()
+                                    .py_0()
+                                    .px_2()
+                                    .scrollable(true)
+                                    .selectable(true),
+                            )
                             .bg(cx.theme().muted)
                             .into_any_element();
                         return v_flex()
@@ -421,11 +448,14 @@ impl Fulgur {
                     view_state.update(cx, |state, cx| {
                         state.set_text(&preview_text, cx);
                     });
-                    let preview = TextView::new(&view_state)
-                        .py_2()
-                        .px_4()
-                        .scrollable(true)
-                        .selectable(true)
+                    let preview = self
+                        .layout_markdown_preview(
+                            TextView::new(&view_state)
+                                .py_2()
+                                .px_4()
+                                .scrollable(true)
+                                .selectable(true),
+                        )
                         .into_any_element();
                     return v_flex()
                         .w_full()
