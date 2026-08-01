@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::thread;
 use std::time::Duration;
 
 use gpui::{
@@ -167,4 +168,30 @@ pub fn start_progress(
         completed,
         cancelled,
     }
+}
+
+/// Run a blocking operation on a background thread behind a progress indicator.
+///
+/// ### Arguments
+/// - `window`: Target window for the progress notification.
+/// - `cx`: Application context.
+/// - `label`: Description shown next to the spinner.
+/// - `on_cancel`: Optional callback invoked once when the user clicks Cancel.
+/// - `work`: The blocking operation, handed the cancel flag so it can discard
+///   its outcome instead of publishing it after a cancellation.
+pub fn spawn_with_progress<F>(
+    window: &mut Window,
+    cx: &mut App,
+    label: SharedString,
+    on_cancel: Option<CancelCallback>,
+    work: F,
+) where
+    F: FnOnce(&AtomicBool) + Send + 'static,
+{
+    let progress = start_progress(window, cx, label, on_cancel);
+    thread::spawn(move || {
+        let cancel_flag = progress.cancel_flag();
+        work(&cancel_flag);
+        drop(progress);
+    });
 }

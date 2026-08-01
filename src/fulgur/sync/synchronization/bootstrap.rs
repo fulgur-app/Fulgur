@@ -8,16 +8,14 @@ use super::version::{
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::SyncState;
 use crate::fulgur::sync::sse::{SSE_WORKER_JOIN_TIMEOUT, SseAgents, SseShareState, connect_sse};
-use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use crate::fulgur::utils::worker::{Worker, WorkerHooks};
-use gpui::{App, SharedString, Window};
+use gpui::SharedString;
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Fetches shared files from each active profile's server and starts SSE
 /// connections for real-time updates.
@@ -134,37 +132,16 @@ fn run_profile_bootstrap(
         http_agent,
         &sync_state.pending_ack_share_ids,
     ) {
-        Ok(InitialSyncOutcome {
-            begin: begin_response,
-            min_fulgur_version,
-            fulgurant_version,
-        }) => {
+        Ok(outcome) => {
             log::info!("Profile '{}': connected to sync server", profile.name);
             set_sync_server_connection_status(
                 &sync_state.connection_status,
                 SynchronizationStatus::Connected,
             );
-            store_server_max_file_size(
-                &sync_state.max_file_size_bytes,
-                begin_response.max_file_size_bytes,
-            );
-            // Record both directions independently; either or both version
-            // warnings may be queued for display.
-            let notifications = record_versions_and_build_notifications(
-                &sync_state.server_min_fulgur_version,
-                &sync_state.server_version,
-                &profile.name,
-                min_fulgur_version,
-                fulgurant_version,
-            );
+            let (_, notifications) = apply_initial_sync_outcome(sync_state, &profile.name, outcome);
             for notification in notifications {
                 sync_state.notify(notification);
             }
-            {
-                let mut device_name = sync_state.device_name.lock();
-                *device_name = Some(begin_response.device_name);
-            }
-            queue_pending_shares(&sync_state.pending_shared_files, begin_response.shares);
             if let (Some(tx), Some(hooks)) = (sse_tx, sse_worker_hooks) {
                 log::info!(
                     "Profile '{}': starting SSE connection for real-time updates",
@@ -209,6 +186,41 @@ fn run_profile_bootstrap(
             );
         }
     }
+}
+
+/// Store everything a successful initial synchronization produced into the
+/// profile's sync state and build the version notifications it warrants.
+///
+/// ### Arguments
+/// - `sync_state`: The profile's shared sync state, updated in place.
+/// - `profile_name`: Profile name used in the notification text.
+/// - `outcome`: The successful initial synchronization outcome.
+///
+/// ### Returns
+/// - `(String, Vec<(NotificationType, SharedString)>)`: The device name the
+///   server registered for this device, and zero to two version notifications.
+#[must_use]
+pub fn apply_initial_sync_outcome(
+    sync_state: &SyncState,
+    profile_name: &str,
+    outcome: InitialSyncOutcome,
+) -> (String, Vec<(NotificationType, SharedString)>) {
+    let InitialSyncOutcome {
+        begin,
+        min_fulgur_version,
+        fulgurant_version,
+    } = outcome;
+    store_server_max_file_size(&sync_state.max_file_size_bytes, begin.max_file_size_bytes);
+    *sync_state.device_name.lock() = Some(begin.device_name.clone());
+    queue_pending_shares(&sync_state.pending_shared_files, begin.shares);
+    let notifications = record_versions_and_build_notifications(
+        &sync_state.server_min_fulgur_version,
+        &sync_state.server_version,
+        profile_name,
+        min_fulgur_version,
+        fulgurant_version,
+    );
+    (begin.device_name, notifications)
 }
 
 /// Record both versions advertised by a begin response and build an update
@@ -321,205 +333,4 @@ pub fn set_sync_server_connection_status(
     new_status: SynchronizationStatus,
 ) {
     *sync_server_connection_status.lock() = new_status;
-}
-
-/// Perform initial synchronization with a single profile's server in a background thread.
-///
-/// ### Arguments
-/// - `profile`: The server profile to synchronize with.
-/// - `cx`: The application context (used to obtain shared state).
-pub fn perform_initial_synchronization(profile: ServerProfile, cx: &mut App) {
-    let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-    let sync_state = shared.sync_state_for(&profile.id);
-    set_sync_server_connection_status(
-        &sync_state.connection_status,
-        SynchronizationStatus::Connecting,
-    );
-    *sync_state.connecting_since.lock() = Some(Instant::now());
-    let token_state = Arc::clone(&sync_state.token_state);
-    let http_agent = Arc::clone(&shared.http_agent);
-    let profile_name = profile.name.clone();
-    let connection_status = sync_state.connection_status.clone();
-    let connecting_since = sync_state.connecting_since.clone();
-    let device_name = sync_state.device_name.clone();
-    let pending_shared_files = sync_state.pending_shared_files.clone();
-    let pending_ack_share_ids = sync_state.pending_ack_share_ids.clone();
-    let notification_tx = sync_state.notification_tx.clone();
-    let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
-    let server_min_fulgur_version = sync_state.server_min_fulgur_version.clone();
-    let server_version = sync_state.server_version.clone();
-    thread::spawn(move || {
-        let result =
-            initial_synchronization(&profile, &token_state, &http_agent, &pending_ack_share_ids);
-        let (notifications, status) = match result {
-            Ok(InitialSyncOutcome {
-                begin: begin_response,
-                min_fulgur_version,
-                fulgurant_version,
-            }) => {
-                store_server_max_file_size(
-                    &max_file_size_bytes,
-                    begin_response.max_file_size_bytes,
-                );
-                {
-                    let mut name = device_name.lock();
-                    *name = Some(begin_response.device_name.clone());
-                }
-                queue_pending_shares(&pending_shared_files, begin_response.shares);
-                let mut notifications = record_versions_and_build_notifications(
-                    &server_min_fulgur_version,
-                    &server_version,
-                    &profile_name,
-                    min_fulgur_version,
-                    fulgurant_version,
-                );
-                if notifications.is_empty() {
-                    notifications.push((
-                        NotificationType::Success,
-                        SharedString::from(format!(
-                            "{profile_name}: Connection successful as {}",
-                            begin_response.device_name
-                        )),
-                    ));
-                }
-                (notifications, SynchronizationStatus::Connected)
-            }
-            Err(e) => (
-                vec![(
-                    NotificationType::Error,
-                    SharedString::from(format!("{profile_name}: Connection failed: {e}")),
-                )],
-                SynchronizationStatus::from_error(&e),
-            ),
-        };
-        set_sync_server_connection_status(&connection_status, status);
-        *connecting_since.lock() = None;
-        for notification in notifications {
-            let _ = notification_tx.unbounded_send(notification);
-        }
-    });
-}
-
-/// Perform initial synchronization with a single profile's server, showing a progress spinner.
-///
-/// ### Arguments
-/// - `profile`: The server profile to synchronize with.
-/// - `window`: Target window for the progress notification.
-/// - `cx`: The application context.
-pub fn perform_initial_synchronization_with_progress(
-    profile: ServerProfile,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-    let sync_state = shared.sync_state_for(&profile.id);
-    set_sync_server_connection_status(
-        &sync_state.connection_status,
-        SynchronizationStatus::Connecting,
-    );
-    *sync_state.connecting_since.lock() = Some(Instant::now());
-    let token_state = Arc::clone(&sync_state.token_state);
-    let http_agent = Arc::clone(&shared.http_agent);
-    let profile_name = profile.name.clone();
-    let connection_status = sync_state.connection_status.clone();
-    let connecting_since = sync_state.connecting_since.clone();
-    let device_name = sync_state.device_name.clone();
-    let pending_shared_files = sync_state.pending_shared_files.clone();
-    let pending_ack_share_ids = sync_state.pending_ack_share_ids.clone();
-    let notification_tx = sync_state.notification_tx.clone();
-    let max_file_size_bytes = sync_state.max_file_size_bytes.clone();
-    let server_min_fulgur_version = sync_state.server_min_fulgur_version.clone();
-    let server_version = sync_state.server_version.clone();
-
-    let done = Arc::new(AtomicBool::new(false));
-    let done_for_thread = Arc::clone(&done);
-
-    let cancel_status = connection_status.clone();
-    let cancel_connecting_since = connecting_since.clone();
-    let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, _cx| {
-        set_sync_server_connection_status(&cancel_status, SynchronizationStatus::Disconnected);
-        *cancel_connecting_since.lock() = None;
-    }));
-
-    let progress = start_progress(
-        window,
-        cx,
-        format!("Connecting to {profile_name}...").into(),
-        cancel_callback,
-    );
-    let cancel_flag = progress.cancel_flag();
-    let cancel_flag_for_thread = Arc::clone(&cancel_flag);
-
-    thread::spawn(move || {
-        let result =
-            initial_synchronization(&profile, &token_state, &http_agent, &pending_ack_share_ids);
-
-        if cancel_flag_for_thread.load(Ordering::Acquire) {
-            done_for_thread.store(true, Ordering::Release);
-            return;
-        }
-
-        let (notifications, status) = match result {
-            Ok(InitialSyncOutcome {
-                begin: begin_response,
-                min_fulgur_version,
-                fulgurant_version,
-            }) => {
-                store_server_max_file_size(
-                    &max_file_size_bytes,
-                    begin_response.max_file_size_bytes,
-                );
-                {
-                    let mut name = device_name.lock();
-                    *name = Some(begin_response.device_name.clone());
-                }
-                queue_pending_shares(&pending_shared_files, begin_response.shares);
-                let mut notifications = record_versions_and_build_notifications(
-                    &server_min_fulgur_version,
-                    &server_version,
-                    &profile_name,
-                    min_fulgur_version,
-                    fulgurant_version,
-                );
-                if notifications.is_empty() {
-                    notifications.push((
-                        NotificationType::Success,
-                        SharedString::from(format!(
-                            "{profile_name}: Connection successful as {}",
-                            begin_response.device_name
-                        )),
-                    ));
-                }
-                (notifications, SynchronizationStatus::Connected)
-            }
-            Err(e) => (
-                vec![(
-                    NotificationType::Error,
-                    SharedString::from(format!("{profile_name}: Connection failed: {e}")),
-                )],
-                SynchronizationStatus::from_error(&e),
-            ),
-        };
-        set_sync_server_connection_status(&connection_status, status);
-        *connecting_since.lock() = None;
-        for notification in notifications {
-            let _ = notification_tx.unbounded_send(notification);
-        }
-        done_for_thread.store(true, Ordering::Release);
-    });
-
-    window
-        .spawn(cx, async move |async_cx| {
-            let _progress = progress;
-            loop {
-                async_cx
-                    .background_executor()
-                    .timer(Duration::from_millis(100))
-                    .await;
-                if done.load(Ordering::Acquire) || cancel_flag.load(Ordering::Acquire) {
-                    break;
-                }
-            }
-        })
-        .detach();
 }

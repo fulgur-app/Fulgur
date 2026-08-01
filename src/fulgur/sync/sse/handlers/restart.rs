@@ -1,12 +1,12 @@
-use crate::fulgur::ui::notifications::progress::{CancelCallback, start_progress};
+use crate::fulgur::shared_state::SyncState;
+use crate::fulgur::ui::notifications::progress::{CancelCallback, spawn_with_progress};
 use crate::fulgur::utils::worker::{Worker, WorkerHooks};
 use crate::fulgur::{
     Fulgur,
     settings::ServerProfile,
     sync::synchronization::{
-        InitialSyncOutcome, SynchronizationStatus, initial_synchronization, queue_pending_shares,
-        record_fulgurant_version, record_server_min_fulgur_version,
-        set_sync_server_connection_status, store_server_max_file_size,
+        SynchronizationError, SynchronizationStatus, apply_initial_sync_outcome,
+        initial_synchronization, set_sync_server_connection_status,
     },
 };
 use futures::channel::mpsc::UnboundedSender;
@@ -26,12 +26,103 @@ use super::super::{
     types::{SSE_WORKER_JOIN_TIMEOUT, SseEvent},
 };
 
-/// Resources produced by the common SSE restart setup phase.
-struct SseRestartSetup {
+/// Delay left between dropping the previous SSE worker and opening the new
+/// stream, so the server sees the old connection close first.
+const SSE_RECONNECT_DELAY: Duration = Duration::from_millis(200);
+
+/// Everything a background SSE restart needs to retire the previous worker and
+/// bring a fresh connection up.
+struct SseRestartJob {
+    profile: ServerProfile,
     old_worker: Option<Worker>,
     sse_tx: UnboundedSender<SseEvent>,
     new_worker_hooks: WorkerHooks,
-    profile: ServerProfile,
+    sync_state: Arc<SyncState>,
+    http_agent: Arc<ureq::Agent>,
+    sse_http_agent: Arc<ureq::Agent>,
+}
+
+/// Result of running an [`SseRestartJob`].
+enum SseRestartOutcome {
+    /// Initial synchronization succeeded and a new SSE connection was started.
+    Completed {
+        device_name: String,
+        notifications: Vec<(NotificationType, SharedString)>,
+    },
+    /// Initial synchronization failed, so no SSE connection was started.
+    Failed(SynchronizationError),
+    /// The user cancelled before the outcome could be published.
+    Cancelled,
+}
+
+impl SseRestartJob {
+    /// Retire the previous worker, re-run the initial synchronization, and opena new SSE connection.
+    ///
+    /// ### Arguments
+    /// - `cancel_flag`: Cancel flag of the progress indicator, when the caller
+    ///   shows one. Checked once before any work with a visible effect starts.
+    ///
+    /// ### Returns
+    /// - `SseRestartOutcome`: What the caller should report to the user.
+    fn run(mut self, cancel_flag: Option<&AtomicBool>) -> SseRestartOutcome {
+        drop(self.old_worker.take());
+        thread::sleep(SSE_RECONNECT_DELAY);
+        if cancel_flag.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+            return SseRestartOutcome::Cancelled;
+        }
+        match initial_synchronization(
+            &self.profile,
+            &self.sync_state.token_state,
+            &self.http_agent,
+            &self.sync_state.pending_ack_share_ids,
+        ) {
+            Ok(outcome) => {
+                let (device_name, notifications) =
+                    apply_initial_sync_outcome(&self.sync_state, &self.profile.name, outcome);
+                log::info!(
+                    "Profile '{}': initial sync succeeded, starting new SSE",
+                    self.profile.name
+                );
+                self.start_sse();
+                SseRestartOutcome::Completed {
+                    device_name,
+                    notifications,
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "Profile '{}': initial sync failed, not starting SSE: {e}",
+                    self.profile.name
+                );
+                SseRestartOutcome::Failed(e)
+            }
+        }
+    }
+
+    /// Hand the profile's shared state to a freshly spawned SSE worker.
+    fn start_sse(self) {
+        let agents = SseAgents {
+            rest: Arc::clone(&self.http_agent),
+            stream: Arc::clone(&self.sse_http_agent),
+        };
+        let share_state = SseShareState {
+            pending_shared_files: Arc::clone(&self.sync_state.pending_shared_files),
+            pending_ack_share_ids: Arc::clone(&self.sync_state.pending_ack_share_ids),
+            max_file_size_bytes: Arc::clone(&self.sync_state.max_file_size_bytes),
+            server_version: Arc::clone(&self.sync_state.server_version),
+        };
+        if let Err(e) = connect_sse(
+            &self.profile,
+            self.sse_tx,
+            &self.new_worker_hooks,
+            self.sync_state.connection_status.clone(),
+            &self.sync_state.token_state,
+            &agents,
+            &share_state,
+        ) {
+            log::error!("Profile '{}': failed to start SSE: {e}", self.profile.name);
+        }
+    }
 }
 
 impl Fulgur {
@@ -43,16 +134,19 @@ impl Fulgur {
     /// - `cx`: The Fulgur context.
     ///
     /// ### Returns
-    /// - `Some(SseRestartSetup)`: Setup resources ready for the caller to spawn a thread.
+    /// - `Some(SseRestartJob)`: A job ready for the caller to run on a thread.
     /// - `None`: The profile was not found, is inactive, or the master switch is off.
     fn prepare_sse_restart(
         &mut self,
         profile_id: &str,
         cx: &mut Context<Self>,
-    ) -> Option<SseRestartSetup> {
+    ) -> Option<SseRestartJob> {
         // Ensure the app-scope consumer task for this profile's events is running.
         Self::spawn_sse_event_consumer(profile_id, cx);
-        let sync_state = Fulgur::shared_state(cx).sync_state_for(profile_id);
+        let shared = Fulgur::shared_state(cx);
+        let sync_state = shared.sync_state_for(profile_id);
+        let http_agent = Arc::clone(&shared.http_agent);
+        let sse_http_agent = Arc::clone(&shared.sse_http_agent);
         let (sse_tx, new_worker_hooks, old_worker) = {
             let mut sse = sync_state.sse.lock();
             let old_worker = sse.worker.take();
@@ -96,11 +190,14 @@ impl Fulgur {
             );
             return None;
         }
-        Some(SseRestartSetup {
+        Some(SseRestartJob {
+            profile,
             old_worker,
             sse_tx,
             new_worker_hooks,
-            profile,
+            sync_state,
+            http_agent,
+            sse_http_agent,
         })
     }
 
@@ -110,87 +207,11 @@ impl Fulgur {
     /// - `profile_id`: The profile whose SSE worker should be restarted.
     /// - `cx`: The context of the application.
     pub fn restart_sse_connection_for(&mut self, profile_id: &str, cx: &mut Context<Self>) {
-        let Some(SseRestartSetup {
-            old_worker,
-            sse_tx,
-            new_worker_hooks,
-            profile,
-        }) = self.prepare_sse_restart(profile_id, cx)
-        else {
+        let Some(job) = self.prepare_sse_restart(profile_id, cx) else {
             return;
         };
-        let shared = Fulgur::shared_state(cx);
-        let sync_state = shared.sync_state_for(&profile.id);
-        let sync_status = sync_state.connection_status.clone();
-        let token_state = Arc::clone(&sync_state.token_state);
-        let http_agent = Arc::clone(&shared.http_agent);
-        let sse_http_agent = Arc::clone(&shared.sse_http_agent);
-        let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
-        let pending_ack_share_ids = Arc::clone(&sync_state.pending_ack_share_ids);
-        let device_name = sync_state.device_name.clone();
-        let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
-        let server_version = Arc::clone(&sync_state.server_version);
-        let server_min_fulgur_version = Arc::clone(&sync_state.server_min_fulgur_version);
         thread::spawn(move || {
-            drop(old_worker);
-            thread::sleep(Duration::from_millis(200));
-            match initial_synchronization(
-                &profile,
-                &token_state,
-                &http_agent,
-                &pending_ack_share_ids,
-            ) {
-                Ok(InitialSyncOutcome {
-                    begin: begin_response,
-                    min_fulgur_version,
-                    fulgurant_version,
-                }) => {
-                    store_server_max_file_size(
-                        &max_file_size_bytes,
-                        begin_response.max_file_size_bytes,
-                    );
-                    *device_name.lock() = Some(begin_response.device_name);
-                    queue_pending_shares(&pending_shared_files, begin_response.shares);
-                    let _ = record_server_min_fulgur_version(
-                        &server_min_fulgur_version,
-                        &profile.name,
-                        min_fulgur_version,
-                    );
-                    let _ =
-                        record_fulgurant_version(&server_version, &profile.name, fulgurant_version);
-                    log::info!(
-                        "Profile '{}': initial sync succeeded, starting new SSE",
-                        profile.name
-                    );
-                    let agents = SseAgents {
-                        rest: Arc::clone(&http_agent),
-                        stream: Arc::clone(&sse_http_agent),
-                    };
-                    let share_state = SseShareState {
-                        pending_shared_files: Arc::clone(&pending_shared_files),
-                        pending_ack_share_ids: Arc::clone(&pending_ack_share_ids),
-                        max_file_size_bytes: Arc::clone(&max_file_size_bytes),
-                        server_version: Arc::clone(&server_version),
-                    };
-                    if let Err(e) = connect_sse(
-                        &profile,
-                        sse_tx,
-                        &new_worker_hooks,
-                        sync_status,
-                        &token_state,
-                        &agents,
-                        &share_state,
-                    ) {
-                        log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
-                    }
-                }
-                Err(e) => {
-                    log::error!(
-                        "Profile '{}': initial sync failed, not starting SSE: {e}",
-                        profile.name
-                    );
-                }
-            }
+            job.run(None);
         });
     }
 
@@ -208,146 +229,62 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(SseRestartSetup {
-            old_worker,
-            sse_tx,
-            new_worker_hooks,
-            profile,
-        }) = self.prepare_sse_restart(profile_id, cx)
-        else {
+        let Some(job) = self.prepare_sse_restart(profile_id, cx) else {
             return;
         };
-        let shared = Fulgur::shared_state(cx);
-        let sync_state = shared.sync_state_for(&profile.id);
-        let connection_status = sync_state.connection_status.clone();
-        let connecting_since = sync_state.connecting_since.clone();
-        let token_state = Arc::clone(&sync_state.token_state);
-        let http_agent = Arc::clone(&shared.http_agent);
-        let sse_http_agent = Arc::clone(&shared.sse_http_agent);
-        let pending_shared_files = Arc::clone(&sync_state.pending_shared_files);
-        let pending_ack_share_ids = Arc::clone(&sync_state.pending_ack_share_ids);
+        let sync_state = Arc::clone(&job.sync_state);
         let notification_tx = sync_state.notification_tx.clone();
-        let device_name = sync_state.device_name.clone();
-        let max_file_size_bytes = Arc::clone(&sync_state.max_file_size_bytes);
-        let server_version = Arc::clone(&sync_state.server_version);
-        let server_min_fulgur_version = Arc::clone(&sync_state.server_min_fulgur_version);
-        let profile_name = profile.name.clone();
+        let profile_name = job.profile.name.clone();
 
-        set_sync_server_connection_status(&connection_status, SynchronizationStatus::Connecting);
-        *connecting_since.lock() = Some(Instant::now());
+        set_sync_server_connection_status(
+            &sync_state.connection_status,
+            SynchronizationStatus::Connecting,
+        );
+        *sync_state.connecting_since.lock() = Some(Instant::now());
 
-        let done = Arc::new(AtomicBool::new(false));
-        let done_for_thread = Arc::clone(&done);
-
-        let cancel_status = connection_status.clone();
-        let cancel_connecting_since = connecting_since.clone();
+        let cancel_state = Arc::clone(&sync_state);
         let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, _cx| {
-            set_sync_server_connection_status(&cancel_status, SynchronizationStatus::Disconnected);
-            *cancel_connecting_since.lock() = None;
+            set_sync_server_connection_status(
+                &cancel_state.connection_status,
+                SynchronizationStatus::Disconnected,
+            );
+            *cancel_state.connecting_since.lock() = None;
         }));
 
-        let progress = start_progress(
+        spawn_with_progress(
             window,
             cx,
             format!("Connecting to {profile_name}...").into(),
             cancel_callback,
-        );
-        let cancel_flag = progress.cancel_flag();
-        let cancel_flag_for_thread = Arc::clone(&cancel_flag);
-
-        thread::spawn(move || {
-            drop(old_worker);
-            thread::sleep(Duration::from_millis(200));
-
-            if cancel_flag_for_thread.load(Ordering::Acquire) {
-                done_for_thread.store(true, Ordering::Release);
-                return;
-            }
-
-            let (notification, status) = match initial_synchronization(
-                &profile,
-                &token_state,
-                &http_agent,
-                &pending_ack_share_ids,
-            ) {
-                Ok(InitialSyncOutcome {
-                    begin: begin_response,
-                    min_fulgur_version,
-                    fulgurant_version,
-                }) => {
-                    store_server_max_file_size(
-                        &max_file_size_bytes,
-                        begin_response.max_file_size_bytes,
-                    );
-                    *device_name.lock() = Some(begin_response.device_name.clone());
-                    queue_pending_shares(&pending_shared_files, begin_response.shares);
-                    let min_fulgur_notification = record_server_min_fulgur_version(
-                        &server_min_fulgur_version,
-                        &profile_name,
-                        min_fulgur_version,
-                    );
-                    let fulgurant_notification =
-                        record_fulgurant_version(&server_version, &profile_name, fulgurant_version);
-                    let update_notification = min_fulgur_notification.or(fulgurant_notification);
-                    let agents = SseAgents {
-                        rest: Arc::clone(&http_agent),
-                        stream: Arc::clone(&sse_http_agent),
-                    };
-                    let share_state = SseShareState {
-                        pending_shared_files: Arc::clone(&pending_shared_files),
-                        pending_ack_share_ids: Arc::clone(&pending_ack_share_ids),
-                        max_file_size_bytes: Arc::clone(&max_file_size_bytes),
-                        server_version: Arc::clone(&server_version),
-                    };
-                    if let Err(e) = connect_sse(
-                        &profile,
-                        sse_tx,
-                        &new_worker_hooks,
-                        connection_status.clone(),
-                        &token_state,
-                        &agents,
-                        &share_state,
-                    ) {
-                        log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
+            move |cancel_flag| {
+                let (notification, status) = match job.run(Some(cancel_flag)) {
+                    SseRestartOutcome::Cancelled => return,
+                    SseRestartOutcome::Completed {
+                        device_name,
+                        notifications,
+                    } => {
+                        let notification = notifications.into_iter().next().unwrap_or_else(|| {
+                            (
+                                NotificationType::Success,
+                                SharedString::from(format!(
+                                    "{profile_name}: Connection successful as {device_name}"
+                                )),
+                            )
+                        });
+                        (notification, SynchronizationStatus::Connected)
                     }
-                    let notification = update_notification.unwrap_or_else(|| {
+                    SseRestartOutcome::Failed(e) => (
                         (
-                            NotificationType::Success,
-                            SharedString::from(format!(
-                                "{profile_name}: Connection successful as {}",
-                                begin_response.device_name
-                            )),
-                        )
-                    });
-                    (notification, SynchronizationStatus::Connected)
-                }
-                Err(e) => {
-                    let msg = format!("{profile_name}: Connection failed: {e}");
-                    (
-                        (NotificationType::Error, SharedString::from(msg)),
+                            NotificationType::Error,
+                            SharedString::from(format!("{profile_name}: Connection failed: {e}")),
+                        ),
                         SynchronizationStatus::from_error(&e),
-                    )
-                }
-            };
-            set_sync_server_connection_status(&connection_status, status);
-            *connecting_since.lock() = None;
-            let _ = notification_tx.unbounded_send(notification);
-            done_for_thread.store(true, Ordering::Release);
-        });
-
-        window
-            .spawn(cx, async move |async_cx| {
-                let _progress = progress;
-                loop {
-                    async_cx
-                        .background_executor()
-                        .timer(Duration::from_millis(100))
-                        .await;
-                    if done.load(Ordering::Acquire) || cancel_flag.load(Ordering::Acquire) {
-                        break;
-                    }
-                }
-            })
-            .detach();
+                    ),
+                };
+                set_sync_server_connection_status(&sync_state.connection_status, status);
+                *sync_state.connecting_since.lock() = None;
+                let _ = notification_tx.unbounded_send(notification);
+            },
+        );
     }
 }

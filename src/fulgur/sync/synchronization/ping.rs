@@ -1,14 +1,11 @@
 use super::error::{SynchronizationError, handle_ureq_error};
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::sync::access_token::get_valid_token;
-use crate::fulgur::ui::notifications::progress::start_progress;
+use crate::fulgur::ui::notifications::progress::spawn_with_progress;
 use fulgur_common::api::sync::PingResponse;
 use gpui::{App, SharedString, Window};
 use gpui_component::notification::NotificationType;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
-use std::time::Duration;
 
 /// Ping an authenticated Fulgurant server endpoint to test connectivity and credentials.
 ///
@@ -71,49 +68,30 @@ pub fn perform_ping_with_progress(
     let token_state = Arc::clone(&sync_state.token_state);
     let http_agent = Arc::clone(&shared.http_agent);
 
-    let done = Arc::new(AtomicBool::new(false));
-    let done_for_thread = Arc::clone(&done);
-
-    let progress = start_progress(
+    spawn_with_progress(
         window,
         cx,
         format!("Testing connection to {display_name}...").into(),
         None,
+        move |_cancel_flag| {
+            let result =
+                get_valid_token(&profile, &token_state, &http_agent).and_then(
+                    |token| match profile.server_url.as_deref() {
+                        Some(url) => ping_server(url, &token, &http_agent),
+                        None => Err(SynchronizationError::ServerUrlMissing),
+                    },
+                );
+            let notification = match result {
+                Ok(()) => (
+                    NotificationType::Success,
+                    SharedString::from(format!("{display_name}: Server is reachable")),
+                ),
+                Err(e) => (
+                    NotificationType::Error,
+                    SharedString::from(format!("{display_name}: Ping failed: {e}")),
+                ),
+            };
+            let _ = notification_tx.unbounded_send(notification);
+        },
     );
-
-    thread::spawn(move || {
-        let result = get_valid_token(&profile, &token_state, &http_agent).and_then(|token| {
-            match profile.server_url.as_deref() {
-                Some(url) => ping_server(url, &token, &http_agent),
-                None => Err(SynchronizationError::ServerUrlMissing),
-            }
-        });
-        let notification = match result {
-            Ok(()) => (
-                NotificationType::Success,
-                SharedString::from(format!("{display_name}: Server is reachable")),
-            ),
-            Err(e) => (
-                NotificationType::Error,
-                SharedString::from(format!("{display_name}: Ping failed: {e}")),
-            ),
-        };
-        let _ = notification_tx.unbounded_send(notification);
-        done_for_thread.store(true, Ordering::Release);
-    });
-
-    window
-        .spawn(cx, async move |async_cx| {
-            let _progress = progress;
-            loop {
-                async_cx
-                    .background_executor()
-                    .timer(Duration::from_millis(100))
-                    .await;
-                if done.load(Ordering::Acquire) {
-                    break;
-                }
-            }
-        })
-        .detach();
 }
