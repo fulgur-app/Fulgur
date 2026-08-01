@@ -1,9 +1,26 @@
 use crate::fulgur::Fulgur;
 use gpui_component::highlighter::Language;
 
-/// Lists all supported languages, including some that are not supported by the language registry but are close enough.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SupportedLanguage {
+/// Declares the `SupportedLanguage` enum and its `ALL` list from a single variant list.
+///
+/// Both artifacts come from the same declaration, so a variant cannot be added to the enum
+/// without also appearing in `ALL` (and therefore in the language picker).
+macro_rules! supported_languages {
+    ($($variant:ident),+ $(,)?) => {
+        /// Lists all supported languages, including some that are not supported by the language registry but are close enough.
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        pub enum SupportedLanguage {
+            $($variant,)+
+        }
+
+        impl SupportedLanguage {
+            /// Every supported language, in declaration order.
+            pub const ALL: &[SupportedLanguage] = &[$(SupportedLanguage::$variant),+];
+        }
+    };
+}
+
+supported_languages! {
     Ada,
     Asm,
     Astro,
@@ -41,8 +58,8 @@ pub enum SupportedLanguage {
     Lua,
     Make,
     Markdown,
-    Matlab,
     MarkdownInline,
+    Matlab,
     ObjectiveC,
     Ocaml,
     Pascal,
@@ -462,76 +479,10 @@ impl SupportedLanguage {
     /// Lists all supported languages in alphabetical order, including some that are not supported by the language registry.
     ///
     /// ### Returns
-    /// - `Vec<SupportedLanguage>`: A vector of all supported languages
+    /// - `&'static [SupportedLanguage]`: Every supported language, in picker display order
     #[must_use]
-    pub fn all() -> Vec<SupportedLanguage> {
-        vec![
-            SupportedLanguage::Ada,
-            SupportedLanguage::Asm,
-            SupportedLanguage::Astro,
-            SupportedLanguage::Bash,
-            SupportedLanguage::C,
-            SupportedLanguage::Clojure,
-            SupportedLanguage::Cpp,
-            SupportedLanguage::CMake,
-            SupportedLanguage::CSharp,
-            SupportedLanguage::Css,
-            SupportedLanguage::Csv,
-            SupportedLanguage::D,
-            SupportedLanguage::Dart,
-            SupportedLanguage::Diff,
-            SupportedLanguage::Dockerfile,
-            SupportedLanguage::Ejs,
-            SupportedLanguage::Elixir,
-            SupportedLanguage::Erb,
-            SupportedLanguage::Erlang,
-            SupportedLanguage::Fortran,
-            SupportedLanguage::FSharp,
-            SupportedLanguage::Go,
-            SupportedLanguage::GraphQl,
-            SupportedLanguage::Groovy,
-            SupportedLanguage::Haskell,
-            SupportedLanguage::Html,
-            SupportedLanguage::Ini,
-            SupportedLanguage::Jinja2,
-            SupportedLanguage::Java,
-            SupportedLanguage::JavaScript,
-            SupportedLanguage::JsDoc,
-            SupportedLanguage::Json,
-            SupportedLanguage::Julia,
-            SupportedLanguage::Kotlin,
-            SupportedLanguage::Lua,
-            SupportedLanguage::Make,
-            SupportedLanguage::Markdown,
-            SupportedLanguage::MarkdownInline,
-            SupportedLanguage::Matlab,
-            SupportedLanguage::ObjectiveC,
-            SupportedLanguage::Ocaml,
-            SupportedLanguage::Pascal,
-            SupportedLanguage::Perl,
-            SupportedLanguage::Php,
-            SupportedLanguage::Plain,
-            SupportedLanguage::Powershell,
-            SupportedLanguage::Prolog,
-            SupportedLanguage::Proto,
-            SupportedLanguage::Python,
-            SupportedLanguage::R,
-            SupportedLanguage::React,
-            SupportedLanguage::Ruby,
-            SupportedLanguage::Rust,
-            SupportedLanguage::Scala,
-            SupportedLanguage::Scss,
-            SupportedLanguage::Sql,
-            SupportedLanguage::Svelte,
-            SupportedLanguage::Svg,
-            SupportedLanguage::Swift,
-            SupportedLanguage::Toml,
-            SupportedLanguage::TypeScript,
-            SupportedLanguage::Vue,
-            SupportedLanguage::Xml,
-            SupportedLanguage::Yaml,
-            SupportedLanguage::Zig,
-        ]
+    pub fn all() -> &'static [SupportedLanguage] {
+        Self::ALL
     }
 }
 
@@ -596,7 +547,21 @@ pub fn register_external_languages() {
 
 #[cfg(test)]
 mod tests {
-    use super::{SupportedLanguage, language_from_content};
+    use super::{SupportedLanguage, language_from_content, pretty_name};
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_all_languages_have_a_distinct_pretty_name() {
+        let mut names = HashSet::new();
+        for language in SupportedLanguage::all() {
+            let name = pretty_name(language);
+            assert!(
+                names.insert(name),
+                "duplicate pretty name in the language picker: {name}"
+            );
+        }
+        assert_eq!(names.len(), SupportedLanguage::all().len());
+    }
 
     #[test]
     fn test_m_file_objc_by_import() {

@@ -1,6 +1,6 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    App, Context, Div, Element, Entity, InteractiveElement, ParentElement, SharedString,
+    App, Context, Div, Element, Entity, InteractiveElement, ParentElement,
     StatefulInteractiveElement, Styled, Window, div, px,
 };
 use gpui_component::{
@@ -17,6 +17,7 @@ use crate::fulgur::{
 /// ### Parameters:
 /// - `entity`: The Fulgur entity handle.
 /// - `language`: The language to create the item for.
+/// - `index`: The position of the language in the list, used as the element id.
 /// - `is_current_language`: Whether the language is the current language.
 /// - `cx`: The application context.
 ///
@@ -25,13 +26,13 @@ use crate::fulgur::{
 fn make_select_language_item(
     entity: Entity<Fulgur>,
     language: SupportedLanguage,
+    index: usize,
     is_current_language: bool,
     cx: &App,
 ) -> impl Element {
     let pretty_name = pretty_name(&language);
-    let id = SharedString::from(format!("Select_{}", pretty_name.replace(' ', "_")));
     h_flex()
-        .id(id)
+        .id(("select-language", index))
         .justify_between()
         .my_2()
         .cursor_pointer()
@@ -79,11 +80,14 @@ fn make_select_language_list(
 ) -> Div {
     div().gap_2().children(
         SupportedLanguage::all()
-            .into_iter()
-            .map(move |language| {
+            .iter()
+            .copied()
+            .enumerate()
+            .map(move |(index, language)| {
                 make_select_language_item(
                     entity.clone(),
                     language,
+                    index,
                     is_current_language(language, current_language),
                     cx,
                 )
