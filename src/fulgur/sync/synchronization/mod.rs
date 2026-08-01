@@ -11,8 +11,7 @@ pub use begin::{
     queue_pending_shares,
 };
 pub use bootstrap::{
-    begin_synchronization, perform_initial_synchronization,
-    perform_initial_synchronization_with_progress, record_fulgurant_version,
+    apply_initial_sync_outcome, begin_synchronization, record_fulgurant_version,
     record_server_min_fulgur_version, set_sync_server_connection_status,
 };
 pub use error::{SynchronizationError, SynchronizationStatus, handle_ureq_error};

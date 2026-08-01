@@ -294,28 +294,11 @@ pub(super) fn spawn_profile_device_fetch(
                 &http_agent,
                 &sync_state.pending_ack_share_ids,
             ) {
-                Ok(crate::fulgur::sync::synchronization::InitialSyncOutcome {
-                    begin: begin_response,
-                    min_fulgur_version,
-                    fulgurant_version,
-                }) => {
-                    *sync_state.device_name.lock() = Some(begin_response.device_name.clone());
-                    *sync_state.pending_shared_files.lock() = begin_response.shares;
-                    crate::fulgur::sync::synchronization::store_server_max_file_size(
-                        &sync_state.max_file_size_bytes,
-                        begin_response.max_file_size_bytes,
-                    );
-                    // Refresh the stored versions so the profiles-list warnings
-                    // stay current after a reconnect triggered from sharing.
-                    let _ = crate::fulgur::sync::synchronization::record_server_min_fulgur_version(
-                        &sync_state.server_min_fulgur_version,
+                Ok(outcome) => {
+                    let _ = crate::fulgur::sync::synchronization::apply_initial_sync_outcome(
+                        &sync_state,
                         &profile.name,
-                        min_fulgur_version,
-                    );
-                    let _ = crate::fulgur::sync::synchronization::record_fulgurant_version(
-                        &sync_state.server_version,
-                        &profile.name,
-                        fulgurant_version,
+                        outcome,
                     );
                     crate::fulgur::sync::synchronization::set_sync_server_connection_status(
                         &sync_state.connection_status,
