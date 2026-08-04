@@ -2,6 +2,7 @@
 
 use fulgur::fulgur;
 use gpui::{AppContext, AssetSource, BorrowAppContext, SharedString};
+use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
@@ -286,8 +287,12 @@ fn main() {
         fulgur::shared_state::spawn_notification_consumer(cx);
         if restore_bounds.is_empty() {
             log::info!("No saved state, creating initial window");
-            cx.spawn(async move |cx| create_window(cx, 0, None, &cli_file_paths))
-                .detach();
+            cx.spawn(async move |cx| {
+                if let Err(e) = create_window(cx, 0, None, &cli_file_paths) {
+                    report_window_creation_failure(0, false, &e, cx);
+                }
+            })
+            .detach();
         } else {
             log::info!("Restoring {} saved window(s)", restore_bounds.len());
             for (index, window_bounds) in restore_bounds.into_iter().enumerate() {
@@ -298,11 +303,42 @@ fn main() {
                 };
                 let saved_bounds = Some(window_bounds);
                 cx.spawn(async move |cx| {
-                    create_window(cx, index, saved_bounds.as_ref(), &cli_files)
+                    if let Err(e) = create_window(cx, index, saved_bounds.as_ref(), &cli_files) {
+                        report_window_creation_failure(index, true, &e, cx);
+                    }
                 })
                 .detach();
             }
         }
+    });
+}
+
+/// Report a window that could not be opened, to the log and to the user
+///
+/// ### Arguments
+/// - `window_index`: The index of the window that failed to open.
+/// - `restoring`: Whether the window was being restored from the saved session.
+/// - `error`: The failure returned by `create_window`.
+/// - `cx`: The application context, used to queue the user notification.
+fn report_window_creation_failure(
+    window_index: usize,
+    restoring: bool,
+    error: &anyhow::Error,
+    cx: &mut gpui::AsyncApp,
+) {
+    let message = if restoring {
+        log::error!("Failed to restore window {window_index}: {error}");
+        format!(
+            "Window {} could not be restored, its tabs are lost: {error}",
+            window_index + 1
+        )
+    } else {
+        log::error!("Failed to create the initial window: {error}");
+        format!("The window could not be opened: {error}")
+    };
+    cx.update(|cx| {
+        cx.global::<fulgur::shared_state::SharedAppState>()
+            .notify((NotificationType::Error, message.into()));
     });
 }
 
