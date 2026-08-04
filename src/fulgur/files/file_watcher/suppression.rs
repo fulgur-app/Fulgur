@@ -2,6 +2,10 @@ use crate::fulgur::Fulgur;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+/// Window during which a watch event for a path is treated as a duplicate of a
+/// previous event or as an echo of the editor's own save.
+const FILE_WATCH_DEBOUNCE: Duration = Duration::from_millis(500);
+
 impl Fulgur {
     /// Remove file-watcher bookkeeping entries for one file path.
     ///
@@ -33,12 +37,12 @@ impl Fulgur {
     pub(super) fn should_suppress_file_watch_event(&mut self, path: &PathBuf) -> bool {
         let now = Instant::now();
         if let Some(&last_time) = self.file_watch_state.last_file_events.get(path)
-            && now.duration_since(last_time) < Duration::from_millis(500)
+            && now.duration_since(last_time) < FILE_WATCH_DEBOUNCE
         {
             return true;
         }
         if let Some(&save_time) = self.file_watch_state.last_file_saves.get(path)
-            && now.duration_since(save_time) < Duration::from_millis(500)
+            && now.duration_since(save_time) < FILE_WATCH_DEBOUNCE
         {
             return true;
         }
