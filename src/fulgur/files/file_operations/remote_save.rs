@@ -1,27 +1,19 @@
-use super::remote_types::{
-    RemoteSaveTaskParams, SSH_HOST_KEY_APPROVAL_TIMEOUT, SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS,
-    SSH_SAVE_TIMEOUT_LABEL, format_remote_endpoint_label, wait_for_host_key_decision,
+use super::{
+    remote_ssh_task::{SshTaskContext, spawn_ssh_task},
+    remote_types::{RemoteSaveTaskParams, SSH_SAVE_TIMEOUT_LABEL},
 };
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur,
     editor_tab::TabLocation,
-    sync::ssh::{
-        self,
-        credentials::SshCredKey,
-        session::{HostKeyDecision, HostKeyRequest},
-        url::RemoteSpec,
-    },
-    ui::notifications::progress::{CancelCallback, start_progress},
+    sync::ssh::{self, credentials::SshCredKey, url::RemoteSpec},
+    ui::notifications::progress::CancelCallback,
 };
 use gpui_component::{WindowExt, notification::NotificationType};
 use parking_lot::Mutex;
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 impl Fulgur {
@@ -165,30 +157,11 @@ impl Fulgur {
             ssh_session_cache,
             ssh_session_pool,
         } = params;
-        let pending_host_key: Arc<Mutex<Option<HostKeyRequest>>> = Arc::new(Mutex::new(None));
-        let pending_host_key_for_thread = Arc::clone(&pending_host_key);
-        let pending_host_key_for_task = Arc::clone(&pending_host_key);
-
         let pending_save_result: Arc<Mutex<Option<Result<(), String>>>> =
             Arc::new(Mutex::new(None));
-        let pending_save_for_thread = Arc::clone(&pending_save_result);
-        let pending_save_for_task = Arc::clone(&pending_save_result);
-
-        let save_finished = Arc::new(AtomicBool::new(false));
-        let save_finished_for_thread = Arc::clone(&save_finished);
-        let save_finished_for_task = Arc::clone(&save_finished);
-        let host_key_decision_timed_out = Arc::new(AtomicBool::new(false));
-        let host_key_decision_timed_out_for_thread = Arc::clone(&host_key_decision_timed_out);
-
-        let spec_for_thread = spec.clone();
-        let user = spec.user.clone().unwrap_or_default();
-        let cache_for_thread = Arc::clone(&ssh_session_cache);
-        let credential_key_for_thread = credential_key.clone();
+        let pending_save_for_publish = Arc::clone(&pending_save_result);
         let content_for_thread = Arc::clone(&saved_bytes);
-        let pool_for_thread = Arc::clone(&ssh_session_pool);
 
-        let progress_label =
-            format_remote_endpoint_label("Saving to ", &spec.host, spec.port, &user);
         let entity_weak = cx.entity().downgrade();
         let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, cx| {
             if let Some(entity) = entity_weak.upgrade() {
@@ -204,110 +177,37 @@ impl Fulgur {
                 });
             }
         }));
-        let progress = start_progress(window, cx, progress_label.into(), cancel_callback);
-
-        std::thread::spawn(move || {
-            let slot = pending_host_key_for_thread;
-            let host_key_decision_timed_out_for_callback =
-                Arc::clone(&host_key_decision_timed_out_for_thread);
-            let session_result = pool_for_thread.checkout_or_connect(
-                &spec_for_thread,
-                &user,
-                &password,
-                move |fingerprint, host, port| {
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    *slot.lock() = Some(HostKeyRequest {
-                        fingerprint: fingerprint.to_string(),
-                        host: host.to_string(),
-                        port,
-                        decision_tx: tx,
-                    });
-                    wait_for_host_key_decision(&rx, &host_key_decision_timed_out_for_callback)
-                },
-            );
-            if let Err(ssh::error::SshError::AuthFailed) = &session_result {
-                cache_for_thread.lock().remove(&credential_key_for_thread);
-            }
-            let mut outcome = session_result
-                .and_then(|pooled_session| {
-                    let result = ssh::sftp::write_remote_file(
-                        pooled_session.session(),
-                        &spec_for_thread.path,
-                        content_for_thread.as_slice(),
-                    );
-                    if result.is_err() {
-                        pooled_session.invalidate();
-                    }
-                    result
-                })
-                .map_err(|e| e.user_message());
-            if host_key_decision_timed_out_for_thread.load(Ordering::Acquire) {
-                outcome = Err(format!(
-                    "{SSH_SAVE_TIMEOUT_LABEL} ({SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS} s)"
-                ));
-            }
-            Self::publish_remote_save_outcome(
-                &save_finished_for_thread,
-                &pending_save_for_thread,
-                outcome,
-            );
-        });
-
-        cx.spawn_in(window, async move |view, async_cx| {
-            let _progress = progress;
-            let deadline = std::time::Instant::now() + SSH_HOST_KEY_APPROVAL_TIMEOUT;
-            loop {
-                async_cx
-                    .background_executor()
-                    .timer(Duration::from_millis(100))
-                    .await;
-
-                let hk_req = pending_host_key_for_task.lock().take();
-                if let Some(req) = hk_req {
-                    async_cx
-                        .update(|window, cx| {
-                            _ = view.update(cx, |fulgur, cx| {
-                                fulgur.show_ssh_host_fingerprint_dialog(window, cx, req);
-                            });
-                        })
-                        .ok();
-                }
-
-                let save_result = pending_save_for_task.lock().take();
-                if let Some(result) = save_result {
-                    let saved_content = Arc::clone(&saved_content);
-                    async_cx
-                        .update(|window, cx| {
-                            _ = view.update(cx, |fulgur, cx| {
-                                fulgur.handle_remote_save_result(
-                                    tab_id,
-                                    request_id,
-                                    saved_content.as_str(),
-                                    result,
-                                    window,
-                                    cx,
-                                );
-                            });
-                        })
-                        .ok();
-                    break;
-                }
-
-                if std::time::Instant::now() > deadline {
-                    if let Some(request) = pending_host_key_for_task.lock().take() {
-                        let _ = request.decision_tx.send(HostKeyDecision::Reject);
-                    }
-                    Self::publish_remote_save_outcome(
-                        &save_finished_for_task,
-                        &pending_save_for_task,
-                        Err(format!(
-                            "{SSH_SAVE_TIMEOUT_LABEL} ({SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS} s)"
-                        )),
-                    );
-                }
-            }
-        })
-        .detach();
+        spawn_ssh_task(
+            window,
+            cx,
+            SshTaskContext {
+                spec,
+                password,
+                credential_key,
+                ssh_session_cache,
+                ssh_session_pool,
+                progress_prefix: "Saving to ",
+                timeout_label: SSH_SAVE_TIMEOUT_LABEL,
+                cancel_callback,
+            },
+            move |session, spec| {
+                ssh::sftp::write_remote_file(session, &spec.path, content_for_thread.as_slice())
+            },
+            move |save_finished, outcome| {
+                Self::publish_remote_save_outcome(save_finished, &pending_save_for_publish, outcome)
+            },
+            move |_save_finished| pending_save_result.lock().take(),
+            move |fulgur, result, window, cx| {
+                fulgur.handle_remote_save_result(
+                    tab_id,
+                    request_id,
+                    saved_content.as_str(),
+                    result,
+                    window,
+                    cx,
+                );
+            },
+        );
     }
 
     /// Publish a remote-save outcome exactly once for a single save operation.

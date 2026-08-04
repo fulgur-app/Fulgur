@@ -1,10 +1,9 @@
 use super::{
     encoding::detect_encoding_and_decode,
+    remote_ssh_task::{SshTaskContext, spawn_ssh_task},
     remote_types::{
         PendingRemoteOpenOutcome, RemoteBrowseResult, RemoteFileResult, RemoteOpenResult,
-        RemoteOpenTaskParams, SSH_CONNECTION_TIMEOUT_LABEL, SSH_HOST_KEY_APPROVAL_TIMEOUT,
-        SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS, format_remote_endpoint_label,
-        wait_for_host_key_decision,
+        RemoteOpenTaskParams, SSH_CONNECTION_TIMEOUT_LABEL,
     },
 };
 use crate::fulgur::ui::tabs::tab::TabId;
@@ -13,18 +12,14 @@ use crate::fulgur::{
     sync::ssh::{
         self,
         credentials::SshCredKey,
-        session::{HostKeyDecision, HostKeyRequest},
         url::{RemoteSpec, format_remote_url},
     },
-    ui::notifications::progress::{CancelCallback, start_progress},
+    ui::notifications::progress::CancelCallback,
 };
 use parking_lot::Mutex;
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 impl Fulgur {
@@ -276,26 +271,6 @@ impl Fulgur {
         }
         let pending_remote_open = Arc::clone(&self.pending_remote_open);
 
-        let pending_host_key: Arc<Mutex<Option<HostKeyRequest>>> = Arc::new(Mutex::new(None));
-        let pending_host_key_for_thread = Arc::clone(&pending_host_key);
-        let pending_host_key_for_task = Arc::clone(&pending_host_key);
-
-        let pending_remote_for_thread = Arc::clone(&pending_remote_open);
-        let pending_remote_for_task = Arc::clone(&pending_remote_open);
-        let open_finished = Arc::new(AtomicBool::new(false));
-        let open_finished_for_thread = Arc::clone(&open_finished);
-        let open_finished_for_task = Arc::clone(&open_finished);
-        let host_key_decision_timed_out = Arc::new(AtomicBool::new(false));
-        let host_key_decision_timed_out_for_thread = Arc::clone(&host_key_decision_timed_out);
-
-        let spec_for_thread = spec.clone();
-        let user = spec.user.clone().unwrap_or_default();
-        let cache_for_thread = Arc::clone(&ssh_session_cache);
-        let credential_key_for_thread = credential_key.clone();
-        let pool_for_thread = Arc::clone(&ssh_session_pool);
-
-        let progress_label =
-            format_remote_endpoint_label("Connecting to ", &spec.host, spec.port, &user);
         let entity_weak = cx.entity().downgrade();
         let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, cx| {
             if let Some(entity) = entity_weak.upgrade() {
@@ -307,132 +282,48 @@ impl Fulgur {
                 });
             }
         }));
-        let progress = start_progress(window, cx, progress_label.into(), cancel_callback);
-        let cancel_flag = progress.cancel_flag();
-        let cancel_flag_for_thread = Arc::clone(&cancel_flag);
 
-        std::thread::spawn(move || {
-            let slot = pending_host_key_for_thread;
-            let host_key_decision_timed_out_for_callback =
-                Arc::clone(&host_key_decision_timed_out_for_thread);
-            let session_result = pool_for_thread.checkout_or_connect(
-                &spec_for_thread,
-                &user,
-                &password,
-                move |fingerprint, host, port| {
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    *slot.lock() = Some(HostKeyRequest {
-                        fingerprint: fingerprint.to_string(),
-                        host: host.to_string(),
-                        port,
-                        decision_tx: tx,
-                    });
-                    wait_for_host_key_decision(&rx, &host_key_decision_timed_out_for_callback)
-                },
-            );
-            if let Err(ssh::error::SshError::AuthFailed) = &session_result {
-                cache_for_thread.lock().remove(&credential_key_for_thread);
-            }
-
-            let mut outcome = session_result
-                .and_then(|pooled_session| {
-                    let result = if target_tab_id.is_some() {
-                        ssh::sftp::read_remote_file(pooled_session.session(), &spec_for_thread.path)
-                            .map(|bytes| {
-                                let decoded = detect_encoding_and_decode(bytes);
-                                RemoteOpenResult::File(RemoteFileResult {
-                                    spec: spec_for_thread.clone(),
-                                    file_size: decoded.byte_len,
-                                    content: decoded.content,
-                                    encoding: decoded.encoding,
-                                    lossy: decoded.lossy,
-                                })
-                            })
-                    } else {
-                        Self::resolve_remote_open_result(pooled_session.session(), &spec_for_thread)
-                    };
-                    if result.is_err() {
-                        pooled_session.invalidate();
-                    }
-                    result
-                })
-                .map_err(|e| e.user_message());
-            if host_key_decision_timed_out_for_thread.load(Ordering::Acquire) {
-                outcome = Err(format!(
-                    "{SSH_CONNECTION_TIMEOUT_LABEL} ({SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS} s)"
-                ));
-            }
-
-            if cancel_flag_for_thread.load(Ordering::Acquire) {
-                // User cancelled, discard the outcome and unblock the monitor task.
-                open_finished_for_thread.store(true, Ordering::Release);
-            } else {
+        spawn_ssh_task(
+            window,
+            cx,
+            SshTaskContext {
+                spec,
+                password,
+                credential_key,
+                ssh_session_cache,
+                ssh_session_pool,
+                progress_prefix: "Connecting to ",
+                timeout_label: SSH_CONNECTION_TIMEOUT_LABEL,
+                cancel_callback,
+            },
+            move |session, spec| {
+                if target_tab_id.is_some() {
+                    ssh::sftp::read_remote_file(session, &spec.path).map(|bytes| {
+                        let decoded = detect_encoding_and_decode(bytes);
+                        RemoteOpenResult::File(RemoteFileResult {
+                            spec: spec.clone(),
+                            file_size: decoded.byte_len,
+                            content: decoded.content,
+                            encoding: decoded.encoding,
+                            lossy: decoded.lossy,
+                        })
+                    })
+                } else {
+                    Self::resolve_remote_open_result(session, spec)
+                }
+            },
+            move |open_finished, outcome| {
                 Self::publish_remote_open_outcome(
-                    &open_finished_for_thread,
-                    &pending_remote_for_thread,
+                    open_finished,
+                    &pending_remote_open,
                     target_tab_id,
                     target_request_id,
                     outcome,
-                );
-            }
-        });
-
-        cx.spawn_in(window, async move |view, async_cx| {
-            let _progress = progress;
-            let deadline = std::time::Instant::now() + SSH_HOST_KEY_APPROVAL_TIMEOUT;
-            loop {
-                async_cx
-                    .background_executor()
-                    .timer(Duration::from_millis(100))
-                    .await;
-
-                if open_finished_for_task.load(Ordering::Acquire) {
-                    async_cx
-                        .update(|_, cx| {
-                            _ = view.update(cx, |_, cx| cx.notify());
-                        })
-                        .ok();
-                    break;
-                }
-
-                let hk_req = pending_host_key_for_task.lock().take();
-                if let Some(req) = hk_req {
-                    async_cx
-                        .update(|window, cx| {
-                            _ = view.update(cx, |fulgur, cx| {
-                                fulgur.show_ssh_host_fingerprint_dialog(window, cx, req);
-                            });
-                        })
-                        .ok();
-                }
-
-                if std::time::Instant::now() > deadline {
-                    if let Some(request) = pending_host_key_for_task.lock().take() {
-                        let _ = request.decision_tx.send(HostKeyDecision::Reject);
-                    }
-                    if cancel_flag.load(Ordering::Acquire) {
-                        open_finished_for_task.store(true, Ordering::Release);
-                    } else {
-                        Self::publish_remote_open_outcome(
-                            &open_finished_for_task,
-                            &pending_remote_for_task,
-                            target_tab_id,
-                            target_request_id,
-                            Err(format!(
-                                "{SSH_CONNECTION_TIMEOUT_LABEL} ({SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS} s)"
-                            )),
-                        );
-                    }
-                    async_cx
-                        .update(|_, cx| {
-                            _ = view.update(cx, |_, cx| cx.notify());
-                        })
-                        .ok();
-                    break;
-                }
-            }
-        })
-        .detach();
+                )
+            },
+            |open_finished| open_finished.load(Ordering::Acquire).then_some(()),
+            |_fulgur, (), _window, cx| cx.notify(),
+        );
     }
 
     /// Publish a remote-open outcome exactly once for a single open operation.
