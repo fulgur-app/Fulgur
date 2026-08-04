@@ -3,6 +3,7 @@ mod open_ops;
 mod remote_open;
 mod remote_processing;
 mod remote_save;
+mod remote_ssh_task;
 mod remote_types;
 mod save_ops;
 
