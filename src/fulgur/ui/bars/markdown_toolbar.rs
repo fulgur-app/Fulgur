@@ -5,8 +5,7 @@ use crate::fulgur::{
 };
 
 use gpui::{
-    App, Context, Entity, EntityInputHandler, Hsla, IntoElement, ParentElement, Render, Styled,
-    WeakEntity, Window, div,
+    App, Context, Entity, Hsla, IntoElement, ParentElement, Render, Styled, WeakEntity, Window, div,
 };
 use gpui_component::{ActiveTheme, button::Button, h_flex, input::InputState};
 
@@ -80,13 +79,7 @@ impl MarkdownToolbar {
     ) {
         if let Some(content) = self.active_editor_content(cx) {
             content.update(cx, |input_state, cx| {
-                let selection = input_state
-                    .selected_text_range(true, window, cx)
-                    .expect("selection");
-                let selected_text = input_state
-                    .text()
-                    .slice(selection.range.start..selection.range.end)
-                    .to_string();
+                let selected_text = input_state.selected_value();
                 let surrounded_text = format!("{prefix}{selected_text}{suffix}");
                 input_state.replace(surrounded_text, window, cx);
                 cx.notify();
