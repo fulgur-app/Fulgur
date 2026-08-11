@@ -5,8 +5,7 @@ use crate::fulgur::{
 };
 
 use gpui::{
-    App, Context, Entity, EntityInputHandler, Hsla, IntoElement, ParentElement, Render, Styled,
-    WeakEntity, Window, div,
+    App, Context, Entity, Hsla, IntoElement, ParentElement, Render, Styled, WeakEntity, Window, div,
 };
 use gpui_component::{ActiveTheme, button::Button, h_flex, input::InputState};
 
@@ -80,18 +79,9 @@ impl MarkdownToolbar {
     ) {
         if let Some(content) = self.active_editor_content(cx) {
             content.update(cx, |input_state, cx| {
-                let selection = input_state.selected_text_range(true, window, cx);
-                if let Some(selection) = selection {
-                    let selected_text = input_state
-                        .text()
-                        .slice(selection.range.start..selection.range.end)
-                        .to_string();
-                    let surrounded_text = format!("{prefix}{selected_text}{suffix}");
-                    input_state.replace(surrounded_text, window, cx);
-                } else {
-                    let inserted_text = format!("{}{}{}", prefix, " ", suffix);
-                    input_state.insert(inserted_text, window, cx);
-                }
+                let selected_text = input_state.selected_value();
+                let surrounded_text = format!("{prefix}{selected_text}{suffix}");
+                input_state.replace(surrounded_text, window, cx);
                 cx.notify();
             });
         }
@@ -375,13 +365,29 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use core::prelude::v1::test;
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Entity, Focusable, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui::{
+        App, AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
+        Window, WindowOptions, div,
+    };
     #[cfg(feature = "gpui-test-support")]
-    use gpui_component::{Root, input::Position, input::SelectAll};
+    use gpui_component::input::{InputState, Position};
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
     #[cfg(feature = "gpui-test-support")]
-    use std::{cell::RefCell, path::PathBuf, sync::Arc};
+    use std::{cell::RefCell, ops::Range, path::PathBuf, sync::Arc};
+
+    /// Window root that avoids `gpui_component::Root`, whose macOS accessibility hook panics on
+    /// gpui's `TestWindow`. The toolbar reads the active editor through its `WeakEntity<Fulgur>`
+    /// and needs nothing that `Root` provides, so these tests can run on every platform.
+    #[cfg(feature = "gpui-test-support")]
+    struct EmptyView;
+
+    #[cfg(feature = "gpui-test-support")]
+    impl Render for EmptyView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
+    }
 
     #[cfg(feature = "gpui-test-support")]
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
@@ -400,8 +406,8 @@ mod tests {
                 cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
-                    *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| Root::new(fulgur, window, cx))
+                    *fulgur_slot.borrow_mut() = Some(fulgur);
+                    cx.new(|_| EmptyView)
                 })
             })
             .expect("failed to open test window");
@@ -424,64 +430,119 @@ mod tests {
         (fulgur, toolbar, visual_cx)
     }
 
+    /// Load `text` into the active editor, select `selection`, then bold it through the toolbar
+    ///
+    /// ### Arguments
+    /// - `cx`: The test application context
+    /// - `text`: The buffer contents to load into the active editor
+    /// - `selection`: The range to select, as UTF-8 byte offsets into `text`
+    ///
+    /// ### Returns
+    /// - `(String, String)`: The text the editor reports as selected, and the resulting buffer
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
-    fn test_insert_or_surround_wraps_selected_text(cx: &mut TestAppContext) {
+    fn bold_byte_selection(
+        cx: &mut TestAppContext,
+        text: &str,
+        selection: Range<usize>,
+    ) -> (String, String) {
         let (fulgur, toolbar, mut visual_cx) = setup_toolbar(cx);
 
         visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.update_active_editor_tab(cx, |editor, cx| {
-                    editor.content.update(cx, |content, cx| {
-                        content.set_value("hello", window, cx);
-                    });
+            fulgur
+                .update(cx, |this, cx| {
+                    this.update_active_editor_tab(cx, |editor, cx| {
+                        editor.content.update(cx, |content, cx| {
+                            content.set_value(text.to_string(), window, cx);
+                            content.set_selected_range(selection, cx);
+                        });
+                    })
                 })
                 .expect("expected active editor tab");
 
-                this.focus_active_tab(window, cx);
-                let focus = this
-                    .get_active_editor_tab(cx)
-                    .expect("expected active editor tab")
-                    .content
-                    .read(cx)
-                    .focus_handle(cx);
-                focus.dispatch_action(&SelectAll, window, cx);
-                let selected = this
-                    .get_active_editor_tab(cx)
-                    .expect("expected active editor tab")
-                    .content
-                    .read(cx)
-                    .selected_value()
-                    .to_string();
-                assert_eq!(selected, "hello");
-            });
+            let selected =
+                active_content_text(&fulgur, cx, |content| content.selected_value().to_string());
 
             toolbar.update(cx, |bar, cx| {
                 bar.insert_or_surround("**", "**", window, cx);
             });
 
-            let text = fulgur
+            let result = active_content_text(&fulgur, cx, |content| content.text().to_string());
+            (selected, result)
+        })
+    }
+
+    /// Read a string out of the active editor tab's content entity
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The window entity owning the tabs
+    /// - `cx`: The application context
+    /// - `read`: Extracts the wanted string from the content entity
+    ///
+    /// ### Returns
+    /// - `String`: Whatever `read` extracted
+    #[cfg(feature = "gpui-test-support")]
+    fn active_content_text(
+        fulgur: &Entity<Fulgur>,
+        cx: &App,
+        read: impl FnOnce(&InputState) -> String,
+    ) -> String {
+        read(
+            fulgur
                 .read(cx)
                 .get_active_editor_tab(cx)
                 .expect("expected active editor tab")
                 .content
-                .read(cx)
-                .text()
-                .to_string();
-            assert_eq!(text, "**hello**");
-        });
+                .read(cx),
+        )
     }
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
+    fn test_insert_or_surround_wraps_selected_text(cx: &mut TestAppContext) {
+        let (selected, text) = bold_byte_selection(cx, "hello", 0..5);
+
+        assert_eq!(selected, "hello");
+        assert_eq!(text, "**hello**");
+    }
+
+    /// A selection sitting after an accented character must be wrapped as-is. The input handler
+    /// reports selections in UTF-16 code units while the rope is indexed in UTF-8 bytes, and
+    /// slicing the rope with the UTF-16 range used to wrap an earlier stretch of the document:
+    /// here it produced `héllo ** worl**` because bytes `6..11` spell `" worl"`.
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_insert_or_surround_wraps_selection_after_accented_character(cx: &mut TestAppContext) {
+        let (selected, text) = bold_byte_selection(cx, "héllo world", 7..12);
+
+        assert_eq!(selected, "world");
+        assert_eq!(text, "héllo **world**");
+    }
+
+    /// Same divergence as the accented case, but wider: an emoji outside the basic multilingual
+    /// plane is 4 UTF-8 bytes against 2 UTF-16 code units, so the stale range started inside the
+    /// emoji rather than merely early. A fix counting characters rather than code units would
+    /// still fail here.
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_insert_or_surround_wraps_selection_after_emoji(cx: &mut TestAppContext) {
+        let (selected, text) = bold_byte_selection(cx, "🚀 launch", 5..11);
+
+        assert_eq!(selected, "launch");
+        assert_eq!(text, "🚀 **launch**");
+    }
+
+    /// The selection itself may hold multi-byte characters without being truncated
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_insert_or_surround_wraps_multibyte_selection(cx: &mut TestAppContext) {
+        let (selected, text) = bold_byte_selection(cx, "dis élève ok", 4..11);
+
+        assert_eq!(selected, "élève");
+        assert_eq!(text, "dis **élève** ok");
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
     fn test_insert_or_surround_inserts_at_cursor_when_no_selection(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_toolbar(cx);
 
