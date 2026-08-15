@@ -207,7 +207,9 @@ impl EditorTab {
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let current_content = self.content.read(cx).text().to_string();
             let language = language_from_content(file_name, &current_content);
-            self.force_language(window, cx, language, settings);
+            if language != self.language {
+                self.force_language(window, cx, language, settings);
+            }
         }
     }
 
