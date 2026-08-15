@@ -43,23 +43,33 @@ impl Fulgur {
     /// - `window`: The window to show the dialog in
     /// - `cx`: The application context
     pub fn show_file_conflict_dialog(
-        &self,
+        &mut self,
         path: &Path,
         tab_id: TabId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let path = path.to_path_buf();
+        if !self
+            .file_watch_state
+            .open_conflict_dialogs
+            .insert(path.clone())
+        {
+            return;
+        }
+
         let entity = cx.entity().clone();
         let filename = path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("file")
             .to_string();
-        let path = path.to_path_buf();
 
         window.open_alert_dialog(cx, move |modal, _, _| {
             let path = path.clone();
+            let path_for_close = path.clone();
             let entity_for_ok = entity.clone();
+            let entity_for_close = entity.clone();
             modal
                 .title(div().text_size(px(16.)).child("File Modified Externally"))
                 .keyboard(true)
@@ -89,6 +99,12 @@ impl Fulgur {
                     true
                 })
                 .on_cancel(|_, _, _| true)
+                .on_close(move |_, _, cx| {
+                    let path = path_for_close.clone();
+                    entity_for_close.update(cx, |this, _| {
+                        this.file_watch_state.open_conflict_dialogs.remove(&path);
+                    });
+                })
         });
     }
 

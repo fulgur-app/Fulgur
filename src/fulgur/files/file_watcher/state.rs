@@ -1,6 +1,6 @@
 use super::watcher::FileWatcher;
 use gpui::Task;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -12,6 +12,7 @@ pub struct FileWatchState {
     pub last_file_events: HashMap<PathBuf, Instant>,
     pub last_file_saves: HashMap<PathBuf, Instant>,
     pub pending_conflicts: HashMap<PathBuf, usize>,
+    pub open_conflict_dialogs: HashSet<PathBuf>,
 }
 
 impl Default for FileWatchState {
@@ -37,6 +38,7 @@ impl FileWatchState {
             last_file_events: HashMap::new(),
             last_file_saves: HashMap::new(),
             pending_conflicts: HashMap::new(),
+            open_conflict_dialogs: HashSet::new(),
         }
     }
 }

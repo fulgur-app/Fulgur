@@ -238,6 +238,56 @@ mod tests {
         target_os = "macos",
         ignore = "known upstream a11y panic on gpui TestWindow"
     )]
+    fn test_repeated_external_modifications_show_a_single_conflict_dialog(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let path = temp_test_path("fulgur_conflict_repeated.txt");
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.modified = true;
+                            editor_tab.content.update(cx, |input_state, cx| {
+                                input_state.set_value("local-edits", window, cx);
+                            });
+                        }
+                    });
+                this.active_tab_id = this.tabs.first().map(|t| t.read(cx).id());
+
+                for _ in 0..3 {
+                    // Backdate the debounce marker so every iteration counts as
+                    // a genuinely separate external write rather than a burst.
+                    let stale = Instant::now()
+                        .checked_sub(Duration::from_secs(1))
+                        .expect("instant subtraction should not underflow");
+                    this.file_watch_state
+                        .last_file_events
+                        .insert(path.clone(), stale);
+                    this.handle_file_watch_event(
+                        FileWatchEvent::Modified(path.clone()),
+                        window,
+                        cx,
+                    );
+                }
+
+                assert_eq!(
+                    this.file_watch_state.open_conflict_dialogs.len(),
+                    1,
+                    "repeated external writes must not stack conflict dialogs"
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "known upstream a11y panic on gpui TestWindow"
+    )]
     fn test_handle_file_watch_event_modified_inactive_tab_defers_until_activation(
         cx: &mut TestAppContext,
     ) {
