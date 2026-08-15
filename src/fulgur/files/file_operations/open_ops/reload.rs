@@ -76,6 +76,10 @@ impl Fulgur {
             let Some(editor_tab) = tab.as_editor_mut() else {
                 return;
             };
+            let (cursor, scroll_offset) = {
+                let input_state = editor_tab.content.read(cx);
+                (input_state.cursor(), input_state.scroll_offset())
+            };
             editor_tab.content.update(cx, |input_state, cx| {
                 input_state.set_value(&decoded.content, window, cx);
             });
@@ -85,6 +89,12 @@ impl Fulgur {
             editor_tab.modified = false;
             editor_tab.update_file_tooltip_cache(decoded.byte_len);
             tab.update_language(window, cx, &settings);
+            if let Some(editor_tab) = tab.as_editor_mut() {
+                editor_tab.content.update(cx, |input_state, cx| {
+                    input_state.set_selected_range(cursor..cursor, cx);
+                    input_state.set_scroll_offset(scroll_offset, cx);
+                });
+            }
             log::debug!("Tab reloaded successfully from disk: {}", path.display());
         });
     }
@@ -99,6 +109,8 @@ mod tests {
     use crate::fulgur::files::file_operations::test_helpers::setup_fulgur;
     #[cfg(feature = "gpui-test-support")]
     use gpui::TestAppContext;
+    #[cfg(feature = "gpui-test-support")]
+    use std::fmt::Write as _;
     #[cfg(feature = "gpui-test-support")]
     use tempfile::TempDir;
 
@@ -153,6 +165,74 @@ mod tests {
                     .and_then(|t| t.read(cx).as_editor())
                     .is_none_or(|e| e.modified);
                 assert!(!modified, "tab should not be marked modified after reload");
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_reload_tab_from_disk_keeps_caret_and_input_state(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("reload_position.txt");
+        let numbered_lines = |suffix: &str| {
+            (0..200).fold(String::new(), |mut acc, i| {
+                writeln!(acc, "line {i}{suffix}").expect("writing to a String cannot fail");
+                acc
+            })
+        };
+        let initial = numbered_lines("");
+        std::fs::write(&path, &initial).expect("failed to write initial file");
+
+        let caret = initial
+            .find("line 120")
+            .expect("expected the anchor line in the fixture");
+
+        let input_before = visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let tab_entity = this.tabs.last().expect("expected at least one tab").clone();
+                tab_entity.update(cx, |tab, cx| {
+                    let editor_tab = tab.as_editor_mut().expect("expected an editor tab");
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.content.update(cx, |input_state, cx| {
+                        input_state.set_value(&initial, window, cx);
+                        input_state.set_selected_range(caret..caret, cx);
+                    });
+                    editor_tab.set_original_content_from_str(&initial);
+                    editor_tab.modified = false;
+                    editor_tab.content.entity_id()
+                })
+            })
+        });
+
+        // Rewrite the file with the same shape, as an external editor would.
+        let updated = numbered_lines(" edited");
+        std::fs::write(&path, &updated).expect("failed to overwrite file");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.reload_tab_from_disk(0, window, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let editor_tab = this
+                    .tabs
+                    .first()
+                    .and_then(|t| t.read(cx).as_editor())
+                    .expect("expected an editor tab");
+                assert_eq!(
+                    editor_tab.content.entity_id(),
+                    input_before,
+                    "an unchanged language must not rebuild the input state, which would drop the scroll offset"
+                );
+                assert_eq!(
+                    editor_tab.content.read(cx).cursor(),
+                    caret,
+                    "the caret must survive an external edit instead of snapping back to the top"
+                );
             });
         });
     }
