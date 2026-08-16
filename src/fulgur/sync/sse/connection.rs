@@ -117,6 +117,30 @@ fn retry_status(consecutive_failures: u32) -> Option<SynchronizationStatus> {
     (consecutive_failures > TRANSIENT_RETRY_ATTEMPTS).then_some(SynchronizationStatus::Disconnected)
 }
 
+/// Status Fulgurant answers with while this device's previous SSE stream still
+/// holds a slot against the per-device connection cap.
+const SSE_SLOT_BUSY_STATUS: u16 = 429;
+
+/// Delay between attempts while the previous stream is still releasing its slot.
+const SSE_SLOT_BUSY_RETRY_DELAY: Duration = Duration::from_millis(500);
+
+/// Attempts spent at the fast handoff cadence before the standard backoff takes over.
+const SSE_SLOT_BUSY_FAST_ATTEMPTS: u32 = 10;
+
+/// Decide whether a failed connect is a slot handoff worth retrying quickly.
+///
+/// ### Arguments
+/// - `error`: The error the connect attempt failed with.
+/// - `attempts_so_far`: Fast handoff attempts already spent since the last success.
+///
+/// ### Returns
+/// - `true`: The previous stream is still releasing its slot; retry quickly.
+/// - `false`: Treat the attempt as a real failure and back off.
+fn is_handoff_retry(error: &ureq::Error, attempts_so_far: u32) -> bool {
+    matches!(error, ureq::Error::StatusCode(SSE_SLOT_BUSY_STATUS))
+        && attempts_so_far < SSE_SLOT_BUSY_FAST_ATTEMPTS
+}
+
 /// Error type for line reading with shutdown support
 enum ReadError {
     /// I/O error during reading
@@ -342,6 +366,7 @@ pub fn connect_sse(
         .spawn(move || {
         let mut backoff = BackoffCalculator::default_settings();
         let mut consecutive_failures: u32 = 0;
+        let mut handoff_attempts: u32 = 0;
 
         loop {
             if shutdown_flag.load(Ordering::Relaxed) {
@@ -377,22 +402,34 @@ pub fn connect_sse(
             {
                 Ok(resp) => resp,
                 Err(e) => {
-                    log::error!("SSE connection failed: {e}");
-                    consecutive_failures = consecutive_failures.saturating_add(1);
-                    if let Some(status) = retry_status(consecutive_failures) {
-                        publish_connection_status(
-                            &shutdown_flag,
-                            &sync_server_connection_status,
-                            &event_tx,
-                            status,
+                    // A slot handoff is not a failed connection: the profile is
+                    // simply waiting for the stream it replaces to be torn down,
+                    // so it must neither be reported as an error nor counted
+                    // towards the disconnected threshold.
+                    let delay = if is_handoff_retry(&e, handoff_attempts) {
+                        handoff_attempts = handoff_attempts.saturating_add(1);
+                        log::info!(
+                            "SSE slot still held by the previous stream, retrying in {SSE_SLOT_BUSY_RETRY_DELAY:?}"
                         );
-                    }
-                    event_tx.unbounded_send(SseEvent::Error(e.to_string())).ok();
+                        SSE_SLOT_BUSY_RETRY_DELAY
+                    } else {
+                        log::error!("SSE connection failed: {e}");
+                        consecutive_failures = consecutive_failures.saturating_add(1);
+                        if let Some(status) = retry_status(consecutive_failures) {
+                            publish_connection_status(
+                                &shutdown_flag,
+                                &sync_server_connection_status,
+                                &event_tx,
+                                status,
+                            );
+                        }
+                        event_tx.unbounded_send(SseEvent::Error(e.to_string())).ok();
+                        backoff.record_failure()
+                    };
                     if shutdown_flag.load(Ordering::Relaxed) {
                         log::info!("SSE connection shutdown requested, stopping...");
                         break;
                     }
-                    let delay = backoff.record_failure();
                     log::info!("Retrying SSE connection after {delay:?}");
                     if interruptible_sleep(delay, || shutdown_flag.load(Ordering::Relaxed)) {
                         log::info!("SSE connection shutdown requested during backoff, stopping...");
@@ -442,6 +479,7 @@ pub fn connect_sse(
             log::info!("SSE connection established");
             backoff.record_success();
             consecutive_failures = 0;
+            handoff_attempts = 0;
             // Catch up on shares that arrived while the connection was down. The
             // server does not replay doorbell events for the downtime window.
             fetch_pending_shares_into(
@@ -556,9 +594,9 @@ pub fn connect_sse(
 #[cfg(test)]
 mod tests {
     use super::{
-        Arc, AtomicBool, Mutex, Ordering, SseEvent, SynchronizationStatus,
-        TRANSIENT_RETRY_ATTEMPTS, publish_connection_status, retry_status,
-        share_payload_exceeds_limit,
+        Arc, AtomicBool, Mutex, Ordering, SSE_SLOT_BUSY_FAST_ATTEMPTS, SSE_SLOT_BUSY_STATUS,
+        SseEvent, SynchronizationStatus, TRANSIENT_RETRY_ATTEMPTS, is_handoff_retry,
+        publish_connection_status, retry_status, share_payload_exceeds_limit,
     };
     use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 
@@ -638,6 +676,31 @@ mod tests {
             Some(SynchronizationStatus::Disconnected),
             "retries that stop looking transient must report the profile as down"
         );
+    }
+
+    #[test]
+    fn a_busy_slot_is_retried_on_the_fast_cadence() {
+        // The server answers 429 while the stream being replaced still counts
+        // against the per-device cap. Backing off exponentially there would
+        // overshoot a release that happens within a moment.
+        let busy = ureq::Error::StatusCode(SSE_SLOT_BUSY_STATUS);
+        assert!(is_handoff_retry(&busy, 0));
+        assert!(is_handoff_retry(&busy, SSE_SLOT_BUSY_FAST_ATTEMPTS - 1));
+    }
+
+    #[test]
+    fn a_slot_that_never_frees_falls_back_to_backoff() {
+        let busy = ureq::Error::StatusCode(SSE_SLOT_BUSY_STATUS);
+        assert!(
+            !is_handoff_retry(&busy, SSE_SLOT_BUSY_FAST_ATTEMPTS),
+            "the fast cadence must be bounded so a stuck slot stops being polled"
+        );
+    }
+
+    #[test]
+    fn a_real_failure_is_never_treated_as_a_handoff() {
+        assert!(!is_handoff_retry(&ureq::Error::StatusCode(500), 0));
+        assert!(!is_handoff_retry(&ureq::Error::HostNotFound, 0));
     }
 
     #[test]
