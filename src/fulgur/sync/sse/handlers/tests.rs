@@ -49,6 +49,20 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
     (fulgur, visual_cx)
 }
 
+/// Install the globals event routing needs, without opening a window.
+///
+/// ### Arguments
+/// - `cx`: The test application context to install the globals into.
+fn setup_globals(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        let mut settings = Settings::new();
+        settings.editor_settings.watch_files = false;
+        let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+        cx.set_global(SharedAppState::new(settings, pending_files, None, None));
+        cx.set_global(WindowManager::new());
+    });
+}
+
 /// Build a minimal valid `ShareNotification` for use in tests.
 fn make_share_notification(share_id: &str) -> ShareNotification {
     ShareNotification {
@@ -169,39 +183,96 @@ fn test_handle_heartbeat_when_connected_keeps_connected_status(cx: &mut TestAppC
 
 // --- handle_sse_event_for_profile: debounce ---
 
+/// Read the instant the debounce window was last opened for the test profile.
+fn debounce_window_opened_at(cx: &gpui::App) -> Option<Instant> {
+    Fulgur::shared_state(cx)
+        .sync_state_for(&test_profile_id())
+        .sse
+        .lock()
+        .last_sse_event
+}
+
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
-fn test_handle_sse_event_debounce_ignores_rapid_second_event(cx: &mut TestAppContext) {
-    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|_window, cx| {
+fn test_share_doorbell_debounce_collapses_a_rapid_second_doorbell(cx: &mut TestAppContext) {
+    // Collapsing doorbell storms is what the debounce exists for, and the only
+    // event it may apply to.
+    setup_globals(cx);
+    cx.update(|cx| {
         Fulgur::handle_sse_event_for_profile(
             &test_profile_id(),
-            SseEvent::Heartbeat {
-                timestamp: "ts1".to_string(),
-            },
+            SseEvent::ShareAvailable(make_share_notification("share-1")),
+            cx,
+        );
+        let window_opened_at = debounce_window_opened_at(cx);
+        assert!(
+            window_opened_at.is_some(),
+            "a share doorbell must open the debounce window"
+        );
+
+        Fulgur::handle_sse_event_for_profile(
+            &test_profile_id(),
+            SseEvent::ShareAvailable(make_share_notification("share-2")),
+            cx,
+        );
+        assert_eq!(
+            debounce_window_opened_at(cx),
+            window_opened_at,
+            "a second doorbell inside the window must be collapsed into the first"
+        );
+    });
+}
+
+#[gpui::test]
+fn test_a_heartbeat_is_never_swallowed_by_the_debounce(cx: &mut TestAppContext) {
+    // A heartbeat is the profile's liveness signal, so honouring it must not
+    // depend on how recently an unrelated event happened to arrive.
+    setup_globals(cx);
+    cx.update(|cx| {
+        Fulgur::handle_sse_event_for_profile(
+            &test_profile_id(),
+            SseEvent::ShareAvailable(make_share_notification("share-1")),
             cx,
         );
         *Fulgur::shared_state(cx)
             .primary_sync_state()
             .connection_status
             .lock() = SynchronizationStatus::Disconnected;
+
+        // Immediately after the doorbell, well inside the debounce window.
         Fulgur::handle_sse_event_for_profile(
             &test_profile_id(),
             SseEvent::Heartbeat {
-                timestamp: "ts2".to_string(),
+                timestamp: "ts".to_string(),
             },
             cx,
         );
         assert!(
-            !Fulgur::shared_state(cx)
+            Fulgur::shared_state(cx)
                 .primary_sync_state()
                 .connection_status
                 .lock()
                 .is_connected(),
-            "Second event within the 500ms debounce window must be ignored"
+            "a heartbeat inside the debounce window must still restore Connected"
+        );
+    });
+}
+
+#[gpui::test]
+fn test_pending_shares_snapshot_does_not_consume_the_debounce_window(cx: &mut TestAppContext) {
+    // The server sends the pending-shares snapshot and a heartbeat in the same
+    // burst after every reconnect. Sharing one window between them meant one of
+    // the two was always silently discarded.
+    setup_globals(cx);
+    cx.update(|cx| {
+        Fulgur::handle_sse_event_for_profile(
+            &test_profile_id(),
+            SseEvent::PendingSharesSnapshot,
+            cx,
+        );
+        assert_eq!(
+            debounce_window_opened_at(cx),
+            None,
+            "the snapshot must not open a debounce window the heartbeat then falls into"
         );
     });
 }
@@ -366,31 +437,26 @@ fn test_sse_consumer_spawn_is_idempotent(cx: &mut TestAppContext) {
 // --- Connection status changes reaching the UI ---
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_status_change_is_not_swallowed_by_the_event_debounce(cx: &mut TestAppContext) {
     // The worker writes the status into an Arc<Mutex<_>> gpui cannot observe,
     // so the status-change event is the only thing that repaints the windows.
-    // The 500ms debounce that guards heartbeat and share storms must not apply
-    // to it, otherwise a reconnect leaves a stale status on screen.
-    let (_fulgur, mut visual_cx) = setup_fulgur(cx);
-    visual_cx.update(|_window, cx| {
+    // The 500ms debounce that guards share storms must not apply to it,
+    // otherwise a reconnect leaves a stale status on screen.
+    setup_globals(cx);
+    cx.update(|cx| {
+        // Open the debounce window with the one event that owns it, so the
+        // status change below really is arriving inside a live window.
         Fulgur::handle_sse_event_for_profile(
             &test_profile_id(),
-            SseEvent::Heartbeat {
-                timestamp: "ts".to_string(),
-            },
+            SseEvent::ShareAvailable(make_share_notification("share-1")),
             cx,
         );
-        let last_event_before = Fulgur::shared_state(cx)
-            .sync_state_for(&test_profile_id())
-            .sse
-            .lock()
-            .last_sse_event;
+        let window_opened_at = debounce_window_opened_at(cx);
+        assert!(
+            window_opened_at.is_some(),
+            "the doorbell must have opened a debounce window for this test to mean anything"
+        );
 
-        // Immediately after the heartbeat, well inside the debounce window.
         Fulgur::handle_sse_event_for_profile(
             &test_profile_id(),
             SseEvent::ConnectionStatusChanged,
@@ -398,12 +464,8 @@ fn test_status_change_is_not_swallowed_by_the_event_debounce(cx: &mut TestAppCon
         );
 
         assert_eq!(
-            Fulgur::shared_state(cx)
-                .sync_state_for(&test_profile_id())
-                .sse
-                .lock()
-                .last_sse_event,
-            last_event_before,
+            debounce_window_opened_at(cx),
+            window_opened_at,
             "a status change must bypass the debounce instead of consuming its window"
         );
     });
