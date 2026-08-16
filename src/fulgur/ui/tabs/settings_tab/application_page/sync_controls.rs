@@ -117,7 +117,11 @@ fn handle_master_toggle(entity: &Entity<Fulgur>, value: bool, cx: &mut App) {
             .map(|p| p.id.clone())
             .collect();
         for profile_id in &ids {
-            this.restart_sse_connection_for(profile_id, cx);
+            if value {
+                this.restart_sse_connection_for(profile_id, cx);
+            } else {
+                this.stop_sse_connection_for(profile_id, cx);
+            }
         }
         ids
     });

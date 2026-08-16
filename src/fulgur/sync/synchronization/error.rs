@@ -132,7 +132,7 @@ impl fmt::Display for SynchronizationError {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SynchronizationStatus {
     Connected,
     Connecting,

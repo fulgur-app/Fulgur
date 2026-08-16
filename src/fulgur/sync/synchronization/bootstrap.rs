@@ -332,5 +332,9 @@ pub fn set_sync_server_connection_status(
     sync_server_connection_status: &Arc<Mutex<SynchronizationStatus>>,
     new_status: SynchronizationStatus,
 ) {
-    *sync_server_connection_status.lock() = new_status;
+    let mut status = sync_server_connection_status.lock();
+    if *status != new_status {
+        log::debug!("Sync status {:?} -> {new_status:?}", *status);
+    }
+    *status = new_status;
 }

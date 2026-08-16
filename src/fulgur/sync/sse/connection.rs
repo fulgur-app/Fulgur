@@ -75,6 +75,48 @@ pub struct SseShareState {
     pub server_version: Arc<Mutex<Option<String>>>,
 }
 
+/// Publish a connection status and wake the windows displaying it.
+///
+/// ### Arguments
+/// - `shutdown_flag`: The worker's shutdown flag.
+/// - `connection_status`: The profile's shared connection status.
+/// - `event_tx`: Channel carrying the change to the UI-thread consumer.
+/// - `status`: The status to publish.
+fn publish_connection_status(
+    shutdown_flag: &AtomicBool,
+    connection_status: &Arc<Mutex<SynchronizationStatus>>,
+    event_tx: &UnboundedSender<SseEvent>,
+    status: SynchronizationStatus,
+) {
+    if shutdown_flag.load(Ordering::Relaxed) {
+        return;
+    }
+    if *connection_status.lock() == status {
+        return;
+    }
+    set_sync_server_connection_status(connection_status, status);
+    event_tx
+        .unbounded_send(SseEvent::ConnectionStatusChanged)
+        .ok();
+}
+
+/// Consecutive failed attempts still reported as "connecting" before a profile
+/// is shown as disconnected.
+const TRANSIENT_RETRY_ATTEMPTS: u32 = 5;
+
+/// Resolve the status to publish after a failed attempt that will be retried.
+///
+/// ### Arguments
+/// - `consecutive_failures`: Failed attempts since the last successful connect.
+///
+/// ### Returns
+/// - `None`: The outage still looks transient; leave the status as it is.
+/// - `Some(SynchronizationStatus::Disconnected)`: Retries have gone on long
+///   enough that the profile should be reported as down.
+fn retry_status(consecutive_failures: u32) -> Option<SynchronizationStatus> {
+    (consecutive_failures > TRANSIENT_RETRY_ATTEMPTS).then_some(SynchronizationStatus::Disconnected)
+}
+
 /// Error type for line reading with shutdown support
 enum ReadError {
     /// I/O error during reading
@@ -299,6 +341,7 @@ pub fn connect_sse(
         .name(format!("fulgur-sse-{}", profile.name))
         .spawn(move || {
         let mut backoff = BackoffCalculator::default_settings();
+        let mut consecutive_failures: u32 = 0;
 
         loop {
             if shutdown_flag.load(Ordering::Relaxed) {
@@ -310,8 +353,10 @@ pub fn connect_sse(
                 Ok(t) => t,
                 Err(e) => {
                     log::error!("Failed to get valid token for SSE: {e}");
-                    set_sync_server_connection_status(
+                    publish_connection_status(
+                        &shutdown_flag,
                         &sync_server_connection_status,
+                        &event_tx,
                         SynchronizationStatus::AuthenticationFailed,
                     );
                     let delay = backoff.record_failure();
@@ -333,10 +378,15 @@ pub fn connect_sse(
                 Ok(resp) => resp,
                 Err(e) => {
                     log::error!("SSE connection failed: {e}");
-                    set_sync_server_connection_status(
-                        &sync_server_connection_status,
-                        SynchronizationStatus::Disconnected,
-                    );
+                    consecutive_failures = consecutive_failures.saturating_add(1);
+                    if let Some(status) = retry_status(consecutive_failures) {
+                        publish_connection_status(
+                            &shutdown_flag,
+                            &sync_server_connection_status,
+                            &event_tx,
+                            status,
+                        );
+                    }
                     event_tx.unbounded_send(SseEvent::Error(e.to_string())).ok();
                     if shutdown_flag.load(Ordering::Relaxed) {
                         log::info!("SSE connection shutdown requested, stopping...");
@@ -366,8 +416,10 @@ pub fn connect_sse(
                     "Server advertises Fulgurant version {}: {error}",
                     version_header.as_deref().unwrap_or("<none>")
                 );
-                set_sync_server_connection_status(
+                publish_connection_status(
+                    &shutdown_flag,
                     &sync_server_connection_status,
+                    &event_tx,
                     SynchronizationStatus::from_error(&error),
                 );
                 event_tx
@@ -381,12 +433,15 @@ pub fn connect_sse(
                 }
                 continue;
             }
-            set_sync_server_connection_status(
+            publish_connection_status(
+                &shutdown_flag,
                 &sync_server_connection_status,
+                &event_tx,
                 SynchronizationStatus::Connected,
             );
             log::info!("SSE connection established");
             backoff.record_success();
+            consecutive_failures = 0;
             // Catch up on shares that arrived while the connection was down. The
             // server does not replay doorbell events for the downtime window.
             fetch_pending_shares_into(
@@ -460,11 +515,9 @@ pub fn connect_sse(
                         break;
                     }
                     Err(ReadError::Io(e)) => {
+                        // The shared "connection closed, reconnecting" path
+                        // below publishes the status for every stream drop.
                         log::error!("SSE stream error: {e}");
-                        set_sync_server_connection_status(
-                            &sync_server_connection_status,
-                            SynchronizationStatus::Disconnected,
-                        );
                         event_tx.unbounded_send(SseEvent::Error(e.to_string())).ok();
                         break;
                     }
@@ -479,11 +532,16 @@ pub fn connect_sse(
                 break;
             }
             let delay = backoff.record_failure();
+            consecutive_failures = consecutive_failures.saturating_add(1);
             log::warn!("SSE connection closed, reconnecting after {delay:?}");
-            set_sync_server_connection_status(
-                &sync_server_connection_status,
-                SynchronizationStatus::Disconnected,
-            );
+            if let Some(status) = retry_status(consecutive_failures) {
+                publish_connection_status(
+                    &shutdown_flag,
+                    &sync_server_connection_status,
+                    &event_tx,
+                    status,
+                );
+            }
             if interruptible_sleep(delay, || shutdown_flag.load(Ordering::Relaxed)) {
                 log::info!("SSE connection shutdown requested during backoff, stopping...");
                 break;
@@ -497,7 +555,90 @@ pub fn connect_sse(
 
 #[cfg(test)]
 mod tests {
-    use super::share_payload_exceeds_limit;
+    use super::{
+        Arc, AtomicBool, Mutex, Ordering, SseEvent, SynchronizationStatus,
+        TRANSIENT_RETRY_ATTEMPTS, publish_connection_status, retry_status,
+        share_payload_exceeds_limit,
+    };
+    use futures::channel::mpsc::{UnboundedReceiver, unbounded};
+
+    /// Count the `ConnectionStatusChanged` events queued on a receiver.
+    fn queued_status_changes(events: &mut UnboundedReceiver<SseEvent>) -> usize {
+        let mut count = 0;
+        while let Ok(event) = events.try_recv() {
+            if matches!(event, SseEvent::ConnectionStatusChanged) {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    #[test]
+    fn a_running_worker_publishes_its_status_and_wakes_the_ui() {
+        let shutdown = AtomicBool::new(false);
+        let status = Arc::new(Mutex::new(SynchronizationStatus::Connecting));
+        let (tx, mut rx) = unbounded();
+        publish_connection_status(&shutdown, &status, &tx, SynchronizationStatus::Connected);
+        assert_eq!(*status.lock(), SynchronizationStatus::Connected);
+        assert_eq!(
+            queued_status_changes(&mut rx),
+            1,
+            "a status change must be announced so the windows repaint"
+        );
+    }
+
+    #[test]
+    fn republishing_the_same_status_does_not_wake_the_ui() {
+        let shutdown = AtomicBool::new(false);
+        let status = Arc::new(Mutex::new(SynchronizationStatus::Disconnected));
+        let (tx, mut rx) = unbounded();
+        publish_connection_status(&shutdown, &status, &tx, SynchronizationStatus::Disconnected);
+        assert_eq!(
+            queued_status_changes(&mut rx),
+            0,
+            "a reconnect loop must not wake the UI on every retry"
+        );
+    }
+
+    #[test]
+    fn a_retiring_worker_cannot_overwrite_its_replacement() {
+        // The replacement worker has published Connected on the shared cell;
+        // the worker being retired must not downgrade it on its way out.
+        let shutdown = AtomicBool::new(false);
+        let status = Arc::new(Mutex::new(SynchronizationStatus::Connected));
+        let (tx, mut rx) = unbounded();
+        shutdown.store(true, Ordering::Relaxed);
+        publish_connection_status(&shutdown, &status, &tx, SynchronizationStatus::Disconnected);
+        assert_eq!(
+            *status.lock(),
+            SynchronizationStatus::Connected,
+            "a worker asked to stop must not write to the shared status cell"
+        );
+        assert_eq!(queued_status_changes(&mut rx), 0);
+    }
+
+    #[test]
+    fn a_reconnect_in_progress_leaves_the_status_alone() {
+        // The profile is usable once the initial synchronization succeeds, so a
+        // stream reconnecting in the background must not pull it out of
+        // Connected and contradict the notification the user just saw.
+        for attempt in 1..=TRANSIENT_RETRY_ATTEMPTS {
+            assert_eq!(
+                retry_status(attempt),
+                None,
+                "attempt {attempt} is still within the transient window"
+            );
+        }
+    }
+
+    #[test]
+    fn a_sustained_outage_reads_as_disconnected() {
+        assert_eq!(
+            retry_status(TRANSIENT_RETRY_ATTEMPTS + 1),
+            Some(SynchronizationStatus::Disconnected),
+            "retries that stop looking transient must report the profile as down"
+        );
+    }
 
     #[test]
     fn unlimited_server_never_drops() {

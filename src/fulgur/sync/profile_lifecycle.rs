@@ -4,6 +4,7 @@ use crate::fulgur::{
     utils::crypto_helper::{
         ensure_profile_keypair, save_device_api_key_to_keychain, save_private_key_to_keychain,
     },
+    utils::worker::dispose_off_thread,
 };
 use gpui::Context;
 
@@ -132,11 +133,7 @@ impl Fulgur {
             .worker
             .take();
         if let Some(worker) = sse_worker {
-            worker.signal_shutdown();
-            // Drop off the UI thread: Worker::drop joins with a bounded timeout.
-            cx.background_executor()
-                .spawn(async move { drop(worker) })
-                .detach();
+            dispose_off_thread(worker, cx);
         }
         if let Err(e) = save_private_key_to_keychain(profile_id, None) {
             log::warn!("Failed to remove private key for profile '{profile_id}': {e}");
