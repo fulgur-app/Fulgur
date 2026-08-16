@@ -1,6 +1,6 @@
 use crate::fulgur::themes::{BundledThemes, themes_directory_path};
 use gpui::SharedString;
-use gpui_component::scroll::ScrollbarShow;
+use gpui_component::scroll::ScrollbarMode;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 
@@ -263,7 +263,7 @@ pub struct AppSettings {
     pub debug_mode: bool,
     pub theme: SharedString,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scrollbar_show: Option<ScrollbarShow>,
+    pub scrollbar_show: Option<ScrollbarMode>,
     pub synchronization_settings: SynchronizationSettings,
     /// How a tab's color tag is displayed in the tab bar.
     #[serde(default)]

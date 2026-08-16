@@ -1,5 +1,5 @@
 use gpui::{Context, Entity, Window};
-use gpui_component::input::InputState;
+use gpui_component::input::EditorState;
 
 use super::SearchBar;
 use super::matching::apply_replacements;
@@ -13,7 +13,7 @@ impl SearchBar {
     /// - `cx`: The search bar context
     fn force_perform_search(
         &mut self,
-        content: Option<Entity<InputState>>,
+        content: Option<Entity<EditorState>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -30,7 +30,7 @@ impl SearchBar {
     /// - `cx`: The search bar context
     pub(super) fn replace_current(
         &mut self,
-        content: Option<Entity<InputState>>,
+        content: Option<Entity<EditorState>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -82,7 +82,7 @@ impl SearchBar {
     /// - `cx`: The search bar context
     pub(super) fn replace_all(
         &mut self,
-        content: Option<Entity<InputState>>,
+        content: Option<Entity<EditorState>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

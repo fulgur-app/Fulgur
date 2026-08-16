@@ -224,7 +224,6 @@ fn confirm_http_save(
                     .ok_text("Continue")
                     .ok_variant(ButtonVariant::Danger),
             )
-            .overlay_closable(false)
             .close_button(false)
             .child(
                 v_flex()
@@ -299,7 +298,6 @@ pub(super) fn confirm_delete_profile(
                     .ok_text("Delete")
                     .ok_variant(ButtonVariant::Danger),
             )
-            .overlay_closable(false)
             .close_button(false)
             .child(
                 v_flex()

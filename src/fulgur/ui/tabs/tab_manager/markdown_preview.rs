@@ -6,7 +6,7 @@ use crate::fulgur::{
     ui::tabs::{markdown_preview_tab::MarkdownPreviewTab, tab::TabId},
 };
 use gpui::{App, AppContext, Context, Entity, SharedString, Window};
-use gpui_component::{input::InputState, text::TextViewState};
+use gpui_component::{input::EditorState, text::TextViewState};
 
 impl Fulgur {
     /// Build a Markdown preview tab bound to a source editor tab
@@ -23,7 +23,7 @@ impl Fulgur {
         &mut self,
         source_tab_id: TabId,
         source_title: &str,
-        content: Entity<InputState>,
+        content: Entity<EditorState>,
         cx: &mut Context<Self>,
     ) -> Tab {
         let view_state = cx.new(|cx| TextViewState::markdown("", cx));
@@ -43,13 +43,13 @@ impl Fulgur {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some((TabId, SharedString, Entity<InputState>))`: The tab is a Markdown editor tab eligible for a preview
+    /// - `Some((TabId, SharedString, Entity<EditorState>))`: The tab is a Markdown editor tab eligible for a preview
     /// - `None`: The position holds no tab, a non-editor tab, a large file, or a non-Markdown language
     fn markdown_preview_source_at(
         &self,
         tab_index: usize,
         cx: &App,
-    ) -> Option<(TabId, SharedString, Entity<InputState>)> {
+    ) -> Option<(TabId, SharedString, Entity<EditorState>)> {
         match self.tabs.get(tab_index).map(|tab| tab.read(cx)) {
             Some(Tab::Editor(editor_tab))
                 if !editor_tab.large_file

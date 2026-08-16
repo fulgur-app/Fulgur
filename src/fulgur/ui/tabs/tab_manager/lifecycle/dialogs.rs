@@ -45,7 +45,6 @@ impl Fulgur {
                         "Are you sure you want to close this tab? Your changes will be lost.",
                     ),
                 )
-                .overlay_closable(false)
                 .close_button(false)
         });
     }
@@ -109,7 +108,6 @@ impl Fulgur {
                             .text_size(px(14.))
                             .child("Are you sure you want to quit Fulgur?"),
                     )
-                    .overlay_closable(false)
                     .close_button(false)
             });
             return;

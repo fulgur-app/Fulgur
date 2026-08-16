@@ -842,7 +842,7 @@ mod gpui_settings_propagation_tests {
         });
         cx.update(|cx| {
             fulgur.update(cx, |this, cx| {
-                // Toggling highlight_colors forces an InputState rebuild, which is
+                // Toggling highlight_colors forces an EditorState rebuild, which is
                 // observable from outside via the content entity id. The rebuild
                 // must happen through the publisher's own global observer.
                 this.settings.editor_settings.highlight_colors =

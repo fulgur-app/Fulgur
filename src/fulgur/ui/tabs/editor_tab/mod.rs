@@ -13,7 +13,7 @@ pub use location::TabLocation;
 pub use navigation::{Jump, extract_line_number};
 
 use gpui::{App, AppContext, Context, Entity, SharedString, Window};
-use gpui_component::input::{InputState, Rope, TabSize};
+use gpui_component::input::{EditorState, InputState, Rope, TabSize};
 use gpui_component::table::TableState;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -51,7 +51,7 @@ pub enum CsvViewMode {
 pub struct EditorTab {
     pub id: TabId,
     pub title: SharedString,
-    pub content: Entity<InputState>,
+    pub content: Entity<EditorState>,
     pub location: TabLocation,
     pub modified: bool,
     pub original_content_hash: u64,
@@ -84,7 +84,7 @@ pub struct EditorTab {
     /// Dedicated read-only display buffer for the tailed log, created lazily when
     /// log view first activates. Kept separate from the editable `content` so the
     /// line cap never truncates the saveable buffer.
-    pub log_content: Option<Entity<InputState>>,
+    pub log_content: Option<Entity<EditorState>>,
     /// Subscription to the content entity keeping `modified` current. Owned by
     /// the tab entity, attached by `Tab::attach_content_subscription`, and
     /// replaced whenever the content entity is swapped.
@@ -258,26 +258,26 @@ pub struct FromFileParams {
     pub is_modified: bool,
 }
 
-/// Create a new input state with syntax highlighting
+/// Create a new editor state with syntax highlighting
 ///
 /// ### Arguments
-/// - `window`: The window to create the input state in
+/// - `window`: The window to create the editor state in
 /// - `cx`: The application context
 /// - `language_name`: The language registry name for syntax highlighting
-/// - `content`: The content of the input state
-/// - `settings`: The settings for the input state
+/// - `content`: The content of the editor state
+/// - `settings`: The settings for the editor state
 /// - `large_file`: Whether to open in large-file mode
 ///
 /// ### Returns
-/// - `InputState`: The new input state
+/// - `EditorState`: The new editor state
 fn make_input_state(
     window: &mut Window,
-    cx: &mut Context<InputState>,
+    cx: &mut Context<EditorState>,
     language_name: &str,
     content: Option<String>,
     settings: &EditorSettings,
     large_file: bool,
-) -> InputState {
+) -> EditorState {
     // In large-file mode, substitute a language with no registered grammar so
     // the background tree-sitter parser short-circuits and never runs.
     let language_name = if large_file {
@@ -285,8 +285,8 @@ fn make_input_state(
     } else {
         language_name
     };
-    let mut state = InputState::new(window, cx)
-        .code_editor(language_name.to_string())
+    let mut state = EditorState::new(window, cx)
+        .language(language_name.to_string())
         .line_number(settings.show_line_numbers)
         .indent_guides(settings.show_indent_guides && !large_file)
         .tab_size(TabSize {
@@ -299,7 +299,7 @@ fn make_input_state(
         .default_value(content.unwrap_or_default());
 
     if settings.highlight_colors && !large_file {
-        state.lsp.document_color_provider =
+        state.lsp_mut().document_color_provider =
             Some(Rc::new(hex_color_provider::ColorHighlightProvider));
     }
 

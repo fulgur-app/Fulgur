@@ -6,7 +6,7 @@ use gpui::{
 };
 use gpui_component::{
     color_picker::{ColorPickerEvent, ColorPickerState},
-    input::{InputEvent, InputState},
+    input::{EditorState, InputEvent, InputState},
 };
 
 use super::color::{format_hsla, format_oklch, parse_hex, parse_hsla, parse_oklch};
@@ -220,9 +220,9 @@ impl ColorPickerBar {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some(Entity<InputState>)`: The active editor tab's content
+    /// - `Some(Entity<EditorState>)`: The active editor tab's content
     /// - `None`: If the window is gone or the active tab is not an editor
-    fn active_editor_content(&self, cx: &App) -> Option<Entity<InputState>> {
+    fn active_editor_content(&self, cx: &App) -> Option<Entity<EditorState>> {
         let fulgur = self.fulgur.upgrade()?;
         fulgur
             .read(cx)

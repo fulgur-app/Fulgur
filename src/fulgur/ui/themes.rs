@@ -43,7 +43,7 @@ pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut Ap
         log::error!("Failed to watch themes directory: {err}");
     }
     if let Some(scrollbar_show) = scrollbar_show {
-        Theme::global_mut(cx).scrollbar_show = scrollbar_show;
+        Theme::global_mut(cx).scrollbar_mode = scrollbar_show;
     }
     cx.refresh_windows();
     cx.on_action(|switch: &SwitchThemeMode, cx| {

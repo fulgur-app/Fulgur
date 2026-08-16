@@ -16,7 +16,7 @@ use gpui::{
     WindowOptions, div,
 };
 #[cfg(feature = "gpui-test-support")]
-use gpui_component::input::InputState;
+use gpui_component::input::EditorState;
 #[cfg(feature = "gpui-test-support")]
 use parking_lot::Mutex;
 #[cfg(feature = "gpui-test-support")]
@@ -93,7 +93,7 @@ fn setup_search(
 ) -> (
     Entity<Fulgur>,
     Entity<SearchBar>,
-    Entity<InputState>,
+    Entity<EditorState>,
     VisualTestContext,
 ) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);

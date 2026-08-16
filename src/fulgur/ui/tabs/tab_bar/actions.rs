@@ -254,7 +254,7 @@ impl Fulgur {
         {
             Theme::global_mut(cx).apply_config(&theme_config);
             self.settings.app_settings.theme = theme_name;
-            self.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_show);
+            self.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_mode);
             let _ = self.update_and_propagate_settings(cx);
         }
         cx.refresh_windows();

@@ -9,7 +9,7 @@ mod tests;
 
 use gpui::{App, Context, Entity, SharedString, Window, px};
 use gpui_component::{
-    input::{InputEvent, InputState},
+    input::{EditorState, InputEvent, InputState},
     table::{Column, TableEvent, TableState},
 };
 
@@ -53,7 +53,7 @@ pub struct CsvTableDelegate {
     rows: Vec<Vec<String>>,
     columns: Vec<Column>,
     delimiter: u8,
-    content: Entity<InputState>,
+    content: Entity<EditorState>,
     dialog_input: Entity<InputState>,
     /// The most recent selection event received via `attach_selection_tracking`.
     last_selection: Option<CsvSelection>,
@@ -68,7 +68,7 @@ impl CsvTableDelegate {
     /// ### Arguments
     /// - `data`: The parsed headers and rows
     /// - `delimiter`: The delimiter to use when serializing back to text
-    /// - `content`: The canonical `InputState` buffer to write edits back into
+    /// - `content`: The canonical `EditorState` buffer to write edits back into
     /// - `dialog_input`: A reusable input entity for the edit dialog
     ///
     /// ### Returns
@@ -76,7 +76,7 @@ impl CsvTableDelegate {
     pub fn new(
         data: CsvData,
         delimiter: u8,
-        content: Entity<InputState>,
+        content: Entity<EditorState>,
         dialog_input: Entity<InputState>,
     ) -> Self {
         let columns = Self::compute_columns(&data.headers, &data.rows);

@@ -1,6 +1,6 @@
 use crate::fulgur::Fulgur;
 use gpui::{App, Context, Entity, Focusable, Window};
-use gpui_component::input::{InputState, Position};
+use gpui_component::input::{EditorState, Position};
 use lsp_types::{Diagnostic, DiagnosticSeverity};
 
 use super::matching::find_matches_with_scratch;
@@ -15,7 +15,7 @@ impl SearchBar {
     /// - `cx`: The search bar context
     pub(super) fn toggle(
         &mut self,
-        content: Option<Entity<InputState>>,
+        content: Option<Entity<EditorState>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -35,7 +35,7 @@ impl SearchBar {
     /// ### Arguments
     /// - `content`: The active editor tab's content to clear highlighting from, if any
     /// - `cx`: The search bar context
-    pub(super) fn close(&mut self, content: Option<Entity<InputState>>, cx: &mut Context<Self>) {
+    pub(super) fn close(&mut self, content: Option<Entity<EditorState>>, cx: &mut Context<Self>) {
         self.show_search = false;
         if let Some(content) = content {
             content.update(cx, |content, _cx| {
@@ -70,7 +70,7 @@ impl SearchBar {
     /// - `cx`: The search bar context
     pub(crate) fn refresh_matches(
         &mut self,
-        content: Option<Entity<InputState>>,
+        content: Option<Entity<EditorState>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -86,7 +86,7 @@ impl SearchBar {
     /// - `cx`: The search bar context
     pub(super) fn perform_search(
         &mut self,
-        content: Option<Entity<InputState>>,
+        content: Option<Entity<EditorState>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -193,7 +193,7 @@ impl SearchBar {
     /// - `cx`: The search bar context
     pub(super) fn search_next(
         &mut self,
-        content: Option<Entity<InputState>>,
+        content: Option<Entity<EditorState>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -219,7 +219,7 @@ impl SearchBar {
     /// - `cx`: The search bar context
     pub(super) fn search_previous(
         &mut self,
-        content: Option<Entity<InputState>>,
+        content: Option<Entity<EditorState>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -249,7 +249,7 @@ impl SearchBar {
     /// - `cx`: The application context
     pub(super) fn highlight_current_match(
         &self,
-        content: &Entity<InputState>,
+        content: &Entity<EditorState>,
         window: &mut Window,
         cx: &mut App,
     ) {

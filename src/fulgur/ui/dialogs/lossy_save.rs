@@ -36,7 +36,6 @@ impl Fulgur {
                         .ok_text("Save as UTF-8")
                         .ok_variant(ButtonVariant::Primary),
                 )
-                .overlay_closable(false)
                 .close_button(false)
                 .child(
                     v_flex()
@@ -95,7 +94,6 @@ impl Fulgur {
                         .ok_text("Save as UTF-8")
                         .ok_variant(ButtonVariant::Primary),
                 )
-                .overlay_closable(false)
                 .close_button(false)
                 .child(
                     v_flex()

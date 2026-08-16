@@ -56,7 +56,6 @@ impl Fulgur {
                         .ok_text("Open")
                         .ok_variant(ButtonVariant::Primary),
                 )
-                .overlay_closable(false)
                 .close_button(false)
                 .child(path_browser)
                 .on_ok(move |_, window: &mut Window, cx| {

@@ -7,7 +7,7 @@ use crate::fulgur::{
 use gpui::{
     App, Context, Entity, Hsla, IntoElement, ParentElement, Render, Styled, WeakEntity, Window, div,
 };
-use gpui_component::{ActiveTheme, button::Button, h_flex, input::InputState};
+use gpui_component::{ActiveTheme, button::Button, h_flex, input::EditorState};
 
 /// Create a markdown bar button
 ///
@@ -53,9 +53,9 @@ impl MarkdownToolbar {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some(Entity<InputState>)`: The active editor tab's content
+    /// - `Some(Entity<EditorState>)`: The active editor tab's content
     /// - `None`: If the window is gone or the active tab is not an editor
-    fn active_editor_content(&self, cx: &App) -> Option<Entity<InputState>> {
+    fn active_editor_content(&self, cx: &App) -> Option<Entity<EditorState>> {
         let fulgur = self.fulgur.upgrade()?;
         fulgur
             .read(cx)
@@ -370,7 +370,7 @@ mod tests {
         Window, WindowOptions, div,
     };
     #[cfg(feature = "gpui-test-support")]
-    use gpui_component::input::{InputState, Position};
+    use gpui_component::input::{EditorState, Position};
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
     #[cfg(feature = "gpui-test-support")]
@@ -484,7 +484,7 @@ mod tests {
     fn active_content_text(
         fulgur: &Entity<Fulgur>,
         cx: &App,
-        read: impl FnOnce(&InputState) -> String,
+        read: impl FnOnce(&EditorState) -> String,
     ) -> String {
         read(
             fulgur

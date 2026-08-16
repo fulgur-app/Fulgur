@@ -82,7 +82,6 @@ impl Fulgur {
                         .ok_text("Connect")
                         .ok_variant(ButtonVariant::Primary),
                 )
-                .overlay_closable(false)
                 .close_button(false);
 
             let form = if show_user_field {
