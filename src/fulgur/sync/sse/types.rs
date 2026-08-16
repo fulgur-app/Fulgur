@@ -74,6 +74,10 @@ pub enum SseEvent {
     Heartbeat { timestamp: String },
     /// File share notification with full share details
     ShareAvailable(ShareNotification),
+    /// Snapshot of pending shares the server sends right after the handshake.
+    PendingSharesSnapshot,
+    /// The worker changed the profile's connection status.
+    ConnectionStatusChanged,
     /// Error event for connection or parsing errors
     Error(String),
 }
@@ -108,6 +112,7 @@ impl SseEvent {
                     SseEvent::Error(format!("Invalid share notification: {e}"))
                 }
             },
+            "pending_shares" => SseEvent::PendingSharesSnapshot,
             "" => {
                 log::error!("Unknown event with no event type");
                 SseEvent::Error("Unknown event with no event type".to_string())

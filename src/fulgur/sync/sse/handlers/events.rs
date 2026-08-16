@@ -53,8 +53,37 @@ impl Fulgur {
     /// - `event`: The SSE event to handle.
     /// - `cx`: The application context.
     pub fn handle_sse_event_for_profile(profile_id: &ProfileId, event: SseEvent, cx: &mut App) {
+        // The debounce below exists to collapse share-doorbell storms.
         let now = Instant::now();
         let sync_state = Fulgur::shared_state(cx).sync_state_for(profile_id);
+        match event {
+            SseEvent::ConnectionStatusChanged => {
+                Self::notify_all_windows(cx);
+                return;
+            }
+            SseEvent::PendingSharesSnapshot => {
+                log::debug!("Pending-shares snapshot received for profile '{profile_id}'");
+                return;
+            }
+            SseEvent::Heartbeat { ref timestamp } => {
+                log::debug!("SSE heartbeat received for profile '{profile_id}': {timestamp}");
+                *sync_state.last_heartbeat.lock() = Some(now);
+                let was_disconnected = !sync_state.connection_status.lock().is_connected();
+                if was_disconnected {
+                    *sync_state.connection_status.lock() = SynchronizationStatus::Connected;
+                    log::info!(
+                        "Profile '{profile_id}': connection restored on heartbeat after timeout"
+                    );
+                    Self::notify_all_windows(cx);
+                }
+                return;
+            }
+            SseEvent::Error(ref err) => {
+                log::error!("SSE error for profile '{profile_id}': {err}");
+                return;
+            }
+            SseEvent::ShareAvailable(_) => {}
+        }
         {
             let mut sse = sync_state.sse.lock();
             if let Some(last_time) = sse.last_sse_event
@@ -64,34 +93,16 @@ impl Fulgur {
             }
             sse.last_sse_event = Some(now);
         }
-        match event {
-            SseEvent::Heartbeat { timestamp } => {
-                log::debug!("SSE heartbeat received for profile '{profile_id}': {timestamp}");
-                let was_disconnected = !sync_state.connection_status.lock().is_connected();
-                *sync_state.last_heartbeat.lock() = Some(now);
-                if was_disconnected {
-                    *sync_state.connection_status.lock() = SynchronizationStatus::Connected;
-                    log::info!(
-                        "Profile '{profile_id}': connection restored on heartbeat after timeout"
-                    );
-                    Self::notify_all_windows(cx);
-                }
-            }
-            SseEvent::ShareAvailable(notification) => {
-                log::debug!(
-                    "Share doorbell received on consumer task (share_id={})",
-                    notification.share_id
-                );
-                Fulgur::shared_state(cx).notify((
-                    NotificationType::Info,
-                    SharedString::from("New file received"),
-                ));
-                // Wake every window so the queued share is decrypted and opened.
-                Self::notify_all_windows(cx);
-            }
-            SseEvent::Error(err) => {
-                log::error!("SSE error for profile '{profile_id}': {err}");
-            }
+        if let SseEvent::ShareAvailable(notification) = event {
+            log::debug!(
+                "Share doorbell received on consumer task (share_id={})",
+                notification.share_id
+            );
+            Fulgur::shared_state(cx).notify((
+                NotificationType::Info,
+                SharedString::from("New file received"),
+            ));
+            Self::notify_all_windows(cx);
         }
     }
 

@@ -140,6 +140,7 @@ fn handle_save_internal(
         .and_then(|p| p.public_key.clone());
     let profile = build_profile_from_form(state, existing_public_key, cx);
     let profile_id = profile.id.clone();
+    let is_active = profile.is_active;
     let is_new = state.is_new;
     let result = entity.update(cx, |this, cx| {
         if is_new {
@@ -166,7 +167,11 @@ fn handle_save_internal(
                 .token_state
                 .clear_token();
             entity.update(cx, |this, cx| {
-                this.restart_sse_connection_for_with_progress(&profile_id, window, cx);
+                if is_active {
+                    this.restart_sse_connection_for_with_progress(&profile_id, window, cx);
+                } else {
+                    this.stop_sse_connection_for(&profile_id, cx);
+                }
             });
             window.close_sheet(cx);
         }

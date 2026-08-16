@@ -10,8 +10,8 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::{
-    ActiveTheme, Icon, Sizable, button::Button, h_flex, label::Label, setting::SettingItem,
-    switch::Switch, tooltip::Tooltip, v_flex,
+    ActiveTheme, Icon, Sizable, WindowExt, button::Button, h_flex, label::Label,
+    notification::NotificationType, setting::SettingItem, switch::Switch, tooltip::Tooltip, v_flex,
 };
 
 /// Render the list of configured profiles as a table-like element.
@@ -138,6 +138,7 @@ fn render_profile_row(
     let activate_id = SharedString::from(format!("profile-row-activate-{}", profile.id));
     let profile_id_for_edit = profile.id.clone();
     let profile_id_for_activate = profile.id.clone();
+    let profile_name_for_activate = profile.name.clone();
     let entity_for_activate = entity.clone();
     let is_active = profile.is_active;
     let profile_name = profile.name.clone();
@@ -186,7 +187,14 @@ fn render_profile_row(
                 .child(Switch::new(activate_id).checked(is_active).on_click(
                     move |val: &bool, window, cx| {
                         let id = profile_id_for_activate.clone();
-                        handle_profile_active_toggle(&entity_for_activate, &id, *val, window, cx);
+                        handle_profile_active_toggle(
+                            &entity_for_activate,
+                            &id,
+                            &profile_name_for_activate,
+                            *val,
+                            window,
+                            cx,
+                        );
                     },
                 )),
         )
@@ -211,20 +219,32 @@ fn render_profile_row(
 /// ### Arguments
 /// - `entity`: The Fulgur entity.
 /// - `profile_id`: The id of the profile to toggle.
+/// - `profile_name`: The profile's display name, used in the notification.
 /// - `value`: The new activation value.
 /// - `window`: The window (used to show connection progress).
 /// - `cx`: The application context.
 fn handle_profile_active_toggle(
     entity: &Entity<Fulgur>,
     profile_id: &str,
+    profile_name: &str,
     value: bool,
     window: &mut Window,
     cx: &mut App,
 ) {
     entity.update(cx, |this, cx| {
         match this.update_profile(profile_id, |profile| profile.is_active = value, cx) {
-            Ok(true) => {
+            Ok(true) if value => {
                 this.restart_sse_connection_for_with_progress(profile_id, window, cx);
+            }
+            Ok(true) => {
+                this.stop_sse_connection_for(profile_id, cx);
+                window.push_notification(
+                    (
+                        NotificationType::Info,
+                        SharedString::from(format!("{profile_name}: Disconnected")),
+                    ),
+                    cx,
+                );
             }
             Ok(false) => {
                 log::warn!("Profile '{profile_id}' could not be toggled (no longer in settings)");

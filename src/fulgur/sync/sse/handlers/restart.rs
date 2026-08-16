@@ -1,6 +1,6 @@
 use crate::fulgur::shared_state::SyncState;
 use crate::fulgur::ui::notifications::progress::{CancelCallback, spawn_with_progress};
-use crate::fulgur::utils::worker::{Worker, WorkerHooks};
+use crate::fulgur::utils::worker::{Worker, WorkerHooks, dispose_off_thread};
 use crate::fulgur::{
     Fulgur,
     settings::ServerProfile,
@@ -141,6 +141,29 @@ impl Fulgur {
         profile_id: &str,
         cx: &mut Context<Self>,
     ) -> Option<SseRestartJob> {
+        let Some(profile) = self
+            .settings
+            .app_settings
+            .synchronization_settings
+            .find_profile(profile_id)
+            .cloned()
+        else {
+            log::warn!("prepare_sse_restart: profile id '{profile_id}' not found in settings");
+            return None;
+        };
+        let master_on = self
+            .settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated;
+        if !master_on || !profile.is_active {
+            log::info!(
+                "Profile '{}' not active or master switch off, SSE connection not started",
+                profile.name
+            );
+            return None;
+        }
+
         // Ensure the app-scope consumer task for this profile's events is running.
         Self::spawn_sse_event_consumer(profile_id, cx);
         let shared = Fulgur::shared_state(cx);
@@ -165,31 +188,6 @@ impl Fulgur {
             (sse_tx, new_worker_hooks, old_worker)
         };
 
-        let profile = if let Some(p) = self
-            .settings
-            .app_settings
-            .synchronization_settings
-            .profiles
-            .iter()
-            .find(|p| p.id == profile_id)
-        {
-            p.clone()
-        } else {
-            log::warn!("prepare_sse_restart: profile id '{profile_id}' not found in settings");
-            return None;
-        };
-        let master_on = self
-            .settings
-            .app_settings
-            .synchronization_settings
-            .is_synchronization_activated;
-        if !master_on || !profile.is_active {
-            log::info!(
-                "Profile '{}' not active or master switch off, SSE connection not started",
-                profile.name
-            );
-            return None;
-        }
         Some(SseRestartJob {
             profile,
             old_worker,
@@ -199,6 +197,26 @@ impl Fulgur {
             http_agent,
             sse_http_agent,
         })
+    }
+
+    /// Stop the SSE connection of a profile without starting a new one.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The profile whose SSE worker should be stopped.
+    /// - `cx`: The context of the application.
+    pub fn stop_sse_connection_for(&self, profile_id: &str, cx: &mut Context<Self>) {
+        let sync_state = Fulgur::shared_state(cx).sync_state_for(profile_id);
+        let worker = sync_state.sse.lock().worker.take();
+        if let Some(worker) = worker {
+            log::info!("Profile '{profile_id}': stopping SSE connection");
+            dispose_off_thread(worker, cx);
+        }
+        set_sync_server_connection_status(
+            &sync_state.connection_status,
+            SynchronizationStatus::NotActivated,
+        );
+        *sync_state.connecting_since.lock() = None;
+        cx.notify();
     }
 
     /// Restart the SSE connection for a single profile.
@@ -283,6 +301,10 @@ impl Fulgur {
                 };
                 set_sync_server_connection_status(&sync_state.connection_status, status);
                 *sync_state.connecting_since.lock() = None;
+                let status_tx = sync_state.sse.lock().sse_event_tx.clone();
+                if let Some(tx) = status_tx {
+                    let _ = tx.unbounded_send(SseEvent::ConnectionStatusChanged);
+                }
                 let _ = notification_tx.unbounded_send(notification);
             },
         );

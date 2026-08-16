@@ -9,6 +9,7 @@
 //! the `Worker` in the state that owns the work guarantees that killing the
 //! owner kills the worker.
 
+use gpui::App;
 use parking_lot::Mutex;
 use std::sync::{
     Arc,
@@ -146,6 +147,18 @@ impl Worker {
     }
 }
 
+/// Retire a worker without blocking the calling thread.
+///
+/// ### Arguments
+/// - `worker`: The worker to retire.
+/// - `cx`: The application context, used for its background executor.
+pub fn dispose_off_thread(worker: Worker, cx: &App) {
+    worker.signal_shutdown();
+    cx.background_executor()
+        .spawn(async move { drop(worker) })
+        .detach();
+}
+
 impl Drop for Worker {
     /// Signal the worker, run the wakeup, and join with a bounded timeout.
     fn drop(&mut self) {
@@ -243,6 +256,26 @@ mod tests {
         assert!(
             flag.load(Ordering::Relaxed),
             "drop must still set the shutdown flag"
+        );
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn dispose_off_thread_signals_without_joining_on_the_caller(cx: &mut gpui::TestAppContext) {
+        let worker = Worker::spawn("stubborn-worker", Duration::from_secs(5), |_shutdown| {
+            thread::sleep(Duration::from_millis(700));
+        });
+        let flag = worker.hooks().shutdown_flag;
+        let started = Instant::now();
+        cx.update(|cx| dispose_off_thread(worker, cx));
+        assert!(
+            started.elapsed() < Duration::from_millis(250),
+            "disposal must hand the join to a background thread (took {:?})",
+            started.elapsed()
+        );
+        assert!(
+            flag.load(Ordering::Relaxed),
+            "disposal must still request the shutdown immediately"
         );
     }
 
