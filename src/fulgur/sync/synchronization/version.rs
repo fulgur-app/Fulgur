@@ -10,7 +10,7 @@ const MIN_SUPPORTED_FULGURANT_VERSION: (u64, u64) = (0, 8);
 pub const MIN_SUPPORTED_FULGURANT_VERSION_DISPLAY: &str = "0.8.0";
 
 /// Minimum Fulgurant version this build of Fulgur is best paired with.
-pub const RECOMMENDED_FULGURANT_VERSION: &str = "0.8.0";
+pub const RECOMMENDED_FULGURANT_VERSION: &str = "0.8.1";
 
 /// Version assumed for a Fulgurant server that does not advertise the
 /// `x-fulgurant-version` header.
