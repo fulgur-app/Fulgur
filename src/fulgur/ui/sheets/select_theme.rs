@@ -4,7 +4,7 @@ use gpui::{
     Stateful, StatefulInteractiveElement, Styled, Window, div, px,
 };
 use gpui_component::{
-    ActiveTheme, Sizable, Theme, ThemeMode, ThemeRegistry, WindowExt,
+    ActiveTheme, Sizable, ThemeMode, ThemeRegistry, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     notification::NotificationType,
@@ -128,7 +128,7 @@ impl Fulgur {
         current_theme_shared: &Arc<Mutex<String>>,
     ) -> bool {
         if let Some(theme_config) = ThemeRegistry::global(cx).themes().get(theme_name).cloned() {
-            Theme::global_mut(cx).apply_config(&theme_config);
+            crate::fulgur::ui::themes::apply_theme_config(&theme_config, cx);
             self.settings.app_settings.theme = theme_name.to_string().into();
             if let Err(error) = self.update_and_propagate_settings(cx) {
                 log::error!(

@@ -58,6 +58,8 @@ impl SearchBar {
             .text_color(cx.theme().muted_foreground)
             .child(
                 Input::new(&self.search_input)
+                    .appearance(false)
+                    .bordered(false)
                     .flex_1()
                     .text_size(TEXT_SIZE)
                     .line_height(LINE_HEIGHT)
@@ -66,7 +68,6 @@ impl SearchBar {
                     .pl_2()
                     .pr_0()
                     .h(SEARCH_BAR_HEIGHT)
-                    .border_0()
                     .corner_radii(CORNERS_SIZE)
                     .text_color(cx.theme().muted_foreground)
                     .bg(cx.theme().background),
@@ -193,6 +194,8 @@ impl SearchBar {
             .border_color(cx.theme().border)
             .child(
                 Input::new(&self.replace_input)
+                    .appearance(false)
+                    .bordered(false)
                     .flex_1()
                     .text_size(TEXT_SIZE)
                     .line_height(LINE_HEIGHT)
@@ -200,7 +203,6 @@ impl SearchBar {
                     .py_0()
                     .px_2()
                     .h(SEARCH_BAR_HEIGHT)
-                    .border_0()
                     .corner_radii(CORNERS_SIZE)
                     .text_color(cx.theme().muted_foreground)
                     .bg(cx.theme().background),

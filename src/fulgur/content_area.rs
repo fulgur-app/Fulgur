@@ -8,7 +8,7 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, WindowExt, h_flex,
-    input::{Input, InputState},
+    input::{Editor, EditorState},
     menu::PopupMenu,
     notification::NotificationType,
     resizable::{h_resizable, resizable_panel},
@@ -105,6 +105,10 @@ impl Fulgur {
         let position = event.position;
         let preview_focus = self.markdown_preview_focus.clone();
 
+        // The replacement, `gpui_base::TextSelection::selected_text`, lives in the
+        // `gpui-base` crate, which gpui-component does not re-export and which Fulgur
+        // does not depend on directly. `WindowExt::selected_text` forwards to it.
+        #[allow(deprecated)]
         let selection = window.selected_text(cx).trim().to_string();
         let has_selection = !selection.is_empty();
         self.markdown_preview_pending_copy = has_selection.then_some(selection);
@@ -241,16 +245,16 @@ impl Fulgur {
                 language: SupportedLanguage,
                 show_markdown_preview: bool,
                 large_file: bool,
-                content: Entity<InputState>,
+                content: Entity<EditorState>,
                 path: Option<std::path::PathBuf>,
                 csv_view_mode: editor_tab::CsvViewMode,
                 csv_table: Option<Entity<TableState<editor_tab::CsvTableDelegate>>>,
                 log_view: bool,
-                log_content: Option<Entity<InputState>>,
+                log_content: Option<Entity<EditorState>>,
             },
             Settings,
             MarkdownPreview {
-                content: Entity<InputState>,
+                content: Entity<EditorState>,
                 source_path: Option<std::path::PathBuf>,
                 view_state: Entity<gpui_component::text::TextViewState>,
             },
@@ -331,14 +335,13 @@ impl Fulgur {
                     log_content,
                 } => {
                     if log_view && let Some(log_content) = log_content {
-                        let log_input = Input::new(&log_content)
+                        let log_input = Editor::new(&log_content)
                             .disabled(true)
                             .bordered(false)
                             .p_0()
                             .h_full()
                             .font_family(self.settings.editor_settings.font_family.clone())
-                            .text_size(px(self.settings.editor_settings.font_size))
-                            .focus_bordered(false);
+                            .text_size(px(self.settings.editor_settings.font_size));
                         return v_flex()
                             .w_full()
                             .flex_1()
@@ -355,13 +358,12 @@ impl Fulgur {
                             .child(DataTable::new(&table).bordered(true).stripe(true))
                             .into_any_element();
                     }
-                    let editor_input = Input::new(&content)
+                    let editor_input = Editor::new(&content)
                         .bordered(false)
                         .p_0()
                         .h_full()
                         .font_family(self.settings.editor_settings.font_family.clone())
-                        .text_size(px(self.settings.editor_settings.font_size))
-                        .focus_bordered(false);
+                        .text_size(px(self.settings.editor_settings.font_size));
                     let capture_right_click =
                         cx.listener(|this, event: &MouseDownEvent, window, cx| {
                             this.on_editor_right_click(event, window, cx);

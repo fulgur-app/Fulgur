@@ -84,7 +84,6 @@ impl CsvTableDelegate {
                         .ok_text("OK")
                         .ok_variant(ButtonVariant::Primary),
                 )
-                .overlay_closable(true)
                 .close_button(false)
                 .child(Input::new(&input))
                 .on_ok(move |_, window, cx| {

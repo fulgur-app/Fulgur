@@ -81,7 +81,7 @@ impl Fulgur {
     /// Scroll the active transferred tab to the saved cursor position.
     ///
     /// Called from the render loop one frame after `handle_pending_tab_transfer`,
-    /// ensuring the `InputState` has gone through layout so `scroll_to` can
+    /// ensuring the `EditorState` has gone through layout so `scroll_to` can
     /// compute pixel offsets. The field is set by `handle_pending_tab_transfer`
     /// and consumed here on the following render cycle.
     ///

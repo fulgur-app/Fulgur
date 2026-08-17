@@ -1,7 +1,7 @@
 //! Read-only display-buffer helpers for the log view.
 
 use gpui::{Context, Entity, Window};
-use gpui_component::input::{InputState, Position, RopeExt};
+use gpui_component::input::{EditorState, Position, RopeExt};
 
 use super::LOG_LINE_CAP;
 use crate::fulgur::Fulgur;
@@ -28,7 +28,7 @@ fn last_line_index(text: &str) -> u32 {
 /// - `window`: The active window
 /// - `cx`: The application context
 pub(super) fn write_log_to_bottom(
-    log_content: &Entity<InputState>,
+    log_content: &Entity<EditorState>,
     display: &str,
     window: &mut Window,
     cx: &mut Context<Fulgur>,
@@ -59,7 +59,7 @@ pub(super) fn write_log_to_bottom(
 /// ### Returns
 /// - `bool`: Whether the line cap dropped lines from the front on this write
 pub(super) fn append_log_to_bottom(
-    log_content: &Entity<InputState>,
+    log_content: &Entity<EditorState>,
     text: &str,
     log_full: bool,
     window: &mut Window,
@@ -95,7 +95,7 @@ pub(super) fn append_log_to_bottom(
     })
 }
 
-/// Build the read-only display `InputState` for a log view buffer.
+/// Build the read-only display `EditorState` for a log view buffer.
 ///
 /// ### Arguments
 /// - `window`: The window the input is created in
@@ -104,15 +104,15 @@ pub(super) fn append_log_to_bottom(
 /// - `soft_wrap`: Whether soft wrapping is enabled
 ///
 /// ### Returns
-/// - `InputState`: A multi-line input seeded with the content
+/// - `EditorState`: A multi-line editor seeded with the content
 pub(super) fn make_log_input_state(
     window: &mut Window,
-    cx: &mut Context<InputState>,
+    cx: &mut Context<EditorState>,
     content: &str,
     soft_wrap: bool,
-) -> InputState {
-    InputState::new(window, cx)
-        .code_editor("log")
+) -> EditorState {
+    EditorState::new(window, cx)
+        .language("log")
         .line_number(true)
         .soft_wrap(soft_wrap)
         .default_value(content.to_string())

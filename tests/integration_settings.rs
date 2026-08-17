@@ -32,7 +32,7 @@ fn create_custom_settings() -> Settings {
         .show_markdown_toolbar = true;
     settings.app_settings.confirm_exit = false;
     settings.app_settings.theme = "Tokyo Night".into();
-    settings.app_settings.scrollbar_show = Some(gpui_component::scroll::ScrollbarShow::Always);
+    settings.app_settings.scrollbar_show = Some(gpui_component::scroll::ScrollbarMode::Always);
     settings
         .app_settings
         .synchronization_settings
@@ -267,7 +267,7 @@ fn test_settings_optional_fields_some() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let settings_path = temp_settings_path(&temp_dir);
     let mut original = Settings::new();
-    original.app_settings.scrollbar_show = Some(gpui_component::scroll::ScrollbarShow::Hover);
+    original.app_settings.scrollbar_show = Some(gpui_component::scroll::ScrollbarMode::Hover);
     let mut profile = ServerProfile::new("Profile");
     profile.server_url = Some("https://test.server".to_string());
     profile.email = Some("test@test.com".to_string());
@@ -283,7 +283,7 @@ fn test_settings_optional_fields_some() {
     let loaded = Settings::load_from_path(&settings_path).expect("Failed to load settings");
     assert_eq!(
         loaded.app_settings.scrollbar_show,
-        Some(gpui_component::scroll::ScrollbarShow::Hover)
+        Some(gpui_component::scroll::ScrollbarMode::Hover)
     );
     let profile = loaded
         .app_settings

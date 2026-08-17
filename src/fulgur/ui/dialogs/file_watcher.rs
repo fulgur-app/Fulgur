@@ -81,7 +81,6 @@ impl Fulgur {
                         .ok_text("Load from file")
                         .ok_variant(ButtonVariant::Primary),
                 )
-                .overlay_closable(false)
                 .close_button(false)
                 .child(
                     v_flex()
@@ -144,7 +143,6 @@ impl Fulgur {
                         .ok_text("Reload from disk")
                         .ok_variant(ButtonVariant::Primary),
                 )
-                .overlay_closable(false)
                 .close_button(false)
                 .child(
                     v_flex()

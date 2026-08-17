@@ -18,7 +18,7 @@ impl EditorTab {
         self.file_last_modified = Some(SystemTime::now());
     }
 
-    /// Update the editor's display settings. Tab size cannot be changed after `InputState` creation.
+    /// Update the editor's display settings. Tab size cannot be changed after `EditorState` creation.
     ///
     /// ### Arguments
     /// - `window`: The window context
@@ -30,7 +30,12 @@ impl EditorTab {
         cx: &mut App,
         settings: &EditorSettings,
     ) {
-        let has_provider = self.content.read(cx).lsp.document_color_provider.is_some();
+        let has_provider = self
+            .content
+            .read(cx)
+            .lsp()
+            .document_color_provider
+            .is_some();
         let wants_provider = settings.highlight_colors && !self.large_file;
 
         if has_provider != wants_provider {
@@ -47,11 +52,11 @@ impl EditorTab {
         });
     }
 
-    /// Rebuild the `InputState` to apply `highlight_colors` changes.
+    /// Rebuild the `EditorState` to apply `highlight_colors` changes.
     ///
     /// The `document_color_provider` can only be set at creation time (Lsp internal
     /// state is not publicly clearable), so toggling the setting requires
-    /// recreating the `InputState` while preserving cursor position.
+    /// recreating the `EditorState` while preserving cursor position.
     ///
     /// ### Arguments
     /// - `window`: The window context
@@ -215,7 +220,7 @@ impl EditorTab {
 
     /// Force the language/syntax highlighting based on the file extension.
     ///
-    /// Recreates the `InputState` with the new language and restores the cursor position.
+    /// Recreates the `EditorState` with the new language and restores the cursor position.
     /// Scroll state and undo history are not preserved.
     ///
     /// ### Arguments

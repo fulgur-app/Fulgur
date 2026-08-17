@@ -185,7 +185,6 @@ impl Fulgur {
             modal
                 .title(div().text_size(px(16.)).child("Unsaved large file"))
                 .keyboard(true)
-                .overlay_closable(false)
                 .close_button(false)
                 .child(
                     v_flex()

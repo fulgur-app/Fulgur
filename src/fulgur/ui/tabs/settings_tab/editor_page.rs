@@ -118,8 +118,8 @@ fn make_number_field(
             },
         );
 
-        let size = options_render.size;
-        let is_horizontal = options_render.layout.is_horizontal();
+        let size = options_render.size();
+        let is_horizontal = options_render.layout().is_horizontal();
         let input_entity = state.read(cx).input.clone();
         NumberInput::new(&input_entity).with_size(size).map(|this| {
             if is_horizontal {

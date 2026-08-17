@@ -53,7 +53,6 @@ impl Fulgur {
                         .ok_text("Rename")
                         .ok_variant(ButtonVariant::Primary),
                 )
-                .overlay_closable(true)
                 .close_button(false)
                 .child(Input::new(&rename_tab_input))
                 .on_ok(move |_, window, cx| {

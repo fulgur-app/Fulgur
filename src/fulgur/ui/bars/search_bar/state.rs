@@ -1,7 +1,7 @@
 use super::SearchMatch;
 use crate::fulgur::Fulgur;
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Subscription, WeakEntity, Window};
-use gpui_component::input::{InputEvent, InputState};
+use gpui_component::input::{EditorState, InputEvent, InputState};
 
 /// The search and replace bar, rendered as its own entity
 ///
@@ -97,9 +97,9 @@ impl SearchBar {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some(Entity<InputState>)`: The active editor tab's content
+    /// - `Some(Entity<EditorState>)`: The active editor tab's content
     /// - `None`: If the window is gone or the active tab is not an editor
-    pub(super) fn active_editor_content(&self, cx: &App) -> Option<Entity<InputState>> {
+    pub(super) fn active_editor_content(&self, cx: &App) -> Option<Entity<EditorState>> {
         let fulgur = self.fulgur.upgrade()?;
         fulgur
             .read(cx)

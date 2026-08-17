@@ -42,7 +42,6 @@ impl Fulgur {
                         .ok_text("Trust and connect")
                         .ok_variant(ButtonVariant::Primary),
                 )
-                .overlay_closable(false)
                 .close_button(false)
                 .child(div().text_sm().child(host_label.clone()))
                 .child(div().text_sm().mt_2().child("SHA-256 fingerprint:"))
