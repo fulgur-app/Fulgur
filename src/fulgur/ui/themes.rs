@@ -2,16 +2,27 @@ use crate::fulgur::settings::{Settings, Themes};
 use crate::fulgur::shared_state::SharedAppState;
 
 use gpui::{Action, App, BorrowAppContext};
-use gpui_component::{Theme, ThemeMode, ThemeRegistry};
+use gpui_component::{Theme, ThemeConfig, ThemeMode, ThemeRegistry};
 use rust_embed::RustEmbed;
 use std::fs;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 // Embed bundled themes into the binary
 #[derive(RustEmbed)]
 #[folder = "./src/themes"]
 #[include = "*.json"]
 pub struct BundledThemes;
+
+/// Apply a theme configuration and propagate it to every theming layer
+///
+/// ### Arguments
+/// - `config`: The theme configuration to apply
+/// - `cx`: The application context
+pub fn apply_theme_config(config: &Rc<ThemeConfig>, cx: &mut App) {
+    Theme::global_mut(cx).apply_config(config);
+    Theme::change(config.mode, None, cx);
+}
 
 /// Initialize the themes
 ///
@@ -36,14 +47,14 @@ pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut Ap
     };
     if let Err(err) = ThemeRegistry::watch_dir(themes_directory, cx, move |cx| {
         if let Some(theme) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
-            Theme::global_mut(cx).apply_config(&theme);
+            apply_theme_config(&theme, cx);
         }
         on_themes_loaded(cx);
     }) {
         log::error!("Failed to watch themes directory: {err}");
     }
     if let Some(scrollbar_show) = scrollbar_show {
-        Theme::global_mut(cx).scrollbar_mode = scrollbar_show;
+        Theme::set_scrollbar_mode(scrollbar_show, cx);
     }
     cx.refresh_windows();
     cx.on_action(|switch: &SwitchThemeMode, cx| {
