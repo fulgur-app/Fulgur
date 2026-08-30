@@ -44,100 +44,151 @@ impl Render for TabBar {
         };
         self.process_pending_scroll(&fulgur_entity, cx);
         let fulgur = fulgur_entity.read(cx);
-        div()
+        let in_title_bar = fulgur.settings.app_settings.uses_unified_title_bar();
+        let mut bar = div()
             .flex()
             .items_center()
             .h(TAB_BAR_HEIGHT)
-            .bg(cx.theme().tab_bar)
-            .child(
-                tab_bar_button_factory("new-tab", "New Tab", CustomIcon::Plus, cx.theme().border)
-                    .on_click(cx.listener(|_, _, _window, cx| {
-                        cx.emit(TabBarEvent::NewTab);
-                    })),
-            )
-            .child(
-                tab_bar_button_factory(
-                    "open-file",
-                    "Open File (+Shift - Open Path)",
-                    CustomIcon::FolderOpen,
-                    cx.theme().border,
-                )
-                .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
-                    if event.modifiers().shift {
-                        cx.emit(TabBarEvent::OpenPath);
-                    } else {
-                        cx.emit(TabBarEvent::OpenFile);
-                    }
+            .bg(cx.theme().tab_bar);
+        if in_title_bar {
+            bar = bar.flex_1().min_w(px(0.));
+        }
+        bar.child(
+            tab_bar_button_factory("new-tab", "New Tab", CustomIcon::Plus, cx.theme().border)
+                .on_click(cx.listener(|_, _, _window, cx| {
+                    cx.emit(TabBarEvent::NewTab);
                 })),
+        )
+        .child(
+            tab_bar_button_factory(
+                "open-file",
+                "Open File (+Shift - Open Path)",
+                CustomIcon::FolderOpen,
+                cx.theme().border,
             )
-            .child(
-                tab_bar_button_factory(
-                    "save-file",
-                    "Save File (+Shift - Save As)",
-                    CustomIcon::Save,
-                    cx.theme().border,
-                )
-                .border_r_1()
-                .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
-                    if event.modifiers().shift {
-                        cx.emit(TabBarEvent::SaveFileAs);
-                    } else {
-                        cx.emit(TabBarEvent::SaveFile);
+            .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
+                if event.modifiers().shift {
+                    cx.emit(TabBarEvent::OpenPath);
+                } else {
+                    cx.emit(TabBarEvent::OpenFile);
+                }
+            })),
+        )
+        .child(
+            tab_bar_button_factory(
+                "save-file",
+                "Save File (+Shift - Save As)",
+                CustomIcon::Save,
+                cx.theme().border,
+            )
+            .border_r_1()
+            .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
+                if event.modifiers().shift {
+                    cx.emit(TabBarEvent::SaveFileAs);
+                } else {
+                    cx.emit(TabBarEvent::SaveFile);
+                }
+            })),
+        )
+        .child(
+            div()
+                .id("tab-scroll-container")
+                .overflow_x_scroll()
+                .track_scroll(&self.scroll_handle)
+                .flex()
+                .flex_1()
+                .items_center()
+                .children(self.render_tabs_with_slots(fulgur, cx))
+                .child(Self::render_trailing_strip(in_title_bar, cx)),
+        )
+        .into_any_element()
+    }
+}
+
+impl TabBar {
+    /// Render the empty strip right of the last tab.
+    ///
+    /// ### Arguments
+    /// - `in_title_bar`: Whether the tab bar is embedded in the unified title bar
+    /// - `cx`: The tab bar context
+    ///
+    /// ### Returns
+    /// - `AnyElement`: The rendered trailing strip
+    fn render_trailing_strip(in_title_bar: bool, cx: &Context<Self>) -> AnyElement {
+        use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
+
+        let strip = div()
+            .id("tab-bar-trailing")
+            .flex_1()
+            .min_w(px(0.))
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .h(TAB_BAR_HEIGHT)
+            .on_drag_move::<DraggedTab>(cx.listener(
+                |this, event: &DragMoveEvent<DraggedTab>, _window, cx| {
+                    let cursor = event.event.position;
+                    let bounds = event.bounds;
+                    if cursor.x < bounds.origin.x
+                        || cursor.x > bounds.origin.x + bounds.size.width
+                        || cursor.y < bounds.origin.y
+                        || cursor.y > bounds.origin.y + bounds.size.height
+                    {
+                        return;
                     }
-                })),
-            )
-            .child(
-                div()
-                    .id("tab-scroll-container")
-                    .overflow_x_scroll()
-                    .track_scroll(&self.scroll_handle)
-                    .flex()
-                    .flex_1()
-                    .items_center()
-                    .children(self.render_tabs_with_slots(fulgur, cx))
-                    .child(
-                        div()
-                            .id("tab-bar-trailing")
-                            .flex_1()
-                            .min_w(px(0.))
-                            .border_b_1()
-                            .border_color(cx.theme().border)
-                            .h(TAB_BAR_HEIGHT)
-                            .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
-                                if event.click_count() == 2 {
-                                    cx.emit(TabBarEvent::NewTab);
-                                }
-                            }))
-                            .on_drag_move::<DraggedTab>(cx.listener(
-                                |this, event: &DragMoveEvent<DraggedTab>, _window, cx| {
-                                    let cursor = event.event.position;
-                                    let bounds = event.bounds;
-                                    if cursor.x < bounds.origin.x
-                                        || cursor.x > bounds.origin.x + bounds.size.width
-                                        || cursor.y < bounds.origin.y
-                                        || cursor.y > bounds.origin.y + bounds.size.height
-                                    {
-                                        return;
-                                    }
-                                    let Some(fulgur) = this.fulgur.upgrade() else {
-                                        return;
-                                    };
-                                    let slot = fulgur.read(cx).tabs.len();
-                                    let dragged = event.drag(cx).clone();
-                                    this.drag_ghost = Some((slot, dragged));
-                                    cx.notify();
-                                },
-                            ))
-                            .on_drop(cx.listener(|this, dragged: &DraggedTab, _window, cx| {
-                                if let Some((slot, _)) = this.drag_ghost.take() {
-                                    cx.emit(TabBarEvent::Drop {
-                                        dragged: dragged.clone(),
-                                        slot,
-                                    });
-                                }
-                            })),
-                    ),
-            )
+                    let Some(fulgur) = this.fulgur.upgrade() else {
+                        return;
+                    };
+                    let slot = fulgur.read(cx).tabs.len();
+                    let dragged = event.drag(cx).clone();
+                    this.drag_ghost = Some((slot, dragged));
+                    cx.notify();
+                },
+            ))
+            .on_drop(cx.listener(|this, dragged: &DraggedTab, _window, cx| {
+                if let Some((slot, _)) = this.drag_ghost.take() {
+                    cx.emit(TabBarEvent::Drop {
+                        dragged: dragged.clone(),
+                        slot,
+                    });
+                }
+            }));
+        #[cfg(target_os = "macos")]
+        if in_title_bar {
+            use gpui_component::InteractiveElementExt;
+
+            return strip
+                .on_double_click(|_, window, _| window.titlebar_double_click())
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _window, _cx| {
+                        this.should_move_window = true;
+                    }),
+                )
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _window, _cx| {
+                        this.should_move_window = false;
+                    }),
+                )
+                .on_mouse_down_out(cx.listener(|this, _, _window, _cx| {
+                    this.should_move_window = false;
+                }))
+                .on_mouse_move(cx.listener(|this, _, window, _cx| {
+                    if this.should_move_window {
+                        this.should_move_window = false;
+                        window.start_window_move();
+                    }
+                }))
+                .into_any_element();
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = in_title_bar;
+        strip
+            .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
+                if event.click_count() == 2 {
+                    cx.emit(TabBarEvent::NewTab);
+                }
+            }))
             .into_any_element()
     }
 }

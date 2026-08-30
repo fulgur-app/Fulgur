@@ -13,6 +13,8 @@ pub(crate) struct TabBar {
     pub(super) scroll_handle: ScrollHandle,
     pub(super) drag_ghost: Option<(usize, DraggedTab)>,
     pub(super) pending_scroll: Option<TabId>,
+    #[cfg(target_os = "macos")]
+    pub(super) should_move_window: bool,
 }
 
 /// Typed events emitted by the tab bar toward the owning `Fulgur` window
@@ -44,6 +46,8 @@ impl TabBar {
             scroll_handle: ScrollHandle::new(),
             drag_ghost: None,
             pending_scroll: None,
+            #[cfg(target_os = "macos")]
+            should_move_window: false,
         }
     }
 

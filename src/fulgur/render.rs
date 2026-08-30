@@ -144,8 +144,13 @@ impl Fulgur {
         let markdown_toolbar_visible = self.markdown_toolbar_visible(cx);
         let csv_toolbar_visible = self.csv_toolbar_visible(cx);
         let color_picker_bar_visible = self.color_picker_bar.read(cx).is_visible();
+        // In the unified macOS layout the title bar hosts the tab bar, and it has to live
+        // inside `app-content`: tab context menu actions are dispatched along the focused
+        // node's ancestor chain, and every `register_action!` above sits on this element.
+        let unified_title_bar = self.settings.app_settings.uses_unified_title_bar();
         app_content = app_content
-            .child(self.tab_bar.clone())
+            .children(unified_title_bar.then(|| self.title_bar.clone()))
+            .children((!unified_title_bar).then(|| self.tab_bar.clone()))
             .child(self.render_content_area(active_tab_index, window, cx))
             .children(markdown_toolbar_visible.then(|| self.markdown_toolbar.clone()))
             .children(csv_toolbar_visible.then(|| self.csv_toolbar.clone()))
@@ -173,11 +178,16 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        // Create root layout: TitleBar OUTSIDE of focus-tracked content
-        // This is critical for Windows hit-testing to work!
+        // Create root layout: TitleBar OUTSIDE of focus-tracked content, kept for the
+        // classic layout. The unified layout inverts this and nests the title bar inside
+        // `app-content`, because tab context menu actions dispatch along the focused node's
+        // ancestor chain and every `register_action!` sits on `app-content`.
         let root_content = v_flex()
             .size_full()
-            .child(self.title_bar.clone())
+            .children(
+                (!self.settings.app_settings.uses_unified_title_bar())
+                    .then(|| self.title_bar.clone()),
+            )
             .child(app_content);
         let mut root = div()
             .size_full()

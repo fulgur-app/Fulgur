@@ -1,4 +1,6 @@
-use crate::fulgur::settings::{RecentFiles, ServerProfile, Settings};
+use crate::fulgur::settings::{
+    AppSettings, RecentFiles, ServerProfile, Settings, TitleBarStyle, UNIFIED_TITLE_BAR_SUPPORTED,
+};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -914,4 +916,72 @@ mod gpui_settings_propagation_tests {
             );
         });
     }
+}
+
+#[test]
+fn app_settings_default_to_the_classic_title_bar() {
+    let app_settings = AppSettings::new();
+    assert_eq!(app_settings.title_bar_style, TitleBarStyle::Classic);
+    assert!(
+        !app_settings.uses_unified_title_bar(),
+        "the classic title bar must never report the unified layout"
+    );
+}
+
+#[test]
+fn unified_title_bar_is_reported_on_macos_only() {
+    let mut app_settings = AppSettings::new();
+    app_settings.title_bar_style = TitleBarStyle::Unified;
+    assert_eq!(
+        app_settings.uses_unified_title_bar(),
+        UNIFIED_TITLE_BAR_SUPPORTED,
+        "the unified layout must follow the platform capability flag"
+    );
+}
+
+#[test]
+fn settings_load_without_title_bar_style_defaults_to_classic() {
+    // Settings files written before the option existed have no `title_bar_style` key.
+    let json = r#"{
+        "editor_settings": {
+            "show_line_numbers": true,
+            "show_indent_guides": true,
+            "soft_wrap": false,
+            "font_size": 14.0,
+            "tab_size": 4,
+            "markdown_settings": {
+                "show_markdown_preview": true,
+                "show_markdown_toolbar": false
+            },
+            "watch_files": true
+        },
+        "app_settings": {
+            "confirm_exit": true,
+            "theme": "Default Light",
+            "synchronization_settings": {
+                "is_synchronization_activated": false
+            }
+        },
+        "recent_files": {
+            "files": [],
+            "max_files": 10
+        }
+    }"#;
+    let settings: Settings = serde_json::from_str(json).unwrap();
+    assert_eq!(
+        settings.app_settings.title_bar_style,
+        TitleBarStyle::Classic
+    );
+}
+
+#[test]
+fn title_bar_style_survives_a_serde_round_trip() {
+    let mut settings = Settings::new();
+    settings.app_settings.title_bar_style = TitleBarStyle::Unified;
+    let json = serde_json::to_string(&settings).unwrap();
+    let restored: Settings = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        restored.app_settings.title_bar_style,
+        TitleBarStyle::Unified
+    );
 }
