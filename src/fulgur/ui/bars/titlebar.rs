@@ -35,7 +35,7 @@ impl CustomTitleBar {
     ///
     /// ### Returns
     /// - `Entity<CustomTitleBar>`: The new custom title bar
-    pub fn new(fulgur: WeakEntity<Fulgur>, _window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(fulgur: &WeakEntity<Fulgur>, _window: &mut Window, cx: &mut App) -> Entity<Self> {
         #[cfg(not(target_os = "macos"))]
         let app_menu_bar = AppMenuBar::new(cx);
         #[cfg(not(target_os = "macos"))]
@@ -45,7 +45,7 @@ impl CustomTitleBar {
             #[cfg(not(target_os = "macos"))]
             app_menu_bar,
             #[cfg(target_os = "macos")]
-            fulgur,
+            fulgur: fulgur.clone(),
             tab_title: None,
             window_name: None,
             title: SharedString::new_static(DEFAULT_TITLE),

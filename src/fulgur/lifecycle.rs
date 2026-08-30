@@ -67,7 +67,7 @@ impl Fulgur {
         let rename_tab_input = cx.new(|cx| InputState::new(window, cx).placeholder("Tab name"));
         let entity = cx.new(|cx| {
             let weak_fulgur = cx.weak_entity();
-            let title_bar = CustomTitleBar::new(weak_fulgur.clone(), window, cx);
+            let title_bar = CustomTitleBar::new(&weak_fulgur, window, cx);
             let search_bar = cx.new(|cx| SearchBar::new(weak_fulgur.clone(), window, cx));
             let search_bar_subscription = cx.subscribe_in(
                 &search_bar,

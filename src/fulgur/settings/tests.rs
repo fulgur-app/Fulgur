@@ -1,4 +1,6 @@
-use crate::fulgur::settings::{AppSettings, RecentFiles, ServerProfile, Settings, TitleBarStyle};
+use crate::fulgur::settings::{
+    AppSettings, RecentFiles, ServerProfile, Settings, TitleBarStyle, UNIFIED_TITLE_BAR_SUPPORTED,
+};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -932,8 +934,8 @@ fn unified_title_bar_is_reported_on_macos_only() {
     app_settings.title_bar_style = TitleBarStyle::Unified;
     assert_eq!(
         app_settings.uses_unified_title_bar(),
-        cfg!(target_os = "macos"),
-        "the unified layout is a macOS-only option"
+        UNIFIED_TITLE_BAR_SUPPORTED,
+        "the unified layout must follow the platform capability flag"
     );
 }
 

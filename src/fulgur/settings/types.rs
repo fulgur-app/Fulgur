@@ -256,9 +256,12 @@ pub enum TabColorStyle {
     Dot,
 }
 
+/// Whether this platform can render the unified title bar.
+pub const UNIFIED_TITLE_BAR_SUPPORTED: bool = cfg!(target_os = "macos");
+
 /// How the window title bar and the tab bar are laid out.
 ///
-/// Only honoured on macOS; every other platform always renders `Classic`.
+/// Only honoured where `UNIFIED_TITLE_BAR_SUPPORTED`; elsewhere `Classic` always wins.
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, Debug)]
 pub enum TitleBarStyle {
     /// A dedicated title bar row above a separate tab bar row.
@@ -408,7 +411,7 @@ impl AppSettings {
     /// - `true` when the title bar and the tab bar share a single row, `false` otherwise
     #[must_use]
     pub fn uses_unified_title_bar(&self) -> bool {
-        cfg!(target_os = "macos") && self.title_bar_style == TitleBarStyle::Unified
+        UNIFIED_TITLE_BAR_SUPPORTED && self.title_bar_style == TitleBarStyle::Unified
     }
 }
 
