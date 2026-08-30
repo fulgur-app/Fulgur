@@ -1,6 +1,7 @@
-#[cfg(target_os = "macos")]
-use crate::fulgur::settings::TitleBarStyle;
-use crate::fulgur::{Fulgur, settings::TabColorStyle};
+use crate::fulgur::{
+    Fulgur,
+    settings::{TabColorStyle, TitleBarStyle},
+};
 use gpui::{Anchor, App, Entity, IntoElement};
 use gpui_component::{
     Sizable,
@@ -66,7 +67,7 @@ fn set_tab_color_style(entity: &Entity<Fulgur>, style: TabColorStyle, cx: &mut A
     });
 }
 
-/// Render the title bar style chooser as a compact dropdown (macOS only).
+/// Render the title bar style chooser as a compact dropdown.
 ///
 /// ### Arguments
 /// - `entity`: The Fulgur entity, read for the current style and updated on change
@@ -74,7 +75,6 @@ fn set_tab_color_style(entity: &Entity<Fulgur>, style: TabColorStyle, cx: &mut A
 ///
 /// ### Returns
 /// - `impl IntoElement`: The small dropdown button reflecting the current style
-#[cfg(target_os = "macos")]
 pub(super) fn render_title_bar_style_select(
     entity: &Entity<Fulgur>,
     cx: &App,
@@ -116,7 +116,6 @@ pub(super) fn render_title_bar_style_select(
 /// - `entity`: The Fulgur entity to update
 /// - `style`: The newly selected title bar style
 /// - `cx`: The application context
-#[cfg(target_os = "macos")]
 fn set_title_bar_style(entity: &Entity<Fulgur>, style: TitleBarStyle, cx: &mut App) {
     entity.update(cx, |this, cx| {
         this.settings.app_settings.title_bar_style = style;
