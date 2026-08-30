@@ -1,6 +1,4 @@
-use crate::fulgur::settings::{
-    AppSettings, RecentFiles, ServerProfile, Settings, TitleBarStyle, UNIFIED_TITLE_BAR_SUPPORTED,
-};
+use crate::fulgur::settings::{AppSettings, RecentFiles, ServerProfile, Settings, TitleBarStyle};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -929,13 +927,12 @@ fn app_settings_default_to_the_classic_title_bar() {
 }
 
 #[test]
-fn unified_title_bar_is_reported_on_macos_only() {
+fn unified_title_bar_is_reported_on_every_platform() {
     let mut app_settings = AppSettings::new();
     app_settings.title_bar_style = TitleBarStyle::Unified;
-    assert_eq!(
+    assert!(
         app_settings.uses_unified_title_bar(),
-        UNIFIED_TITLE_BAR_SUPPORTED,
-        "the unified layout must follow the platform capability flag"
+        "the unified layout is supported on every platform"
     );
 }
 

@@ -9,7 +9,7 @@ use crate::fulgur::{
     tab::Tab,
     ui::tabs::color_tag::ColorTag,
     ui::tabs::tab_drag::DraggedTab,
-    ui::{components_utils, icons::CustomIcon},
+    ui::{components_utils, icons::CustomIcon, window_drag::window_drag_region},
     window_manager::WindowManager,
 };
 use gpui::{
@@ -152,37 +152,9 @@ impl TabBar {
                     });
                 }
             }));
-        #[cfg(target_os = "macos")]
         if in_title_bar {
-            use gpui_component::InteractiveElementExt;
-
-            return strip
-                .on_double_click(|_, window, _| window.titlebar_double_click())
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _window, _cx| {
-                        this.should_move_window = true;
-                    }),
-                )
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _window, _cx| {
-                        this.should_move_window = false;
-                    }),
-                )
-                .on_mouse_down_out(cx.listener(|this, _, _window, _cx| {
-                    this.should_move_window = false;
-                }))
-                .on_mouse_move(cx.listener(|this, _, window, _cx| {
-                    if this.should_move_window {
-                        this.should_move_window = false;
-                        window.start_window_move();
-                    }
-                }))
-                .into_any_element();
+            return window_drag_region(strip, cx).into_any_element();
         }
-        #[cfg(not(target_os = "macos"))]
-        let _ = in_title_bar;
         strip
             .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
                 if event.click_count() == 2 {

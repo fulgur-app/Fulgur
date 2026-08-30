@@ -13,7 +13,8 @@ pub(crate) struct TabBar {
     pub(super) scroll_handle: ScrollHandle,
     pub(super) drag_ghost: Option<(usize, DraggedTab)>,
     pub(super) pending_scroll: Option<TabId>,
-    #[cfg(target_os = "macos")]
+    /// Set while a left button press that started on the trailing strip may still
+    /// turn into a window move; only used by the unified title bar layout.
     pub(super) should_move_window: bool,
 }
 
@@ -32,6 +33,16 @@ pub(crate) enum TabBarEvent {
 
 impl EventEmitter<TabBarEvent> for TabBar {}
 
+impl crate::fulgur::ui::window_drag::WindowDragState for TabBar {
+    /// Access the window move latch armed by the trailing strip
+    ///
+    /// ### Returns
+    /// - `&mut bool`: The latch backing the unified title bar drag region
+    fn window_drag_armed(&mut self) -> &mut bool {
+        &mut self.should_move_window
+    }
+}
+
 impl TabBar {
     /// Create a new tab bar view
     ///
@@ -46,7 +57,6 @@ impl TabBar {
             scroll_handle: ScrollHandle::new(),
             drag_ghost: None,
             pending_scroll: None,
-            #[cfg(target_os = "macos")]
             should_move_window: false,
         }
     }
