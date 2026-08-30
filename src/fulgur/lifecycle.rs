@@ -52,7 +52,6 @@ impl Fulgur {
         window_id: WindowId,
         window_index: usize,
     ) -> Entity<Self> {
-        let title_bar = CustomTitleBar::new(window, cx);
         let shared = cx.global::<shared_state::SharedAppState>();
         let settings = shared.settings.clone();
         // A restored window keeps the identity it was persisted under, so its row
@@ -68,6 +67,7 @@ impl Fulgur {
         let rename_tab_input = cx.new(|cx| InputState::new(window, cx).placeholder("Tab name"));
         let entity = cx.new(|cx| {
             let weak_fulgur = cx.weak_entity();
+            let title_bar = CustomTitleBar::new(weak_fulgur.clone(), window, cx);
             let search_bar = cx.new(|cx| SearchBar::new(weak_fulgur.clone(), window, cx));
             let search_bar_subscription = cx.subscribe_in(
                 &search_bar,

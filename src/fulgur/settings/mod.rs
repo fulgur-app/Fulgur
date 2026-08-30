@@ -5,7 +5,7 @@ mod types;
 pub use types::{
     AppSettings, DEFAULT_PROFILE_NAME, EditorSettings, MAX_PROFILES, MarkdownPreviewMode,
     MarkdownSettings, ProfileId, RecentFiles, ServerProfile, Settings, SynchronizationSettings,
-    TabColorStyle, ThemeFile, ThemeInfo, Themes, new_profile_id,
+    TabColorStyle, ThemeFile, ThemeInfo, Themes, TitleBarStyle, new_profile_id,
 };
 
 #[cfg(test)]

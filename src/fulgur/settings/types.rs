@@ -256,6 +256,18 @@ pub enum TabColorStyle {
     Dot,
 }
 
+/// How the window title bar and the tab bar are laid out.
+///
+/// Only honoured on macOS; every other platform always renders `Classic`.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, Debug)]
+pub enum TitleBarStyle {
+    /// A dedicated title bar row above a separate tab bar row.
+    #[default]
+    Classic,
+    /// A single row holding the window controls, the window badge and the tab bar.
+    Unified,
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppSettings {
     pub confirm_exit: bool,
@@ -270,6 +282,9 @@ pub struct AppSettings {
     pub tab_color_style: TabColorStyle,
     #[serde(default = "default_persist_unsaved_buffers")]
     pub persist_unsaved_buffers: bool,
+    /// How the title bar and the tab bar are laid out (macOS only).
+    #[serde(default)]
+    pub title_bar_style: TitleBarStyle,
 }
 
 /// Default value for `debug_mode` setting
@@ -383,7 +398,17 @@ impl AppSettings {
             debug_mode: false,
             tab_color_style: TabColorStyle::TextColor,
             persist_unsaved_buffers: default_persist_unsaved_buffers(),
+            title_bar_style: TitleBarStyle::Classic,
         }
+    }
+
+    /// Whether the window should render the unified title bar that embeds the tab bar
+    ///
+    /// ### Returns
+    /// - `true` when the title bar and the tab bar share a single row, `false` otherwise
+    #[must_use]
+    pub fn uses_unified_title_bar(&self) -> bool {
+        cfg!(target_os = "macos") && self.title_bar_style == TitleBarStyle::Unified
     }
 }
 

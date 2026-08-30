@@ -370,14 +370,13 @@ fn create_window(
         None
     };
     let window_options = gpui::WindowOptions {
-        titlebar: Some(gpui_component::TitleBar::title_bar_options()),
         window_bounds,
         display_id,
         #[cfg(target_os = "linux")]
         app_id: Some("Fulgur".to_string()),
         #[cfg(target_os = "linux")]
         window_decorations: Some(gpui::WindowDecorations::Client),
-        ..Default::default()
+        ..gpui_component::TitleBar::window_options()
     };
     let window = cx.open_window(window_options, |window, cx| {
         window.set_window_title("Fulgur");
