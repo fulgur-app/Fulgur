@@ -16,6 +16,9 @@ const TRAFFIC_LIGHTS_WIDTH: Pixels = px(80.0);
 const FULLSCREEN_LEFT_PADDING: Pixels = px(12.0);
 /// Blank gap kept on either side of the window badge, about one character wide
 const BADGE_GAP: Pixels = px(10.0);
+/// Left shift applied to the badge slot so its separator lands on the border of whatever
+/// precedes it instead of drawing a second line right next to it
+const BADGE_SEPARATOR_OVERLAP: Pixels = px(-1.0);
 
 impl CustomTitleBar {
     /// Check whether the owning window asked for the unified title bar layout
@@ -157,7 +160,7 @@ impl CustomTitleBar {
             .h_full()
             .items_center();
         slot = if badge.is_some() {
-            slot.px(BADGE_GAP)
+            slot.px(BADGE_GAP).ml(BADGE_SEPARATOR_OVERLAP).border_l_1()
         } else {
             slot.w(BADGE_GAP)
         };
