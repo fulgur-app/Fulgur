@@ -37,7 +37,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 
 # Persistence
-rusqlite = { version = "0.40.1", features = ["bundled"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 # Cryptography & security
 base64 = "0.22.1"
@@ -62,16 +62,16 @@ urlencoding = "2.1.3"
 url = "2.5.8"
 
 # Logging
-log = "0.4.33"
+log = "0.4.34"
 
 # Time
-time = { version = "0.3.54", features = ["serde", "macros", "formatting", "parsing"] }
+time = { version = "0.3.55", features = ["serde", "macros", "formatting", "parsing"] }
 
 # Error handling
 anyhow = "1.0.104"
 
 # Async primitives (channels consumed by GPUI tasks)
-futures = "0.3.33"
+futures = "0.3.34"
 
 # GUI
 # Rev-less like gpui-component HEAD; Cargo.lock carries the compatible Zed pin
@@ -88,43 +88,43 @@ markdown = "1.0.0"
 
 # Filesystem
 notify = "8.2.0"
-open = "5.4.0"
-flate2 = "1.1.9"
+open = "5.4.3"
+flate2 = "1.1.10"
 
 # Security - forcing minimum versions for transitive dependencies
 # Fix RUSTSEC-2026-0007: Integer overflow in BytesMut::reserve
 bytes = "1.12.1"
 # Fix RUSTSEC-2026-0098/0099: Name constraint bypass in rustls-webpki
-rustls-webpki = "0.103.13"
+rustls-webpki = "0.103.15"
 # Fix RUSTSEC-2026-0186: Unchecked pointer offset in memmap2 (via fontdb -> usvg -> gpui)
 memmap2 = "0.9.11"
 
 # Tree-sitter languages
-arborium-ada = "2.18.1"
-arborium-asm = "2.18.1"
-arborium-c = "2.18.1"
-arborium-clojure = "2.18.1"
-arborium-d = "2.18.1"
-arborium-dart = "2.18.1"
-arborium-erlang = "2.18.1"
-arborium-groovy = "2.18.1"
-arborium-jinja2 = "2.18.1"
-arborium-julia = "2.18.1"
-arborium-matlab = "2.18.1"
-arborium-ini = "2.18.1"
-arborium-objc = "2.18.1"
-arborium-prolog = "2.18.1"
-arborium-scss = "2.18.1"
-arborium-tsx= "2.18.1"
-arborium-vue = "2.18.1"
-arborium-dockerfile = "2.18.1"
+arborium-ada = "2.18.2"
+arborium-asm = "2.18.2"
+arborium-c = "2.18.2"
+arborium-clojure = "2.18.2"
+arborium-d = "2.18.2"
+arborium-dart = "2.18.2"
+arborium-erlang = "2.18.2"
+arborium-groovy = "2.18.2"
+arborium-jinja2 = "2.18.2"
+arborium-julia = "2.18.2"
+arborium-matlab = "2.18.2"
+arborium-ini = "2.18.2"
+arborium-objc = "2.18.2"
+arborium-prolog = "2.18.2"
+arborium-scss = "2.18.2"
+arborium-tsx= "2.18.2"
+arborium-vue = "2.18.2"
+arborium-dockerfile = "2.18.2"
 tree-sitter-haskell = "0.23.1"
 tree-sitter-ocaml = "0.25.0"
 tree-sitter-pascal = "0.10.2"
 ts-parser-perl = "1.2.1"
 tree-sitter-powershell = "0.26.4"
 tree-sitter-fortran = "0.6.0"
-tree-sitter-fsharp = "0.3.1"
+tree-sitter-fsharp = "0.3.11"
 tree-sitter-r = "1.3.0"
 
 # Others
@@ -134,17 +134,17 @@ ropey = "=2.0.0-beta.1"
 semver = "1.0.28"
 parking_lot = "0.12.5"
 color-lsp = "0.2.0"
-flexi_logger = "0.31.9"
+flexi_logger = "0.31.10"
 uuid = { version = "1.24.0", features = ["v4"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-apple-native-keyring-store = { version = "1.0.0", features = ["keychain"] }
+apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-dbus-secret-service-keyring-store = { version = "1.0.0", features = ["crypto-rust"] }
+dbus-secret-service-keyring-store = { version = "1.0.1", features = ["crypto-rust"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = "1.1.0"
