@@ -293,7 +293,7 @@ impl Drop for FileWatcher {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     use super::{FILE_WATCH_EVENT_CHANNEL_CAPACITY, FileWatchEvent, FileWatcher};
-    use crate::fulgur::files::file_watcher::test_helpers::temp_test_path;
+    use crate::fulgur::test_support::temp_test_path;
     use futures::channel::mpsc::{TryRecvError, channel};
     use gpui::TestAppContext;
     use notify::{

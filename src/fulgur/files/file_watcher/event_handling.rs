@@ -144,7 +144,7 @@ impl Fulgur {
 mod tests {
     use crate::fulgur::editor_tab::TabLocation;
     use crate::fulgur::files::file_watcher::FileWatchEvent;
-    use crate::fulgur::files::file_watcher::test_helpers::{setup_fulgur, temp_test_path};
+    use crate::fulgur::test_support::{setup_fulgur_with_root as setup_fulgur, temp_test_path};
     use gpui::TestAppContext;
     use std::time::{Duration, Instant};
     use tempfile::TempDir;

@@ -194,6 +194,7 @@ mod gpui_tests {
         DEVICE_KEY_PLACEHOLDER, DeviceKeyEdit, KeyRollback, ProfileFormState,
         build_profile_from_form, read_device_key_edit,
     };
+    use crate::fulgur::test_support::EmptyView;
     use gpui::{App, AppContext, TestAppContext, Window, WindowOptions};
     use gpui_component::input::InputState;
     use parking_lot::Mutex;
@@ -339,17 +340,5 @@ mod gpui_tests {
             })
             .expect("failed to open test window");
         });
-    }
-
-    struct EmptyView;
-
-    impl gpui::Render for EmptyView {
-        fn render(
-            &mut self,
-            _window: &mut Window,
-            _cx: &mut gpui::Context<Self>,
-        ) -> impl gpui::IntoElement {
-            gpui::div()
-        }
     }
 }

@@ -241,68 +241,23 @@ impl Fulgur {
 mod tests {
     use super::{Fulgur, StatusBar, StatusBarEvent, SyncButtonState};
     use crate::fulgur::{
-        languages::supported_languages::SupportedLanguage,
-        settings::{ServerProfile, Settings},
-        shared_state::SharedAppState,
-        sync::synchronization::SynchronizationStatus,
-        ui::components_utils::UTF_8,
-        window_manager::WindowManager,
+        languages::supported_languages::SupportedLanguage, settings::ServerProfile,
+        sync::synchronization::SynchronizationStatus, ui::components_utils::UTF_8,
     };
-    use gpui::{
-        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
-        Window, WindowOptions, div,
-    };
+    use gpui::{Entity, TestAppContext, VisualTestContext};
     use gpui_component::input::Position;
-    use parking_lot::Mutex;
-    use std::{
-        cell::RefCell,
-        path::PathBuf,
-        sync::Arc,
-        time::{Duration, Instant},
-    };
 
-    struct EmptyView;
-
-    impl Render for EmptyView {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div()
-        }
-    }
-
-    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(|cx| {
-            gpui_component::init(cx);
-            let mut settings = Settings::new();
-            settings.editor_settings.watch_files = false;
-            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-            cx.set_global(SharedAppState::new(settings, pending_files, None, None));
-            cx.set_global(WindowManager::new());
-        });
-
-        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
-        let window = cx
-            .update(|cx| {
-                cx.open_window(WindowOptions::default(), |window, cx| {
-                    let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
-                    *fulgur_slot.borrow_mut() = Some(fulgur);
-                    cx.new(|_| EmptyView)
-                })
-            })
-            .expect("failed to open test window");
-
-        let visual_cx = VisualTestContext::from_window(window.into(), cx);
-        visual_cx.run_until_parked();
-        let fulgur = fulgur_slot
-            .into_inner()
-            .expect("failed to capture Fulgur entity");
-        (fulgur, visual_cx)
-    }
+    use crate::fulgur::test_support::{setup_fulgur, setup_fulgur_with_settings, test_settings};
+    use std::time::{Duration, Instant};
 
     /// Set up a `Fulgur` instance with one active sync profile seeded into settings.
     ///
-    /// Returns the entity, the visual context, and the profile id so tests can
-    /// address the correct per-profile `SyncState` via `sync_state_for`.
+    /// ### Arguments
+    /// - `cx`: The test application context
+    ///
+    /// ### Returns
+    /// - `(Entity<Fulgur>, VisualTestContext, String)`: The entity, its visual context, and the
+    ///   profile id so tests can address the matching per-profile `SyncState` via `sync_state_for`
     fn setup_fulgur_with_active_profile(
         cx: &mut TestAppContext,
     ) -> (Entity<Fulgur>, VisualTestContext, String) {
@@ -310,41 +265,18 @@ mod tests {
         profile.is_active = true;
         let profile_id = profile.id.clone();
 
-        cx.update(|cx| {
-            gpui_component::init(cx);
-            let mut settings = Settings::new();
-            settings.editor_settings.watch_files = false;
-            settings
-                .app_settings
-                .synchronization_settings
-                .is_synchronization_activated = true;
-            settings
-                .app_settings
-                .synchronization_settings
-                .profiles
-                .push(profile);
-            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-            cx.set_global(SharedAppState::new(settings, pending_files, None, None));
-            cx.set_global(WindowManager::new());
-        });
+        let mut settings = test_settings();
+        settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated = true;
+        settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .push(profile);
 
-        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
-        let window = cx
-            .update(|cx| {
-                cx.open_window(WindowOptions::default(), |window, cx| {
-                    let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
-                    *fulgur_slot.borrow_mut() = Some(fulgur);
-                    cx.new(|_| EmptyView)
-                })
-            })
-            .expect("failed to open test window");
-
-        let visual_cx = VisualTestContext::from_window(window.into(), cx);
-        visual_cx.run_until_parked();
-        let fulgur = fulgur_slot
-            .into_inner()
-            .expect("failed to capture Fulgur entity");
+        let (fulgur, visual_cx) = setup_fulgur_with_settings(cx, settings);
         (fulgur, visual_cx, profile_id)
     }
 
@@ -508,44 +440,23 @@ mod tests {
         profile_b.is_active = true;
         let id_b = profile_b.id.clone();
 
-        cx.update(|cx| {
-            gpui_component::init(cx);
-            let mut settings = Settings::new();
-            settings.editor_settings.watch_files = false;
-            settings
-                .app_settings
-                .synchronization_settings
-                .is_synchronization_activated = true;
-            settings
-                .app_settings
-                .synchronization_settings
-                .profiles
-                .push(profile_a);
-            settings
-                .app_settings
-                .synchronization_settings
-                .profiles
-                .push(profile_b);
-            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-            cx.set_global(SharedAppState::new(settings, pending_files, None, None));
-            cx.set_global(WindowManager::new());
-        });
+        let mut settings = test_settings();
+        settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated = true;
+        settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .push(profile_a);
+        settings
+            .app_settings
+            .synchronization_settings
+            .profiles
+            .push(profile_b);
 
-        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
-        let window = cx
-            .update(|cx| {
-                cx.open_window(WindowOptions::default(), |window, cx| {
-                    let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
-                    *fulgur_slot.borrow_mut() = Some(fulgur);
-                    cx.new(|_| EmptyView)
-                })
-            })
-            .expect("failed to open test window");
-
-        let mut visual_cx = VisualTestContext::from_window(window.into(), cx);
-        visual_cx.run_until_parked();
-        let fulgur = fulgur_slot.into_inner().expect("failed to capture Fulgur");
+        let (fulgur, mut visual_cx) = setup_fulgur_with_settings(cx, settings);
 
         visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {

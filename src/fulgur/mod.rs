@@ -7,6 +7,8 @@ pub mod settings;
 pub mod shared_state;
 pub mod state;
 pub mod sync;
+#[cfg(feature = "gpui-test-support")]
+pub mod test_support;
 mod ui;
 pub mod utils;
 pub mod window_manager;

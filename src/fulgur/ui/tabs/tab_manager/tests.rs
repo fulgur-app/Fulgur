@@ -1,58 +1,12 @@
+use crate::fulgur::test_support::setup_fulgur;
 use crate::fulgur::{
-    Fulgur,
     languages::supported_languages::SupportedLanguage,
-    settings::Settings,
-    shared_state::SharedAppState,
     tab::Tab,
     ui::tabs::editor_tab::{TabLocation, TabTransferData},
-    window_manager::WindowManager,
 };
-use gpui::{
-    AppContext, Context, Entity, IntoElement, Render, SharedString, TestAppContext,
-    VisualTestContext, Window, WindowOptions, div,
-};
+use gpui::{SharedString, TestAppContext};
 use gpui_component::input::{InputEvent, Position};
-use parking_lot::Mutex;
-use std::{cell::RefCell, path::PathBuf, sync::Arc};
-
-struct EmptyView;
-
-impl Render for EmptyView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-    }
-}
-
-fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-    cx.update(|cx| {
-        gpui_component::init(cx);
-        let mut settings = Settings::new();
-        settings.editor_settings.watch_files = false;
-        let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-        cx.set_global(SharedAppState::new(settings, pending_files, None, None));
-        cx.set_global(WindowManager::new());
-    });
-
-    let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
-    let window = cx
-        .update(|cx| {
-            cx.open_window(WindowOptions::default(), |window, cx| {
-                let window_id = window.window_handle().window_id();
-                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
-                *fulgur_slot.borrow_mut() = Some(fulgur);
-                cx.new(|_| EmptyView)
-            })
-        })
-        .expect("failed to open test window");
-
-    let visual_cx = VisualTestContext::from_window(window.into(), cx);
-    visual_cx.run_until_parked();
-    let fulgur = fulgur_slot
-        .into_inner()
-        .expect("failed to capture Fulgur entity");
-    (fulgur, visual_cx)
-}
-
+use std::path::PathBuf;
 // ========== new_tab tests ==========
 
 #[gpui::test]

@@ -4,34 +4,11 @@ use super::{
 };
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
 use crate::fulgur::settings::EditorSettings;
+use crate::fulgur::test_support::{EmptyView, temp_test_path};
 use crate::fulgur::ui::tabs::tab::TabId;
-use gpui::{
-    AppContext, Context, IntoElement, Render, SharedString, TestAppContext, Window, WindowOptions,
-    div,
-};
+use gpui::{AppContext, SharedString, TestAppContext, WindowOptions};
 use gpui_component::input::Position;
 use gpui_component::table::TableDelegate;
-use std::path::PathBuf;
-
-struct EmptyView;
-
-impl Render for EmptyView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-    }
-}
-
-/// Build an OS-agnostic temporary test path.
-///
-/// ### Parameters
-/// - `file_name`: The file name to append to the platform temp directory.
-///
-/// ### Returns
-/// - `PathBuf`: A path under `std::env::temp_dir()` suitable for cross-platform tests.
-fn temp_test_path(file_name: &str) -> PathBuf {
-    std::env::temp_dir().join(file_name)
-}
-
 fn make_transfer_data() -> TabTransferData {
     TabTransferData {
         title: SharedString::from("transfer.rs"),

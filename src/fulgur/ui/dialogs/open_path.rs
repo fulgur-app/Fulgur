@@ -81,6 +81,8 @@ impl Fulgur {
 #[cfg(test)]
 mod tests {
     use super::validate_open_path;
+    #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::test_support::setup_fulgur_with_root as setup_fulgur;
     use core::prelude::v1::test;
     use tempfile::TempDir;
 
@@ -139,47 +141,7 @@ mod tests {
     // ========== show_open_from_path_dialog smoke test ==========
 
     #[cfg(feature = "gpui-test-support")]
-    use crate::fulgur::{
-        Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
-    };
-    #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
-    #[cfg(feature = "gpui-test-support")]
-    use parking_lot::Mutex;
-    #[cfg(feature = "gpui-test-support")]
-    use std::{cell::RefCell, rc::Rc, sync::Arc};
-
-    #[cfg(feature = "gpui-test-support")]
-    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(gpui_component::init);
-        cx.update(|cx| {
-            cx.set_global(SharedAppState::new(
-                Settings::new(),
-                Arc::new(Mutex::new(Vec::new())),
-                None,
-                None,
-            ));
-            cx.set_global(WindowManager::new());
-        });
-        let fulgur_slot: Rc<RefCell<Option<Entity<Fulgur>>>> = Rc::new(RefCell::new(None));
-        let slot = Rc::clone(&fulgur_slot);
-        let window = cx
-            .update(|cx| {
-                cx.open_window(WindowOptions::default(), |window, cx| {
-                    let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
-                    *slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
-                })
-            })
-            .expect("failed to open test window");
-        let fulgur = fulgur_slot
-            .borrow_mut()
-            .take()
-            .expect("expected fulgur entity");
-        let visual_cx = VisualTestContext::from_window(window.into(), cx);
-        (fulgur, visual_cx)
-    }
+    use gpui::TestAppContext;
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]

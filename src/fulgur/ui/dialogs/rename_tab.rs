@@ -85,46 +85,11 @@ mod tests {
         Fulgur,
         editor_tab::{EditorTab, TabLocation},
         languages::supported_languages::SupportedLanguage,
-        settings::Settings,
-        shared_state::SharedAppState,
         tab::TabId,
-        window_manager::WindowManager,
     };
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
-    use parking_lot::Mutex;
-    use std::{cell::RefCell, rc::Rc, sync::Arc};
+    use gpui::{Entity, TestAppContext, VisualTestContext};
 
-    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(gpui_component::init);
-        cx.update(|cx| {
-            cx.set_global(SharedAppState::new(
-                Settings::new(),
-                Arc::new(Mutex::new(Vec::new())),
-                None,
-                None,
-            ));
-            cx.set_global(WindowManager::new());
-        });
-        let fulgur_slot: Rc<RefCell<Option<Entity<Fulgur>>>> = Rc::new(RefCell::new(None));
-        let slot = Rc::clone(&fulgur_slot);
-        let window = cx
-            .update(|cx| {
-                cx.open_window(WindowOptions::default(), |window, cx| {
-                    let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
-                    *slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
-                })
-            })
-            .expect("failed to open test window");
-        let fulgur = fulgur_slot
-            .borrow_mut()
-            .take()
-            .expect("expected fulgur entity");
-        let visual_cx = VisualTestContext::from_window(window.into(), cx);
-        (fulgur, visual_cx)
-    }
-
+    use crate::fulgur::test_support::setup_fulgur_with_root as setup_fulgur;
     /// Read the id and title of the first tab
     fn first_tab_title(fulgur: &Entity<Fulgur>, cx: &mut VisualTestContext) -> String {
         fulgur.read_with(cx, |this, cx| {

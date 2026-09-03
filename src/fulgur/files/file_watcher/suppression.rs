@@ -67,7 +67,7 @@ impl Fulgur {
 mod tests {
     use crate::fulgur::editor_tab::TabLocation;
     use crate::fulgur::files::file_watcher::FileWatchEvent;
-    use crate::fulgur::files::file_watcher::test_helpers::setup_fulgur;
+    use crate::fulgur::test_support::setup_fulgur_with_root as setup_fulgur;
     use gpui::TestAppContext;
     use std::time::Instant;
     use tempfile::TempDir;

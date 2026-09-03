@@ -189,18 +189,15 @@ mod tests {
 mod gpui_tests {
     use super::init;
     use super::reload_themes_and_update;
-    use crate::fulgur::{
-        Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
+    use crate::fulgur::test_support::{
+        open_window_with_fulgur_root as open_window_with_fulgur, setup_test_globals,
     };
-    use gpui::{
-        AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId, WindowOptions,
-    };
+    use crate::fulgur::{settings::Settings, shared_state::SharedAppState};
+    use gpui::{BorrowAppContext, SharedString, TestAppContext};
     use gpui_component::ActiveTheme;
     use gpui_component::ThemeRegistry;
-    use parking_lot::Mutex;
+
     use std::{
-        cell::RefCell,
-        path::PathBuf,
         sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -234,51 +231,6 @@ mod gpui_tests {
             thread::sleep(delay);
         }
         false
-    }
-
-    /// Initialize GPUI globals needed to construct `Fulgur` windows in tests.
-    ///
-    /// ### Arguments
-    /// - `cx`: The GPUI test context to initialize.
-    fn setup_test_globals(cx: &mut TestAppContext) {
-        cx.update(|cx| {
-            gpui_component::init(cx);
-            let mut settings = Settings::new();
-            settings.editor_settings.watch_files = false;
-            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-            cx.set_global(SharedAppState::new(settings, pending_files, None, None));
-            cx.set_global(WindowManager::new());
-        });
-    }
-
-    /// Open a test window that hosts a `Fulgur` root.
-    ///
-    /// ### Arguments
-    /// - `cx`: The GPUI test context used to open the window.
-    ///
-    /// ### Returns
-    /// - `(WindowId, Entity<Fulgur>)`: The opened window ID and associated `Fulgur` entity.
-    fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Fulgur>) {
-        let window_id_slot: RefCell<Option<WindowId>> = RefCell::new(None);
-        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
-        cx.update(|cx| {
-            cx.open_window(WindowOptions::default(), |window, cx| {
-                let window_id = window.window_handle().window_id();
-                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
-                *window_id_slot.borrow_mut() = Some(window_id);
-                *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
-            })
-            .expect("failed to open test window");
-        });
-        (
-            window_id_slot
-                .into_inner()
-                .expect("failed to capture test window id"),
-            fulgur_slot
-                .into_inner()
-                .expect("failed to capture test Fulgur entity"),
-        )
     }
 
     #[gpui::test]

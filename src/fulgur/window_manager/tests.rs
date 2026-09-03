@@ -1,80 +1,12 @@
 use super::WindowManager;
-use crate::fulgur::{
-    Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
-    state::StateDb,
+use crate::fulgur::test_support::{
+    open_window_with_fulgur_root as open_window_with_fulgur,
+    setup_test_globals_with_state_db as setup_test_globals, temp_test_path,
 };
-use gpui::{
-    AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId, WindowOptions,
-};
+use crate::fulgur::{Fulgur, editor_tab::TabLocation};
+use gpui::{BorrowAppContext, Entity, SharedString, TestAppContext, WindowId};
 use gpui_component::notification::NotificationType;
-use parking_lot::Mutex;
-use std::{
-    cell::RefCell,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-
-/// Initialize test globals required by `Fulgur::new`.
-///
-/// ### Arguments
-/// - `cx`: The GPUI test application context to initialize.
-fn setup_test_globals(cx: &mut TestAppContext) {
-    cx.update(|cx| {
-        gpui_component::init(cx);
-        let mut settings = Settings::new();
-        settings.editor_settings.watch_files = false;
-        let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-        let state_db = StateDb::open_in_memory().expect("failed to open in-memory state database");
-        cx.set_global(SharedAppState::new(
-            settings,
-            pending_files,
-            None,
-            Some(state_db),
-        ));
-        cx.set_global(WindowManager::new());
-    });
-}
-
-/// Open a window that owns a `Fulgur` entity and return both identifiers.
-///
-/// ### Arguments
-/// - `cx`: The GPUI test application context used to open the window.
-///
-/// ### Returns
-/// - `(WindowId, Entity<Fulgur>)`: The window ID and the associated `Fulgur` entity.
-fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Fulgur>) {
-    let window_id_slot: RefCell<Option<WindowId>> = RefCell::new(None);
-    let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
-    cx.update(|cx| {
-        cx.open_window(WindowOptions::default(), |window, cx| {
-            let window_id = window.window_handle().window_id();
-            let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
-            *window_id_slot.borrow_mut() = Some(window_id);
-            *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-            cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
-        })
-        .expect("failed to open test window");
-    });
-    (
-        window_id_slot
-            .into_inner()
-            .expect("failed to capture test window id"),
-        fulgur_slot
-            .into_inner()
-            .expect("failed to capture test Fulgur entity"),
-    )
-}
-
-/// Build an OS-agnostic temporary path for file lookup tests.
-///
-/// ### Arguments
-/// - `file_name`: The file name to append to the platform temp directory.
-///
-/// ### Returns
-/// - `PathBuf`: A path rooted under `std::env::temp_dir()`.
-fn temp_test_path(file_name: &str) -> PathBuf {
-    std::env::temp_dir().join(file_name)
-}
+use std::path::Path;
 
 /// Register a window entity inside the global `WindowManager`.
 ///
