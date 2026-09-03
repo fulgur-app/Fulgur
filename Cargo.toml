@@ -40,7 +40,7 @@ serde_json = "1.0.151"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 # Cryptography & security
-base64 = "0.22.1"
+base64 = "0.23.1"
 age = "0.12.1"
 zeroize = "1.9.0"
 sha2 = "0.11.0"
@@ -51,7 +51,7 @@ ssh-key = { version = "0.6.7", features = ["std"] }
 keyring-core = "1.0.0"
 
 # Networking
-ureq = { version = "3.3.0", features = ["json"] }
+ureq = { version = "3.4.0", features = ["json"] }
 ssh2 = { version = "0.9.6", features = ["vendored-openssl"] }
 
 # Encoding
@@ -135,10 +135,10 @@ semver = "1.0.28"
 parking_lot = "0.12.5"
 color-lsp = "0.2.0"
 flexi_logger = "0.31.10"
-uuid = { version = "1.24.0", features = ["v4"] }
+uuid = { version = "1.26.0", features = ["v4"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.6.1"
+tikv-jemallocator = "0.7.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
@@ -148,7 +148,7 @@ dbus-secret-service-keyring-store = { version = "1.0.1", features = ["crypto-rus
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = "1.1.0"
-windows = { version = "0.61", features = [
+windows = { version = "0.62.1", features = [
     "Win32_Foundation",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
