@@ -4,9 +4,9 @@ use crate::fulgur::ui::tabs::tab::TabId;
 use gpui::{AppContext, Context, Window};
 use gpui_component::{WindowExt, notification::NotificationType};
 
-use super::input::{make_log_input_state, write_log_to_bottom};
+use super::input::make_log_input_state;
 use super::tail::{log_toggle_available, trim_to_last_lines};
-use super::{LOG_LINE_CAP, LogTailState};
+use super::{LOG_LINE_CAP, LogDisplayUpdate, LogTailState};
 use crate::fulgur::Fulgur;
 
 /// File size beyond which "Load full file" warns the user about memory use.
@@ -104,12 +104,18 @@ impl Fulgur {
         }
         let new_offset = bytes.len() as u64;
         let full = String::from_utf8_lossy(&bytes).into_owned();
-        write_log_to_bottom(&log_content, &full, window, cx);
         if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
             state.byte_offset = new_offset;
-            state.dropped_lines = false;
-            state.pending.clear();
         }
+        // The cap is lifted from here on, so commit as a full untrimmed buffer.
+        self.commit_log_display(
+            tab_id,
+            &log_content,
+            LogDisplayUpdate::Replace(&full),
+            true,
+            window,
+            cx,
+        );
         self.update_editor_tab(tab_id, cx, |editor, _| {
             editor.log_full = true;
             editor.log_follow = true;

@@ -19,6 +19,11 @@ mod tail;
 
 pub use tail::{log_toggle_available, opens_as_log_by_default};
 
+use gpui::{Context, Entity, Window};
+use gpui_component::input::EditorState;
+
+use self::input::{append_log_to_bottom, write_log_to_bottom};
+use self::tail::trim_to_last_lines;
 use crate::fulgur::Fulgur;
 use crate::fulgur::ui::tabs::tab::TabId;
 
@@ -73,5 +78,57 @@ impl Fulgur {
                 .as_editor()
                 .filter(|editor| editor.id == tab_id)
         })
+    }
+}
+
+/// How a log display buffer should absorb a piece of newly produced text.
+#[derive(Clone, Copy)]
+enum LogDisplayUpdate<'a> {
+    Replace(&'a str),
+    Append(&'a str),
+}
+
+impl Fulgur {
+    /// Write text into a log display buffer and update its tail bookkeeping.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: The tab whose tail state should be updated
+    /// - `log_content`: The read-only display buffer of that tab
+    /// - `update`: The text to write and how to write it
+    /// - `log_full`: Whether the line cap is lifted for this tab
+    /// - `window`: The active window
+    /// - `cx`: The application context
+    fn commit_log_display(
+        &mut self,
+        tab_id: TabId,
+        log_content: &Entity<EditorState>,
+        update: LogDisplayUpdate<'_>,
+        log_full: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let dropped = match update {
+            LogDisplayUpdate::Replace(text) if log_full => {
+                write_log_to_bottom(log_content, text, window, cx);
+                false
+            }
+            LogDisplayUpdate::Replace(text) => {
+                let (display, dropped) = trim_to_last_lines(text.to_string(), LOG_LINE_CAP);
+                write_log_to_bottom(log_content, &display, window, cx);
+                dropped
+            }
+            LogDisplayUpdate::Append(text) => {
+                let dropped_before = self
+                    .log_tail_state
+                    .get(&tab_id)
+                    .is_some_and(|state| state.dropped_lines);
+                let dropped_now = append_log_to_bottom(log_content, text, log_full, window, cx);
+                dropped_before || dropped_now
+            }
+        };
+        if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
+            state.pending.clear();
+            state.dropped_lines = dropped;
+        }
     }
 }
