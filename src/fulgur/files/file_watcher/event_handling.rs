@@ -150,10 +150,6 @@ mod tests {
     use tempfile::TempDir;
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_handle_file_watch_event_modified_reloads_unmodified_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -199,10 +195,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_handle_file_watch_event_modified_active_tab_does_not_queue_conflict(
         cx: &mut TestAppContext,
     ) {
@@ -234,10 +226,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_repeated_external_modifications_show_a_single_conflict_dialog(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = temp_test_path("fulgur_conflict_repeated.txt");
@@ -284,10 +272,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_handle_file_watch_event_modified_inactive_tab_defers_until_activation(
         cx: &mut TestAppContext,
     ) {
@@ -330,10 +314,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_handle_file_watch_event_deleted_keeps_editor_state(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = temp_test_path("fulgur_deleted_branch.txt");
@@ -375,10 +355,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_handle_file_watch_event_deleted_existing_path_reloads(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -423,10 +399,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_handle_file_watch_event_renamed_updates_path_and_title(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let from = temp_test_path("fulgur_rename_from.rs");

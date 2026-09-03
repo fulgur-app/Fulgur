@@ -148,10 +148,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_rename_tab_sets_title(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -165,10 +161,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_rename_tab_rejects_blank_name(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -181,10 +173,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_rename_tab_truncates_long_name(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -201,10 +189,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_rename_tab_applies_language_from_extension(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -223,10 +207,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_rename_tab_refuses_file_backed_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -255,10 +235,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_renamed_tab_is_suggested_as_filename(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -277,10 +253,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_renamed_empty_tab_is_persisted(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);

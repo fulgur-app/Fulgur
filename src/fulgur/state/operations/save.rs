@@ -316,10 +316,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn dirty_file_tab_persists_content_when_setting_is_enabled(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tabs = tab_states_with(
@@ -336,10 +332,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn dirty_file_tab_persists_path_only_when_setting_is_disabled(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tabs = tab_states_with(
@@ -357,10 +349,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn untitled_tab_is_dropped_when_setting_is_disabled(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tabs = tab_states_with(&fulgur, &mut visual_cx, TabLocation::Untitled, false);
@@ -371,10 +359,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn untitled_tab_is_persisted_when_setting_is_enabled(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tabs = tab_states_with(&fulgur, &mut visual_cx, TabLocation::Untitled, true);

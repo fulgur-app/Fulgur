@@ -263,10 +263,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_process_pending_share_sheet_drains_sse_restart_queue(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
@@ -291,10 +287,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_process_pending_share_sheet_no_state_is_a_noop(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {

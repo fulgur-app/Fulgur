@@ -88,10 +88,6 @@ fn test_sse_state_new_is_fully_empty() {
 // --- handle_sse_event_for_profile: Heartbeat ---
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_handle_heartbeat_sets_last_heartbeat(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -122,10 +118,6 @@ fn test_handle_heartbeat_sets_last_heartbeat(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_handle_heartbeat_when_disconnected_restores_connected_status(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -152,10 +144,6 @@ fn test_handle_heartbeat_when_disconnected_restores_connected_status(cx: &mut Te
 }
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_handle_heartbeat_when_connected_keeps_connected_status(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -280,10 +268,6 @@ fn test_pending_shares_snapshot_does_not_consume_the_debounce_window(cx: &mut Te
 // --- handle_sse_event_for_profile: ShareAvailable ---
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_handle_share_available_does_not_touch_pending_files(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -316,10 +300,6 @@ fn test_handle_share_available_does_not_touch_pending_files(cx: &mut TestAppCont
 // --- handle_sse_event_for_profile: Error ---
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_handle_error_event_does_not_change_shared_state(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -374,10 +354,6 @@ fn install_test_sse_channel(cx: &gpui::App) -> futures::channel::mpsc::Unbounded
 }
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_sse_consumer_dispatches_heartbeat_from_channel(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -410,10 +386,6 @@ fn test_sse_consumer_dispatches_heartbeat_from_channel(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_sse_consumer_spawn_is_idempotent(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -499,10 +471,6 @@ fn install_stubborn_sse_worker(profile_id: &str, cx: &gpui::App) {
 }
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_stop_sse_connection_clears_the_worker_without_blocking(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -540,10 +508,6 @@ fn test_stop_sse_connection_clears_the_worker_without_blocking(cx: &mut TestAppC
 }
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_restart_bail_out_leaves_the_live_connection_untouched(cx: &mut TestAppContext) {
     // `prepare_sse_restart` decides whether to connect from this window's
     // settings snapshot, which is not authoritative about the live connection.
@@ -589,10 +553,6 @@ fn test_restart_bail_out_leaves_the_live_connection_untouched(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-#[cfg_attr(
-    target_os = "macos",
-    ignore = "known upstream a11y panic on gpui TestWindow"
-)]
 fn test_sse_consumer_with_closed_channel_is_a_no_op(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {

@@ -175,10 +175,6 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_do_open_file_does_not_reload_modified_existing_tab_without_confirmation(
         cx: &mut TestAppContext,
     ) {

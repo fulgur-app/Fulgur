@@ -137,10 +137,6 @@ mod tests {
     use std::time::Instant;
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_unwatch_file_prunes_bookkeeping_maps(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = temp_test_path("fulgur_unwatch_cleanup.txt");
@@ -173,10 +169,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_stop_file_watcher_clears_bookkeeping_maps(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = temp_test_path("fulgur_stop_watcher_cleanup.txt");
