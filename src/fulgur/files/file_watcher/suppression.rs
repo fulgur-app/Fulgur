@@ -73,10 +73,6 @@ mod tests {
     use tempfile::TempDir;
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_handle_file_watch_event_modified_is_debounced(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -114,10 +110,6 @@ mod tests {
     }
 
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_handle_file_watch_event_deleted_is_suppressed_after_self_save(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");

@@ -220,10 +220,6 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_current_sheet_language_reflects_active_editor_language(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -242,10 +238,6 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "known upstream a11y panic on gpui TestWindow"
-    )]
     fn test_switch_active_tab_language_is_noop_without_active_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
