@@ -3,7 +3,7 @@ name: Security Audit
 on:
   pull_request:
     branches: [main]
-    paths: ['Cargo.lock', 'deny.toml']
+    paths: ['Cargo.lock', 'deny.toml', '.cargo/audit.toml', '.github/workflows/security.yml']
   schedule:
     - cron: '0 8 * * 3' # Every Wednesday at 8:00 UTC
   workflow_dispatch:
@@ -34,6 +34,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      # The two ignore lists drift silently: cargo-audit treats `unmaintained` as a
+      # non-fatal warning, so a missing id here never turns the build red on its own.
+      - name: Advisory ignore lists are in sync
+        run: |
+          deny=$(grep -oE '^[[:space:]]*"RUSTSEC-[0-9]{4}-[0-9]{4}"' deny.toml | tr -d ' "' | paste -sd, -)
+          workflow=$(sed -n 's/^[[:space:]]*ignore:[[:space:]]*//p' .github/workflows/security.yml)
+          if [ "$deny" != "$workflow" ]; then
+            echo "::error::deny.toml and security.yml advisory ignore lists diverged"
+            echo "  deny.toml: $deny"
+            echo "  security.yml: $workflow"
+            exit 1
+          fi
+          echo "Ignore lists match: $deny"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -41,9 +55,14 @@ jobs:
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          # Ignore unmaintained transitive dependencies that come from external crates and are outside of Fulgur's control.
-          # Keep this list in sync with `[advisories].ignore` in deny.toml.
-          ignore: RUSTSEC-2025-0052,RUSTSEC-2024-0384,RUSTSEC-2024-0436,RUSTSEC-2026-0105,RUSTSEC-2026-0173,RUSTSEC-2026-0192,RUSTSEC-2026-0194,RUSTSEC-2026-0195,RUSTSEC-2026-0206,RUSTSEC-2025-0134
+          # MUST be a verbatim mirror of `[advisories].ignore` in deny.toml, same IDs in the
+          # same order, so the two can be diffed by eye. Both tools read the same RustSec
+          # database, but cargo-audit reports `unmaintained` as a non-fatal warning while
+          # deny.toml sets `unmaintained = "all"`, so a missing ID here degrades silently
+          # into annotation noise rather than a failed build. Advisories for crates that sit
+          # in Cargo.lock without being reachable in the build graph belong in
+          # .cargo/audit.toml instead, since cargo-deny's graph never sees them.
+          ignore: RUSTSEC-2024-0384,RUSTSEC-2024-0436,RUSTSEC-2026-0173,RUSTSEC-2026-0192,RUSTSEC-2026-0206,RUSTSEC-2025-0141,RUSTSEC-2025-0134,RUSTSEC-2026-0194,RUSTSEC-2026-0195
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2

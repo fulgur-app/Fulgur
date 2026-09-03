@@ -1,10 +1,18 @@
 # cargo-audit configuration for Fulgur
 # https://docs.rs/cargo-audit/latest/cargo_audit/config/index.html
 
+# Advisories listed here are deliberately NOT in deny.toml: they cover crates that are
+# recorded in Cargo.lock but are not reachable from any target in the build graph, so
+# cargo-deny never reports them while cargo-audit, which reads the lock file flat, does.
+# Everything reachable in the build graph belongs in deny.toml instead, mirrored into the
+# `ignore:` input of .github/workflows/security.yml.
 [advisories]
 ignore = [
     # rsa - Marvin Attack timing side-channel; no fix available upstream.
     # Mandatory transitive dependency of ssh-key 0.6.7; client-side use only,
     # not exposed to untrusted remote timing observations.
     "RUSTSEC-2023-0071",
+    # core2 - unmaintained, all versions yanked. Left behind in Cargo.lock by the pinned
+    # gpui/Zed revision; unreachable from any target, so cargo-deny does not flag it.
+    "RUSTSEC-2026-0105",
 ]
