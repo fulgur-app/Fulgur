@@ -8,9 +8,8 @@ use std::time::Duration;
 
 use gpui::{Context, Window};
 
-use super::LOG_LINE_CAP;
-use super::input::{append_log_to_bottom, write_log_to_bottom};
-use super::tail::{read_new_log_bytes, trim_to_last_lines};
+use super::LogDisplayUpdate;
+use super::tail::read_new_log_bytes;
 use crate::fulgur::Fulgur;
 
 /// How often the active log tab polls its file for newly appended bytes.
@@ -136,16 +135,14 @@ impl Fulgur {
 
         if truncated {
             // File was rotated or shrunk: rebuild the view from the new content.
-            let (display, dropped) = if log_full {
-                (text.to_string(), false)
-            } else {
-                trim_to_last_lines(text.to_string(), LOG_LINE_CAP)
-            };
-            if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
-                state.pending.clear();
-                state.dropped_lines = dropped;
-            }
-            write_log_to_bottom(&log_content, &display, window, cx);
+            self.commit_log_display(
+                tab_id,
+                &log_content,
+                LogDisplayUpdate::Replace(text),
+                log_full,
+                window,
+                cx,
+            );
             cx.notify();
             return;
         }
@@ -160,15 +157,14 @@ impl Fulgur {
         }
 
         // Following: append the new text to the live buffer and snap to bottom.
-        let dropped_before = self
-            .log_tail_state
-            .get(&tab_id)
-            .is_some_and(|state| state.dropped_lines);
-        let dropped_now = append_log_to_bottom(&log_content, text, log_full, window, cx);
-        if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
-            state.pending.clear();
-            state.dropped_lines = dropped_before || dropped_now;
-        }
+        self.commit_log_display(
+            tab_id,
+            &log_content,
+            LogDisplayUpdate::Append(text),
+            log_full,
+            window,
+            cx,
+        );
         cx.notify();
     }
 
@@ -196,14 +192,14 @@ impl Fulgur {
             .get_mut(&tab_id)
             .map(|state| std::mem::take(&mut state.pending))
             .unwrap_or_default();
-        let dropped_before = self
-            .log_tail_state
-            .get(&tab_id)
-            .is_some_and(|state| state.dropped_lines);
-        let dropped_now = append_log_to_bottom(&log_content, &pending, log_full, window, cx);
-        if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
-            state.dropped_lines = dropped_before || dropped_now;
-        }
+        self.commit_log_display(
+            tab_id,
+            &log_content,
+            LogDisplayUpdate::Append(&pending),
+            log_full,
+            window,
+            cx,
+        );
     }
 
     /// Set the follow flag on a log tab by id.
