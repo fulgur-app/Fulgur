@@ -346,7 +346,7 @@ fn report_window_creation_failure(
 ///
 /// ### Arguments
 /// * `cx` - The application context
-/// * `window_index` - The index of the window to create
+/// * `window_index` - The index of the window to create, and of the saved state it restores
 /// * `saved_bounds` - Previously loaded window bounds for this window, if any
 /// * `cli_file_paths` - The paths of the files to open in the window
 fn create_window(
@@ -381,7 +381,12 @@ fn create_window(
     let window = cx.open_window(window_options, |window, cx| {
         window.set_window_title("Fulgur");
         let window_id = window.window_handle().window_id();
-        let view = fulgur::Fulgur::new(window, cx, window_id, window_index);
+        let view = fulgur::Fulgur::new(
+            window,
+            cx,
+            window_id,
+            fulgur::WindowInit::Restore(window_index),
+        );
         cx.update_global::<fulgur::window_manager::WindowManager, _>(|manager, _| {
             manager.register(window_id, view.downgrade());
         });

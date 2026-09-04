@@ -1,3 +1,4 @@
+use crate::fulgur::WindowInit;
 #[cfg(feature = "gpui-test-support")]
 use crate::fulgur::{
     Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
@@ -54,7 +55,7 @@ pub fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestConte
         .update(|cx| {
             cx.open_window(WindowOptions::default(), |window, cx| {
                 let window_id = window.window_handle().window_id();
-                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *fulgur_slot.borrow_mut() = Some(fulgur);
                 cx.new(|_| EmptyView)
             })
@@ -93,7 +94,7 @@ pub fn setup_fulgur_with_root(cx: &mut TestAppContext) -> (Entity<Fulgur>, Visua
         .update(|cx| {
             cx.open_window(WindowOptions::default(), |window, cx| {
                 let window_id = window.window_handle().window_id();
-                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *fulgur_slot.borrow_mut() = Some(fulgur.clone());
                 cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
             })
@@ -128,7 +129,7 @@ pub fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Ful
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
             let window_id = window.window_handle().window_id();
-            let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+            let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
             *window_id_slot.borrow_mut() = Some(window_id);
             *fulgur_slot.borrow_mut() = Some(fulgur.clone());
             cx.new(|_| EmptyView)

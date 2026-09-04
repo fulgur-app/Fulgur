@@ -11,6 +11,8 @@ mod ui;
 pub mod utils;
 pub mod window_manager;
 
+pub use lifecycle::WindowInit;
+
 use crate::fulgur::files::{
     file_operations::PendingRemoteOpenOutcome, file_watcher::FileWatchState,
 };

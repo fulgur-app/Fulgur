@@ -240,6 +240,7 @@ impl Fulgur {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     use super::{Fulgur, StatusBar, StatusBarEvent, SyncButtonState};
+    use crate::fulgur::WindowInit;
     use crate::fulgur::{
         languages::supported_languages::SupportedLanguage,
         settings::{ServerProfile, Settings},
@@ -284,7 +285,7 @@ mod tests {
             .update(|cx| {
                 cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *fulgur_slot.borrow_mut() = Some(fulgur);
                     cx.new(|_| EmptyView)
                 })
@@ -333,7 +334,7 @@ mod tests {
             .update(|cx| {
                 cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *fulgur_slot.borrow_mut() = Some(fulgur);
                     cx.new(|_| EmptyView)
                 })
@@ -536,7 +537,7 @@ mod tests {
             .update(|cx| {
                 cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *fulgur_slot.borrow_mut() = Some(fulgur);
                     cx.new(|_| EmptyView)
                 })

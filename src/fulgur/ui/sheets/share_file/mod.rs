@@ -167,6 +167,7 @@ impl Fulgur {
 mod tests {
     use super::state::ProfileFetchState;
     use super::{Fulgur, ShareSheetState};
+    use crate::fulgur::WindowInit;
     use crate::fulgur::{
         settings::{ServerProfile, Settings},
         shared_state::SharedAppState,
@@ -192,7 +193,7 @@ mod tests {
             .update(|cx| {
                 cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *fulgur_slot.borrow_mut() = Some(fulgur.clone());
                     cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
                 })

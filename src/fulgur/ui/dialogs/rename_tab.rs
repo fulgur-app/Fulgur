@@ -81,6 +81,7 @@ impl Fulgur {
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
+    use crate::fulgur::WindowInit;
     use crate::fulgur::{
         Fulgur,
         editor_tab::{EditorTab, TabLocation},
@@ -111,7 +112,7 @@ mod tests {
             .update(|cx| {
                 cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *slot.borrow_mut() = Some(fulgur.clone());
                     cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
                 })
