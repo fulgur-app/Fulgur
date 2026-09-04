@@ -731,6 +731,7 @@ fn load_from_path_returns_error_when_both_primary_and_backup_are_corrupted() {
 
 #[cfg(feature = "gpui-test-support")]
 mod gpui_settings_propagation_tests {
+    use crate::fulgur::WindowInit;
     use crate::fulgur::{
         Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
@@ -766,7 +767,7 @@ mod gpui_settings_propagation_tests {
         cx.update(|cx| {
             cx.open_window(WindowOptions::default(), |window, cx| {
                 let window_id = window.window_handle().window_id();
-                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *window_id_slot.borrow_mut() = Some(window_id);
                 *fulgur_slot.borrow_mut() = Some(fulgur.clone());
                 cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))

@@ -6,6 +6,7 @@ use core::prelude::v1::test;
 
 #[cfg(feature = "gpui-test-support")]
 use super::SearchBar;
+use crate::fulgur::WindowInit;
 #[cfg(feature = "gpui-test-support")]
 use crate::fulgur::{
     Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
@@ -71,7 +72,7 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
         .update(|cx| {
             cx.open_window(WindowOptions::default(), |window, cx| {
                 let window_id = window.window_handle().window_id();
-                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *fulgur_slot.borrow_mut() = Some(fulgur);
                 cx.new(|_| EmptyView)
             })
