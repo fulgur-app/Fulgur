@@ -3,12 +3,12 @@ use crate::fulgur::{
     languages::supported_languages::SupportedLanguage,
     settings::Settings,
     shared_state::SharedAppState,
-    tab::Tab,
+    tab::{Tab, TabId},
     ui::tabs::editor_tab::{TabLocation, TabTransferData},
     window_manager::WindowManager,
 };
 use gpui::{
-    AppContext, Context, Entity, IntoElement, Render, SharedString, TestAppContext,
+    App, AppContext, Context, Entity, IntoElement, Render, SharedString, TestAppContext,
     VisualTestContext, Window, WindowOptions, div,
 };
 use gpui_component::input::{InputEvent, Position};
@@ -23,7 +23,11 @@ impl Render for EmptyView {
     }
 }
 
-fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+/// Install the globals every test window needs
+///
+/// ### Arguments
+/// - `cx`: The test application context
+fn init_test_globals(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_component::init(cx);
         let mut settings = Settings::new();
@@ -32,6 +36,10 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
         cx.set_global(SharedAppState::new(settings, pending_files, None, None));
         cx.set_global(WindowManager::new());
     });
+}
+
+fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+    init_test_globals(cx);
 
     let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
     let window = cx
@@ -51,6 +59,82 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
         .into_inner()
         .expect("failed to capture Fulgur entity");
     (fulgur, visual_cx)
+}
+
+/// Boot a test window rooted in a `gpui_component::Root`
+///
+/// ### Arguments
+/// - `cx`: The test application context
+///
+/// ### Returns
+/// - `(Entity<Fulgur>, VisualTestContext)`: The window state and its visual context
+fn setup_fulgur_with_root(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+    init_test_globals(cx);
+
+    let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+    let window = cx
+        .update(|cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
+                let window_id = window.window_handle().window_id();
+                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                *fulgur_slot.borrow_mut() = Some(fulgur.clone());
+                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+            })
+        })
+        .expect("failed to open test window");
+
+    let visual_cx = VisualTestContext::from_window(window.into(), cx);
+    visual_cx.run_until_parked();
+    let fulgur = fulgur_slot
+        .into_inner()
+        .expect("failed to capture Fulgur entity");
+    (fulgur, visual_cx)
+}
+
+/// Open additional editor tabs on top of the one the test window starts with
+///
+/// ### Arguments
+/// - `fulgur`: The window state to add the tabs to
+/// - `count`: How many tabs to open beyond the initial one
+/// - `window`: The window context
+/// - `cx`: The application context
+///
+/// ### Returns
+/// - `Vec<TabId>`: The ids of every open tab, in tab-strip order
+fn open_extra_tabs(
+    fulgur: &mut Fulgur,
+    count: usize,
+    window: &mut Window,
+    cx: &mut Context<Fulgur>,
+) -> Vec<TabId> {
+    for _ in 0..count {
+        fulgur.new_tab(window, cx);
+    }
+    tab_ids(fulgur, cx)
+}
+
+/// Collect the ids of the currently open tabs
+///
+/// ### Arguments
+/// - `fulgur`: The window state to read the tabs from
+/// - `cx`: The application context
+///
+/// ### Returns
+/// - `Vec<TabId>`: The ids of every open tab, in tab-strip order
+fn tab_ids(fulgur: &Fulgur, cx: &App) -> Vec<TabId> {
+    fulgur.tabs.iter().map(|t| t.read(cx).id()).collect()
+}
+
+/// Flag an editor tab as carrying unsaved changes
+///
+/// ### Arguments
+/// - `fulgur`: The window state owning the tab
+/// - `tab_id`: The id of the editor tab to flag
+/// - `cx`: The application context
+fn mark_tab_modified(fulgur: &Fulgur, tab_id: TabId, cx: &mut App) {
+    fulgur
+        .update_editor_tab(tab_id, cx, |editor, _| editor.modified = true)
+        .expect("expected an editor tab to flag as modified");
 }
 
 // ========== new_tab tests ==========
@@ -157,7 +241,7 @@ fn test_close_tab_is_noop_for_unknown_id(cx: &mut TestAppContext) {
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             let count_before = this.tabs.len();
-            this.close_tab(crate::fulgur::tab::TabId(u64::MAX), window, cx);
+            this.close_tab(TabId(u64::MAX), window, cx);
             assert_eq!(this.tabs.len(), count_before);
         });
     });
@@ -263,6 +347,195 @@ fn test_close_other_tabs_is_noop_with_single_tab(cx: &mut TestAppContext) {
             this.close_other_tabs(window, cx);
             assert_eq!(this.tabs.len(), 1);
             assert_eq!(this.tabs[0].read(cx).id(), tab_id_before);
+        });
+    });
+}
+
+// ========== close_tabs_to_left tests ==========
+
+#[gpui::test]
+fn test_close_tabs_to_left_removes_preceding_unmodified_tabs(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 3, window, cx);
+
+            this.close_tabs_to_left(2, window, cx);
+
+            assert_eq!(tab_ids(this, cx), vec![ids[2], ids[3]]);
+            assert_eq!(this.active_tab_index(cx), Some(1));
+        });
+    });
+}
+
+#[gpui::test]
+fn test_close_tabs_to_left_is_noop_at_index_zero(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 2, window, cx);
+
+            this.close_tabs_to_left(0, window, cx);
+
+            assert_eq!(tab_ids(this, cx), ids);
+        });
+    });
+}
+
+#[gpui::test]
+fn test_close_tabs_to_left_is_noop_for_out_of_range_index(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 2, window, cx);
+
+            this.close_tabs_to_left(ids.len(), window, cx);
+
+            assert_eq!(tab_ids(this, cx), ids);
+        });
+    });
+}
+
+#[gpui::test]
+fn test_close_tabs_to_left_stops_at_modified_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 3, window, cx);
+            mark_tab_modified(this, ids[1], cx);
+
+            this.close_tabs_to_left(3, window, cx);
+
+            // The unmodified tab before it is gone, the modified tab halts the
+            // loop behind its confirmation dialog, and the boundary tab lives.
+            assert_eq!(tab_ids(this, cx), vec![ids[1], ids[2], ids[3]]);
+            assert_eq!(this.active_tab_id, Some(ids[1]));
+        });
+    });
+}
+
+// ========== close_tabs_to_right tests ==========
+
+#[gpui::test]
+fn test_close_tabs_to_right_removes_following_unmodified_tabs(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 3, window, cx);
+
+            this.close_tabs_to_right(1, window, cx);
+
+            assert_eq!(tab_ids(this, cx), vec![ids[0], ids[1]]);
+            // The active tab was removed, so focus falls back onto the boundary.
+            assert_eq!(this.active_tab_id, Some(ids[1]));
+        });
+    });
+}
+
+#[gpui::test]
+fn test_close_tabs_to_right_is_noop_at_last_index(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 2, window, cx);
+
+            this.close_tabs_to_right(ids.len() - 1, window, cx);
+
+            assert_eq!(tab_ids(this, cx), ids);
+        });
+    });
+}
+
+#[gpui::test]
+fn test_close_tabs_to_right_is_noop_without_tabs(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let only_tab = this.tabs[0].read(cx).id();
+            this.close_tab(only_tab, window, cx);
+            assert!(this.tabs.is_empty());
+
+            this.close_tabs_to_right(0, window, cx);
+
+            assert!(this.tabs.is_empty());
+        });
+    });
+}
+
+#[gpui::test]
+fn test_close_tabs_to_right_stops_at_modified_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 3, window, cx);
+            mark_tab_modified(this, ids[2], cx);
+
+            this.close_tabs_to_right(0, window, cx);
+
+            assert_eq!(tab_ids(this, cx), vec![ids[0], ids[2], ids[3]]);
+            assert_eq!(this.active_tab_id, Some(ids[2]));
+        });
+    });
+}
+
+// ========== close_all_tabs tests ==========
+
+#[gpui::test]
+fn test_close_all_tabs_removes_every_unmodified_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            open_extra_tabs(this, 2, window, cx);
+
+            this.close_all_tabs(window, cx);
+
+            assert!(this.tabs.is_empty());
+            assert_eq!(this.active_tab_id, None);
+            assert_eq!(this.active_tab_index(cx), None);
+        });
+    });
+}
+
+#[gpui::test]
+fn test_close_all_tabs_is_noop_without_tabs(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let only_tab = this.tabs[0].read(cx).id();
+            this.close_tab(only_tab, window, cx);
+            assert!(this.tabs.is_empty());
+
+            this.close_all_tabs(window, cx);
+
+            assert!(this.tabs.is_empty());
+            assert_eq!(this.active_tab_id, None);
+        });
+    });
+}
+
+#[gpui::test]
+fn test_close_all_tabs_stops_at_modified_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 2, window, cx);
+            mark_tab_modified(this, ids[1], cx);
+
+            this.close_all_tabs(window, cx);
+
+            assert_eq!(tab_ids(this, cx), vec![ids[1], ids[2]]);
+            assert_eq!(this.active_tab_id, Some(ids[1]));
         });
     });
 }

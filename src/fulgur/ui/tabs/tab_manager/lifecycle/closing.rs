@@ -160,7 +160,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if index >= self.tabs.len() - 1 {
+        if self.tabs.is_empty() || index >= self.tabs.len() - 1 {
             return;
         }
         let keep_id = self.tabs[index].read(cx).id();
