@@ -228,6 +228,7 @@ impl Render for CsvToolbar {
 mod tests {
     #[cfg(feature = "gpui-test-support")]
     use super::CsvToolbar;
+    use crate::fulgur::WindowInit;
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::{
         Fulgur, languages::supported_languages::SupportedLanguage, settings::Settings,
@@ -261,7 +262,7 @@ mod tests {
             .update(|cx| {
                 cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *fulgur_slot.borrow_mut() = Some(fulgur.clone());
                     cx.new(|cx| Root::new(fulgur, window, cx))
                 })

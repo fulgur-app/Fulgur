@@ -1,5 +1,6 @@
 use super::{TabBar, TabBarEvent};
 use crate::fulgur::Fulgur;
+use crate::fulgur::WindowInit;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::tabs::editor_tab::TabLocation;
 use crate::fulgur::{
@@ -42,7 +43,7 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
         .update(|cx| {
             cx.open_window(WindowOptions::default(), |window, cx| {
                 let window_id = window.window_handle().window_id();
-                let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *fulgur_slot.borrow_mut() = Some(fulgur);
                 cx.new(|_| EmptyView)
             })

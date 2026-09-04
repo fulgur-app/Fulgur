@@ -1,5 +1,6 @@
 use super::WindowManager;
 use crate::fulgur::Fulgur;
+use crate::fulgur::WindowInit;
 use crate::fulgur::ui::dialogs::large_file_close::CloseContinuation;
 use crate::fulgur::ui::tabs::editor_tab::TabTransferData;
 use gpui::{AppContext, BorrowAppContext, Context, Window, WindowOptions};
@@ -146,7 +147,7 @@ impl Fulgur {
                 let window = cx.open_window(window_options, |window, cx| {
                     window.set_window_title("Fulgur");
                     let window_id = window.window_handle().window_id();
-                    let view = Fulgur::new(window, cx, window_id, usize::MAX); // usize::MAX = new empty window
+                    let view = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     cx.update_global::<WindowManager, _>(|manager, _| {
                         manager.register(window_id, view.downgrade());
                     });
@@ -194,7 +195,7 @@ impl Fulgur {
                 let window = cx.open_window(window_options, move |window, cx| {
                     window.set_window_title("Fulgur");
                     let window_id = window.window_handle().window_id();
-                    let view = Fulgur::new(window, cx, window_id, usize::MAX - 1);
+                    let view = Fulgur::new(window, cx, window_id, WindowInit::AwaitTabTransfer);
                     cx.update_global::<WindowManager, _>(|manager, _| {
                         manager.register(window_id, view.downgrade());
                     });

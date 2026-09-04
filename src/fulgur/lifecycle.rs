@@ -24,6 +24,17 @@ use gpui_component::notification::NotificationType;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+/// How a newly created `Fulgur` window initializes its tabs
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowInit {
+    /// Restore the tabs saved for the window at this index in the session snapshot
+    Restore(usize),
+    /// Start with a single empty untitled tab
+    Empty,
+    /// Start with no tab at all, because a tab transfer will populate the window
+    AwaitTabTransfer,
+}
+
 impl Fulgur {
     /// Get shared application state
     ///
@@ -42,7 +53,7 @@ impl Fulgur {
     /// - `window`: The window to create the Fulgur instance in
     /// - `cx`: The application context
     /// - `window_id`: The window ID for this instance, obtained from `window.window_handle().window_id()`
-    /// - `window_index`: Index of this window in saved state (0 = first window, etc.). Use `usize::MAX` for new empty windows.
+    /// - `window_init`: How the window initializes its tabs (restore from saved state, empty, or awaiting a tab transfer)
     ///
     /// ### Returns
     /// - `Entity<Self>`: The new Fulgur instance
@@ -50,18 +61,26 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut App,
         window_id: WindowId,
-        window_index: usize,
+        window_init: WindowInit,
     ) -> Entity<Self> {
         let shared = cx.global::<shared_state::SharedAppState>();
         let settings = shared.settings.clone();
         // A restored window keeps the identity it was persisted under, so its row
         // is updated in place instead of being deleted and reinserted.
-        let persistent_window_id = shared
-            .restore_state
-            .lock()
-            .as_ref()
-            .and_then(|state| state.windows.get(window_index))
-            .map_or_else(state::WindowState::allocate_id, |state| state.window_id);
+        let restored_window_index = match window_init {
+            WindowInit::Restore(index) => Some(index),
+            WindowInit::Empty | WindowInit::AwaitTabTransfer => None,
+        };
+        let persistent_window_id = restored_window_index
+            .and_then(|index| {
+                shared
+                    .restore_state
+                    .lock()
+                    .as_ref()
+                    .and_then(|state| state.windows.get(index))
+                    .map(|state| state.window_id)
+            })
+            .unwrap_or_else(state::WindowState::allocate_id);
         let jump_to_line_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Jump to line or line:character"));
         let rename_tab_input = cx.new(|cx| InputState::new(window, cx).placeholder("Tab name"));
@@ -175,24 +194,28 @@ impl Fulgur {
             if let Some(error_msg) = shared.sync_error.lock().as_ref() {
                 shared.notify((NotificationType::Error, error_msg.clone().into()));
             }
-            if window_index == usize::MAX {
-                let initial_tab = Tab::Editor(editor_tab::EditorTab::new(
-                    TabId(0),
-                    crate::fulgur::ui::components_utils::UNTITLED,
-                    window,
-                    cx,
-                    &this.settings.editor_settings,
-                ));
-                this.active_tab_id = Some(initial_tab.id());
-                this.tabs.push(initial_tab.into_entity(cx));
-                this.next_tab_id = TabId(1);
-            } else if window_index < usize::MAX - 1 {
-                // usize::MAX - 1 means new window receiving a tab transfer: skip initial tab
-                this.load_state(window, cx, window_index);
-                if let Some(tab_id) = this.active_tab_id {
-                    this.request_tab_scroll(tab_id, cx);
+            match window_init {
+                WindowInit::Empty => {
+                    let initial_tab = Tab::Editor(editor_tab::EditorTab::new(
+                        TabId(0),
+                        crate::fulgur::ui::components_utils::UNTITLED,
+                        window,
+                        cx,
+                        &this.settings.editor_settings,
+                    ));
+                    this.active_tab_id = Some(initial_tab.id());
+                    this.tabs.push(initial_tab.into_entity(cx));
+                    this.next_tab_id = TabId(1);
                 }
-                this.pending_initial_active_tab = this.active_tab_id;
+                WindowInit::Restore(index) => {
+                    this.load_state(window, cx, index);
+                    if let Some(tab_id) = this.active_tab_id {
+                        this.request_tab_scroll(tab_id, cx);
+                    }
+                    this.pending_initial_active_tab = this.active_tab_id;
+                }
+                // The incoming transfer supplies the only tab, so none is created here.
+                WindowInit::AwaitTabTransfer => {}
             }
             if this.settings.editor_settings.watch_files {
                 this.start_file_watcher(cx);

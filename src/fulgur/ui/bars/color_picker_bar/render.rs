@@ -216,6 +216,7 @@ impl ColorPickerBar {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod gpui_tests {
     use super::super::state::ColorPickerBarEvent;
+    use crate::fulgur::WindowInit;
     use crate::fulgur::{
         Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
@@ -250,7 +251,7 @@ mod gpui_tests {
             .update(|cx| {
                 cx.open_window(WindowOptions::default(), |window, cx| {
                     let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, usize::MAX);
+                    let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *fulgur_slot.borrow_mut() = Some(fulgur);
                     cx.new(|_| EmptyView)
                 })
