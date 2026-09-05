@@ -17,7 +17,7 @@ use gpui::{
     WindowOptions, div,
 };
 #[cfg(feature = "gpui-test-support")]
-use gpui_component::input::EditorState;
+use gpui_component::input::{EditorState, Undo};
 #[cfg(feature = "gpui-test-support")]
 use parking_lot::Mutex;
 #[cfg(feature = "gpui-test-support")]
@@ -108,6 +108,56 @@ fn setup_search(
         (this.search_bar.clone(), content)
     });
     (fulgur, search_bar, content, visual_cx)
+}
+
+/// Set up a `Fulgur` window rooted in a `gpui_component::Root`
+///
+/// ### Arguments
+/// - `cx`: The test application context
+///
+/// ### Returns
+/// - `(Entity<SearchBar>, Entity<EditorState>, VisualTestContext)`: The window's search
+///   bar, the active editor's content, and the visual context driving the window
+#[cfg(feature = "gpui-test-support")]
+fn setup_search_with_root(
+    cx: &mut TestAppContext,
+) -> (Entity<SearchBar>, Entity<EditorState>, VisualTestContext) {
+    cx.update(|cx| {
+        gpui_component::init(cx);
+        let mut settings = Settings::new();
+        settings.editor_settings.watch_files = false;
+        let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+        cx.set_global(SharedAppState::new(settings, pending_files, None, None));
+        cx.set_global(WindowManager::new());
+    });
+
+    let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+    let window = cx
+        .update(|cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
+                let window_id = window.window_handle().window_id();
+                let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
+                *fulgur_slot.borrow_mut() = Some(fulgur.clone());
+                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+            })
+        })
+        .expect("failed to open test window");
+
+    let mut visual_cx = VisualTestContext::from_window(window.into(), cx);
+    visual_cx.run_until_parked();
+    let fulgur = fulgur_slot
+        .into_inner()
+        .expect("failed to capture Fulgur entity");
+    let (search_bar, content) = visual_cx.update(|_window, cx| {
+        let this = fulgur.read(cx);
+        let content = this
+            .get_active_editor_tab(cx)
+            .expect("expected active editor tab")
+            .content
+            .clone();
+        (this.search_bar.clone(), content)
+    });
+    (search_bar, content, visual_cx)
 }
 
 // ========== apply_replacements ==========
@@ -873,6 +923,54 @@ fn test_gpui_replace_all_whole_word_only(cx: &mut TestAppContext) {
             assert!(bar.search_matches.is_empty());
             assert_eq!(bar.current_match_index, None);
         });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_gpui_replace_all_preserves_undo_history(cx: &mut TestAppContext) {
+    let (search_bar, content, mut visual_cx) = setup_search_with_root(cx);
+
+    // Type through the editable path so the pre-replace text is itself an undoable
+    // edit; seeding with `set_value` would clear the stack and make this vacuous.
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.focus(window, cx);
+            content.insert("alpha beta alpha", window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|window, cx| {
+        search_bar.update(cx, |bar, cx| {
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("alpha", window, cx);
+            });
+            bar.replace_input.update(cx, |input, cx| {
+                input.set_value("gamma", window, cx);
+            });
+            bar.replace_all(Some(content.clone()), window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        assert_eq!(
+            content.read(cx).text().to_string(),
+            "gamma beta gamma",
+            "replace-all must rewrite every match"
+        );
+    });
+
+    visual_cx.dispatch_action(Undo);
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        assert_eq!(
+            content.read(cx).text().to_string(),
+            "alpha beta alpha",
+            "a single undo must restore the pre-replace text"
+        );
     });
 }
 

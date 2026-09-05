@@ -58,7 +58,7 @@ impl SearchBar {
             new_text.push_str(&replace_text);
             new_text.push_str(&text[search_match.end..]);
             content_entity.update(cx, |content, cx| {
-                content.set_value(&new_text, window, cx);
+                content.replace_all(&new_text, window, cx);
             });
             self.search_matches.clear();
             self.perform_search(Some(content_entity.clone()), window, cx);
@@ -102,7 +102,7 @@ impl SearchBar {
                 apply_replacements(&self.search_matches, &text, &replace_text)
             };
             content_entity.update(cx, |content, cx| {
-                content.set_value(&new_text, window, cx);
+                content.replace_all(&new_text, window, cx);
             });
             self.search_matches.clear();
             self.current_match_index = None;
