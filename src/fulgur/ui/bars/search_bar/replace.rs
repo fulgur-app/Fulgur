@@ -68,8 +68,9 @@ impl SearchBar {
                 } else {
                     self.current_match_index = Some(0);
                 }
-                self.highlight_current_match(&content_entity, window, cx);
+                self.scroll_to_current_match(&content_entity, window, cx);
             }
+            self.apply_match_decorations(&content_entity, cx);
         }
         cx.notify();
     }
@@ -106,6 +107,7 @@ impl SearchBar {
             });
             self.search_matches.clear();
             self.current_match_index = None;
+            self.clear_match_decorations(cx);
         }
         cx.notify();
     }

@@ -268,8 +268,7 @@ impl SearchBar {
                     cx.theme().border,
                 )
                 .on_click(cx.listener(|this, _, _window, cx| {
-                    let content = this.active_editor_content(cx);
-                    this.close(content, cx);
+                    this.close(cx);
                 })),
             )
     }
