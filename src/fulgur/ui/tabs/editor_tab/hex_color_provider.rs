@@ -103,6 +103,20 @@ fn corrected_character(line: Option<&str>, matched: &str, character: u32) -> u32
     character
 }
 
+/// Reports that the document contains no colors.
+pub struct NoColorProvider;
+
+impl DocumentColorProvider for NoColorProvider {
+    fn document_colors(
+        &self,
+        _text: &Rope,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Task<gpui::Result<Vec<ColorInformation>>> {
+        Task::ready(Ok(Vec::new()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::corrected_character;

@@ -43,7 +43,7 @@ fn make_select_language_item(
         .hover(|this| this.bg(cx.theme().muted))
         .on_click(move |_event, window, cx| {
             entity.update(cx, |this, cx| {
-                this.switch_active_tab_language(window, cx, language);
+                this.switch_active_tab_language(cx, language);
                 window.close_sheet(cx);
             });
         })
@@ -115,19 +115,12 @@ impl Fulgur {
     /// Force the active editor tab language from the select-language sheet.
     ///
     /// ### Parameters:
-    /// - `window`: The window context.
     /// - `cx`: The application context.
     /// - `language`: The language to apply to the active editor tab.
-    fn switch_active_tab_language(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        language: SupportedLanguage,
-    ) {
+    fn switch_active_tab_language(&mut self, cx: &mut Context<Self>, language: SupportedLanguage) {
         if let Some(tab_entity) = self.active_tab_entity(cx) {
-            let settings = self.settings.editor_settings.clone();
             tab_entity.update(cx, |tab, cx| {
-                tab.force_language(window, cx, language, &settings);
+                tab.force_language(cx, language);
             });
         }
     }
@@ -227,9 +220,9 @@ mod tests {
         let initial_language = fulgur.read_with(&visual_cx, Fulgur::current_sheet_language);
         assert_eq!(initial_language, Some(SupportedLanguage::Plain));
 
-        visual_cx.update(|window, cx| {
+        visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
-                this.switch_active_tab_language(window, cx, SupportedLanguage::Rust);
+                this.switch_active_tab_language(cx, SupportedLanguage::Rust);
             });
         });
 
@@ -242,10 +235,10 @@ mod tests {
     fn test_switch_active_tab_language_is_noop_without_active_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
-        visual_cx.update(|window, cx| {
+        visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.active_tab_id = None;
-                this.switch_active_tab_language(window, cx, SupportedLanguage::Rust);
+                this.switch_active_tab_language(cx, SupportedLanguage::Rust);
             });
         });
 

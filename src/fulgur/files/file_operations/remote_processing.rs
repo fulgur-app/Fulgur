@@ -128,7 +128,6 @@ impl Fulgur {
         let Some(tab_entity) = self.tab_entity_of(tab_id, cx) else {
             return;
         };
-        let settings = self.settings.editor_settings.clone();
         tab_entity.update(cx, |tab, cx| {
             let Some(editor_tab) = tab.as_editor_mut() else {
                 return;
@@ -154,7 +153,7 @@ impl Fulgur {
                 editor_tab.title.as_ref(),
                 &remote_file.content,
             );
-            tab.force_language(window, cx, language, &settings);
+            tab.force_language(cx, language);
             cx.notify();
         });
         cx.notify();

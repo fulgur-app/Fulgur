@@ -825,35 +825,33 @@ mod gpui_settings_propagation_tests {
         setup_test_globals(cx);
         let (window_id, fulgur) = open_window_with_fulgur(cx);
         register_window_in_global_manager(cx, window_id, &fulgur);
-        let content_before = cx.update(|cx| {
+        let colors_before = cx.update(|cx| {
             fulgur
                 .read(cx)
                 .get_active_editor_tab(cx)
                 .expect("expected initial editor tab")
-                .content
-                .entity_id()
+                .highlight_colors
         });
         cx.update(|cx| {
             fulgur.update(cx, |this, cx| {
-                // Toggling highlight_colors forces an EditorState rebuild, which is
-                // observable from outside via the content entity id. The rebuild
-                // must happen through the publisher's own global observer.
-                this.settings.editor_settings.highlight_colors =
-                    !this.settings.editor_settings.highlight_colors;
+                // Toggling highlight_colors swaps the tab's document color
+                // provider, which is observable from outside via the tab's own
+                // highlight_colors flag. The swap must happen through the
+                // publisher's own global observer.
+                this.settings.editor_settings.highlight_colors = !colors_before;
                 this.update_and_propagate_settings(cx)
                     .expect("settings update should succeed");
             });
         });
         cx.run_until_parked();
         cx.update(|cx| {
-            let content_after = fulgur
+            let colors_after = fulgur
                 .read(cx)
                 .get_active_editor_tab(cx)
                 .expect("expected initial editor tab")
-                .content
-                .entity_id();
-            assert_ne!(
-                content_before, content_after,
+                .highlight_colors;
+            assert_eq!(
+                colors_after, !colors_before,
                 "the publishing window's observer must apply editor settings to its own tabs"
             );
         });

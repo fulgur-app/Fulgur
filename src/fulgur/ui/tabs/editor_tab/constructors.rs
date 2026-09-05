@@ -68,6 +68,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            highlight_colors: settings.highlight_colors,
             content_subscription: None,
         }
     }
@@ -132,6 +133,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
     }
@@ -210,6 +212,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
     }
@@ -272,6 +275,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
     }
@@ -338,6 +342,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            highlight_colors: settings.highlight_colors,
             content_subscription: None,
         }
     }
@@ -407,6 +412,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
     }
@@ -473,6 +479,7 @@ impl EditorTab {
             log_follow: true,
             log_full: false,
             log_content: None,
+            highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
     }

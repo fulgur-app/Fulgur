@@ -1,11 +1,12 @@
-use super::{EditorTab, Jump};
+use super::{EditorTab, Jump, hex_color_provider};
 use crate::fulgur::languages::supported_languages::{
     SupportedLanguage, language_from_content, language_registry_name,
 };
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::UNTITLED;
-use gpui::{App, AppContext, Window};
-use gpui_component::input::Position;
+use gpui::{App, Window};
+use gpui_component::input::{DocumentColorProvider, Position};
+use std::rc::Rc;
 use std::time::SystemTime;
 
 impl EditorTab {
@@ -30,19 +31,6 @@ impl EditorTab {
         cx: &mut App,
         settings: &EditorSettings,
     ) {
-        let has_provider = self
-            .content
-            .read(cx)
-            .lsp()
-            .document_color_provider
-            .is_some();
-        let wants_provider = settings.highlight_colors && !self.large_file;
-
-        if has_provider != wants_provider {
-            self.rebuild_input_state(window, cx, settings);
-            return;
-        }
-
         let large_file = self.large_file;
         self.content.update(cx, |input_state, cx| {
             input_state.set_line_number(settings.show_line_numbers, window, cx);
@@ -50,39 +38,29 @@ impl EditorTab {
             input_state.set_soft_wrap(settings.soft_wrap && !large_file, window, cx);
             input_state.set_show_whitespaces(settings.show_whitespaces && !large_file, window, cx);
         });
+        self.set_highlight_colors(cx, settings.highlight_colors);
     }
 
-    /// Rebuild the `EditorState` to apply `highlight_colors` changes.
-    ///
-    /// The `document_color_provider` can only be set at creation time (Lsp internal
-    /// state is not publicly clearable), so toggling the setting requires
-    /// recreating the `EditorState` while preserving cursor position.
+    /// Turn document color swatches on or off on the live `EditorState`.
     ///
     /// ### Arguments
-    /// - `window`: The window context
     /// - `cx`: The application context
-    /// - `settings`: The editor settings
-    pub fn rebuild_input_state(
-        &mut self,
-        window: &mut Window,
-        cx: &mut App,
-        settings: &EditorSettings,
-    ) {
-        let cursor = self.content.read(cx).cursor_position();
-        let current_content = self.content.read(cx).text().to_string();
-        let large_file = self.large_file;
-        self.content = cx.new(|cx| {
-            super::make_input_state(
-                window,
-                cx,
-                language_registry_name(&self.language),
-                Some(current_content),
-                settings,
-                large_file,
-            )
-        });
+    /// - `enabled`: Whether color swatches should be shown
+    ///
+    /// [`NoColorProvider`]: super::hex_color_provider::NoColorProvider
+    fn set_highlight_colors(&mut self, cx: &mut App, enabled: bool) {
+        let enabled = enabled && !self.large_file;
+        if enabled == self.highlight_colors {
+            return;
+        }
+        self.highlight_colors = enabled;
         self.content.update(cx, |state, cx| {
-            state.set_cursor_position(cursor, window, cx);
+            state.lsp_mut().document_color_provider = Some(if enabled {
+                Rc::new(hex_color_provider::ColorHighlightProvider) as Rc<dyn DocumentColorProvider>
+            } else {
+                Rc::new(hex_color_provider::NoColorProvider)
+            });
+            state.refresh(cx);
         });
     }
 
@@ -199,58 +177,33 @@ impl EditorTab {
     /// Update the language/syntax highlighting based on the file extension
     ///
     /// ### Arguments
-    /// - `window`: The window context
     /// - `cx`: The application context
-    /// - `settings`: The editor settings for the new input state
-    pub fn update_language(
-        &mut self,
-        window: &mut Window,
-        cx: &mut App,
-        settings: &EditorSettings,
-    ) {
+    pub fn update_language(&mut self, cx: &mut App) {
         if let Some(path) = self.location.local_path() {
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let current_content = self.content.read(cx).text().to_string();
             let language = language_from_content(file_name, &current_content);
-            if language != self.language {
-                self.force_language(window, cx, language, settings);
-            }
+            self.force_language(cx, language);
         }
     }
 
     /// Force the language/syntax highlighting based on the file extension.
     ///
-    /// Recreates the `EditorState` with the new language and restores the cursor position.
-    /// Scroll state and undo history are not preserved.
-    ///
     /// ### Arguments
-    /// - `window`: The window context
     /// - `cx`: The application context
     /// - `language`: The language to force
-    /// - `settings`: The editor settings for the new input state
-    pub fn force_language(
-        &mut self,
-        window: &mut Window,
-        cx: &mut App,
-        language: SupportedLanguage,
-        settings: &EditorSettings,
-    ) {
-        let cursor = self.content.read(cx).cursor_position();
-        let current_content = self.content.read(cx).text().to_string();
+    pub fn force_language(&mut self, cx: &mut App, language: SupportedLanguage) {
+        if self.language == language {
+            return;
+        }
         self.language = language;
-        let large_file = self.large_file;
-        self.content = cx.new(|cx| {
-            super::make_input_state(
-                window,
-                cx,
-                language_registry_name(&language),
-                Some(current_content),
-                settings,
-                large_file,
-            )
-        });
+        if self.large_file {
+            return;
+        }
+        let registry_name = language_registry_name(&language).to_string();
         self.content.update(cx, |state, cx| {
-            state.set_cursor_position(cursor, window, cx);
+            state.set_highlighter(registry_name, cx);
+            state.refresh(cx);
         });
     }
 

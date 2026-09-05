@@ -65,6 +65,8 @@ pub struct EditorTab {
     pub file_size_bytes: Option<u64>,
     pub file_last_modified: Option<SystemTime>,
     pub large_file: bool,
+    /// Whether the document color provider currently reports colors.
+    pub highlight_colors: bool,
     /// Which surface a CSV tab edits through. Always `Text` for non-CSV tabs.
     pub csv_view_mode: CsvViewMode,
     /// The delimiter detected on open and preserved on save (CSV tabs only).

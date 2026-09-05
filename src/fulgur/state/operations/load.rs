@@ -261,6 +261,7 @@ impl Fulgur {
                 log_follow: true,
                 log_full: false,
                 log_content: None,
+                highlight_colors: self.settings.editor_settings.highlight_colors && !large_file,
                 content_subscription: None,
             }
         };
