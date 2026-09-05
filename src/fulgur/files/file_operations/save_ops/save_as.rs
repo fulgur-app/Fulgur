@@ -181,7 +181,6 @@ impl Fulgur {
                 self.file_watch_state
                     .last_file_saves
                     .insert(path.to_path_buf(), std::time::Instant::now());
-                let settings = self.settings.editor_settings.clone();
                 tab_entity.update(cx, |tab, cx| {
                     let Some(editor_tab) = tab.as_editor_mut() else {
                         return;
@@ -195,7 +194,7 @@ impl Fulgur {
                         .into();
                     editor_tab.encoding = encoding;
                     editor_tab.update_file_tooltip_cache(byte_len);
-                    tab.update_language(window, cx, &settings);
+                    tab.update_language(cx);
                     cx.notify();
                 });
                 cx.notify();

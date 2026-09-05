@@ -31,10 +31,7 @@ impl Fulgur {
         let Some(tab_entity) = self.tab_entity_of(tab_id, cx) else {
             return false;
         };
-        let settings = self.settings.editor_settings.clone();
-        let renamed = tab_entity.update(cx, |tab, cx| {
-            tab.rename_editor(&new_name, window, cx, &settings)
-        });
+        let renamed = tab_entity.update(cx, |tab, cx| tab.rename_editor(&new_name, cx));
         if renamed {
             self.retitle_preview_tabs_of(tab_id, &new_name, cx);
             self.save_state_async(cx, window);

@@ -1,7 +1,7 @@
 use crate::fulgur::WindowInit;
 use crate::fulgur::{
     Fulgur,
-    languages::supported_languages::SupportedLanguage,
+    languages::supported_languages::{SupportedLanguage, language_registry_name},
     settings::Settings,
     shared_state::SharedAppState,
     tab::{Tab, TabId},
@@ -10,11 +10,11 @@ use crate::fulgur::{
 };
 use gpui::{
     App, AppContext, Context, Entity, IntoElement, Render, SharedString, TestAppContext,
-    VisualTestContext, Window, WindowOptions, div,
+    VisualTestContext, Window, WindowOptions, div, point, px,
 };
-use gpui_component::input::{InputEvent, Position};
+use gpui_component::input::{InputEvent, Position, Undo};
 use parking_lot::Mutex;
-use std::{cell::RefCell, path::PathBuf, sync::Arc};
+use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
 
 struct EmptyView;
 
@@ -902,21 +902,10 @@ fn test_tab_entity_updates_modified_on_input_change(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn test_tab_entity_resubscribes_after_content_rebuild(cx: &mut TestAppContext) {
+fn test_force_language_keeps_content_entity_and_subscription(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
-    // Rebuild the content entity via the Tab-level `force_language` wrapper,
-    // which must re-attach the tab's content subscription.
-    visual_cx.update(|window, cx| {
-        fulgur.update(cx, |this, cx| {
-            let settings = this.settings.editor_settings.clone();
-            this.tabs[0].clone().update(cx, |tab, cx| {
-                tab.force_language(window, cx, SupportedLanguage::Rust, &settings);
-            });
-        });
-    });
-
-    let new_content = visual_cx.update(|_window, cx| {
+    let content_before = visual_cx.update(|_window, cx| {
         fulgur.update(cx, |this, cx| {
             this.tabs[0]
                 .read(cx)
@@ -927,9 +916,34 @@ fn test_tab_entity_resubscribes_after_content_rebuild(cx: &mut TestAppContext) {
         })
     });
 
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.tabs[0].clone().update(cx, |tab, cx| {
+                tab.force_language(cx, SupportedLanguage::Rust);
+            });
+        });
+    });
+
+    let content_after = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab")
+                .content
+                .clone()
+        })
+    });
+
+    assert_eq!(
+        content_before.entity_id(),
+        content_after.entity_id(),
+        "force_language must swap the grammar in place, not rebuild the EditorState"
+    );
+
     visual_cx.update(|window, cx| {
-        new_content.update(cx, |input_state, cx| {
-            input_state.set_value("edited after rebuild", window, cx);
+        content_after.update(cx, |input_state, cx| {
+            input_state.set_value("edited after language change", window, cx);
             cx.emit(InputEvent::Change);
         });
     });
@@ -941,11 +955,139 @@ fn test_tab_entity_resubscribes_after_content_rebuild(cx: &mut TestAppContext) {
                 .read(cx)
                 .as_editor()
                 .expect("expected editor tab");
+            assert_eq!(editor.language, SupportedLanguage::Rust);
             assert!(
                 editor.modified,
-                "InputEvent::Change on the rebuilt content entity must update modified state"
+                "InputEvent::Change must still update modified state after a language change"
             );
         });
+    });
+}
+
+#[gpui::test]
+fn test_force_language_rebuilds_the_highlighter(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+
+    let content = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab")
+                .content
+                .clone()
+        })
+    });
+
+    // `EditorState` exposes no reader for its highlighter, so observe the
+    // factory it builds one from instead. Returning `None` keeps the highlighter
+    // slot empty, which is enough to record every build attempt.
+    let requested: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+    let recorder = requested.clone();
+    visual_cx.update(|_window, cx| {
+        content.update(cx, |input_state, cx| {
+            input_state.set_highlighter_factory(
+                Rc::new(move |language: &str| {
+                    recorder.borrow_mut().push(language.to_string());
+                    None
+                }),
+                cx,
+            );
+        });
+    });
+    visual_cx.run_until_parked();
+    requested.borrow_mut().clear();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.tabs[0].clone().update(cx, |tab, cx| {
+                tab.force_language(cx, SupportedLanguage::Rust);
+            });
+        });
+    });
+    visual_cx.run_until_parked();
+
+    let expected = language_registry_name(&SupportedLanguage::Rust);
+    assert!(
+        requested.borrow().iter().any(|name| name == expected),
+        "force_language must rebuild the highlighter for {expected}, but the \
+         factory was only asked for {:?}",
+        requested.borrow()
+    );
+}
+
+#[gpui::test]
+fn test_force_language_preserves_undo_history_and_scroll(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+
+    let content = visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.tabs[0]
+                .read(cx)
+                .as_editor()
+                .expect("expected editor tab")
+                .content
+                .clone()
+        })
+    });
+
+    // Type through the editable path so the edit lands on the undo stack. The
+    // text is long enough to overflow the viewport, so the caret-following
+    // scroll leaves the buffer scrolled away from the origin.
+    let typed = format!("{}\ntyped by the user", "filler line\n".repeat(200));
+    visual_cx.update(|window, cx| {
+        content.update(cx, |input_state, cx| {
+            input_state.focus(window, cx);
+            input_state.insert(typed, window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    let scroll_before = visual_cx.update(|_window, cx| content.read(cx).scroll_offset());
+    assert_ne!(
+        scroll_before,
+        point(px(0.), px(0.)),
+        "the test needs a non-zero scroll offset to be meaningful"
+    );
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.tabs[0].clone().update(cx, |tab, cx| {
+                tab.force_language(cx, SupportedLanguage::Rust);
+            });
+        });
+    });
+    visual_cx.run_until_parked();
+
+    assert_eq!(
+        visual_cx.update(|_window, cx| content.read(cx).scroll_offset()),
+        scroll_before,
+        "force_language must not reset the scroll offset"
+    );
+
+    visual_cx.update(|_window, cx| {
+        assert!(
+            content
+                .read(cx)
+                .text()
+                .to_string()
+                .contains("typed by the user"),
+            "the typed text must be present before undo, otherwise the undo assertion is vacuous"
+        );
+    });
+
+    visual_cx.dispatch_action(Undo);
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        assert!(
+            !content
+                .read(cx)
+                .text()
+                .to_string()
+                .contains("typed by the user"),
+            "undo history must survive a language change"
+        );
     });
 }
 

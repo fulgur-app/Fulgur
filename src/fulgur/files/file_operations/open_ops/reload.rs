@@ -71,7 +71,6 @@ impl Fulgur {
         let Some(tab_entity) = self.tabs.get(tab_index).cloned() else {
             return;
         };
-        let settings = self.settings.editor_settings.clone();
         tab_entity.update(cx, |tab, cx| {
             let Some(editor_tab) = tab.as_editor_mut() else {
                 return;
@@ -88,7 +87,7 @@ impl Fulgur {
             editor_tab.lossy_decode = decoded.lossy;
             editor_tab.modified = false;
             editor_tab.update_file_tooltip_cache(decoded.byte_len);
-            tab.update_language(window, cx, &settings);
+            tab.update_language(cx);
             if let Some(editor_tab) = tab.as_editor_mut() {
                 editor_tab.content.update(cx, |input_state, cx| {
                     input_state.set_selected_range(cursor..cursor, cx);

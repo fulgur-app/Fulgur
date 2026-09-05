@@ -158,7 +158,7 @@ impl Tab {
         ));
     }
 
-    /// Update the editor's display settings, re-attaching the content subscription on rebuild
+    /// Update the editor's display settings
     ///
     /// ### Arguments
     /// - `window`: The window context
@@ -173,48 +173,29 @@ impl Tab {
         let Tab::Editor(editor_tab) = self else {
             return;
         };
-        let content_before = editor_tab.content.entity_id();
         editor_tab.update_settings(window, cx, settings);
-        self.reattach_if_content_swapped(content_before, cx);
     }
 
-    /// Update the language from the file extension, re-attaching the content subscription
+    /// Update the language from the file extension
     ///
     /// ### Arguments
-    /// - `window`: The window context
     /// - `cx`: The tab entity context
-    /// - `settings`: The editor settings for the new input state
-    pub fn update_language(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Tab>,
-        settings: &EditorSettings,
-    ) {
+    pub fn update_language(&mut self, cx: &mut Context<Tab>) {
         let Tab::Editor(editor_tab) = self else {
             return;
         };
-        let content_before = editor_tab.content.entity_id();
-        editor_tab.update_language(window, cx, settings);
-        self.reattach_if_content_swapped(content_before, cx);
+        editor_tab.update_language(cx);
     }
 
     /// Rename an editor tab and re-detect its language from the new name
     ///
     /// ### Arguments
     /// - `name`: The new name, expected to be already trimmed and non-empty
-    /// - `window`: The window context
     /// - `cx`: The tab entity context
-    /// - `settings`: The editor settings used when the input state is rebuilt
     ///
     /// ### Returns
     /// - `bool`: `true` when the tab was renamed, `false` when it is not a renameable editor tab
-    pub fn rename_editor(
-        &mut self,
-        name: &str,
-        window: &mut Window,
-        cx: &mut Context<Tab>,
-        settings: &EditorSettings,
-    ) -> bool {
+    pub fn rename_editor(&mut self, name: &str, cx: &mut Context<Tab>) -> bool {
         let Some(editor_tab) = self.as_editor_mut() else {
             return false;
         };
@@ -225,52 +206,25 @@ impl Tab {
         let content = editor_tab.content.read(cx).text().to_string();
         let language =
             crate::fulgur::languages::supported_languages::language_from_content(name, &content);
-        let language_changed = language != editor_tab.language;
-        if language_changed {
-            self.force_language(window, cx, language, settings);
-        }
+        self.force_language(cx, language);
         cx.notify();
         true
     }
 
-    /// Force the language, re-attaching the content subscription
+    /// Force the language on the editor tab
     ///
     /// ### Arguments
-    /// - `window`: The window context
     /// - `cx`: The tab entity context
     /// - `language`: The language to force
-    /// - `settings`: The editor settings for the new input state
     pub fn force_language(
         &mut self,
-        window: &mut Window,
         cx: &mut Context<Tab>,
         language: crate::fulgur::languages::supported_languages::SupportedLanguage,
-        settings: &EditorSettings,
     ) {
         let Tab::Editor(editor_tab) = self else {
             return;
         };
-        let content_before = editor_tab.content.entity_id();
-        editor_tab.force_language(window, cx, language, settings);
-        self.reattach_if_content_swapped(content_before, cx);
-    }
-
-    /// Re-attach the content subscription when the content entity was replaced
-    ///
-    /// ### Arguments
-    /// - `content_before`: The content entity id before the possibly swapping call
-    /// - `cx`: The tab entity context
-    fn reattach_if_content_swapped(
-        &mut self,
-        content_before: gpui::EntityId,
-        cx: &mut Context<Tab>,
-    ) {
-        if let Tab::Editor(editor_tab) = self
-            && editor_tab.content.entity_id() != content_before
-        {
-            self.attach_content_subscription(cx);
-            cx.notify();
-        }
+        editor_tab.force_language(cx, language);
     }
 }
 
