@@ -1,4 +1,5 @@
 mod actions;
+mod decorations;
 mod matching;
 mod rendering;
 mod replace;

@@ -1,7 +1,6 @@
 use crate::fulgur::Fulgur;
 use gpui::{App, Context, Entity, Focusable, Window};
 use gpui_component::input::{EditorState, Position};
-use lsp_types::{Diagnostic, DiagnosticSeverity};
 
 use super::matching::find_matches_with_scratch;
 use super::{SearchBar, SearchBarEvent};
@@ -20,7 +19,7 @@ impl SearchBar {
         cx: &mut Context<Self>,
     ) {
         if self.show_search {
-            self.close(content, cx);
+            self.close(cx);
         } else {
             self.show_search = true;
             let search_focus = self.search_input.read(cx).focus_handle(cx);
@@ -33,17 +32,10 @@ impl SearchBar {
     /// Close the search bar, clear highlighting, and notify the owning window
     ///
     /// ### Arguments
-    /// - `content`: The active editor tab's content to clear highlighting from, if any
     /// - `cx`: The search bar context
-    pub(super) fn close(&mut self, content: Option<Entity<EditorState>>, cx: &mut Context<Self>) {
+    pub(super) fn close(&mut self, cx: &mut Context<Self>) {
         self.show_search = false;
-        if let Some(content) = content {
-            content.update(cx, |content, _cx| {
-                if let Some(diagnostics) = content.diagnostics_mut() {
-                    diagnostics.clear();
-                }
-            });
-        }
+        self.clear_match_decorations(cx);
         self.search_matches.clear();
         self.current_match_index = None;
         cx.emit(SearchBarEvent::Closed);
@@ -106,12 +98,8 @@ impl SearchBar {
         self.search_matches.clear();
         self.current_match_index = None;
         if let Some(content_entity) = content {
-            content_entity.update(cx, |content, _cx| {
-                if let Some(diagnostics) = content.diagnostics_mut() {
-                    diagnostics.clear();
-                }
-            });
             if query.is_empty() {
+                self.apply_match_decorations(&content_entity, cx);
                 cx.notify();
                 return;
             }
@@ -135,37 +123,6 @@ impl SearchBar {
             );
             self.search_text_scratch = search_text_scratch;
             self.search_matches = matches;
-            content_entity.update(cx, |content, cx| {
-                if let Some(diagnostics) = content.diagnostics_mut() {
-                    for search_match in &self.search_matches {
-                        let diagnostic = Diagnostic {
-                            range: lsp_types::Range {
-                                start: Position {
-                                    line: u32::try_from(search_match.line).unwrap_or(u32::MAX),
-                                    character: u32::try_from(search_match.col).unwrap_or(u32::MAX),
-                                },
-                                end: Position {
-                                    line: u32::try_from(search_match.line).unwrap_or(u32::MAX),
-                                    character: u32::try_from(
-                                        search_match.col + (search_match.end - search_match.start),
-                                    )
-                                    .unwrap_or(u32::MAX),
-                                },
-                            },
-                            severity: Some(DiagnosticSeverity::WARNING),
-                            message: "Search match".to_string(),
-                            source: None,
-                            code: None,
-                            related_information: None,
-                            tags: None,
-                            code_description: None,
-                            data: None,
-                        };
-                        diagnostics.push(diagnostic);
-                    }
-                }
-                cx.notify();
-            });
             if !self.search_matches.is_empty() {
                 let mut found_after_cursor = false;
                 for (idx, m) in self.search_matches.iter().enumerate() {
@@ -178,8 +135,9 @@ impl SearchBar {
                 if !found_after_cursor {
                     self.current_match_index = Some(0);
                 }
-                self.highlight_current_match(&content_entity, window, cx);
+                self.scroll_to_current_match(&content_entity, window, cx);
             }
+            self.apply_match_decorations(&content_entity, cx);
         }
 
         cx.notify();
@@ -206,7 +164,8 @@ impl SearchBar {
             self.current_match_index = Some(0);
         }
         if let Some(content) = content {
-            self.highlight_current_match(&content, window, cx);
+            self.scroll_to_current_match(&content, window, cx);
+            self.apply_match_decorations(&content, cx);
         }
         cx.notify();
     }
@@ -236,18 +195,19 @@ impl SearchBar {
             self.current_match_index = Some(0);
         }
         if let Some(content) = content {
-            self.highlight_current_match(&content, window, cx);
+            self.scroll_to_current_match(&content, window, cx);
+            self.apply_match_decorations(&content, cx);
         }
         cx.notify();
     }
 
-    /// Move the editor cursor to the current search match
+    /// Move the editor cursor to the current search match, scrolling it into view
     ///
     /// ### Arguments
     /// - `content`: The active editor tab's content
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn highlight_current_match(
+    pub(super) fn scroll_to_current_match(
         &self,
         content: &Entity<EditorState>,
         window: &mut Window,
