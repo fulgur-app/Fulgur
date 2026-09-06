@@ -105,7 +105,7 @@ See the [releases page](https://github.com/fulgur-app/Fulgur/releases) for what'
 
 ### All platforms
 
-[Rust](https://rust-lang.org/) 1.96.0 is the minimum supported version.
+[Rust](https://rust-lang.org/) 1.98.1 is the minimum supported version.
 
 Install [cargo-packager](https://github.com/crabnebula-dev/cargo-packager) with `cargo install cargo-packager --locked`. It bundles the app with a proper icon for each platform.
 

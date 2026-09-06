@@ -194,17 +194,17 @@ jobs:
         run: cargo test --all-features
 
   msrv:
-    name: Minimum Rust Version (1.96.0)
+    name: Minimum Rust Version (1.98.1)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Install Rust 1.96.0
+      - name: Install Rust 1.98.1
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.96.0
+          toolchain: 1.98.1
 
       - name: Install Linux dependencies
         run: *linux_deps_install_cmd
