@@ -1,3 +1,4 @@
+use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::shared_state::SyncState;
 use crate::fulgur::ui::notifications::progress::{CancelCallback, spawn_with_progress};
 use crate::fulgur::utils::worker::{Worker, WorkerHooks, dispose_off_thread};
@@ -10,7 +11,7 @@ use crate::fulgur::{
     },
 };
 use futures::channel::mpsc::UnboundedSender;
-use gpui::{Context, SharedString, Window};
+use gpui::{Context, Window};
 use gpui_component::notification::NotificationType;
 use std::{
     sync::{
@@ -47,7 +48,7 @@ enum SseRestartOutcome {
     /// Initial synchronization succeeded and a new SSE connection was started.
     Completed {
         device_name: String,
-        notifications: Vec<(NotificationType, SharedString)>,
+        notifications: Vec<AppNotification>,
     },
     /// Initial synchronization failed, so no SSE connection was started.
     Failed(SynchronizationError),
@@ -282,19 +283,17 @@ impl Fulgur {
                         notifications,
                     } => {
                         let notification = notifications.into_iter().next().unwrap_or_else(|| {
-                            (
+                            AppNotification::background(
                                 NotificationType::Success,
-                                SharedString::from(format!(
-                                    "{profile_name}: Connection successful as {device_name}"
-                                )),
+                                format!("{profile_name}: Connection successful as {device_name}"),
                             )
                         });
                         (notification, SynchronizationStatus::Connected)
                     }
                     SseRestartOutcome::Failed(e) => (
-                        (
+                        AppNotification::background(
                             NotificationType::Error,
-                            SharedString::from(format!("{profile_name}: Connection failed: {e}")),
+                            format!("{profile_name}: Connection failed: {e}"),
                         ),
                         SynchronizationStatus::from_error(&e),
                     ),

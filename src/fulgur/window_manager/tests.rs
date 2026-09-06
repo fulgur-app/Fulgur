@@ -1,5 +1,6 @@
 use super::WindowManager;
 use crate::fulgur::WindowInit;
+use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{
     Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
     state::StateDb,
@@ -432,14 +433,16 @@ fn test_notification_consumer_delivers_channel_notifications_to_window(cx: &mut 
 
     cx.update(|cx| {
         crate::fulgur::shared_state::spawn_notification_consumer(cx);
-        Fulgur::shared_state(cx).notify((
+        Fulgur::shared_state(cx).notify(AppNotification::foreground(
             NotificationType::Warning,
-            "notification from app channel".into(),
+            "notification from app channel",
         ));
-        Fulgur::shared_state(cx).primary_sync_state().notify((
-            NotificationType::Success,
-            "notification from sync background task".into(),
-        ));
+        Fulgur::shared_state(cx)
+            .primary_sync_state()
+            .notify(AppNotification::background(
+                NotificationType::Success,
+                "notification from sync background task",
+            ));
     });
     cx.run_until_parked();
 

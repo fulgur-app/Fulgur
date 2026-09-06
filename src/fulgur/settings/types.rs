@@ -286,6 +286,9 @@ pub struct AppSettings {
     /// How the title bar and the tab bar are laid out.
     #[serde(default)]
     pub title_bar_style: TitleBarStyle,
+    /// Whether background events also post to the operating system's notification center.
+    #[serde(default = "default_system_notifications")]
+    pub system_notifications: bool,
 }
 
 /// Default value for `debug_mode` setting
@@ -294,6 +297,14 @@ pub struct AppSettings {
 /// - `false`: disable debug mode by default
 fn default_debug_mode() -> bool {
     false
+}
+
+/// Default value for `system_notifications` setting
+///
+/// ### Returns
+/// - `true`: surface background events in the OS notification center by default
+fn default_system_notifications() -> bool {
+    true
 }
 
 /// Default value for `watch_files` setting
@@ -400,6 +411,7 @@ impl AppSettings {
             tab_color_style: TabColorStyle::TextColor,
             persist_unsaved_buffers: default_persist_unsaved_buffers(),
             title_bar_style: TitleBarStyle::Classic,
+            system_notifications: default_system_notifications(),
         }
     }
 

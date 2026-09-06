@@ -226,7 +226,13 @@ fn main() {
         }
     });
     app.run(move |cx| {
+        // Must be set before any window opens or any system notification is posted: Windows keys
+        // the notification center off the AppUserModelID, and drops notifications without it.
+        cx.set_app_identity("app.fulgur.fulgur", "Fulgur");
+
         // This must be called before using any GPUI Component features.
+        // It also claims the app-wide system-notification response handler, so Fulgur must not
+        // call `cx.on_system_notification_response` itself: gpui keeps only the last one.
         gpui_component::init(cx);
 
         // Register an HTTP client so the GPUI image loader can fetch Markdown
@@ -337,8 +343,9 @@ fn report_window_creation_failure(
         format!("The window could not be opened: {error}")
     };
     cx.update(|cx| {
-        cx.global::<fulgur::shared_state::SharedAppState>()
-            .notify((NotificationType::Error, message.into()));
+        cx.global::<fulgur::shared_state::SharedAppState>().notify(
+            fulgur::shared_state::AppNotification::background(NotificationType::Error, message),
+        );
     });
 }
 

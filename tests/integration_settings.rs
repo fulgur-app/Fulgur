@@ -33,6 +33,7 @@ fn create_custom_settings() -> Settings {
     settings.app_settings.confirm_exit = false;
     settings.app_settings.theme = "Tokyo Night".into();
     settings.app_settings.scrollbar_show = Some(gpui_component::scroll::ScrollbarMode::Always);
+    settings.app_settings.system_notifications = false;
     settings
         .app_settings
         .synchronization_settings
@@ -146,6 +147,10 @@ fn assert_settings_equal(original: &Settings, loaded: &Settings, context: &str) 
     assert_eq!(
         original.app_settings.theme, loaded.app_settings.theme,
         "{context}: theme mismatch"
+    );
+    assert_eq!(
+        original.app_settings.system_notifications, loaded.app_settings.system_notifications,
+        "{context}: system_notifications mismatch"
     );
     assert_eq!(
         original.app_settings.scrollbar_show, loaded.app_settings.scrollbar_show,
@@ -421,6 +426,10 @@ fn test_settings_backward_compatibility_with_missing_fields() {
     assert_eq!(
         loaded.app_settings.scrollbar_show, None,
         "scrollbar_show should default to None"
+    );
+    assert!(
+        loaded.app_settings.system_notifications,
+        "system_notifications should default to true for settings files written before it existed"
     );
 }
 

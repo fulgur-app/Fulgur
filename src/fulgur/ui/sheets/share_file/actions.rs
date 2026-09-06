@@ -1,4 +1,5 @@
 use super::state::{ProfileFetchState, ShareSheetState};
+use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{
     Fulgur,
     settings::{ProfileId, ServerProfile},
@@ -260,7 +261,8 @@ pub(super) fn handle_share_file(
         });
         let summary = format_multi_profile_summary(&outcomes);
         let notification_type = aggregate_notification_type(&outcomes);
-        let _ = notification_tx.unbounded_send((notification_type, SharedString::from(summary)));
+        let _ =
+            notification_tx.unbounded_send(AppNotification::background(notification_type, summary));
     });
 }
 
