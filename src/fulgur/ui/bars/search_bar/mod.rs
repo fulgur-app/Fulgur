@@ -68,7 +68,7 @@ pub fn search_bar_toggle_button_factory(
     accent_color: Hsla,
     checked: bool,
 ) -> Button {
-    let mut button = search_bar_button_factory(id, tooltip, icon, border_color);
+    let mut button = search_bar_button_factory(id, tooltip, icon, border_color).toggled(checked);
     if checked {
         button = button.bg(accent_color);
     } else {

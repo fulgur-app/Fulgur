@@ -123,6 +123,7 @@ impl RenderOnce for CopyButton {
             .icon(icon)
             .text()
             .tooltip(self.tooltip.clone())
+            .accessibility_label(self.tooltip.clone())
             .ghost()
             .cursor_pointer()
             .when_some(self.label.clone(), |this, label| {

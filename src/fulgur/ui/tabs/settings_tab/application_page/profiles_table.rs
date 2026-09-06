@@ -6,7 +6,7 @@ use crate::fulgur::{
     ui::icons::CustomIcon,
 };
 use gpui::{
-    App, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    App, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Role, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::{
@@ -124,6 +124,8 @@ fn render_profile_row(
         let tooltip = SharedString::from(tooltip);
         div()
             .id(warn_id)
+            .role(Role::Image)
+            .aria_label(tooltip.clone())
             .cursor_pointer()
             .child(
                 Icon::new(CustomIcon::TriangleAlert)

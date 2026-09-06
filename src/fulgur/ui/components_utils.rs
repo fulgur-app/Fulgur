@@ -43,7 +43,7 @@ pub const EMPTY: &str = "";
 ///
 /// ### Arguments
 /// - `id`: The ID of the button
-/// - `tooltip`: The tooltip of the button for the button
+/// - `tooltip`: The tooltip of the button, also announced as its accessible name
 /// - `icon`: The icon of the button
 /// - `border_color`: The color of the border of the button
 ///
@@ -60,6 +60,7 @@ pub fn button_factory(
         .text()
         .small()
         .tooltip(tooltip)
+        .accessibility_label(tooltip)
         .ghost()
         .p_0()
         .m_0()

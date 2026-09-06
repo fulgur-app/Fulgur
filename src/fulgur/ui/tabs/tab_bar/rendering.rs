@@ -14,8 +14,8 @@ use crate::fulgur::{
 };
 use gpui::{
     AnyElement, AppContext, ClickEvent, Context, DragMoveEvent, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Render, StatefulInteractiveElement, Styled, WeakEntity, Window,
-    div, px,
+    MouseButton, ParentElement, Render, Role, StatefulInteractiveElement, Styled, WeakEntity,
+    Window, div, px,
 };
 use gpui_component::{
     ActiveTheme, Sizable, StyledExt,
@@ -93,6 +93,7 @@ impl Render for TabBar {
         .child(
             div()
                 .id("tab-scroll-container")
+                .role(Role::TabList)
                 .overflow_x_scroll()
                 .track_scroll(&self.scroll_handle)
                 .flex()
@@ -337,6 +338,9 @@ impl TabBar {
         };
         let mut tab_div = div()
             .id(("tab", tab_id.0))
+            .role(Role::Tab)
+            .aria_selected(is_active)
+            .aria_label(tab.title())
             .flex()
             .items_center()
             .h(TAB_BAR_HEIGHT)
@@ -455,6 +459,7 @@ impl TabBar {
             .child(
                 Button::new(("close-tab", tab_id.0))
                     .icon(CustomIcon::Close)
+                    .accessibility_label(format!("Close {title}"))
                     .ghost()
                     .xsmall()
                     .cursor_pointer()

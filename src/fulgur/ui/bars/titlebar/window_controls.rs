@@ -3,7 +3,7 @@
 use super::CustomTitleBar;
 use crate::fulgur::ui::icons::CustomIcon;
 use gpui::{
-    AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement,
+    AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement, Role,
     StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, Sizable, TITLE_BAR_HEIGHT, h_flex};
@@ -68,6 +68,19 @@ impl Control {
         }
     }
 
+    /// The name a screen reader announces for this button
+    ///
+    /// ### Returns
+    /// - `&'static str`: The accessible name of the button
+    fn label(self) -> &'static str {
+        match self {
+            Self::Minimize => "Minimize",
+            Self::Maximize => "Maximize",
+            Self::Restore => "Restore",
+            Self::Close => "Close window",
+        }
+    }
+
     /// The icon drawn inside this button
     ///
     /// ### Returns
@@ -129,6 +142,8 @@ fn render_control(control: Control, cx: &mut Context<CustomTitleBar>) -> AnyElem
     let (hovered_bg, pressed_bg, emphasis) = control.colors(cx);
     let button = div()
         .id(control.id())
+        .role(Role::Button)
+        .aria_label(control.label())
         .flex()
         .w(TITLE_BAR_HEIGHT)
         .h_full()
@@ -162,5 +177,28 @@ fn render_control(control: Control, cx: &mut Context<CustomTitleBar>) -> AnyElem
                 }
             })
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Control;
+
+    #[test]
+    fn every_control_has_a_distinct_accessible_name() {
+        let controls = [
+            Control::Minimize,
+            Control::Maximize,
+            Control::Restore,
+            Control::Close,
+        ];
+        let labels: Vec<&str> = controls.iter().map(|control| control.label()).collect();
+        assert!(labels.iter().all(|label| !label.is_empty()));
+        for (index, label) in labels.iter().enumerate() {
+            assert!(
+                !labels[index + 1..].contains(label),
+                "duplicate window control label: {label}"
+            );
+        }
     }
 }

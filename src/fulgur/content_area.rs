@@ -437,6 +437,7 @@ impl Fulgur {
                 } => {
                     if log_view && let Some(log_content) = log_content {
                         let log_input = Editor::new(&log_content)
+                            .aria_label("Log view")
                             .disabled(true)
                             .bordered(false)
                             .p_0()
@@ -460,6 +461,7 @@ impl Fulgur {
                             .into_any_element();
                     }
                     let editor_input = Editor::new(&content)
+                        .aria_label("Editor")
                         .bordered(false)
                         .p_0()
                         .h_full()

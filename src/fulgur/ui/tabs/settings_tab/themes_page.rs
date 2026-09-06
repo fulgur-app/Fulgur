@@ -36,6 +36,7 @@ impl Fulgur {
                 .collect::<Vec<String>>()
                 .join(", ");
             let button_id = SharedString::from(format!("delete-theme-{theme_name}"));
+            let delete_label = SharedString::from(format!("Delete theme {theme_name}"));
             user_theme_items.push(SettingItem::render({
                 let entity = entity.clone();
                 move |_options, _window, cx| {
@@ -63,6 +64,8 @@ impl Fulgur {
                         .child(
                             Button::new(button_id.clone())
                                 .icon(CustomIcon::Close)
+                                .tooltip(delete_label.clone())
+                                .accessibility_label(delete_label.clone())
                                 .small()
                                 .cursor_pointer()
                                 .on_click(move |_, _window, cx| {
