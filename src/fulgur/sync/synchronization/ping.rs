@@ -1,9 +1,10 @@
 use super::error::{SynchronizationError, handle_ureq_error};
 use crate::fulgur::settings::ServerProfile;
+use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::sync::access_token::get_valid_token;
 use crate::fulgur::ui::notifications::progress::spawn_with_progress;
 use fulgur_common::api::sync::PingResponse;
-use gpui::{App, SharedString, Window};
+use gpui::{App, Window};
 use gpui_component::notification::NotificationType;
 use std::sync::Arc;
 
@@ -82,13 +83,13 @@ pub fn perform_ping_with_progress(
                     },
                 );
             let notification = match result {
-                Ok(()) => (
+                Ok(()) => AppNotification::background(
                     NotificationType::Success,
-                    SharedString::from(format!("{display_name}: Server is reachable")),
+                    format!("{display_name}: Server is reachable"),
                 ),
-                Err(e) => (
+                Err(e) => AppNotification::background(
                     NotificationType::Error,
-                    SharedString::from(format!("{display_name}: Ping failed: {e}")),
+                    format!("{display_name}: Ping failed: {e}"),
                 ),
             };
             let _ = notification_tx.unbounded_send(notification);

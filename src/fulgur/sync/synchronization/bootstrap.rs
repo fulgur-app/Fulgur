@@ -6,11 +6,10 @@ use super::version::{
     compare_required_version,
 };
 use crate::fulgur::settings::ServerProfile;
-use crate::fulgur::shared_state::SyncState;
+use crate::fulgur::shared_state::{AppNotification, SyncState};
 use crate::fulgur::sync::sse::{SSE_WORKER_JOIN_TIMEOUT, SseAgents, SseShareState, connect_sse};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use crate::fulgur::utils::worker::{Worker, WorkerHooks};
-use gpui::SharedString;
 use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -197,14 +196,14 @@ fn run_profile_bootstrap(
 /// - `outcome`: The successful initial synchronization outcome.
 ///
 /// ### Returns
-/// - `(String, Vec<(NotificationType, SharedString)>)`: The device name the
+/// - `(String, Vec<AppNotification>)`: The device name the
 ///   server registered for this device, and zero to two version notifications.
 #[must_use]
 pub fn apply_initial_sync_outcome(
     sync_state: &SyncState,
     profile_name: &str,
     outcome: InitialSyncOutcome,
-) -> (String, Vec<(NotificationType, SharedString)>) {
+) -> (String, Vec<AppNotification>) {
     let InitialSyncOutcome {
         begin,
         min_fulgur_version,
@@ -234,14 +233,14 @@ pub fn apply_initial_sync_outcome(
 /// - `fulgurant_version`: The Fulgurant version advertised by the server, if any.
 ///
 /// ### Returns
-/// - `Vec<(NotificationType, SharedString)>`: Zero, one, or two update notifications.
+/// - `Vec<AppNotification>`: Zero, one, or two update notifications.
 fn record_versions_and_build_notifications(
     server_min_fulgur_slot: &Arc<Mutex<Option<String>>>,
     server_version_slot: &Arc<Mutex<Option<String>>>,
     profile_name: &str,
     min_fulgur_version: Option<String>,
     fulgurant_version: Option<String>,
-) -> Vec<(NotificationType, SharedString)> {
+) -> Vec<AppNotification> {
     let mut notifications = Vec::new();
     if let Some(notification) =
         record_server_min_fulgur_version(server_min_fulgur_slot, profile_name, min_fulgur_version)
@@ -265,22 +264,22 @@ fn record_versions_and_build_notifications(
 /// - `min_fulgur_version`: The minimum Fulgur version advertised by the server, if any.
 ///
 /// ### Returns
-/// - `Some((NotificationType, SharedString))`: An "update Fulgur" notification.
+/// - `Some(AppNotification)`: An "update Fulgur" notification.
 /// - `None`: The running Fulgur is recent enough, or the server advertised no version.
 pub fn record_server_min_fulgur_version(
     slot: &Arc<Mutex<Option<String>>>,
     profile_name: &str,
     min_fulgur_version: Option<String>,
-) -> Option<(NotificationType, SharedString)> {
+) -> Option<AppNotification> {
     slot.lock().clone_from(&min_fulgur_version);
     let required = min_fulgur_version?;
     let current = env!("CARGO_PKG_VERSION");
     if compare_required_version(current, &required) == VersionCompatibility::UpdateRequired {
-        Some((
+        Some(AppNotification::background(
             NotificationType::Warning,
-            SharedString::from(format!(
+            format!(
                 "{profile_name}: this server needs Fulgur v{required} or newer (you have v{current}). Please update Fulgur."
-            )),
+            ),
         ))
     } else {
         None
@@ -297,24 +296,24 @@ pub fn record_server_min_fulgur_version(
 /// - `fulgurant_version`: The Fulgurant version advertised by the server, if any.
 ///
 /// ### Returns
-/// - `Some((NotificationType, SharedString))`: An "update Fulgurant" notification.
+/// - `Some(AppNotification)`: An "update Fulgurant" notification.
 /// - `None`: The connected Fulgurant is recent enough.
 pub fn record_fulgurant_version(
     slot: &Arc<Mutex<Option<String>>>,
     profile_name: &str,
     fulgurant_version: Option<String>,
-) -> Option<(NotificationType, SharedString)> {
+) -> Option<AppNotification> {
     let effective = fulgurant_version
         .as_deref()
         .unwrap_or(FULGURANT_VERSION_WITHOUT_HEADER);
     let notification = if compare_required_version(effective, RECOMMENDED_FULGURANT_VERSION)
         == VersionCompatibility::UpdateRequired
     {
-        Some((
+        Some(AppNotification::background(
             NotificationType::Warning,
-            SharedString::from(format!(
+            format!(
                 "{profile_name}: Fulgur works best with Fulgurant v{RECOMMENDED_FULGURANT_VERSION} or newer (this server runs v{effective}). Please update Fulgurant."
-            )),
+            ),
         ))
     } else {
         None

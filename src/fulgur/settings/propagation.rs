@@ -1,3 +1,4 @@
+use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{Fulgur, shared_state::SharedAppState};
 use gpui::{BorrowAppContext, Context, Window};
 use gpui_component::notification::NotificationType;
@@ -29,9 +30,9 @@ impl Fulgur {
         // Save settings to disk
         if let Err(e) = self.settings.save() {
             log::error!("Failed to save settings: {e}");
-            Fulgur::shared_state(cx).notify((
+            Fulgur::shared_state(cx).notify(AppNotification::foreground(
                 NotificationType::Error,
-                format!("Failed to save settings: {e}").into(),
+                format!("Failed to save settings: {e}"),
             ));
             return Err(e);
         }

@@ -1,4 +1,5 @@
 use crate::fulgur::settings::ServerProfile;
+use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::shared_state::SyncState;
 use crate::fulgur::sync::share;
 use crate::fulgur::utils::crypto_helper::{self, load_private_key_from_keychain};
@@ -363,7 +364,10 @@ impl DecryptionOutcome {
         if let Some((signature, message)) = error_notification {
             let mut last_signature = sync_state.last_share_receive_error_signature.lock();
             if last_signature.as_deref() != Some(signature) {
-                sync_state.notify((NotificationType::Error, message));
+                sync_state.notify(AppNotification::background(
+                    NotificationType::Error,
+                    message,
+                ));
                 *last_signature = Some(signature.to_string());
             }
         } else if self.decrypted_count > 0 || self.retry_count == 0 {

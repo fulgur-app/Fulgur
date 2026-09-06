@@ -1,3 +1,4 @@
+use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{
     Fulgur, editor_tab,
     files::file_watcher::FileWatchState,
@@ -194,7 +195,10 @@ impl Fulgur {
         entity.update(cx, |this, cx| {
             let shared = cx.global::<shared_state::SharedAppState>();
             if let Some(error_msg) = shared.sync_error.lock().as_ref() {
-                shared.notify((NotificationType::Error, error_msg.clone().into()));
+                shared.notify(AppNotification::background(
+                    NotificationType::Error,
+                    error_msg.clone(),
+                ));
             }
             match window_init {
                 WindowInit::Empty => {

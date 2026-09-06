@@ -75,6 +75,32 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                     "Restore unsaved edits after a restart. When off, only file paths are kept and untitled tabs are discarded.",
                 ),
                 SettingItem::new(
+                    "System Notifications",
+                    SettingField::switch(
+                        {
+                            let entity = entity.clone();
+                            move |cx: &App| {
+                                entity.read(cx).settings.app_settings.system_notifications
+                            }
+                        },
+                        {
+                            let entity = entity.clone();
+                            move |val: bool, cx: &mut App| {
+                                entity.update(cx, |this, cx| {
+                                    this.settings.app_settings.system_notifications = val;
+                                    if let Err(e) = this.update_and_propagate_settings(cx) {
+                                        log::error!("Failed to save settings: {e}");
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .default_value(default_app_settings.system_notifications),
+                )
+                .description(
+                    "Also show background events, such as sync and received files, in the system notification center.",
+                ),
+                SettingItem::new(
                     "Debug mode",
                     SettingField::switch(
                         {
