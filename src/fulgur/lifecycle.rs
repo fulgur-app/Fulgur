@@ -136,6 +136,8 @@ impl Fulgur {
                         this.settings = shared.settings.clone();
                     }
                     this.apply_editor_settings_to_tabs(window, cx);
+                    this.search_bar
+                        .update(cx, SearchBar::refresh_match_decorations);
                     cx.notify();
                 },
             );

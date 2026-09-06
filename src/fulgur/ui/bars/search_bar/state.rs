@@ -1,7 +1,21 @@
 use super::SearchMatch;
 use crate::fulgur::Fulgur;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Subscription, WeakEntity, Window};
-use gpui_component::input::{EditorState, InputEvent, InputState};
+use gpui::{
+    App, AppContext, Context, Entity, EntityId, EventEmitter, Subscription, WeakEntity, Window,
+};
+use gpui_component::input::{EditorState, InputEvent, InputState, TextDecorationCollection};
+use std::collections::HashMap;
+
+/// The pair of decoration collections painting the search matches of one editor
+///
+/// `all` carries every match except the current one, `current` carries the
+/// current one alone, so the two never overlap and their styles never compete.
+/// The weak handle lets dead editors be pruned from the cache.
+pub(super) struct MatchDecorations {
+    pub(super) editor: WeakEntity<EditorState>,
+    pub(super) all: TextDecorationCollection,
+    pub(super) current: TextDecorationCollection,
+}
 
 /// The search and replace bar, rendered as its own entity
 ///
@@ -21,6 +35,7 @@ pub(crate) struct SearchBar {
     pub(super) search_newline_offsets_scratch: Vec<usize>,
     pub(super) search_lowercase_text_scratch: String,
     pub(super) search_lowercase_offsets_scratch: Vec<usize>,
+    pub(super) match_decorations: HashMap<EntityId, MatchDecorations>,
     _search_input_subscription: Subscription,
 }
 
@@ -79,6 +94,7 @@ impl SearchBar {
             search_newline_offsets_scratch: Vec::new(),
             search_lowercase_text_scratch: String::new(),
             search_lowercase_offsets_scratch: Vec::new(),
+            match_decorations: HashMap::new(),
             _search_input_subscription: search_input_subscription,
         }
     }

@@ -682,7 +682,7 @@ fn test_search_bar_visible_when_open(cx: &mut TestAppContext) {
 #[cfg(feature = "gpui-test-support")]
 #[gpui::test]
 fn test_open_search_sets_show_search_and_close_clears_it(cx: &mut TestAppContext) {
-    let (fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+    let (fulgur, search_bar, _content, mut visual_cx) = setup_search(cx);
 
     visual_cx.update(|window, cx| {
         assert!(!search_bar.read(cx).is_visible());
@@ -693,7 +693,7 @@ fn test_open_search_sets_show_search_and_close_clears_it(cx: &mut TestAppContext
         assert!(search_bar.read(cx).is_visible());
 
         search_bar.update(cx, |bar, cx| {
-            bar.close(Some(content.clone()), cx);
+            bar.close(cx);
         });
         assert!(!search_bar.read(cx).is_visible());
     });
@@ -809,7 +809,7 @@ fn test_close_search_clears_match_state(cx: &mut TestAppContext) {
             assert_eq!(bar.search_matches.len(), 3);
             assert!(bar.current_match_index.is_some());
 
-            bar.close(Some(content.clone()), cx);
+            bar.close(cx);
 
             assert!(!bar.show_search);
             assert!(bar.search_matches.is_empty());
@@ -1081,6 +1081,196 @@ fn test_gpui_replace_all_case_sensitive_non_whole_word(cx: &mut TestAppContext) 
             assert_eq!(text, "bb");
             assert!(bar.search_matches.is_empty());
             assert_eq!(bar.current_match_index, None);
+        });
+    });
+}
+
+// ========== Match decorations ==========
+
+/// Read the ranges painted by a search bar's two decoration collections
+///
+/// ### Arguments
+/// - `bar`: The search bar holding the collections
+/// - `content`: The editor the matches were painted in
+/// - `cx`: The application context
+///
+/// ### Returns
+/// - `(Vec<Range<usize>>, Vec<Range<usize>>)`: The non-current match ranges and
+///   the current match range, both empty when nothing is painted
+#[cfg(feature = "gpui-test-support")]
+fn painted_ranges(
+    bar: &SearchBar,
+    content: &Entity<EditorState>,
+    cx: &gpui::App,
+) -> (Vec<std::ops::Range<usize>>, Vec<std::ops::Range<usize>>) {
+    match bar.match_decorations.get(&content.entity_id()) {
+        Some(decorations) => (
+            decorations.all.get_ranges(cx),
+            decorations.current.get_ranges(cx),
+        ),
+        None => (Vec::new(), Vec::new()),
+    }
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_search_paints_every_match_and_accents_the_current_one(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo foo foo", window, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.show_search = true;
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.perform_search(Some(content.clone()), window, cx);
+
+            assert_eq!(bar.current_match_index, Some(0));
+            let (all, current) = painted_ranges(bar, &content, cx);
+            assert_eq!(current, vec![0..3]);
+            assert_eq!(all, vec![4..7, 8..11]);
+        });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_navigation_moves_the_accented_match(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo foo foo", window, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.show_search = true;
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.perform_search(Some(content.clone()), window, cx);
+
+            bar.search_next(Some(content.clone()), window, cx);
+            let (all, current) = painted_ranges(bar, &content, cx);
+            assert_eq!(current, vec![4..7]);
+            assert_eq!(all, vec![0..3, 8..11]);
+
+            bar.search_previous(Some(content.clone()), window, cx);
+            let (all, current) = painted_ranges(bar, &content, cx);
+            assert_eq!(current, vec![0..3]);
+            assert_eq!(all, vec![4..7, 8..11]);
+        });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_close_search_clears_match_decorations(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo foo foo", window, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.show_search = true;
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.perform_search(Some(content.clone()), window, cx);
+            assert_eq!(bar.search_matches.len(), 3);
+
+            bar.close(cx);
+
+            let (all, current) = painted_ranges(bar, &content, cx);
+            assert!(all.is_empty());
+            assert!(current.is_empty());
+        });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_clearing_the_query_clears_match_decorations(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo foo foo", window, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.show_search = true;
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.perform_search(Some(content.clone()), window, cx);
+            assert_eq!(bar.search_matches.len(), 3);
+
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("", window, cx);
+            });
+            bar.perform_search(Some(content.clone()), window, cx);
+
+            let (all, current) = painted_ranges(bar, &content, cx);
+            assert!(all.is_empty());
+            assert!(current.is_empty());
+        });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_decoration_collections_are_reused_across_searches(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo bar foo bar", window, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.show_search = true;
+            for query in ["foo", "bar", "foo"] {
+                bar.search_input.update(cx, |input, cx| {
+                    input.set_value(query, window, cx);
+                });
+                bar.perform_search(Some(content.clone()), window, cx);
+            }
+
+            assert_eq!(bar.match_decorations.len(), 1);
+            // The intermediate "bar" search left the cursor on the first "bar",
+            // so the final "foo" search resumes from the second occurrence.
+            let (all, current) = painted_ranges(bar, &content, cx);
+            assert_eq!(current, vec![8..11]);
+            assert_eq!(all, vec![0..3]);
+        });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_replace_all_clears_match_decorations(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo foo foo", window, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.show_search = true;
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.replace_input.update(cx, |input, cx| {
+                input.set_value("baz", window, cx);
+            });
+            bar.perform_search(Some(content.clone()), window, cx);
+            bar.replace_all(Some(content.clone()), window, cx);
+
+            let (all, current) = painted_ranges(bar, &content, cx);
+            assert!(all.is_empty());
+            assert!(current.is_empty());
         });
     });
 }
