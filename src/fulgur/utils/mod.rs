@@ -5,6 +5,7 @@ pub mod http;
 pub mod jump_list;
 pub mod logger;
 pub mod markdown_images;
+pub mod markdown_links;
 pub mod paths;
 pub mod retry;
 pub mod sanitize;

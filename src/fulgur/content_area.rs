@@ -1,10 +1,12 @@
+use crate::fulgur::utils::markdown_links::{MarkdownLinkTarget, resolve_markdown_link};
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
 };
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, App, AppContext, Context, DismissEvent, Div, Entity, Focusable, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, Window, div, px,
+    AnyElement, App, AppContext, ClickEvent, Context, DismissEvent, Div, Entity, Focusable,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString,
+    Styled, Window, div, px,
 };
 use gpui_component::{
     ActiveTheme, WindowExt, h_flex,
@@ -17,6 +19,7 @@ use gpui_component::{
     text::{TextView, TextViewState},
     v_flex,
 };
+use std::path::PathBuf;
 
 /// Reading width the Markdown preview is capped at when the width limit is enabled.
 const MARKDOWN_PREVIEW_MAX_WIDTH: f32 = 800.0;
@@ -170,6 +173,55 @@ impl Fulgur {
             .clone();
         state.update(cx, |state, cx| state.set_text(text, cx));
         state
+    }
+
+    /// Build the link activation handler for a markdown preview.
+    ///
+    /// ### Arguments
+    /// - `base_dir`: The directory of the previewed file, used to resolve
+    ///   relative links. `None` for a buffer that has never been saved.
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `impl Fn(...)`: A handler that hands remote links to the system and
+    ///   opens local files in a tab of this window.
+    fn markdown_link_handler(
+        base_dir: Option<PathBuf>,
+        cx: &Context<Self>,
+    ) -> impl Fn(&SharedString, &ClickEvent, &mut Window, &mut App) + use<> {
+        let view = cx.entity().downgrade();
+        move |target, _event, window, cx| {
+            match resolve_markdown_link(target, base_dir.as_deref()) {
+                Some(MarkdownLinkTarget::External(url)) => {
+                    log::debug!("Opening markdown preview link {url} in the system handler");
+                    cx.open_url(&url);
+                }
+                Some(MarkdownLinkTarget::LocalFile(path)) => {
+                    if !path.is_file() {
+                        log::warn!(
+                            "Markdown preview link points at a missing file: {}",
+                            path.display()
+                        );
+                        window.push_notification(
+                            (
+                                NotificationType::Warning,
+                                SharedString::from(format!(
+                                    "Cannot open '{}': the file does not exist",
+                                    path.display()
+                                )),
+                            ),
+                            cx,
+                        );
+                        return;
+                    }
+                    view.update(cx, |this, cx| this.do_open_file(window, cx, path))
+                        .ok();
+                }
+                // An anchor has no scroll target in the preview, and an
+                // unresolvable reference has nowhere to go.
+                Some(MarkdownLinkTarget::Anchor) | None => {}
+            }
+        }
     }
 
     /// Lay out a markdown preview inside its container, honouring the width limit setting.
@@ -387,6 +439,12 @@ impl Fulgur {
                                 ),
                             );
                         let preview_state = self.ensure_markdown_panel_state(&preview_text, cx);
+                        let link_handler = Self::markdown_link_handler(
+                            path.as_deref()
+                                .and_then(std::path::Path::parent)
+                                .map(std::path::Path::to_path_buf),
+                            cx,
+                        );
                         let preview = self
                             .layout_markdown_preview(
                                 TextView::new(&preview_state)
@@ -394,7 +452,8 @@ impl Fulgur {
                                     .py_0()
                                     .px_2()
                                     .scrollable(true)
-                                    .selectable(true),
+                                    .selectable(true)
+                                    .on_link_click(link_handler),
                             )
                             .bg(cx.theme().muted)
                             .into_any_element();
@@ -450,13 +509,16 @@ impl Fulgur {
                     view_state.update(cx, |state, cx| {
                         state.set_text(&preview_text, cx);
                     });
+                    let link_handler =
+                        Self::markdown_link_handler(base_dir.map(std::path::Path::to_path_buf), cx);
                     let preview = self
                         .layout_markdown_preview(
                             TextView::new(&view_state)
                                 .py_2()
                                 .px_4()
                                 .scrollable(true)
-                                .selectable(true),
+                                .selectable(true)
+                                .on_link_click(link_handler),
                         )
                         .into_any_element();
                     return v_flex()
