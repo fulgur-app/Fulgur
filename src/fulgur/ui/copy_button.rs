@@ -20,6 +20,7 @@ use std::time::Duration;
 pub struct CopyButton {
     id: ElementId,
     value: SharedString,
+    compact: bool,
 }
 
 impl CopyButton {
@@ -34,6 +35,7 @@ impl CopyButton {
         Self {
             id: id.into(),
             value: SharedString::default(),
+            compact: false,
         }
     }
 
@@ -46,6 +48,15 @@ impl CopyButton {
     /// - `Self`: The button with the clipboard value set
     pub fn value(mut self, value: impl Into<SharedString>) -> Self {
         self.value = value.into();
+        self
+    }
+
+    /// Render the button small enough to float over other content.
+    ///
+    /// ### Returns
+    /// - `Self`: The button sized as a compact overlay affordance
+    pub fn compact(mut self) -> Self {
+        self.compact = true;
         self
     }
 }
@@ -77,37 +88,64 @@ impl RenderOnce for CopyButton {
         } else {
             CustomIcon::Copy
         };
-        Button::new(button_id)
+        let button = Button::new(button_id)
             .icon(icon)
             .text()
-            .small()
             .tooltip("Copy")
             .ghost()
-            .p_0()
-            .m_0()
-            .border_0()
-            .cursor_pointer()
-            .corner_radii(CORNERS_SIZE)
-            .h(SEARCH_BAR_HEIGHT)
-            .w(SEARCH_BAR_HEIGHT)
-            .when(!copied, |this| {
-                this.on_click(move |_, _window, cx| {
-                    cx.stop_propagation();
-                    cx.write_to_clipboard(ClipboardItem::new_string(value.to_string()));
+            .cursor_pointer();
+        let button = if self.compact {
+            button.xsmall()
+        } else {
+            button
+                .small()
+                .p_0()
+                .m_0()
+                .border_0()
+                .corner_radii(CORNERS_SIZE)
+                .h(SEARCH_BAR_HEIGHT)
+                .w(SEARCH_BAR_HEIGHT)
+        };
+        button.when(!copied, |this| {
+            this.on_click(move |_, _window, cx| {
+                cx.stop_propagation();
+                cx.write_to_clipboard(ClipboardItem::new_string(value.to_string()));
+                state.update(cx, |state, cx| {
+                    state.copied = true;
+                    cx.notify();
+                });
+                let state = state.clone();
+                cx.spawn(async move |cx| {
+                    cx.background_executor().timer(Duration::from_secs(2)).await;
                     state.update(cx, |state, cx| {
-                        state.copied = true;
+                        state.copied = false;
                         cx.notify();
                     });
-                    let state = state.clone();
-                    cx.spawn(async move |cx| {
-                        cx.background_executor().timer(Duration::from_secs(2)).await;
-                        state.update(cx, |state, cx| {
-                            state.copied = false;
-                            cx.notify();
-                        });
-                    })
-                    .detach();
                 })
+                .detach();
             })
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_the_bar_sizing() {
+        assert!(!CopyButton::new("copy").compact);
+    }
+
+    #[test]
+    fn compact_opts_into_the_overlay_sizing() {
+        assert!(CopyButton::new("copy").compact().compact);
+    }
+
+    #[test]
+    fn compact_preserves_the_clipboard_value() {
+        let button = CopyButton::new("copy").value("payload").compact();
+        assert_eq!(button.value, SharedString::from("payload"));
+        assert!(button.compact);
     }
 }

@@ -1,3 +1,4 @@
+use crate::fulgur::ui::copy_button::CopyButton;
 use crate::fulgur::utils::markdown_links::{MarkdownLinkTarget, resolve_markdown_link};
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
@@ -222,6 +223,17 @@ impl Fulgur {
                 Some(MarkdownLinkTarget::Anchor) | None => {}
             }
         }
+    }
+
+    /// Build the copy affordance shown on a markdown preview code block.
+    ///
+    /// ### Arguments
+    /// - `code`: The code block contents to place on the clipboard
+    ///
+    /// ### Returns
+    /// - `CopyButton`: The compact copy button for that code block
+    fn markdown_code_block_copy(code: impl Into<SharedString>) -> CopyButton {
+        CopyButton::new("copy-code-block").compact().value(code)
     }
 
     /// Lay out a markdown preview inside its container, honouring the width limit setting.
@@ -453,7 +465,10 @@ impl Fulgur {
                                     .px_2()
                                     .scrollable(true)
                                     .selectable(true)
-                                    .on_link_click(link_handler),
+                                    .on_link_click(link_handler)
+                                    .code_block_actions(|code_block, _window, _cx| {
+                                        Self::markdown_code_block_copy(code_block.code())
+                                    }),
                             )
                             .bg(cx.theme().muted)
                             .into_any_element();
@@ -518,7 +533,10 @@ impl Fulgur {
                                 .px_4()
                                 .scrollable(true)
                                 .selectable(true)
-                                .on_link_click(link_handler),
+                                .on_link_click(link_handler)
+                                .code_block_actions(|code_block, _window, _cx| {
+                                    Self::markdown_code_block_copy(code_block.code())
+                                }),
                         )
                         .into_any_element();
                     return v_flex()
