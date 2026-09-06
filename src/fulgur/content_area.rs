@@ -1,10 +1,14 @@
+use crate::fulgur::files::csv_support::{DEFAULT_DELIMITER, serialize_csv};
+use crate::fulgur::ui::copy_button::CopyButton;
+use crate::fulgur::utils::markdown_links::{MarkdownLinkTarget, resolve_markdown_link};
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
 };
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, App, AppContext, Context, DismissEvent, Div, Entity, Focusable, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, Window, div, px,
+    AnyElement, App, AppContext, ClickEvent, Context, DismissEvent, Div, Entity, Focusable,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString,
+    Styled, Window, div, px,
 };
 use gpui_component::{
     ActiveTheme, WindowExt, h_flex,
@@ -14,9 +18,10 @@ use gpui_component::{
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
     table::{DataTable, TableState},
-    text::{TextView, TextViewState},
+    text::{TableData, TextView, TextViewState},
     v_flex,
 };
+use std::path::PathBuf;
 
 /// Reading width the Markdown preview is capped at when the width limit is enabled.
 const MARKDOWN_PREVIEW_MAX_WIDTH: f32 = 800.0;
@@ -170,6 +175,102 @@ impl Fulgur {
             .clone();
         state.update(cx, |state, cx| state.set_text(text, cx));
         state
+    }
+
+    /// Build the link activation handler for a markdown preview.
+    ///
+    /// ### Arguments
+    /// - `base_dir`: The directory of the previewed file, used to resolve
+    ///   relative links. `None` for a buffer that has never been saved.
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `impl Fn(...)`: A handler that hands remote links to the system and
+    ///   opens local files in a tab of this window.
+    fn markdown_link_handler(
+        base_dir: Option<PathBuf>,
+        cx: &Context<Self>,
+    ) -> impl Fn(&SharedString, &ClickEvent, &mut Window, &mut App) + use<> {
+        let view = cx.entity().downgrade();
+        move |target, _event, window, cx| {
+            match resolve_markdown_link(target, base_dir.as_deref()) {
+                Some(MarkdownLinkTarget::External(url)) => {
+                    log::debug!("Opening markdown preview link {url} in the system handler");
+                    cx.open_url(&url);
+                }
+                Some(MarkdownLinkTarget::LocalFile(path)) => {
+                    if !path.is_file() {
+                        log::warn!(
+                            "Markdown preview link points at a missing file: {}",
+                            path.display()
+                        );
+                        window.push_notification(
+                            (
+                                NotificationType::Warning,
+                                SharedString::from(format!(
+                                    "Cannot open '{}': the file does not exist",
+                                    path.display()
+                                )),
+                            ),
+                            cx,
+                        );
+                        return;
+                    }
+                    view.update(cx, |this, cx| this.do_open_file(window, cx, path))
+                        .ok();
+                }
+                // An anchor has no scroll target in the preview, and an
+                // unresolvable reference has nowhere to go.
+                Some(MarkdownLinkTarget::Anchor) | None => {}
+            }
+        }
+    }
+
+    /// Build the copy affordance shown on a markdown preview code block.
+    ///
+    /// ### Arguments
+    /// - `code`: The code block contents to place on the clipboard
+    ///
+    /// ### Returns
+    /// - `CopyButton`: The compact copy button for that code block
+    fn markdown_code_block_copy(code: impl Into<SharedString>) -> CopyButton {
+        CopyButton::new("copy-code-block").compact().value(code)
+    }
+
+    /// Build the actions row shown under a markdown preview table.
+    ///
+    /// ### Arguments
+    /// - `table`: The table snapshot, as header cells, body rows, and the
+    ///   table re-serialized to GFM Markdown
+    ///
+    /// ### Returns
+    /// - `impl IntoElement`: A right-aligned row of copy affordances. The CSV
+    ///   button is omitted when the table cannot be serialized.
+    fn markdown_table_actions(
+        table: &TableData,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> impl IntoElement + use<> {
+        let csv = markdown_table_as_csv(table);
+
+        h_flex()
+            .w_full()
+            .justify_end()
+            .gap_1()
+            .child(
+                CopyButton::new("copy-table-markdown")
+                    .compact()
+                    .label("MD")
+                    .tooltip("Copy as Markdown")
+                    .value(table.markdown.clone()),
+            )
+            .children(csv.map(|csv| {
+                CopyButton::new("copy-table-csv")
+                    .compact()
+                    .label("CSV")
+                    .tooltip("Copy as CSV")
+                    .value(csv)
+            }))
     }
 
     /// Lay out a markdown preview inside its container, honouring the width limit setting.
@@ -387,6 +488,12 @@ impl Fulgur {
                                 ),
                             );
                         let preview_state = self.ensure_markdown_panel_state(&preview_text, cx);
+                        let link_handler = Self::markdown_link_handler(
+                            path.as_deref()
+                                .and_then(std::path::Path::parent)
+                                .map(std::path::Path::to_path_buf),
+                            cx,
+                        );
                         let preview = self
                             .layout_markdown_preview(
                                 TextView::new(&preview_state)
@@ -394,7 +501,12 @@ impl Fulgur {
                                     .py_0()
                                     .px_2()
                                     .scrollable(true)
-                                    .selectable(true),
+                                    .selectable(true)
+                                    .on_link_click(link_handler)
+                                    .code_block_actions(|code_block, _window, _cx| {
+                                        Self::markdown_code_block_copy(code_block.code())
+                                    })
+                                    .table_actions(Self::markdown_table_actions),
                             )
                             .bg(cx.theme().muted)
                             .into_any_element();
@@ -450,13 +562,20 @@ impl Fulgur {
                     view_state.update(cx, |state, cx| {
                         state.set_text(&preview_text, cx);
                     });
+                    let link_handler =
+                        Self::markdown_link_handler(base_dir.map(std::path::Path::to_path_buf), cx);
                     let preview = self
                         .layout_markdown_preview(
                             TextView::new(&view_state)
                                 .py_2()
                                 .px_4()
                                 .scrollable(true)
-                                .selectable(true),
+                                .selectable(true)
+                                .on_link_click(link_handler)
+                                .code_block_actions(|code_block, _window, _cx| {
+                                    Self::markdown_code_block_copy(code_block.code())
+                                })
+                                .table_actions(Self::markdown_table_actions),
                         )
                         .into_any_element();
                     return v_flex()
@@ -468,5 +587,69 @@ impl Fulgur {
             }
         }
         v_flex().w_full().flex_1().into_any_element()
+    }
+}
+
+/// Serialize a markdown preview table to CSV text.
+///
+/// ### Arguments
+/// - `table`: The table snapshot taken from the rendered document
+///
+/// ### Returns
+/// - `Some(String)`: The table as CSV, with the delimiter Fulgur's own CSV
+///   view defaults to
+/// - `None`: The rows could not be serialized; the reason is logged
+fn markdown_table_as_csv(table: &TableData) -> Option<String> {
+    serialize_csv(&table.headers, &table.rows, DEFAULT_DELIMITER)
+        .inspect_err(|error| log::warn!("Cannot offer the preview table as CSV: {error}"))
+        .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn table(headers: &[&str], rows: &[&[&str]]) -> TableData {
+        TableData {
+            headers: headers.iter().map(|cell| (*cell).to_string()).collect(),
+            rows: rows
+                .iter()
+                .map(|row| row.iter().map(|cell| (*cell).to_string()).collect())
+                .collect(),
+            ..TableData::default()
+        }
+    }
+
+    #[test]
+    fn serializes_a_plain_table() {
+        let csv = markdown_table_as_csv(&table(&["a", "b"], &[&["1", "2"], &["3", "4"]]));
+        assert_eq!(csv.as_deref(), Some("a,b\n1,2\n3,4\n"));
+    }
+
+    #[test]
+    fn quotes_cells_containing_the_delimiter() {
+        let csv = markdown_table_as_csv(&table(&["name"], &[&["Doe, Jane"]]));
+        assert_eq!(csv.as_deref(), Some("name\n\"Doe, Jane\"\n"));
+    }
+
+    #[test]
+    fn escapes_quotes_inside_a_cell() {
+        let csv = markdown_table_as_csv(&table(&["quote"], &[&["say \"hi\""]]));
+        assert_eq!(csv.as_deref(), Some("quote\n\"say \"\"hi\"\"\"\n"));
+    }
+
+    /// `TableData` documents its rows as possibly ragged, so a row that is
+    /// shorter or longer than the header must not cost the reader the whole
+    /// CSV affordance.
+    #[test]
+    fn serializes_a_ragged_table() {
+        let csv = markdown_table_as_csv(&table(&["a", "b", "c"], &[&["1"], &["2", "3", "4", "5"]]));
+        assert_eq!(csv.as_deref(), Some("a,b,c\n1\n2,3,4,5\n"));
+    }
+
+    #[test]
+    fn serializes_a_table_with_no_body_rows() {
+        let csv = markdown_table_as_csv(&table(&["a", "b"], &[]));
+        assert_eq!(csv.as_deref(), Some("a,b\n"));
     }
 }

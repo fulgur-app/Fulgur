@@ -7,10 +7,13 @@ use gpui::{
     prelude::FluentBuilder,
 };
 use gpui_component::{
-    Sizable, StyledExt,
+    ActiveTheme, Sizable, StyledExt,
     button::{Button, ButtonVariants},
 };
 use std::time::Duration;
+
+/// Hover text used when the caller sets none.
+const DEFAULT_TOOLTIP: &str = "Copy";
 
 /// A copy-to-clipboard button styled to match Fulgur's bar buttons.
 ///
@@ -20,6 +23,9 @@ use std::time::Duration;
 pub struct CopyButton {
     id: ElementId,
     value: SharedString,
+    tooltip: SharedString,
+    label: Option<SharedString>,
+    compact: bool,
 }
 
 impl CopyButton {
@@ -34,6 +40,9 @@ impl CopyButton {
         Self {
             id: id.into(),
             value: SharedString::default(),
+            tooltip: DEFAULT_TOOLTIP.into(),
+            label: None,
+            compact: false,
         }
     }
 
@@ -46,6 +55,39 @@ impl CopyButton {
     /// - `Self`: The button with the clipboard value set
     pub fn value(mut self, value: impl Into<SharedString>) -> Self {
         self.value = value.into();
+        self
+    }
+
+    /// Set the tooltip shown on hover, replacing the default `Copy`.
+    ///
+    /// ### Arguments
+    /// - `tooltip`: The hover text describing what gets copied
+    ///
+    /// ### Returns
+    /// - `Self`: The button with the tooltip set
+    pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
+        self.tooltip = tooltip.into();
+        self
+    }
+
+    /// Show a short label beside the copy icon.
+    ///
+    /// ### Arguments
+    /// - `label`: A short name for the format copied, such as `CSV`
+    ///
+    /// ### Returns
+    /// - `Self`: The button with the label set
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Render the button small enough to float over other content.
+    ///
+    /// ### Returns
+    /// - `Self`: The button sized as a compact overlay affordance
+    pub fn compact(mut self) -> Self {
+        self.compact = true;
         self
     }
 }
@@ -77,37 +119,87 @@ impl RenderOnce for CopyButton {
         } else {
             CustomIcon::Copy
         };
-        Button::new(button_id)
+        let button = Button::new(button_id)
             .icon(icon)
             .text()
-            .small()
-            .tooltip("Copy")
+            .tooltip(self.tooltip.clone())
             .ghost()
-            .p_0()
-            .m_0()
-            .border_0()
             .cursor_pointer()
-            .corner_radii(CORNERS_SIZE)
-            .h(SEARCH_BAR_HEIGHT)
-            .w(SEARCH_BAR_HEIGHT)
-            .when(!copied, |this| {
-                this.on_click(move |_, _window, cx| {
-                    cx.stop_propagation();
-                    cx.write_to_clipboard(ClipboardItem::new_string(value.to_string()));
+            .when_some(self.label.clone(), |this, label| {
+                this.label(label).text_color(cx.theme().muted_foreground)
+            });
+        let button = if self.compact {
+            button.xsmall()
+        } else {
+            button
+                .small()
+                .p_0()
+                .m_0()
+                .border_0()
+                .corner_radii(CORNERS_SIZE)
+                .h(SEARCH_BAR_HEIGHT)
+                .w(SEARCH_BAR_HEIGHT)
+        };
+        button.when(!copied, |this| {
+            this.on_click(move |_, _window, cx| {
+                cx.stop_propagation();
+                cx.write_to_clipboard(ClipboardItem::new_string(value.to_string()));
+                state.update(cx, |state, cx| {
+                    state.copied = true;
+                    cx.notify();
+                });
+                let state = state.clone();
+                cx.spawn(async move |cx| {
+                    cx.background_executor().timer(Duration::from_secs(2)).await;
                     state.update(cx, |state, cx| {
-                        state.copied = true;
+                        state.copied = false;
                         cx.notify();
                     });
-                    let state = state.clone();
-                    cx.spawn(async move |cx| {
-                        cx.background_executor().timer(Duration::from_secs(2)).await;
-                        state.update(cx, |state, cx| {
-                            state.copied = false;
-                            cx.notify();
-                        });
-                    })
-                    .detach();
                 })
+                .detach();
             })
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_the_bar_sizing() {
+        assert!(!CopyButton::new("copy").compact);
+    }
+
+    #[test]
+    fn compact_opts_into_the_overlay_sizing() {
+        assert!(CopyButton::new("copy").compact().compact);
+    }
+
+    #[test]
+    fn has_no_label_by_default() {
+        assert!(CopyButton::new("copy").label.is_none());
+    }
+
+    #[test]
+    fn label_is_set_alongside_the_tooltip() {
+        let button = CopyButton::new("copy").label("CSV").tooltip("Copy as CSV");
+        assert_eq!(button.label, Some(SharedString::from("CSV")));
+        assert_eq!(button.tooltip, SharedString::from("Copy as CSV"));
+    }
+
+    #[test]
+    fn tooltip_defaults_to_copy() {
+        assert_eq!(
+            CopyButton::new("copy").tooltip,
+            SharedString::from(DEFAULT_TOOLTIP)
+        );
+    }
+
+    #[test]
+    fn compact_preserves_the_clipboard_value() {
+        let button = CopyButton::new("copy").value("payload").compact();
+        assert_eq!(button.value, SharedString::from("payload"));
+        assert!(button.compact);
     }
 }
