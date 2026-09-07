@@ -1,6 +1,6 @@
 [package]
 name = "Fulgur"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2024"
 rust-version = "1.98"
 license = "Apache-2.0"
@@ -18,7 +18,6 @@ gpui-test-support = ["gpui/test-support"]
 # To burn down the list: remove one allow entry, fix all its violations, repeat.
 pedantic = { level = "deny", priority = -1 }
 
-# --- Burn-down list: allowed until fixed one by one ---
 borrow_as_ptr = "allow" # Windows only
 struct_excessive_bools = "allow" # Will stay for now
 too_many_lines = "allow" # Will stay for now
