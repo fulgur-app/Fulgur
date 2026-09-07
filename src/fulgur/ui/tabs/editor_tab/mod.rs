@@ -288,6 +288,7 @@ fn make_input_state(
         language_name
     };
     let mut state = EditorState::new(window, cx)
+        .searchable(false)
         .language(language_name.to_string())
         .line_number(settings.show_line_numbers)
         .indent_guides(settings.show_indent_guides && !large_file)

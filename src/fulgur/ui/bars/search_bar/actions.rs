@@ -29,6 +29,27 @@ impl SearchBar {
         }
     }
 
+    /// Open the search bar with the caret in the replace field
+    ///
+    /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
+    /// - `window`: The window context
+    /// - `cx`: The search bar context
+    pub(super) fn open_replace(
+        &mut self,
+        content: Option<Entity<EditorState>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.show_search {
+            self.show_search = true;
+            self.perform_search(content, window, cx);
+        }
+        let replace_focus = self.replace_input.read(cx).focus_handle(cx);
+        window.focus(&replace_focus, cx);
+        cx.notify();
+    }
+
     /// Close the search bar, clear highlighting, and notify the owning window
     ///
     /// ### Arguments
@@ -242,6 +263,20 @@ impl Fulgur {
             .map(|editor_tab| editor_tab.content.clone());
         self.search_bar
             .update(cx, |bar, cx| bar.toggle(content, window, cx));
+        cx.notify();
+    }
+
+    /// Open the search bar in this window with the caret in the replace field
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn find_and_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let content = self
+            .get_active_editor_tab(cx)
+            .map(|editor_tab| editor_tab.content.clone());
+        self.search_bar
+            .update(cx, |bar, cx| bar.open_replace(content, window, cx));
         cx.notify();
     }
 }
