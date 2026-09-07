@@ -216,6 +216,7 @@ impl Fulgur {
                 crate::fulgur::ui::tabs::editor_tab::initial_csv_state(language, &content);
             let content_entity = cx.new(|cx| {
                 gpui_component::input::EditorState::new(window, cx)
+                    .searchable(false)
                     .language(language_name)
                     .line_number(self.settings.editor_settings.show_line_numbers)
                     .indent_guides(self.settings.editor_settings.show_indent_guides)

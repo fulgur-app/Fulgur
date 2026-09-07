@@ -112,6 +112,7 @@ pub(super) fn make_log_input_state(
     soft_wrap: bool,
 ) -> EditorState {
     EditorState::new(window, cx)
+        .searchable(false)
         .language("log")
         .line_number(true)
         .soft_wrap(soft_wrap)

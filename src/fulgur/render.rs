@@ -110,6 +110,7 @@ impl Fulgur {
         register_action!(app_content, cx, ui::menus::Quit => quit);
         register_action!(app_content, cx, ui::menus::SettingsTab => open_settings);
         register_action!(app_content, cx, ui::menus::FindInFile => find_in_file);
+        register_action!(app_content, cx, ui::menus::FindAndReplace => find_and_replace);
         register_action!(app_content, cx, ui::menus::ToggleColorPicker => toggle_color_picker);
         register_action!(app_content, cx, ui::menus::NextTab => on_next_tab);
         register_action!(app_content, cx, ui::menus::PreviousTab => on_previous_tab);
