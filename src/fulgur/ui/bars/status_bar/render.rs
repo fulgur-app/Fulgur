@@ -13,7 +13,7 @@ use crate::fulgur::{
 };
 use gpui::{
     Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder,
+    Role, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder,
 };
 use gpui_component::{ActiveTheme, Icon, StyledExt, h_flex, tooltip::Tooltip, v_flex};
 
@@ -35,24 +35,34 @@ impl Render for StatusBar {
         let active_editor_tab = active_tab.and_then(Tab::as_editor);
         let labels = StatusBar::compute_labels(active_tab, cx);
 
-        let jump_to_line_button =
-            status_bar_button_factory(labels.line_col, cx.theme().border, cx.theme().muted)
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|_, _event: &MouseDownEvent, _window, cx| {
-                        cx.emit(StatusBarEvent::JumpToLine);
-                    }),
-                );
-        let language_button =
-            status_bar_button_factory(labels.language_label, cx.theme().border, cx.theme().muted)
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|_, _event: &MouseDownEvent, _window, cx| {
-                        cx.emit(StatusBarEvent::SelectLanguage);
-                    }),
-                );
+        let jump_to_line_button = status_bar_button_factory(
+            "status-jump-to-line",
+            labels.line_col,
+            cx.theme().border,
+            cx.theme().muted,
+        )
+        .aria_label("Jump to line")
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|_, _event: &MouseDownEvent, _window, cx| {
+                cx.emit(StatusBarEvent::JumpToLine);
+            }),
+        );
+        let language_button = status_bar_button_factory(
+            "status-language",
+            labels.language_label,
+            cx.theme().border,
+            cx.theme().muted,
+        )
+        .aria_label("Select language")
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|_, _event: &MouseDownEvent, _window, cx| {
+                cx.emit(StatusBarEvent::SelectLanguage);
+            }),
+        );
         let (preview_button, toolbar_button) = match active_editor_tab {
-            None => (div(), div()),
+            None => (div().id("status-preview"), div().id("status-toolbar")),
             Some(active_editor_tab) => {
                 let editor_id = active_editor_tab.id;
                 let preview_active = match fulgur
@@ -67,6 +77,7 @@ impl Render for StatusBar {
                     MarkdownPreviewMode::Panel => active_editor_tab.show_markdown_preview,
                 };
                 let preview_button = status_bar_toggle_button_factory(
+                    "status-preview",
                     "Preview".to_string(),
                     cx.theme().border,
                     cx.theme().muted,
@@ -79,6 +90,7 @@ impl Render for StatusBar {
                     }),
                 );
                 let toolbar_button = status_bar_toggle_button_factory(
+                    "status-toolbar",
                     "Toolbar".to_string(),
                     cx.theme().border,
                     cx.theme().muted,
@@ -100,6 +112,7 @@ impl Render for StatusBar {
         let csv_table_active =
             active_editor_tab.is_some_and(|tab| tab.csv_view_mode == CsvViewMode::Table);
         let csv_view_button = status_bar_toggle_button_factory(
+            "status-csv-view",
             "Table".to_string(),
             cx.theme().border,
             cx.theme().muted,
@@ -120,6 +133,7 @@ impl Render for StatusBar {
             .and_then(|id| fulgur.log_tail_state.get(&id))
             .is_some_and(|state| state.dropped_lines);
         let log_button = status_bar_toggle_button_factory(
+            "status-log-view",
             "Log".to_string(),
             cx.theme().border,
             cx.theme().muted,
@@ -132,6 +146,7 @@ impl Render for StatusBar {
             }),
         );
         let log_follow_button = status_bar_toggle_button_factory(
+            "status-log-follow",
             "Follow".to_string(),
             cx.theme().border,
             cx.theme().muted,
@@ -143,14 +158,18 @@ impl Render for StatusBar {
                 cx.emit(StatusBarEvent::ToggleLogFollow);
             }),
         );
-        let log_load_full_button =
-            status_bar_button_factory("Load full".to_string(), cx.theme().border, cx.theme().muted)
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|_, _event: &MouseDownEvent, _window, cx| {
-                        cx.emit(StatusBarEvent::LoadFullLog);
-                    }),
-                );
+        let log_load_full_button = status_bar_button_factory(
+            "status-log-load-full",
+            "Load full".to_string(),
+            cx.theme().border,
+            cx.theme().muted,
+        )
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|_, _event: &MouseDownEvent, _window, cx| {
+                cx.emit(StatusBarEvent::LoadFullLog);
+            }),
+        );
         let is_markdown = matches!(
             current_language,
             SupportedLanguage::Markdown | SupportedLanguage::MarkdownInline
@@ -180,6 +199,8 @@ impl Render for StatusBar {
             show_spinner,
         )
         .id("sync-status-button")
+        .role(Role::Button)
+        .aria_label(sync_button_state.accessibility_label())
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(|_, _event, _window, cx| {
@@ -211,6 +232,7 @@ impl Render for StatusBar {
         });
         let color_picker_active = fulgur.color_picker_bar.read(cx).is_visible();
         let color_button = status_bar_toggle_button_factory(
+            "status-color-picker",
             "Color".to_string(),
             cx.theme().border,
             cx.theme().muted,

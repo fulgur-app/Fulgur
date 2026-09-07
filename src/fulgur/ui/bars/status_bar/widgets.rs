@@ -1,6 +1,7 @@
 use crate::fulgur::ui::icons::CustomIcon;
 use gpui::{
-    Animation, AnimationExt, Div, Hsla, InteractiveElement, IntoElement, ParentElement, Styled, div,
+    Animation, AnimationExt, Div, Hsla, InteractiveElement, IntoElement, ParentElement, Role,
+    Stateful, StatefulInteractiveElement, Styled, accesskit::Toggled, div,
 };
 use gpui_component::Icon;
 use std::f32::consts::PI;
@@ -26,18 +27,22 @@ pub fn status_bar_item_factory(content: impl IntoElement, border_color: Hsla) ->
 /// Create a status bar button
 ///
 /// ### Arguments
+/// - `id`: The element ID, also the accessibility identifier of the button
 /// - `content`: The content of the status bar button
 /// - `border_color`: The color of the border
 /// - `accent_color`: The color of the accent
 ///
 /// ### Returns
-/// - `Div`: A status bar button
+/// - `Stateful<Div>`: A status bar button
 pub fn status_bar_button_factory(
+    id: &'static str,
     content: impl IntoElement,
     border_color: Hsla,
     accent_color: Hsla,
-) -> Div {
+) -> Stateful<Div> {
     status_bar_item_factory(content, border_color)
+        .id(id)
+        .role(Role::Button)
         .hover(|this| this.bg(accent_color))
         .cursor_pointer()
 }
@@ -57,20 +62,23 @@ pub fn status_bar_right_item_factory(content: String, border_color: Hsla) -> imp
 /// Create a status bar toggle button
 ///
 /// ### Arguments
+/// - `id`: The element ID, also the accessibility identifier of the button
 /// - `content`: The content of the status bar toggle button
 /// - `border_color`: The color of the border
 /// - `accent_color`: The color of the accent
 /// - `checked`: Whether the toggle is checked
 ///
 /// ### Returns
-/// - `Div`: A status bar toggle button
+/// - `Stateful<Div>`: A status bar toggle button
 pub fn status_bar_toggle_button_factory(
+    id: &'static str,
     content: impl IntoElement,
     border_color: Hsla,
     accent_color: Hsla,
     checked: bool,
-) -> Div {
-    let mut button = status_bar_button_factory(content, border_color, accent_color);
+) -> Stateful<Div> {
+    let mut button = status_bar_button_factory(id, content, border_color, accent_color)
+        .aria_toggled(Toggled::from(checked));
     if checked {
         button = button.bg(accent_color);
     }
@@ -98,6 +106,20 @@ pub enum SyncButtonState {
     Connected,
     Connecting,
     Disconnected,
+}
+
+impl SyncButtonState {
+    /// The name a screen reader announces for the sync button in this state
+    ///
+    /// ### Returns
+    /// - `&'static str`: The accessible name of the sync button
+    pub fn accessibility_label(self) -> &'static str {
+        match self {
+            Self::Connected => "Synchronization connected, open sharing",
+            Self::Connecting => "Synchronization connecting, open sharing",
+            Self::Disconnected => "Synchronization disconnected, open sharing",
+        }
+    }
 }
 
 /// Create a status bar sync button
@@ -159,4 +181,22 @@ pub fn status_bar_sync_button(
         }
     }
     button
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SyncButtonState;
+
+    #[test]
+    fn every_sync_state_has_a_distinct_accessible_name() {
+        let labels = [
+            SyncButtonState::Connected.accessibility_label(),
+            SyncButtonState::Connecting.accessibility_label(),
+            SyncButtonState::Disconnected.accessibility_label(),
+        ];
+        assert!(labels.iter().all(|label| !label.is_empty()));
+        assert_ne!(labels[0], labels[1]);
+        assert_ne!(labels[1], labels[2]);
+        assert_ne!(labels[0], labels[2]);
+    }
 }

@@ -69,6 +69,7 @@ impl RenderOnce for InsertButton {
             .text()
             .small()
             .tooltip("Insert at cursor")
+            .accessibility_label("Insert at cursor")
             .ghost()
             .p_0()
             .m_0()
