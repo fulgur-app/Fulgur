@@ -1,6 +1,7 @@
 use super::actions::{
-    CloseAllFiles, CloseFile, FindInFile, JumpToLine, NewFile, NewWindow, NextTab, OpenFile,
-    OpenPath, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs, ToggleColorPicker,
+    CloseAllFiles, CloseFile, FindAndReplace, FindInFile, JumpToLine, NewFile, NewWindow, NextTab,
+    OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs,
+    ToggleColorPicker,
 };
 use gpui::KeyBinding;
 
@@ -24,6 +25,7 @@ enum KeybindingDispatchAction {
     SaveFile,
     SaveFileAs,
     FindInFile,
+    FindAndReplace,
     NextTab,
     PreviousTab,
     JumpToLine,
@@ -88,6 +90,9 @@ impl KeybindingDispatchSpec {
             KeybindingDispatchAction::FindInFile => {
                 KeyBinding::new(self.keystroke, FindInFile, context)
             }
+            KeybindingDispatchAction::FindAndReplace => {
+                KeyBinding::new(self.keystroke, FindAndReplace, context)
+            }
             KeybindingDispatchAction::NextTab => KeyBinding::new(self.keystroke, NextTab, context),
             KeybindingDispatchAction::PreviousTab => {
                 KeyBinding::new(self.keystroke, PreviousTab, context)
@@ -124,6 +129,7 @@ impl KeybindingDispatchAction {
             | Self::SaveFile
             | Self::SaveFileAs
             | Self::FindInFile
+            | Self::FindAndReplace
             | Self::NextTab
             | Self::PreviousTab
             | Self::JumpToLine
@@ -182,6 +188,10 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
         KeybindingDispatchSpec::new("cmd-f", KeybindingDispatchAction::FindInFile),
         #[cfg(not(target_os = "macos"))]
         KeybindingDispatchSpec::new("ctrl-f", KeybindingDispatchAction::FindInFile),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-shift-f", KeybindingDispatchAction::FindAndReplace),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-h", KeybindingDispatchAction::FindAndReplace),
         #[cfg(target_os = "macos")]
         KeybindingDispatchSpec::new("cmd-shift-right", KeybindingDispatchAction::NextTab),
         #[cfg(not(target_os = "macos"))]
@@ -266,6 +276,51 @@ mod tests {
             "ctrl-g",
             KeybindingDispatchAction::JumpToLine
         ));
+    }
+
+    #[test]
+    fn test_default_keybinding_dispatch_specs_claim_the_upstream_replace_shortcuts() {
+        let specs = default_keybinding_dispatch_specs();
+
+        #[cfg(target_os = "macos")]
+        {
+            assert!(has_binding(
+                &specs,
+                "cmd-f",
+                KeybindingDispatchAction::FindInFile
+            ));
+            assert!(has_binding(
+                &specs,
+                "cmd-shift-f",
+                KeybindingDispatchAction::FindAndReplace
+            ));
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert!(has_binding(
+                &specs,
+                "ctrl-f",
+                KeybindingDispatchAction::FindInFile
+            ));
+            assert!(has_binding(
+                &specs,
+                "ctrl-h",
+                KeybindingDispatchAction::FindAndReplace
+            ));
+        }
+    }
+
+    #[test]
+    fn test_search_shortcuts_are_scoped_to_the_application_content() {
+        assert_eq!(
+            KeybindingDispatchAction::FindAndReplace.key_context(),
+            KeybindingDispatchAction::FindInFile.key_context()
+        );
+        assert!(
+            KeybindingDispatchAction::FindAndReplace
+                .key_context()
+                .is_some()
+        );
     }
 
     #[test]

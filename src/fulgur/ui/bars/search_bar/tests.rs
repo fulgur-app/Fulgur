@@ -13,8 +13,8 @@ use crate::fulgur::{
 };
 #[cfg(feature = "gpui-test-support")]
 use gpui::{
-    AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext, Window,
-    WindowOptions, div,
+    AppContext, Context, Entity, Focusable, IntoElement, Render, TestAppContext, VisualTestContext,
+    Window, WindowOptions, div,
 };
 #[cfg(feature = "gpui-test-support")]
 use gpui_component::input::{EditorState, Undo};
@@ -676,6 +676,71 @@ fn test_search_bar_visible_when_open(cx: &mut TestAppContext) {
             this.find_in_file(window, cx);
         });
         assert!(search_bar.read(cx).is_visible());
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_find_and_replace_opens_the_bar_with_the_replace_input_focused(cx: &mut TestAppContext) {
+    let (fulgur, search_bar, _content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.find_and_replace(window, cx);
+        });
+        assert!(search_bar.read(cx).is_visible());
+        assert!(
+            search_bar
+                .read(cx)
+                .replace_input
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_find_and_replace_keeps_an_already_open_bar_open(cx: &mut TestAppContext) {
+    let (fulgur, search_bar, _content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.find_in_file(window, cx);
+            this.find_and_replace(window, cx);
+        });
+        assert!(search_bar.read(cx).is_visible());
+        assert!(
+            search_bar
+                .read(cx)
+                .replace_input
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui::test]
+fn test_editor_never_opens_the_upstream_search_panel(cx: &mut TestAppContext) {
+    let (fulgur, _search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        assert!(!content.read(cx).search_session().open);
+
+        fulgur.update(cx, |this, cx| {
+            this.find_in_file(window, cx);
+            this.find_and_replace(window, cx);
+        });
+        assert!(!content.read(cx).search_session().open);
+
+        // The upstream panel stays shut even when its own entry point is called.
+        content.update(cx, |editor, cx| {
+            editor.open_search(true, cx);
+        });
+        assert!(!content.read(cx).search_session().open);
     });
 }
 
