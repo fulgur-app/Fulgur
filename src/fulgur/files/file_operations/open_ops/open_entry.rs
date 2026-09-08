@@ -4,7 +4,7 @@ use gpui_component::{WindowExt, notification::NotificationType};
 use std::path::PathBuf;
 
 impl Fulgur {
-    /// Open a file
+    /// Open a file selected through the system file picker
     ///
     /// ### Arguments
     /// - `window`: The window to open the file in
@@ -18,33 +18,14 @@ impl Fulgur {
         });
         cx.spawn_in(window, async move |view, window| {
             let paths = path_future.await.ok()?.ok()??;
-            let raw_path = paths.first()?.clone();
-            let path = std::fs::canonicalize(&raw_path).unwrap_or(raw_path);
+            let path = paths.first()?.clone();
 
-            // Check if tab already exists for this path
-            let should_open_new = window
+            window
                 .update(|window, cx| {
-                    view.update(cx, |this, cx| {
-                        if let Some(tab_index) = this.find_tab_by_path(&path, cx) {
-                            log::debug!(
-                                "Tab already exists for {} at index {tab_index}, focusing existing tab",
-                                path.display()
-                            );
-                            this.focus_existing_local_tab_for_open(&path, tab_index, window, cx);
-                            false // Don't open new tab
-                        } else {
-                            true // Open new tab
-                        }
-                    })
-                    .ok()
+                    view.update(cx, |this, cx| this.do_open_file(window, cx, path))
+                        .ok()
                 })
-                .ok()??;
-
-            if should_open_new {
-                Self::open_file_from_path(&view, window, &path).await
-            } else {
-                Some(())
-            }
+                .ok()?
         })
         .detach();
     }
