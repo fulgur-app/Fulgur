@@ -38,6 +38,15 @@ use ui::{
 // Re-export so descendant modules can keep using `crate::fulgur::themes::...`.
 pub(crate) use ui::themes;
 
+/// Close operation deferred until pending local saves finish successfully.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PendingSaveCloseAction {
+    /// Quit the entire application.
+    Quit,
+    /// Close only the current window.
+    Window,
+}
+
 pub struct Fulgur {
     // Identity of this window in the state database, stable across restarts
     persistent_window_id: i64,
@@ -87,6 +96,8 @@ pub struct Fulgur {
     pending_remote_restore: HashSet<TabId>, // Restored remote tab ids that should lazily reconnect on first activation/save
     inflight_remote_restore: HashSet<TabId>, // Restored remote tabs currently running a reconnect task
     inflight_saves: HashMap<TabId, PathBuf>, // Destination path of each background local-file write in flight, keyed by tab id; guards against overlapping saves and suppresses self-save watcher events
+    pending_save_tab_closes: HashSet<TabId>, // Tabs whose close request is waiting for a local background save to finish
+    pending_save_close_action: Option<PendingSaveCloseAction>, // App/window close request waiting for every local background save in this window
     pending_initial_active_tab: Option<TabId>, // Active tab to re-activate after first render so dialogs can open safely
     has_rendered_once: bool, // Tracks first render completion for startup actions that require mounted Root layers
 }

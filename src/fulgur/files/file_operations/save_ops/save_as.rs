@@ -2,7 +2,10 @@ use super::super::{EncodedContents, encode_for_save};
 use super::completion::SaveCompletion;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
-    Fulgur, editor_tab::TabLocation, tab::Tab, ui::components_utils::UNTITLED,
+    Fulgur,
+    editor_tab::{TabLocation, content_fingerprint_from_str},
+    tab::Tab,
+    ui::components_utils::UNTITLED,
     utils::atomic_write::atomic_write_file,
 };
 use gpui::{Context, Window};
@@ -61,8 +64,7 @@ impl Fulgur {
                             this.finalize_save_as(
                                 tab_id,
                                 &path,
-                                &bytes,
-                                encoding.clone(),
+                                (&contents, &bytes, encoding.clone()),
                                 window,
                                 cx,
                             );
@@ -90,19 +92,18 @@ impl Fulgur {
     /// ### Arguments
     /// - `tab_id`: Stable identifier of the editor tab that started `save_file_as`
     /// - `path`: The chosen destination path
-    /// - `bytes`: The already-encoded file contents
-    /// - `encoding`: The encoding label the bytes were written in
+    /// - `snapshot`: The editor text, encoded bytes, and encoding label
     /// - `window`: The window context
     /// - `cx`: The application context
     pub(crate) fn finalize_save_as(
         &mut self,
         tab_id: TabId,
         path: &Path,
-        bytes: &[u8],
-        encoding: String,
+        snapshot: (&str, &[u8], String),
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let (contents, bytes, encoding) = snapshot;
         if self.inflight_saves.contains_key(&tab_id) {
             log::debug!(
                 "Save already in flight for tab {tab_id}; skipping Save As to {}",
@@ -112,16 +113,14 @@ impl Fulgur {
         }
         log::debug!("Saving file as: {} ({} bytes)", path.display(), bytes.len());
         self.inflight_saves.insert(tab_id, path.to_path_buf());
+        let (saved_content_hash, saved_content_len) = content_fingerprint_from_str(contents);
         let completion = SaveCompletion {
             tab_id,
             byte_len: bytes.len(),
-            previous_baseline: self.capture_saved_baseline(tab_id, cx),
+            saved_content_hash,
+            saved_content_len,
             path: path.to_path_buf(),
         };
-        self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
-            editor_tab.mark_as_saved(cx);
-            cx.notify();
-        });
         let bytes = bytes.to_vec();
         cx.spawn_in(window, async move |view, window| {
             let write_path = completion.path.clone();
@@ -136,7 +135,7 @@ impl Fulgur {
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
-                        this.finish_save_as(completion, encoding, write_result, window, cx);
+                        this.finish_save_as(&completion, encoding, write_result, window, cx);
                     });
                 })
                 .ok();
@@ -154,7 +153,7 @@ impl Fulgur {
     /// - `cx`: The application context
     fn finish_save_as(
         &mut self,
-        completion: SaveCompletion,
+        completion: &SaveCompletion,
         encoding: String,
         write_result: anyhow::Result<PathBuf>,
         window: &mut Window,
@@ -167,41 +166,48 @@ impl Fulgur {
             Ok(canonical_path) => {
                 let path = canonical_path.as_path();
                 log::debug!("File saved successfully as: {}", path.display());
-                let Some(tab_entity) = self.tab_entity_of(tab_id, cx) else {
-                    log::warn!("Save As completed, but tab {tab_id} no longer exists");
-                    return;
-                };
-                let old_path = tab_entity
-                    .read(cx)
-                    .as_editor()
-                    .and_then(|editor_tab| editor_tab.file_path().cloned());
-                if let Some(old_path) = old_path {
-                    self.unwatch_file(&old_path);
-                }
-                self.file_watch_state
-                    .last_file_saves
-                    .insert(path.to_path_buf(), std::time::Instant::now());
-                tab_entity.update(cx, |tab, cx| {
-                    let Some(editor_tab) = tab.as_editor_mut() else {
-                        return;
-                    };
-                    editor_tab.location = TabLocation::Local(path.to_path_buf());
-                    editor_tab.title = path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or(UNTITLED)
-                        .to_string()
-                        .into();
-                    editor_tab.encoding = encoding;
-                    editor_tab.update_file_tooltip_cache(byte_len);
-                    tab.update_language(cx);
+                if let Some(tab_entity) = self.tab_entity_of(tab_id, cx) {
+                    let old_path = tab_entity
+                        .read(cx)
+                        .as_editor()
+                        .and_then(|editor_tab| editor_tab.file_path().cloned());
+                    if let Some(old_path) = old_path {
+                        self.unwatch_file(&old_path);
+                    }
+                    self.file_watch_state
+                        .last_file_saves
+                        .insert(path.to_path_buf(), std::time::Instant::now());
+                    tab_entity.update(cx, |tab, cx| {
+                        let Some(editor_tab) = tab.as_editor_mut() else {
+                            return;
+                        };
+                        editor_tab.location = TabLocation::Local(path.to_path_buf());
+                        editor_tab.title = path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(UNTITLED)
+                            .to_string()
+                            .into();
+                        editor_tab.encoding = encoding;
+                        editor_tab.mark_snapshot_as_saved(
+                            completion.saved_content_hash,
+                            completion.saved_content_len,
+                            cx,
+                        );
+                        editor_tab.update_file_tooltip_cache(byte_len);
+                        tab.update_language(cx);
+                        cx.notify();
+                    });
                     cx.notify();
-                });
-                cx.notify();
-                self.watch_file(path);
+                    self.watch_file(path);
+                } else {
+                    log::warn!("Save As completed, but tab {tab_id} no longer exists");
+                }
+                self.resume_after_local_save(tab_id, window, cx);
             }
             Err(e) => {
-                self.handle_failed_save(completion, &e, window, cx);
+                self.cancel_close_after_failed_local_save(tab_id);
+                Self::handle_failed_save(completion, &e, window, cx);
             }
         }
     }
@@ -234,9 +240,12 @@ mod tests {
                     .first()
                     .expect("expected at least one tab")
                     .clone()
-                    .update(cx, |tab, _cx| {
+                    .update(cx, |tab, cx| {
                         if let Some(editor_tab) = tab.as_editor_mut() {
                             editor_tab.location = TabLocation::Local(first_path.clone());
+                            editor_tab.content.update(cx, |state, cx| {
+                                state.set_value("hello", window, cx);
+                            });
                         }
                     });
 
@@ -255,10 +264,18 @@ mod tests {
                 this.finalize_save_as(
                     first_tab_id,
                     &renamed_path,
-                    b"hello",
-                    "UTF-8".to_string(),
+                    ("hello", b"hello", "UTF-8".to_string()),
                     window,
                     cx,
+                );
+                let first_editor = this
+                    .tabs
+                    .first()
+                    .and_then(|tab| tab.read(cx).as_editor())
+                    .expect("expected first editor tab");
+                assert!(
+                    first_editor.content_differs_from_original(cx),
+                    "Save As must retain the old baseline while its write is pending"
                 );
                 (first_tab_id, second_tab_id)
             })
@@ -295,6 +312,17 @@ mod tests {
                 assert_eq!(
                     second_tab_path, second_path,
                     "save-as update must not alter other tabs"
+                );
+                let first_editor = this
+                    .tabs
+                    .iter()
+                    .map(|tab| tab.read(cx))
+                    .find(|tab| tab.id() == first_tab_id)
+                    .and_then(Tab::as_editor)
+                    .expect("expected first editor tab");
+                assert!(
+                    !first_editor.content_differs_from_original(cx),
+                    "Save As should advance the baseline after the write succeeds"
                 );
             });
         });

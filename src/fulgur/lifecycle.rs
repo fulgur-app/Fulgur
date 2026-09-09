@@ -200,6 +200,8 @@ impl Fulgur {
                 pending_remote_restore: HashSet::new(),
                 inflight_remote_restore: HashSet::new(),
                 inflight_saves: HashMap::new(),
+                pending_save_tab_closes: HashSet::new(),
+                pending_save_close_action: None,
                 pending_initial_active_tab: None,
                 has_rendered_once: false,
             }

@@ -2,7 +2,10 @@ use super::super::{EncodedContents, encode_for_save};
 use super::completion::SaveCompletion;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
-    Fulgur, editor_tab::TabLocation, tab::Tab, utils::atomic_write::atomic_write_file,
+    Fulgur,
+    editor_tab::{TabLocation, content_fingerprint_from_str},
+    tab::Tab,
+    utils::atomic_write::atomic_write_file,
 };
 use gpui::{Context, Window};
 use std::path::PathBuf;
@@ -52,7 +55,7 @@ impl Fulgur {
         };
         match location {
             TabLocation::Local(path) => {
-                self.spawn_local_save(tab_id, path, bytes, window, cx);
+                self.spawn_local_save(tab_id, path, &contents, bytes, window, cx);
             }
             TabLocation::Remote(spec) => {
                 self.save_remote_file(window, cx, tab_id, spec, contents, bytes);
@@ -66,6 +69,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `tab_id`: Stable identifier of the editor tab being saved
     /// - `path`: Destination path of the local file
+    /// - `contents`: The editor snapshot represented by `bytes`
     /// - `bytes`: The already-encoded file contents
     /// - `window`: The window context
     /// - `cx`: The application context
@@ -73,6 +77,7 @@ impl Fulgur {
         &mut self,
         tab_id: TabId,
         path: PathBuf,
+        contents: &str,
         bytes: Vec<u8>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -86,16 +91,14 @@ impl Fulgur {
         }
         log::debug!("Saving file: {} ({} bytes)", path.display(), bytes.len());
         self.inflight_saves.insert(tab_id, path.clone());
+        let (saved_content_hash, saved_content_len) = content_fingerprint_from_str(contents);
         let completion = SaveCompletion {
             tab_id,
             byte_len: bytes.len(),
-            previous_baseline: self.capture_saved_baseline(tab_id, cx),
+            saved_content_hash,
+            saved_content_len,
             path,
         };
-        self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
-            editor_tab.mark_as_saved(cx);
-            cx.notify();
-        });
         cx.notify();
         cx.spawn_in(window, async move |view, window| {
             let write_path = completion.path.clone();
@@ -106,7 +109,7 @@ impl Fulgur {
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
-                        this.finish_local_save(completion, write_result, window, cx);
+                        this.finish_local_save(&completion, write_result, window, cx);
                     });
                 })
                 .ok();
@@ -123,7 +126,7 @@ impl Fulgur {
     /// - `cx`: The application context
     fn finish_local_save(
         &mut self,
-        completion: SaveCompletion,
+        completion: &SaveCompletion,
         write_result: anyhow::Result<()>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -143,13 +146,20 @@ impl Fulgur {
                     .insert(completion.path.clone(), std::time::Instant::now());
                 let byte_len = completion.byte_len;
                 self.update_editor_tab(completion.tab_id, cx, |editor_tab, cx| {
+                    editor_tab.mark_snapshot_as_saved(
+                        completion.saved_content_hash,
+                        completion.saved_content_len,
+                        cx,
+                    );
                     editor_tab.update_file_tooltip_cache(byte_len);
                     cx.notify();
                 });
                 cx.notify();
+                self.resume_after_local_save(completion.tab_id, window, cx);
             }
             Err(e) => {
-                self.handle_failed_save(completion, &e, window, cx);
+                self.cancel_close_after_failed_local_save(completion.tab_id);
+                Self::handle_failed_save(completion, &e, window, cx);
             }
         }
     }
@@ -158,9 +168,15 @@ impl Fulgur {
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "gpui-test-support")]
-    use crate::fulgur::editor_tab::TabLocation;
+    use super::SaveCompletion;
     #[cfg(feature = "gpui-test-support")]
-    use crate::fulgur::files::file_operations::test_helpers::setup_fulgur;
+    use crate::fulgur::PendingSaveCloseAction;
+    #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::editor_tab::{TabLocation, content_fingerprint_from_str};
+    #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::files::file_operations::test_helpers::{
+        setup_fulgur, setup_fulgur_with_root,
+    };
     #[cfg(feature = "gpui-test-support")]
     use gpui::TestAppContext;
     #[cfg(feature = "gpui-test-support")]
@@ -196,7 +212,7 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui::test]
-    fn test_save_file_marks_tab_as_not_modified(cx: &mut TestAppContext) {
+    fn test_save_file_marks_tab_clean_only_after_write_completes(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
         let path = dir.path().join("mark_saved_test.txt");
@@ -219,7 +235,187 @@ mod tests {
                     .last()
                     .and_then(|t| t.read(cx).as_editor())
                     .is_none_or(|e| e.modified);
-                assert!(!modified, "tab should be marked as not modified after save");
+                assert!(modified, "tab must remain dirty while the write is pending");
+            });
+        });
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|_, cx| {
+            let modified = fulgur
+                .read(cx)
+                .tabs
+                .last()
+                .and_then(|tab| tab.read(cx).as_editor())
+                .is_none_or(|editor_tab| editor_tab.modified);
+            assert!(
+                !modified,
+                "tab should become clean after the write succeeds"
+            );
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_edit_during_local_save_stays_dirty(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("edited_during_save.txt");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let tab = this.tabs.last().expect("expected at least one tab").clone();
+                tab.update(cx, |tab, cx| {
+                    let editor_tab = tab.as_editor_mut().expect("expected editor tab");
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.content.update(cx, |state, cx| {
+                        state.set_value("dispatched", window, cx);
+                    });
+                });
+                this.save_file(window, cx);
+                tab.update(cx, |tab, cx| {
+                    tab.as_editor_mut()
+                        .expect("expected editor tab")
+                        .content
+                        .update(cx, |state, cx| {
+                            state.set_value("edited later", window, cx);
+                        });
+                });
+            });
+        });
+        visual_cx.run_until_parked();
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("file should have been saved"),
+            "dispatched"
+        );
+        visual_cx.update(|_, cx| {
+            let editor_tab = fulgur.read(cx).tabs.last().expect("expected tab").read(cx);
+            let editor_tab = editor_tab.as_editor().expect("expected editor tab");
+            assert!(editor_tab.modified, "later edit must remain dirty");
+            assert!(editor_tab.content_differs_from_original(cx));
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_save_then_close_waits_for_success(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("save_then_close.txt");
+        let tab_id = visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let tab = this.tabs.last().expect("expected tab").clone();
+                let tab_id = tab.read(cx).id();
+                tab.update(cx, |tab, cx| {
+                    let editor_tab = tab.as_editor_mut().expect("expected editor tab");
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.content.update(cx, |state, cx| {
+                        state.set_value("saved before close", window, cx);
+                    });
+                });
+                this.save_file(window, cx);
+                let editor_tab = tab.read(cx);
+                assert!(
+                    editor_tab
+                        .as_editor()
+                        .expect("expected editor tab")
+                        .content_differs_from_original(cx),
+                    "pending save must remain recoverable in session state"
+                );
+                this.close_tab(tab_id, window, cx);
+                assert!(this.tabs.iter().any(|tab| tab.read(cx).id() == tab_id));
+                assert!(this.pending_save_tab_closes.contains(&tab_id));
+                tab_id
+            })
+        });
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|_, cx| {
+            assert!(
+                !fulgur
+                    .read(cx)
+                    .tabs
+                    .iter()
+                    .any(|tab| tab.read(cx).id() == tab_id)
+            );
+        });
+        assert_eq!(
+            std::fs::read_to_string(path).expect("file should have been saved"),
+            "saved before close"
+        );
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_failed_save_cancels_deferred_close_and_retains_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("missing-parent").join("missing.txt");
+        let contents = "not persisted";
+        let (saved_content_hash, saved_content_len) = content_fingerprint_from_str(contents);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let tab = this.tabs.last().expect("expected tab").clone();
+                let tab_id = tab.read(cx).id();
+                tab.update(cx, |tab, cx| {
+                    let editor_tab = tab.as_editor_mut().expect("expected editor tab");
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.content.update(cx, |state, cx| {
+                        state.set_value(contents, window, cx);
+                    });
+                });
+                this.inflight_saves.insert(tab_id, path.clone());
+                this.close_tab(tab_id, window, cx);
+                this.finish_local_save(
+                    &SaveCompletion {
+                        tab_id,
+                        path: path.clone(),
+                        byte_len: contents.len(),
+                        saved_content_hash,
+                        saved_content_len,
+                    },
+                    Err(anyhow::anyhow!("delayed write failed")),
+                    window,
+                    cx,
+                );
+
+                let editor_tab = this
+                    .tabs
+                    .iter()
+                    .map(|tab| tab.read(cx))
+                    .find(|tab| tab.id() == tab_id)
+                    .and_then(crate::fulgur::tab::Tab::as_editor)
+                    .expect("failed save must retain the tab");
+                assert!(editor_tab.content_differs_from_original(cx));
+                assert!(!this.pending_save_tab_closes.contains(&tab_id));
+            });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui::test]
+    fn test_quit_waits_for_pending_local_save(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let path = std::env::temp_dir().join("pending-quit-save.txt");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let tab_id = this.tabs.last().expect("expected tab").read(cx).id();
+                this.inflight_saves.insert(tab_id, path.clone());
+
+                this.quit(window, cx);
+
+                assert_eq!(
+                    this.pending_save_close_action,
+                    Some(PendingSaveCloseAction::Quit)
+                );
+                assert!(this.tabs.iter().any(|tab| tab.read(cx).id() == tab_id));
+
+                // This test exercises only the deferral boundary; do not leave
+                // an artificial save pending after the assertion.
+                this.inflight_saves.remove(&tab_id);
+                this.pending_save_close_action = None;
             });
         });
     }

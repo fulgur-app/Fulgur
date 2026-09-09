@@ -1,5 +1,5 @@
-use crate::fulgur::Fulgur;
 use crate::fulgur::ui::dialogs::large_file_close::CloseContinuation;
+use crate::fulgur::{Fulgur, PendingSaveCloseAction};
 use gpui::{App, Context, ParentElement, Styled, Window, div, px};
 use gpui_component::WindowExt;
 
@@ -55,6 +55,9 @@ impl Fulgur {
     /// - `window`: The window to quit the application in
     /// - `cx`: The application context
     pub fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.defer_close_for_pending_saves(PendingSaveCloseAction::Quit) {
+            return;
+        }
         let large_modified = self.large_modified_local_tabs(cx);
         if large_modified.is_empty() {
             self.quit_inner(window, cx);
