@@ -21,7 +21,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `Vec<ProfileId>`: Active only profile ids when the master sync switch is on, in declaration order.
-    fn collect_active_profiles(&self) -> Vec<ServerProfile> {
+    pub(crate) fn collect_active_profiles(&self) -> Vec<ServerProfile> {
         if !self
             .settings
             .app_settings

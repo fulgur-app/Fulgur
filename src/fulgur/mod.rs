@@ -31,6 +31,7 @@ use ui::{
     bars::search_bar::SearchBar,
     bars::status_bar::StatusBar,
     bars::titlebar::CustomTitleBar,
+    command_palette::CommandPalette,
     tabs::{editor_tab, tab, tab_bar::TabBar},
 };
 
@@ -73,6 +74,8 @@ pub struct Fulgur {
     _status_bar_subscription: Subscription, // Routes StatusBarEvent from the status bar to window-level handlers
     tab_bar: Entity<TabBar>,                // The tab bar view at the top of the window
     _tab_bar_subscription: Subscription, // Routes TabBarEvent from the tab bar to window-level handlers
+    command_palette: Entity<CommandPalette>, // The command palette, opened on demand over the window
+    _command_palette_subscription: Subscription, // Routes CommandPaletteEvent from the palette to window-level handlers
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
     pending_tab_removal: Option<TabId>, // Tab ID to remove after it has been sent to another window
     pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)

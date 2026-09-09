@@ -1,7 +1,7 @@
 use super::actions::{
     CloseAllFiles, CloseFile, FindAndReplace, FindInFile, JumpToLine, NewFile, NewWindow, NextTab,
     OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs,
-    ToggleColorPicker,
+    ToggleColorPicker, ToggleCommandPalette,
 };
 use gpui::KeyBinding;
 
@@ -31,6 +31,7 @@ enum KeybindingDispatchAction {
     JumpToLine,
     PrintFile,
     ToggleColorPicker,
+    ToggleCommandPalette,
 }
 
 /// A platform keybinding dispatch specification used to build runtime keybindings.
@@ -106,6 +107,9 @@ impl KeybindingDispatchSpec {
             KeybindingDispatchAction::ToggleColorPicker => {
                 KeyBinding::new(self.keystroke, ToggleColorPicker, context)
             }
+            KeybindingDispatchAction::ToggleCommandPalette => {
+                KeyBinding::new(self.keystroke, ToggleCommandPalette, context)
+            }
         }
     }
 }
@@ -134,7 +138,8 @@ impl KeybindingDispatchAction {
             | Self::PreviousTab
             | Self::JumpToLine
             | Self::PrintFile
-            | Self::ToggleColorPicker => Some(SCOPED_BINDING_PREDICATE),
+            | Self::ToggleColorPicker
+            | Self::ToggleCommandPalette => Some(SCOPED_BINDING_PREDICATE),
         }
     }
 }
@@ -209,6 +214,16 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
         KeybindingDispatchSpec::new("cmd-shift-c", KeybindingDispatchAction::ToggleColorPicker),
         #[cfg(not(target_os = "macos"))]
         KeybindingDispatchSpec::new("ctrl-shift-c", KeybindingDispatchAction::ToggleColorPicker),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new(
+            "cmd-shift-p",
+            KeybindingDispatchAction::ToggleCommandPalette,
+        ),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new(
+            "ctrl-shift-p",
+            KeybindingDispatchAction::ToggleCommandPalette,
+        ),
     ]
 }
 
@@ -413,6 +428,7 @@ mod tests {
             KeybindingDispatchAction::JumpToLine,
             KeybindingDispatchAction::PrintFile,
             KeybindingDispatchAction::ToggleColorPicker,
+            KeybindingDispatchAction::ToggleCommandPalette,
         ];
         for action in editor_scoped {
             assert_eq!(
@@ -421,5 +437,23 @@ mod tests {
                 "{action:?} should be scoped to the application content"
             );
         }
+    }
+
+    #[test]
+    fn test_the_command_palette_claims_the_conventional_shortcut() {
+        let specs = default_keybinding_dispatch_specs();
+
+        #[cfg(target_os = "macos")]
+        assert!(has_binding(
+            &specs,
+            "cmd-shift-p",
+            KeybindingDispatchAction::ToggleCommandPalette
+        ));
+        #[cfg(not(target_os = "macos"))]
+        assert!(has_binding(
+            &specs,
+            "ctrl-shift-p",
+            KeybindingDispatchAction::ToggleCommandPalette
+        ));
     }
 }

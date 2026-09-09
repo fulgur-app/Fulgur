@@ -30,6 +30,7 @@ actions!(
         CheckForUpdates,
         PrintFile,
         ToggleColorPicker,
+        ToggleCommandPalette,
     ]
 );
 
