@@ -1411,6 +1411,7 @@ fn make_transfer_data() -> TabTransferData {
         )
         .0,
         original_content_len: "let x = 42;".len(),
+        saved_baseline_known: true,
         encoding: "UTF-8".to_string(),
         lossy_decode: false,
         language: SupportedLanguage::Rust,

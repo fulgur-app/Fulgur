@@ -248,12 +248,20 @@ impl Fulgur {
 mod tests {
     use crate::fulgur::WindowInit;
     use crate::fulgur::{
-        Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
-        state::persistence::TabState, window_manager::WindowManager,
+        Fulgur,
+        editor_tab::TabLocation,
+        settings::Settings,
+        shared_state::SharedAppState,
+        state::persistence::{
+            SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState,
+            WindowsState,
+        },
+        window_manager::WindowManager,
     };
     use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     use parking_lot::Mutex;
-    use std::{cell::RefCell, rc::Rc, sync::Arc};
+    use std::{cell::RefCell, fs, rc::Rc, sync::Arc};
+    use tempfile::TempDir;
 
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
         cx.update(gpui_component::init);
@@ -316,6 +324,62 @@ mod tests {
         })
     }
 
+    /// Wrap one persisted tab in the startup snapshot shape used by restoration.
+    ///
+    /// ### Arguments
+    /// - `tab`: The persisted tab to place in the only restored window
+    ///
+    /// ### Returns
+    /// - `WindowsState`: A single-window startup snapshot containing `tab`
+    fn startup_snapshot(tab: TabState) -> WindowsState {
+        WindowsState {
+            windows: vec![WindowState {
+                window_id: 42,
+                tabs: vec![tab],
+                active_tab_index: Some(0),
+                window_bounds: SerializedWindowBounds::default(),
+            }],
+        }
+    }
+
+    /// Restore a startup snapshot and immediately capture the next persisted window state.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The application entity whose tabs should be restored
+    /// - `cx`: The visual test context containing the application window
+    /// - `state`: The startup snapshot to restore
+    ///
+    /// ### Returns
+    /// - `WindowState`: The window snapshot produced immediately after restoration
+    fn restore_and_snapshot(
+        fulgur: &Entity<Fulgur>,
+        cx: &mut VisualTestContext,
+        state: WindowsState,
+    ) -> WindowState {
+        cx.update(|window, cx| {
+            let restore_state = Arc::clone(&cx.global::<SharedAppState>().restore_state);
+            *restore_state.lock() = Some(state);
+            fulgur.update(cx, |this, cx| {
+                this.settings.app_settings.persist_unsaved_buffers = true;
+                this.load_state(window, cx, 0);
+            });
+        });
+        fulgur.read_with(cx, crate::fulgur::Fulgur::build_window_state_without_bounds)
+    }
+
+    /// Assert that a persisted tab still carries the expected recovery text.
+    ///
+    /// ### Arguments
+    /// - `tab`: The persisted tab whose optional recovery content is inspected
+    /// - `expected`: The recovery text expected in `tab`
+    fn assert_recovery_content(tab: &TabState, expected: &str) {
+        let content = tab
+            .content
+            .as_ref()
+            .map(|content| content.to_text().into_owned());
+        assert_eq!(content.as_deref(), Some(expected));
+    }
+
     #[gpui::test]
     fn dirty_file_tab_persists_content_when_setting_is_enabled(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
@@ -330,6 +394,69 @@ mod tests {
             tabs[0].content.is_some(),
             "unsaved content must be persisted when the setting is enabled"
         );
+    }
+
+    #[gpui::test]
+    fn restored_local_recovery_survives_repeated_snapshots(cx: &mut TestAppContext) {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let path = temp_dir.path().join("notes.txt");
+        fs::write(&path, "saved on disk").expect("write saved file");
+        let restored = TabState {
+            tab_id: 7,
+            title: "notes.txt".to_string(),
+            file_path: Some(path.clone()),
+            content: Some(TabContent::from("recovered local edits")),
+            last_saved: None,
+            remote: None,
+            log_view: false,
+            color_tag: None,
+        };
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let first = restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(restored));
+        assert_recovery_content(&first.tabs[0], "recovered local edits");
+
+        let second = restore_and_snapshot(
+            &fulgur,
+            &mut visual_cx,
+            WindowsState {
+                windows: vec![first],
+            },
+        );
+        assert_recovery_content(&second.tabs[0], "recovered local edits");
+        assert_eq!(fs::read_to_string(path).unwrap(), "saved on disk");
+    }
+
+    #[gpui::test]
+    fn restored_remote_recovery_survives_repeated_snapshots(cx: &mut TestAppContext) {
+        let restored = TabState {
+            tab_id: 8,
+            title: "remote.txt".to_string(),
+            file_path: None,
+            content: Some(TabContent::from("recovered remote edits")),
+            last_saved: None,
+            remote: Some(SerializedRemoteSpec {
+                host: "example.com".to_string(),
+                port: 22,
+                user: "alice".to_string(),
+                path: "/srv/remote.txt".to_string(),
+            }),
+            log_view: false,
+            color_tag: None,
+        };
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let first = restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(restored));
+        assert_recovery_content(&first.tabs[0], "recovered remote edits");
+
+        let second = restore_and_snapshot(
+            &fulgur,
+            &mut visual_cx,
+            WindowsState {
+                windows: vec![first],
+            },
+        );
+        assert_recovery_content(&second.tabs[0], "recovered remote edits");
     }
 
     #[gpui::test]

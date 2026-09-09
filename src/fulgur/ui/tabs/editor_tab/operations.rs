@@ -90,10 +90,11 @@ impl EditorTab {
         };
         self.original_content_hash = hash;
         self.original_content_len = len;
+        self.saved_baseline_known = true;
         self.modified = false;
     }
 
-    /// Update original-content fingerprint from a string source.
+    /// Establish a known original-content fingerprint from a string source.
     ///
     /// ### Arguments
     /// - `content`: Content to set as the new saved baseline
@@ -105,6 +106,13 @@ impl EditorTab {
         };
         self.original_content_hash = hash;
         self.original_content_len = len;
+        self.saved_baseline_known = true;
+    }
+
+    /// Mark the saved-content baseline as unknown after recovering unsaved text.
+    pub fn mark_saved_baseline_unknown(&mut self) {
+        self.saved_baseline_known = false;
+        self.modified = true;
     }
 
     /// Whether this tab's content is too large to embed in the persisted state file.
@@ -119,6 +127,7 @@ impl EditorTab {
     }
 
     /// Check whether current buffer content differs from the saved baseline.
+    /// An unknown baseline always reports the content as different.
     ///
     /// ### Arguments
     /// - `cx`: The application context
@@ -126,6 +135,9 @@ impl EditorTab {
     /// ### Returns
     /// - `True` when content differs from baseline, `False` otherwise
     pub fn content_differs_from_original(&self, cx: &App) -> bool {
+        if !self.saved_baseline_known {
+            return true;
+        }
         let current_text = self.content.read(cx).text();
         if current_text.len() != self.original_content_len {
             return true;
