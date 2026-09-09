@@ -1,4 +1,5 @@
 pub mod bars;
+pub mod command_palette;
 pub mod components_utils;
 pub mod copy_button;
 pub mod dialogs;

@@ -2,7 +2,7 @@ use super::actions::{
     About, CheckForUpdates, ClearRecentFiles, CloseAllFiles, CloseFile, CloseWindow, FindInFile,
     GetTheme, JumpToLine, NewFile, NewWindow, NextTab, NoneAction, OpenFile, OpenPath,
     OpenRecentFile, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs, SelectTheme,
-    SettingsTab, ToggleColorPicker,
+    SettingsTab, ToggleColorPicker, ToggleCommandPalette,
 };
 use crate::fulgur::Fulgur;
 use gpui::{Context, Menu, MenuItem};
@@ -92,6 +92,8 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<&str>) -> Vec<M
             name: "View".into(),
             disabled: false,
             items: vec![
+                MenuItem::action("Command palette", ToggleCommandPalette),
+                MenuItem::separator(),
                 MenuItem::action("Color picker", ToggleColorPicker),
                 MenuItem::separator(),
             ],

@@ -13,6 +13,7 @@ use crate::fulgur::{
         bars::search_bar::{SearchBar, SearchBarEvent},
         bars::status_bar::{StatusBar, StatusBarEvent},
         bars::titlebar::CustomTitleBar,
+        command_palette::{CommandPalette, CommandPaletteEvent},
         menus::{build_default_key_bindings, build_menus},
         tabs::tab_bar::{TabBar, TabBarEvent},
         themes,
@@ -129,6 +130,15 @@ impl Fulgur {
                 },
             );
 
+            let command_palette = cx.new(|cx| CommandPalette::new(window, cx));
+            let command_palette_subscription = cx.subscribe_in(
+                &command_palette,
+                window,
+                |this: &mut Self, _, event: &CommandPaletteEvent, window, cx| {
+                    this.on_command_palette_event(*event, window, cx);
+                },
+            );
+
             let shared_state_observation = cx.observe_global_in::<shared_state::SharedAppState>(
                 window,
                 |this: &mut Self, window, cx| {
@@ -177,6 +187,8 @@ impl Fulgur {
                 _status_bar_subscription: status_bar_subscription,
                 tab_bar,
                 _tab_bar_subscription: tab_bar_subscription,
+                command_palette,
+                _command_palette_subscription: command_palette_subscription,
                 pending_tab_transfer: None,
                 pending_tab_removal: None,
                 pending_transfer_scroll: None,
