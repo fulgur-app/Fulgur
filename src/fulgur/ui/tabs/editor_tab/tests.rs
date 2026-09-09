@@ -40,6 +40,7 @@ fn make_transfer_data() -> TabTransferData {
         modified: false,
         original_content_hash: content_fingerprint_from_str("fn main() {}").0,
         original_content_len: "fn main() {}".len(),
+        saved_baseline_known: true,
         encoding: "UTF-8".to_string(),
         lossy_decode: false,
         language: SupportedLanguage::Rust,
@@ -242,6 +243,43 @@ fn test_editor_tab_check_modified_and_mark_as_saved(cx: &mut TestAppContext) {
             assert_eq!(tab.original_content_len, "changed".len());
             assert!(!tab.check_modified(cx));
 
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
+#[gpui::test]
+fn test_recovered_file_stays_modified_after_edit_and_undo(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
+    let settings = EditorSettings::new();
+    let params = FromFileParams {
+        id: TabId(34),
+        path: temp_test_path("recovered.md"),
+        contents: "recovered content".to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: true,
+    };
+
+    cx.update(|cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let mut tab = EditorTab::from_file(params, window, cx, &settings);
+            assert!(!tab.saved_baseline_known);
+            assert!(tab.content_differs_from_original(cx));
+
+            tab.content.update(cx, |content, cx| {
+                content.set_value("temporary edit", window, cx);
+                content.set_value("recovered content", window, cx);
+            });
+
+            assert!(
+                tab.check_modified(cx),
+                "returning to recovered text must stay dirty while its saved baseline is unknown"
+            );
+
+            tab.mark_as_saved(cx);
+            assert!(tab.saved_baseline_known);
+            assert!(!tab.content_differs_from_original(cx));
             cx.new(|_| EmptyView)
         })
         .expect("failed to open test window");
@@ -473,6 +511,7 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
         modified: false,
         original_content_hash: content_fingerprint_from_str("").0,
         original_content_len: 0,
+        saved_baseline_known: true,
         encoding: "UTF-8".to_string(),
         lossy_decode: false,
         language: SupportedLanguage::Plain,
@@ -510,6 +549,7 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
         modified: true,
         original_content_hash: content_fingerprint_from_str("original content").0,
         original_content_len: "original content".len(),
+        saved_baseline_known: true,
         encoding: "UTF-8".to_string(),
         lossy_decode: false,
         language: SupportedLanguage::Markdown,
@@ -550,6 +590,7 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
         modified: false,
         original_content_hash: content_fingerprint_from_str("print('hello')").0,
         original_content_len: "print('hello')".len(),
+        saved_baseline_known: true,
         encoding: "UTF-8".to_string(),
         lossy_decode: false,
         language: SupportedLanguage::Python,
@@ -584,6 +625,7 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
         modified: false,
         original_content_hash: content_fingerprint_from_str("# Note").0,
         original_content_len: "# Note".len(),
+        saved_baseline_known: true,
         encoding: "UTF-8".to_string(),
         lossy_decode: false,
         language: SupportedLanguage::Markdown,

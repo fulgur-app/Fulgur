@@ -30,6 +30,7 @@ impl Fulgur {
             modified: editor.modified,
             original_content_hash: editor.original_content_hash,
             original_content_len: editor.original_content_len,
+            saved_baseline_known: editor.saved_baseline_known,
             encoding: editor.encoding.clone(),
             lossy_decode: editor.lossy_decode,
             language: editor.language,

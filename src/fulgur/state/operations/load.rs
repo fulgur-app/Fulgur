@@ -162,7 +162,9 @@ impl Fulgur {
                     cx,
                     &self.settings.editor_settings,
                 );
-                tab.modified = is_modified;
+                if is_modified {
+                    tab.mark_saved_baseline_unknown();
+                }
                 tab.color_tag = color_tag;
                 self.pending_remote_restore.insert(tab_id);
                 return Some(tab);
@@ -237,6 +239,7 @@ impl Fulgur {
                 original_content_hash:
                     crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str("").0,
                 original_content_len: 0,
+                saved_baseline_known: true,
                 encoding: "UTF-8".to_string(),
                 lossy_decode: false,
                 language,

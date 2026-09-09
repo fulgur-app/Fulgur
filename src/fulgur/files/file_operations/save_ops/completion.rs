@@ -11,6 +11,8 @@ pub(super) struct SavedBaseline {
     pub(super) hash: u64,
     /// The tab's `original_content_len` at dispatch time
     pub(super) len: usize,
+    /// Whether the tab's saved-content baseline was known at dispatch time
+    pub(super) known: bool,
     /// The tab's `modified` flag at dispatch time
     pub(super) modified: bool,
 }
@@ -47,6 +49,7 @@ impl Fulgur {
             tab.read(cx).as_editor().map(|editor_tab| SavedBaseline {
                 hash: editor_tab.original_content_hash,
                 len: editor_tab.original_content_len,
+                known: editor_tab.saved_baseline_known,
                 modified: editor_tab.modified,
             })
         })
@@ -72,6 +75,7 @@ impl Fulgur {
                 let edited_during_save = editor_tab.modified;
                 editor_tab.original_content_hash = baseline.hash;
                 editor_tab.original_content_len = baseline.len;
+                editor_tab.saved_baseline_known = baseline.known;
                 if editor_tab.large_file {
                     editor_tab.modified = baseline.modified || edited_during_save;
                 } else {

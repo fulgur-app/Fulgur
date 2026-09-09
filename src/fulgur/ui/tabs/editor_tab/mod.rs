@@ -56,6 +56,9 @@ pub struct EditorTab {
     pub modified: bool,
     pub original_content_hash: u64,
     pub original_content_len: usize,
+    /// Whether the original-content fingerprint represents a successfully
+    /// saved or loaded version of this file.
+    pub saved_baseline_known: bool,
     pub encoding: String,
     /// Whether the file was decoded lossily (undecodable bytes replaced).
     pub lossy_decode: bool,
@@ -101,6 +104,9 @@ pub struct TabTransferData {
     pub modified: bool,
     pub original_content_hash: u64,
     pub original_content_len: usize,
+    /// Whether the transferred fingerprint represents a successfully saved or
+    /// loaded version of the file.
+    pub saved_baseline_known: bool,
     pub encoding: String,
     pub lossy_decode: bool,
     pub language: SupportedLanguage,
