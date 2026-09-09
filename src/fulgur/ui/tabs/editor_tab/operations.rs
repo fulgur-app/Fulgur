@@ -94,6 +94,21 @@ impl EditorTab {
         self.modified = false;
     }
 
+    /// Advance the saved baseline to a snapshot that completed writing.
+    ///
+    /// ### Arguments
+    /// - `saved_hash`: Fingerprint of the content dispatched to the writer
+    /// - `saved_len`: Byte length of the content dispatched to the writer
+    /// - `cx`: The application context
+    pub fn mark_snapshot_as_saved(&mut self, saved_hash: u64, saved_len: usize, cx: &mut App) {
+        let current_text = self.content.read(cx).text();
+        let (current_hash, current_len) = super::content_fingerprint_from_rope(current_text);
+        self.original_content_hash = if self.large_file { 0 } else { saved_hash };
+        self.original_content_len = saved_len;
+        self.saved_baseline_known = true;
+        self.modified = current_len != saved_len || current_hash != saved_hash;
+    }
+
     /// Establish a known original-content fingerprint from a string source.
     ///
     /// ### Arguments

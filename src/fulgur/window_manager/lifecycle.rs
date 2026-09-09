@@ -1,8 +1,8 @@
 use super::WindowManager;
-use crate::fulgur::Fulgur;
 use crate::fulgur::WindowInit;
 use crate::fulgur::ui::dialogs::large_file_close::CloseContinuation;
 use crate::fulgur::ui::tabs::editor_tab::TabTransferData;
+use crate::fulgur::{Fulgur, PendingSaveCloseAction};
 use gpui::{AppContext, BorrowAppContext, Context, Window, WindowOptions};
 use gpui_component::WindowExt;
 use gpui_component::notification::NotificationType;
@@ -26,6 +26,9 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.defer_close_for_pending_saves(PendingSaveCloseAction::Window) {
+            return false;
+        }
         let window_count = cx.global::<WindowManager>().window_count();
         // Large, modified local files cannot be persisted, so warn about each before closing.
         let large_modified = self.large_modified_local_tabs(cx);

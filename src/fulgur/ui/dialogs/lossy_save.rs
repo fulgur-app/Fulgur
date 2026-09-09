@@ -108,8 +108,7 @@ impl Fulgur {
                         this.finalize_save_as(
                             tab_id,
                             &path,
-                            contents.as_bytes(),
-                            UTF_8.to_string(),
+                            (&contents, contents.as_bytes(), UTF_8.to_string()),
                             window,
                             cx,
                         );

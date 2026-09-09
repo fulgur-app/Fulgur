@@ -15,6 +15,9 @@ impl Fulgur {
         if !self.tabs.iter().any(|t| t.read(cx).id() == tab_id) {
             return;
         }
+        if self.defer_tab_close_for_pending_save(tab_id) {
+            return;
+        }
 
         if self.check_tab_modified(tab_id, cx) {
             self.show_unsaved_changes_dialog(window, cx, move |this, window, cx| {
@@ -75,6 +78,9 @@ impl Fulgur {
             if !self.tabs.iter().any(|t| t.read(cx).id() == tab_id) {
                 continue;
             }
+            if self.defer_tab_close_for_pending_save(tab_id) {
+                continue;
+            }
             if self.check_tab_modified(tab_id, cx) {
                 if let Some(pos) = self.tab_index_of(tab_id, cx) {
                     self.set_active_tab(pos, window, cx);
@@ -122,6 +128,9 @@ impl Fulgur {
             .collect();
         for tab_id in tab_ids {
             if !self.tabs.iter().any(|t| t.read(cx).id() == tab_id) {
+                continue;
+            }
+            if self.defer_tab_close_for_pending_save(tab_id) {
                 continue;
             }
             if self.check_tab_modified(tab_id, cx) {
@@ -172,6 +181,9 @@ impl Fulgur {
             if !self.tabs.iter().any(|t| t.read(cx).id() == tab_id) {
                 continue;
             }
+            if self.defer_tab_close_for_pending_save(tab_id) {
+                continue;
+            }
             if self.check_tab_modified(tab_id, cx) {
                 if let Some(pos) = self.tab_index_of(tab_id, cx) {
                     self.set_active_tab(pos, window, cx);
@@ -216,6 +228,9 @@ impl Fulgur {
             .collect();
         for tab_id in tab_ids {
             if !self.tabs.iter().any(|t| t.read(cx).id() == tab_id) {
+                continue;
+            }
+            if self.defer_tab_close_for_pending_save(tab_id) {
                 continue;
             }
             if self.check_tab_modified(tab_id, cx) {
