@@ -1,8 +1,8 @@
 use super::{RemoteFileResult, RemoteOpenResult};
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{Fulgur, editor_tab, tab::Tab, ui::menus::build_menus};
-use gpui::{Context, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{Context, Window};
 use std::path::PathBuf;
 
 impl Fulgur {
@@ -88,7 +88,7 @@ impl Fulgur {
                         window.push_notification(
                             (
                                 NotificationType::Error,
-                                gpui::SharedString::from(
+                                gpui_kit::SharedString::from(
                                     "Restored remote tab path is no longer a file",
                                 ),
                             ),
@@ -103,7 +103,7 @@ impl Fulgur {
                         self.pending_remote_restore.insert(tab_id);
                     }
                     window.push_notification(
-                        (NotificationType::Error, gpui::SharedString::from(msg)),
+                        (NotificationType::Error, gpui_kit::SharedString::from(msg)),
                         cx,
                     );
                 }

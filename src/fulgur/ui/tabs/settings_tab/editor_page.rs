@@ -2,14 +2,14 @@ use crate::fulgur::{
     Fulgur,
     settings::{EditorSettings, MarkdownPreviewMode},
 };
-use gpui::prelude::FluentBuilder as _;
-use gpui::{App, AppContext as _, Context, Entity, SharedString, Styled, Subscription, px};
-use gpui_component::{
+use gpui_kit::component::{
     AxisExt, Sizable,
     input::{InputEvent, InputState, NumberInput, NumberInputEvent, StepAction},
     select::{SearchableVec, Select, SelectState},
     setting::{NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage},
 };
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{App, AppContext as _, Context, Entity, SharedString, Styled, Subscription, px};
 use std::rc::Rc;
 
 type SetValFn = Rc<dyn Fn(f64, &mut App)>;

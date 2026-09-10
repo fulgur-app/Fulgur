@@ -1,8 +1,8 @@
 #[cfg(target_os = "macos")]
 use super::actions::{DockActivateTab, DockActivateTabByTitle, NewFile, NewWindow, OpenRecentFile};
-use gpui::SharedString;
+use gpui_kit::SharedString;
 #[cfg(target_os = "macos")]
-use gpui::{Menu, MenuItem};
+use gpui_kit::{Menu, MenuItem};
 use std::path::PathBuf;
 
 /// A single tab entry for the dock/taskbar menu, carrying the display name and the action to fire
@@ -72,8 +72,8 @@ pub fn build_dock_menu(windows: &[Vec<DockMenuTab>], recent_files: &[PathBuf]) -
 mod tests {
     use super::{DockMenuTab, build_dock_menu};
     use core::prelude::v1::test;
-    use gpui::MenuItem;
-    use gpui::SharedString;
+    use gpui_kit::MenuItem;
+    use gpui_kit::SharedString;
     use std::path::PathBuf;
 
     #[test]

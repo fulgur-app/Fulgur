@@ -5,15 +5,15 @@ use crate::fulgur::sync::ssh::{
     sftp::RemoteDirectoryEntry,
     url::RemoteSpec,
 };
-use gpui::{
-    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
-    div, prelude::FluentBuilder, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Sizable, h_flex,
     input::{Input, InputEvent, InputState},
     spinner::Spinner,
     v_flex,
+};
+use gpui_kit::{
+    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
+    div, prelude::FluentBuilder, px,
 };
 
 use crate::fulgur::ui::icons::CustomIcon;
@@ -63,7 +63,7 @@ struct BrowserListRequest {
 impl From<&RemoteDirectoryEntry> for BrowserEntry {
     fn from(e: &RemoteDirectoryEntry) -> Self {
         build_browser_entry(
-            gpui::SharedString::from(e.full_path.clone()),
+            gpui_kit::SharedString::from(e.full_path.clone()),
             e.is_dir,
             &e.name,
             &e.full_path,
@@ -473,7 +473,7 @@ mod tests {
     use super::{
         BROWSER_REFRESH_DEBOUNCE_MS, normalize_remote_browser_path, parse_remote_browser_input,
     };
-    use gpui::px;
+    use gpui_kit::px;
 
     #[test]
     fn parse_remote_browser_input_handles_directory_path() {

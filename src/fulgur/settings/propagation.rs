@@ -1,7 +1,7 @@
 use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{Fulgur, shared_state::SharedAppState};
-use gpui::{BorrowAppContext, Context, Window};
-use gpui_component::notification::NotificationType;
+use gpui_kit::component::notification::NotificationType;
+use gpui_kit::{BorrowAppContext, Context, Window};
 
 impl Fulgur {
     /// Update settings and propagate to all windows

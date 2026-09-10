@@ -11,11 +11,11 @@ use crate::fulgur::{
     tab::Tab,
     ui::{icons::CustomIcon, log_view::log_toggle_available, tabs::editor_tab::CsvViewMode},
 };
-use gpui::{
+use gpui_kit::component::{ActiveTheme, Icon, StyledExt, h_flex, tooltip::Tooltip, v_flex};
+use gpui_kit::{
     Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Render,
     Role, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder,
 };
-use gpui_component::{ActiveTheme, Icon, StyledExt, h_flex, tooltip::Tooltip, v_flex};
 
 impl Render for StatusBar {
     /// Render the status bar from the owning window's current state

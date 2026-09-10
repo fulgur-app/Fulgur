@@ -1,8 +1,8 @@
-use gpui::{App, Context, Entity, HighlightStyle};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme,
     input::{EditorState, TextDecoration, TextDecorationCollection},
 };
+use gpui_kit::{App, Context, Entity, HighlightStyle};
 
 use super::SearchBar;
 use super::state::MatchDecorations;

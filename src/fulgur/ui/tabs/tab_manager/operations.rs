@@ -3,7 +3,7 @@ use crate::fulgur::{
     tab::{Tab, TabId},
     ui::components_utils::MAX_TAB_NAME_LENGTH,
 };
-use gpui::{Context, Window};
+use gpui_kit::{Context, Window};
 
 impl Fulgur {
     /// Rename a tab identified by its stable identifier
@@ -57,7 +57,7 @@ impl Fulgur {
             })
             .cloned()
             .collect();
-        let title = gpui::SharedString::from(format!("Preview - {new_name}"));
+        let title = gpui_kit::SharedString::from(format!("Preview - {new_name}"));
         for preview in previews {
             preview.update(cx, |tab, cx| {
                 if let Tab::MarkdownPreview(preview_tab) = tab {

@@ -12,18 +12,18 @@ use crate::fulgur::{
     ui::{components_utils, icons::CustomIcon, window_drag::window_drag_region},
     window_manager::WindowManager,
 };
-use gpui::{
-    AnyElement, AppContext, ClickEvent, Context, DragMoveEvent, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Render, Role, StatefulInteractiveElement, Styled, WeakEntity,
-    Window, div, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     h_flex,
     menu::{ContextMenuExt, PopupMenuItem},
     tooltip::Tooltip,
     v_flex,
+};
+use gpui_kit::{
+    AnyElement, AppContext, ClickEvent, Context, DragMoveEvent, InteractiveElement, IntoElement,
+    MouseButton, ParentElement, Render, Role, StatefulInteractiveElement, Styled, WeakEntity,
+    Window, div, px,
 };
 use std::collections::HashMap;
 

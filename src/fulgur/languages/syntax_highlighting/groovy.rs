@@ -1,5 +1,5 @@
 use arborium_groovy;
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Custom highlights query for Groovy.
 ///
@@ -179,7 +179,7 @@ mod tests {
     fn test_add_groovy_support_registers_language() {
         super::add_groovy_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("groovy")
                 .is_some()
         );
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn test_groovy_highlights_query_compiles() {
         super::add_groovy_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("groovy");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("groovy");
         assert_eq!(highlighter.language().as_ref(), "groovy");
     }
 }

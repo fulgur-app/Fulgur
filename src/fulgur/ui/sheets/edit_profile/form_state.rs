@@ -2,8 +2,8 @@ use crate::fulgur::settings::{ProfileId, ServerProfile};
 use crate::fulgur::utils::crypto_helper::{
     load_device_api_key_from_keychain, save_device_api_key_to_keychain,
 };
-use gpui::{App, Entity};
-use gpui_component::input::InputState;
+use gpui_kit::component::input::InputState;
+use gpui_kit::{App, Entity};
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -194,8 +194,8 @@ mod gpui_tests {
         DEVICE_KEY_PLACEHOLDER, DeviceKeyEdit, KeyRollback, ProfileFormState,
         build_profile_from_form, read_device_key_edit,
     };
-    use gpui::{App, AppContext, TestAppContext, Window, WindowOptions};
-    use gpui_component::input::InputState;
+    use gpui_kit::component::input::InputState;
+    use gpui_kit::{App, AppContext, TestAppContext, Window, WindowOptions};
     use parking_lot::Mutex;
     use std::sync::Arc;
 
@@ -231,9 +231,9 @@ mod gpui_tests {
         }
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn build_profile_round_trips_every_field(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         cx.update(|cx| {
             cx.open_window(WindowOptions::default(), |window, cx| {
                 let state = make_form_state(
@@ -263,9 +263,9 @@ mod gpui_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn build_profile_normalizes_whitespace_fields(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         cx.update(|cx| {
             cx.open_window(WindowOptions::default(), |window, cx| {
                 let state = make_form_state(
@@ -291,9 +291,9 @@ mod gpui_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn read_device_key_edit_classifies_each_state(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         cx.update(|cx| {
             cx.open_window(WindowOptions::default(), |window, cx| {
                 let untouched = make_form_state(
@@ -343,13 +343,13 @@ mod gpui_tests {
 
     struct EmptyView;
 
-    impl gpui::Render for EmptyView {
+    impl gpui_kit::Render for EmptyView {
         fn render(
             &mut self,
             _window: &mut Window,
-            _cx: &mut gpui::Context<Self>,
-        ) -> impl gpui::IntoElement {
-            gpui::div()
+            _cx: &mut gpui_kit::Context<Self>,
+        ) -> impl gpui_kit::IntoElement {
+            gpui_kit::div()
         }
     }
 }

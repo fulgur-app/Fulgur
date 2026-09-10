@@ -249,7 +249,7 @@ mod tests {
     fn test_update_windows_jump_list_with_data_does_not_panic() {
         use crate::fulgur::ui::menus::DockMenuTab;
         let tabs = vec![vec![DockMenuTab::File {
-            name: gpui::SharedString::from("main.rs"),
+            name: gpui_kit::SharedString::from("main.rs"),
             path: PathBuf::from(r"C:\Users\user\project\main.rs"),
         }]];
         let recent = vec![PathBuf::from(r"C:\Users\user\project\main.rs")];

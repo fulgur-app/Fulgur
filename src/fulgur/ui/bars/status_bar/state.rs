@@ -7,8 +7,8 @@ use crate::fulgur::{
     tab::Tab,
     ui::components_utils::{EMPTY, UTF_8},
 };
-use gpui::{App, Context, EventEmitter, SharedString, WeakEntity, Window};
-use gpui_component::input::Position;
+use gpui_kit::component::input::Position;
+use gpui_kit::{App, Context, EventEmitter, SharedString, WeakEntity, Window};
 use std::time::{Duration, Instant};
 
 /// Delay before showing the connecting spinner (to avoid flickering on fast connections)
@@ -249,11 +249,11 @@ mod tests {
         ui::components_utils::UTF_8,
         window_manager::WindowManager,
     };
-    use gpui::{
+    use gpui_kit::component::input::Position;
+    use gpui_kit::{
         AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
         Window, WindowOptions, div,
     };
-    use gpui_component::input::Position;
     use parking_lot::Mutex;
     use std::{
         cell::RefCell,
@@ -272,7 +272,7 @@ mod tests {
 
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
         cx.update(|cx| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -312,7 +312,7 @@ mod tests {
         let profile_id = profile.id.clone();
 
         cx.update(|cx| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             settings
@@ -349,7 +349,7 @@ mod tests {
         (fulgur, visual_cx, profile_id)
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_status_bar_reflects_active_editor_cursor_language_and_encoding(
         cx: &mut TestAppContext,
     ) {
@@ -382,7 +382,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_status_bar_labels_use_defaults_without_active_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -398,7 +398,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_status_bar_events_are_routed_to_the_window(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -419,7 +419,7 @@ mod tests {
         assert_eq!(after, !initial);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_status_bar_sync_indicator_connected(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx, profile_id) = setup_fulgur_with_active_profile(cx);
 
@@ -437,7 +437,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_status_bar_sync_indicator_connecting_with_elapsed_delay(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx, profile_id) = setup_fulgur_with_active_profile(cx);
 
@@ -459,7 +459,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_status_bar_sync_indicator_connecting_before_delay(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx, profile_id) = setup_fulgur_with_active_profile(cx);
 
@@ -481,7 +481,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_status_bar_sync_indicator_non_connected_maps_to_disconnected(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx, profile_id) = setup_fulgur_with_active_profile(cx);
 
@@ -500,7 +500,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_status_bar_sync_aggregates_connected_wins_over_connecting(cx: &mut TestAppContext) {
         let mut profile_a = ServerProfile::new("Server A");
         profile_a.is_active = true;
@@ -510,7 +510,7 @@ mod tests {
         let id_b = profile_b.id.clone();
 
         cx.update(|cx| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             settings

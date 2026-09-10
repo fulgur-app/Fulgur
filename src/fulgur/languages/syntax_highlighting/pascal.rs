@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 use tree_sitter_pascal;
 
 const HIGHLIGHTS_QUERY: &str = include_str!("queries/pascal_highlights.scm");
@@ -24,7 +24,7 @@ mod tests {
     fn test_add_pascal_support_registers_language() {
         super::add_pascal_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("pascal")
                 .is_some()
         );
@@ -33,7 +33,7 @@ mod tests {
     #[test]
     fn test_pascal_highlights_query_compiles() {
         super::add_pascal_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("pascal");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("pascal");
         assert_eq!(highlighter.language().as_ref(), "pascal");
     }
 }

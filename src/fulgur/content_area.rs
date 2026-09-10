@@ -4,13 +4,7 @@ use crate::fulgur::utils::markdown_links::{MarkdownLinkTarget, resolve_markdown_
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
 };
-use gpui::prelude::FluentBuilder;
-use gpui::{
-    AnyElement, App, AppContext, ClickEvent, Context, DismissEvent, Div, Entity, Focusable,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString,
-    Styled, Window, div, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, WindowExt, h_flex,
     input::{Editor, EditorState},
     menu::PopupMenu,
@@ -20,6 +14,12 @@ use gpui_component::{
     table::{DataTable, TableState},
     text::{TableData, TextView, TextViewState},
     v_flex,
+};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::{
+    AnyElement, App, AppContext, ClickEvent, Context, DismissEvent, Div, Entity, Focusable,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString,
+    Styled, Window, div, px,
 };
 use std::path::PathBuf;
 
@@ -67,11 +67,14 @@ impl Fulgur {
                         )
                         .separator();
                 }
-                menu.menu("Cut", Box::new(gpui_component::input::Cut))
-                    .menu("Copy", Box::new(gpui_component::input::Copy))
-                    .menu("Paste", Box::new(gpui_component::input::Paste))
+                menu.menu("Cut", Box::new(gpui_kit::component::input::Cut))
+                    .menu("Copy", Box::new(gpui_kit::component::input::Copy))
+                    .menu("Paste", Box::new(gpui_kit::component::input::Paste))
                     .separator()
-                    .menu("Select All", Box::new(gpui_component::input::SelectAll))
+                    .menu(
+                        "Select All",
+                        Box::new(gpui_kit::component::input::SelectAll),
+                    )
             }
         });
 
@@ -110,18 +113,23 @@ impl Fulgur {
         let position = event.position;
         let preview_focus = self.markdown_preview_focus.clone();
 
-        // The replacement, `gpui_base::TextSelection::selected_text`, lives in the
-        // `gpui-base` crate, which gpui-component does not re-export and which Fulgur
-        // does not depend on directly. `WindowExt::selected_text` forwards to it.
-        #[allow(deprecated)]
-        let selection = window.selected_text(cx).trim().to_string();
+        let selection = gpui_kit::base::TextSelection::selected_text(window, cx)
+            .trim()
+            .to_string();
         let has_selection = !selection.is_empty();
         self.markdown_preview_pending_copy = has_selection.then_some(selection);
 
         let menu = PopupMenu::build(window, cx, move |menu, _window, _cx| {
             menu.action_context(preview_focus)
-                .menu_with_enable("Copy", Box::new(gpui_component::input::Copy), has_selection)
-                .menu("Select All", Box::new(gpui_component::input::SelectAll))
+                .menu_with_enable(
+                    "Copy",
+                    Box::new(gpui_kit::component::input::Copy),
+                    has_selection,
+                )
+                .menu(
+                    "Select All",
+                    Box::new(gpui_kit::component::input::SelectAll),
+                )
         });
 
         let subscription = cx.subscribe_in(
@@ -305,16 +313,18 @@ impl Fulgur {
         let right_click = cx.listener(|this, event: &MouseDownEvent, window, cx| {
             this.on_preview_right_click(event, window, cx);
         });
-        let copy = cx.listener(|this, _: &gpui_component::input::Copy, _window, cx| {
+        let copy = cx.listener(|this, _: &gpui_kit::component::input::Copy, _window, cx| {
             if let Some(text) = this.markdown_preview_pending_copy.take() {
-                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
             }
         });
-        let select_all = cx.listener(|this, _: &gpui_component::input::SelectAll, _window, cx| {
-            if let Some(state) = this.active_markdown_preview_state(cx) {
-                state.update(cx, TextViewState::select_all);
-            }
-        });
+        let select_all = cx.listener(
+            |this, _: &gpui_kit::component::input::SelectAll, _window, cx| {
+                if let Some(state) = this.active_markdown_preview_state(cx) {
+                    state.update(cx, TextViewState::select_all);
+                }
+            },
+        );
 
         div()
             .id("markdown-preview-context")
@@ -357,7 +367,7 @@ impl Fulgur {
             MarkdownPreview {
                 content: Entity<EditorState>,
                 source_path: Option<std::path::PathBuf>,
-                view_state: Entity<gpui_component::text::TextViewState>,
+                view_state: Entity<gpui_kit::component::text::TextViewState>,
             },
         }
 

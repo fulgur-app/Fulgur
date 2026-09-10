@@ -1,5 +1,5 @@
 use arborium_clojure;
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add Clojure language support.
 pub fn add_clojure_support() {
@@ -107,7 +107,7 @@ mod tests {
     fn test_add_clojure_support_registers_language() {
         super::add_clojure_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("clojure")
                 .is_some()
         );
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn test_clojure_highlights_query_compiles() {
         super::add_clojure_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("clojure");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("clojure");
         assert_eq!(highlighter.language().as_ref(), "clojure");
     }
 }

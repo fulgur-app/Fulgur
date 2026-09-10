@@ -1,5 +1,5 @@
-use gpui::{App, ParentElement, Styled, Window, div, img, px};
-use gpui_component::{Icon, WindowExt, h_flex, link::Link};
+use gpui_kit::component::{Icon, WindowExt, h_flex, link::Link};
+use gpui_kit::{App, ParentElement, Styled, Window, div, img, px};
 
 use crate::fulgur::ui::icons::CustomIcon;
 
@@ -14,7 +14,7 @@ pub fn about(window: &mut Window, cx: &mut App) {
             .keyboard(true)
             .title(div().text_center().child("Fulgur"))
             .child(
-                gpui_component::v_flex()
+                gpui_kit::component::v_flex()
                     .gap_4()
                     .items_center()
                     .child(img("assets/icon_square.png").w(px(200.0)).h(px(200.0)))

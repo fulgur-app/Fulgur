@@ -1,10 +1,10 @@
 #!/bin/bash
-# Fetch the latest versions of bundled themes from the gpui-component repository.
-# Only syncs the themes already included in Fulgur — does not add new ones.
+# Fetch the latest versions of bundled themes from the GPUI Kit repository.
+# Only syncs the themes already included in Fulgur - does not add new ones.
 
 set -euo pipefail
 
-THEMES_URL="https://raw.githubusercontent.com/longbridge/gpui-component/main/themes"
+THEMES_URL="https://raw.githubusercontent.com/longbridge/gpui-kit/main/themes"
 THEMES_DIR="$(dirname "$0")/../src/themes"
 
 THEMES=(

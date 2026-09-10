@@ -11,7 +11,7 @@ homepage = "https://fulgur.app"
 
 [features]
 default = []
-gpui-test-support = ["gpui/test-support"]
+gpui-test-support = ["gpui-kit/test-support"]
 
 [lints.clippy]
 # Pedantic mode is always on. Rules below are allowed because they are not yet addressed.
@@ -73,15 +73,14 @@ anyhow = "1.0.104"
 futures = "0.3.34"
 
 # GUI
-# Rev-less like gpui-component HEAD; Cargo.lock carries the compatible Zed pin
-gpui = { git = "https://github.com/zed-industries/zed" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["runtime_shaders", "font-kit", "wayland", "x11"] }
-gpui-macros = "0.2.2"
-gpui-component = { git = "https://github.com/longbridge/gpui-component", features = ["tree-sitter-languages"] }
-http_client = { git = "https://github.com/zed-industries/zed" }
-reqwest_client = { git = "https://github.com/zed-industries/zed" }
+# The facade owns the compatible GPUI Pre family and forwards Fulgur's required
+# runtime_shaders, font-kit, Wayland, and X11 platform features.
+gpui-kit = { version = "0.6.1", features = ["tree-sitter-languages"] }
+# GPUI Kit re-exports the HTTP abstractions, but Fulgur also constructs the
+# concrete Zed Reqwest transport directly.
+reqwest_client = { package = "gpui-pre-reqwest-client", version = "0.3.4" }
 
-# Markdown (same crate and version gpui-component parses with; used to locate
+# Markdown (same crate and version GPUI Kit parses with; used to locate
 # inline text spans so the preview stopgap only neutralizes soft-break newlines)
 markdown = "1.0.0"
 

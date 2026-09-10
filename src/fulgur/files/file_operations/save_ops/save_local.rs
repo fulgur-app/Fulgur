@@ -7,7 +7,7 @@ use crate::fulgur::{
     tab::Tab,
     utils::atomic_write::atomic_write_file,
 };
-use gpui::{Context, Window};
+use gpui_kit::{Context, Window};
 use std::path::PathBuf;
 
 impl Fulgur {
@@ -178,14 +178,14 @@ mod tests {
         setup_fulgur, setup_fulgur_with_root,
     };
     #[cfg(feature = "gpui-test-support")]
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
     #[cfg(feature = "gpui-test-support")]
     use tempfile::TempDir;
 
     // ========== save_file tests ==========
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_save_file_writes_content_to_disk(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_save_file_marks_tab_clean_only_after_write_completes(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -255,7 +255,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_edit_during_local_save_stays_dirty(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -297,7 +297,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_save_then_close_waits_for_success(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -346,7 +346,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_failed_save_cancels_deferred_close_and_retains_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -394,7 +394,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_quit_waits_for_pending_local_save(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = std::env::temp_dir().join("pending-quit-save.txt");
@@ -421,7 +421,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_save_file_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -434,7 +434,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_save_file_preserves_non_utf8_encoding(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");

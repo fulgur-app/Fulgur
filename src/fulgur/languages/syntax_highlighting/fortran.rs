@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add Fortran language support.
 pub fn add_fortran_support() {
@@ -229,7 +229,7 @@ mod tests {
     fn test_add_fortran_support_registers_language() {
         super::add_fortran_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("fortran")
                 .is_some()
         );
@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn test_fortran_highlights_query_compiles() {
         super::add_fortran_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("fortran");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("fortran");
         assert_eq!(highlighter.language().as_ref(), "fortran");
     }
 }

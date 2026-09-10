@@ -1,9 +1,9 @@
 use crate::fulgur::ui::icons::CustomIcon;
-use gpui::{Corners, DefiniteLength, Hsla, Pixels, Styled, px, relative};
-use gpui_component::{
+use gpui_kit::component::{
     Sizable, StyledExt,
     button::{Button, ButtonVariants},
 };
+use gpui_kit::{Corners, DefiniteLength, Hsla, Pixels, Styled, px, relative};
 use std::time::SystemTime;
 use time::OffsetDateTime;
 
@@ -130,8 +130,8 @@ pub fn format_file_size(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use core::prelude::v1::test;
-    use gpui::{px, red, relative};
-    use gpui_component::button::Button;
+    use gpui_kit::component::button::Button;
+    use gpui_kit::{px, red, relative};
     use std::time::{Duration, UNIX_EPOCH};
 
     use crate::fulgur::ui::{

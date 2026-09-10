@@ -3,7 +3,7 @@ use super::actions::{
     OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs,
     ToggleColorPicker, ToggleCommandPalette,
 };
-use gpui::KeyBinding;
+use gpui_kit::KeyBinding;
 
 /// Key context set on the application content element, used to scope keybindings.
 pub const KEY_CONTEXT_FULGUR: &str = "Fulgur";
@@ -372,12 +372,12 @@ mod tests {
     #[test]
     fn test_scoped_predicate_matches_editor_input_depth_but_not_modal_inputs() {
         let scoped =
-            gpui::KeyBindingContextPredicate::parse(super::SCOPED_BINDING_PREDICATE).unwrap();
-        let input = gpui::KeyBindingContextPredicate::parse("Input").unwrap();
+            gpui_kit::KeyBindingContextPredicate::parse(super::SCOPED_BINDING_PREDICATE).unwrap();
+        let input = gpui_kit::KeyBindingContextPredicate::parse("Input").unwrap();
 
         let editor_stack = [
-            gpui::KeyContext::parse("Fulgur").unwrap(),
-            gpui::KeyContext::parse("Input").unwrap(),
+            gpui_kit::KeyContext::parse("Fulgur").unwrap(),
+            gpui_kit::KeyContext::parse("Input").unwrap(),
         ];
         assert_eq!(
             scoped.depth_of(&editor_stack),
@@ -387,8 +387,8 @@ mod tests {
         );
 
         let dialog_stack = [
-            gpui::KeyContext::parse("Dialog").unwrap(),
-            gpui::KeyContext::parse("Input").unwrap(),
+            gpui_kit::KeyContext::parse("Dialog").unwrap(),
+            gpui_kit::KeyContext::parse("Input").unwrap(),
         ];
         assert_eq!(
             scoped.depth_of(&dialog_stack),
@@ -396,7 +396,7 @@ mod tests {
             "scoped bindings must not fire inside modal inputs"
         );
 
-        let content_stack = [gpui::KeyContext::parse("Fulgur").unwrap()];
+        let content_stack = [gpui_kit::KeyContext::parse("Fulgur").unwrap()];
         assert!(
             scoped.depth_of(&content_stack).is_some(),
             "scoped bindings must fire when the app content itself is focused"

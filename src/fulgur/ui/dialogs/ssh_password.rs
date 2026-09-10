@@ -2,12 +2,12 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gpui::{
-    App, AppContext, Context, Focusable, ParentElement, SharedString, Styled, Window, div, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input,
     notification::NotificationType, v_flex,
+};
+use gpui_kit::{
+    App, AppContext, Context, Focusable, ParentElement, SharedString, Styled, Window, div, px,
 };
 use zeroize::Zeroizing;
 
@@ -41,10 +41,11 @@ impl Fulgur {
         let show_user_field = user.is_none();
         let prefilled_user = user.unwrap_or_default();
 
-        let user_input =
-            cx.new(|cx| gpui_component::input::InputState::new(window, cx).placeholder("Username"));
+        let user_input = cx.new(|cx| {
+            gpui_kit::component::input::InputState::new(window, cx).placeholder("Username")
+        });
         let password_input = cx.new(|cx| {
-            gpui_component::input::InputState::new(window, cx)
+            gpui_kit::component::input::InputState::new(window, cx)
                 .placeholder("Password")
                 .masked(true)
         });

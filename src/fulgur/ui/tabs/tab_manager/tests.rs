@@ -8,11 +8,11 @@ use crate::fulgur::{
     ui::tabs::editor_tab::{TabLocation, TabTransferData},
     window_manager::WindowManager,
 };
-use gpui::{
+use gpui_kit::component::input::{InputEvent, Position, Undo};
+use gpui_kit::{
     App, AppContext, Context, Entity, IntoElement, Render, SharedString, TestAppContext,
     VisualTestContext, Window, WindowOptions, div, point, px,
 };
-use gpui_component::input::{InputEvent, Position, Undo};
 use parking_lot::Mutex;
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
 
@@ -30,7 +30,7 @@ impl Render for EmptyView {
 /// - `cx`: The test application context
 fn init_test_globals(cx: &mut TestAppContext) {
     cx.update(|cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -62,7 +62,7 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
     (fulgur, visual_cx)
 }
 
-/// Boot a test window rooted in a `gpui_component::Root`
+/// Boot a test window rooted in a `gpui_kit::component::Root`
 ///
 /// ### Arguments
 /// - `cx`: The test application context
@@ -79,7 +79,7 @@ fn setup_fulgur_with_root(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTes
                 let window_id = window.window_handle().window_id();
                 let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
             })
         })
         .expect("failed to open test window");
@@ -140,7 +140,7 @@ fn mark_tab_modified(fulgur: &Fulgur, tab_id: TabId, cx: &mut App) {
 
 // ========== new_tab tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_new_tab_adds_tab_and_sets_as_active(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -154,7 +154,7 @@ fn test_new_tab_adds_tab_and_sets_as_active(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_new_tab_increments_next_tab_id(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -169,7 +169,7 @@ fn test_new_tab_increments_next_tab_id(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_new_tab_produces_untitled_editor_tab_without_file_path(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -186,7 +186,7 @@ fn test_new_tab_produces_untitled_editor_tab_without_file_path(cx: &mut TestAppC
 
 // ========== open_settings tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_open_settings_adds_settings_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -203,7 +203,7 @@ fn test_open_settings_adds_settings_tab(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_open_settings_switches_to_existing_settings_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -219,7 +219,7 @@ fn test_open_settings_switches_to_existing_settings_tab(cx: &mut TestAppContext)
 
 // ========== close_tab tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tab_removes_unmodified_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -235,7 +235,7 @@ fn test_close_tab_removes_unmodified_tab(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tab_is_noop_for_unknown_id(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -248,7 +248,7 @@ fn test_close_tab_is_noop_for_unknown_id(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tab_keeps_active_index_valid_when_closing_before_active(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -269,7 +269,7 @@ fn test_close_tab_keeps_active_index_valid_when_closing_before_active(cx: &mut T
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_last_tab_leaves_no_active_index(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -286,7 +286,7 @@ fn test_close_last_tab_leaves_no_active_index(cx: &mut TestAppContext) {
 
 // ========== set_active_tab tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_set_active_tab_changes_active_index(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -301,7 +301,7 @@ fn test_set_active_tab_changes_active_index(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_set_active_tab_is_noop_out_of_bounds(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -316,7 +316,7 @@ fn test_set_active_tab_is_noop_out_of_bounds(cx: &mut TestAppContext) {
 
 // ========== close_other_tabs tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_other_tabs_leaves_only_active_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -337,7 +337,7 @@ fn test_close_other_tabs_leaves_only_active_tab(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_other_tabs_is_noop_with_single_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -354,7 +354,7 @@ fn test_close_other_tabs_is_noop_with_single_tab(cx: &mut TestAppContext) {
 
 // ========== close_tabs_to_left tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tabs_to_left_removes_preceding_unmodified_tabs(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -370,7 +370,7 @@ fn test_close_tabs_to_left_removes_preceding_unmodified_tabs(cx: &mut TestAppCon
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tabs_to_left_is_noop_at_index_zero(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -385,7 +385,7 @@ fn test_close_tabs_to_left_is_noop_at_index_zero(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tabs_to_left_is_noop_for_out_of_range_index(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -400,7 +400,7 @@ fn test_close_tabs_to_left_is_noop_for_out_of_range_index(cx: &mut TestAppContex
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tabs_to_left_stops_at_modified_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
 
@@ -421,7 +421,7 @@ fn test_close_tabs_to_left_stops_at_modified_tab(cx: &mut TestAppContext) {
 
 // ========== close_tabs_to_right tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tabs_to_right_removes_following_unmodified_tabs(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -438,7 +438,7 @@ fn test_close_tabs_to_right_removes_following_unmodified_tabs(cx: &mut TestAppCo
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tabs_to_right_is_noop_at_last_index(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -453,7 +453,7 @@ fn test_close_tabs_to_right_is_noop_at_last_index(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tabs_to_right_is_noop_without_tabs(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -470,7 +470,7 @@ fn test_close_tabs_to_right_is_noop_without_tabs(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_tabs_to_right_stops_at_modified_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
 
@@ -489,7 +489,7 @@ fn test_close_tabs_to_right_stops_at_modified_tab(cx: &mut TestAppContext) {
 
 // ========== close_all_tabs tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_all_tabs_removes_every_unmodified_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -506,7 +506,7 @@ fn test_close_all_tabs_removes_every_unmodified_tab(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_all_tabs_is_noop_without_tabs(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -524,7 +524,7 @@ fn test_close_all_tabs_is_noop_without_tabs(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_all_tabs_stops_at_modified_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
 
@@ -543,7 +543,7 @@ fn test_close_all_tabs_stops_at_modified_tab(cx: &mut TestAppContext) {
 
 // ========== duplicate_tab tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_duplicate_tab_inserts_copy_after_original_and_becomes_active(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -560,7 +560,7 @@ fn test_duplicate_tab_inserts_copy_after_original_and_becomes_active(cx: &mut Te
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_duplicate_tab_preserves_content_and_language(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -581,7 +581,7 @@ fn test_duplicate_tab_preserves_content_and_language(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_duplicate_tab_is_noop_for_settings_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -602,7 +602,7 @@ fn test_duplicate_tab_is_noop_for_settings_tab(cx: &mut TestAppContext) {
 
 // ========== open_markdown_preview_tab tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_open_markdown_preview_tab_creates_preview_tab_for_markdown_editor(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -622,7 +622,7 @@ fn test_open_markdown_preview_tab_creates_preview_tab_for_markdown_editor(cx: &m
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_open_markdown_preview_tab_preview_is_inserted_after_editor(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -640,7 +640,7 @@ fn test_open_markdown_preview_tab_preview_is_inserted_after_editor(cx: &mut Test
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_open_markdown_preview_tab_toggle_removes_preview_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -663,7 +663,7 @@ fn test_open_markdown_preview_tab_toggle_removes_preview_tab(cx: &mut TestAppCon
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_open_markdown_preview_tab_is_noop_in_panel_mode(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -680,7 +680,7 @@ fn test_open_markdown_preview_tab_is_noop_in_panel_mode(cx: &mut TestAppContext)
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_open_markdown_preview_tab_is_noop_without_active_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -695,7 +695,7 @@ fn test_open_markdown_preview_tab_is_noop_without_active_tab(cx: &mut TestAppCon
 
 // ========== maybe_open_markdown_preview_for_editor tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_maybe_open_markdown_preview_for_editor_inserts_preview_for_markdown(
     cx: &mut TestAppContext,
 ) {
@@ -722,7 +722,7 @@ fn test_maybe_open_markdown_preview_for_editor_inserts_preview_for_markdown(
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_maybe_open_markdown_preview_for_editor_skips_non_markdown(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -735,7 +735,7 @@ fn test_maybe_open_markdown_preview_for_editor_skips_non_markdown(cx: &mut TestA
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_maybe_open_markdown_preview_for_editor_is_noop_when_disabled(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -762,7 +762,7 @@ fn test_maybe_open_markdown_preview_for_editor_is_noop_when_disabled(cx: &mut Te
 
 // ========== insert_preview_tabs_for_markdown tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_insert_preview_tabs_for_markdown_adds_preview_tabs_for_all_markdown_editors(
     cx: &mut TestAppContext,
 ) {
@@ -802,7 +802,7 @@ fn test_insert_preview_tabs_for_markdown_adds_preview_tabs_for_all_markdown_edit
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_insert_preview_tabs_for_markdown_is_noop_when_disabled(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -829,7 +829,7 @@ fn test_insert_preview_tabs_for_markdown_is_noop_when_disabled(cx: &mut TestAppC
 
 // ========== panel mode show_markdown_preview flag tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_panel_preview_flag_is_true_by_default(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -843,7 +843,7 @@ fn test_panel_preview_flag_is_true_by_default(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_panel_preview_flag_can_be_toggled(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -865,7 +865,7 @@ fn test_panel_preview_flag_can_be_toggled(cx: &mut TestAppContext) {
 
 // ========== tab-entity modified tracking tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_tab_entity_updates_modified_on_input_change(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     let editor_content = visual_cx.update(|_window, cx| {
@@ -901,7 +901,7 @@ fn test_tab_entity_updates_modified_on_input_change(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_force_language_keeps_content_entity_and_subscription(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -964,7 +964,7 @@ fn test_force_language_keeps_content_entity_and_subscription(cx: &mut TestAppCon
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_force_language_rebuilds_the_highlighter(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
 
@@ -1016,7 +1016,7 @@ fn test_force_language_rebuilds_the_highlighter(cx: &mut TestAppContext) {
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_force_language_preserves_undo_history_and_scroll(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
 
@@ -1091,7 +1091,7 @@ fn test_force_language_preserves_undo_history_and_scroll(cx: &mut TestAppContext
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_large_file_tab_keeps_modified_after_restoring_original_content(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     let editor_content = visual_cx.update(|_window, cx| {
@@ -1153,7 +1153,7 @@ fn test_large_file_tab_keeps_modified_after_restoring_original_content(cx: &mut 
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_modified_detected_for_same_length_edit(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     let editor_content = visual_cx.update(|_window, cx| {
@@ -1217,7 +1217,7 @@ fn test_modified_detected_for_same_length_edit(cx: &mut TestAppContext) {
 
 // ========== reorder_tab tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_reorder_tab_moves_tab_backward(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1236,7 +1236,7 @@ fn test_reorder_tab_moves_tab_backward(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_reorder_tab_moves_tab_forward(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1255,7 +1255,7 @@ fn test_reorder_tab_moves_tab_forward(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_reorder_tab_noop_when_to_equals_from(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1271,7 +1271,7 @@ fn test_reorder_tab_noop_when_to_equals_from(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_reorder_tab_noop_when_to_equals_from_plus_one(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1288,7 +1288,7 @@ fn test_reorder_tab_noop_when_to_equals_from_plus_one(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_reorder_tab_noop_when_from_out_of_bounds(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1300,7 +1300,7 @@ fn test_reorder_tab_noop_when_from_out_of_bounds(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_reorder_tab_noop_when_to_out_of_bounds(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1312,7 +1312,7 @@ fn test_reorder_tab_noop_when_to_out_of_bounds(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_reorder_tab_active_index_follows_moved_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1332,7 +1332,7 @@ fn test_reorder_tab_active_index_follows_moved_tab(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_reorder_tab_active_index_decrements_when_earlier_tab_moves_past(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1352,7 +1352,7 @@ fn test_reorder_tab_active_index_decrements_when_earlier_tab_moves_past(cx: &mut
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_reorder_tab_active_index_increments_when_later_tab_moves_before(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1374,7 +1374,7 @@ fn test_reorder_tab_active_index_increments_when_later_tab_moves_before(cx: &mut
 
 // ========== handle_tab_drop tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_tab_drop_reorders_tab_to_target_slot(cx: &mut TestAppContext) {
     use crate::fulgur::ui::tabs::tab_drag::DraggedTab;
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
@@ -1429,7 +1429,7 @@ fn make_transfer_data() -> TabTransferData {
 
 // ========== extract_tab_transfer_data() tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_extract_transfer_data_returns_none_for_missing_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -1440,7 +1440,7 @@ fn test_extract_transfer_data_returns_none_for_missing_tab(cx: &mut TestAppConte
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_extract_transfer_data_captures_content_and_metadata(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -1460,7 +1460,7 @@ fn test_extract_transfer_data_captures_content_and_metadata(cx: &mut TestAppCont
 
 // ========== handle_pending_tab_transfer() tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_transfer_no_op_when_none(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1476,7 +1476,7 @@ fn test_handle_pending_tab_transfer_no_op_when_none(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_transfer_adds_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1489,7 +1489,7 @@ fn test_handle_pending_tab_transfer_adds_tab(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_transfer_sets_as_active(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1505,7 +1505,7 @@ fn test_handle_pending_tab_transfer_sets_as_active(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_transfer_consumes_pending_field(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1520,7 +1520,7 @@ fn test_handle_pending_tab_transfer_consumes_pending_field(cx: &mut TestAppConte
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_transfer_sets_deferred_scroll(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1535,7 +1535,7 @@ fn test_handle_pending_tab_transfer_sets_deferred_scroll(cx: &mut TestAppContext
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_transfer_preserves_content(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1553,7 +1553,7 @@ fn test_handle_pending_tab_transfer_preserves_content(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_transfer_increments_tab_id(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1572,7 +1572,7 @@ fn test_handle_pending_tab_transfer_increments_tab_id(cx: &mut TestAppContext) {
 
 // ========== handle_pending_tab_removal() tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_removal_no_op_when_none(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1588,7 +1588,7 @@ fn test_handle_pending_tab_removal_no_op_when_none(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_removal_removes_correct_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1606,7 +1606,7 @@ fn test_handle_pending_tab_removal_removes_correct_tab(cx: &mut TestAppContext) 
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_removal_consumes_pending_field(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1623,7 +1623,7 @@ fn test_handle_pending_tab_removal_consumes_pending_field(cx: &mut TestAppContex
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_tab_removal_closes_window_when_last_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1648,7 +1648,7 @@ fn test_handle_pending_tab_removal_closes_window_when_last_tab(cx: &mut TestAppC
 
 // ========== handle_pending_transfer_scroll() tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_transfer_scroll_no_op_when_none(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1660,7 +1660,7 @@ fn test_handle_pending_transfer_scroll_no_op_when_none(cx: &mut TestAppContext) 
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_pending_transfer_scroll_consumes_position(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -1675,7 +1675,7 @@ fn test_handle_pending_transfer_scroll_consumes_position(cx: &mut TestAppContext
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_large_modified_local_tabs_detects_modified_large_local_file(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     let (tab_id, content) = visual_cx.update(|_window, cx| {
@@ -1711,7 +1711,7 @@ fn test_large_modified_local_tabs_detects_modified_large_local_file(cx: &mut Tes
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_large_modified_local_tabs_excludes_untitled_and_unmodified(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     let content = visual_cx.update(|_window, cx| {

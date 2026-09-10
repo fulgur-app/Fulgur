@@ -1,6 +1,6 @@
 use crate::fulgur::themes::{BundledThemes, themes_directory_path};
-use gpui::SharedString;
-use gpui_component::scroll::ScrollbarMode;
+use gpui_kit::SharedString;
+use gpui_kit::component::scroll::ScrollbarMode;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 

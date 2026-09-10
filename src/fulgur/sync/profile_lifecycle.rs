@@ -6,7 +6,7 @@ use crate::fulgur::{
     },
     utils::worker::dispose_off_thread,
 };
-use gpui::Context;
+use gpui_kit::Context;
 
 impl Fulgur {
     /// Add a new server profile to the configuration.
@@ -165,7 +165,7 @@ mod tests {
         },
         window_manager::WindowManager,
     };
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     use parking_lot::Mutex;
     use std::{cell::RefCell, path::PathBuf, sync::Arc};
     use zeroize::Zeroizing;
@@ -173,7 +173,7 @@ mod tests {
     /// Initialize globals and open a test window with a Root-mounted Fulgur.
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
         cx.update(|cx| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -187,7 +187,7 @@ mod tests {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                    cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
                 })
             })
             .expect("failed to open test window");
@@ -199,7 +199,7 @@ mod tests {
         (fulgur, visual_cx)
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_add_profile_inserts_and_allocates_sse_slot(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -226,7 +226,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_add_profile_generates_keypair_for_active_profile(cx: &mut TestAppContext) {
         // Reproduces the user-reported "Missing encryption key" path: a
         // freshly added active profile must have its keypair generated as
@@ -263,7 +263,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_add_profile_skips_keypair_generation_for_inactive_profile(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -292,7 +292,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_update_profile_generates_keypair_when_activating(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -334,7 +334,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_update_profile_returns_false_for_unknown_id(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -351,7 +351,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_update_profile_mutates_existing_entry(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -382,7 +382,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_delete_profile_removes_settings_state_and_keychain(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -428,7 +428,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_delete_profile_returns_false_for_unknown_id(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {

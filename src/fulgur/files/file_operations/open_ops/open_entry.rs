@@ -1,6 +1,6 @@
 use crate::fulgur::{Fulgur, sync::ssh::url::parse_remote_url};
-use gpui::{Context, PathPromptOptions, SharedString, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{Context, PathPromptOptions, SharedString, Window};
 use std::path::PathBuf;
 
 impl Fulgur {
@@ -118,16 +118,16 @@ mod tests {
         setup_fulgur, setup_fulgur_with_root, temp_test_path,
     };
     #[cfg(feature = "gpui-test-support")]
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
     #[cfg(feature = "gpui-test-support")]
-    use gpui_component::input::InputEvent;
+    use gpui_kit::component::input::InputEvent;
     #[cfg(feature = "gpui-test-support")]
     use tempfile::TempDir;
 
     // ========== do_open_file tests ==========
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_do_open_file_focuses_existing_tab_when_already_open(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = temp_test_path("fulgur_already_open_test.txt");
@@ -155,7 +155,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_do_open_file_does_not_reload_modified_existing_tab_without_confirmation(
         cx: &mut TestAppContext,
     ) {
@@ -201,7 +201,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_do_open_file_reuses_empty_scratch_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -240,7 +240,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_do_open_file_does_not_reuse_tab_with_content(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_do_open_file_reuses_whitespace_only_scratch_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -325,7 +325,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_do_open_file_reuses_only_the_last_tab_position(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -381,7 +381,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_do_open_recent_file_focuses_existing_remote_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let spec = RemoteSpec {

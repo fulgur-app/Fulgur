@@ -4,7 +4,7 @@ mod render;
 pub mod system_menus;
 
 use crate::fulgur::Fulgur;
-use gpui::{App, Global, WeakEntity, WindowId};
+use gpui_kit::{App, Global, WeakEntity, WindowId};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use system_menus::WindowMenuTab;

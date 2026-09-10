@@ -1,8 +1,8 @@
 use crate::fulgur::settings::{Settings, Themes};
 use crate::fulgur::shared_state::SharedAppState;
 
-use gpui::{Action, App, BorrowAppContext};
-use gpui_component::{Theme, ThemeConfig, ThemeMode, ThemeRegistry};
+use gpui_kit::component::{Theme, ThemeConfig, ThemeMode, ThemeRegistry};
+use gpui_kit::{Action, App, BorrowAppContext};
 use rust_embed::RustEmbed;
 use std::fs;
 use std::path::PathBuf;
@@ -193,11 +193,11 @@ mod gpui_tests {
     use crate::fulgur::{
         Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
-    use gpui::{
+    use gpui_kit::component::ActiveTheme;
+    use gpui_kit::component::ThemeRegistry;
+    use gpui_kit::{
         AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId, WindowOptions,
     };
-    use gpui_component::ActiveTheme;
-    use gpui_component::ThemeRegistry;
     use parking_lot::Mutex;
     use std::{
         cell::RefCell,
@@ -243,7 +243,7 @@ mod gpui_tests {
     /// - `cx`: The GPUI test context to initialize.
     fn setup_test_globals(cx: &mut TestAppContext) {
         cx.update(|cx| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -268,7 +268,7 @@ mod gpui_tests {
                 let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *window_id_slot.borrow_mut() = Some(window_id);
                 *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
             })
             .expect("failed to open test window");
         });
@@ -282,7 +282,7 @@ mod gpui_tests {
         )
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_init_runs_watch_load_callback_and_applies_selected_theme(cx: &mut TestAppContext) {
         setup_test_globals(cx);
         let selected_theme: SharedString = "Catppuccin Latte".into();
@@ -316,7 +316,7 @@ mod gpui_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_reload_themes_and_update_refreshes_shared_theme_state(cx: &mut TestAppContext) {
         setup_test_globals(cx);
         let (_, fulgur) = open_window_with_fulgur(cx);

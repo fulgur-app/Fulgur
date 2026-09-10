@@ -1,5 +1,5 @@
 use crate::fulgur::{Fulgur, tab::Tab, ui::tabs::editor_tab::TabLocation};
-use gpui::{App, Context, Focusable, Window};
+use gpui_kit::{App, Context, Focusable, Window};
 
 impl Fulgur {
     /// Set the active tab. If search is open, re-run search on new tab.

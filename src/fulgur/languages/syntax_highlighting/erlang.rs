@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add Erlang syntax highlighting support.
 pub fn add_erlang_support() {
@@ -21,7 +21,7 @@ mod tests {
     fn test_add_erlang_support_registers_language() {
         super::add_erlang_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("erlang")
                 .is_some()
         );
@@ -30,7 +30,7 @@ mod tests {
     #[test]
     fn test_erlang_highlights_query_compiles() {
         super::add_erlang_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("erlang");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("erlang");
         assert_eq!(highlighter.language().as_ref(), "erlang");
     }
 }

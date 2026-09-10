@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add Assembly language syntax highlighting support.
 pub fn add_asm_support() {
@@ -107,7 +107,7 @@ mod tests {
     fn test_add_asm_support_registers_language() {
         super::add_asm_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("asm")
                 .is_some()
         );
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn test_asm_highlights_query_compiles() {
         super::add_asm_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("asm");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("asm");
         assert_eq!(highlighter.language().as_ref(), "asm");
     }
 }

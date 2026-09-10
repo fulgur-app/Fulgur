@@ -5,8 +5,8 @@ use crate::fulgur::{
         editor_tab::EditorTab, markdown_preview_tab::MarkdownPreviewTab, settings_tab::SettingsTab,
     },
 };
-use gpui::{App, AppContext, Context, Entity, SharedString, Window};
-use gpui_component::input::InputEvent;
+use gpui_kit::component::input::InputEvent;
+use gpui_kit::{App, AppContext, Context, Entity, SharedString, Window};
 
 /// Stable identifier of a tab, unique within a window for the process lifetime
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

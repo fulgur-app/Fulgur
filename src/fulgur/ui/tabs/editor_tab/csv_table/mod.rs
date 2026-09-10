@@ -7,11 +7,11 @@ mod rows;
 #[cfg(test)]
 mod tests;
 
-use gpui::{App, Context, Entity, SharedString, Window, px};
-use gpui_component::{
+use gpui_kit::component::{
     input::{EditorState, InputEvent, InputState},
     table::{Column, TableEvent, TableState},
 };
+use gpui_kit::{App, Context, Entity, SharedString, Window, px};
 
 use super::content_fingerprint_from_str;
 use crate::fulgur::files::csv_support::{CsvData, serialize_csv};

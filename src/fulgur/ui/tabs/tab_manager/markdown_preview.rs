@@ -5,8 +5,8 @@ use crate::fulgur::{
     tab::Tab,
     ui::tabs::{markdown_preview_tab::MarkdownPreviewTab, tab::TabId},
 };
-use gpui::{App, AppContext, Context, Entity, SharedString, Window};
-use gpui_component::{input::EditorState, text::TextViewState};
+use gpui_kit::component::{input::EditorState, text::TextViewState};
+use gpui_kit::{App, AppContext, Context, Entity, SharedString, Window};
 
 impl Fulgur {
     /// Build a Markdown preview tab bound to a source editor tab

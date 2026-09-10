@@ -4,10 +4,10 @@ use crate::fulgur::{
     ui::icons::CustomIcon,
 };
 
-use gpui::{
+use gpui_kit::component::{ActiveTheme, button::Button, h_flex, input::EditorState};
+use gpui_kit::{
     App, Context, Entity, Hsla, IntoElement, ParentElement, Render, Styled, WeakEntity, Window, div,
 };
-use gpui_component::{ActiveTheme, button::Button, h_flex, input::EditorState};
 
 /// Create a markdown bar button
 ///
@@ -96,7 +96,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `bool`: True if the active tab is markdown and its toolbar is enabled
-    pub(crate) fn markdown_toolbar_visible(&self, cx: &gpui::App) -> bool {
+    pub(crate) fn markdown_toolbar_visible(&self, cx: &gpui_kit::App) -> bool {
         self.is_markdown(cx)
             && self
                 .get_active_editor_tab(cx)
@@ -366,18 +366,18 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use core::prelude::v1::test;
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{
+    use gpui_kit::component::input::{EditorState, Position};
+    #[cfg(feature = "gpui-test-support")]
+    use gpui_kit::{
         App, AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
         Window, WindowOptions, div,
     };
-    #[cfg(feature = "gpui-test-support")]
-    use gpui_component::input::{EditorState, Position};
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
     #[cfg(feature = "gpui-test-support")]
     use std::{cell::RefCell, ops::Range, path::PathBuf, sync::Arc};
 
-    /// Window root that avoids `gpui_component::Root`, whose macOS accessibility hook panics on
+    /// Window root that avoids `gpui_kit::component::Root`, whose macOS accessibility hook panics on
     /// gpui's `TestWindow`. The toolbar reads the active editor through its `WeakEntity<Fulgur>`
     /// and needs nothing that `Root` provides, so these tests can run on every platform.
     #[cfg(feature = "gpui-test-support")]
@@ -393,7 +393,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
         cx.update(|cx| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -498,7 +498,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_insert_or_surround_wraps_selected_text(cx: &mut TestAppContext) {
         let (selected, text) = bold_byte_selection(cx, "hello", 0..5);
 
@@ -511,7 +511,7 @@ mod tests {
     /// slicing the rope with the UTF-16 range used to wrap an earlier stretch of the document:
     /// here it produced `héllo ** worl**` because bytes `6..11` spell `" worl"`.
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_insert_or_surround_wraps_selection_after_accented_character(cx: &mut TestAppContext) {
         let (selected, text) = bold_byte_selection(cx, "héllo world", 7..12);
 
@@ -524,7 +524,7 @@ mod tests {
     /// emoji rather than merely early. A fix counting characters rather than code units would
     /// still fail here.
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_insert_or_surround_wraps_selection_after_emoji(cx: &mut TestAppContext) {
         let (selected, text) = bold_byte_selection(cx, "🚀 launch", 5..11);
 
@@ -534,7 +534,7 @@ mod tests {
 
     /// The selection itself may hold multi-byte characters without being truncated
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_insert_or_surround_wraps_multibyte_selection(cx: &mut TestAppContext) {
         let (selected, text) = bold_byte_selection(cx, "dis élève ok", 4..11);
 
@@ -543,7 +543,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_insert_or_surround_inserts_at_cursor_when_no_selection(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_toolbar(cx);
 

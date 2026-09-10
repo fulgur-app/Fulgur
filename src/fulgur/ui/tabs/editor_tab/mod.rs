@@ -12,9 +12,9 @@ pub use csv_table::CsvTableDelegate;
 pub use location::TabLocation;
 pub use navigation::{Jump, extract_line_number};
 
-use gpui::{App, AppContext, Context, Entity, SharedString, Window};
-use gpui_component::input::{EditorState, InputState, Rope, TabSize};
-use gpui_component::table::TableState;
+use gpui_kit::component::input::{EditorState, InputState, Rope, TabSize};
+use gpui_kit::component::table::TableState;
+use gpui_kit::{App, AppContext, Context, Entity, SharedString, Window};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::SystemTime;
@@ -93,7 +93,7 @@ pub struct EditorTab {
     /// Subscription to the content entity keeping `modified` current. Owned by
     /// the tab entity, attached by `Tab::attach_content_subscription`, and
     /// replaced whenever the content entity is swapped.
-    pub(crate) content_subscription: Option<gpui::Subscription>,
+    pub(crate) content_subscription: Option<gpui_kit::Subscription>,
 }
 
 /// All state required to transfer an editor tab between windows
@@ -114,7 +114,7 @@ pub struct TabTransferData {
     pub show_markdown_preview: bool,
     pub file_size_bytes: Option<u64>,
     pub file_last_modified: Option<SystemTime>,
-    pub cursor_position: gpui_component::input::Position,
+    pub cursor_position: gpui_kit::component::input::Position,
     pub csv_view_mode: CsvViewMode,
     pub csv_delimiter: u8,
     pub color_tag: Option<ColorTag>,

@@ -1,5 +1,5 @@
 use arborium_objc;
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add Objective-C language support.
 pub fn add_objective_c_support() {
@@ -279,7 +279,7 @@ mod tests {
     fn test_add_objective_c_support_registers_language() {
         super::add_objective_c_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("objective-c")
                 .is_some()
         );
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn test_objective_c_highlights_query_compiles() {
         super::add_objective_c_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("objective-c");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("objective-c");
         assert_eq!(highlighter.language().as_ref(), "objective-c");
     }
 }

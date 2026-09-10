@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add F# language support.
 pub fn add_fsharp_support() {
@@ -199,13 +199,13 @@ const FSHARP_HIGHLIGHTS_QUERY: &str = r##"
 
 #[cfg(test)]
 mod tests {
-    use gpui_component::highlighter::SyntaxHighlighter;
+    use gpui_kit::component::highlighter::SyntaxHighlighter;
 
     #[test]
     fn test_add_fsharp_support_registers_language() {
         super::add_fsharp_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("fsharp")
                 .is_some()
         );

@@ -1,6 +1,6 @@
 use crate::fulgur::utils::updater::{UpdateInfo, is_valid_release_page_url};
-use gpui::{SharedString, Styled};
-use gpui_component::{button::ButtonVariants, notification::Notification};
+use gpui_kit::component::{button::ButtonVariants, notification::Notification};
+use gpui_kit::{SharedString, Styled};
 
 /// Create an update notification with a download button
 ///
@@ -15,11 +15,11 @@ pub fn make_update_notification(update_info: &UpdateInfo) -> Notification {
         update_info.latest_version
     ));
     let download_url = update_info.download_url.clone();
-    gpui_component::notification::Notification::new()
+    gpui_kit::component::notification::Notification::new()
         .message(message)
         .action(move |_, _, cx| {
             let url = download_url.clone();
-            gpui_component::button::Button::new("download")
+            gpui_kit::component::button::Button::new("download")
                 .primary()
                 .label("Download")
                 .mr_2()

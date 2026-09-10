@@ -6,13 +6,13 @@ use crate::fulgur::{
     tab::Tab,
     ui::{icons::CustomIcon, tabs::tab_bar::tab_bar_button_factory},
 };
-use gpui::{
-    AnyElement, App, Context, FocusHandle, Focusable, IntoElement, OwnedMenu, OwnedMenuItem,
-    WeakEntity, Window,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, GlobalState,
     menu::{DropdownMenu, PopupMenu},
+};
+use gpui_kit::{
+    AnyElement, App, Context, FocusHandle, Focusable, IntoElement, OwnedMenu, OwnedMenuItem,
+    WeakEntity, Window,
 };
 
 /// Render the burger button opening the application menus as submenus

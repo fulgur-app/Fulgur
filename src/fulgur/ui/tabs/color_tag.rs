@@ -1,5 +1,5 @@
-use gpui::{App, Hsla};
-use gpui_component::ActiveTheme;
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::{App, Hsla};
 
 /// A theme-relative color a user can assign to a tab as a visual tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,6 +1,6 @@
 //! Rewrite local image references in Markdown so the preview can load them.
 
-use http_client::Url;
+use gpui_kit::http_client::Url;
 use std::path::Path;
 
 /// Rewrite local image references in `source` to absolute `file://` URLs.

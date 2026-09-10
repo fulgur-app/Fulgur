@@ -4,7 +4,7 @@ use crate::fulgur::{
     ui::tabs::editor_tab::TabLocation,
     ui::tabs::tab_drag::DraggedTab,
 };
-use gpui::{Context, Entity, EventEmitter, ScrollHandle, WeakEntity, Window};
+use gpui_kit::{Context, Entity, EventEmitter, ScrollHandle, WeakEntity, Window};
 use std::collections::HashMap;
 
 /// The tab bar at the top of the window, rendered as its own entity
@@ -112,8 +112,8 @@ impl TabBar {
     /// ### Returns
     /// - `HashMap<String, usize>`: Map of filename to number of open tabs with that filename
     pub(crate) fn build_tab_filename_counts(
-        tabs: &[gpui::Entity<Tab>],
-        cx: &gpui::App,
+        tabs: &[gpui_kit::Entity<Tab>],
+        cx: &gpui_kit::App,
     ) -> HashMap<String, usize> {
         let mut filename_counts = HashMap::new();
         for tab in tabs {
@@ -211,7 +211,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `tab_id`: The tab to scroll into view on the next tab bar render
     /// - `cx`: The application context
-    pub(crate) fn request_tab_scroll(&self, tab_id: TabId, cx: &mut gpui::App) {
+    pub(crate) fn request_tab_scroll(&self, tab_id: TabId, cx: &mut gpui_kit::App) {
         self.tab_bar.update(cx, |bar, cx| {
             bar.request_scroll_to(tab_id, cx);
         });

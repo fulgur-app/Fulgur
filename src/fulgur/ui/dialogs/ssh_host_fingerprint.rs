@@ -1,5 +1,5 @@
-use gpui::{Context, ParentElement, SharedString, Styled, Window, div, px};
-use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps};
+use gpui_kit::component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps};
+use gpui_kit::{Context, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::fulgur::{
     Fulgur,

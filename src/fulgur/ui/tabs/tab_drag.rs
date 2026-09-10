@@ -1,6 +1,6 @@
 use crate::fulgur::ui::tabs::tab::TabId;
-use gpui::{Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div};
-use gpui_component::ActiveTheme;
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::{Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div};
 
 /// Data carried during a tab drag operation.
 ///

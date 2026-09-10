@@ -5,7 +5,7 @@ use crate::fulgur::{
         VersionCompatibility, compare_required_version,
     },
 };
-use gpui::App;
+use gpui_kit::App;
 
 /// Get the status  for a profile.
 ///

@@ -1,8 +1,8 @@
 //! `Fulgur` user actions and the log-view activation lifecycle.
 
 use crate::fulgur::ui::tabs::tab::TabId;
-use gpui::{AppContext, Context, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{AppContext, Context, Window};
 
 use super::input::make_log_input_state;
 use super::tail::{log_toggle_available, trim_to_last_lines};
@@ -84,7 +84,7 @@ impl Fulgur {
                 window.push_notification(
                     (
                         NotificationType::Error,
-                        gpui::SharedString::from(format!("Failed to load full log: {error}")),
+                        gpui_kit::SharedString::from(format!("Failed to load full log: {error}")),
                     ),
                     cx,
                 );
@@ -95,7 +95,7 @@ impl Fulgur {
             window.push_notification(
                 (
                     NotificationType::Warning,
-                    gpui::SharedString::from(
+                    gpui_kit::SharedString::from(
                         "Loading a very large log file may use significant memory.",
                     ),
                 ),

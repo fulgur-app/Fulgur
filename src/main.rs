@@ -1,8 +1,8 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use fulgur::fulgur;
-use gpui::{AppContext, AssetSource, BorrowAppContext, SharedString};
-use gpui_component::notification::NotificationType;
+use gpui_kit::component::notification::NotificationType;
+use gpui_kit::{AppContext, AssetSource, BorrowAppContext, SharedString};
 use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
@@ -201,7 +201,7 @@ fn main() {
         return;
     }
 
-    let app = gpui_platform::application().with_assets(Assets);
+    let app = gpui_kit::application().with_assets(Assets);
     let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
     let pending_files_clone = pending_files.clone();
     app.on_open_urls(move |urls: Vec<String>| {
@@ -230,10 +230,10 @@ fn main() {
         // the notification center off the AppUserModelID, and drops notifications without it.
         cx.set_app_identity("app.fulgur.fulgur", "Fulgur");
 
-        // This must be called before using any GPUI Component features.
+        // This must be called before using any GPUI Kit features.
         // It also claims the app-wide system-notification response handler, so Fulgur must not
         // call `cx.on_system_notification_response` itself: gpui keeps only the last one.
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
 
         // Register an HTTP client so the GPUI image loader can fetch Markdown
         // preview images; this one also serves `file://` URLs for local images.
@@ -245,7 +245,7 @@ fn main() {
             let appearance = cx.window_appearance();
             let is_dark = matches!(
                 appearance,
-                gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
+                gpui_kit::WindowAppearance::Dark | gpui_kit::WindowAppearance::VibrantDark
             );
             settings.app_settings.theme = if is_dark {
                 "Default Dark".into()
@@ -330,7 +330,7 @@ fn report_window_creation_failure(
     window_index: usize,
     restoring: bool,
     error: &anyhow::Error,
-    cx: &mut gpui::AsyncApp,
+    cx: &mut gpui_kit::AsyncApp,
 ) {
     let message = if restoring {
         log::error!("Failed to restore window {window_index}: {error}");
@@ -357,7 +357,7 @@ fn report_window_creation_failure(
 /// * `saved_bounds` - Previously loaded window bounds for this window, if any
 /// * `cli_file_paths` - The paths of the files to open in the window
 fn create_window(
-    cx: &mut gpui::AsyncApp,
+    cx: &mut gpui_kit::AsyncApp,
     window_index: usize,
     saved_bounds: Option<&fulgur::state::SerializedWindowBounds>,
     cli_file_paths: &[std::path::PathBuf],
@@ -376,14 +376,14 @@ fn create_window(
     } else {
         None
     };
-    let window_options = gpui::WindowOptions {
+    let window_options = gpui_kit::WindowOptions {
         window_bounds,
         display_id,
         #[cfg(target_os = "linux")]
         app_id: Some("Fulgur".to_string()),
         #[cfg(target_os = "linux")]
-        window_decorations: Some(gpui::WindowDecorations::Client),
-        ..gpui_component::TitleBar::window_options()
+        window_decorations: Some(gpui_kit::WindowDecorations::Client),
+        ..gpui_kit::component::TitleBar::window_options()
     };
     let window = cx.open_window(window_options, |window, cx| {
         window.set_window_title("Fulgur");
@@ -416,7 +416,7 @@ fn create_window(
                 });
             }
         }
-        cx.new(|cx| gpui_component::Root::new(view, window, cx))
+        cx.new(|cx| gpui_kit::component::Root::new(view, window, cx))
     })?;
     window.update(cx, |_, window, _| {
         window.activate_window();

@@ -51,13 +51,14 @@ pub(super) struct SshTaskContext {
 /// - `poll_completion`: Returns the payload to deliver once the operation has completed
 /// - `on_complete`: Applies the delivered payload on the UI thread
 pub(super) fn spawn_ssh_task<Work, Payload>(
-    window: &mut gpui::Window,
-    cx: &mut gpui::Context<Fulgur>,
+    window: &mut gpui_kit::Window,
+    cx: &mut gpui_kit::Context<Fulgur>,
     context: SshTaskContext,
     work: impl FnOnce(&SshSession, &RemoteSpec) -> Result<Work, ssh::error::SshError> + Send + 'static,
     publish: impl Fn(&AtomicBool, Result<Work, String>) -> bool + Send + Sync + 'static,
     poll_completion: impl Fn(&AtomicBool) -> Option<Payload> + 'static,
-    on_complete: impl Fn(&mut Fulgur, Payload, &mut gpui::Window, &mut gpui::Context<Fulgur>) + 'static,
+    on_complete: impl Fn(&mut Fulgur, Payload, &mut gpui_kit::Window, &mut gpui_kit::Context<Fulgur>)
+    + 'static,
 ) where
     Work: Send + 'static,
     Payload: 'static,

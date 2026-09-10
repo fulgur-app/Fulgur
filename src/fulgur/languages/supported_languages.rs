@@ -1,5 +1,5 @@
 use crate::fulgur::Fulgur;
-use gpui_component::highlighter::Language;
+use gpui_kit::component::highlighter::Language;
 
 /// Declares the `SupportedLanguage` enum and its `ALL` list from a single variant list.
 ///
@@ -495,7 +495,7 @@ impl Fulgur {
     /// ### Returns
     /// - `SupportedLanguage`: The active tab's language
     #[must_use]
-    pub fn get_current_language(&self, cx: &gpui::App) -> SupportedLanguage {
+    pub fn get_current_language(&self, cx: &gpui_kit::App) -> SupportedLanguage {
         self.active_tab(cx)
             .and_then(crate::fulgur::tab::Tab::as_editor)
             .map_or(SupportedLanguage::Plain, |editor_tab| editor_tab.language)
@@ -509,7 +509,7 @@ impl Fulgur {
     /// ### Returns
     /// - `True` if the active tab's language is a Markdown language, `False` otherwise
     #[must_use]
-    pub fn is_markdown(&self, cx: &gpui::App) -> bool {
+    pub fn is_markdown(&self, cx: &gpui_kit::App) -> bool {
         let current_language = self.get_current_language(cx);
         current_language == SupportedLanguage::Markdown
             || current_language == SupportedLanguage::MarkdownInline

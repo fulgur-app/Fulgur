@@ -1,5 +1,7 @@
-use gpui::{Context, Focusable, ParentElement, Styled, Window, div, px};
-use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input};
+use gpui_kit::component::{
+    WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input,
+};
+use gpui_kit::{Context, Focusable, ParentElement, Styled, Window, div, px};
 
 use crate::fulgur::{
     Fulgur, tab::TabId, ui::components_utils::UNTITLED, ui::tabs::editor_tab::EditorTab,
@@ -70,7 +72,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `bool`: `true` when the tab is an editor tab with no associated file
-    pub fn is_tab_renameable(&self, tab_id: TabId, cx: &gpui::App) -> bool {
+    pub fn is_tab_renameable(&self, tab_id: TabId, cx: &gpui_kit::App) -> bool {
         self.tab_entity_of(tab_id, cx).is_some_and(|tab| {
             tab.read(cx)
                 .as_editor()
@@ -91,12 +93,12 @@ mod tests {
         tab::TabId,
         window_manager::WindowManager,
     };
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     use parking_lot::Mutex;
     use std::{cell::RefCell, rc::Rc, sync::Arc};
 
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         cx.update(|cx| {
             cx.set_global(SharedAppState::new(
                 Settings::new(),
@@ -114,7 +116,7 @@ mod tests {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                    cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
                 })
             })
             .expect("failed to open test window");
@@ -148,7 +150,7 @@ mod tests {
         })
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_rename_tab_sets_title(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -161,7 +163,7 @@ mod tests {
         assert_eq!(first_tab_title(&fulgur, &mut visual_cx), "Meeting notes");
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_rename_tab_rejects_blank_name(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -173,7 +175,7 @@ mod tests {
         assert_eq!(first_tab_title(&fulgur, &mut visual_cx), before);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_rename_tab_truncates_long_name(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -189,7 +191,7 @@ mod tests {
         );
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_rename_tab_applies_language_from_extension(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -207,7 +209,7 @@ mod tests {
         assert_eq!(language, Some(SupportedLanguage::Markdown));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_rename_tab_refuses_file_backed_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -235,7 +237,7 @@ mod tests {
         assert!(!is_renameable);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_renamed_tab_is_suggested_as_filename(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);
@@ -253,7 +255,7 @@ mod tests {
         assert_eq!(suggested, Some("Shopping list".to_string()));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_renamed_empty_tab_is_persisted(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tab_id = first_tab_id(&fulgur, &mut visual_cx);

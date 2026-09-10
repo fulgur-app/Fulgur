@@ -1,4 +1,4 @@
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -64,7 +64,7 @@ fn string_to_u32(string: &str) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{extract_line_number, string_to_u32};
-    use gpui::SharedString;
+    use gpui_kit::SharedString;
 
     // ========== extract_line_number() tests ==========
 

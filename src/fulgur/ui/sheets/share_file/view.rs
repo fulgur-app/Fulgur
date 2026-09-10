@@ -6,16 +6,16 @@ use crate::fulgur::{
     sync::share::{Device, get_icon},
     ui::icons::CustomIcon,
 };
-use gpui::{
-    App, Div, Element, Entity, FontWeight, InteractiveElement, ParentElement,
-    StatefulInteractiveElement, Styled, div, prelude::FluentBuilder,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Icon, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     spinner::Spinner,
     v_flex,
+};
+use gpui_kit::{
+    App, Div, Element, Entity, FontWeight, InteractiveElement, ParentElement,
+    StatefulInteractiveElement, Styled, div, prelude::FluentBuilder,
 };
 use parking_lot::Mutex;
 use std::collections::HashSet;
@@ -57,7 +57,7 @@ fn make_device_item(
         .rounded_sm()
         .border_color(cx.theme().border)
         .border_1()
-        .when(has_public_key, gpui::Styled::cursor_pointer)
+        .when(has_public_key, gpui_kit::Styled::cursor_pointer)
         .when(!has_public_key, |this| this.opacity(0.5))
         .when(has_public_key, |this| {
             this.hover(|hover| hover.bg(cx.theme().muted))

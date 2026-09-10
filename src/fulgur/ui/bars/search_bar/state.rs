@@ -1,9 +1,9 @@
 use super::SearchMatch;
 use crate::fulgur::Fulgur;
-use gpui::{
+use gpui_kit::component::input::{EditorState, InputEvent, InputState, TextDecorationCollection};
+use gpui_kit::{
     App, AppContext, Context, Entity, EntityId, EventEmitter, Subscription, WeakEntity, Window,
 };
-use gpui_component::input::{EditorState, InputEvent, InputState, TextDecorationCollection};
 use std::collections::HashMap;
 
 /// The pair of decoration collections painting the search matches of one editor

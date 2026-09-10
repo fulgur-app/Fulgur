@@ -4,13 +4,13 @@ use crate::fulgur::ui::{
     insert_button::InsertButton,
 };
 
-use gpui::{
-    Anchor, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, div,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, h_flex,
     input::{Input, InputState},
+};
+use gpui_kit::{
+    Anchor, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window, div,
 };
 
 use super::super::search_bar::{search_bar_button_factory, search_bar_toggle_button_factory};
@@ -91,7 +91,7 @@ impl ColorPickerBar {
             .gap_2()
             .h(SEARCH_BAR_HEIGHT)
             .child(
-                gpui_component::color_picker::ColorPicker::new(&self.color_picker_state)
+                gpui_kit::component::color_picker::ColorPicker::new(&self.color_picker_state)
                     .anchor(Anchor::BottomLeft),
             )
     }
@@ -116,7 +116,7 @@ impl ColorPickerBar {
             .flex()
             .items_center()
             .flex_1()
-            .min_w(gpui::px(330.0))
+            .min_w(gpui_kit::px(330.0))
             .h(SEARCH_BAR_HEIGHT)
             .border_l_1()
             .border_color(cx.theme().border)
@@ -220,11 +220,11 @@ mod gpui_tests {
     use crate::fulgur::{
         Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
-    use gpui::{
+    use gpui_kit::component::input::Position;
+    use gpui_kit::{
         AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
         Window, WindowOptions,
     };
-    use gpui_component::input::Position;
     use parking_lot::Mutex;
     use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
@@ -232,13 +232,13 @@ mod gpui_tests {
 
     impl Render for EmptyView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            gpui::div()
+            gpui_kit::div()
         }
     }
 
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
         cx.update(|cx| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -266,7 +266,7 @@ mod gpui_tests {
         (fulgur, visual_cx)
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_color_picker_bar_hidden_by_default(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|_window, cx| {
@@ -274,7 +274,7 @@ mod gpui_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_toggle_color_picker_shows_bar(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
@@ -285,7 +285,7 @@ mod gpui_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_toggle_color_picker_twice_hides_bar(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
@@ -301,7 +301,7 @@ mod gpui_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_close_event_hides_bar(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let bar = visual_cx.update(|window, cx| {
@@ -319,7 +319,7 @@ mod gpui_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_insert_color_value_inserts_at_cursor(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
@@ -355,7 +355,7 @@ mod gpui_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_insert_color_value_no_active_tab_does_not_panic(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
@@ -369,7 +369,7 @@ mod gpui_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_toggle_highlight_colors_event_flips_setting(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let (bar, initial) = visual_cx.update(|_window, cx| {

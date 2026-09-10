@@ -11,8 +11,8 @@ use crate::fulgur::{
     },
 };
 use futures::channel::mpsc::UnboundedSender;
-use gpui::{Context, Window};
-use gpui_component::notification::NotificationType;
+use gpui_kit::component::notification::NotificationType;
+use gpui_kit::{Context, Window};
 use std::{
     sync::{
         Arc,

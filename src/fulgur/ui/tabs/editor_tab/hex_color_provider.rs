@@ -1,5 +1,5 @@
-use gpui::{App, Task, Window};
-use gpui_component::input::DocumentColorProvider;
+use gpui_kit::component::input::DocumentColorProvider;
+use gpui_kit::{App, Task, Window};
 use lsp_types::{Color, ColorInformation, Position, Range};
 use ropey::Rope;
 
@@ -18,13 +18,13 @@ impl DocumentColorProvider for ColorHighlightProvider {
     /// - `_cx`: The application context (unused)
     ///
     /// ### Returns
-    /// - `Task<gpui::Result<Vec<ColorInformation>>>`: The detected colors with their positions
+    /// - `Task<gpui_kit::Result<Vec<ColorInformation>>>`: The detected colors with their positions
     fn document_colors(
         &self,
         text: &Rope,
         _window: &mut Window,
         _cx: &mut App,
-    ) -> Task<gpui::Result<Vec<ColorInformation>>> {
+    ) -> Task<gpui_kit::Result<Vec<ColorInformation>>> {
         let text_str = text.to_string();
         let lines: Vec<&str> = text_str.lines().collect();
         let nodes = color_lsp::parse(&text_str);
@@ -112,7 +112,7 @@ impl DocumentColorProvider for NoColorProvider {
         _text: &Rope,
         _window: &mut Window,
         _cx: &mut App,
-    ) -> Task<gpui::Result<Vec<ColorInformation>>> {
+    ) -> Task<gpui_kit::Result<Vec<ColorInformation>>> {
         Task::ready(Ok(Vec::new()))
     }
 }

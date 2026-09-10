@@ -1,12 +1,12 @@
 //! The `TableDelegate` implementation that renders the CSV grid.
 
-use gpui::{
-    App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme,
     table::{Column, TableDelegate, TableState},
+};
+use gpui_kit::{
+    App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder,
 };
 
 use super::{CsvTableDelegate, EditTarget};

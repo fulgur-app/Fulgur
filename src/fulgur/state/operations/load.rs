@@ -11,8 +11,8 @@ use crate::fulgur::{
     ui::components_utils::{UNTITLED, UTF_8},
     ui::tabs::color_tag::ColorTag,
 };
-use gpui::{App, AppContext, Context, Window};
-use gpui_component::input::TabSize;
+use gpui_kit::component::input::TabSize;
+use gpui_kit::{App, AppContext, Context, Window};
 use std::fs;
 use std::io::Read;
 
@@ -217,7 +217,7 @@ impl Fulgur {
             let (csv_view_mode, csv_delimiter) =
                 crate::fulgur::ui::tabs::editor_tab::initial_csv_state(language, &content);
             let content_entity = cx.new(|cx| {
-                gpui_component::input::EditorState::new(window, cx)
+                gpui_kit::component::input::EditorState::new(window, cx)
                     .searchable(false)
                     .language(language_name)
                     .line_number(self.settings.editor_settings.show_line_numbers)

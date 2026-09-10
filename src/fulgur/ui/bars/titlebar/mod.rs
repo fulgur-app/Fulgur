@@ -1,13 +1,13 @@
 // Custom title bar with platform-specific menu bar placement
 
 use crate::fulgur::{Fulgur, ui::window_drag::WindowDragState};
-use gpui::{
+#[cfg(not(target_os = "macos"))]
+use gpui_kit::component::menu::AppMenuBar;
+use gpui_kit::component::{ActiveTheme, StyledExt, TitleBar, h_flex};
+use gpui_kit::{
     AnyElement, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
     Styled, WeakEntity, Window, div,
 };
-#[cfg(not(target_os = "macos"))]
-use gpui_component::menu::AppMenuBar;
-use gpui_component::{ActiveTheme, StyledExt, TitleBar, h_flex};
 
 const DEFAULT_TITLE: &str = "Fulgur";
 
@@ -62,7 +62,7 @@ impl CustomTitleBar {
     #[cfg(not(target_os = "macos"))]
     pub fn reload_app_menu_bar(&mut self, cx: &mut Context<Self>) {
         self.app_menu_bar
-            .update(cx, gpui_component::menu::AppMenuBar::reload);
+            .update(cx, gpui_kit::component::menu::AppMenuBar::reload);
     }
 
     /// Check whether the displayed title was composed from the given inputs

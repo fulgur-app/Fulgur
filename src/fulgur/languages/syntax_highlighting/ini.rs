@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add INI syntax highlighting support.
 pub fn add_ini_support() {
@@ -21,7 +21,7 @@ mod tests {
     fn test_add_ini_support_registers_language() {
         super::add_ini_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("ini")
                 .is_some()
         );
@@ -30,7 +30,7 @@ mod tests {
     #[test]
     fn test_ini_highlights_query_compiles() {
         super::add_ini_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("ini");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("ini");
         assert_eq!(highlighter.language().as_ref(), "ini");
     }
 }

@@ -4,9 +4,9 @@ use crate::fulgur::{
     Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
 };
 #[cfg(feature = "gpui-test-support")]
-use gpui::WindowId;
+use gpui_kit::WindowId;
 #[cfg(feature = "gpui-test-support")]
-use gpui::{
+use gpui_kit::{
     AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext, Window,
     WindowOptions, div,
 };
@@ -42,7 +42,7 @@ pub fn temp_test_path(file_name: &str) -> PathBuf {
 #[allow(clippy::missing_panics_doc)]
 pub fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
     cx.update(|cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -70,7 +70,7 @@ pub fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestConte
     (fulgur, visual_cx)
 }
 
-/// Set up a test window hosting `Fulgur` inside a `gpui_component::Root`.
+/// Set up a test window hosting `Fulgur` inside a `gpui_kit::component::Root`.
 ///
 /// ### Arguments
 /// - `cx`: The test application context.
@@ -81,7 +81,7 @@ pub fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestConte
 #[allow(clippy::missing_panics_doc)]
 pub fn setup_fulgur_with_root(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
     cx.update(|cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -96,7 +96,7 @@ pub fn setup_fulgur_with_root(cx: &mut TestAppContext) -> (Entity<Fulgur>, Visua
                 let window_id = window.window_handle().window_id();
                 let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
             })
         })
         .expect("failed to open test window");
@@ -112,7 +112,7 @@ pub fn setup_fulgur_with_root(cx: &mut TestAppContext) -> (Entity<Fulgur>, Visua
 #[cfg(feature = "gpui-test-support")]
 pub fn setup_test_globals(cx: &mut TestAppContext) {
     cx.update(|cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));

@@ -4,7 +4,7 @@ use crate::fulgur::tab::Tab;
 use futures::StreamExt;
 use futures::channel::mpsc::{Receiver, Sender};
 use futures::future::Either;
-use gpui::{Context, Task};
+use gpui_kit::{Context, Task};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -133,10 +133,10 @@ impl Fulgur {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     use crate::fulgur::files::file_watcher::test_helpers::{setup_fulgur, temp_test_path};
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
     use std::time::Instant;
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_unwatch_file_prunes_bookkeeping_maps(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = temp_test_path("fulgur_unwatch_cleanup.txt");
@@ -168,7 +168,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_stop_file_watcher_clears_bookkeeping_maps(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = temp_test_path("fulgur_stop_watcher_cleanup.txt");

@@ -1,5 +1,5 @@
-use gpui::{AnyElement, App, Entity, IntoElement, SharedString};
-use gpui_component::Icon;
+use gpui_kit::component::Icon;
+use gpui_kit::{AnyElement, App, Entity, IntoElement, SharedString};
 
 #[derive(Clone)]
 pub enum CustomIcon {

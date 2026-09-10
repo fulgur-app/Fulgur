@@ -1,7 +1,7 @@
 use crate::fulgur::ui::dialogs::large_file_close::CloseContinuation;
 use crate::fulgur::{Fulgur, PendingSaveCloseAction};
-use gpui::{App, Context, ParentElement, Styled, Window, div, px};
-use gpui_component::WindowExt;
+use gpui_kit::component::WindowExt;
+use gpui_kit::{App, Context, ParentElement, Styled, Window, div, px};
 
 impl Fulgur {
     /// Show confirmation dialog for unsaved changes
@@ -93,8 +93,8 @@ impl Fulgur {
                             log::error!("Failed to save app state on quit: {e}");
                             window.push_notification(
                                 (
-                                    gpui_component::notification::NotificationType::Error,
-                                    gpui::SharedString::from(format!(
+                                    gpui_kit::component::notification::NotificationType::Error,
+                                    gpui_kit::SharedString::from(format!(
                                         "Failed to save application state: {e}. Quit anyway?"
                                     )),
                                 ),
@@ -119,8 +119,8 @@ impl Fulgur {
             log::error!("Failed to save app state on quit: {e}");
             window.push_notification(
                 (
-                    gpui_component::notification::NotificationType::Error,
-                    gpui::SharedString::from(format!(
+                    gpui_kit::component::notification::NotificationType::Error,
+                    gpui_kit::SharedString::from(format!(
                         "Failed to save application state: {e}. Try again or close the app to quit without saving."
                     )),
                 ),

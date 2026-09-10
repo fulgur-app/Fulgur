@@ -1,6 +1,6 @@
 use crate::fulgur::Fulgur;
-use gpui::{App, Context, Entity, Focusable, Window};
-use gpui_component::input::{EditorState, Position};
+use gpui_kit::component::input::{EditorState, Position};
+use gpui_kit::{App, Context, Entity, Focusable, Window};
 
 use super::matching::find_matches_with_scratch;
 use super::{SearchBar, SearchBarEvent};

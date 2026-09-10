@@ -5,10 +5,10 @@ use crate::fulgur::{
     Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
     state::StateDb,
 };
-use gpui::{
+use gpui_kit::component::notification::NotificationType;
+use gpui_kit::{
     AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId, WindowOptions,
 };
-use gpui_component::notification::NotificationType;
 use parking_lot::Mutex;
 use std::{
     cell::RefCell,
@@ -22,7 +22,7 @@ use std::{
 /// - `cx`: The GPUI test application context to initialize.
 fn setup_test_globals(cx: &mut TestAppContext) {
     cx.update(|cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -53,7 +53,7 @@ fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Fulgur>
             let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
             *window_id_slot.borrow_mut() = Some(window_id);
             *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-            cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+            cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
         })
         .expect("failed to open test window");
     });
@@ -247,7 +247,7 @@ fn invoke_dock_activate_tab_by_title(
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_register_unregister_and_focus_tracking(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
@@ -283,7 +283,7 @@ fn test_register_unregister_and_focus_tracking(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_find_window_with_file_returns_other_window_with_matching_tab(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
@@ -310,7 +310,7 @@ fn test_find_window_with_file_returns_other_window_with_matching_tab(cx: &mut Te
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_find_window_with_file_skips_current_window_and_returns_none_on_miss(
     cx: &mut TestAppContext,
 ) {
@@ -349,7 +349,7 @@ fn test_find_window_with_file_skips_current_window_and_returns_none_on_miss(
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_on_window_close_requested_last_window_with_confirm_exit_blocks_close(
     cx: &mut TestAppContext,
 ) {
@@ -373,7 +373,7 @@ fn test_on_window_close_requested_last_window_with_confirm_exit_blocks_close(
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_on_window_close_requested_last_window_without_confirm_exit_closes_and_unregisters(
     cx: &mut TestAppContext,
 ) {
@@ -397,7 +397,7 @@ fn test_on_window_close_requested_last_window_without_confirm_exit_closes_and_un
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_on_window_close_requested_non_last_window_closes_even_with_confirm_exit_enabled(
     cx: &mut TestAppContext,
 ) {
@@ -425,7 +425,7 @@ fn test_on_window_close_requested_non_last_window_closes_even_with_confirm_exit_
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_notification_consumer_delivers_channel_notifications_to_window(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (window_id, fulgur) = open_window_with_fulgur(cx);
@@ -454,7 +454,7 @@ fn test_notification_consumer_delivers_channel_notifications_to_window(cx: &mut 
             .expect("test window should still be open");
         handle
             .update(cx, |_, window, cx| {
-                use gpui_component::WindowExt;
+                use gpui_kit::component::WindowExt;
                 window.notifications(cx).len()
             })
             .expect("failed to update test window")
@@ -465,7 +465,7 @@ fn test_notification_consumer_delivers_channel_notifications_to_window(cx: &mut 
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_do_open_file_does_not_open_duplicate_when_file_exists_in_another_window(
     cx: &mut TestAppContext,
 ) {
@@ -499,7 +499,7 @@ fn test_do_open_file_does_not_open_duplicate_when_file_exists_in_another_window(
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
@@ -544,7 +544,7 @@ fn test_dock_activate_tab_transfers_active_tab_to_other_window(cx: &mut TestAppC
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut TestAppContext) {
     setup_test_globals(cx);
     let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
@@ -587,7 +587,7 @@ fn test_dock_activate_tab_by_title_transfers_active_tab_to_other_window(cx: &mut
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_publish_window_menu_tabs_stores_only_changes(cx: &mut TestAppContext) {
     use super::system_menus::WindowMenuTab;
 
@@ -639,7 +639,7 @@ fn test_publish_window_menu_tabs_stores_only_changes(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn test_process_window_state_updates_publishes_menu_tabs_on_tab_change(cx: &mut TestAppContext) {
     setup_test_globals(cx);

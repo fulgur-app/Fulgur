@@ -6,11 +6,11 @@ use crate::fulgur::{
     },
 };
 use crate::register_action;
-use gpui::{
+use gpui_kit::component::{ActiveTheme, Root, StyledExt, WindowExt, v_flex};
+use gpui_kit::{
     Anchor, App, Context, ExternalPaths, FocusHandle, Focusable, InteractiveElement, IntoElement,
     ParentElement, Render, Styled, Window, div, px,
 };
-use gpui_component::{ActiveTheme, Root, StyledExt, WindowExt, v_flex};
 
 impl Focusable for Fulgur {
     /// Get the focus handle for the Fulgur instance
@@ -203,8 +203,8 @@ impl Fulgur {
             .map(|(pos, menu)| (*pos, menu.clone()))
         {
             root = root.child(
-                gpui::deferred(
-                    gpui::anchored()
+                gpui_kit::deferred(
+                    gpui_kit::anchored()
                         .position(position)
                         .snap_to_window_with_margin(px(8.))
                         .anchor(Anchor::TopLeft)
@@ -285,7 +285,7 @@ impl Fulgur {
             .border_color(cx.theme().primary.opacity(0.7))
             .bg(cx.theme().muted.opacity(0.4))
             .on_drag_move::<ExternalPaths>(|_, _, _| {})
-            .group_drag_over::<ExternalPaths>("", gpui::Styled::visible)
+            .group_drag_over::<ExternalPaths>("", gpui_kit::Styled::visible)
             .child(
                 div()
                     .px_4()

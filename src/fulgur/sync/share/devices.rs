@@ -10,7 +10,7 @@ use crate::fulgur::{
     utils::crypto_helper::is_valid_public_key,
 };
 use fulgur_common::api::devices::{DeviceResponse, DevicesResponse};
-use gpui_component::Icon;
+use gpui_kit::component::Icon;
 use std::sync::Arc;
 
 pub type Device = DeviceResponse;

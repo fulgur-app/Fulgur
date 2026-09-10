@@ -4,8 +4,8 @@ use crate::fulgur::{
     window_manager::WindowManager,
 };
 use futures::StreamExt;
-use gpui::App;
-use gpui_component::notification::NotificationType;
+use gpui_kit::App;
+use gpui_kit::component::notification::NotificationType;
 use std::time::{Duration, Instant};
 
 use super::super::types::SseEvent;

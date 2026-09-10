@@ -1,8 +1,8 @@
 use super::WindowManager;
 use crate::fulgur::Fulgur;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-use gpui::BorrowAppContext;
-use gpui::{Context, Entity, WeakEntity, Window, WindowId};
+use gpui_kit::BorrowAppContext;
+use gpui_kit::{Context, Entity, WeakEntity, Window, WindowId};
 
 impl Fulgur {
     /// Publish this window's menu-relevant tab snapshot to the `WindowManager`.

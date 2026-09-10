@@ -1,6 +1,6 @@
 use super::form_state::ProfileFormState;
 use crate::fulgur::Fulgur;
-use gpui::{App, Entity, SharedString};
+use gpui_kit::{App, Entity, SharedString};
 
 /// Validate a server URL string from the form.
 ///

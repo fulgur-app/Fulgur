@@ -1,11 +1,11 @@
 use std::time::Instant;
 
 use anyhow::anyhow;
-use gpui::{Context, ParentElement, SharedString, Styled, Window, div, px};
-use gpui_component::{
+use gpui_kit::component::{
     WindowExt, button::Button, button::ButtonVariant, button::ButtonVariants, h_flex,
     notification::NotificationType, v_flex,
 };
+use gpui_kit::{Context, ParentElement, SharedString, Styled, Window, div, px};
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::files::file_operations::{EncodedContents, encode_for_save};
@@ -42,7 +42,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `Vec<TabId>`: The ids of large, modified local tabs, in tab order
-    pub fn large_modified_local_tabs(&self, cx: &gpui::App) -> Vec<TabId> {
+    pub fn large_modified_local_tabs(&self, cx: &gpui_kit::App) -> Vec<TabId> {
         self.tabs
             .iter()
             .filter_map(|tab| {
@@ -67,7 +67,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `bool`: `true` when the tab is still a modified, large local tab
-    fn tab_still_needs_close_warning(&self, tab_id: TabId, cx: &gpui::App) -> bool {
+    fn tab_still_needs_close_warning(&self, tab_id: TabId, cx: &gpui_kit::App) -> bool {
         self.tab_entity_of(tab_id, cx)
             .and_then(|tab| {
                 let tab = tab.read(cx);
@@ -331,7 +331,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `String`: The file name, or the tab title when there is no path
-    fn tab_filename(&self, tab_id: TabId, cx: &gpui::App) -> String {
+    fn tab_filename(&self, tab_id: TabId, cx: &gpui_kit::App) -> String {
         self.tab_entity_of(tab_id, cx)
             .and_then(|tab| {
                 let tab = tab.read(cx);

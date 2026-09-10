@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 use tree_sitter_r;
 
 /// Add R language support.
@@ -22,7 +22,7 @@ mod tests {
     fn test_add_r_support_registers_language() {
         super::add_r_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("r")
                 .is_some()
         );
@@ -31,7 +31,7 @@ mod tests {
     #[test]
     fn test_r_highlights_query_compiles() {
         super::add_r_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("r");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("r");
         assert_eq!(highlighter.language().as_ref(), "r");
     }
 }

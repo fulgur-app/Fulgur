@@ -1,7 +1,7 @@
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{Fulgur, PendingSaveCloseAction};
-use gpui::{Context, SharedString, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{Context, SharedString, Window};
 use std::path::PathBuf;
 
 /// Dispatch-time context of a background save, handed back to the completion

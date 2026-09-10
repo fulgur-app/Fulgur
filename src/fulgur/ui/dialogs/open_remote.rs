@@ -1,7 +1,9 @@
-use gpui::{AppContext, Context, Focusable, ParentElement, SharedString, Styled, Window, div, px};
-use gpui_component::{
+use gpui_kit::component::{
     WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input,
     notification::NotificationType,
+};
+use gpui_kit::{
+    AppContext, Context, Focusable, ParentElement, SharedString, Styled, Window, div, px,
 };
 
 use crate::fulgur::{
@@ -23,7 +25,7 @@ impl Fulgur {
         let entity = cx.entity().clone();
         let remembered_url = self.last_failed_remote_open_url.clone().unwrap_or_default();
         let input = cx.new(|cx| {
-            gpui_component::input::InputState::new(window, cx)
+            gpui_kit::component::input::InputState::new(window, cx)
                 .placeholder("ssh://user@host/path/to/file")
                 .default_value(remembered_url.clone())
         });
@@ -224,7 +226,7 @@ mod tests {
     use crate::fulgur::{
         Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     use parking_lot::Mutex;
     use std::{cell::RefCell, rc::Rc, sync::Arc};
 
@@ -236,7 +238,7 @@ mod tests {
     /// ### Returns
     /// - `(Entity<Fulgur>, VisualTestContext)`: The Fulgur entity and its visual test context
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         cx.update(|cx| {
             cx.set_global(SharedAppState::new(
                 Settings::new(),
@@ -254,7 +256,7 @@ mod tests {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                    cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
                 })
             })
             .expect("failed to open test window");
@@ -267,7 +269,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_show_open_remote_dialog_does_not_panic(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {

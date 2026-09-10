@@ -1,5 +1,5 @@
 use arborium_dockerfile;
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add Dockerfile language support.
 pub fn add_dockerfile_support() {
@@ -22,7 +22,7 @@ mod tests {
     fn test_add_dockerfile_support_registers_language() {
         super::add_dockerfile_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("dockerfile")
                 .is_some()
         );
@@ -31,7 +31,7 @@ mod tests {
     #[test]
     fn test_dockerfile_highlights_query_compiles() {
         super::add_dockerfile_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("dockerfile");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("dockerfile");
         assert_eq!(highlighter.language().as_ref(), "dockerfile");
     }
 }

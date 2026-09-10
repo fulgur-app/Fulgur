@@ -5,11 +5,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use gpui::{
-    App, ElementId, IntoElement, ParentElement, SharedString, Styled, WeakEntity, Window, div,
-};
-use gpui_component::{
+use gpui_kit::component::{
     Sizable, WindowExt, button::Button, h_flex, notification::Notification, spinner::Spinner,
+};
+use gpui_kit::{
+    App, ElementId, IntoElement, ParentElement, SharedString, Styled, WeakEntity, Window, div,
 };
 
 use crate::fulgur::ui::icons::CustomIcon;
@@ -141,7 +141,10 @@ pub fn start_progress(
                 }
 
                 window.push_notification(note, cx);
-                window.notifications(cx).last().map(gpui::Entity::downgrade)
+                window
+                    .notifications(cx)
+                    .last()
+                    .map(gpui_kit::Entity::downgrade)
             }) {
                 Ok(entity) => entity,
                 Err(_) => return,
@@ -154,7 +157,9 @@ pub fn start_progress(
                     .await;
                 if completed_for_task.load(Ordering::Acquire) {
                     let _ = async_cx.update(|window, cx| {
-                        if let Some(entity) = entity.as_ref().and_then(gpui::WeakEntity::upgrade) {
+                        if let Some(entity) =
+                            entity.as_ref().and_then(gpui_kit::WeakEntity::upgrade)
+                        {
                             entity.update(cx, |note, cx| note.dismiss(window, cx));
                         }
                     });

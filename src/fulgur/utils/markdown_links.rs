@@ -1,6 +1,6 @@
 //! Classify Markdown preview link targets so activation can be routed.
 
-use http_client::Url;
+use gpui_kit::http_client::Url;
 use std::path::{Path, PathBuf};
 
 /// What a link in the Markdown preview points at.

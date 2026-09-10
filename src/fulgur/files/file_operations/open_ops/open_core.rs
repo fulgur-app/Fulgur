@@ -5,8 +5,8 @@ use crate::fulgur::{
     tab::Tab,
     ui::menus,
 };
-use gpui::{AsyncWindowContext, Context, SharedString, WeakEntity, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{AsyncWindowContext, Context, SharedString, WeakEntity, Window};
 use std::path::Path;
 
 /// Result of reading and classifying a file on the background executor.

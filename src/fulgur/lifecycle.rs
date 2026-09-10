@@ -20,9 +20,9 @@ use crate::fulgur::{
     },
     window_manager,
 };
-use gpui::{App, AppContext, Context, Entity, SharedString, Window, WindowId};
-use gpui_component::input::InputState;
-use gpui_component::notification::NotificationType;
+use gpui_kit::component::input::InputState;
+use gpui_kit::component::notification::NotificationType;
+use gpui_kit::{App, AppContext, Context, Entity, SharedString, Window, WindowId};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -261,7 +261,7 @@ impl Fulgur {
             cx.set_menus(menus);
             #[cfg(not(target_os = "macos"))]
             if let Some(owned_menus) = cx.get_menus() {
-                gpui_component::GlobalState::global_mut(cx).set_app_menus(owned_menus);
+                gpui_kit::component::GlobalState::global_mut(cx).set_app_menus(owned_menus);
             }
         });
     }

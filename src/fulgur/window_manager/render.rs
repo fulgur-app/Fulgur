@@ -1,6 +1,6 @@
 use super::WindowManager;
 use crate::fulgur::{Fulgur, state};
-use gpui::{BorrowAppContext, Context, Window};
+use gpui_kit::{BorrowAppContext, Context, Window};
 
 impl Fulgur {
     /// Process window state updates during the render cycle:

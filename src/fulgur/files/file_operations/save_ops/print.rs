@@ -1,6 +1,6 @@
 use crate::fulgur::{Fulgur, tab::Tab};
-use gpui::{Context, SharedString, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{Context, SharedString, Window};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};

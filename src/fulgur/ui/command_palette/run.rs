@@ -19,7 +19,7 @@ use crate::fulgur::{
         },
     },
 };
-use gpui::{App, Context, Window};
+use gpui_kit::{App, Context, Window};
 
 impl Fulgur {
     /// Snapshot the window state the palette filters its command list on.

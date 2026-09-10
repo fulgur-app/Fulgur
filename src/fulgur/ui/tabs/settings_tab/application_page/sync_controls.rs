@@ -1,14 +1,14 @@
 use crate::fulgur::{Fulgur, settings::MAX_PROFILES, utils::crypto_helper};
-use gpui::{
-    App, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     setting::SettingItem,
     switch::Switch,
     v_flex,
+};
+use gpui_kit::{
+    App, Entity, FontWeight, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 
 /// Render the inline error banner shown when key initialization failed.
@@ -26,11 +26,11 @@ pub(super) fn render_sync_error_banner() -> SettingItem {
                 .bg(cx.theme().muted)
                 .border_1()
                 .border_color(cx.theme().border)
-                .rounded(gpui::px(4.0))
+                .rounded(gpui_kit::px(4.0))
                 .child(
                     div()
                         .text_color(cx.theme().foreground)
-                        .text_size(gpui::px(13.0))
+                        .text_size(gpui_kit::px(13.0))
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(error_msg.clone()),
                 )
@@ -164,7 +164,7 @@ pub(super) fn render_add_server_button(entity: &Entity<Fulgur>) -> SettingItem {
                         if already_at_cap {
                             window.push_notification(
                                 (
-                                    gpui_component::notification::NotificationType::Error,
+                                    gpui_kit::component::notification::NotificationType::Error,
                                     SharedString::from(format!(
                                         "Maximum of {MAX_PROFILES} Fulgurant instances reached."
                                     )),

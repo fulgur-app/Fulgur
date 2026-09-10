@@ -2,7 +2,7 @@ use crate::fulgur::{
     Fulgur,
     tab::{Tab, TabId},
 };
-use gpui::{Context, Window};
+use gpui_kit::{Context, Window};
 
 impl Fulgur {
     /// Close a tab
@@ -262,7 +262,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `True`: If the tab has unsaved changes, `False` otherwise
-    fn check_tab_modified(&self, tab_id: TabId, cx: &gpui::App) -> bool {
+    fn check_tab_modified(&self, tab_id: TabId, cx: &gpui_kit::App) -> bool {
         if let Some(Tab::Editor(editor_tab)) = self
             .tabs
             .iter()

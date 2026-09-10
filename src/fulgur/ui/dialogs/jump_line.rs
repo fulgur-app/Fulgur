@@ -1,5 +1,7 @@
-use gpui::{Context, Focusable, ParentElement, Styled, Window, div, px};
-use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input};
+use gpui_kit::component::{
+    WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input,
+};
+use gpui_kit::{Context, Focusable, ParentElement, Styled, Window, div, px};
 
 use crate::fulgur::{Fulgur, editor_tab};
 
@@ -80,12 +82,12 @@ mod tests {
         Fulgur, settings::Settings, shared_state::SharedAppState, ui::tabs::editor_tab::Jump,
         window_manager::WindowManager,
     };
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     use parking_lot::Mutex;
     use std::{cell::RefCell, rc::Rc, sync::Arc};
 
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         cx.update(|cx| {
             cx.set_global(SharedAppState::new(
                 Settings::new(),
@@ -103,7 +105,7 @@ mod tests {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                    cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
                 })
             })
             .expect("failed to open test window");
@@ -117,7 +119,7 @@ mod tests {
 
     // ========== handle_pending_jump_to_line tests ==========
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_pending_jump_consumes_pending_jump(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
@@ -133,7 +135,7 @@ mod tests {
         assert!(!pending, "pending_jump should be consumed after handling");
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_pending_jump_applies_cursor_line(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         // Set multi-line content in the active editor tab
@@ -171,7 +173,7 @@ mod tests {
         assert_eq!(cursor_line, Some(1), "cursor should be on line index 1");
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_pending_jump_is_noop_without_pending_jump(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         // No pending_jump set, handler should do nothing
@@ -193,7 +195,7 @@ mod tests {
         );
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_pending_jump_is_noop_without_active_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {

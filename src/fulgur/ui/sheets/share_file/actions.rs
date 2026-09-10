@@ -12,8 +12,8 @@ use crate::fulgur::{
     },
     ui::{components_utils::UNTITLED, notifications::progress::start_progress},
 };
-use gpui::{App, Entity, SharedString, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{App, Entity, SharedString, Window};
 use std::sync::Arc;
 
 /// Snapshot of the file content captured from the active editor tab when Share is pressed. Reused across each per-profile share request.

@@ -1,7 +1,7 @@
 use crate::fulgur::ui::tabs::tab::TabId;
-use gpui::{Entity, SharedString};
-use gpui_component::input::EditorState;
-use gpui_component::text::TextViewState;
+use gpui_kit::component::input::EditorState;
+use gpui_kit::component::text::TextViewState;
+use gpui_kit::{Entity, SharedString};
 
 /// A read-only tab that renders a live Markdown preview for a linked editor tab.
 pub struct MarkdownPreviewTab {

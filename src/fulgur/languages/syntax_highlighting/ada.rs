@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add Ada language support.
 pub fn add_ada_support() {
@@ -134,7 +134,7 @@ mod tests {
     fn test_add_ada_support_registers_language() {
         super::add_ada_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("ada")
                 .is_some()
         );
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn test_ada_highlights_query_compiles() {
         super::add_ada_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("ada");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("ada");
         assert_eq!(highlighter.language().as_ref(), "ada");
     }
 }

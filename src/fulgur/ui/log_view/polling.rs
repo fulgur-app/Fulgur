@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use gpui::{Context, Window};
+use gpui_kit::{Context, Window};
 
 use super::LogDisplayUpdate;
 use super::tail::read_new_log_bytes;
@@ -91,7 +91,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Some(u64)`: The byte offset when the tab is still in log view
     /// - `None`: When the tab is gone or no longer in log view (poll should stop)
-    fn log_tail_offset(&self, tab_id: TabId, cx: &gpui::App) -> Option<u64> {
+    fn log_tail_offset(&self, tab_id: TabId, cx: &gpui_kit::App) -> Option<u64> {
         let editor = self.editor_tab(tab_id, cx)?;
         if !editor.log_view {
             return None;
@@ -208,7 +208,7 @@ impl Fulgur {
     /// - `tab_id`: The tab to update
     /// - `follow`: The new follow state
     /// - `cx`: The application context
-    pub(super) fn set_log_follow(&mut self, tab_id: TabId, follow: bool, cx: &mut gpui::App) {
+    pub(super) fn set_log_follow(&mut self, tab_id: TabId, follow: bool, cx: &mut gpui_kit::App) {
         self.update_editor_tab(tab_id, cx, |editor, _| {
             editor.log_follow = follow;
         });

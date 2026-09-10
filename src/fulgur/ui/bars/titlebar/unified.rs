@@ -2,11 +2,11 @@
 
 use super::CustomTitleBar;
 use crate::fulgur::{ui::window_drag::window_drag_region, window_manager::WindowManager};
-use gpui::{
+use gpui_kit::component::{ActiveTheme, StyledExt, TITLE_BAR_HEIGHT, h_flex};
+use gpui_kit::{
     AnyElement, App, Context, InteractiveElement, IntoElement, ParentElement, Pixels, Styled,
     Window, div, px,
 };
-use gpui_component::{ActiveTheme, StyledExt, TITLE_BAR_HEIGHT, h_flex};
 
 /// Horizontal room reserved on the left for the macOS traffic light buttons
 #[cfg(target_os = "macos")]

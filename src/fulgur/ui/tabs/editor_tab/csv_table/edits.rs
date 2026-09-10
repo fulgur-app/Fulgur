@@ -1,9 +1,9 @@
 //! Single header/cell editing and the modal edit dialog.
 
-use gpui::{Context, Focusable, ParentElement, Styled, Window, div, px};
-use gpui_component::{
+use gpui_kit::component::{
     WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input, table::TableState,
 };
+use gpui_kit::{Context, Focusable, ParentElement, Styled, Window, div, px};
 
 use super::{CsvTableDelegate, EditTarget};
 

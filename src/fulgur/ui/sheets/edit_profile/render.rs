@@ -1,6 +1,6 @@
 use super::form_state::ProfileFormState;
-use gpui::{App, FontWeight, IntoElement, ParentElement, Styled, div, prelude::FluentBuilder};
-use gpui_component::{ActiveTheme, h_flex, input::Input, switch::Switch, v_flex};
+use gpui_kit::component::{ActiveTheme, h_flex, input::Input, switch::Switch, v_flex};
+use gpui_kit::{App, FontWeight, IntoElement, ParentElement, Styled, div, prelude::FluentBuilder};
 use std::sync::Arc;
 
 /// Render the body of the edit profile sheet.

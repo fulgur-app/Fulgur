@@ -735,7 +735,7 @@ mod gpui_settings_propagation_tests {
     use crate::fulgur::{
         Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
     };
-    use gpui::{AppContext, BorrowAppContext, Entity, TestAppContext, WindowId, WindowOptions};
+    use gpui_kit::{AppContext, BorrowAppContext, Entity, TestAppContext, WindowId, WindowOptions};
     use parking_lot::Mutex;
     use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
@@ -745,7 +745,7 @@ mod gpui_settings_propagation_tests {
     /// - `cx`: The GPUI test app context to initialize.
     fn setup_test_globals(cx: &mut TestAppContext) {
         cx.update(|cx| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -770,7 +770,7 @@ mod gpui_settings_propagation_tests {
                 let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *window_id_slot.borrow_mut() = Some(window_id);
                 *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
             })
             .expect("failed to open test window");
         });
@@ -802,7 +802,7 @@ mod gpui_settings_propagation_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_update_and_propagate_settings_publishes_to_shared_state(cx: &mut TestAppContext) {
         setup_test_globals(cx);
         let (window_id, fulgur) = open_window_with_fulgur(cx);
@@ -820,7 +820,7 @@ mod gpui_settings_propagation_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_settings_observer_applies_editor_settings_to_publisher_tabs(cx: &mut TestAppContext) {
         setup_test_globals(cx);
         let (window_id, fulgur) = open_window_with_fulgur(cx);
@@ -857,7 +857,7 @@ mod gpui_settings_propagation_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_settings_observer_applies_shared_settings_to_other_windows(cx: &mut TestAppContext) {
         setup_test_globals(cx);
         let (_window_id_one, fulgur_one) = open_window_with_fulgur(cx);
@@ -878,7 +878,7 @@ mod gpui_settings_propagation_tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_theme_only_global_update_keeps_settings_snapshot_identical(cx: &mut TestAppContext) {
         setup_test_globals(cx);
         let (_, fulgur) = open_window_with_fulgur(cx);

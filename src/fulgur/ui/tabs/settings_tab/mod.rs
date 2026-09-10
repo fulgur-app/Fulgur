@@ -1,13 +1,13 @@
-use gpui::{
-    App, AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, IndexPath, Sizable, Size,
     group_box::GroupBoxVariant,
     select::{SearchableVec, SelectState},
     setting::{SettingPage, Settings as SettingsComponent},
     v_flex,
+};
+use gpui_kit::{
+    App, AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
 };
 
 use crate::fulgur::{
@@ -139,7 +139,7 @@ impl Fulgur {
                     .min_w(px(980.0))
                     .text_color(cx.theme().foreground)
                     .text_size(px(12.0))
-                    .when(show_side_borders, |el: gpui::Div| {
+                    .when(show_side_borders, |el: gpui_kit::Div| {
                         el.border_l_1().border_r_1().border_color(cx.theme().border)
                     })
                     .child(

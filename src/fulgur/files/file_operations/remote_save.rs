@@ -9,7 +9,7 @@ use crate::fulgur::{
     sync::ssh::{self, credentials::SshCredKey, url::RemoteSpec},
     ui::notifications::progress::CancelCallback,
 };
-use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
 use parking_lot::Mutex;
 use std::sync::{
     Arc,
@@ -28,8 +28,8 @@ impl Fulgur {
     /// - `bytes`: The encoded file contents to write to the remote host
     pub(super) fn save_remote_file(
         &mut self,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
         tab_id: TabId,
         mut spec: RemoteSpec,
         contents: String,
@@ -142,8 +142,8 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `params`: All data required to run the remote save operation
     fn spawn_ssh_save_task(
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
         params: RemoteSaveTaskParams,
     ) {
         let RemoteSaveTaskParams {
@@ -247,8 +247,8 @@ impl Fulgur {
         request_id: u64,
         saved_content: &str,
         result: Result<(), String>,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
     ) {
         if self.latest_remote_save_request_by_tab.get(&tab_id).copied() != Some(request_id) {
             return;
@@ -278,7 +278,7 @@ impl Fulgur {
                 window.push_notification(
                     (
                         NotificationType::Error,
-                        gpui::SharedString::from(format!("Failed to save: {msg}")),
+                        gpui_kit::SharedString::from(format!("Failed to save: {msg}")),
                     ),
                     cx,
                 );

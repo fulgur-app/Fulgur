@@ -68,11 +68,11 @@ mod tests {
     use crate::fulgur::editor_tab::TabLocation;
     use crate::fulgur::files::file_watcher::FileWatchEvent;
     use crate::fulgur::files::file_watcher::test_helpers::setup_fulgur;
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
     use std::time::Instant;
     use tempfile::TempDir;
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_file_watch_event_modified_is_debounced(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -109,7 +109,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_file_watch_event_deleted_is_suppressed_after_self_save(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");

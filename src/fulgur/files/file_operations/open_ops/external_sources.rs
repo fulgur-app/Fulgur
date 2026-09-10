@@ -1,6 +1,6 @@
 use crate::fulgur::{Fulgur, window_manager};
-use gpui::{Context, ExternalPaths, SharedString, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{Context, ExternalPaths, SharedString, Window};
 use std::{collections::HashSet, path::PathBuf};
 
 impl Fulgur {
@@ -138,14 +138,14 @@ mod tests {
         open_window_with_fulgur, setup_test_globals,
     };
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
-    use gpui::BorrowAppContext;
+    use gpui_kit::BorrowAppContext;
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
     use tempfile::TempDir;
 
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_process_pending_files_from_macos_only_focused_window_drains_queue(
         cx: &mut TestAppContext,
     ) {
