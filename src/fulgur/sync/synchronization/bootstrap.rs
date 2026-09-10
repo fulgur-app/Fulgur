@@ -10,7 +10,7 @@ use crate::fulgur::shared_state::{AppNotification, SyncState};
 use crate::fulgur::sync::sse::{SSE_WORKER_JOIN_TIMEOUT, SseAgents, SseShareState, connect_sse};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use crate::fulgur::utils::worker::{Worker, WorkerHooks};
-use gpui_component::notification::NotificationType;
+use gpui_kit::component::notification::NotificationType;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::thread;
@@ -22,7 +22,10 @@ use std::time::Duration;
 /// ### Arguments
 /// - `entity`: The Fulgur entity
 /// - `cx`: The application context.
-pub fn begin_synchronization(entity: &gpui::Entity<crate::fulgur::Fulgur>, cx: &mut gpui::App) {
+pub fn begin_synchronization(
+    entity: &gpui_kit::Entity<crate::fulgur::Fulgur>,
+    cx: &mut gpui_kit::App,
+) {
     if !entity
         .read(cx)
         .settings

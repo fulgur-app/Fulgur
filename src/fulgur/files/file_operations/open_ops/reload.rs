@@ -1,6 +1,6 @@
 use super::super::{DecodedContents, detect_encoding_and_decode};
 use crate::fulgur::{Fulgur, tab::Tab};
-use gpui::{Context, Window};
+use gpui_kit::{Context, Window};
 use std::path::Path;
 
 impl Fulgur {
@@ -107,7 +107,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::files::file_operations::test_helpers::setup_fulgur;
     #[cfg(feature = "gpui-test-support")]
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
     #[cfg(feature = "gpui-test-support")]
     use std::fmt::Write as _;
     #[cfg(feature = "gpui-test-support")]
@@ -116,7 +116,7 @@ mod tests {
     // ========== reload_tab_from_disk tests ==========
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_reload_tab_from_disk_updates_content_from_file(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -169,7 +169,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_reload_tab_from_disk_keeps_caret_and_input_state(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_reload_tab_from_disk_is_noop_without_file_path(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 

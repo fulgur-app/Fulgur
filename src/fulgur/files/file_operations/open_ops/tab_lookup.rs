@@ -12,7 +12,7 @@ impl Fulgur {
     /// - `Some(usize)`: The index of the tab if found
     /// - `None`: If the tab was not found
     #[must_use]
-    pub fn find_tab_by_path(&self, path: &PathBuf, cx: &gpui::App) -> Option<usize> {
+    pub fn find_tab_by_path(&self, path: &PathBuf, cx: &gpui_kit::App) -> Option<usize> {
         self.tabs.iter().position(|tab| {
             if let Tab::Editor(editor_tab) = tab.read(cx) {
                 editor_tab.file_path().is_some_and(|p| p == path)
@@ -32,7 +32,7 @@ impl Fulgur {
     /// - `Some(usize)`: The index of the matching remote tab.
     /// - `None`: If no tab matches this remote location.
     #[must_use]
-    pub fn find_tab_by_remote_spec(&self, spec: &RemoteSpec, cx: &gpui::App) -> Option<usize> {
+    pub fn find_tab_by_remote_spec(&self, spec: &RemoteSpec, cx: &gpui_kit::App) -> Option<usize> {
         self.tabs.iter().position(|tab| {
             if let Tab::Editor(editor_tab) = tab.read(cx)
                 && let TabLocation::Remote(existing_spec) = &editor_tab.location
@@ -58,12 +58,12 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::files::file_operations::test_helpers::{setup_fulgur, temp_test_path};
     #[cfg(feature = "gpui-test-support")]
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
 
     // ========== find_tab_by_path tests ==========
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_find_tab_by_path_returns_index_for_existing_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = temp_test_path("fulgur_find_tab_test.txt");
@@ -88,7 +88,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_find_tab_by_path_returns_none_for_unknown_path(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -101,7 +101,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_find_tab_by_path_ignores_settings_tabs(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -117,7 +117,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_find_tab_by_remote_spec_returns_index_for_existing_remote_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let spec = RemoteSpec {
@@ -148,7 +148,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_find_tab_by_remote_spec_returns_none_for_unknown_remote_spec(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let spec = RemoteSpec {

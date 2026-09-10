@@ -1,12 +1,12 @@
 use crate::fulgur::Fulgur;
 
-use gpui::{
-    App, AppContext, Context, Entity, EntityInputHandler, EventEmitter, Hsla, Subscription,
-    WeakEntity, Window,
-};
-use gpui_component::{
+use gpui_kit::component::{
     color_picker::{ColorPickerEvent, ColorPickerState},
     input::{EditorState, InputEvent, InputState},
+};
+use gpui_kit::{
+    App, AppContext, Context, Entity, EntityInputHandler, EventEmitter, Hsla, Subscription,
+    WeakEntity, Window,
 };
 
 use super::color::{format_hsla, format_oklch, parse_hex, parse_hsla, parse_oklch};
@@ -47,7 +47,7 @@ impl ColorInput {
     /// - `String`: The formatted color string
     fn format(self, color: Hsla) -> String {
         match self {
-            ColorInput::Hex => gpui_component::Colorize::to_hex(&color),
+            ColorInput::Hex => gpui_kit::component::Colorize::to_hex(&color),
             ColorInput::Oklch => format_oklch(color),
             ColorInput::Hsla => format_hsla(color),
         }
@@ -112,9 +112,9 @@ impl ColorPickerBar {
         cx: &mut Context<Self>,
     ) -> Self {
         let color_picker_state =
-            cx.new(|cx| ColorPickerState::new(window, cx).default_value(gpui::white()));
-        let initial = gpui::white();
-        let initial_hex = gpui_component::Colorize::to_hex(&initial).clone();
+            cx.new(|cx| ColorPickerState::new(window, cx).default_value(gpui_kit::white()));
+        let initial = gpui_kit::white();
+        let initial_hex = gpui_kit::component::Colorize::to_hex(&initial).clone();
         let initial_oklch = format_oklch(initial);
         let initial_hsla = format_hsla(initial);
         let hex_input = cx.new(|cx| InputState::new(window, cx).default_value(initial_hex.clone()));
@@ -128,7 +128,7 @@ impl ColorPickerBar {
             |this: &mut Self, _, event: &ColorPickerEvent, window, cx| {
                 if let ColorPickerEvent::Change(Some(color)) = event {
                     let color = *color;
-                    let hex = gpui_component::Colorize::to_hex(&color);
+                    let hex = gpui_kit::component::Colorize::to_hex(&color);
                     let oklch = format_oklch(color);
                     let hsla_str = format_hsla(color);
                     this.cached_hex.clone_from(&hex);

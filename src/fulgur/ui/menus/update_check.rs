@@ -3,8 +3,8 @@ use crate::fulgur::{
     Fulgur,
     utils::updater::{check_for_updates, is_valid_release_page_url},
 };
-use gpui::{Context, SharedString, Window};
-use gpui_component::{WindowExt, notification::NotificationType};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{Context, SharedString, Window};
 
 impl Fulgur {
     /// Check for updates, open the download page in the browser if an update is available, update the menus to show the update available action and trigger notifications

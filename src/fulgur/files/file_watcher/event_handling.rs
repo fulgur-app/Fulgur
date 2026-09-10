@@ -2,7 +2,7 @@ use super::watcher::FileWatchEvent;
 use crate::fulgur::Fulgur;
 use crate::fulgur::editor_tab::TabLocation;
 use crate::fulgur::tab::Tab;
-use gpui::{Context, Window};
+use gpui_kit::{Context, Window};
 use std::path::PathBuf;
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 use std::time::Instant;
@@ -46,7 +46,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `path`: The path of the file that was deleted externally
     /// - `cx`: The application context
-    fn mark_tab_deleted_externally(&mut self, path: &PathBuf, cx: &mut gpui::App) {
+    fn mark_tab_deleted_externally(&mut self, path: &PathBuf, cx: &mut gpui_kit::App) {
         self.file_watch_state.pending_conflicts.remove(path);
         if let Some(tab_entity) = self
             .find_tab_by_path(path, cx)
@@ -145,11 +145,11 @@ mod tests {
     use crate::fulgur::editor_tab::TabLocation;
     use crate::fulgur::files::file_watcher::FileWatchEvent;
     use crate::fulgur::files::file_watcher::test_helpers::{setup_fulgur, temp_test_path};
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_file_watch_event_modified_reloads_unmodified_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -194,7 +194,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_file_watch_event_modified_active_tab_does_not_queue_conflict(
         cx: &mut TestAppContext,
     ) {
@@ -225,7 +225,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_repeated_external_modifications_show_a_single_conflict_dialog(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = temp_test_path("fulgur_conflict_repeated.txt");
@@ -271,7 +271,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_file_watch_event_modified_inactive_tab_defers_until_activation(
         cx: &mut TestAppContext,
     ) {
@@ -313,7 +313,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_file_watch_event_deleted_keeps_editor_state(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let path = temp_test_path("fulgur_deleted_branch.txt");
@@ -354,7 +354,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_file_watch_event_deleted_existing_path_reloads(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -398,7 +398,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_file_watch_event_renamed_updates_path_and_title(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let from = temp_test_path("fulgur_rename_from.rs");

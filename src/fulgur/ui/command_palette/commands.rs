@@ -10,7 +10,7 @@ use crate::fulgur::ui::{
         ToggleColorPicker,
     },
 };
-use gpui::Action;
+use gpui_kit::Action;
 
 /// A titled section of the command palette.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

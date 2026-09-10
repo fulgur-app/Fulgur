@@ -1,8 +1,8 @@
 use crate::fulgur::ui::tabs::tab::TabId;
 use std::path::Path;
 
-use gpui::{Context, ParentElement, Styled, Window, div, px};
-use gpui_component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, v_flex};
+use gpui_kit::component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, v_flex};
+use gpui_kit::{Context, ParentElement, Styled, Window, div, px};
 
 use crate::fulgur::Fulgur;
 

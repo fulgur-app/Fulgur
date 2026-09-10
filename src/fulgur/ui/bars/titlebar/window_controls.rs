@@ -2,11 +2,11 @@
 
 use super::CustomTitleBar;
 use crate::fulgur::ui::icons::CustomIcon;
-use gpui::{
+use gpui_kit::component::{ActiveTheme, Sizable, TITLE_BAR_HEIGHT, h_flex};
+use gpui_kit::{
     AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement, Role,
     StatefulInteractiveElement, Styled, Window, div,
 };
-use gpui_component::{ActiveTheme, Sizable, TITLE_BAR_HEIGHT, h_flex};
 
 /// Render the window control cluster sitting at the end of the unified row
 ///
@@ -98,11 +98,11 @@ impl Control {
     ///
     /// ### Returns
     /// - `WindowControlArea`: The matching control area
-    fn area(self) -> gpui::WindowControlArea {
+    fn area(self) -> gpui_kit::WindowControlArea {
         match self {
-            Self::Minimize => gpui::WindowControlArea::Min,
-            Self::Maximize | Self::Restore => gpui::WindowControlArea::Max,
-            Self::Close => gpui::WindowControlArea::Close,
+            Self::Minimize => gpui_kit::WindowControlArea::Min,
+            Self::Maximize | Self::Restore => gpui_kit::WindowControlArea::Max,
+            Self::Close => gpui_kit::WindowControlArea::Close,
         }
     }
 
@@ -164,7 +164,7 @@ fn render_control(control: Control, cx: &mut Context<CustomTitleBar>) -> AnyElem
     {
         let _ = control.area();
         button
-            .on_mouse_down(gpui::MouseButton::Left, |_, window, cx| {
+            .on_mouse_down(gpui_kit::MouseButton::Left, |_, window, cx| {
                 window.prevent_default();
                 cx.stop_propagation();
             })

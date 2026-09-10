@@ -8,7 +8,7 @@ use crate::fulgur::{
     utils::worker::Worker,
     window_manager::WindowManager,
 };
-use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
 use parking_lot::Mutex;
 use std::{
     cell::RefCell,
@@ -18,13 +18,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Initialize globals and open a test window with a `gpui_component::Root`-mounted `Fulgur`.
+/// Initialize globals and open a test window with a `gpui_kit::component::Root`-mounted `Fulgur`.
 ///
-/// The root must be a `gpui_component::Root` (not a bare `EmptyView`) because
+/// The root must be a `gpui_kit::component::Root` (not a bare `EmptyView`) because
 /// `window.push_notification(...)` asserts that the first layer is a Root.
 fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
     cx.update(|cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -38,7 +38,7 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
                 let window_id = window.window_handle().window_id();
                 let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
             })
         })
         .expect("failed to open test window");
@@ -88,7 +88,7 @@ fn test_sse_state_new_is_fully_empty() {
 
 // --- handle_sse_event_for_profile: Heartbeat ---
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_heartbeat_sets_last_heartbeat(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -118,7 +118,7 @@ fn test_handle_heartbeat_sets_last_heartbeat(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_heartbeat_when_disconnected_restores_connected_status(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -144,7 +144,7 @@ fn test_handle_heartbeat_when_disconnected_restores_connected_status(cx: &mut Te
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_heartbeat_when_connected_keeps_connected_status(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -173,7 +173,7 @@ fn test_handle_heartbeat_when_connected_keeps_connected_status(cx: &mut TestAppC
 // --- handle_sse_event_for_profile: debounce ---
 
 /// Read the instant the debounce window was last opened for the test profile.
-fn debounce_window_opened_at(cx: &gpui::App) -> Option<Instant> {
+fn debounce_window_opened_at(cx: &gpui_kit::App) -> Option<Instant> {
     Fulgur::shared_state(cx)
         .sync_state_for(&test_profile_id())
         .sse
@@ -181,7 +181,7 @@ fn debounce_window_opened_at(cx: &gpui::App) -> Option<Instant> {
         .last_sse_event
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_share_doorbell_debounce_collapses_a_rapid_second_doorbell(cx: &mut TestAppContext) {
     // Collapsing doorbell storms is what the debounce exists for, and the only
     // event it may apply to.
@@ -211,7 +211,7 @@ fn test_share_doorbell_debounce_collapses_a_rapid_second_doorbell(cx: &mut TestA
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_a_heartbeat_is_never_swallowed_by_the_debounce(cx: &mut TestAppContext) {
     // A heartbeat is the profile's liveness signal, so honouring it must not
     // depend on how recently an unrelated event happened to arrive.
@@ -246,7 +246,7 @@ fn test_a_heartbeat_is_never_swallowed_by_the_debounce(cx: &mut TestAppContext) 
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_pending_shares_snapshot_does_not_consume_the_debounce_window(cx: &mut TestAppContext) {
     // The server sends the pending-shares snapshot and a heartbeat in the same
     // burst after every reconnect. Sharing one window between them meant one of
@@ -268,7 +268,7 @@ fn test_pending_shares_snapshot_does_not_consume_the_debounce_window(cx: &mut Te
 
 // --- handle_sse_event_for_profile: ShareAvailable ---
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_share_available_does_not_touch_pending_files(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -300,7 +300,7 @@ fn test_handle_share_available_does_not_touch_pending_files(cx: &mut TestAppCont
 
 // --- handle_sse_event_for_profile: Error ---
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_handle_error_event_does_not_change_shared_state(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -345,7 +345,9 @@ fn test_handle_error_event_does_not_change_shared_state(cx: &mut TestAppContext)
 /// Install a fresh SSE channel on the shared sync state for the empty profile
 /// id used by the Phase 1 single-profile tests. Returns the `Sender` for the
 /// test to emit events through.
-fn install_test_sse_channel(cx: &gpui::App) -> futures::channel::mpsc::UnboundedSender<SseEvent> {
+fn install_test_sse_channel(
+    cx: &gpui_kit::App,
+) -> futures::channel::mpsc::UnboundedSender<SseEvent> {
     let (tx, rx) = futures::channel::mpsc::unbounded();
     let sync_state = Fulgur::shared_state(cx).sync_state_for("");
     let mut sse = sync_state.sse.lock();
@@ -354,7 +356,7 @@ fn install_test_sse_channel(cx: &gpui::App) -> futures::channel::mpsc::Unbounded
     tx
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_sse_consumer_dispatches_heartbeat_from_channel(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -386,7 +388,7 @@ fn test_sse_consumer_dispatches_heartbeat_from_channel(cx: &mut TestAppContext) 
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_sse_consumer_spawn_is_idempotent(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -409,7 +411,7 @@ fn test_sse_consumer_spawn_is_idempotent(cx: &mut TestAppContext) {
 
 // --- Connection status changes reaching the UI ---
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_status_change_is_not_swallowed_by_the_event_debounce(cx: &mut TestAppContext) {
     // The worker writes the status into an Arc<Mutex<_>> gpui cannot observe,
     // so the status-change event is the only thing that repaints the windows.
@@ -460,7 +462,7 @@ const NON_BLOCKING_BUDGET: Duration = Duration::from_millis(250);
 ///
 /// Joining it on the calling thread costs at least that long, which is what the
 /// timing assertions below detect.
-fn install_stubborn_sse_worker(profile_id: &str, cx: &gpui::App) {
+fn install_stubborn_sse_worker(profile_id: &str, cx: &gpui_kit::App) {
     let worker = Worker::spawn("test-stubborn-sse", SSE_WORKER_JOIN_TIMEOUT, |_shutdown| {
         thread::sleep(STUBBORN_WORKER_LIFETIME);
     });
@@ -471,7 +473,7 @@ fn install_stubborn_sse_worker(profile_id: &str, cx: &gpui::App) {
         .worker = Some(worker);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_stop_sse_connection_clears_the_worker_without_blocking(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -508,7 +510,7 @@ fn test_stop_sse_connection_clears_the_worker_without_blocking(cx: &mut TestAppC
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_restart_bail_out_leaves_the_live_connection_untouched(cx: &mut TestAppContext) {
     // `prepare_sse_restart` decides whether to connect from this window's
     // settings snapshot, which is not authoritative about the live connection.
@@ -553,7 +555,7 @@ fn test_restart_bail_out_leaves_the_live_connection_untouched(cx: &mut TestAppCo
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_sse_consumer_with_closed_channel_is_a_no_op(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {

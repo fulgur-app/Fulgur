@@ -2,7 +2,7 @@ use crate::fulgur::Fulgur;
 use crate::fulgur::sync::share;
 use crate::fulgur::ui::tabs::editor_tab;
 use crate::fulgur::ui::tabs::tab::Tab;
-use gpui::{Context, Window};
+use gpui_kit::{Context, Window};
 use std::sync::Arc;
 
 impl Fulgur {

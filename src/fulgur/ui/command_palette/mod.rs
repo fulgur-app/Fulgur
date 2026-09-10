@@ -8,8 +8,8 @@ mod run;
 pub use commands::{PaletteCommand, PaletteGroup};
 pub use layout::{PaletteContext, build_palette_layout};
 
-use gpui::{AppContext, Context, Entity, EventEmitter, Window};
-use gpui_component::{IndexPath, WindowExt, command::CommandState};
+use gpui_kit::component::{IndexPath, WindowExt, command::CommandState};
+use gpui_kit::{AppContext, Context, Entity, EventEmitter, Window};
 
 /// An event emitted by the command palette to the window that owns it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

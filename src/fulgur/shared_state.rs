@@ -11,9 +11,9 @@ use crate::fulgur::{
 use fulgur_common::api::shares::SharedFileResponse;
 use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
-use gpui::{App, AsyncApp, SharedString};
-use gpui_component::WindowExt;
-use gpui_component::notification::{Notification, NotificationDelivery, NotificationType};
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::notification::{Notification, NotificationDelivery, NotificationType};
+use gpui_kit::{App, AsyncApp, SharedString};
 use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -226,7 +226,7 @@ pub struct SharedAppState {
     notification_rx: Mutex<Option<UnboundedReceiver<AppNotification>>>,
 }
 
-impl gpui::Global for SharedAppState {}
+impl gpui_kit::Global for SharedAppState {}
 
 impl SharedAppState {
     /// Create a new shared app state by orchestrating the initialization of shared application state
@@ -558,7 +558,7 @@ fn notification_delivery(notification: &AppNotification, cx: &App) -> Notificati
 mod tests {
     use super::*;
     use crate::fulgur::state::StateDb;
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
 
     /// Install a `SharedAppState` whose `system_notifications` setting has the given value.
     ///
@@ -579,7 +579,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_background_notification_reaches_system_when_enabled(cx: &mut TestAppContext) {
         set_up_shared_state(cx, true);
         let notification = AppNotification::background(NotificationType::Info, "share received");
@@ -587,7 +587,7 @@ mod tests {
         assert_eq!(delivery, NotificationDelivery::InAppAndSystem);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_background_notification_stays_in_app_when_disabled(cx: &mut TestAppContext) {
         set_up_shared_state(cx, false);
         let notification = AppNotification::background(NotificationType::Info, "share received");
@@ -595,7 +595,7 @@ mod tests {
         assert_eq!(delivery, NotificationDelivery::InApp);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_foreground_notification_never_reaches_system(cx: &mut TestAppContext) {
         set_up_shared_state(cx, true);
         let notification =
@@ -608,7 +608,7 @@ mod tests {
         );
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_delivery_without_shared_state_stays_in_app(cx: &mut TestAppContext) {
         let notification = AppNotification::background(NotificationType::Info, "early failure");
         let delivery = cx.update(|cx| notification_delivery(&notification, cx));

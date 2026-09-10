@@ -8,7 +8,7 @@ use crate::fulgur::{
     ui::components_utils::UNTITLED,
     utils::atomic_write::atomic_write_file,
 };
-use gpui::{Context, Window};
+use gpui_kit::{Context, Window};
 use std::path::{Path, PathBuf};
 
 impl Fulgur {
@@ -220,12 +220,12 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::{editor_tab::TabLocation, tab::Tab};
     #[cfg(feature = "gpui-test-support")]
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
     #[cfg(feature = "gpui-test-support")]
     use tempfile::TempDir;
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_finalize_save_as_targets_tab_by_id(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");

@@ -3,8 +3,8 @@ use crate::fulgur::ui::{
     components_utils::{CORNERS_SIZE, LINE_HEIGHT, SEARCH_BAR_HEIGHT, TEXT_SIZE},
     icons::CustomIcon,
 };
-use gpui::{Context, Div, IntoElement, ParentElement, Render, Styled, Window, div};
-use gpui_component::{ActiveTheme, StyledExt, input::Input};
+use gpui_kit::component::{ActiveTheme, StyledExt, input::Input};
+use gpui_kit::{Context, Div, IntoElement, ParentElement, Render, Styled, Window, div};
 
 impl Render for SearchBar {
     /// Render the search bar

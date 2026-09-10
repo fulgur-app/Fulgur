@@ -3,7 +3,7 @@ use super::super::persistence::{
     get_file_modified_time,
 };
 use crate::fulgur::{Fulgur, editor_tab::TabLocation, tab::Tab, ui::components_utils::UNTITLED};
-use gpui::{App, Window};
+use gpui_kit::{App, Window};
 
 impl Fulgur {
     /// Save the current app state to disk (saves all windows in multi-window mode)
@@ -258,13 +258,13 @@ mod tests {
         },
         window_manager::WindowManager,
     };
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     use parking_lot::Mutex;
     use std::{cell::RefCell, fs, rc::Rc, sync::Arc};
     use tempfile::TempDir;
 
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         cx.update(|cx| {
             cx.set_global(SharedAppState::new(
                 Settings::new(),
@@ -282,7 +282,7 @@ mod tests {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                    cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
                 })
             })
             .expect("failed to open test window");
@@ -380,7 +380,7 @@ mod tests {
         assert_eq!(content.as_deref(), Some(expected));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn dirty_file_tab_persists_content_when_setting_is_enabled(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tabs = tab_states_with(
@@ -396,7 +396,7 @@ mod tests {
         );
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn restored_local_recovery_survives_repeated_snapshots(cx: &mut TestAppContext) {
         let temp_dir = TempDir::new().expect("create temp dir");
         let path = temp_dir.path().join("notes.txt");
@@ -427,7 +427,7 @@ mod tests {
         assert_eq!(fs::read_to_string(path).unwrap(), "saved on disk");
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn restored_remote_recovery_survives_repeated_snapshots(cx: &mut TestAppContext) {
         let restored = TabState {
             tab_id: 8,
@@ -459,7 +459,7 @@ mod tests {
         assert_recovery_content(&second.tabs[0], "recovered remote edits");
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn dirty_file_tab_persists_path_only_when_setting_is_disabled(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tabs = tab_states_with(
@@ -476,7 +476,7 @@ mod tests {
         assert!(tabs[0].file_path.is_some());
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn untitled_tab_is_dropped_when_setting_is_disabled(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tabs = tab_states_with(&fulgur, &mut visual_cx, TabLocation::Untitled, false);
@@ -486,7 +486,7 @@ mod tests {
         );
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn untitled_tab_is_persisted_when_setting_is_enabled(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let tabs = tab_states_with(&fulgur, &mut visual_cx, TabLocation::Untitled, true);

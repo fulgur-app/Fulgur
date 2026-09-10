@@ -9,7 +9,7 @@
 //! the `Worker` in the state that owns the work guarantees that killing the
 //! owner kills the worker.
 
-use gpui::App;
+use gpui_kit::App;
 use parking_lot::Mutex;
 use std::sync::{
     Arc,
@@ -260,8 +260,8 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
-    fn dispose_off_thread_signals_without_joining_on_the_caller(cx: &mut gpui::TestAppContext) {
+    #[gpui_kit::test]
+    fn dispose_off_thread_signals_without_joining_on_the_caller(cx: &mut gpui_kit::TestAppContext) {
         let worker = Worker::spawn("stubborn-worker", Duration::from_secs(5), |_shutdown| {
             thread::sleep(Duration::from_millis(700));
         });

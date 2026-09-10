@@ -8,8 +8,7 @@ use crate::fulgur::{
     settings::{MAX_PROFILES, new_profile_id},
 };
 use form_state::{DEVICE_KEY_PLACEHOLDER, KeyRollback, ProfileFormState};
-use gpui::{AppContext, Context, ParentElement, SharedString, Styled, Window, div, px};
-use gpui_component::{
+use gpui_kit::component::{
     Sizable, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
@@ -17,6 +16,7 @@ use gpui_component::{
     notification::NotificationType,
     v_flex,
 };
+use gpui_kit::{AppContext, Context, ParentElement, SharedString, Styled, Window, div, px};
 use handlers::{confirm_delete_profile, handle_cancel, handle_save, handle_test_connection};
 use parking_lot::Mutex;
 use render::render_form_body;

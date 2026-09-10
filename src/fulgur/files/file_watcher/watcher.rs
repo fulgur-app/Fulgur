@@ -295,7 +295,7 @@ mod tests {
     use super::{FILE_WATCH_EVENT_CHANNEL_CAPACITY, FileWatchEvent, FileWatcher};
     use crate::fulgur::files::file_watcher::test_helpers::temp_test_path;
     use futures::channel::mpsc::{TryRecvError, channel};
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
     use notify::{
         Event, EventKind,
         event::{DataChange, ModifyKind, RemoveKind, RenameMode},
@@ -305,7 +305,7 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_notify_event_maps_modify_to_modified(_cx: &mut TestAppContext) {
         let (mut event_tx, mut event_rx) = channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
@@ -319,7 +319,7 @@ mod tests {
         ));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_notify_event_maps_remove_to_deleted(_cx: &mut TestAppContext) {
         let (mut event_tx, mut event_rx) = channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
@@ -332,7 +332,7 @@ mod tests {
         ));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_notify_event_maps_macos_rename_any_to_deleted(_cx: &mut TestAppContext) {
         let (mut event_tx, mut event_rx) = channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
@@ -348,7 +348,7 @@ mod tests {
         );
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_notify_event_maps_rename_both_to_renamed(_cx: &mut TestAppContext) {
         let (mut event_tx, mut event_rx) = channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
@@ -367,7 +367,7 @@ mod tests {
         ));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_notify_event_pairs_linux_split_rename(_cx: &mut TestAppContext) {
         let (mut event_tx, mut event_rx) = channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let pending_rename_from = Mutex::new(None);
@@ -389,7 +389,7 @@ mod tests {
         ));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_handle_notify_event_expires_stale_pending_rename(_cx: &mut TestAppContext) {
         let (mut event_tx, mut event_rx) = channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
         let stale_from = temp_test_path("fulgur_notify_stale_from.txt");
@@ -414,7 +414,7 @@ mod tests {
         );
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_flush_expired_pending_rename_emits_deleted(_cx: &mut TestAppContext) {
         let (mut watcher, mut event_rx) = FileWatcher::new();
         let stale_from = temp_test_path("fulgur_flush_stale_from.txt");

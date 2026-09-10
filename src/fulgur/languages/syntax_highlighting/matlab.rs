@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add MATLAB language support.
 pub fn add_matlab_support() {
@@ -170,7 +170,7 @@ mod tests {
     fn test_add_matlab_support_registers_language() {
         super::add_matlab_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("matlab")
                 .is_some()
         );
@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn test_matlab_highlights_query_compiles() {
         super::add_matlab_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("matlab");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("matlab");
         assert_eq!(highlighter.language().as_ref(), "matlab");
     }
 }

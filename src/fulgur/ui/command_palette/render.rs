@@ -2,15 +2,15 @@
 
 use super::{CommandPalette, PaletteCommand, PaletteGroup};
 use crate::fulgur::ui::menus::KEY_CONTEXT_FULGUR;
-use gpui::{
-    Action, App, Context, Focusable, IntoElement, ParentElement, Styled, Window,
-    prelude::FluentBuilder as _, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Icon, WindowExt,
     command::{Command, CommandGroup, CommandItem},
     h_flex,
     kbd::Kbd,
+};
+use gpui_kit::{
+    Action, App, Context, Focusable, IntoElement, ParentElement, Styled, Window,
+    prelude::FluentBuilder as _, px,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -66,7 +66,7 @@ impl CommandPalette {
 ///
 /// ### Returns
 /// - `Command`: The configured palette element
-fn build_command(palette: &gpui::Entity<CommandPalette>, cx: &mut App) -> Command {
+fn build_command(palette: &gpui_kit::Entity<CommandPalette>, cx: &mut App) -> Command {
     let (state, layout) = {
         let this = palette.read(cx);
         (this.state.clone(), this.layout.clone())
@@ -162,7 +162,7 @@ fn render_row(
 /// ### Returns
 /// - `impl IntoElement`: The footer element
 fn render_footer(
-    _state: &gpui_component::command::CommandState,
+    _state: &gpui_kit::component::command::CommandState,
     _window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement + use<> {

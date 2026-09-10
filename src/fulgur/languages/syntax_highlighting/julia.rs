@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add Julia language support.
 pub fn add_julia_support() {
@@ -390,7 +390,7 @@ mod tests {
     fn test_add_julia_support_registers_language() {
         super::add_julia_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("julia")
                 .is_some()
         );
@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn test_julia_highlights_query_compiles() {
         super::add_julia_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("julia");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("julia");
         assert_eq!(highlighter.language().as_ref(), "julia");
     }
 }

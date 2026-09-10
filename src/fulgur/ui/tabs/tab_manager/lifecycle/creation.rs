@@ -9,8 +9,8 @@ use crate::fulgur::{
         },
     },
 };
-use gpui::{App, Context, SharedString, Window};
-use gpui_component::select::{SearchableVec, SelectEvent};
+use gpui_kit::component::select::{SearchableVec, SelectEvent};
+use gpui_kit::{App, Context, SharedString, Window};
 
 impl Fulgur {
     /// Create a new tab

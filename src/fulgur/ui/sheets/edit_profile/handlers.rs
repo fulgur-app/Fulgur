@@ -5,11 +5,11 @@ use super::form_state::{
 use super::validation::{should_warn_for_http_url, validate_form, validate_url};
 use crate::fulgur::Fulgur;
 use crate::fulgur::sync::synchronization::perform_ping_with_progress;
-use gpui::{App, Entity, ParentElement, SharedString, Styled, Window, div, px};
-use gpui_component::{
+use gpui_kit::component::{
     WindowExt, button::ButtonVariant, dialog::DialogButtonProps, notification::NotificationType,
     v_flex,
 };
+use gpui_kit::{App, Entity, ParentElement, SharedString, Styled, Window, div, px};
 use std::sync::Arc;
 
 /// Handle the Test connection button.

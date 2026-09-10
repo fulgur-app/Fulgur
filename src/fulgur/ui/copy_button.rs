@@ -2,13 +2,13 @@ use crate::fulgur::ui::{
     components_utils::{CORNERS_SIZE, SEARCH_BAR_HEIGHT},
     icons::CustomIcon,
 };
-use gpui::{
-    App, ClipboardItem, ElementId, IntoElement, RenderOnce, SharedString, Styled, Window,
-    prelude::FluentBuilder,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Sizable, StyledExt,
     button::{Button, ButtonVariants},
+};
+use gpui_kit::{
+    App, ClipboardItem, ElementId, IntoElement, RenderOnce, SharedString, Styled, Window,
+    prelude::FluentBuilder,
 };
 use std::time::Duration;
 

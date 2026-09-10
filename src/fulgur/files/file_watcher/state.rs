@@ -1,5 +1,5 @@
 use super::watcher::FileWatcher;
-use gpui::Task;
+use gpui_kit::Task;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Instant;

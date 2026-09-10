@@ -3,9 +3,9 @@ use crate::fulgur::WindowInit;
 use crate::fulgur::ui::dialogs::large_file_close::CloseContinuation;
 use crate::fulgur::ui::tabs::editor_tab::TabTransferData;
 use crate::fulgur::{Fulgur, PendingSaveCloseAction};
-use gpui::{AppContext, BorrowAppContext, Context, Window, WindowOptions};
-use gpui_component::WindowExt;
-use gpui_component::notification::NotificationType;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::notification::NotificationType;
+use gpui_kit::{AppContext, BorrowAppContext, Context, Window, WindowOptions};
 
 impl Fulgur {
     /// Handle window close request
@@ -55,7 +55,7 @@ impl Fulgur {
                         window.push_notification(
                             (
                                 NotificationType::Error,
-                                gpui::SharedString::from(format!(
+                                gpui_kit::SharedString::from(format!(
                                     "Failed to save application state: {e}. Close again to force-close."
                                 )),
                             ),
@@ -84,7 +84,7 @@ impl Fulgur {
                     window.push_notification(
                         (
                             NotificationType::Error,
-                            gpui::SharedString::from(format!(
+                            gpui_kit::SharedString::from(format!(
                                 "Failed to save application state: {e}. Close again to force-close."
                             )),
                         ),
@@ -117,7 +117,7 @@ impl Fulgur {
             window.push_notification(
                 (
                     NotificationType::Error,
-                    gpui::SharedString::from(format!("Failed to save application state: {e}.")),
+                    gpui_kit::SharedString::from(format!("Failed to save application state: {e}.")),
                 ),
                 cx,
             );
@@ -144,8 +144,8 @@ impl Fulgur {
             .spawn(async move |cx| {
                 let window_options = WindowOptions {
                     #[cfg(target_os = "linux")]
-                    window_decorations: Some(gpui::WindowDecorations::Client),
-                    ..gpui_component::TitleBar::window_options()
+                    window_decorations: Some(gpui_kit::WindowDecorations::Client),
+                    ..gpui_kit::component::TitleBar::window_options()
                 };
                 let window = cx.open_window(window_options, |window, cx| {
                     window.set_window_title("Fulgur");
@@ -167,7 +167,7 @@ impl Fulgur {
                         })
                     });
                     view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
-                    cx.new(|cx| gpui_component::Root::new(view, window, cx))
+                    cx.new(|cx| gpui_kit::component::Root::new(view, window, cx))
                 })?;
                 window.update(cx, |_, window, _| {
                     window.activate_window();
@@ -192,8 +192,8 @@ impl Fulgur {
             .spawn(async move |cx| {
                 let window_options = WindowOptions {
                     #[cfg(target_os = "linux")]
-                    window_decorations: Some(gpui::WindowDecorations::Client),
-                    ..gpui_component::TitleBar::window_options()
+                    window_decorations: Some(gpui_kit::WindowDecorations::Client),
+                    ..gpui_kit::component::TitleBar::window_options()
                 };
                 let window = cx.open_window(window_options, move |window, cx| {
                     window.set_window_title("Fulgur");
@@ -218,7 +218,7 @@ impl Fulgur {
                         cx.notify();
                     });
                     view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
-                    cx.new(|cx| gpui_component::Root::new(view, window, cx))
+                    cx.new(|cx| gpui_kit::component::Root::new(view, window, cx))
                 })?;
                 window.update(cx, |_, window, _| {
                     window.activate_window();

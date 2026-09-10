@@ -6,7 +6,7 @@ use crate::fulgur::ui::tabs::editor_tab::TabLocation;
 use crate::fulgur::{
     settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
 };
-use gpui::{
+use gpui_kit::{
     AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext, Window,
     WindowOptions, div,
 };
@@ -31,7 +31,7 @@ impl Render for EmptyView {
 /// - `VisualTestContext` - The visual test context.
 fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
     cx.update(|cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -59,7 +59,7 @@ fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) 
 
 // ========== get_tab_display_title tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_get_tab_display_title_returns_filename_for_unique_path(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -89,7 +89,7 @@ fn test_get_tab_display_title_returns_filename_for_unique_path(cx: &mut TestAppC
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -134,7 +134,7 @@ fn test_get_tab_display_title_shows_parent_folder_for_duplicate_filenames(cx: &m
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_get_tab_display_title_returns_tab_title_for_untitled_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -154,7 +154,7 @@ fn test_get_tab_display_title_returns_tab_title_for_untitled_tab(cx: &mut TestAp
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_remote_tab_indicator_label_returns_ssh_for_remote_editor_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -184,7 +184,7 @@ fn test_remote_tab_indicator_label_returns_ssh_for_remote_editor_tab(cx: &mut Te
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_remote_tab_indicator_label_is_none_for_local_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|_window, cx| {
@@ -210,7 +210,7 @@ fn test_remote_tab_indicator_label_is_none_for_local_tab(cx: &mut TestAppContext
 
 // ========== event routing tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_tab_bar_events_are_routed_to_the_window(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -227,7 +227,7 @@ fn test_tab_bar_events_are_routed_to_the_window(cx: &mut TestAppContext) {
     assert_eq!(after, initial_tab_count + 1);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_tab_bar_activate_event_switches_active_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -254,7 +254,7 @@ fn test_tab_bar_activate_event_switches_active_tab(cx: &mut TestAppContext) {
 
 // ========== on_next_tab tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_on_next_tab_advances_active_index_by_one(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -270,7 +270,7 @@ fn test_on_next_tab_advances_active_index_by_one(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_on_next_tab_wraps_around_from_last_to_first(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -286,7 +286,7 @@ fn test_on_next_tab_wraps_around_from_last_to_first(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_on_next_tab_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -301,7 +301,7 @@ fn test_on_next_tab_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
 
 // ========== on_previous_tab tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_on_previous_tab_moves_to_previous_index(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -316,7 +316,7 @@ fn test_on_previous_tab_moves_to_previous_index(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_on_previous_tab_wraps_around_from_first_to_last(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {
@@ -331,7 +331,7 @@ fn test_on_previous_tab_wraps_around_from_first_to_last(cx: &mut TestAppContext)
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_on_previous_tab_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     visual_cx.update(|window, cx| {

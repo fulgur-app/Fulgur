@@ -4,8 +4,8 @@ use crate::fulgur::languages::supported_languages::{
 };
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::UNTITLED;
-use gpui::{App, Window};
-use gpui_component::input::{DocumentColorProvider, Position};
+use gpui_kit::component::input::{DocumentColorProvider, Position};
+use gpui_kit::{App, Window};
 use std::rc::Rc;
 use std::time::SystemTime;
 

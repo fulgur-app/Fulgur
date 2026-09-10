@@ -31,8 +31,8 @@ impl Fulgur {
     /// - `spec`: The parsed remote file specification
     pub fn do_open_remote_file(
         &mut self,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
         spec: RemoteSpec,
     ) {
         if let Some(tab_index) = self.find_tab_by_remote_spec(&spec, cx) {
@@ -54,8 +54,8 @@ impl Fulgur {
     /// - `target_tab_id`: Existing tab to refresh, or `None` to open in a new tab
     fn open_remote_file_with_target(
         &mut self,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
         mut spec: RemoteSpec,
         target_tab_id: Option<TabId>,
     ) {
@@ -152,8 +152,8 @@ impl Fulgur {
     /// - `spec`: Remote location spec for the tab
     pub fn ensure_remote_tab_loaded(
         &mut self,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
         tab_id: TabId,
         spec: RemoteSpec,
     ) {
@@ -253,8 +253,8 @@ impl Fulgur {
     /// - `params`: All data required to run the remote open operation
     fn spawn_ssh_open_task(
         &mut self,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
         params: RemoteOpenTaskParams,
     ) {
         let RemoteOpenTaskParams {

@@ -3,8 +3,8 @@ use super::{
     CopyPath, DuplicateTab, RenameTab, SetTabColor, ShowInFileManager,
 };
 use crate::fulgur::Fulgur;
-use gpui::{ClipboardItem, Context, Window};
-use gpui_component::{ActiveTheme, ThemeRegistry};
+use gpui_kit::component::{ActiveTheme, ThemeRegistry};
+use gpui_kit::{ClipboardItem, Context, Window};
 
 impl Fulgur {
     /// Handle close tab action from context menu
@@ -246,7 +246,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `theme_name`: The name of the theme to switch to (as `SharedString` from action)
     /// - `cx`: The application context
-    pub fn switch_to_theme(&mut self, theme_name: gpui::SharedString, cx: &mut Context<Self>) {
+    pub fn switch_to_theme(&mut self, theme_name: gpui_kit::SharedString, cx: &mut Context<Self>) {
         if let Some(theme_config) = ThemeRegistry::global(cx)
             .themes()
             .get(theme_name.as_ref())

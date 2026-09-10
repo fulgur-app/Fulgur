@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use gpui::{
-    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme,
     input::{Input, InputEvent, InputState},
     v_flex,
+};
+use gpui_kit::{
+    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
 };
 
 use super::file_browser::{BrowserEntry, build_browser_entry, render_browser_list};
@@ -27,7 +27,7 @@ impl From<&PathEntry> for BrowserEntry {
     fn from(e: &PathEntry) -> Self {
         let full_path = e.full_path.to_string_lossy().into_owned();
         build_browser_entry(
-            gpui::SharedString::from(full_path.clone()),
+            gpui_kit::SharedString::from(full_path.clone()),
             e.is_dir,
             &e.name,
             &full_path,
@@ -299,9 +299,9 @@ mod tests {
     use tempfile::tempdir;
 
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::component::input::{InputEvent, InputState};
     #[cfg(feature = "gpui-test-support")]
-    use gpui_component::input::{InputEvent, InputState};
+    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
 
     #[test]
     fn test_empty_input() {
@@ -396,9 +396,9 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_gpui_input_change_updates_entries_list(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
 
         let temp_dir = tempdir().expect("failed to create temp dir");
         std::fs::create_dir(temp_dir.path().join("alpha_dir"))
@@ -471,9 +471,9 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_gpui_input_change_to_invalid_path_clears_entries(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
 
         let temp_dir = tempdir().expect("failed to create temp dir");
         std::fs::write(temp_dir.path().join("alpha.txt"), "alpha")

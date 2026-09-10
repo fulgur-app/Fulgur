@@ -1,15 +1,15 @@
-use gpui::prelude::FluentBuilder;
-use gpui::{
-    App, Context, Div, Entity, InteractiveElement, ParentElement, PathPromptOptions, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, Window, div, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Sizable, ThemeMode, ThemeRegistry, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
     notification::NotificationType,
     scroll::ScrollableElement,
     v_flex,
+};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::{
+    App, Context, Div, Entity, InteractiveElement, ParentElement, PathPromptOptions, SharedString,
+    Stateful, StatefulInteractiveElement, Styled, Window, div, px,
 };
 use parking_lot::Mutex;
 use std::{fs, sync::Arc};
@@ -328,9 +328,9 @@ mod tests {
     };
     use core::prelude::v1::test;
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::component::ThemeRegistry;
     #[cfg(feature = "gpui-test-support")]
-    use gpui_component::ThemeRegistry;
+    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
     #[cfg(feature = "gpui-test-support")]
@@ -344,7 +344,7 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         cx.update(|cx| {
             cx.set_global(SharedAppState::new(
                 Settings::new(),
@@ -363,7 +363,7 @@ mod tests {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                    cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
                 })
             })
             .expect("failed to open test window");
@@ -376,7 +376,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_switch_active_theme_from_sheet_updates_current_theme(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let current_theme = fulgur.read_with(&visual_cx, |this, _| {
@@ -417,7 +417,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_switch_active_theme_from_sheet_is_noop_for_unknown_theme(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let initial_theme = fulgur.read_with(&visual_cx, |this, _| {

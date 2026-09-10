@@ -45,8 +45,8 @@ impl SerializedWindowBounds {
     /// ### Returns
     /// - `SerializedWindowBounds`: The serialized window bounds
     #[must_use]
-    pub fn from_gpui_bounds(bounds: gpui::WindowBounds, display_id: Option<u32>) -> Self {
-        use gpui::WindowBounds;
+    pub fn from_gpui_bounds(bounds: gpui_kit::WindowBounds, display_id: Option<u32>) -> Self {
+        use gpui_kit::WindowBounds;
         match bounds {
             WindowBounds::Windowed(rect) => Self {
                 state: "Windowed".to_string(),
@@ -78,10 +78,10 @@ impl SerializedWindowBounds {
     /// Convert `SerializedWindowBounds` to GPUI `WindowBounds`
     ///
     /// ### Returns
-    /// - `gpui::WindowBounds`: The GPUI window bounds
+    /// - `gpui_kit::WindowBounds`: The GPUI window bounds
     #[must_use]
-    pub fn to_gpui_bounds(&self) -> gpui::WindowBounds {
-        use gpui::{Bounds, WindowBounds, point, px, size};
+    pub fn to_gpui_bounds(&self) -> gpui_kit::WindowBounds {
+        use gpui_kit::{Bounds, WindowBounds, point, px, size};
         let bounds = Bounds {
             origin: point(px(self.x), px(self.y)),
             size: size(px(self.width), px(self.height)),
@@ -107,13 +107,13 @@ mod tests {
     /// - `expected_width`: Expected width in pixels.
     /// - `expected_height`: Expected height in pixels.
     fn assert_gpui_bounds_geometry(
-        bounds: &gpui::WindowBounds,
+        bounds: &gpui_kit::WindowBounds,
         expected_x: f32,
         expected_y: f32,
         expected_width: f32,
         expected_height: f32,
     ) {
-        use gpui::WindowBounds;
+        use gpui_kit::WindowBounds;
         let rect = match bounds {
             WindowBounds::Windowed(rect)
             | WindowBounds::Maximized(rect)
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn test_serialized_window_bounds_from_gpui_windowed_preserves_geometry_and_display() {
-        use gpui::{Bounds, WindowBounds, point, px, size};
+        use gpui_kit::{Bounds, WindowBounds, point, px, size};
         let gpui_bounds = WindowBounds::Windowed(Bounds {
             origin: point(px(120.0), px(80.0)),
             size: size(px(1440.0), px(900.0)),
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_serialized_window_bounds_from_gpui_maximized_preserves_geometry_and_display() {
-        use gpui::{Bounds, WindowBounds, point, px, size};
+        use gpui_kit::{Bounds, WindowBounds, point, px, size};
         let gpui_bounds = WindowBounds::Maximized(Bounds {
             origin: point(px(0.0), px(0.0)),
             size: size(px(1920.0), px(1080.0)),
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_serialized_window_bounds_from_gpui_fullscreen_preserves_geometry_and_display() {
-        use gpui::{Bounds, WindowBounds, point, px, size};
+        use gpui_kit::{Bounds, WindowBounds, point, px, size};
         let gpui_bounds = WindowBounds::Fullscreen(Bounds {
             origin: point(px(10.0), px(20.0)),
             size: size(px(2560.0), px(1440.0)),
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn test_serialized_window_bounds_to_gpui_bounds_preserves_geometry_for_each_state() {
-        use gpui::WindowBounds;
+        use gpui_kit::WindowBounds;
         let cases = [
             (
                 SerializedWindowBounds {
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_serialized_window_bounds_to_gpui_bounds_unknown_state_defaults_to_windowed() {
-        use gpui::WindowBounds;
+        use gpui_kit::WindowBounds;
         let serialized = SerializedWindowBounds {
             state: "UnknownState".to_string(),
             x: 40.0,

@@ -1,4 +1,4 @@
-use gpui::{Hsla, hsla};
+use gpui_kit::{Hsla, hsla};
 
 /// Convert an HSLA color to `OkLCH` (Lightness, Chroma, Hue) components.
 ///
@@ -88,7 +88,7 @@ fn oklch_to_hsla(l: f32, c: f32, h: f32) -> Hsla {
             1.055 * c.powf(1.0 / 2.4) - 0.055
         }
     };
-    gpui::Rgba {
+    gpui_kit::Rgba {
         r: from_linear(lin_r),
         g: from_linear(lin_g),
         b: from_linear(lin_b),
@@ -135,7 +135,7 @@ pub(super) fn format_hsla(color: Hsla) -> String {
 /// - `Option<Hsla>`: The parsed color
 /// - `None`: If the string is not a valid HSLA string
 pub(super) fn parse_hex(s: &str) -> Option<Hsla> {
-    gpui_component::Colorize::parse_hex(s).ok()
+    gpui_kit::component::Colorize::parse_hex(s).ok()
 }
 
 /// Parse an `OkLCH` CSS string into an HSLA color.
@@ -181,7 +181,7 @@ mod tests {
     use super::{
         format_hsla, format_oklch, hsla_to_oklch, oklch_to_hsla, parse_hex, parse_hsla, parse_oklch,
     };
-    use gpui::hsla;
+    use gpui_kit::hsla;
 
     #[test]
     fn test_format_oklch_produces_valid_string() {
@@ -202,14 +202,14 @@ mod tests {
 
     #[test]
     fn test_hsla_to_oklch_white() {
-        let (l, c, _h) = hsla_to_oklch(gpui::white());
+        let (l, c, _h) = hsla_to_oklch(gpui_kit::white());
         assert!((l - 1.0).abs() < 0.01, "white should have lightness ~1.0");
         assert!(c < 0.01, "white should have near-zero chroma");
     }
 
     #[test]
     fn test_hsla_to_oklch_black() {
-        let (l, c, _h) = hsla_to_oklch(gpui::black());
+        let (l, c, _h) = hsla_to_oklch(gpui_kit::black());
         assert!(l.abs() < 0.01, "black should have lightness ~0.0");
         assert!(c < 0.01, "black should have near-zero chroma");
     }

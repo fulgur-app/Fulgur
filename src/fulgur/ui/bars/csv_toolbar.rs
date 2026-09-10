@@ -1,11 +1,11 @@
 //! The bottom toolbar shown for CSV tabs in table view, rendered as its own entity.
 
-use gpui::{
+use gpui_kit::component::{
+    ActiveTheme, WindowExt, h_flex, notification::NotificationType, table::TableState,
+};
+use gpui_kit::{
     App, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, WeakEntity,
     Window, div,
-};
-use gpui_component::{
-    ActiveTheme, WindowExt, h_flex, notification::NotificationType, table::TableState,
 };
 
 use crate::fulgur::Fulgur;
@@ -83,7 +83,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `bool`: True if the active tab is a CSV tab in table view
-    pub(crate) fn csv_toolbar_visible(&self, cx: &gpui::App) -> bool {
+    pub(crate) fn csv_toolbar_visible(&self, cx: &gpui_kit::App) -> bool {
         self.get_active_editor_tab(cx).is_some_and(|editor| {
             editor.language == SupportedLanguage::Csv && editor.csv_view_mode == CsvViewMode::Table
         })
@@ -238,9 +238,9 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use core::prelude::v1::test;
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::component::Root;
     #[cfg(feature = "gpui-test-support")]
-    use gpui_component::Root;
+    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
     #[cfg(feature = "gpui-test-support")]
@@ -249,7 +249,7 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
         cx.update(|cx| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -302,7 +302,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_csv_toolbar_visible_only_in_table_view(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -330,7 +330,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_edit_active_table_inserts_row_through_toolbar(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
 
@@ -356,7 +356,7 @@ mod tests {
     fn active_csv_table(
         fulgur: &Entity<Fulgur>,
         visual_cx: &mut VisualTestContext,
-    ) -> Entity<gpui_component::table::TableState<CsvTableDelegate>> {
+    ) -> Entity<gpui_kit::component::table::TableState<CsvTableDelegate>> {
         visual_cx.update(|_window, cx| {
             fulgur
                 .read(cx)
@@ -384,7 +384,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_edit_active_table_inserts_column_at_selected_cell(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
         let table = active_csv_table(&fulgur, &mut visual_cx);
@@ -406,7 +406,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_column_ops_follow_column_header_selection(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
         let table = active_csv_table(&fulgur, &mut visual_cx);
@@ -436,7 +436,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_table_survives_its_own_commits(cx: &mut TestAppContext) {
         let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
         let table_before = active_csv_table(&fulgur, &mut visual_cx);

@@ -5,13 +5,13 @@ use crate::fulgur::{
     Fulgur, settings::ServerProfile, sync::synchronization::SynchronizationStatus,
     ui::icons::CustomIcon,
 };
-use gpui::{
-    App, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Role, SharedString,
-    StatefulInteractiveElement, Styled, Window, div,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Icon, Sizable, WindowExt, button::Button, h_flex, label::Label,
     notification::NotificationType, setting::SettingItem, switch::Switch, tooltip::Tooltip, v_flex,
+};
+use gpui_kit::{
+    App, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement, Role, SharedString,
+    StatefulInteractiveElement, Styled, Window, div,
 };
 
 /// Render the list of configured profiles as a table-like element.
@@ -90,12 +90,12 @@ fn table_header(cx: &App) -> impl IntoElement {
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(cx.theme().muted_foreground)
         .child(div().flex_1().child("Name"))
-        .child(div().w(gpui::px(90.0)).child("Version"))
+        .child(div().w(gpui_kit::px(90.0)).child("Version"))
         .child(div().flex_1().child("URL"))
-        .child(div().w(gpui::px(20.0)).child(""))
-        .child(div().w(gpui::px(125.0)).child("Status").pr_4())
-        .child(div().w(gpui::px(60.0)).child("Activate"))
-        .child(div().w(gpui::px(80.0)).child(""))
+        .child(div().w(gpui_kit::px(20.0)).child(""))
+        .child(div().w(gpui_kit::px(125.0)).child("Status").pr_4())
+        .child(div().w(gpui_kit::px(60.0)).child("Activate"))
+        .child(div().w(gpui_kit::px(80.0)).child(""))
 }
 
 /// Render a single profile row in the profiles table.
@@ -129,7 +129,7 @@ fn render_profile_row(
             .cursor_pointer()
             .child(
                 Icon::new(CustomIcon::TriangleAlert)
-                    .with_size(gpui::px(18.0))
+                    .with_size(gpui_kit::px(18.0))
                     .text_color(cx.theme().warning),
             )
             .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
@@ -162,7 +162,7 @@ fn render_profile_row(
         )
         .child(
             div()
-                .w(gpui::px(90.0))
+                .w(gpui_kit::px(90.0))
                 .text_sm()
                 .text_color(cx.theme().muted_foreground)
                 .child(version_label),
@@ -176,17 +176,16 @@ fn render_profile_row(
         )
         .child(
             div()
-                .w(gpui::px(20.0))
+                .w(gpui_kit::px(20.0))
                 .flex()
                 .items_center()
                 .justify_center()
                 .children(update_warning),
         )
-        .child(div().w(gpui::px(125.0)).child(pill).pr_4())
+        .child(div().w(gpui_kit::px(125.0)).child(pill).pr_4())
         .child(
-            div()
-                .w(gpui::px(60.0))
-                .child(Switch::new(activate_id).checked(is_active).on_click(
+            div().w(gpui_kit::px(60.0)).child(
+                Switch::new(activate_id).checked(is_active).on_click(
                     move |val: &bool, window, cx| {
                         let id = profile_id_for_activate.clone();
                         handle_profile_active_toggle(
@@ -198,10 +197,11 @@ fn render_profile_row(
                             cx,
                         );
                     },
-                )),
+                ),
+            ),
         )
         .child(
-            div().w(gpui::px(80.0)).child(
+            div().w(gpui_kit::px(80.0)).child(
                 Button::new(edit_id)
                     .child("Edit")
                     .small()
@@ -286,8 +286,8 @@ fn render_status_pill(profile: &ServerProfile, master_on: bool, cx: &App) -> imp
 /// - `status`: The profile's status enum value.
 ///
 /// ### Returns
-/// - `(gpui::Hsla, gpui::Hsla)`: Background and foreground colors.
-fn pill_colors(status: SynchronizationStatus, cx: &App) -> (gpui::Hsla, gpui::Hsla) {
+/// - `(gpui_kit::Hsla, gpui_kit::Hsla)`: Background and foreground colors.
+fn pill_colors(status: SynchronizationStatus, cx: &App) -> (gpui_kit::Hsla, gpui_kit::Hsla) {
     let theme = cx.theme();
     match status {
         SynchronizationStatus::Connected => (theme.success, theme.success),

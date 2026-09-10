@@ -16,8 +16,8 @@ pub use lifecycle::WindowInit;
 use crate::fulgur::files::{
     file_operations::PendingRemoteOpenOutcome, file_watcher::FileWatchState,
 };
-use gpui::{Entity, FocusHandle, Pixels, Point, Subscription, WindowId};
-use gpui_component::{input::InputState, menu::PopupMenu};
+use gpui_kit::component::{input::InputState, menu::PopupMenu};
+use gpui_kit::{Entity, FocusHandle, Pixels, Point, Subscription, WindowId};
 use settings::Settings;
 use std::{
     collections::HashMap, collections::HashSet, path::PathBuf, sync::Arc, sync::atomic::AtomicBool,
@@ -77,7 +77,7 @@ pub struct Fulgur {
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor and markdown preview
     editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
     markdown_preview_focus: FocusHandle, // Stable dispatch target for the markdown preview context menu (Copy / Select All)
-    markdown_panel_view_state: Option<Entity<gpui_component::text::TextViewState>>, // Owned text view state backing the inline markdown preview panel, created lazily on render
+    markdown_panel_view_state: Option<Entity<gpui_kit::component::text::TextViewState>>, // Owned text view state backing the inline markdown preview panel, created lazily on render
     markdown_preview_pending_copy: Option<String>, // Preview selection captured at right-click time, before the menu's own click clears it, consumed by the Copy action
     status_bar: Entity<StatusBar>, // The status bar view at the bottom of the window
     _status_bar_subscription: Subscription, // Routes StatusBarEvent from the status bar to window-level handlers
@@ -87,7 +87,7 @@ pub struct Fulgur {
     _command_palette_subscription: Subscription, // Routes CommandPaletteEvent from the palette to window-level handlers
     pub pending_tab_transfer: Option<editor_tab::TabTransferData>, // Incoming tab state from another window, processed on next render
     pending_tab_removal: Option<TabId>, // Tab ID to remove after it has been sent to another window
-    pending_transfer_scroll: Option<gpui_component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
+    pending_transfer_scroll: Option<gpui_kit::component::input::Position>, // Deferred scroll-to-cursor after tab transfer (needs one render cycle for layout)
     pending_remote_open: Arc<parking_lot::Mutex<Vec<PendingRemoteOpenOutcome>>>, // Queue for SSH background threads to deliver loaded remote files
     next_remote_request_id: u64, // Monotonic identifier for remote open/save operations targeting existing tabs
     latest_remote_open_request_by_tab: HashMap<TabId, u64>, // Latest remote-open request id expected per tab id

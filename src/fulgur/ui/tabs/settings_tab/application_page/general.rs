@@ -2,12 +2,12 @@ use crate::fulgur::{
     Fulgur,
     settings::{TabColorStyle, TitleBarStyle},
 };
-use gpui::{Anchor, App, Entity, IntoElement};
-use gpui_component::{
+use gpui_kit::component::{
     Sizable,
     button::Button,
     menu::{DropdownMenu, PopupMenuItem},
 };
+use gpui_kit::{Anchor, App, Entity, IntoElement};
 
 /// Render the tab color style chooser as a compact dropdown.
 ///

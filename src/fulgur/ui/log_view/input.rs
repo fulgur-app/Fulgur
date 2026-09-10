@@ -1,7 +1,7 @@
 //! Read-only display-buffer helpers for the log view.
 
-use gpui::{Context, Entity, Window};
-use gpui_component::input::{EditorState, Position, RopeExt};
+use gpui_kit::component::input::{EditorState, Position, RopeExt};
+use gpui_kit::{Context, Entity, Window};
 
 use super::LOG_LINE_CAP;
 use crate::fulgur::Fulgur;

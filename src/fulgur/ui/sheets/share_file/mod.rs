@@ -9,10 +9,10 @@ use crate::fulgur::{
     settings::{ProfileId, ServerProfile},
 };
 use actions::spawn_profile_device_fetch;
-use gpui::{Context, ParentElement, SharedString, Styled, Window, px};
-use gpui_component::{
+use gpui_kit::component::{
     WindowExt, notification::NotificationType, scroll::ScrollableElement, v_flex,
 };
+use gpui_kit::{Context, ParentElement, SharedString, Styled, Window, px};
 use std::{sync::Arc, time::Duration};
 use view::{make_device_list, render_footer};
 
@@ -174,14 +174,14 @@ mod tests {
         sync::share::Device,
         window_manager::WindowManager,
     };
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     use parking_lot::Mutex;
     use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
     /// Initialize globals and open a test window with a Root-mounted `Fulgur`.
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
         cx.update(|cx| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -195,7 +195,7 @@ mod tests {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                    cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
                 })
             })
             .expect("failed to open test window");
@@ -263,7 +263,7 @@ mod tests {
         assert!(!state.all_settled());
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_process_pending_share_sheet_drains_sse_restart_queue(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {
@@ -287,7 +287,7 @@ mod tests {
         });
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_process_pending_share_sheet_no_state_is_a_noop(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         visual_cx.update(|window, cx| {

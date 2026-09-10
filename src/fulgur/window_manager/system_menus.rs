@@ -1,6 +1,6 @@
 //! App-scope rebuilding of the OS-level menus (macOS dock menu, Windows jump list).
 
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use std::path::PathBuf;
 
 /// Menu-relevant snapshot of one tab, published per window to the `WindowManager`
@@ -16,7 +16,7 @@ pub struct WindowMenuTab {
 ///
 /// ### Arguments
 /// - `cx`: The application context
-pub fn init(cx: &mut gpui::App) {
+pub fn init(cx: &mut gpui_kit::App) {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
         use crate::fulgur::shared_state::SharedAppState;
@@ -58,7 +58,7 @@ struct SystemMenuInputs {
 /// - `last_inputs`: Inputs of the previous build, used to skip no-op rebuilds
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn rebuild_if_inputs_changed(
-    cx: &mut gpui::App,
+    cx: &mut gpui_kit::App,
     last_inputs: &std::cell::RefCell<Option<SystemMenuInputs>>,
 ) {
     use crate::fulgur::shared_state::SharedAppState;
@@ -149,7 +149,7 @@ mod tests {
     fn file_tab(path: &str) -> WindowMenuTab {
         WindowMenuTab {
             path: Some(PathBuf::from(path)),
-            title: gpui::SharedString::from(
+            title: gpui_kit::SharedString::from(
                 PathBuf::from(path)
                     .file_name()
                     .and_then(|n| n.to_str())
@@ -203,7 +203,7 @@ mod tests {
     fn test_to_dock_menu_tabs_maps_titled_tabs_to_title_lookup() {
         let windows = vec![vec![WindowMenuTab {
             path: None,
-            title: gpui::SharedString::from("Settings"),
+            title: gpui_kit::SharedString::from("Settings"),
         }]];
         let converted = to_dock_menu_tabs(&windows);
         match &converted[0][0] {

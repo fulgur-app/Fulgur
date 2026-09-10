@@ -1,6 +1,6 @@
 use arborium_tsx;
-use gpui::SharedString;
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::SharedString;
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add React language support.
 pub fn add_react_support() {
@@ -27,7 +27,7 @@ mod tests {
     fn test_add_react_support_registers_language() {
         super::add_react_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("react")
                 .is_some()
         );
@@ -36,7 +36,7 @@ mod tests {
     #[test]
     fn test_react_highlights_query_compiles() {
         super::add_react_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("react");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("react");
         assert_eq!(highlighter.language().as_ref(), "react");
     }
 }

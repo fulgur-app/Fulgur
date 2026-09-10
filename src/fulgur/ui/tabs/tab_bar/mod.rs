@@ -7,8 +7,8 @@ mod tests;
 
 pub(crate) use state::{TabBar, TabBarEvent};
 
-use gpui::{Action, Hsla, Styled};
-use gpui_component::button::Button;
+use gpui_kit::component::button::Button;
+use gpui_kit::{Action, Hsla, Styled};
 
 use crate::fulgur::ui::{
     components_utils::{TAB_BAR_BUTTON_SIZE, button_factory},
@@ -52,7 +52,7 @@ pub struct SetTabColor(pub TabId, pub Option<ColorTag>);
 #[action(namespace = fulgur, no_json)]
 pub struct RenameTab(pub TabId);
 
-gpui::actions!(fulgur, [CloseAllTabsAction, SendTabToWindowNoOp]);
+gpui_kit::actions!(fulgur, [CloseAllTabsAction, SendTabToWindowNoOp]);
 
 /// Create a tab bar button
 ///
@@ -80,7 +80,7 @@ pub fn tab_bar_button_factory(
 ///
 /// This is a standalone helper function for the `GetTheme` action.
 pub fn open_theme_repository() {
-    if let Err(e) = open::that("https://github.com/longbridge/gpui-component/tree/main/themes") {
+    if let Err(e) = open::that("https://github.com/longbridge/gpui-kit/tree/main/themes") {
         log::error!("Failed to open browser: {e}");
     }
 }

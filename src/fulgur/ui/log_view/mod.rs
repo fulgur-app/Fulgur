@@ -19,8 +19,8 @@ mod tail;
 
 pub use tail::{log_toggle_available, opens_as_log_by_default};
 
-use gpui::{Context, Entity, Window};
-use gpui_component::input::EditorState;
+use gpui_kit::component::input::EditorState;
+use gpui_kit::{Context, Entity, Window};
 
 use self::input::{append_log_to_bottom, write_log_to_bottom};
 use self::tail::trim_to_last_lines;
@@ -71,7 +71,7 @@ impl Fulgur {
     fn editor_tab<'a>(
         &self,
         tab_id: TabId,
-        cx: &'a gpui::App,
+        cx: &'a gpui_kit::App,
     ) -> Option<&'a crate::fulgur::editor_tab::EditorTab> {
         self.tabs.iter().find_map(|tab| {
             tab.read(cx)

@@ -5,12 +5,12 @@ use super::{
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::tabs::tab::TabId;
-use gpui::{
+use gpui_kit::component::input::Position;
+use gpui_kit::component::table::TableDelegate;
+use gpui_kit::{
     AppContext, Context, IntoElement, Render, SharedString, TestAppContext, Window, WindowOptions,
     div,
 };
-use gpui_component::input::Position;
-use gpui_component::table::TableDelegate;
 use std::path::PathBuf;
 
 struct EmptyView;
@@ -56,9 +56,9 @@ fn make_transfer_data() -> TabTransferData {
     }
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_new_construction(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
 
     cx.update(|cx| {
@@ -92,9 +92,9 @@ fn test_editor_tab_new_construction(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let mut settings = EditorSettings::new();
     settings.markdown_settings.show_markdown_toolbar = true;
     settings.markdown_settings.show_markdown_preview = false;
@@ -132,9 +132,9 @@ fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let path = temp_test_path("test_file.md");
     let contents = "# title\nbody".to_string();
@@ -169,9 +169,9 @@ fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_from_duplicate_construction(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromDuplicateParams {
         id: TabId(22),
@@ -205,9 +205,9 @@ fn test_editor_tab_from_duplicate_construction(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_check_modified_and_mark_as_saved(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
         id: TabId(31),
@@ -249,9 +249,9 @@ fn test_editor_tab_check_modified_and_mark_as_saved(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_recovered_file_stays_modified_after_edit_and_undo(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
         id: TabId(34),
@@ -286,9 +286,9 @@ fn test_recovered_file_stays_modified_after_edit_and_undo(cx: &mut TestAppContex
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_check_modified_detects_same_length_content_change(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
         id: TabId(32),
@@ -311,9 +311,9 @@ fn test_editor_tab_check_modified_detects_same_length_content_change(cx: &mut Te
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_check_modified_handles_multibyte_utf8_content(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
         id: TabId(33),
@@ -342,9 +342,9 @@ fn test_editor_tab_check_modified_handles_multibyte_utf8_content(cx: &mut TestAp
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_from_file_title_indicator_clean_and_dirty(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
 
     let clean = FromFileParams {
@@ -376,9 +376,9 @@ fn test_editor_tab_from_file_title_indicator_clean_and_dirty(cx: &mut TestAppCon
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_get_suggested_filename_trims_modified_indicator(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
         id: TabId(51),
@@ -403,9 +403,9 @@ fn test_editor_tab_get_suggested_filename_trims_modified_indicator(cx: &mut Test
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_share_file_name_uses_local_file_name(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
         id: TabId(52),
@@ -426,9 +426,9 @@ fn test_share_file_name_uses_local_file_name(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_share_file_name_uses_renamed_title_for_untitled_tab(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
 
     cx.update(|cx| {
@@ -448,9 +448,9 @@ fn test_share_file_name_uses_renamed_title_for_untitled_tab(cx: &mut TestAppCont
 
 // ========== from_transfer() tests ==========
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_from_transfer_preserves_all_fields(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -481,9 +481,9 @@ fn test_from_transfer_preserves_all_fields(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_from_transfer_assigns_new_id(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -500,9 +500,9 @@ fn test_from_transfer_assigns_new_id(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let data = TabTransferData {
         title: SharedString::from("Untitled"),
@@ -538,9 +538,9 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let data = TabTransferData {
         title: SharedString::from("changed.md"),
@@ -579,9 +579,9 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let data = TabTransferData {
         title: SharedString::from("script.py"),
@@ -614,9 +614,9 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let data = TabTransferData {
         title: SharedString::from("note.md"),
@@ -650,9 +650,9 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_from_file_csv_defaults_to_table(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
         id: TabId(70),
@@ -693,9 +693,9 @@ fn test_initial_csv_state_small_file_uses_table_mode() {
     assert_eq!(delimiter, b';');
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_tab_from_file_csv_detects_semicolon(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
         id: TabId(71),
@@ -715,9 +715,9 @@ fn test_editor_tab_from_file_csv_detects_semicolon(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_csv_table_insert_row_commits_to_buffer(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
         id: TabId(72),
@@ -742,9 +742,9 @@ fn test_csv_table_insert_row_commits_to_buffer(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn test_csv_table_move_column_reorders_data(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
         id: TabId(73),

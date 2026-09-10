@@ -4,8 +4,8 @@ use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::sync::access_token::get_valid_token;
 use crate::fulgur::ui::notifications::progress::spawn_with_progress;
 use fulgur_common::api::sync::PingResponse;
-use gpui::{App, Window};
-use gpui_component::notification::NotificationType;
+use gpui_kit::component::notification::NotificationType;
+use gpui_kit::{App, Window};
 use std::sync::Arc;
 
 /// Ping an authenticated Fulgurant server endpoint to test connectivity and credentials.

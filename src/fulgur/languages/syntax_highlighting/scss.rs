@@ -1,5 +1,5 @@
 use arborium_scss;
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 // arboretum_scss has a parsing issue with `@extend`, leading to partially parsed content
 
@@ -128,7 +128,7 @@ mod tests {
     fn test_add_scss_support_registers_language() {
         super::add_scss_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("scss")
                 .is_some()
         );
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn test_scss_highlights_query_compiles() {
         super::add_scss_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("scss");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("scss");
         assert_eq!(highlighter.language().as_ref(), "scss");
     }
 }

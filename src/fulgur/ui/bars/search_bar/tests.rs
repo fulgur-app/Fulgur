@@ -12,12 +12,12 @@ use crate::fulgur::{
     Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
 };
 #[cfg(feature = "gpui-test-support")]
-use gpui::{
+use gpui_kit::component::input::{EditorState, Undo};
+#[cfg(feature = "gpui-test-support")]
+use gpui_kit::{
     AppContext, Context, Entity, Focusable, IntoElement, Render, TestAppContext, VisualTestContext,
     Window, WindowOptions, div,
 };
-#[cfg(feature = "gpui-test-support")]
-use gpui_component::input::{EditorState, Undo};
 #[cfg(feature = "gpui-test-support")]
 use parking_lot::Mutex;
 #[cfg(feature = "gpui-test-support")]
@@ -59,7 +59,7 @@ impl Render for EmptyView {
 #[cfg(feature = "gpui-test-support")]
 fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
     cx.update(|cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -110,7 +110,7 @@ fn setup_search(
     (fulgur, search_bar, content, visual_cx)
 }
 
-/// Set up a `Fulgur` window rooted in a `gpui_component::Root`
+/// Set up a `Fulgur` window rooted in a `gpui_kit::component::Root`
 ///
 /// ### Arguments
 /// - `cx`: The test application context
@@ -123,7 +123,7 @@ fn setup_search_with_root(
     cx: &mut TestAppContext,
 ) -> (Entity<SearchBar>, Entity<EditorState>, VisualTestContext) {
     cx.update(|cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -138,7 +138,7 @@ fn setup_search_with_root(
                 let window_id = window.window_handle().window_id();
                 let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
             })
         })
         .expect("failed to open test window");
@@ -657,7 +657,7 @@ fn test_find_matches_case_insensitive_whole_word_after_shrinking_char() {
 // ========== Visibility control ==========
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_search_bar_hidden_by_default(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, _content, mut visual_cx) = setup_search(cx);
 
@@ -667,7 +667,7 @@ fn test_search_bar_hidden_by_default(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_search_bar_visible_when_open(cx: &mut TestAppContext) {
     let (fulgur, search_bar, _content, mut visual_cx) = setup_search(cx);
 
@@ -680,7 +680,7 @@ fn test_search_bar_visible_when_open(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_find_and_replace_opens_the_bar_with_the_replace_input_focused(cx: &mut TestAppContext) {
     let (fulgur, search_bar, _content, mut visual_cx) = setup_search(cx);
 
@@ -701,7 +701,7 @@ fn test_find_and_replace_opens_the_bar_with_the_replace_input_focused(cx: &mut T
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_find_and_replace_keeps_an_already_open_bar_open(cx: &mut TestAppContext) {
     let (fulgur, search_bar, _content, mut visual_cx) = setup_search(cx);
 
@@ -723,7 +723,7 @@ fn test_find_and_replace_keeps_an_already_open_bar_open(cx: &mut TestAppContext)
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_editor_never_opens_the_upstream_search_panel(cx: &mut TestAppContext) {
     let (fulgur, _search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -745,7 +745,7 @@ fn test_editor_never_opens_the_upstream_search_panel(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_open_search_sets_show_search_and_close_clears_it(cx: &mut TestAppContext) {
     let (fulgur, search_bar, _content, mut visual_cx) = setup_search(cx);
 
@@ -767,7 +767,7 @@ fn test_open_search_sets_show_search_and_close_clears_it(cx: &mut TestAppContext
 // ========== Default toggle state ==========
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_search_toggle_defaults(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, _content, mut visual_cx) = setup_search(cx);
 
@@ -784,7 +784,7 @@ fn test_search_toggle_defaults(cx: &mut TestAppContext) {
 // ========== Toggle state reflected in search results ==========
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_match_case_toggle_filters_results(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -809,7 +809,7 @@ fn test_match_case_toggle_filters_results(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_match_whole_word_toggle_filters_results(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -836,7 +836,7 @@ fn test_match_whole_word_toggle_filters_results(cx: &mut TestAppContext) {
 // ========== Match count state ==========
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_no_match_state_when_query_not_found(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -857,7 +857,7 @@ fn test_no_match_state_when_query_not_found(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_search_clears_match_state(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -886,7 +886,7 @@ fn test_close_search_clears_match_state(cx: &mut TestAppContext) {
 // ========== Navigation ==========
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_gpui_search_next_previous_wrap_and_cursor(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -921,7 +921,7 @@ fn test_gpui_search_next_previous_wrap_and_cursor(cx: &mut TestAppContext) {
 // ========== Replace ==========
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_gpui_replace_current_updates_text_and_matches(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -959,7 +959,7 @@ fn test_gpui_replace_current_updates_text_and_matches(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_gpui_replace_all_whole_word_only(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -992,7 +992,7 @@ fn test_gpui_replace_all_whole_word_only(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_gpui_replace_all_preserves_undo_history(cx: &mut TestAppContext) {
     let (search_bar, content, mut visual_cx) = setup_search_with_root(cx);
 
@@ -1040,7 +1040,7 @@ fn test_gpui_replace_all_preserves_undo_history(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_gpui_replace_current_recomputes_after_buffer_edit(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -1080,7 +1080,7 @@ fn test_gpui_replace_current_recomputes_after_buffer_edit(cx: &mut TestAppContex
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_gpui_replace_all_recomputes_after_buffer_edit(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -1118,7 +1118,7 @@ fn test_gpui_replace_all_recomputes_after_buffer_edit(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_gpui_replace_all_case_sensitive_non_whole_word(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -1166,7 +1166,7 @@ fn test_gpui_replace_all_case_sensitive_non_whole_word(cx: &mut TestAppContext) 
 fn painted_ranges(
     bar: &SearchBar,
     content: &Entity<EditorState>,
-    cx: &gpui::App,
+    cx: &gpui_kit::App,
 ) -> (Vec<std::ops::Range<usize>>, Vec<std::ops::Range<usize>>) {
     match bar.match_decorations.get(&content.entity_id()) {
         Some(decorations) => (
@@ -1178,7 +1178,7 @@ fn painted_ranges(
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_search_paints_every_match_and_accents_the_current_one(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -1202,7 +1202,7 @@ fn test_search_paints_every_match_and_accents_the_current_one(cx: &mut TestAppCo
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_navigation_moves_the_accented_match(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -1231,7 +1231,7 @@ fn test_navigation_moves_the_accented_match(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_close_search_clears_match_decorations(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -1257,7 +1257,7 @@ fn test_close_search_clears_match_decorations(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_clearing_the_query_clears_match_decorations(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -1286,7 +1286,7 @@ fn test_clearing_the_query_clears_match_decorations(cx: &mut TestAppContext) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_decoration_collections_are_reused_across_searches(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 
@@ -1314,7 +1314,7 @@ fn test_decoration_collections_are_reused_across_searches(cx: &mut TestAppContex
 }
 
 #[cfg(feature = "gpui-test-support")]
-#[gpui::test]
+#[gpui_kit::test]
 fn test_replace_all_clears_match_decorations(cx: &mut TestAppContext) {
     let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
 

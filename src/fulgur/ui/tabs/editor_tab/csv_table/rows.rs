@@ -1,7 +1,7 @@
 //! Row insert and delete operations.
 
-use gpui::{Context, Window};
-use gpui_component::table::TableState;
+use gpui_kit::component::table::TableState;
+use gpui_kit::{Context, Window};
 
 use super::CsvTableDelegate;
 

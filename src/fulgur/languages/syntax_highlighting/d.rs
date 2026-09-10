@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add D language syntax highlighting support.
 pub fn add_d_support() {
@@ -21,7 +21,7 @@ mod tests {
     fn test_add_d_support_registers_language() {
         super::add_d_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("d")
                 .is_some()
         );
@@ -30,7 +30,7 @@ mod tests {
     #[test]
     fn test_d_highlights_query_compiles() {
         super::add_d_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("d");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("d");
         assert_eq!(highlighter.language().as_ref(), "d");
     }
 }

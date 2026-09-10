@@ -5,9 +5,9 @@ use super::actions::{
     SettingsTab, ToggleColorPicker, ToggleCommandPalette,
 };
 use crate::fulgur::Fulgur;
-use gpui::{Context, Menu, MenuItem};
 #[cfg(not(target_os = "macos"))]
-use gpui_component::GlobalState;
+use gpui_kit::component::GlobalState;
+use gpui_kit::{Context, Menu, MenuItem};
 use std::path::PathBuf;
 
 /// Build the menus for the Fulgur instance
@@ -78,12 +78,12 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<&str>) -> Vec<M
             name: "Edit".into(),
             disabled: false,
             items: vec![
-                MenuItem::action("Undo", gpui_component::input::Undo),
-                MenuItem::action("Redo", gpui_component::input::Redo),
+                MenuItem::action("Undo", gpui_kit::component::input::Undo),
+                MenuItem::action("Redo", gpui_kit::component::input::Redo),
                 MenuItem::separator(),
-                MenuItem::action("Cut", gpui_component::input::Cut),
-                MenuItem::action("Copy", gpui_component::input::Copy),
-                MenuItem::action("Paste", gpui_component::input::Paste),
+                MenuItem::action("Cut", gpui_kit::component::input::Cut),
+                MenuItem::action("Copy", gpui_kit::component::input::Copy),
+                MenuItem::action("Paste", gpui_kit::component::input::Paste),
                 MenuItem::separator(),
                 MenuItem::action("Find & Replace", FindInFile),
             ],

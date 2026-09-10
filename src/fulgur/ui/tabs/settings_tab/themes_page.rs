@@ -3,14 +3,14 @@ use crate::fulgur::{
     settings::Themes,
     ui::{icons::CustomIcon, themes},
 };
-use gpui::{Entity, IntoElement, ParentElement, SharedString, Styled, div};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme, Sizable, StyledExt,
     button::Button,
     h_flex,
     setting::{SettingGroup, SettingItem, SettingPage},
     v_flex,
 };
+use gpui_kit::{Entity, IntoElement, ParentElement, SharedString, Styled, div};
 
 impl Fulgur {
     /// Create the Themes settings page

@@ -1,6 +1,6 @@
 use crate::fulgur::{Fulgur, settings::AppSettings};
-use gpui::{App, Entity};
-use gpui_component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
+use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
+use gpui_kit::{App, Entity};
 
 mod general;
 mod profile_status;

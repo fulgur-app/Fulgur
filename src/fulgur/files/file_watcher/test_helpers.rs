@@ -2,7 +2,7 @@ use crate::fulgur::WindowInit;
 use crate::fulgur::{
     Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
 };
-use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
 use parking_lot::Mutex as ParkingMutex;
 use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
@@ -19,7 +19,7 @@ pub(super) fn temp_test_path(file_name: &str) -> PathBuf {
 
 pub(super) fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
     cx.update(|cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<ParkingMutex<Vec<PathBuf>>> =
@@ -34,7 +34,7 @@ pub(super) fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTe
                 let window_id = window.window_handle().window_id();
                 let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                 *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
             })
         })
         .expect("failed to open test window");

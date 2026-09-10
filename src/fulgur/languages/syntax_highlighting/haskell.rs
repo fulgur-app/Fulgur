@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 use tree_sitter_haskell;
 
 /// Add Haskell language support.
@@ -22,7 +22,7 @@ mod tests {
     fn test_add_haskell_support_registers_language() {
         super::add_haskell_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("haskell")
                 .is_some()
         );
@@ -31,7 +31,7 @@ mod tests {
     #[test]
     fn test_haskell_highlights_query_compiles() {
         super::add_haskell_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("haskell");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("haskell");
         assert_eq!(highlighter.language().as_ref(), "haskell");
     }
 }

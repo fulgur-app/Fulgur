@@ -1,8 +1,8 @@
 // Turning parts of the unified title bar into window move regions
 
-use gpui::{Context, Div, InteractiveElement, MouseButton, Render, Stateful};
 #[cfg(not(target_os = "windows"))]
-use gpui_component::InteractiveElementExt;
+use gpui_kit::component::InteractiveElementExt;
+use gpui_kit::{Context, Div, InteractiveElement, MouseButton, Render, Stateful};
 
 /// A view that owns the "a left button press started on a drag region" latch.
 pub(crate) trait WindowDragState {
@@ -26,7 +26,7 @@ where
     T: WindowDragState + Render,
 {
     #[cfg(target_os = "windows")]
-    let element = element.window_control_area(gpui::WindowControlArea::Drag);
+    let element = element.window_control_area(gpui_kit::WindowControlArea::Drag);
     #[cfg(target_os = "macos")]
     let element = element.on_double_click(|_, window, _| window.titlebar_double_click());
     #[cfg(target_os = "linux")]

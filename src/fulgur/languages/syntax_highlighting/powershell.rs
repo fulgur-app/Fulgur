@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 use tree_sitter_powershell;
 
 /// Add Powershell language support.
@@ -22,7 +22,7 @@ mod tests {
     fn test_add_powershell_support_registers_language() {
         super::add_powershell_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("powershell")
                 .is_some()
         );
@@ -31,7 +31,7 @@ mod tests {
     #[test]
     fn test_powershell_highlights_query_compiles() {
         super::add_powershell_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("powershell");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("powershell");
         assert_eq!(highlighter.language().as_ref(), "powershell");
     }
 }

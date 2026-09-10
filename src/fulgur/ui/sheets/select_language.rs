@@ -1,10 +1,10 @@
-use gpui::prelude::FluentBuilder;
-use gpui::{
+use gpui_kit::component::{
+    ActiveTheme, Placement, WindowExt, h_flex, scroll::ScrollableElement, v_flex,
+};
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::{
     App, Context, Div, Element, Entity, InteractiveElement, ParentElement,
     StatefulInteractiveElement, Styled, Window, div, px,
-};
-use gpui_component::{
-    ActiveTheme, Placement, WindowExt, h_flex, scroll::ScrollableElement, v_flex,
 };
 
 use crate::fulgur::{
@@ -105,7 +105,7 @@ impl Fulgur {
     /// ### Returns:
     /// - `Some(SupportedLanguage)`: Active editor tab language, or `Plain` for non-editor tabs.
     /// - `None`: If there is no active tab.
-    fn current_sheet_language(&self, cx: &gpui::App) -> Option<SupportedLanguage> {
+    fn current_sheet_language(&self, cx: &gpui_kit::App) -> Option<SupportedLanguage> {
         self.active_tab(cx).map(|tab| {
             tab.as_editor()
                 .map_or(SupportedLanguage::Plain, |editor_tab| editor_tab.language)
@@ -160,7 +160,7 @@ mod tests {
     };
     use core::prelude::v1::test;
     #[cfg(feature = "gpui-test-support")]
-    use gpui::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
     #[cfg(feature = "gpui-test-support")]
@@ -181,7 +181,7 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         cx.update(|cx| {
             cx.set_global(SharedAppState::new(
                 Settings::new(),
@@ -200,7 +200,7 @@ mod tests {
                     let window_id = window.window_handle().window_id();
                     let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
                     *slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_component::Root::new(fulgur, window, cx))
+                    cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
                 })
             })
             .expect("failed to open test window");
@@ -213,7 +213,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_current_sheet_language_reflects_active_editor_language(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -231,7 +231,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    #[gpui::test]
+    #[gpui_kit::test]
     fn test_switch_active_tab_language_is_noop_without_active_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 

@@ -1,7 +1,7 @@
 //! HTTP client used by the GPUI image loader for Markdown preview images.
 
 use futures::future::BoxFuture;
-use http_client::{AsyncBody, HttpClient, Request, Response, StatusCode, Url};
+use gpui_kit::http_client::{AsyncBody, HttpClient, Request, Response, StatusCode, Url};
 use reqwest_client::ReqwestClient;
 
 /// An [`HttpClient`] that serves `file://` URLs from the local filesystem and
@@ -49,7 +49,7 @@ fn read_file_uri(uri: &str) -> anyhow::Result<Response<AsyncBody>> {
 }
 
 impl HttpClient for FileAwareHttpClient {
-    fn user_agent(&self) -> Option<&http_client::http::HeaderValue> {
+    fn user_agent(&self) -> Option<&gpui_kit::http_client::http::HeaderValue> {
         self.inner.user_agent()
     }
 

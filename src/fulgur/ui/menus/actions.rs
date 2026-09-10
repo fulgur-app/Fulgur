@@ -1,5 +1,5 @@
-use gpui::{SharedString, actions};
-use gpui_macros::Action;
+use gpui_kit::Action;
+use gpui_kit::{SharedString, actions};
 use std::path::PathBuf;
 
 actions!(

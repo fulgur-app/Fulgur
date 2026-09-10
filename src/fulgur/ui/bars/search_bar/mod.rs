@@ -14,8 +14,8 @@ use crate::fulgur::ui::{
     components_utils::{SEARCH_BAR_BUTTON_SIZE, button_factory},
     icons::CustomIcon,
 };
-use gpui::{Hsla, Styled};
-use gpui_component::button::Button;
+use gpui_kit::component::button::Button;
+use gpui_kit::{Hsla, Styled};
 
 #[derive(Debug, Clone)]
 pub struct SearchMatch {

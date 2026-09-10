@@ -1,4 +1,4 @@
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add Jinja2 template syntax highlighting support.
 pub fn add_jinja2_support() {
@@ -62,7 +62,7 @@ mod tests {
     fn test_add_jinja2_support_registers_language() {
         super::add_jinja2_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("jinja2")
                 .is_some()
         );
@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn test_jinja2_highlights_query_compiles() {
         super::add_jinja2_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("jinja2");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("jinja2");
         assert_eq!(highlighter.language().as_ref(), "jinja2");
     }
 }

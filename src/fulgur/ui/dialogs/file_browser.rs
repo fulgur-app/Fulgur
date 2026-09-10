@@ -1,12 +1,12 @@
-use gpui::{
-    Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels, SharedString,
-    StatefulInteractiveElement, Styled, div, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     h_flex,
     input::{InputEvent, InputState},
     scroll::ScrollableElement,
     v_flex,
+};
+use gpui_kit::{
+    Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels, SharedString,
+    StatefulInteractiveElement, Styled, div, px,
 };
 
 use crate::fulgur::ui::icons::CustomIcon;

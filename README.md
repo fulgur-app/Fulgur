@@ -82,7 +82,7 @@ On Linux, storing sync encryption keys requires a running Secret Service provide
 
 ## Themes
 
-Fulgur themes use the `gpui-component` JSON format with hexadecimal color codes. Bundled themes (Catppuccin, Everforest, Tokyo Night, Solarized, and more) are extracted to `~/.fulgur/themes` (`%APPDATA%\Fulgur` on Windows) on first run. Edit a theme file and it hot-reloads on save; copy one to create your own.
+Fulgur themes use the GPUI Kit component theme format with hexadecimal color codes. Bundled themes (Catppuccin, Everforest, Tokyo Night, Solarized, and more) are extracted to `~/.fulgur/themes` (`%APPDATA%\Fulgur` on Windows) on first run. Edit a theme file and it hot-reloads on save; copy one to create your own.
 
 ## Self-hosted sync
 

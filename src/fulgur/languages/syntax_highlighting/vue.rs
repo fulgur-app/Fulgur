@@ -1,6 +1,6 @@
 use arborium_vue;
-use gpui::SharedString;
-use gpui_component::highlighter::{LanguageConfig, LanguageRegistry};
+use gpui_kit::SharedString;
+use gpui_kit::component::highlighter::{LanguageConfig, LanguageRegistry};
 
 /// Add Vue language support.
 pub fn add_vue_support() {
@@ -27,7 +27,7 @@ mod tests {
     fn test_add_vue_support_registers_language() {
         super::add_vue_support();
         assert!(
-            gpui_component::highlighter::LanguageRegistry::singleton()
+            gpui_kit::component::highlighter::LanguageRegistry::singleton()
                 .language("vue")
                 .is_some()
         );
@@ -36,7 +36,7 @@ mod tests {
     #[test]
     fn test_vue_highlights_query_compiles() {
         super::add_vue_support();
-        let highlighter = gpui_component::highlighter::SyntaxHighlighter::new("vue");
+        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("vue");
         assert_eq!(highlighter.language().as_ref(), "vue");
     }
 }

@@ -9,7 +9,7 @@ use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
 use crate::fulgur::ui::tabs::tab::TabId;
-use gpui::{App, AppContext, SharedString, Window};
+use gpui_kit::{App, AppContext, SharedString, Window};
 use std::time::SystemTime;
 
 impl EditorTab {
