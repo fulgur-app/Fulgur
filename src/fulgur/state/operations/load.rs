@@ -227,6 +227,8 @@ impl Fulgur {
                         hard_tabs: false,
                     })
                     .soft_wrap(self.settings.editor_settings.soft_wrap && !large_file)
+                    .auto_close(self.settings.editor_settings.auto_close_pairs)
+                    .smart_indent(self.settings.editor_settings.smart_indent)
                     .show_whitespaces(self.settings.editor_settings.show_whitespaces)
                     .default_value(content)
             });

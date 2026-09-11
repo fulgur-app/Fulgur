@@ -256,6 +256,50 @@ pub fn create_editor_page(
                 .default_value(default_editor_settings.show_indent_guides),
             )
             .description("Show vertical lines indicating indentation levels."),
+            SettingItem::new(
+                "Smart Indentation",
+                SettingField::switch(
+                    {
+                        let entity = entity.clone();
+                        move |cx: &App| entity.read(cx).settings.editor_settings.smart_indent
+                    },
+                    {
+                        let entity = entity.clone();
+                        move |val: bool, cx: &mut App| {
+                            entity.update(cx, |this, cx| {
+                                this.settings.editor_settings.smart_indent = val;
+                                let _ = this.update_and_propagate_settings(cx);
+                            });
+                        }
+                    },
+                )
+                .default_value(default_editor_settings.smart_indent),
+            )
+            .description(
+                "Keep the current indentation on a new line and add a level after an opening delimiter.",
+            ),
+            SettingItem::new(
+                "Auto Close Pairs",
+                SettingField::switch(
+                    {
+                        let entity = entity.clone();
+                        move |cx: &App| entity.read(cx).settings.editor_settings.auto_close_pairs
+                    },
+                    {
+                        let entity = entity.clone();
+                        move |val: bool, cx: &mut App| {
+                            entity.update(cx, |this, cx| {
+                                this.settings.editor_settings.auto_close_pairs = val;
+                                let _ = this.update_and_propagate_settings(cx);
+                            });
+                        }
+                    },
+                )
+                .default_value(default_editor_settings.auto_close_pairs),
+            )
+            .description(
+                "Insert the matching bracket or quote while typing, using rules specific to the language.",
+            ),
         ]),
         SettingGroup::new().title("Display").items(vec![
             SettingItem::new(
