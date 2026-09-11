@@ -39,6 +39,7 @@ Fulgur doesn't try to replace VS Code, Zed, or Vim. It's the fast, dependable ed
 - **LOG mode**: follows log files in real time as your app writes them
 - **Color tools**: a color picker and converter bar, plus inline color previews in your code
 - **Search**, jump to line, drag-and-drop files and reorderable tabs
+- **Multiple cursors and column selection**: edit several places at once (see the shortcuts below)
 
 ### Sync and remote
 - **End-to-end encrypted file sharing** between your devices: X25519 keys per device (stored in the system keychain), encryption via [age](https://github.com/FiloSottile/age), zero-knowledge server
@@ -51,6 +52,22 @@ Fulgur doesn't try to replace VS Code, Zed, or Vim. It's the fast, dependable ed
 - **Themes as a core feature**: 8 bundled, JSON-based, hot-reloaded on save, and easy to write your own
 - **State restoration**: windows, tabs, and even unsaved content survive restarts
 - Platform niceties: macOS Dock menu, Windows taskbar jump list, signed and notarized macOS builds
+
+### Multiple cursors
+
+Fulgur edits at several places at once. Every cursor types, deletes, indents and undoes together.
+
+| Action | macOS | Windows | Linux |
+| --- | --- | --- | --- |
+| Add a cursor on the line above | `Cmd` + `Alt` + `Up` | `Ctrl` + `Alt` + `Up` | `Shift` + `Alt` + `Up` |
+| Add a cursor on the line below | `Cmd` + `Alt` + `Down` | `Ctrl` + `Alt` + `Down` | `Shift` + `Alt` + `Down` |
+| Add a cursor where you click | `Alt` + click | `Alt` + click | `Alt` + click |
+| Select a rectangular block | `Shift` + `Alt` + drag | `Shift` + `Alt` + drag | `Shift` + `Alt` + drag |
+| Collapse back to one cursor | `Esc` | `Esc` | `Esc` |
+
+`Add Cursor Above` and `Add Cursor Below` are also in the **Edit** menu and in the command palette
+under **Edit**. Multiple cursors need a multi-line editor, so they are unavailable in single-line
+fields such as the search bar.
 
 ## Screenshots
 

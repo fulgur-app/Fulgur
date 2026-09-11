@@ -53,6 +53,7 @@ pub fn build_palette_layout(context: &PaletteContext) -> Vec<(PaletteGroup, Vec<
 mod tests {
     use super::{PaletteContext, build_palette_layout};
     use crate::fulgur::ui::command_palette::commands::{PaletteCommand, PaletteGroup};
+    use crate::fulgur::ui::menus::{KEY_CONTEXT_FULGUR, KEY_CONTEXT_INPUT};
     use core::prelude::v1::test;
     use std::collections::HashSet;
 
@@ -212,19 +213,54 @@ mod tests {
     }
 
     #[test]
-    fn keybinding_hint_actions_stay_inside_the_fulgur_namespace() {
-        // The hint is resolved against the Fulgur key context, so an action from another
-        // namespace would either resolve to nothing or, worse, advertise a keystroke that
-        // belongs to a context the palette row does not speak for.
+    fn the_multi_cursor_commands_need_an_editor_tab() {
+        let no_tab = PaletteContext {
+            has_editor_tab: false,
+            ..permissive_context()
+        };
+        for command in [
+            PaletteCommand::AddCursorAbove,
+            PaletteCommand::AddCursorBelow,
+        ] {
+            assert!(!command.is_available(&no_tab));
+            assert!(command.is_available(&permissive_context()));
+            assert_eq!(command.group(), PaletteGroup::Edit);
+        }
+    }
+
+    #[test]
+    fn keybinding_hints_resolve_in_the_context_that_binds_them() {
+        // A hint only resolves inside the key context its action was bound under, so a
+        // mismatch here would either show nothing or advertise a keystroke belonging to a
+        // context the palette row does not speak for.
         for command in PaletteCommand::ALL {
-            let Some(action) = command.keybinding_hint_action() else {
+            let Some(hint) = command.keybinding_hint() else {
                 continue;
             };
+            let expected_namespace = match hint.context {
+                KEY_CONTEXT_FULGUR => "fulgur::",
+                KEY_CONTEXT_INPUT => "input::",
+                other => panic!("{command:?} hints an unknown key context: {other}"),
+            };
             assert!(
-                action.name().starts_with("fulgur::"),
-                "{command:?} hints a foreign action: {}",
-                action.name()
+                hint.action.name().starts_with(expected_namespace),
+                "{command:?} hints {} under the {} context",
+                hint.action.name(),
+                hint.context
             );
+        }
+    }
+
+    #[test]
+    fn the_multi_cursor_commands_hint_the_editor_context() {
+        for command in [
+            PaletteCommand::AddCursorAbove,
+            PaletteCommand::AddCursorBelow,
+        ] {
+            let hint = command
+                .keybinding_hint()
+                .unwrap_or_else(|| panic!("{command:?} shows no keybinding hint"));
+            assert_eq!(hint.context, KEY_CONTEXT_INPUT);
         }
     }
 }

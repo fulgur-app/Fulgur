@@ -5,6 +5,7 @@ use super::actions::{
     SettingsTab, ToggleColorPicker, ToggleCommandPalette,
 };
 use crate::fulgur::Fulgur;
+use gpui_kit::base::input::{AddCursorAbove, AddCursorBelow};
 #[cfg(not(target_os = "macos"))]
 use gpui_kit::component::GlobalState;
 use gpui_kit::{Context, Menu, MenuItem};
@@ -85,6 +86,9 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<&str>) -> Vec<M
                 MenuItem::action("Copy", gpui_kit::component::input::Copy),
                 MenuItem::action("Paste", gpui_kit::component::input::Paste),
                 MenuItem::separator(),
+                MenuItem::action("Add Cursor Above", AddCursorAbove),
+                MenuItem::action("Add Cursor Below", AddCursorBelow),
+                MenuItem::separator(),
                 MenuItem::action("Find & Replace", FindInFile),
             ],
         },
@@ -129,5 +133,30 @@ impl Fulgur {
                 crate::fulgur::ui::bars::titlebar::CustomTitleBar::reload_app_menu_bar,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_menus;
+    use core::prelude::v1::test;
+    use gpui_kit::base::input::{AddCursorAbove, AddCursorBelow};
+    use gpui_kit::{Action, MenuItem};
+
+    fn edit_menu_exposes(action: &dyn Action) -> bool {
+        build_menus(&[], None)
+            .iter()
+            .filter(|menu| menu.name == "Edit")
+            .flat_map(|menu| menu.items.iter())
+            .any(|item| match item {
+                MenuItem::Action { action: bound, .. } => bound.partial_eq(action),
+                _ => false,
+            })
+    }
+
+    #[test]
+    fn test_edit_menu_exposes_multi_cursor_actions() {
+        assert!(edit_menu_exposes(&AddCursorAbove));
+        assert!(edit_menu_exposes(&AddCursorBelow));
     }
 }

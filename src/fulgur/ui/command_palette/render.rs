@@ -1,7 +1,7 @@
 //! Rendering of the command palette dialog.
 
+use super::commands::KeybindingHint;
 use super::{CommandPalette, PaletteCommand, PaletteGroup};
-use crate::fulgur::ui::menus::KEY_CONTEXT_FULGUR;
 use gpui_kit::component::{
     ActiveTheme, Icon, WindowExt,
     command::{Command, CommandGroup, CommandItem},
@@ -9,7 +9,7 @@ use gpui_kit::component::{
     kbd::Kbd,
 };
 use gpui_kit::{
-    Action, App, Context, Focusable, IntoElement, ParentElement, Styled, Window,
+    App, Context, Focusable, IntoElement, ParentElement, Styled, Window,
     prelude::FluentBuilder as _, px,
 };
 use std::{cell::Cell, rc::Rc};
@@ -111,12 +111,12 @@ fn build_group(group: PaletteGroup, commands: &[PaletteCommand]) -> CommandGroup
 /// ### Returns
 /// - `CommandItem`: The row, searchable on its label and keywords
 fn build_item(command: PaletteCommand) -> CommandItem {
-    let hint_action = command.keybinding_hint_action();
+    let hint = command.keybinding_hint();
     CommandItem::new()
         .label(command.label())
         .keywords(command.keywords().iter().copied())
         .child(move |window: &mut Window, cx: &mut App| {
-            render_row(command, hint_action.as_deref(), window, cx)
+            render_row(command, hint.as_ref(), window, cx)
         })
 }
 
@@ -124,7 +124,7 @@ fn build_item(command: PaletteCommand) -> CommandItem {
 ///
 /// ### Arguments
 /// - `command`: The command the row stands for
-/// - `action`: The action whose keybinding is displayed, when the command has one
+/// - `hint`: The keybinding hint to display, when the command has one
 /// - `window`: The window the keybinding is resolved against
 /// - `cx`: The application context
 ///
@@ -132,12 +132,12 @@ fn build_item(command: PaletteCommand) -> CommandItem {
 /// - `impl IntoElement`: The row element
 fn render_row(
     command: PaletteCommand,
-    action: Option<&dyn Action>,
+    hint: Option<&KeybindingHint>,
     window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    let binding =
-        action.and_then(|action| Kbd::binding_for_action(action, Some(KEY_CONTEXT_FULGUR), window));
+    let binding = hint
+        .and_then(|hint| Kbd::binding_for_action(hint.action.as_ref(), Some(hint.context), window));
 
     h_flex()
         .w_full()
