@@ -8,6 +8,9 @@ use gpui_kit::KeyBinding;
 /// Key context set on the application content element, used to scope keybindings.
 pub const KEY_CONTEXT_FULGUR: &str = "Fulgur";
 
+/// Key context the editor binds its own actions under.
+pub const KEY_CONTEXT_INPUT: &str = "Input";
+
 /// Context predicate for keybindings scoped to the application content.
 const SCOPED_BINDING_PREDICATE: &str = "Fulgur || (Fulgur > Input)";
 

@@ -19,7 +19,8 @@ use crate::fulgur::{
         },
     },
 };
-use gpui_kit::{App, Context, Window};
+use gpui_kit::base::input::{AddCursorAbove, AddCursorBelow};
+use gpui_kit::{Action, App, Context, Window};
 
 impl Fulgur {
     /// Snapshot the window state the palette filters its command list on.
@@ -112,6 +113,12 @@ impl Fulgur {
             PaletteCommand::CloseAllFiles => self.close_all_tabs(window, cx),
             PaletteCommand::ClearRecentFiles => self.clear_recent_files(cx),
             PaletteCommand::Quit => self.quit(window, cx),
+            PaletteCommand::AddCursorAbove => {
+                self.dispatch_to_active_editor(Box::new(AddCursorAbove), window, cx);
+            }
+            PaletteCommand::AddCursorBelow => {
+                self.dispatch_to_active_editor(Box::new(AddCursorBelow), window, cx);
+            }
             PaletteCommand::FindInFile => self.find_in_file(window, cx),
             PaletteCommand::FindAndReplace => self.find_and_replace(window, cx),
             PaletteCommand::JumpToLine => self.show_jump_to_line_dialog(window, cx),
@@ -144,6 +151,22 @@ impl Fulgur {
             PaletteCommand::CheckForUpdates => self.check_for_updates(window, cx),
             PaletteCommand::About => about(window, cx),
         }
+    }
+
+    /// Dispatch an editor action to the active tab's editor.
+    ///
+    /// ### Arguments
+    /// - `action`: The editor action to dispatch
+    /// - `window`: The window to run the action in
+    /// - `cx`: The application context
+    fn dispatch_to_active_editor(
+        &mut self,
+        action: Box<dyn Action>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.focus_active_tab(window, cx);
+        window.dispatch_action(action, cx);
     }
 
     /// Run a palette command that targets the active tab.

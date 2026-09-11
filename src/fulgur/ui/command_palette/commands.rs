@@ -5,17 +5,19 @@ use crate::fulgur::ui::{
     icons::CustomIcon,
     menus::{
         About, CheckForUpdates, ClearRecentFiles, CloseAllFiles, CloseFile, FindAndReplace,
-        FindInFile, GetTheme, JumpToLine, NewFile, NewWindow, NextTab, OpenFile, OpenPath,
-        OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs, SelectTheme, SettingsTab,
-        ToggleColorPicker,
+        FindInFile, GetTheme, JumpToLine, KEY_CONTEXT_FULGUR, KEY_CONTEXT_INPUT, NewFile,
+        NewWindow, NextTab, OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile,
+        SaveFileAs, SelectTheme, SettingsTab, ToggleColorPicker,
     },
 };
 use gpui_kit::Action;
+use gpui_kit::base::input::{AddCursorAbove, AddCursorBelow};
 
 /// A titled section of the command palette.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PaletteGroup {
     File,
+    Edit,
     Search,
     View,
     Tabs,
@@ -24,8 +26,9 @@ pub enum PaletteGroup {
 
 impl PaletteGroup {
     /// Every group, in the order the palette renders them.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::File,
+        Self::Edit,
         Self::Search,
         Self::View,
         Self::Tabs,
@@ -39,10 +42,49 @@ impl PaletteGroup {
     pub const fn label(self) -> &'static str {
         match self {
             Self::File => "File",
+            Self::Edit => "Edit",
             Self::Search => "Search",
             Self::View => "View",
             Self::Tabs => "Tabs",
             Self::Application => "Application",
+        }
+    }
+}
+
+/// The keybinding hint rendered at the end of a palette row.
+pub struct KeybindingHint {
+    /// The action whose bound keystroke is displayed.
+    pub action: Box<dyn Action>,
+    /// The key context the action's binding is registered in.
+    pub context: &'static str,
+}
+
+impl KeybindingHint {
+    /// Build a hint for an action bound in the application key context.
+    ///
+    /// ### Arguments
+    /// - `action`: The action whose bound keystroke to display
+    ///
+    /// ### Returns
+    /// - `Self`: The hint, resolved against the Fulgur key context
+    fn fulgur(action: impl Action) -> Self {
+        Self {
+            action: Box::new(action),
+            context: KEY_CONTEXT_FULGUR,
+        }
+    }
+
+    /// Build a hint for an action the editor binds under its own key context.
+    ///
+    /// ### Arguments
+    /// - `action`: The action whose bound keystroke to display
+    ///
+    /// ### Returns
+    /// - `Self`: The hint, resolved against the editor key context
+    fn editor(action: impl Action) -> Self {
+        Self {
+            action: Box::new(action),
+            context: KEY_CONTEXT_INPUT,
         }
     }
 }
@@ -63,6 +105,8 @@ pub enum PaletteCommand {
     CloseAllFiles,
     ClearRecentFiles,
     Quit,
+    AddCursorAbove,
+    AddCursorBelow,
     FindInFile,
     FindAndReplace,
     JumpToLine,
@@ -93,7 +137,7 @@ impl PaletteCommand {
     ///
     /// Grouping is derived from [`Self::group`], so a command added here lands in its
     /// group automatically and cannot go missing from the palette.
-    pub const ALL: [Self; 36] = [
+    pub const ALL: [Self; 38] = [
         Self::NewFile,
         Self::NewWindow,
         Self::OpenFile,
@@ -107,6 +151,8 @@ impl PaletteCommand {
         Self::CloseAllFiles,
         Self::ClearRecentFiles,
         Self::Quit,
+        Self::AddCursorAbove,
+        Self::AddCursorBelow,
         Self::FindInFile,
         Self::FindAndReplace,
         Self::JumpToLine,
@@ -151,6 +197,7 @@ impl PaletteCommand {
             | Self::CloseAllFiles
             | Self::ClearRecentFiles
             | Self::Quit => PaletteGroup::File,
+            Self::AddCursorAbove | Self::AddCursorBelow => PaletteGroup::Edit,
             Self::FindInFile | Self::FindAndReplace | Self::JumpToLine => PaletteGroup::Search,
             Self::SelectLanguage
             | Self::ToggleMarkdownPreview
@@ -192,6 +239,8 @@ impl PaletteCommand {
             Self::CloseAllFiles => "Close all files",
             Self::ClearRecentFiles => "Clear recent files",
             Self::Quit => "Quit Fulgur",
+            Self::AddCursorAbove => "Add cursor above",
+            Self::AddCursorBelow => "Add cursor below",
             Self::FindInFile => "Find in file",
             Self::FindAndReplace => "Find and replace",
             Self::JumpToLine => "Jump to line...",
@@ -237,6 +286,8 @@ impl PaletteCommand {
             Self::CloseAllFiles => &["dismiss", "everything"],
             Self::ClearRecentFiles => &["history", "forget", "purge"],
             Self::Quit => &["exit", "close application"],
+            Self::AddCursorAbove => &["multi cursor", "multiple carets", "column", "up"],
+            Self::AddCursorBelow => &["multi cursor", "multiple carets", "column", "down"],
             Self::FindInFile => &["search", "locate", "grep"],
             Self::FindAndReplace => &["search", "substitute", "swap"],
             Self::JumpToLine => &["goto", "go to", "line number"],
@@ -282,6 +333,8 @@ impl PaletteCommand {
             | Self::CloseTabsToLeft
             | Self::CloseOtherTabs => CustomIcon::Close,
             Self::ClearRecentFiles => CustomIcon::Minus,
+            Self::AddCursorAbove => CustomIcon::ChevronUp,
+            Self::AddCursorBelow => CustomIcon::ChevronDown,
             Self::Quit => CustomIcon::WindowClose,
             Self::FindInFile => CustomIcon::Search,
             Self::FindAndReplace => CustomIcon::Replace,
@@ -301,36 +354,38 @@ impl PaletteCommand {
         }
     }
 
-    /// Get the action whose keybinding is displayed alongside this command.
+    /// Get the keybinding hint displayed alongside this command.
     ///
     /// ### Returns
-    /// - `Some(Box<dyn Action>)`: The action whose keybinding hint to show
+    /// - `Some(KeybindingHint)`: The action to resolve a keystroke from, and its context
     /// - `None`: The command has no dedicated action, so it shows no keybinding hint
-    pub fn keybinding_hint_action(self) -> Option<Box<dyn Action>> {
+    pub fn keybinding_hint(self) -> Option<KeybindingHint> {
         match self {
-            Self::NewFile => Some(Box::new(NewFile)),
-            Self::NewWindow => Some(Box::new(NewWindow)),
-            Self::OpenFile => Some(Box::new(OpenFile)),
-            Self::OpenFromPath => Some(Box::new(OpenPath)),
-            Self::OpenRemoteFile => Some(Box::new(OpenRemote)),
-            Self::SaveFile => Some(Box::new(SaveFile)),
-            Self::SaveFileAs => Some(Box::new(SaveFileAs)),
-            Self::PrintFile => Some(Box::new(PrintFile)),
-            Self::CloseFile => Some(Box::new(CloseFile)),
-            Self::CloseAllFiles => Some(Box::new(CloseAllFiles)),
-            Self::ClearRecentFiles => Some(Box::new(ClearRecentFiles)),
-            Self::Quit => Some(Box::new(Quit)),
-            Self::FindInFile => Some(Box::new(FindInFile)),
-            Self::FindAndReplace => Some(Box::new(FindAndReplace)),
-            Self::JumpToLine => Some(Box::new(JumpToLine)),
-            Self::ToggleColorPicker => Some(Box::new(ToggleColorPicker)),
-            Self::SelectTheme => Some(Box::new(SelectTheme)),
-            Self::GetMoreThemes => Some(Box::new(GetTheme)),
-            Self::NextTab => Some(Box::new(NextTab)),
-            Self::PreviousTab => Some(Box::new(PreviousTab)),
-            Self::OpenSettings => Some(Box::new(SettingsTab)),
-            Self::CheckForUpdates => Some(Box::new(CheckForUpdates)),
-            Self::About => Some(Box::new(About)),
+            Self::NewFile => Some(KeybindingHint::fulgur(NewFile)),
+            Self::NewWindow => Some(KeybindingHint::fulgur(NewWindow)),
+            Self::OpenFile => Some(KeybindingHint::fulgur(OpenFile)),
+            Self::OpenFromPath => Some(KeybindingHint::fulgur(OpenPath)),
+            Self::OpenRemoteFile => Some(KeybindingHint::fulgur(OpenRemote)),
+            Self::SaveFile => Some(KeybindingHint::fulgur(SaveFile)),
+            Self::SaveFileAs => Some(KeybindingHint::fulgur(SaveFileAs)),
+            Self::PrintFile => Some(KeybindingHint::fulgur(PrintFile)),
+            Self::CloseFile => Some(KeybindingHint::fulgur(CloseFile)),
+            Self::CloseAllFiles => Some(KeybindingHint::fulgur(CloseAllFiles)),
+            Self::ClearRecentFiles => Some(KeybindingHint::fulgur(ClearRecentFiles)),
+            Self::Quit => Some(KeybindingHint::fulgur(Quit)),
+            Self::FindInFile => Some(KeybindingHint::fulgur(FindInFile)),
+            Self::FindAndReplace => Some(KeybindingHint::fulgur(FindAndReplace)),
+            Self::JumpToLine => Some(KeybindingHint::fulgur(JumpToLine)),
+            Self::ToggleColorPicker => Some(KeybindingHint::fulgur(ToggleColorPicker)),
+            Self::SelectTheme => Some(KeybindingHint::fulgur(SelectTheme)),
+            Self::GetMoreThemes => Some(KeybindingHint::fulgur(GetTheme)),
+            Self::NextTab => Some(KeybindingHint::fulgur(NextTab)),
+            Self::PreviousTab => Some(KeybindingHint::fulgur(PreviousTab)),
+            Self::OpenSettings => Some(KeybindingHint::fulgur(SettingsTab)),
+            Self::CheckForUpdates => Some(KeybindingHint::fulgur(CheckForUpdates)),
+            Self::About => Some(KeybindingHint::fulgur(About)),
+            Self::AddCursorAbove => Some(KeybindingHint::editor(AddCursorAbove)),
+            Self::AddCursorBelow => Some(KeybindingHint::editor(AddCursorBelow)),
             Self::ShareFile
             | Self::SelectLanguage
             | Self::ToggleMarkdownPreview
@@ -378,6 +433,8 @@ impl PaletteCommand {
             | Self::JumpToLine
             | Self::SelectLanguage
             | Self::ToggleColorPicker
+            | Self::AddCursorAbove
+            | Self::AddCursorBelow
             | Self::DuplicateActiveTab => context.has_editor_tab,
             Self::ShareFile => context.has_editor_tab && context.has_active_sync_profile,
             Self::CloseFile | Self::CloseAllFiles | Self::RenameActiveTab => context.tab_count > 0,
