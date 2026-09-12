@@ -202,6 +202,8 @@ pub struct MarkdownSettings {
     pub show_markdown_toolbar: bool,
     #[serde(default = "default_limit_preview_width")]
     pub limit_preview_width: bool,
+    #[serde(default = "default_render_frontmatter")]
+    pub render_frontmatter: bool,
 }
 
 impl Default for MarkdownSettings {
@@ -222,6 +224,7 @@ impl MarkdownSettings {
             show_markdown_preview: true,
             show_markdown_toolbar: false,
             limit_preview_width: true,
+            render_frontmatter: true,
         }
     }
 }
@@ -320,6 +323,14 @@ fn default_watch_files() -> bool {
 /// ### Returns
 /// - `true`: cap and center the Markdown preview by default
 fn default_limit_preview_width() -> bool {
+    true
+}
+
+/// Default value for `render_frontmatter` setting
+///
+/// ### Returns
+/// - `true`: show YAML frontmatter as a metadata list by default
+fn default_render_frontmatter() -> bool {
     true
 }
 
