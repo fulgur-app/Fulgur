@@ -12,7 +12,7 @@ use gpui_kit::component::{
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
     table::{DataTable, TableState},
-    text::{TableData, TextView, TextViewState},
+    text::{FrontmatterPlugin, MarkdownExtensions, TableData, TextView, TextViewState},
     v_flex,
 };
 use gpui_kit::prelude::FluentBuilder;
@@ -281,6 +281,25 @@ impl Fulgur {
             }))
     }
 
+    /// Build the Markdown extension registry the preview is rendered with.
+    ///
+    /// ### Returns
+    /// - `MarkdownExtensions`: The registry, carrying the frontmatter plugin
+    ///   only when the corresponding setting is enabled
+    fn markdown_preview_extensions(&self) -> MarkdownExtensions {
+        let extensions = MarkdownExtensions::default();
+        if self
+            .settings
+            .editor_settings
+            .markdown_settings
+            .render_frontmatter
+        {
+            extensions.frontmatter().plugin(FrontmatterPlugin::new())
+        } else {
+            extensions
+        }
+    }
+
     /// Lay out a markdown preview inside its container, honouring the width limit setting.
     ///
     /// ### Arguments
@@ -489,15 +508,10 @@ impl Fulgur {
                     {
                         // Reading the content entity here tracks it for this
                         // window, so edits re-render the panel automatically.
-                        // Multi-line raw-HTML blocks are collapsed first so the
-                        // Markdown renderer never shapes a run containing a
-                        // newline (see `sanitize_markdown_preview`).
                         let preview_text =
-                            crate::fulgur::utils::sanitize::sanitize_markdown_preview(
-                                &crate::fulgur::utils::markdown_images::rewrite_markdown_image_paths(
-                                    content.read(cx).value().as_ref(),
-                                    path.as_deref().and_then(std::path::Path::parent),
-                                ),
+                            crate::fulgur::utils::markdown_images::rewrite_markdown_image_paths(
+                                content.read(cx).value().as_ref(),
+                                path.as_deref().and_then(std::path::Path::parent),
                             );
                         let preview_state = self.ensure_markdown_panel_state(&preview_text, cx);
                         let link_handler = Self::markdown_link_handler(
@@ -509,6 +523,7 @@ impl Fulgur {
                         let preview = self
                             .layout_markdown_preview(
                                 TextView::new(&preview_state)
+                                    .markdown_extensions(self.markdown_preview_extensions())
                                     .flex_none()
                                     .py_0()
                                     .px_2()
@@ -565,12 +580,11 @@ impl Fulgur {
                     view_state,
                 } => {
                     let base_dir = source_path.as_deref().and_then(std::path::Path::parent);
-                    let preview_text = crate::fulgur::utils::sanitize::sanitize_markdown_preview(
-                        &crate::fulgur::utils::markdown_images::rewrite_markdown_image_paths(
+                    let preview_text =
+                        crate::fulgur::utils::markdown_images::rewrite_markdown_image_paths(
                             content.read(cx).value().as_ref(),
                             base_dir,
-                        ),
-                    );
+                        );
                     view_state.update(cx, |state, cx| {
                         state.set_text(&preview_text, cx);
                     });
@@ -579,6 +593,7 @@ impl Fulgur {
                     let preview = self
                         .layout_markdown_preview(
                             TextView::new(&view_state)
+                                .markdown_extensions(self.markdown_preview_extensions())
                                 .py_2()
                                 .px_4()
                                 .scrollable(true)
@@ -663,5 +678,131 @@ mod tests {
     fn serializes_a_table_with_no_body_rows() {
         let csv = markdown_table_as_csv(&table(&["a", "b"], &[]));
         assert_eq!(csv.as_deref(), Some("a,b\n"));
+    }
+}
+
+/// Rendering regressions for the Markdown preview.
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod markdown_preview_tests {
+    use super::*;
+    use core::prelude::v1::test;
+    use gpui_kit::{Render, TestAppContext, VisualTestContext, WindowOptions};
+
+    /// A window root holding nothing but the preview under test.
+    struct PreviewView {
+        state: Entity<TextViewState>,
+        frontmatter: bool,
+    }
+
+    impl Render for PreviewView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            TextView::new(&self.state)
+                .selectable(true)
+                .when(self.frontmatter, |view| {
+                    view.markdown_extensions(
+                        MarkdownExtensions::default()
+                            .frontmatter()
+                            .plugin(FrontmatterPlugin::new()),
+                    )
+                })
+        }
+    }
+
+    /// Draw `source` as a Markdown preview and return its rendered plain text.
+    ///
+    /// ### Arguments
+    /// - `source`: The raw Markdown to render
+    /// - `frontmatter`: Whether to enable the frontmatter extension and plugin
+    /// - `cx`: The test application context
+    ///
+    /// ### Returns
+    /// - `String`: The text the renderer produced for the parsed document
+    fn render_preview(source: &str, frontmatter: bool, cx: &mut TestAppContext) -> String {
+        cx.update(gpui_kit::init);
+        let state_slot: std::cell::RefCell<Option<Entity<TextViewState>>> =
+            std::cell::RefCell::new(None);
+        let window = cx
+            .update(|cx| {
+                cx.open_window(WindowOptions::default(), |_window, cx| {
+                    let state = cx.new(|cx| TextViewState::markdown(source, cx));
+                    *state_slot.borrow_mut() = Some(state.clone());
+                    cx.new(|_| PreviewView { state, frontmatter })
+                })
+            })
+            .expect("failed to open the preview test window");
+        let visual_cx = VisualTestContext::from_window(window.into(), cx);
+        visual_cx.run_until_parked();
+        let state = state_slot
+            .into_inner()
+            .expect("failed to capture the preview state");
+        state.update(cx, |state, cx| {
+            state.select_all(cx);
+        });
+        cx.update(|cx| state.read(cx).selected_text())
+    }
+
+    #[gpui_kit::test]
+    fn renders_a_soft_wrapped_paragraph(cx: &mut TestAppContext) {
+        let text = render_preview("line one\nline two\nline three\n", false, cx);
+        assert!(
+            text.contains("line one line two line three"),
+            "got {text:?}"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn renders_inline_br_tags(cx: &mut TestAppContext) {
+        let text = render_preview("a<br>b\n\na<br />b\n", false, cx);
+        assert!(text.contains('a'), "got {text:?}");
+    }
+
+    #[gpui_kit::test]
+    fn renders_a_multiline_html_block(cx: &mut TestAppContext) {
+        render_preview(
+            "<details>\n<summary>Build</summary>\n\n### Steps\n",
+            false,
+            cx,
+        );
+    }
+
+    #[gpui_kit::test]
+    fn renders_a_badge_block(cx: &mut TestAppContext) {
+        render_preview("[![A](a)](x)\n[![B](b)](y)\n", false, cx);
+    }
+
+    #[gpui_kit::test]
+    fn renders_hard_breaks_nested_lists_and_fenced_code(cx: &mut TestAppContext) {
+        let text = render_preview(
+            "Owner: Jane  \nPersona: assistant\n\n- one\n  - nested\n\n```html\n<br>\n<div>\n```\n",
+            false,
+            cx,
+        );
+        assert!(text.contains("nested"), "got {text:?}");
+    }
+
+    #[gpui_kit::test]
+    fn renders_a_table(cx: &mut TestAppContext) {
+        let text = render_preview("| a | b |\n|---|---|\n| 1 | 2 |\n", false, cx);
+        assert!(text.contains('a'), "got {text:?}");
+    }
+
+    #[gpui_kit::test]
+    fn keeps_frontmatter_as_a_code_block_when_disabled(cx: &mut TestAppContext) {
+        let text = render_preview("---\ntitle: Notes\n---\n\nBody\n", false, cx);
+        assert!(text.contains("Body"), "got {text:?}");
+    }
+
+    #[gpui_kit::test]
+    fn renders_frontmatter_entries_when_enabled(cx: &mut TestAppContext) {
+        let text = render_preview("---\ntitle: Notes\nowner: Jane\n---\n\nBody\n", true, cx);
+        assert!(text.contains("title"), "got {text:?}");
+        assert!(text.contains("Notes"), "got {text:?}");
+    }
+
+    /// Malformed and non-mapping frontmatter must fall back without aborting.
+    #[gpui_kit::test]
+    fn tolerates_non_mapping_frontmatter(cx: &mut TestAppContext) {
+        render_preview("---\n- just\n- a list\n---\n\nBody\n", true, cx);
+        render_preview("---\nnot: [closed\n", true, cx);
     }
 }
