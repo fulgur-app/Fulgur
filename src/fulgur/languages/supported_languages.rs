@@ -338,6 +338,21 @@ pub fn language_registry_name(supported_language: &SupportedLanguage) -> &'stati
     }
 }
 
+/// Extract a file's extension in lowercase so detection is case-insensitive.
+///
+/// ### Arguments
+/// - `filename`: The file name
+///
+/// ### Returns
+/// - `String`: The lowercased extension, empty when the file has none
+fn lowercase_extension(filename: &str) -> String {
+    std::path::Path::new(filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
 /// Get the Language enum from a filename or file extension.
 /// Exact filename matches (e.g. `Dockerfile`, `Makefile`) are checked first,
 /// then falls back to the file extension.
@@ -360,17 +375,14 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
         return lang;
     }
 
-    let extension = std::path::Path::new(filename)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("");
+    let extension = lowercase_extension(filename);
 
     if extension == "txt" {
         return SupportedLanguage::Plain;
     }
 
     // Overriding gpui-component's default language mapping.
-    if let Some(lang) = match extension {
+    if let Some(lang) = match extension.as_str() {
         "scss" => Some(SupportedLanguage::Scss),
         "csv" | "tsv" => Some(SupportedLanguage::Csv),
         _ => None,
@@ -378,11 +390,11 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
         return lang;
     }
 
-    let mut language = from_language(Language::from_str(extension));
+    let mut language = from_language(Language::from_str(&extension));
     if language == SupportedLanguage::Plain {
-        language = match extension {
+        language = match extension.as_str() {
             "ada" | "ads" | "adb" => SupportedLanguage::Ada,
-            "asm" | "s" | "S" | "nasm" | "masm" => SupportedLanguage::Asm,
+            "asm" | "s" | "nasm" | "masm" => SupportedLanguage::Asm,
             "clojure" | "clj" | "cljs" => SupportedLanguage::Clojure,
             "d" | "di" => SupportedLanguage::D,
             "dart" => SupportedLanguage::Dart,
@@ -403,7 +415,7 @@ pub fn language_from_filename(filename: &str) -> SupportedLanguage {
             "perl" | "pl" | "pm" | "plx" => SupportedLanguage::Perl,
             "powershell" | "ps1" | "psm1" | "psd1" => SupportedLanguage::Powershell,
             "pro" | "prolog" => SupportedLanguage::Prolog,
-            "m" | "M" | "mm" => SupportedLanguage::ObjectiveC,
+            "m" | "mm" => SupportedLanguage::ObjectiveC,
             "ml" | "mli" => SupportedLanguage::Ocaml,
             "r" | "rmd" => SupportedLanguage::R,
             "svg" => SupportedLanguage::Html,
@@ -463,14 +475,8 @@ fn detect_m_file_language(content: &str) -> SupportedLanguage {
 #[must_use]
 pub fn language_from_content(filename: &str, content: &str) -> SupportedLanguage {
     let base = language_from_filename(filename);
-    if base == SupportedLanguage::ObjectiveC {
-        let ext = std::path::Path::new(filename)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        if ext == "m" {
-            return detect_m_file_language(content);
-        }
+    if base == SupportedLanguage::ObjectiveC && lowercase_extension(filename) == "m" {
+        return detect_m_file_language(content);
     }
     base
 }
@@ -547,7 +553,7 @@ pub fn register_external_languages() {
 
 #[cfg(test)]
 mod tests {
-    use super::{SupportedLanguage, language_from_content, pretty_name};
+    use super::{SupportedLanguage, language_from_content, language_from_filename, pretty_name};
     use std::collections::HashSet;
 
     #[test]
@@ -640,6 +646,39 @@ mod tests {
         assert_eq!(
             language_from_content("foo.rs", "fn main() {}"),
             SupportedLanguage::Rust
+        );
+    }
+
+    #[test]
+    fn test_uppercase_extension_detects_registry_language() {
+        assert_eq!(language_from_filename("FOO.RS"), SupportedLanguage::Rust);
+        assert_eq!(language_from_filename("Foo.Py"), SupportedLanguage::Python);
+    }
+
+    #[test]
+    fn test_uppercase_extension_detects_overridden_language() {
+        assert_eq!(
+            language_from_filename("styles.SCSS"),
+            SupportedLanguage::Scss
+        );
+        assert_eq!(
+            language_from_filename("notes.TXT"),
+            SupportedLanguage::Plain
+        );
+    }
+
+    #[test]
+    fn test_uppercase_extension_detects_fallback_language() {
+        assert_eq!(language_from_filename("boot.S"), SupportedLanguage::Asm);
+        assert_eq!(language_from_filename("main.ADB"), SupportedLanguage::Ada);
+    }
+
+    #[test]
+    fn test_uppercase_m_file_still_disambiguates_content() {
+        let content = "% This is a MATLAB script\nx = 1 + 2;\n";
+        assert_eq!(
+            language_from_content("FOO.M", content),
+            SupportedLanguage::Matlab
         );
     }
 }
