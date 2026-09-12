@@ -36,7 +36,6 @@ mod tests {
     #[test]
     fn test_vue_highlights_query_compiles() {
         super::add_vue_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("vue");
-        assert_eq!(highlighter.language().as_ref(), "vue");
+        super::super::test_support::assert_queries_compile("vue");
     }
 }

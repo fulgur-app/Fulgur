@@ -288,7 +288,6 @@ mod tests {
     #[test]
     fn test_objective_c_highlights_query_compiles() {
         super::add_objective_c_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("objective-c");
-        assert_eq!(highlighter.language().as_ref(), "objective-c");
+        super::super::test_support::assert_queries_compile("objective-c");
     }
 }

@@ -31,7 +31,6 @@ mod tests {
     #[test]
     fn test_r_highlights_query_compiles() {
         super::add_r_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("r");
-        assert_eq!(highlighter.language().as_ref(), "r");
+        super::super::test_support::assert_queries_compile("r");
     }
 }

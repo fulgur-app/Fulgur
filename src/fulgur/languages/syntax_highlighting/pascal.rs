@@ -33,7 +33,6 @@ mod tests {
     #[test]
     fn test_pascal_highlights_query_compiles() {
         super::add_pascal_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("pascal");
-        assert_eq!(highlighter.language().as_ref(), "pascal");
+        super::super::test_support::assert_queries_compile("pascal");
     }
 }

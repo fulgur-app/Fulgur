@@ -31,7 +31,6 @@ mod tests {
     #[test]
     fn test_perl_highlights_query_compiles() {
         super::add_perl_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("perl");
-        assert_eq!(highlighter.language().as_ref(), "perl");
+        super::super::test_support::assert_queries_compile("perl");
     }
 }

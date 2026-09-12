@@ -238,7 +238,6 @@ mod tests {
     #[test]
     fn test_fortran_highlights_query_compiles() {
         super::add_fortran_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("fortran");
-        assert_eq!(highlighter.language().as_ref(), "fortran");
+        super::super::test_support::assert_queries_compile("fortran");
     }
 }

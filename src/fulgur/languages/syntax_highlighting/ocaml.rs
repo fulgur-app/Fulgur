@@ -31,7 +31,6 @@ mod tests {
     #[test]
     fn test_ocaml_highlights_query_compiles() {
         super::add_ocaml_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("ocaml");
-        assert_eq!(highlighter.language().as_ref(), "ocaml");
+        super::super::test_support::assert_queries_compile("ocaml");
     }
 }

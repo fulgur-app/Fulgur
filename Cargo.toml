@@ -158,6 +158,7 @@ windows = { version = "0.62.1", features = [
 
 [dev-dependencies]
 tempfile = "3.27.0"
+tree-sitter = "0.26.13"
 
 [build-dependencies]
 embed-resource = "3.0.11"

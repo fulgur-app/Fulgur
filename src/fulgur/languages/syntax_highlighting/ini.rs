@@ -30,7 +30,6 @@ mod tests {
     #[test]
     fn test_ini_highlights_query_compiles() {
         super::add_ini_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("ini");
-        assert_eq!(highlighter.language().as_ref(), "ini");
+        super::super::test_support::assert_queries_compile("ini");
     }
 }

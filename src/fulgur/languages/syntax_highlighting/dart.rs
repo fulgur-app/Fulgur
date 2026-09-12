@@ -31,7 +31,6 @@ mod tests {
     #[test]
     fn test_dart_highlights_query_compiles() {
         super::add_dart_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("dart");
-        assert_eq!(highlighter.language().as_ref(), "dart");
+        super::super::test_support::assert_queries_compile("dart");
     }
 }

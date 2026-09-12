@@ -399,7 +399,6 @@ mod tests {
     #[test]
     fn test_julia_highlights_query_compiles() {
         super::add_julia_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("julia");
-        assert_eq!(highlighter.language().as_ref(), "julia");
+        super::super::test_support::assert_queries_compile("julia");
     }
 }

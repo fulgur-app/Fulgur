@@ -188,7 +188,6 @@ mod tests {
     #[test]
     fn test_groovy_highlights_query_compiles() {
         super::add_groovy_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("groovy");
-        assert_eq!(highlighter.language().as_ref(), "groovy");
+        super::super::test_support::assert_queries_compile("groovy");
     }
 }

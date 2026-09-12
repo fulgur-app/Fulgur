@@ -116,7 +116,6 @@ mod tests {
     #[test]
     fn test_clojure_highlights_query_compiles() {
         super::add_clojure_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("clojure");
-        assert_eq!(highlighter.language().as_ref(), "clojure");
+        super::super::test_support::assert_queries_compile("clojure");
     }
 }
