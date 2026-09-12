@@ -244,6 +244,10 @@ pub struct EditorSettings {
     pub use_spaces: bool,
     #[serde(default = "default_highlight_colors")]
     pub highlight_colors: bool,
+    #[serde(default = "default_auto_close_pairs")]
+    pub auto_close_pairs: bool,
+    #[serde(default = "default_smart_indent")]
+    pub smart_indent: bool,
 }
 
 /// How a tab's color tag is shown in the tab bar.
@@ -344,6 +348,22 @@ fn default_highlight_colors() -> bool {
     true
 }
 
+/// Default value for `auto_close_pairs` setting
+///
+/// ### Returns
+/// - `true`: insert the matching closing delimiter while typing by default
+fn default_auto_close_pairs() -> bool {
+    true
+}
+
+/// Default value for `smart_indent` setting
+///
+/// ### Returns
+/// - `true`: keep and adjust indentation when pressing Enter by default
+fn default_smart_indent() -> bool {
+    true
+}
+
 /// Default value for `persist_unsaved_buffers` setting
 ///
 /// ### Returns
@@ -385,6 +405,8 @@ impl EditorSettings {
             watch_files: default_watch_files(),
             use_spaces: default_use_spaces(),
             highlight_colors: default_highlight_colors(),
+            auto_close_pairs: default_auto_close_pairs(),
+            smart_indent: default_smart_indent(),
         }
     }
 }

@@ -303,6 +303,8 @@ fn make_input_state(
             hard_tabs: !settings.use_spaces,
         })
         .soft_wrap(settings.soft_wrap && !large_file)
+        .auto_close(settings.auto_close_pairs)
+        .smart_indent(settings.smart_indent)
         .folding(!large_file)
         .show_whitespaces(settings.show_whitespaces && !large_file)
         .default_value(content.unwrap_or_default());

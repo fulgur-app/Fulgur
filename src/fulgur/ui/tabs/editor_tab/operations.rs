@@ -37,6 +37,8 @@ impl EditorTab {
             input_state.set_indent_guides(settings.show_indent_guides && !large_file, window, cx);
             input_state.set_soft_wrap(settings.soft_wrap && !large_file, window, cx);
             input_state.set_show_whitespaces(settings.show_whitespaces && !large_file, window, cx);
+            input_state.set_auto_close(settings.auto_close_pairs, window, cx);
+            input_state.set_smart_indent(settings.smart_indent, window, cx);
         });
         self.set_highlight_colors(cx, settings.highlight_colors);
     }

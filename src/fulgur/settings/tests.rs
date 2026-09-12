@@ -317,6 +317,40 @@ fn settings_load_with_new_profiles_shape() {
 }
 
 #[test]
+fn settings_saved_before_pairing_controls_default_to_enabled() {
+    // Settings files written before the pairing controls existed have neither
+    // key, so both must fall back to enabled rather than failing to deserialize.
+    let json = r#"{
+        "editor_settings": {
+            "show_line_numbers": true,
+            "show_indent_guides": true,
+            "soft_wrap": false,
+            "font_size": 14.0,
+            "tab_size": 4,
+            "markdown_settings": {
+                "show_markdown_preview": true,
+                "show_markdown_toolbar": false
+            },
+            "watch_files": true
+        },
+        "app_settings": {
+            "confirm_exit": true,
+            "theme": "Default Light",
+            "synchronization_settings": {
+                "is_synchronization_activated": false
+            }
+        },
+        "recent_files": {
+            "files": [],
+            "max_files": 10
+        }
+    }"#;
+    let settings: Settings = serde_json::from_str(json).unwrap();
+    assert!(settings.editor_settings.auto_close_pairs);
+    assert!(settings.editor_settings.smart_indent);
+}
+
+#[test]
 fn settings_load_without_profiles_array_yields_empty_profiles() {
     // A `synchronization_settings` object with no `profiles` key produces an
     // empty profiles list rather than failing to deserialize.
