@@ -31,7 +31,6 @@ mod tests {
     #[test]
     fn test_dockerfile_highlights_query_compiles() {
         super::add_dockerfile_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("dockerfile");
-        assert_eq!(highlighter.language().as_ref(), "dockerfile");
+        super::super::test_support::assert_queries_compile("dockerfile");
     }
 }

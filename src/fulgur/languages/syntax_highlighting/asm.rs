@@ -116,7 +116,6 @@ mod tests {
     #[test]
     fn test_asm_highlights_query_compiles() {
         super::add_asm_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("asm");
-        assert_eq!(highlighter.language().as_ref(), "asm");
+        super::super::test_support::assert_queries_compile("asm");
     }
 }

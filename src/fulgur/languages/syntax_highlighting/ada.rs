@@ -143,7 +143,6 @@ mod tests {
     #[test]
     fn test_ada_highlights_query_compiles() {
         super::add_ada_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("ada");
-        assert_eq!(highlighter.language().as_ref(), "ada");
+        super::super::test_support::assert_queries_compile("ada");
     }
 }

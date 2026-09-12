@@ -179,7 +179,6 @@ mod tests {
     #[test]
     fn test_matlab_highlights_query_compiles() {
         super::add_matlab_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("matlab");
-        assert_eq!(highlighter.language().as_ref(), "matlab");
+        super::super::test_support::assert_queries_compile("matlab");
     }
 }

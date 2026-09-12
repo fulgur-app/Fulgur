@@ -31,7 +31,6 @@ mod tests {
     #[test]
     fn test_powershell_highlights_query_compiles() {
         super::add_powershell_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("powershell");
-        assert_eq!(highlighter.language().as_ref(), "powershell");
+        super::super::test_support::assert_queries_compile("powershell");
     }
 }

@@ -199,8 +199,6 @@ const FSHARP_HIGHLIGHTS_QUERY: &str = r##"
 
 #[cfg(test)]
 mod tests {
-    use gpui_kit::component::highlighter::SyntaxHighlighter;
-
     #[test]
     fn test_add_fsharp_support_registers_language() {
         super::add_fsharp_support();
@@ -214,7 +212,6 @@ mod tests {
     #[test]
     fn test_fsharp_highlights_query_compiles() {
         super::add_fsharp_support();
-        let highlighter = SyntaxHighlighter::new("fsharp");
-        assert_eq!(highlighter.language().as_ref(), "fsharp");
+        super::super::test_support::assert_queries_compile("fsharp");
     }
 }

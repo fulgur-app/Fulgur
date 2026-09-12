@@ -30,7 +30,6 @@ mod tests {
     #[test]
     fn test_prolog_highlights_query_compiles() {
         super::add_prolog_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("prolog");
-        assert_eq!(highlighter.language().as_ref(), "prolog");
+        super::super::test_support::assert_queries_compile("prolog");
     }
 }

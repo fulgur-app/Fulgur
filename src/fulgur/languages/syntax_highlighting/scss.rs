@@ -137,7 +137,6 @@ mod tests {
     #[test]
     fn test_scss_highlights_query_compiles() {
         super::add_scss_support();
-        let highlighter = gpui_kit::component::highlighter::SyntaxHighlighter::new("scss");
-        assert_eq!(highlighter.language().as_ref(), "scss");
+        super::super::test_support::assert_queries_compile("scss");
     }
 }

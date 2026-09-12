@@ -66,6 +66,7 @@ dependencies = [
  "tempfile",
  "tikv-jemallocator",
  "time",
+ "tree-sitter",
  "tree-sitter-fortran",
  "tree-sitter-fsharp",
  "tree-sitter-haskell",
