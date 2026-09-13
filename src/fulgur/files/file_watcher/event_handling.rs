@@ -2,6 +2,7 @@ use super::watcher::FileWatchEvent;
 use crate::fulgur::Fulgur;
 use crate::fulgur::editor_tab::TabLocation;
 use crate::fulgur::tab::Tab;
+use crate::fulgur::ui::components_utils::UNTITLED;
 use gpui_kit::{Context, Window};
 use std::path::PathBuf;
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -124,9 +125,10 @@ impl Fulgur {
                             editor_tab.title = to
                                 .file_name()
                                 .and_then(|n| n.to_str())
-                                .unwrap_or("Untitled")
+                                .unwrap_or(UNTITLED)
                                 .to_string()
                                 .into();
+                            editor_tab.update_language(cx);
                             cx.notify();
                         }
                     });
@@ -145,6 +147,7 @@ mod tests {
     use crate::fulgur::editor_tab::TabLocation;
     use crate::fulgur::files::file_watcher::FileWatchEvent;
     use crate::fulgur::files::file_watcher::test_helpers::{setup_fulgur, temp_test_path};
+    use crate::fulgur::languages::supported_languages::SupportedLanguage;
     use gpui_kit::TestAppContext;
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
@@ -462,6 +465,47 @@ mod tests {
                 assert!(
                     !this.file_watch_state.pending_conflicts.contains_key(&from),
                     "rename should prune old-path deferred conflict bookkeeping"
+                );
+            });
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_handle_file_watch_event_renamed_refreshes_language(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let from = temp_test_path("fulgur_rename_language_from.txt");
+        let to = temp_test_path("fulgur_rename_language_to.rs");
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, _cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(from.clone());
+                            editor_tab.title = "fulgur_rename_language_from.txt".into();
+                            editor_tab.language = SupportedLanguage::Plain;
+                        }
+                    });
+                this.handle_file_watch_event(
+                    FileWatchEvent::Renamed {
+                        from: from.clone(),
+                        to: to.clone(),
+                    },
+                    window,
+                    cx,
+                );
+                let language = this
+                    .tabs
+                    .first()
+                    .and_then(|t| t.read(cx).as_editor())
+                    .map(|editor_tab| editor_tab.language)
+                    .expect("expected active editor tab");
+                assert_eq!(
+                    language,
+                    SupportedLanguage::Rust,
+                    "rename should re-detect the language from the new extension"
                 );
             });
         });
