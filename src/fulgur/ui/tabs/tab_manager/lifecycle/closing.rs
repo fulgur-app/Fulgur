@@ -169,7 +169,7 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tabs.is_empty() || index >= self.tabs.len() - 1 {
+        if index + 1 >= self.tabs.len() {
             return;
         }
         let keep_id = self.tabs[index].read(cx).id();
@@ -191,7 +191,7 @@ impl Fulgur {
                 self.show_unsaved_changes_dialog(window, cx, move |this, window, cx| {
                     this.remove_tab_by_id(tab_id, window, cx);
                     if let Some(boundary_index) = this.tab_index_of(keep_id, cx)
-                        && boundary_index < this.tabs.len() - 1
+                        && boundary_index + 1 < this.tabs.len()
                     {
                         this.close_tabs_to_right(boundary_index, window, cx);
                         return;
