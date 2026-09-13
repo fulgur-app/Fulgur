@@ -205,7 +205,7 @@ pub fn share_file(
                     let token = token.clone();
                     let file_name = request.file_name.clone();
                     let deduplication_hash = deduplication_hash.clone();
-                    let compressed_content = compressed_content.clone();
+                    let compressed_content = compressed_content.as_slice();
                     scope.spawn(move || {
                         let Some(device) = devices.iter().find(|d| d.id == device_id) else {
                             log::warn!("Device {device_id} not found, skipping");
@@ -224,7 +224,7 @@ pub fn share_file(
                             );
                         };
                         let encrypted_content =
-                            match encrypt_content_for_device(&compressed_content, public_key) {
+                            match encrypt_content_for_device(compressed_content, public_key) {
                                 Ok(content) => content,
                                 Err(e) => {
                                     log::error!(
