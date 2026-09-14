@@ -122,8 +122,10 @@ pub fn format_file_size(bytes: u64) -> String {
         format!("{bytes} B")
     } else if bytes < 1024 * 1024 {
         format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else {
+    } else if bytes < 1024 * 1024 * 1024 {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
 
@@ -223,5 +225,11 @@ mod tests {
     fn test_format_file_size_boundary_at_one_megabyte() {
         assert_eq!(format_file_size(1024 * 1024 - 1), "1024.0 KB");
         assert_eq!(format_file_size(1024 * 1024), "1.0 MB");
+    }
+
+    #[test]
+    fn test_format_file_size_boundary_at_one_gigabyte() {
+        assert_eq!(format_file_size(1024 * 1024 * 1024 - 1), "1024.0 MB");
+        assert_eq!(format_file_size(1024 * 1024 * 1024), "1.0 GB");
     }
 }
