@@ -1,4 +1,4 @@
-use super::{RemoteFileResult, RemoteOpenResult};
+use super::{RemoteFileResult, RemoteOpenResult, remote_types::RemoteReloadGuard};
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{Fulgur, editor_tab, tab::Tab, ui::menus::build_menus};
 use gpui_kit::component::{WindowExt, notification::NotificationType};
@@ -26,6 +26,7 @@ impl Fulgur {
         }
         for outcome in outcomes {
             let target_tab_id = outcome.target_tab_id;
+            let target_reload_guard = outcome.target_reload_guard;
             if let Some(tab_id) = target_tab_id {
                 if let Some(request_id) = outcome.target_request_id
                     && self.latest_remote_open_request_by_tab.get(&tab_id).copied()
@@ -46,8 +47,17 @@ impl Fulgur {
             match outcome.result {
                 Ok(RemoteOpenResult::File(remote_file)) => {
                     if let Some(tab_id) = target_tab_id {
-                        self.pending_remote_restore.remove(&tab_id);
-                        self.apply_remote_reload_to_existing_tab(tab_id, remote_file, window, cx);
+                        if target_reload_guard.is_some_and(|guard| {
+                            self.apply_remote_reload_to_existing_tab(
+                                tab_id,
+                                &guard,
+                                remote_file,
+                                window,
+                                cx,
+                            )
+                        }) {
+                            self.pending_remote_restore.remove(&tab_id);
+                        }
                     } else {
                         self.last_failed_remote_open_url = None;
                         let recent_remote_url =
@@ -115,19 +125,53 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `tab_id`: Stable editor tab id to update
+    /// - `guard`: Content revision and source captured before the SSH read
     /// - `remote_file`: Loaded remote payload from SSH worker
     /// - `window`: The window context
     /// - `cx`: The application context
+    /// ### Returns
+    /// - `true`: The original tab and content revision still matched and were updated
+    /// - `false`: The tab changed while the remote read was pending and was left untouched
     fn apply_remote_reload_to_existing_tab(
         &mut self,
         tab_id: TabId,
+        guard: &RemoteReloadGuard,
         remote_file: RemoteFileResult,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
         let Some(tab_entity) = self.tab_entity_of(tab_id, cx) else {
-            return;
+            return false;
         };
+        let can_apply = tab_entity.read(cx).as_editor().is_some_and(|editor| {
+            editor.content_revision(cx) == guard.content_revision
+                && matches!(
+                    &editor.location,
+                    crate::fulgur::editor_tab::TabLocation::Remote(spec)
+                        if crate::fulgur::sync::ssh::url::format_remote_url(spec) == guard.source_url
+                )
+        });
+        if !can_apply {
+            log::warn!(
+                "Discarding stale remote reload for tab {tab_id} because its source or content changed"
+            );
+            tab_entity.update(cx, |tab, cx| {
+                if let Some(editor) = tab.as_editor_mut() {
+                    editor.check_modified(cx);
+                    cx.notify();
+                }
+            });
+            window.push_notification(
+                (
+                    NotificationType::Warning,
+                    gpui_kit::SharedString::from(
+                        "Remote reload skipped because the tab changed while loading; local edits were kept",
+                    ),
+                ),
+                cx,
+            );
+            return false;
+        }
         tab_entity.update(cx, |tab, cx| {
             let Some(editor_tab) = tab.as_editor_mut() else {
                 return;
@@ -157,5 +201,92 @@ impl Fulgur {
             cx.notify();
         });
         cx.notify();
+        true
+    }
+}
+
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod tests {
+    use super::{RemoteFileResult, RemoteOpenResult};
+    use crate::fulgur::{
+        editor_tab::TabLocation,
+        files::file_operations::{
+            PendingRemoteOpenOutcome, remote_types::RemoteReloadGuard,
+            test_helpers::setup_fulgur_with_root,
+        },
+        sync::ssh::url::RemoteSpec,
+        ui::components_utils::UTF_8,
+    };
+    use gpui_kit::TestAppContext;
+
+    /// Build the remote location shared by the restored tab and its delayed result.
+    ///
+    /// ### Returns
+    /// - `RemoteSpec`: A deterministic remote file location for the test
+    fn remote_spec() -> RemoteSpec {
+        RemoteSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: Some("alice".to_string()),
+            path: "/tmp/reconnect.txt".to_string(),
+            password_in_url: None,
+        }
+    }
+
+    #[gpui_kit::test]
+    fn test_remote_reconnect_keeps_edits_made_while_loading(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let tab_entity = this.tabs.first().expect("expected an editor tab").clone();
+                let (tab_id, expected_revision) = tab_entity.update(cx, |tab, cx| {
+                    let editor = tab.as_editor_mut().expect("expected an editor tab");
+                    editor.location = TabLocation::Remote(remote_spec());
+                    editor.set_original_content_from_str("");
+                    editor.modified = false;
+                    (editor.id, editor.content_revision(cx))
+                });
+                this.pending_remote_restore.insert(tab_id);
+
+                tab_entity.update(cx, |tab, cx| {
+                    let editor = tab.as_editor_mut().expect("expected an editor tab");
+                    editor.content.update(cx, |state, cx| {
+                        state.set_value("local edit", window, cx);
+                    });
+                });
+                this.pending_remote_open
+                    .lock()
+                    .push(PendingRemoteOpenOutcome {
+                        target_tab_id: Some(tab_id),
+                        target_request_id: None,
+                        target_reload_guard: Some(RemoteReloadGuard {
+                            content_revision: expected_revision,
+                            source_url: crate::fulgur::sync::ssh::url::format_remote_url(
+                                &remote_spec(),
+                            ),
+                        }),
+                        result: Ok(RemoteOpenResult::File(RemoteFileResult {
+                            spec: remote_spec(),
+                            content: "remote content".to_string(),
+                            encoding: UTF_8.to_string(),
+                            lossy: false,
+                            file_size: 14,
+                        })),
+                    });
+                this.process_pending_remote_files(window, cx);
+
+                let editor = tab_entity
+                    .read(cx)
+                    .as_editor()
+                    .expect("expected an editor tab");
+                assert_eq!(editor.content.read(cx).text().to_string(), "local edit");
+                assert!(editor.modified, "the intervening edit must remain dirty");
+                assert!(
+                    this.pending_remote_restore.contains(&tab_id),
+                    "a rejected stale reload must not mark the restored tab as refreshed"
+                );
+            });
+        });
     }
 }
