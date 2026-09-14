@@ -5,7 +5,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use sha2::{Digest, Sha256};
 use ssh_key::{
     PublicKey,
-    known_hosts::{Entry as KnownHostEntry, KnownHosts},
+    known_hosts::{Entry as KnownHostEntry, KnownHosts, Marker as KnownHostMarker},
 };
 use ssh2::Session;
 use std::fs::{File, OpenOptions};
@@ -95,23 +95,49 @@ fn resolve_known_host_check_result_with_known_hosts_fallback(
     known_hosts_path: &Path,
 ) -> ssh2::CheckResult {
     let primary = resolve_known_host_check_result(known_hosts, host, port, key);
-    if matches!(primary, ssh2::CheckResult::Match) {
-        return primary;
-    }
-
     let fallback = check_known_hosts_with_parser(host, port, key, known_hosts_path);
+    merge_known_host_check_results(primary, fallback)
+}
+
+/// Merge libssh2's host-key check with marker-aware parser results.
+///
+/// ### Arguments
+/// - `primary`: Result returned by libssh2's `known_hosts` implementation.
+/// - `fallback`: Marker-aware result returned by the pure-Rust parser, when available.
+///
+/// ### Returns
+/// - `ssh2::CheckResult::Mismatch`: The key is revoked, mismatched, or is only a certificate
+///   authority key.
+/// - `ssh2::CheckResult::Match`: An unmarked parsed entry or the primary lookup trusts the key.
+/// - `ssh2::CheckResult::NotFound`: Neither lookup found an applicable entry.
+/// - `ssh2::CheckResult::Failure`: Both lookups failed to produce a decision.
+fn merge_known_host_check_results(
+    primary: ssh2::CheckResult,
+    fallback: Option<ParsedKnownHostCheckResult>,
+) -> ssh2::CheckResult {
     match fallback {
-        Some(ssh2::CheckResult::Match) => ssh2::CheckResult::Match,
-        Some(ssh2::CheckResult::Mismatch) => ssh2::CheckResult::Mismatch,
-        Some(ssh2::CheckResult::NotFound) => {
+        Some(ParsedKnownHostCheckResult::Revoked | ParsedKnownHostCheckResult::Mismatch) => {
+            ssh2::CheckResult::Mismatch
+        }
+        Some(ParsedKnownHostCheckResult::Match) => ssh2::CheckResult::Match,
+        Some(ParsedKnownHostCheckResult::NotFound) => {
             if matches!(primary, ssh2::CheckResult::Failure) {
                 ssh2::CheckResult::NotFound
             } else {
                 primary
             }
         }
-        Some(ssh2::CheckResult::Failure) | None => primary,
+        None => primary,
     }
+}
+
+/// Marker-aware result from the pure-Rust `known_hosts` parser.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ParsedKnownHostCheckResult {
+    Match,
+    Mismatch,
+    NotFound,
+    Revoked,
 }
 
 /// Resolve host-key check result across host representations used by OpenSSH.
@@ -157,15 +183,18 @@ fn resolve_known_host_check_result(
 /// - `known_hosts_path`: Path to the `known_hosts` file.
 ///
 /// ### Returns
-/// - `Some(ssh2::CheckResult)`: Parsed result from known-host entries.
-/// - `None`: The file could not be parsed or the key format is unsupported.
+/// - `Some(ParsedKnownHostCheckResult)`: Parsed result from known-host entries.
+/// - `None`: The file could not be read or the server key format is unsupported.
 fn check_known_hosts_with_parser(
     host: &str,
     port: u16,
     key: &[u8],
     known_hosts_path: &Path,
-) -> Option<ssh2::CheckResult> {
-    let entries = KnownHosts::read_file(known_hosts_path).ok()?;
+) -> Option<ParsedKnownHostCheckResult> {
+    let contents = std::fs::read_to_string(known_hosts_path).ok()?;
+    let entries = KnownHosts::new(&contents)
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
     let server_key = PublicKey::from_bytes(key).ok()?;
     Some(resolve_known_host_check_result_from_entries(
         &entries,
@@ -184,16 +213,18 @@ fn check_known_hosts_with_parser(
 /// - `server_key`: Server key parsed from libssh2 raw bytes.
 ///
 /// ### Returns
-/// - `ssh2::CheckResult::Match`: A matching host entry with an identical key was found.
-/// - `ssh2::CheckResult::Mismatch`: Host entry exists but key differs.
-/// - `ssh2::CheckResult::NotFound`: No host entry matched.
+/// - `ParsedKnownHostCheckResult::Revoked`: An applicable revocation matches the server key.
+/// - `ParsedKnownHostCheckResult::Match`: An unmarked entry matches the server key.
+/// - `ParsedKnownHostCheckResult::Mismatch`: Host entries exist, but none directly trust the key.
+/// - `ParsedKnownHostCheckResult::NotFound`: No host entry matched.
 fn resolve_known_host_check_result_from_entries(
     entries: &[KnownHostEntry],
     host: &str,
     port: u16,
     server_key: &PublicKey,
-) -> ssh2::CheckResult {
+) -> ParsedKnownHostCheckResult {
     let mut saw_host_entry = false;
+    let mut saw_unmarked_match = false;
     for entry in entries {
         if !known_host_entry_matches_target(entry, host, port) {
             continue;
@@ -201,14 +232,22 @@ fn resolve_known_host_check_result_from_entries(
 
         saw_host_entry = true;
         if entry.public_key().key_data() == server_key.key_data() {
-            return ssh2::CheckResult::Match;
+            match entry.marker() {
+                Some(KnownHostMarker::Revoked) => {
+                    return ParsedKnownHostCheckResult::Revoked;
+                }
+                Some(KnownHostMarker::CertAuthority) => {}
+                None => saw_unmarked_match = true,
+            }
         }
     }
 
-    if saw_host_entry {
-        ssh2::CheckResult::Mismatch
+    if saw_unmarked_match {
+        ParsedKnownHostCheckResult::Match
+    } else if saw_host_entry {
+        ParsedKnownHostCheckResult::Mismatch
     } else {
-        ssh2::CheckResult::NotFound
+        ParsedKnownHostCheckResult::NotFound
     }
 }
 
@@ -383,8 +422,9 @@ fn known_hosts_ends_mid_line(known_hosts_path: &Path) -> Result<bool, SshError> 
 #[cfg(test)]
 mod tests {
     use super::{
-        aggregate_check_results, append_known_hosts_entry, host_key_algorithm_name,
-        known_hosts_entry_host, known_hosts_entry_line,
+        ParsedKnownHostCheckResult, aggregate_check_results, append_known_hosts_entry,
+        check_known_hosts_with_parser, host_key_algorithm_name, known_hosts_entry_host,
+        known_hosts_entry_line, merge_known_host_check_results,
         resolve_known_host_check_result_from_entries,
     };
     use ssh_key::{PublicKey, known_hosts::KnownHosts};
@@ -436,6 +476,16 @@ mod tests {
     }
 
     #[test]
+    fn parsed_revocation_overrides_a_libssh2_match() {
+        let result = merge_known_host_check_results(
+            ssh2::CheckResult::Match,
+            Some(ParsedKnownHostCheckResult::Revoked),
+        );
+
+        assert!(matches!(result, ssh2::CheckResult::Mismatch));
+    }
+
+    #[test]
     fn known_hosts_entry_uses_plain_host_for_default_port() {
         assert_eq!(known_hosts_entry_host("example.com", 22), "example.com");
     }
@@ -460,7 +510,7 @@ mod tests {
 
         let result =
             resolve_known_host_check_result_from_entries(&entries, "example.com", 22, &server_key);
-        assert!(matches!(result, ssh2::CheckResult::Match));
+        assert_eq!(result, ParsedKnownHostCheckResult::Match);
     }
 
     #[test]
@@ -475,7 +525,7 @@ mod tests {
 
         let result =
             resolve_known_host_check_result_from_entries(&entries, "example.com", 22, &server_key);
-        assert!(matches!(result, ssh2::CheckResult::Mismatch));
+        assert_eq!(result, ParsedKnownHostCheckResult::Mismatch);
     }
 
     #[test]
@@ -490,7 +540,108 @@ mod tests {
 
         let result =
             resolve_known_host_check_result_from_entries(&entries, "example.com", 22, &server_key);
-        assert!(matches!(result, ssh2::CheckResult::Match));
+        assert_eq!(result, ParsedKnownHostCheckResult::Match);
+    }
+
+    #[test]
+    fn parser_rejects_a_revoked_only_key() {
+        let entries = parse_known_host_entries(&format!(
+            "@revoked example.com {}",
+            SERVER_KEY_OPENSSH.trim_end_matches(" server")
+        ));
+
+        let result = resolve_known_host_check_result_from_entries(
+            &entries,
+            "example.com",
+            22,
+            &server_key(),
+        );
+
+        assert_eq!(result, ParsedKnownHostCheckResult::Revoked);
+    }
+
+    #[test]
+    fn parser_does_not_let_a_malformed_line_hide_a_revocation() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("known_hosts");
+        let key = SERVER_KEY_OPENSSH.trim_end_matches(" server");
+        std::fs::write(
+            &path,
+            format!("this is not a valid entry\n@revoked example.com {key}"),
+        )
+        .expect("failed to seed known_hosts");
+
+        let result = check_known_hosts_with_parser("example.com", 22, &server_key_bytes(), &path);
+
+        assert_eq!(result, Some(ParsedKnownHostCheckResult::Revoked));
+    }
+
+    #[test]
+    fn parser_revocation_overrides_an_ordinary_entry_in_either_order() {
+        let key = SERVER_KEY_OPENSSH.trim_end_matches(" server");
+        for entries in [
+            parse_known_host_entries(&format!("example.com {key}\n@revoked example.com {key}")),
+            parse_known_host_entries(&format!("@revoked example.com {key}\nexample.com {key}")),
+        ] {
+            let result = resolve_known_host_check_result_from_entries(
+                &entries,
+                "example.com",
+                22,
+                &server_key(),
+            );
+
+            assert_eq!(result, ParsedKnownHostCheckResult::Revoked);
+        }
+    }
+
+    #[test]
+    fn parser_rejects_a_revoked_wildcard_key() {
+        let entries = parse_known_host_entries(&format!(
+            "@revoked *.example.com {}",
+            SERVER_KEY_OPENSSH.trim_end_matches(" server")
+        ));
+
+        let result = resolve_known_host_check_result_from_entries(
+            &entries,
+            "dev.example.com",
+            22,
+            &server_key(),
+        );
+
+        assert_eq!(result, ParsedKnownHostCheckResult::Revoked);
+    }
+
+    #[test]
+    fn parser_rejects_a_revoked_hashed_key() {
+        let entries = parse_known_host_entries(
+            "@revoked |1|O33ESRMWPVkMYIwJ1Uw+n877jTo=|nuuC5vEqXlEZ/8BXQR7m619W6Ak= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF",
+        );
+        let server_key = PublicKey::from_openssh(
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF server",
+        )
+        .expect("failed to parse server key");
+
+        let result =
+            resolve_known_host_check_result_from_entries(&entries, "example.com", 22, &server_key);
+
+        assert_eq!(result, ParsedKnownHostCheckResult::Revoked);
+    }
+
+    #[test]
+    fn parser_does_not_trust_a_certificate_authority_as_a_raw_host_key() {
+        let entries = parse_known_host_entries(&format!(
+            "@cert-authority example.com {}",
+            SERVER_KEY_OPENSSH.trim_end_matches(" server")
+        ));
+
+        let result = resolve_known_host_check_result_from_entries(
+            &entries,
+            "example.com",
+            22,
+            &server_key(),
+        );
+
+        assert_eq!(result, ParsedKnownHostCheckResult::Mismatch);
     }
 
     #[test]
@@ -592,6 +743,6 @@ mod tests {
             2222,
             &server_key(),
         );
-        assert!(matches!(result, ssh2::CheckResult::Match));
+        assert_eq!(result, ParsedKnownHostCheckResult::Match);
     }
 }
