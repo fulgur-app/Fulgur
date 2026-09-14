@@ -180,11 +180,12 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `cx`: The application context
+    /// - `tab_states`: The editor tabs that will actually be persisted
     ///
     /// ### Returns
     /// - `Some(usize)`: the active editor tab index
-    /// - `None`: if the active tab is a Settings tab (not persisted).
-    fn active_editor_index_for_state(&self, cx: &App) -> Option<usize> {
+    /// - `None`: if the active tab is Settings or its editor is not persisted
+    fn active_editor_index_for_state(&self, cx: &App, tab_states: &[TabState]) -> Option<usize> {
         let active = self.active_tab_index(cx)?;
         let active_tab = self.tabs.get(active)?.read(cx);
         let editor_tab_id = match active_tab {
@@ -192,16 +193,9 @@ impl Fulgur {
             Tab::MarkdownPreview(pt) => pt.source_tab_id,
             Tab::Settings(_) => return None,
         };
-        let mut editor_index = 0;
-        for tab in &self.tabs {
-            if let Tab::Editor(et) = tab.read(cx) {
-                if et.id == editor_tab_id {
-                    return Some(editor_index);
-                }
-                editor_index += 1;
-            }
-        }
-        None
+        tab_states
+            .iter()
+            .position(|tab_state| tab_state.tab_id == editor_tab_id.0)
     }
 
     /// Build `WindowState` for this window without window bounds (for cross-window saves)
@@ -213,10 +207,12 @@ impl Fulgur {
     /// - `WindowState`: The `WindowState` for this window (with cached bounds)
     pub fn build_window_state_without_bounds(&self, cx: &App) -> WindowState {
         let window_bounds = self.cached_window_bounds.clone().unwrap_or_default();
+        let tabs = self.build_tab_states(cx);
+        let active_tab_index = self.active_editor_index_for_state(cx, &tabs);
         WindowState {
             window_id: self.persistent_window_id,
-            tabs: self.build_tab_states(cx),
-            active_tab_index: self.active_editor_index_for_state(cx),
+            tabs,
+            active_tab_index,
             window_bounds,
         }
     }
@@ -235,10 +231,12 @@ impl Fulgur {
             .and_then(|d| u32::try_from(u64::from(d.id())).ok());
         let window_bounds =
             SerializedWindowBounds::from_gpui_bounds(window.window_bounds(), display_id);
+        let tabs = self.build_tab_states(cx);
+        let active_tab_index = self.active_editor_index_for_state(cx, &tabs);
         WindowState {
             window_id: self.persistent_window_id,
-            tabs: self.build_tab_states(cx),
-            active_tab_index: self.active_editor_index_for_state(cx),
+            tabs,
+            active_tab_index,
             window_bounds,
         }
     }
@@ -394,6 +392,93 @@ mod tests {
             tabs[0].content.is_some(),
             "unsaved content must be persisted when the setting is enabled"
         );
+    }
+
+    #[gpui_kit::test]
+    fn active_index_ignores_tabs_omitted_from_snapshot(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let snapshot = visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.settings.app_settings.persist_unsaved_buffers = true;
+                this.open_settings(window, cx);
+                this.new_tab(window, cx);
+
+                let active_tab = this
+                    .active_tab_entity(cx)
+                    .expect("expected the new editor tab to be active");
+                active_tab.update(cx, |tab, cx| {
+                    tab.as_editor_mut()
+                        .expect("expected an editor tab")
+                        .content
+                        .update(cx, |content, cx| {
+                            content.set_value("persisted active tab", window, cx);
+                        });
+                });
+
+                this.build_window_state_without_bounds(cx)
+            })
+        });
+
+        assert_eq!(snapshot.tabs.len(), 1);
+        assert_eq!(snapshot.active_tab_index, Some(0));
+    }
+
+    #[gpui_kit::test]
+    fn restore_keeps_active_tab_identity_when_an_earlier_tab_is_skipped(cx: &mut TestAppContext) {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let state = WindowsState {
+            windows: vec![WindowState {
+                window_id: 42,
+                tabs: vec![
+                    TabState {
+                        tab_id: 10,
+                        title: "missing.txt".to_string(),
+                        file_path: Some(temp_dir.path().join("missing.txt")),
+                        content: None,
+                        last_saved: None,
+                        remote: None,
+                        log_view: false,
+                        color_tag: None,
+                    },
+                    TabState {
+                        tab_id: 11,
+                        title: "active.txt".to_string(),
+                        file_path: None,
+                        content: Some(TabContent::from("active content")),
+                        last_saved: None,
+                        remote: None,
+                        log_view: false,
+                        color_tag: None,
+                    },
+                    TabState {
+                        tab_id: 12,
+                        title: "other.txt".to_string(),
+                        file_path: None,
+                        content: Some(TabContent::from("other content")),
+                        last_saved: None,
+                        remote: None,
+                        log_view: false,
+                        color_tag: None,
+                    },
+                ],
+                active_tab_index: Some(1),
+                window_bounds: SerializedWindowBounds::default(),
+            }],
+        };
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let restored = restore_and_snapshot(&fulgur, &mut visual_cx, state);
+
+        assert_eq!(
+            restored
+                .tabs
+                .iter()
+                .map(|tab| tab.tab_id)
+                .collect::<Vec<_>>(),
+            vec![11, 12]
+        );
+        assert_eq!(restored.active_tab_index, Some(0));
     }
 
     #[gpui_kit::test]
