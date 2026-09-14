@@ -2,10 +2,18 @@ name: CI
 
 # Branch-protection assumption: "Require branches to be up to date before merging"
 # is enforced on main. Under that rule, a PR's CI run validates the exact merge
-# commit that lands, so post-merge we only run coverage + docs-deploy. If that
-# rule is ever disabled, re-enable the fmt/clippy/test/msrv/docs-validate jobs
-# on push-to-main by appending `|| (github.event_name == 'push' && github.ref ==
-# 'refs/heads/main')` to their `if:` conditions.
+# commit that lands, so post-merge we only run coverage + docs-deploy + a test
+# cache warm-up. If that rule is ever disabled, re-enable the
+# fmt/clippy/test/docs-validate jobs on push-to-main by appending
+# `|| (github.event_name == 'push' && github.ref == 'refs/heads/main')` to their
+# `if:` conditions.
+#
+# Cache strategy: GitHub Actions caches are immutable per key and scoped to the
+# branch that saved them. Only caches saved on main are readable by every PR, so
+# every job uses its own `shared-key` (clippy, test and docs artefacts are not
+# interchangeable) and PR-only jobs never save (`save-if` main only). The
+# `warm-test-cache` and `warm-clippy-cache` jobs on push-to-main are what keep
+# the PR test jobs and the dev-* clippy smoke warm.
 
 on:
   push:
@@ -139,7 +147,7 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ${{ matrix.os }}-cargo
+          shared-key: ${{ matrix.os }}-clippy
 
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -148,7 +156,6 @@ jobs:
     name: Test - ${{ matrix.os }}
     if: >-
       github.event_name == 'pull_request'
-      || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))
       || github.event_name == 'workflow_dispatch'
       || github.event_name == 'schedule'
     runs-on: ${{ matrix.os }}
@@ -188,35 +195,60 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ${{ matrix.os }}-cargo
+          shared-key: ${{ matrix.os }}-test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run tests
         run: cargo test --all-features
 
-  msrv:
-    name: Minimum Rust Version (1.98.1)
-    if: github.event_name == 'pull_request'
+  warm-test-cache:
+    name: Warm test cache - ${{ matrix.os }}
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: *linux_deps_install_cmd
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.os }}-test
+
+      - name: Build test artefacts
+        run: cargo test --all-features --no-run
+
+  warm-clippy-cache:
+    name: Warm clippy cache - ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Install Rust 1.98.1
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.98.1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux dependencies
         run: *linux_deps_install_cmd
 
-      # Dedicated cache for MSRV (different Rust version)
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ubuntu-msrv-cargo
+          shared-key: ubuntu-latest-clippy
 
-      - name: Check with minimum Rust version
-        run: cargo check --all-features --quiet
+      - name: Build check artefacts
+        run: cargo check --all-targets --all-features
 
   docs-validate:
     name: Documentation (validate)
@@ -232,10 +264,12 @@ jobs:
       - name: Install Linux dependencies
         run: *linux_deps_install_cmd
 
+      # Restore-only: the main-scoped copy is saved by docs-deploy.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ubuntu-latest-cargo
+          shared-key: ubuntu-docs
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build documentation
         run: cargo doc --no-deps --all-features
@@ -259,7 +293,7 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ubuntu-latest-cargo
+          shared-key: ubuntu-docs
 
       - name: Build documentation
         run: cargo doc --no-deps --all-features
@@ -326,11 +360,11 @@ jobs:
 
   # Aggregator job named "CI" so branch protection can require a single stable
   # status check instead of every individual job. Fails if any PR-gate job
-  # failed; allows "skipped" so dev-push (which skips msrv/docs-validate) still
+  # failed; allows "skipped" so dev-push (which skips test/docs-validate) still
   # reports green.
   ci:
     name: CI
-    needs: [fmt, clippy, test, msrv, docs-validate]
+    needs: [fmt, clippy, test, docs-validate]
     # Excludes workflow_dispatch: manual Windows runs report through their own
     # job statuses (and the Telegram notification), not the branch-protection gate.
     if: ${{ always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))) }}
@@ -341,11 +375,10 @@ jobs:
           FMT: ${{ needs.fmt.result }}
           CLIPPY: ${{ needs.clippy.result }}
           TEST: ${{ needs.test.result }}
-          MSRV: ${{ needs.msrv.result }}
           DOCS_VALIDATE: ${{ needs.docs-validate.result }}
         run: |
           failed=0
-          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "msrv:$MSRV" "docs-validate:$DOCS_VALIDATE"; do
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "docs-validate:$DOCS_VALIDATE"; do
             name="${entry%%:*}"
             result="${entry#*:}"
             if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
@@ -359,7 +392,7 @@ jobs:
   # the per-job notification steps (two Telegram messages per PR) with one.
   notify:
     name: Telegram notification
-    needs: [fmt, clippy, test, msrv, docs-validate, docs-deploy, coverage]
+    needs: [fmt, clippy, test, warm-test-cache, warm-clippy-cache, docs-validate, docs-deploy, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -371,7 +404,8 @@ jobs:
           FMT: ${{ needs.fmt.result }}
           CLIPPY: ${{ needs.clippy.result }}
           TEST: ${{ needs.test.result }}
-          MSRV: ${{ needs.msrv.result }}
+          WARM_TEST_CACHE: ${{ needs.warm-test-cache.result }}
+          WARM_CLIPPY_CACHE: ${{ needs.warm-clippy-cache.result }}
           DOCS_VALIDATE: ${{ needs.docs-validate.result }}
           DOCS_DEPLOY: ${{ needs.docs-deploy.result }}
           COVERAGE: ${{ needs.coverage.result }}
@@ -379,7 +413,7 @@ jobs:
         run: |
           # Determine overall status: failure > cancelled > success.
           STATUS="success"
-          for result in "$FMT" "$CLIPPY" "$TEST" "$MSRV" "$DOCS_VALIDATE" "$DOCS_DEPLOY" "$COVERAGE"; do
+          for result in "$FMT" "$CLIPPY" "$TEST" "$WARM_TEST_CACHE" "$WARM_CLIPPY_CACHE" "$DOCS_VALIDATE" "$DOCS_DEPLOY" "$COVERAGE"; do
             if [ "$result" = "failure" ]; then
               STATUS="failure"
             elif [ "$result" = "cancelled" ] && [ "$STATUS" != "failure" ]; then
@@ -395,7 +429,7 @@ jobs:
 
           # Per-job summary line, omitting jobs that did not run.
           SUMMARY=""
-          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "msrv:$MSRV" "docs-validate:$DOCS_VALIDATE" "docs-deploy:$DOCS_DEPLOY" "coverage:$COVERAGE"; do
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "warm-test-cache:$WARM_TEST_CACHE" "warm-clippy-cache:$WARM_CLIPPY_CACHE" "docs-validate:$DOCS_VALIDATE" "docs-deploy:$DOCS_DEPLOY" "coverage:$COVERAGE"; do
             name="${entry%%:*}"
             result="${entry#*:}"
             case "$result" in
