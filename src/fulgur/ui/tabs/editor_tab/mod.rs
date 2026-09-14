@@ -47,6 +47,13 @@ pub enum CsvViewMode {
     Text,
 }
 
+/// Fingerprint of editor text used to reject stale asynchronous work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ContentRevision {
+    hash: u64,
+    len: usize,
+}
+
 /// A single editor tab with its content and file metadata
 pub struct EditorTab {
     pub id: TabId,
@@ -153,6 +160,18 @@ pub(crate) fn initial_csv_state(language: SupportedLanguage, content: &str) -> (
 }
 
 impl EditorTab {
+    /// Capture the current editor text as a lightweight revision token.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `ContentRevision`: A hash and byte length representing the current text
+    pub(crate) fn content_revision(&self, cx: &App) -> ContentRevision {
+        let (hash, len) = content_fingerprint_from_rope(self.content.read(cx).text());
+        ContentRevision { hash, len }
+    }
+
     /// Return the local filesystem path, if this tab holds a local file.
     ///
     /// ### Returns

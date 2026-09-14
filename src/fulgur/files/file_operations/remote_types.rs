@@ -2,6 +2,7 @@ use crate::fulgur::sync::ssh::{
     self, credentials::SshCredKey, pool::SshSessionPool, session::HostKeyDecision,
     sftp::RemoteDirectoryEntry, url::RemoteSpec,
 };
+use crate::fulgur::ui::tabs::editor_tab::ContentRevision;
 use crate::fulgur::ui::tabs::tab::TabId;
 use parking_lot::Mutex;
 use std::{
@@ -42,10 +43,18 @@ pub enum RemoteOpenResult {
     Browse(RemoteBrowseResult),
 }
 
+/// Existing-tab state that must remain unchanged during a remote reload.
+#[derive(Clone)]
+pub(crate) struct RemoteReloadGuard {
+    pub content_revision: ContentRevision,
+    pub source_url: String,
+}
+
 /// A queued remote-open outcome consumed by `Fulgur::process_pending_remote_files`.
 pub struct PendingRemoteOpenOutcome {
     pub target_tab_id: Option<TabId>,
     pub target_request_id: Option<u64>,
+    pub(crate) target_reload_guard: Option<RemoteReloadGuard>,
     pub result: Result<RemoteOpenResult, String>,
 }
 
@@ -58,6 +67,7 @@ pub struct RemoteOpenTaskParams {
     pub ssh_session_pool: Arc<SshSessionPool>,
     pub target_tab_id: Option<TabId>,
     pub target_request_id: Option<u64>,
+    pub(crate) target_reload_guard: Option<RemoteReloadGuard>,
 }
 
 /// Wait for a host-key trust decision with a bounded timeout.
