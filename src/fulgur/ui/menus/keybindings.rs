@@ -181,6 +181,7 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
         KeybindingDispatchSpec::new("cmd-shift-w", KeybindingDispatchAction::CloseAllFiles),
         #[cfg(not(target_os = "macos"))]
         KeybindingDispatchSpec::new("ctrl-shift-w", KeybindingDispatchAction::CloseAllFiles),
+        #[cfg(target_os = "macos")]
         KeybindingDispatchSpec::new("cmd-q", KeybindingDispatchAction::Quit),
         #[cfg(not(target_os = "macos"))]
         KeybindingDispatchSpec::new("alt-f4", KeybindingDispatchAction::Quit),
@@ -344,14 +345,23 @@ mod tests {
     #[test]
     fn test_default_keybinding_dispatch_specs_include_platform_quit_shortcuts() {
         let specs = default_keybinding_dispatch_specs();
+
+        #[cfg(target_os = "macos")]
         assert!(has_binding(&specs, "cmd-q", KeybindingDispatchAction::Quit));
 
         #[cfg(not(target_os = "macos"))]
-        assert!(has_binding(
-            &specs,
-            "alt-f4",
-            KeybindingDispatchAction::Quit
-        ));
+        {
+            assert!(!has_binding(
+                &specs,
+                "cmd-q",
+                KeybindingDispatchAction::Quit
+            ));
+            assert!(has_binding(
+                &specs,
+                "alt-f4",
+                KeybindingDispatchAction::Quit
+            ));
+        }
     }
 
     #[test]
