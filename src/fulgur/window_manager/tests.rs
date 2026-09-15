@@ -5,9 +5,10 @@ use crate::fulgur::{
     Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
     state::StateDb,
 };
-use gpui_kit::component::notification::NotificationType;
+use gpui_kit::component::{WindowExt, input::InputEvent, notification::NotificationType};
 use gpui_kit::{
-    AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId, WindowOptions,
+    AppContext, BorrowAppContext, Entity, Modifiers, SharedString, TestAppContext,
+    VisualTestContext, WindowId, WindowOptions,
 };
 use parking_lot::Mutex;
 use std::{
@@ -122,6 +123,27 @@ fn invoke_window_close_requested(
         }
         panic!("failed to locate target test window by id");
     })
+}
+
+/// Invoke application Quit against a specific window in tests.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context.
+/// - `window_id`: The target window ID where Quit should begin.
+/// - `fulgur`: The `Fulgur` entity that owns the quit handler.
+fn invoke_quit(cx: &mut TestAppContext, window_id: WindowId, fulgur: &Entity<Fulgur>) {
+    cx.update(|cx| {
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)
+            .expect("failed to locate target test window by id");
+        handle
+            .update(cx, |_, window, cx| {
+                fulgur.update(cx, |this, cx| this.quit(window, cx));
+            })
+            .expect("failed to invoke Quit on test window");
+    });
 }
 
 /// Invoke `do_open_file` against a specific window in tests.
@@ -422,6 +444,116 @@ fn test_on_window_close_requested_non_last_window_closes_even_with_confirm_exit_
         assert!(manager.get_window(window_id_one).is_some());
         assert!(manager.get_window(window_id_two).is_none());
         assert_eq!(manager.get_last_focused(), Some(window_id_one));
+    });
+}
+
+#[gpui_kit::test]
+fn test_quit_warns_for_large_dirty_file_in_other_window_and_cancel_aborts(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let (initiator_window_id, initiator) = open_window_with_fulgur(cx);
+    let (dirty_window_id, dirty_window) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, initiator_window_id, &initiator);
+    register_window_in_global_manager(cx, dirty_window_id, &dirty_window);
+
+    cx.update(|cx| {
+        initiator.update(cx, |this, _| {
+            this.settings.app_settings.confirm_exit = false;
+        });
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == dirty_window_id)
+            .expect("dirty test window should exist");
+        handle
+            .update(cx, |_, window, cx| {
+                dirty_window.update(cx, |this, cx| {
+                    let tab = this
+                        .tabs
+                        .first()
+                        .expect("dirty window should have an editor tab")
+                        .clone();
+                    let content = tab.update(cx, |tab, _| {
+                        let editor = tab.as_editor_mut().expect("expected editor tab");
+                        editor.large_file = true;
+                        editor.location =
+                            TabLocation::Local(temp_test_path("fulgur-large-other-window.txt"));
+                        editor.content.clone()
+                    });
+                    content.update(cx, |content, cx| {
+                        content.set_value("unsaved oversized content", window, cx);
+                        cx.emit(InputEvent::Change);
+                    });
+                });
+            })
+            .expect("failed to dirty the second window");
+    });
+    cx.run_until_parked();
+
+    invoke_quit(cx, initiator_window_id, &initiator);
+    cx.run_until_parked();
+
+    let (initiator_has_dialog, dirty_window_has_dialog) = cx.update(|cx| {
+        let mut states = (false, false);
+        for handle in cx.windows() {
+            let has_dialog = handle
+                .update(cx, |_, window, cx| window.has_active_dialog(cx))
+                .expect("failed to inspect test window dialog");
+            if handle.window_id() == initiator_window_id {
+                states.0 = has_dialog;
+            } else if handle.window_id() == dirty_window_id {
+                states.1 = has_dialog;
+            }
+        }
+        states
+    });
+    assert!(
+        !initiator_has_dialog,
+        "the clean initiating window must not receive the other window's warning"
+    );
+    assert!(
+        dirty_window_has_dialog,
+        "Quit must route the warning to the window that owns the dirty large file"
+    );
+
+    let dirty_handle = cx.update(|cx| {
+        cx.windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == dirty_window_id)
+            .expect("dirty test window should still exist")
+    });
+    {
+        let mut visual_cx = VisualTestContext::from_window(dirty_handle, cx);
+        visual_cx.run_until_parked();
+        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+        let cancel = visual_cx
+            .debug_bounds("large-file-close-cancel")
+            .expect("cancel button should be rendered in the dirty window");
+        visual_cx.simulate_click(cancel.center(), Modifiers::none());
+    }
+    cx.run_until_parked();
+
+    cx.update(|cx| {
+        assert_eq!(
+            cx.global::<WindowManager>().window_count(),
+            2,
+            "cancelling in the second window must abort application Quit"
+        );
+        assert!(
+            !dirty_window
+                .read(cx)
+                .large_modified_local_tabs(cx)
+                .is_empty(),
+            "cancelling must preserve the dirty large buffer"
+        );
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == dirty_window_id)
+            .expect("dirty test window should remain open after cancellation");
+        let has_dialog = handle
+            .update(cx, |_, window, cx| window.has_active_dialog(cx))
+            .expect("failed to inspect dirty window after cancellation");
+        assert!(!has_dialog, "cancel should close the warning dialog");
     });
 }
 

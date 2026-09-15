@@ -1,4 +1,4 @@
-use crate::fulgur::ui::dialogs::large_file_close::CloseContinuation;
+use crate::fulgur::ui::dialogs::application_close::ApplicationClosePlan;
 use crate::fulgur::{Fulgur, PendingSaveCloseAction};
 use gpui_kit::component::WindowExt;
 use gpui_kit::{App, Context, ParentElement, Styled, Window, div, px};
@@ -58,17 +58,10 @@ impl Fulgur {
         if self.defer_close_for_pending_saves(PendingSaveCloseAction::Quit) {
             return;
         }
-        let large_modified = self.large_modified_local_tabs(cx);
-        if large_modified.is_empty() {
-            self.quit_inner(window, cx);
-        } else {
-            self.drive_large_file_close_warnings(
-                large_modified,
-                CloseContinuation::Quit,
-                window,
-                cx,
-            );
-        }
+        let plan = ApplicationClosePlan::new(self.window_id);
+        window.defer(cx, move |_window, cx| {
+            Fulgur::drive_application_close_plan(plan, cx);
+        });
     }
 
     /// Quit the application. If `confirm_exit` is enabled, a modal will be shown to confirm the action.
