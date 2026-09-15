@@ -273,7 +273,7 @@ impl Fulgur {
     /// ### Returns
     /// - `Ok(())`: The file was written and the tab marked as saved
     /// - `Err(anyhow::Error)`: The file could not be written
-    fn save_local_tab_blocking(
+    pub(super) fn save_local_tab_blocking(
         &mut self,
         tab_id: TabId,
         cx: &mut Context<Self>,
@@ -331,7 +331,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `String`: The file name, or the tab title when there is no path
-    fn tab_filename(&self, tab_id: TabId, cx: &gpui_kit::App) -> String {
+    pub(super) fn tab_filename(&self, tab_id: TabId, cx: &gpui_kit::App) -> String {
         self.tab_entity_of(tab_id, cx)
             .and_then(|tab| {
                 let tab = tab.read(cx);

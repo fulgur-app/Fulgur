@@ -1,4 +1,5 @@
 pub mod about;
+pub(crate) mod application_close;
 pub mod file_browser;
 pub mod file_watcher;
 pub mod jump_line;
