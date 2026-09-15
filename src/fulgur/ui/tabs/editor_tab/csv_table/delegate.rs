@@ -6,7 +6,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::{
     App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder,
+    StatefulInteractiveElement, Styled, TestSupportExt, Window, div, prelude::FluentBuilder,
 };
 
 use super::{CsvTableDelegate, EditTarget};
@@ -37,6 +37,7 @@ impl TableDelegate for CsvTableDelegate {
         };
         div()
             .id(SharedString::from(format!("csv-th-{col_ix}")))
+            .test_support()
             .size_full()
             .child(label)
             .when(col_ix != 0, |this| {
@@ -73,6 +74,7 @@ impl TableDelegate for CsvTableDelegate {
         };
         div()
             .id(SharedString::from(format!("csv-td-{row_ix}-{col_ix}")))
+            .test_support()
             .size_full()
             .when(is_row_number, |this| {
                 this.flex().justify_center().text_color(muted)
