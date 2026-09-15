@@ -46,19 +46,18 @@ impl Fulgur {
             // first save of the session updates their rows in place rather than
             // deleting and reinserting every buffer under a fresh identity.
             let mut highest_tab_id = 0;
-            for tab_state in &window_state.tabs {
+            let mut saved_active_editor_id = None;
+            for (saved_index, tab_state) in window_state.tabs.iter().enumerate() {
                 let tab_id = TabId(tab_state.tab_id);
                 let tab = self.restore_tab_from_state(tab_state.clone(), tab_id, window, cx);
                 if let Some(editor_tab) = tab {
+                    if window_state.active_tab_index == Some(saved_index) {
+                        saved_active_editor_id = Some(editor_tab.id);
+                    }
                     self.tabs.push(Tab::Editor(editor_tab).into_entity(cx));
                     highest_tab_id = highest_tab_id.max(tab_state.tab_id);
                 }
             }
-            let saved_active_editor_id: Option<TabId> = window_state
-                .active_tab_index
-                .and_then(|idx| self.tabs.get(idx))
-                .and_then(|t| t.read(cx).as_editor())
-                .map(|et| et.id);
             self.next_tab_id = TabId(highest_tab_id.saturating_add(1));
             self.insert_preview_tabs_for_markdown(cx);
             self.active_tab_id =
