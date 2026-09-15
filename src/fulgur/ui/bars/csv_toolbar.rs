@@ -240,6 +240,8 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     use gpui_kit::component::Root;
     #[cfg(feature = "gpui-test-support")]
+    use gpui_kit::test::TestWindowExt;
+    #[cfg(feature = "gpui-test-support")]
     use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
     #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
@@ -433,6 +435,52 @@ mod tests {
             });
         });
         assert_eq!(active_tab_text(&fulgur, &mut visual_cx), "a,b\n1,2\n");
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_column_edits_refresh_visible_grid_and_clamp_selection(cx: &mut TestAppContext) {
+        let (fulgur, toolbar, mut visual_cx) = setup_csv_toolbar(cx);
+        let table = active_csv_table(&fulgur, &mut visual_cx);
+
+        visual_cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.try_find(("col-header", 3usize)).is_none());
+            assert!(window.try_find("csv-th-3").is_none());
+            assert!(window.try_find("csv-td-0-3").is_none());
+
+            toolbar.update(cx, |bar, cx| {
+                bar.edit_active_table(CsvTableDelegate::insert_column_after, window, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.find(("col-header", 3usize)).visible());
+            assert!(window.find("csv-th-3").visible());
+            assert!(window.find("csv-td-0-3").visible());
+
+            table.update(cx, |state, cx| {
+                state.set_selected_cell(0, 3, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|window, cx| {
+            toolbar.update(cx, |bar, cx| {
+                bar.edit_active_table(CsvTableDelegate::delete_column, window, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.try_find(("col-header", 3usize)).is_none());
+            assert!(window.try_find("csv-th-3").is_none());
+            assert!(window.try_find("csv-td-0-3").is_none());
+            assert_eq!(table.read(cx).selected_cell(), Some((0, 2)));
+        });
     }
 
     #[cfg(feature = "gpui-test-support")]

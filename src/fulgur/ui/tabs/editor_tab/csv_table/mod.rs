@@ -245,7 +245,8 @@ impl CsvTableDelegate {
         });
     }
 
-    /// Refresh columns, write the model back to the buffer, and notify.
+    /// Refresh delegate columns, write the model back to the buffer, and
+    /// schedule the owning table's cached layout refresh.
     ///
     /// ### Arguments
     /// - `window`: The active window
@@ -253,6 +254,62 @@ impl CsvTableDelegate {
     fn commit_and_refresh(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
         self.refresh_columns();
         self.commit_to_buffer(window, cx);
-        cx.notify();
+        Self::schedule_table_refresh(cx);
+    }
+
+    /// Refresh the owning table's cached layout and repair an invalid selection.
+    ///
+    /// ### Arguments
+    /// - `table`: The table state whose delegate model changed
+    /// - `cx`: The table state context
+    fn finish_table_edit(table: &mut TableState<Self>, cx: &mut Context<TableState<Self>>) {
+        let (selection, rows_count, columns_count) = {
+            let delegate = table.delegate();
+            (
+                delegate.last_selection,
+                delegate.rows.len(),
+                delegate.headers.len() + 1,
+            )
+        };
+
+        table.refresh(cx);
+        if rows_count == 0
+            && matches!(
+                selection,
+                Some(CsvSelection::Cell(_, _) | CsvSelection::Row(_))
+            )
+        {
+            table.clear_selection(cx);
+            return;
+        }
+
+        match selection {
+            Some(CsvSelection::Cell(_, _) | CsvSelection::Column(_)) if columns_count <= 1 => {
+                table.clear_selection(cx);
+            }
+            Some(CsvSelection::Cell(row, column))
+                if row >= rows_count || column >= columns_count =>
+            {
+                table.set_selected_cell(row.min(rows_count - 1), column.min(columns_count - 1), cx);
+            }
+            Some(CsvSelection::Column(column)) if column >= columns_count => {
+                table.set_selected_col(columns_count - 1, cx);
+            }
+            Some(CsvSelection::Row(row)) if row >= rows_count => {
+                table.set_selected_row(rows_count - 1, cx);
+            }
+            Some(_) | None => {}
+        }
+    }
+
+    /// Defer a table refresh until the current delegate callback has returned.
+    ///
+    /// ### Arguments
+    /// - `cx`: The table state context
+    fn schedule_table_refresh(cx: &mut Context<TableState<Self>>) {
+        let table = cx.weak_entity();
+        cx.defer(move |cx| {
+            let _ = table.update(cx, Self::finish_table_edit);
+        });
     }
 }
