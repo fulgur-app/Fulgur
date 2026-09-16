@@ -397,12 +397,6 @@ fn create_window(
         cx.update_global::<fulgur::window_manager::WindowManager, _>(|manager, _| {
             manager.register(window_id, view.downgrade());
         });
-        let view_clone = view.clone();
-        window.on_window_should_close(cx, move |window, cx| {
-            view_clone.update(cx, |fulgur, cx| {
-                fulgur.on_window_close_requested(window, cx)
-            })
-        });
         if cli_file_paths.is_empty() {
             view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
         } else {
@@ -416,7 +410,14 @@ fn create_window(
                 });
             }
         }
-        cx.new(|cx| gpui_kit::component::Root::new(view, window, cx))
+        let root = cx.new(|cx| gpui_kit::component::Root::new(view.clone(), window, cx));
+        let view_clone = view.clone();
+        window.on_window_should_close(cx, move |window, cx| {
+            view_clone.update(cx, |fulgur, cx| {
+                fulgur.on_window_close_requested(window, cx)
+            })
+        });
+        root
     })?;
     window.update(cx, |_, window, _| {
         window.activate_window();

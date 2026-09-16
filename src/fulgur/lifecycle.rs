@@ -14,7 +14,7 @@ use crate::fulgur::{
         bars::status_bar::{StatusBar, StatusBarEvent},
         bars::titlebar::CustomTitleBar,
         command_palette::{CommandPalette, CommandPaletteEvent},
-        menus::{build_default_key_bindings, build_menus},
+        menus::{CloseWindow, Quit, build_default_key_bindings, build_menus},
         tabs::tab_bar::{TabBar, TabBarEvent},
         themes,
     },
@@ -22,7 +22,7 @@ use crate::fulgur::{
 };
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::notification::NotificationType;
-use gpui_kit::{App, AppContext, Context, Entity, SharedString, Window, WindowId};
+use gpui_kit::{AnyWindowHandle, App, AppContext, Context, Entity, SharedString, Window, WindowId};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -253,6 +253,7 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `settings`: The application settings (already loaded and resolved, including first-run overrides)
     pub fn init(cx: &mut App, settings: &mut Settings) {
+        Self::register_window_actions(cx);
         let recent_files = settings.get_recent_files();
         languages::supported_languages::register_external_languages();
         languages::language_configs::register_language_configs(cx);
@@ -263,6 +264,78 @@ impl Fulgur {
             #[cfg(not(target_os = "macos"))]
             if let Some(owned_menus) = cx.get_menus() {
                 gpui_kit::component::GlobalState::global_mut(cx).set_app_menus(owned_menus);
+            }
+        });
+    }
+
+    /// Register window-level actions on GPUI's application dispatch fallback.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context used to register action listeners
+    pub(crate) fn register_window_actions(cx: &mut App) {
+        cx.on_action::<CloseWindow>(|_, cx| Self::dispatch_close_window_action(cx));
+        cx.on_action::<Quit>(|_, cx| Self::dispatch_quit_action(cx));
+    }
+
+    /// Resolve the Fulgur window targeted by an application-level action.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context used to inspect platform and managed windows
+    ///
+    /// ### Returns
+    /// - `Some((AnyWindowHandle, Entity<Fulgur>))`: The active or last-focused window
+    /// - `None`: No managed Fulgur window remains open
+    fn window_action_target(cx: &App) -> Option<(AnyWindowHandle, Entity<Self>)> {
+        let active_window = cx.active_window();
+        let window_id = active_window.map(|handle| handle.window_id()).or_else(|| {
+            cx.global::<window_manager::WindowManager>()
+                .get_last_focused()
+        })?;
+        let handle = active_window
+            .filter(|handle| handle.window_id() == window_id)
+            .or_else(|| {
+                cx.windows()
+                    .into_iter()
+                    .find(|handle| handle.window_id() == window_id)
+            })?;
+        let fulgur = cx
+            .global::<window_manager::WindowManager>()
+            .get_window(window_id)?
+            .upgrade()?;
+        Some((handle, fulgur))
+    }
+
+    /// Route Close Window to the target window's guarded close lifecycle.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context used to locate and update the target window
+    fn dispatch_close_window_action(cx: &mut App) {
+        let Some((handle, fulgur)) = Self::window_action_target(cx) else {
+            return;
+        };
+        cx.defer(move |cx| {
+            if let Err(error) = handle.update(cx, |_, window, cx| {
+                fulgur.update(cx, |this, cx| this.request_window_close(window, cx));
+            }) {
+                log::error!("Failed to dispatch Close Window: {error}");
+            }
+        });
+    }
+
+    /// Route Quit to the target Fulgur window, or quit directly if none remains.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context used to locate and update the target window
+    fn dispatch_quit_action(cx: &mut App) {
+        let Some((handle, fulgur)) = Self::window_action_target(cx) else {
+            cx.quit();
+            return;
+        };
+        cx.defer(move |cx| {
+            if let Err(error) = handle.update(cx, |_, window, cx| {
+                fulgur.update(cx, |this, cx| this.quit(window, cx));
+            }) {
+                log::error!("Failed to dispatch Quit: {error}");
             }
         });
     }

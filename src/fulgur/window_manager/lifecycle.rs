@@ -8,6 +8,17 @@ use gpui_kit::component::notification::NotificationType;
 use gpui_kit::{AppContext, BorrowAppContext, Context, Window, WindowOptions};
 
 impl Fulgur {
+    /// Run the guarded window-close lifecycle for an in-app close action.
+    ///
+    /// ### Arguments
+    /// - `window`: The window requested to close
+    /// - `cx`: The application context
+    pub(crate) fn request_window_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.on_window_close_requested(window, cx) {
+            window.remove_window();
+        }
+    }
+
     /// Handle window close request
     ///
     /// ### Behavior
@@ -160,14 +171,16 @@ impl Fulgur {
                             entity.update(cx, |_, cx| cx.notify());
                         }
                     }
+                    view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
+                    let root =
+                        cx.new(|cx| gpui_kit::component::Root::new(view.clone(), window, cx));
                     let view_clone = view.clone();
                     window.on_window_should_close(cx, move |window, cx| {
                         view_clone.update(cx, |fulgur, cx| {
                             fulgur.on_window_close_requested(window, cx)
                         })
                     });
-                    view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
-                    cx.new(|cx| gpui_kit::component::Root::new(view, window, cx))
+                    root
                 })?;
                 window.update(cx, |_, window, _| {
                     window.activate_window();
@@ -207,18 +220,20 @@ impl Fulgur {
                             entity.update(cx, |_, cx| cx.notify());
                         }
                     }
+                    view.update(cx, |fulgur, cx| {
+                        fulgur.pending_tab_transfer = Some(data);
+                        cx.notify();
+                    });
+                    view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
+                    let root =
+                        cx.new(|cx| gpui_kit::component::Root::new(view.clone(), window, cx));
                     let view_clone = view.clone();
                     window.on_window_should_close(cx, move |window, cx| {
                         view_clone.update(cx, |fulgur, cx| {
                             fulgur.on_window_close_requested(window, cx)
                         })
                     });
-                    view.update(cx, |fulgur, cx| {
-                        fulgur.pending_tab_transfer = Some(data);
-                        cx.notify();
-                    });
-                    view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
-                    cx.new(|cx| gpui_kit::component::Root::new(view, window, cx))
+                    root
                 })?;
                 window.update(cx, |_, window, _| {
                     window.activate_window();

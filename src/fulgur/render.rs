@@ -107,7 +107,6 @@ impl Fulgur {
         register_action!(app_content, cx, ui::menus::CloseAllFiles => close_all_tabs);
         register_action!(app_content, cx, ui::menus::SaveFile => save_file);
         register_action!(app_content, cx, ui::menus::SaveFileAs => save_file_as);
-        register_action!(app_content, cx, ui::menus::Quit => quit);
         register_action!(app_content, cx, ui::menus::SettingsTab => open_settings);
         register_action!(app_content, cx, ui::menus::FindInFile => find_in_file);
         register_action!(app_content, cx, ui::menus::FindAndReplace => find_and_replace);
