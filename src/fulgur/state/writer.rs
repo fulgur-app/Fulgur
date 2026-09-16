@@ -131,6 +131,7 @@ impl WriterState {
             .db
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("no state database is available"))?;
+        let fallback_error = db.fallback_error().map(str::to_owned);
         let stats = db.apply(snapshot)?;
         if stats.is_empty() {
             log::debug!("State unchanged since the last write, nothing written");
@@ -144,6 +145,11 @@ impl WriterState {
                 stats.tabs_deleted,
                 stats.windows_deleted
             );
+        }
+        if let Some(error) = fallback_error {
+            return Err(anyhow::anyhow!(
+                "{error}; session state was updated only in memory and will be lost when Fulgur exits"
+            ));
         }
         Ok(())
     }
@@ -202,6 +208,7 @@ impl WriterState {
 pub struct StateWriter {
     sender: mpsc::SyncSender<WriterMessage>,
     mailbox: Arc<SnapshotMailbox>,
+    persistence_error: Option<String>,
     _worker: Worker,
 }
 
@@ -230,6 +237,10 @@ impl StateWriter {
     /// ### Returns
     /// - `Self`: A writer handle bound to the freshly spawned worker thread.
     fn with_throttle(db: Option<StateDb>, throttle: Duration) -> Self {
+        let persistence_error = db.as_ref().map_or_else(
+            || Some("no state database is available".to_string()),
+            |db| db.fallback_error().map(str::to_owned),
+        );
         let (sender, receiver) = mpsc::sync_channel::<WriterMessage>(CHANNEL_CAPACITY);
         let mailbox = Arc::new(SnapshotMailbox::default());
         let writer_state = WriterState::new(throttle, Arc::clone(&mailbox), db);
@@ -243,8 +254,19 @@ impl StateWriter {
         Self {
             sender,
             mailbox,
+            persistence_error,
             _worker: worker,
         }
+    }
+
+    /// Explain why session snapshots cannot be persisted durably.
+    ///
+    /// ### Returns
+    /// - `Some(&str)`: The startup/storage failure preventing durable saves
+    /// - `None`: Session snapshots are written to durable storage
+    #[must_use]
+    pub fn persistence_error(&self) -> Option<&str> {
+        self.persistence_error.as_deref()
     }
 
     /// Worker-thread loop that processes save requests one at a time.
@@ -515,7 +537,30 @@ mod tests {
     #[test]
     fn writer_reports_an_error_when_no_database_is_available() {
         let writer = StateWriter::with_throttle(None, SAVE_THROTTLE);
+        assert_eq!(
+            writer.persistence_error(),
+            Some("no state database is available")
+        );
         assert!(writer.save_blocking(sample_state("nowhere")).is_err());
+    }
+
+    #[test]
+    fn writer_reports_ephemeral_fallback_as_non_durable() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.db");
+        std::fs::write(&path, b"not a database").unwrap();
+        let db = StateDb::open_or_fallback(&path).expect("fallback database");
+        let writer = StateWriter::with_throttle(Some(db), SAVE_THROTTLE);
+
+        assert!(
+            writer
+                .persistence_error()
+                .is_some_and(|error| error.contains(&path.display().to_string()))
+        );
+        let error = writer
+            .save_blocking(sample_state("temporary"))
+            .expect_err("in-memory fallback must not report a durable save");
+        assert!(error.to_string().contains("updated only in memory"));
     }
 
     #[test]

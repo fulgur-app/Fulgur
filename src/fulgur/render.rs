@@ -153,6 +153,7 @@ impl Fulgur {
         app_content = app_content
             .children(unified_title_bar.then(|| self.title_bar.clone()))
             .children((!unified_title_bar).then(|| self.tab_bar.clone()))
+            .children(Self::render_session_persistence_warning(cx))
             .child(self.render_content_area(active_tab_index, window, cx))
             .children(markdown_toolbar_visible.then(|| self.markdown_toolbar.clone()))
             .children(csv_toolbar_visible.then(|| self.csv_toolbar.clone()))
@@ -163,6 +164,36 @@ impl Fulgur {
         }
         app_content = app_content.child(Self::render_external_file_drop_overlay(cx));
         app_content
+    }
+
+    /// Render a persistent warning when session recovery is running in memory only.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context used to read shared storage state and theme colors
+    ///
+    /// ### Returns
+    /// - `Some(impl IntoElement)`: A warning banner describing the startup database failure
+    /// - `None`: Session state is backed by durable storage
+    fn render_session_persistence_warning(cx: &App) -> Option<impl IntoElement + use<>> {
+        let error = Self::shared_state(cx)
+            .state_writer
+            .persistence_error()?
+            .to_string();
+        Some(
+            div()
+                .id("session-persistence-warning")
+                .debug_selector(|| "session-persistence-warning".to_string())
+                .w_full()
+                .flex_none()
+                .px_3()
+                .py_2()
+                .bg(cx.theme().warning)
+                .text_color(cx.theme().warning_foreground)
+                .text_sm()
+                .child(format!(
+                    "Session recovery is unavailable. Open tabs and unsaved buffers will be lost when Fulgur closes. {error}"
+                )),
+        )
     }
 
     /// Assemble the final UI tree with all layers

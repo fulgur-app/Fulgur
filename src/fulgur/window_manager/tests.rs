@@ -2,8 +2,11 @@ use super::WindowManager;
 use crate::fulgur::WindowInit;
 use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{
-    Fulgur, editor_tab::TabLocation, settings::Settings, shared_state::SharedAppState,
-    state::StateDb,
+    Fulgur,
+    editor_tab::TabLocation,
+    settings::Settings,
+    shared_state::SharedAppState,
+    state::{StateDb, StateWriter},
 };
 use gpui_kit::component::{WindowExt, input::InputEvent, notification::NotificationType};
 use gpui_kit::{
@@ -35,6 +38,21 @@ fn setup_test_globals(cx: &mut TestAppContext) {
             Some(state_db),
         ));
         cx.set_global(WindowManager::new());
+    });
+}
+
+/// Replace the test state writer with the same fallback used after a corrupt database.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context containing [`SharedAppState`]
+/// - `path`: Path where an invalid SQLite file should be created
+fn install_ephemeral_fallback_writer(cx: &mut TestAppContext, path: &Path) {
+    std::fs::write(path, b"not a database").expect("create corrupt state database");
+    let db = StateDb::open_or_fallback(path).expect("open fallback state database");
+    cx.update(|cx| {
+        cx.update_global::<SharedAppState, _>(|shared, _| {
+            shared.state_writer = Arc::new(StateWriter::new(Some(db)));
+        });
     });
 }
 
@@ -445,6 +463,61 @@ fn test_on_window_close_requested_non_last_window_closes_even_with_confirm_exit_
         assert!(manager.get_window(window_id_two).is_none());
         assert_eq!(manager.get_last_focused(), Some(window_id_one));
     });
+}
+
+#[gpui_kit::test]
+fn test_ephemeral_session_warns_and_blocks_the_first_close(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    let state_path = dir.path().join("state.db");
+    install_ephemeral_fallback_writer(cx, &state_path);
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id, &fulgur);
+    let handle = cx.update(|cx| {
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)
+            .expect("test window");
+        handle
+            .update(cx, |_, window, cx| {
+                fulgur.update(cx, |this, cx| {
+                    this.settings.app_settings.confirm_exit = false;
+                    let tab = this.tabs.first().expect("initial untitled tab").clone();
+                    tab.update(cx, |tab, cx| {
+                        let editor = tab.as_editor_mut().expect("editor tab");
+                        editor.content.update(cx, |content, cx| {
+                            content.set_value("unsaved recovery text", window, cx);
+                        });
+                    });
+                });
+            })
+            .expect("update test window");
+        handle
+    });
+    {
+        let mut visual_cx = VisualTestContext::from_window(handle, cx);
+        visual_cx.run_until_parked();
+        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(
+            visual_cx
+                .debug_bounds("session-persistence-warning")
+                .is_some(),
+            "ephemeral storage must remain visible while the window is open"
+        );
+    }
+
+    assert!(
+        !invoke_window_close_requested(cx, window_id, &fulgur),
+        "the first close must be blocked when recovery state is not durable"
+    );
+    cx.update(|cx| {
+        assert_eq!(cx.global::<WindowManager>().window_count(), 1);
+    });
+    assert!(
+        invoke_window_close_requested(cx, window_id, &fulgur),
+        "repeating close explicitly force-closes after the warning"
+    );
 }
 
 #[gpui_kit::test]

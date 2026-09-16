@@ -54,6 +54,10 @@ pub struct StateDb {
     conn: Connection,
     /// `None` for the in-memory fallback database.
     path: Option<PathBuf>,
+    /// Why the normal file-backed database could not be used. This is `None`
+    /// for file-backed databases and for explicitly-created in-memory databases
+    /// used by tests.
+    fallback_error: Option<String>,
     /// Window ids this handle has written, used to scope deletions so a second
     /// process cannot erase windows it does not own.
     owned_windows: HashSet<i64>,
@@ -84,6 +88,7 @@ impl StateDb {
         Ok(Self {
             conn,
             path: Some(path.to_path_buf()),
+            fallback_error: None,
             owned_windows: HashSet::new(),
         })
     }
@@ -105,6 +110,7 @@ impl StateDb {
         Ok(Self {
             conn,
             path: None,
+            fallback_error: None,
             owned_windows: HashSet::new(),
         })
     }
@@ -126,7 +132,13 @@ impl StateDb {
                     "Falling back to in-memory session state, it will not be saved: {file_err}"
                 );
                 match Self::open_in_memory() {
-                    Ok(db) => Some(db),
+                    Ok(mut db) => {
+                        db.fallback_error = Some(format!(
+                            "could not use session database '{}': {file_err}",
+                            path.display()
+                        ));
+                        Some(db)
+                    }
                     Err(memory_err) => {
                         log::error!("Failed to open fallback state database: {memory_err}");
                         None
@@ -143,6 +155,16 @@ impl StateDb {
     #[must_use]
     pub fn is_ephemeral(&self) -> bool {
         self.path.is_none()
+    }
+
+    /// Explain why this database is a non-durable production fallback.
+    ///
+    /// ### Returns
+    /// - `Some(&str)`: The file-backed database failure that caused fallback
+    /// - `None`: The database is durable or was explicitly opened in memory
+    #[must_use]
+    pub(crate) fn fallback_error(&self) -> Option<&str> {
+        self.fallback_error.as_deref()
     }
 
     /// Drop every ownership claim, as if the handle had just been opened.
