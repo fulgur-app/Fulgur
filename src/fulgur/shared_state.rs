@@ -3,6 +3,7 @@ use crate::fulgur::state::{StateWriter, WindowsState};
 use crate::fulgur::sync::sse::SseState;
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::sync::ssh::pool::SshSessionPool;
+use crate::fulgur::sync::ssh::save_queue::RemoteSaveQueue;
 use crate::fulgur::utils::crypto_helper::check_private_public_keys;
 use crate::fulgur::utils::updater::UpdateInfo;
 use crate::fulgur::{
@@ -211,6 +212,8 @@ pub struct SharedAppState {
     /// Process-wide pool of authenticated SSH sessions used to amortize TCP +
     /// SSH handshakes across successive remote operations.
     pub ssh_session_pool: Arc<SshSessionPool>,
+    /// Process-wide queue that commits remote saves in request order per destination.
+    pub remote_save_queue: Arc<RemoteSaveQueue>,
     /// Dedicated background writer for `WindowsState` persistence.
     pub state_writer: Arc<StateWriter>,
     /// In-memory snapshot of `WindowsState` taken once at startup, used to
@@ -281,6 +284,7 @@ impl SharedAppState {
             )),
             ssh_session_cache: Arc::new(Mutex::new(SshCredentialCache::new())),
             ssh_session_pool: Arc::new(SshSessionPool::new()),
+            remote_save_queue: Arc::new(RemoteSaveQueue::new()),
             state_writer: Arc::new(StateWriter::new(state_db)),
             restore_state: Arc::new(Mutex::new(restore_state)),
             notification_tx,

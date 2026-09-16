@@ -1,6 +1,6 @@
 use crate::fulgur::sync::ssh::{
-    self, credentials::SshCredKey, pool::SshSessionPool, session::HostKeyDecision,
-    sftp::RemoteDirectoryEntry, url::RemoteSpec,
+    self, credentials::SshCredKey, pool::SshSessionPool, save_queue::RemoteSavePermit,
+    session::HostKeyDecision, sftp::RemoteDirectoryEntry, url::RemoteSpec,
 };
 use crate::fulgur::ui::tabs::editor_tab::ContentRevision;
 use crate::fulgur::ui::tabs::tab::TabId;
@@ -122,4 +122,5 @@ pub struct RemoteSaveTaskParams {
     pub credential_key: SshCredKey,
     pub ssh_session_cache: Arc<Mutex<ssh::credentials::SshCredentialCache>>,
     pub ssh_session_pool: Arc<SshSessionPool>,
+    pub remote_save_permit: RemoteSavePermit,
 }

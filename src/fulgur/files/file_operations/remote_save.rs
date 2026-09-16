@@ -37,6 +37,7 @@ impl Fulgur {
     ) {
         let ssh_session_cache = Arc::clone(&Fulgur::shared_state(cx).ssh_session_cache);
         let ssh_session_pool = Arc::clone(&Fulgur::shared_state(cx).ssh_session_pool);
+        let remote_save_queue = Arc::clone(&Fulgur::shared_state(cx).remote_save_queue);
         if let (Some(user), Some(password)) = (spec.user.clone(), spec.password_in_url.take()) {
             let key = SshCredKey::new(spec.host.clone(), spec.port, user);
             ssh_session_cache.lock().insert(key, password);
@@ -52,6 +53,7 @@ impl Fulgur {
                 self.next_remote_request_id = self.next_remote_request_id.wrapping_add(1);
                 self.latest_remote_save_request_by_tab
                     .insert(tab_id, request_id);
+                let remote_save_permit = remote_save_queue.enqueue(&spec);
                 Self::spawn_ssh_save_task(
                     window,
                     cx,
@@ -65,6 +67,7 @@ impl Fulgur {
                         credential_key: cache_key,
                         ssh_session_cache: Arc::clone(&ssh_session_cache),
                         ssh_session_pool: Arc::clone(&ssh_session_pool),
+                        remote_save_permit,
                     },
                 );
                 return;
@@ -77,6 +80,7 @@ impl Fulgur {
         let entity = cx.entity().downgrade();
         let cache_for_callback = Arc::clone(&ssh_session_cache);
         let pool_for_callback = Arc::clone(&ssh_session_pool);
+        let save_queue_for_callback = Arc::clone(&remote_save_queue);
 
         self.show_ssh_password_dialog(
             window,
@@ -114,6 +118,7 @@ impl Fulgur {
                         fulgur
                             .latest_remote_save_request_by_tab
                             .insert(tab_id, request_id);
+                        let remote_save_permit = save_queue_for_callback.enqueue(&spec_with_user);
                         Self::spawn_ssh_save_task(
                             window,
                             cx,
@@ -127,6 +132,7 @@ impl Fulgur {
                                 credential_key: cache_key,
                                 ssh_session_cache: Arc::clone(&cache_for_callback),
                                 ssh_session_pool: Arc::clone(&pool_for_callback),
+                                remote_save_permit,
                             },
                         );
                     });
@@ -156,6 +162,7 @@ impl Fulgur {
             credential_key,
             ssh_session_cache,
             ssh_session_pool,
+            remote_save_permit,
         } = params;
         let pending_save_result: Arc<Mutex<Option<Result<(), String>>>> =
             Arc::new(Mutex::new(None));
@@ -191,6 +198,7 @@ impl Fulgur {
                 cancel_callback,
             },
             move |session, spec| {
+                remote_save_permit.wait();
                 ssh::sftp::write_remote_file(session, &spec.path, content_for_thread.as_slice())
             },
             move |save_finished, outcome| {
