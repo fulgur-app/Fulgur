@@ -356,7 +356,10 @@ impl Fulgur {
         };
         let _ = handle.update(cx, |_, window, cx| {
             entity.update(cx, |this, cx| {
-                if this.settings.app_settings.confirm_exit && !plan.exit_confirmed {
+                if this.settings.app_settings.confirm_exit
+                    && !plan.exit_confirmed
+                    && !this.save_failed_once
+                {
                     Self::show_application_quit_confirmation(plan, window, cx);
                 } else {
                     this.persist_and_quit_application(window, cx);
@@ -403,20 +406,46 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window supplying current bounds and notifications
     /// - `cx`: The application context
-    fn persist_and_quit_application(&self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state on quit: {e}");
-            window.push_notification(
-                (
-                    NotificationType::Error,
-                    SharedString::from(format!(
-                        "Failed to save application state: {e}. Try again or close the app to quit without saving."
-                    )),
-                ),
-                cx,
-            );
-            return;
+    fn persist_and_quit_application(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.can_quit_after_state_save(window, cx) {
+            cx.quit();
         }
-        cx.quit();
+    }
+
+    /// Attempt to persist the session and decide whether Quit may continue.
+    ///
+    /// ### Arguments
+    /// - `window`: The window supplying current bounds and notifications
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: State was saved, or the user repeated Quit after a failure
+    /// - `false`: The first save failure must block Quit and notify the user
+    pub(crate) fn can_quit_after_state_save(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        match self.save_state(cx, window) {
+            Ok(()) => true,
+            Err(e) => {
+                log::error!("Failed to save app state on quit: {e}");
+                if self.save_failed_once {
+                    log::warn!("Save failed again - allowing force-quit");
+                    return true;
+                }
+                self.save_failed_once = true;
+                window.push_notification(
+                    (
+                        NotificationType::Error,
+                        SharedString::from(format!(
+                            "Failed to save application state: {e}. Quit again to force-quit."
+                        )),
+                    ),
+                    cx,
+                );
+                false
+            }
+        }
     }
 }

@@ -1,22 +1,24 @@
 // The minimize, maximize and close buttons of the unified layout on Windows and Linux
 
 use super::CustomTitleBar;
-use crate::fulgur::ui::icons::CustomIcon;
+use crate::fulgur::{Fulgur, ui::icons::CustomIcon};
 use gpui_kit::component::{ActiveTheme, Sizable, TITLE_BAR_HEIGHT, h_flex};
 use gpui_kit::{
     AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement, Role,
-    StatefulInteractiveElement, Styled, Window, div,
+    StatefulInteractiveElement, Styled, WeakEntity, Window, div,
 };
 
 /// Render the window control cluster sitting at the end of the unified row
 ///
 /// ### Arguments
+/// - `fulgur`: Weak handle to the window's guarded close lifecycle
 /// - `window`: The window being rendered, queried for the controls it supports
 /// - `cx`: The title bar context
 ///
 /// ### Returns
 /// - `AnyElement`: The rendered cluster, empty when the window manager supports nothing
 pub(super) fn render_window_controls(
+    fulgur: &WeakEntity<Fulgur>,
     window: &mut Window,
     cx: &mut Context<CustomTitleBar>,
 ) -> AnyElement {
@@ -30,7 +32,7 @@ pub(super) fn render_window_controls(
         .border_b_1()
         .border_color(cx.theme().border);
     if supported.minimize {
-        controls = controls.child(render_control(Control::Minimize, cx));
+        controls = controls.child(render_control(Control::Minimize, fulgur, cx));
     }
     if supported.maximize {
         let control = if window.is_maximized() {
@@ -38,10 +40,10 @@ pub(super) fn render_window_controls(
         } else {
             Control::Maximize
         };
-        controls = controls.child(render_control(control, cx));
+        controls = controls.child(render_control(control, fulgur, cx));
     }
     controls
-        .child(render_control(Control::Close, cx))
+        .child(render_control(Control::Close, fulgur, cx))
         .into_any_element()
 }
 
@@ -134,11 +136,16 @@ impl Control {
 ///
 /// ### Arguments
 /// - `control`: The button to render
+/// - `fulgur`: Weak handle to the window's guarded close lifecycle
 /// - `cx`: The title bar context
 ///
 /// ### Returns
 /// - `AnyElement`: The rendered button
-fn render_control(control: Control, cx: &mut Context<CustomTitleBar>) -> AnyElement {
+fn render_control(
+    control: Control,
+    fulgur: &WeakEntity<Fulgur>,
+    cx: &mut Context<CustomTitleBar>,
+) -> AnyElement {
     let (hovered_bg, pressed_bg, emphasis) = control.colors(cx);
     let button = div()
         .id(control.id())
@@ -156,6 +163,7 @@ fn render_control(control: Control, cx: &mut Context<CustomTitleBar>) -> AnyElem
         .child(control.icon().icon().small());
     #[cfg(target_os = "windows")]
     {
+        let _ = fulgur;
         button
             .window_control_area(control.area())
             .into_any_element()
@@ -163,6 +171,7 @@ fn render_control(control: Control, cx: &mut Context<CustomTitleBar>) -> AnyElem
     #[cfg(not(target_os = "windows"))]
     {
         let _ = control.area();
+        let fulgur = fulgur.clone();
         button
             .on_mouse_down(gpui_kit::MouseButton::Left, |_, window, cx| {
                 window.prevent_default();
@@ -173,7 +182,13 @@ fn render_control(control: Control, cx: &mut Context<CustomTitleBar>) -> AnyElem
                 match control {
                     Control::Minimize => window.minimize_window(),
                     Control::Maximize | Control::Restore => window.zoom_window(),
-                    Control::Close => window.remove_window(),
+                    Control::Close => {
+                        if let Some(fulgur) = fulgur.upgrade() {
+                            fulgur.update(cx, |this, cx| {
+                                this.request_window_close(window, cx);
+                            });
+                        }
+                    }
                 }
             })
             .into_any_element()

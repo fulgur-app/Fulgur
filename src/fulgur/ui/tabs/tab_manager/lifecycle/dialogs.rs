@@ -54,14 +54,12 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to quit the application in
     /// - `cx`: The application context
-    pub fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn quit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.defer_close_for_pending_saves(PendingSaveCloseAction::Quit) {
             return;
         }
         let plan = ApplicationClosePlan::new(self.window_id);
-        window.defer(cx, move |_window, cx| {
-            Fulgur::drive_application_close_plan(plan, cx);
-        });
+        cx.defer(move |cx| Fulgur::drive_application_close_plan(plan, cx));
     }
 
     /// Quit the application. If `confirm_exit` is enabled, a modal will be shown to confirm the action.

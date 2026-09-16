@@ -82,7 +82,11 @@ impl CustomTitleBar {
             .child(Self::render_window_badge_slot(window_name.as_deref(), cx));
         #[cfg(not(target_os = "macos"))]
         {
-            row = row.child(super::window_controls::render_window_controls(window, cx));
+            row = row.child(super::window_controls::render_window_controls(
+                &self.fulgur,
+                window,
+                cx,
+            ));
         }
         div().flex_shrink_0().child(row).into_any_element()
     }

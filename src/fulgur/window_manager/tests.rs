@@ -38,6 +38,7 @@ fn setup_test_globals(cx: &mut TestAppContext) {
             Some(state_db),
         ));
         cx.set_global(WindowManager::new());
+        Fulgur::register_window_actions(cx);
     });
 }
 
@@ -70,9 +71,14 @@ fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Fulgur>
         cx.open_window(WindowOptions::default(), |window, cx| {
             let window_id = window.window_handle().window_id();
             let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
+            let root = cx.new(|cx| gpui_kit::component::Root::new(fulgur.clone(), window, cx));
+            let close_target = fulgur.clone();
+            window.on_window_should_close(cx, move |window, cx| {
+                close_target.update(cx, |this, cx| this.on_window_close_requested(window, cx))
+            });
             *window_id_slot.borrow_mut() = Some(window_id);
             *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-            cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
+            root
         })
         .expect("failed to open test window");
     });
@@ -162,6 +168,35 @@ fn invoke_quit(cx: &mut TestAppContext, window_id: WindowId, fulgur: &Entity<Ful
             })
             .expect("failed to invoke Quit on test window");
     });
+}
+
+/// Attempt the persistence gate used immediately before application Quit.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context.
+/// - `window_id`: The target window ID supplying bounds and notifications.
+/// - `fulgur`: The `Fulgur` entity that owns the quit handler.
+///
+/// ### Returns
+/// - `true`: Quit may proceed after this save attempt.
+/// - `false`: Quit must remain blocked after the first persistence failure.
+fn invoke_quit_persistence_gate(
+    cx: &mut TestAppContext,
+    window_id: WindowId,
+    fulgur: &Entity<Fulgur>,
+) -> bool {
+    cx.update(|cx| {
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)
+            .expect("failed to locate target test window by id");
+        handle
+            .update(cx, |_, window, cx| {
+                fulgur.update(cx, |this, cx| this.can_quit_after_state_save(window, cx))
+            })
+            .expect("failed to invoke the Quit persistence gate")
+    })
 }
 
 /// Invoke `do_open_file` against a specific window in tests.
@@ -518,6 +553,150 @@ fn test_ephemeral_session_warns_and_blocks_the_first_close(cx: &mut TestAppConte
         invoke_window_close_requested(cx, window_id, &fulgur),
         "repeating close explicitly force-closes after the warning"
     );
+}
+
+#[gpui_kit::test]
+fn test_ephemeral_session_quit_allows_a_second_attempt(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    install_ephemeral_fallback_writer(cx, &dir.path().join("state.db"));
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id, &fulgur);
+    cx.update(|cx| {
+        fulgur.update(cx, |this, _| {
+            this.settings.app_settings.confirm_exit = false;
+        });
+    });
+
+    assert!(
+        !invoke_quit_persistence_gate(cx, window_id, &fulgur),
+        "the first persistence failure must block Quit"
+    );
+    assert!(
+        invoke_quit_persistence_gate(cx, window_id, &fulgur),
+        "repeating Quit must allow an explicit force-quit"
+    );
+}
+
+#[gpui_kit::test]
+fn test_native_window_close_runs_the_guarded_close_lifecycle(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id, &fulgur);
+    cx.update(|cx| {
+        fulgur.update(cx, |this, _| {
+            this.settings.app_settings.confirm_exit = false;
+        });
+    });
+    let handle = cx.update(|cx| {
+        cx.windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)
+            .expect("test window")
+    });
+    let mut visual_cx = VisualTestContext::from_window(handle, cx);
+
+    assert!(
+        visual_cx.simulate_close(),
+        "the native title-bar close must be allowed after a successful state save"
+    );
+    visual_cx.update(|_window, cx| {
+        assert_eq!(
+            cx.global::<WindowManager>().window_count(),
+            0,
+            "native close must unregister the window through the lifecycle guard"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn test_close_window_action_runs_the_guarded_close_lifecycle(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id, &fulgur);
+    cx.update(|cx| {
+        fulgur.update(cx, |this, _| {
+            this.settings.app_settings.confirm_exit = false;
+        });
+    });
+    let handle = cx.update(|cx| {
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)
+            .expect("test window");
+        handle
+            .update(cx, |_, window, cx| window.blur(cx))
+            .expect("clear window focus");
+        handle
+    });
+    {
+        let mut visual_cx = VisualTestContext::from_window(handle, cx);
+        visual_cx.run_until_parked();
+        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+        visual_cx.dispatch_action(crate::fulgur::ui::menus::CloseWindow);
+    }
+    cx.run_until_parked();
+
+    cx.update(|cx| {
+        assert!(
+            cx.windows()
+                .into_iter()
+                .all(|handle| handle.window_id() != window_id),
+            "Close Window must remove the active window"
+        );
+        assert_eq!(
+            cx.global::<WindowManager>().window_count(),
+            0,
+            "Close Window must unregister the window through the lifecycle guard"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn test_quit_action_without_focused_element_reaches_persistence_gate(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    install_ephemeral_fallback_writer(cx, &dir.path().join("state.db"));
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id, &fulgur);
+    cx.update(|cx| {
+        fulgur.update(cx, |this, _| {
+            this.settings.app_settings.confirm_exit = false;
+        });
+    });
+    let handle = cx.update(|cx| {
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)
+            .expect("test window");
+        handle
+            .update(cx, |_, window, cx| window.blur(cx))
+            .expect("clear window focus");
+        handle
+    });
+    {
+        let mut visual_cx = VisualTestContext::from_window(handle, cx);
+        visual_cx.run_until_parked();
+        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+        visual_cx.dispatch_action(crate::fulgur::ui::menus::Quit);
+    }
+    cx.run_until_parked();
+    // Flush the application-scoped quit preflight queued by the action handler.
+    cx.update(|_| {});
+
+    cx.update(|cx| {
+        assert!(
+            fulgur.read(cx).save_failed_once,
+            "Quit must reach the persistence gate even when no element owns focus"
+        );
+        assert_eq!(
+            cx.global::<WindowManager>().window_count(),
+            1,
+            "the first persistence failure must keep the window open"
+        );
+    });
 }
 
 #[gpui_kit::test]
