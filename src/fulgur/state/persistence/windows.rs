@@ -212,14 +212,24 @@ mod tests {
     fn an_unusable_database_degrades_to_an_ephemeral_one() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("state.db");
-        fs::write(&path, b"not a database at all").unwrap();
+        let corrupt_contents = b"not a database at all";
+        fs::write(&path, corrupt_contents).unwrap();
 
         // Failing to start is worse than losing session restore for one run, so
         // an unreadable database is replaced by an in-memory one.
         let db = crate::fulgur::state::db::StateDb::open_or_fallback(&path)
             .expect("a fallback database must always be available");
         assert!(db.is_ephemeral());
+        let fallback_error = db
+            .fallback_error()
+            .expect("fallback must retain the file database failure");
+        assert!(fallback_error.contains(&path.display().to_string()));
         assert!(db.load().expect("load from fallback").windows.is_empty());
+        assert_eq!(
+            fs::read(&path).expect("read preserved database"),
+            corrupt_contents,
+            "the failed database must remain untouched for recovery"
+        );
     }
 
     #[test]
