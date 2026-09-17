@@ -78,8 +78,8 @@ impl Fulgur {
                 shared
                     .restore_state
                     .lock()
-                    .as_ref()
-                    .and_then(|state| state.windows.get(index))
+                    .get(index)
+                    .and_then(Option::as_ref)
                     .map(|state| state.window_id)
             })
             .unwrap_or_else(state::WindowState::allocate_id);

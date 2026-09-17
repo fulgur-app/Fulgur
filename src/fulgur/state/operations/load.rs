@@ -17,7 +17,7 @@ use std::fs;
 use std::io::Read;
 
 impl Fulgur {
-    /// Load app state from disk and restore tabs
+    /// Restore tabs from the startup snapshot slot of this window
     ///
     /// ### Arguments
     /// - `window`: The window to load the state from
@@ -32,8 +32,8 @@ impl Fulgur {
             .global::<crate::fulgur::shared_state::SharedAppState>()
             .restore_state
             .lock()
-            .as_ref()
-            .and_then(|ws| ws.windows.get(window_index).cloned());
+            .get_mut(window_index)
+            .and_then(Option::take);
         if let Some(window_state) = window_state {
             log::debug!(
                 "Restoring {} tabs from startup snapshot",
@@ -47,15 +47,16 @@ impl Fulgur {
             // deleting and reinserting every buffer under a fresh identity.
             let mut highest_tab_id = 0;
             let mut saved_active_editor_id = None;
-            for (saved_index, tab_state) in window_state.tabs.iter().enumerate() {
+            let active_tab_index = window_state.active_tab_index;
+            for (saved_index, tab_state) in window_state.tabs.into_iter().enumerate() {
                 let tab_id = TabId(tab_state.tab_id);
-                let tab = self.restore_tab_from_state(tab_state.clone(), tab_id, window, cx);
+                let tab = self.restore_tab_from_state(tab_state, tab_id, window, cx);
                 if let Some(editor_tab) = tab {
-                    if window_state.active_tab_index == Some(saved_index) {
+                    if active_tab_index == Some(saved_index) {
                         saved_active_editor_id = Some(editor_tab.id);
                     }
                     self.tabs.push(Tab::Editor(editor_tab).into_entity(cx));
-                    highest_tab_id = highest_tab_id.max(tab_state.tab_id);
+                    highest_tab_id = highest_tab_id.max(tab_id.0);
                 }
             }
             self.next_tab_id = TabId(highest_tab_id.saturating_add(1));
