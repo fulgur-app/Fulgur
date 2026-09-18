@@ -5,8 +5,8 @@ use gpui_kit::component::{WindowExt, notification::NotificationType};
 use gpui_kit::{AppContext, Context, Window};
 
 use super::input::make_log_input_state;
-use super::tail::{log_toggle_available, trim_to_last_lines};
-use super::{LOG_LINE_CAP, LogDisplayUpdate, LogTailState};
+use super::tail::{log_file_position, log_toggle_available, read_full_log, trim_to_last_lines};
+use super::{LOG_LINE_CAP, LogDisplayUpdate, LogFilePosition, LogTailState};
 use crate::fulgur::Fulgur;
 
 /// File size beyond which "Load full file" warns the user about memory use.
@@ -78,8 +78,8 @@ impl Fulgur {
         let Some(log_content) = editor.log_content.clone() else {
             return;
         };
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
+        let (bytes, identity) = match read_full_log(&path) {
+            Ok(read) => read,
             Err(error) => {
                 window.push_notification(
                     (
@@ -102,10 +102,12 @@ impl Fulgur {
                 cx,
             );
         }
-        let new_offset = bytes.len() as u64;
         let full = String::from_utf8_lossy(&bytes).into_owned();
         if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
-            state.byte_offset = new_offset;
+            state.set_position(LogFilePosition {
+                byte_offset: bytes.len() as u64,
+                identity,
+            });
         }
         // The cap is lifted from here on, so commit as a full untrimmed buffer.
         self.commit_log_display(
@@ -142,7 +144,10 @@ impl Fulgur {
             },
             None => return,
         };
-        let byte_offset = std::fs::metadata(&path).map_or(0, |m| m.len());
+        let position = log_file_position(&path).unwrap_or(LogFilePosition {
+            byte_offset: 0,
+            identity: None,
+        });
         let (display, dropped) = trim_to_last_lines(seed, LOG_LINE_CAP);
         let soft_wrap = self.settings.editor_settings.soft_wrap;
         let log_content = cx.new(|cx| make_log_input_state(window, cx, &display, soft_wrap));
@@ -153,7 +158,7 @@ impl Fulgur {
             editor.log_content = Some(log_content);
         });
         self.log_tail_state
-            .insert(tab_id, LogTailState::new(byte_offset, dropped));
+            .insert(tab_id, LogTailState::new(position, dropped));
         self.start_log_poll_task(tab_id, path, window, cx);
     }
 

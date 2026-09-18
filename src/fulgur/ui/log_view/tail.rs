@@ -1,5 +1,6 @@
 //! Pure path, text, and file helpers for the log view (no UI or `Fulgur`).
 
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
@@ -71,47 +72,175 @@ pub fn trim_to_last_lines(buffer: String, max_lines: usize) -> (String, bool) {
     (buffer[cut..].to_string(), true)
 }
 
-/// Read newly appended bytes from a file beyond a known offset.
+/// Identity of the file object behind a path, used to detect rename-based
+/// rotation where the path is re-pointed at a different file.
+///
+/// On Unix this is the device and inode pair; on Windows it is the volume
+/// serial number and file index pair.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LogFileIdentity {
+    device: u64,
+    file_index: u64,
+}
+
+impl LogFileIdentity {
+    /// Read the identity of an already opened file from its handle.
+    ///
+    /// ### Arguments
+    /// - `file`: The opened file
+    ///
+    /// ### Returns
+    /// - `Some(LogFileIdentity)`: The identity of the file object
+    /// - `None`: If the platform could not report it
+    #[cfg(unix)]
+    fn from_file(file: &File) -> Option<Self> {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = file.metadata().ok()?;
+        Some(Self {
+            device: metadata.dev(),
+            file_index: metadata.ino(),
+        })
+    }
+
+    /// Read the identity of an already opened file from its handle.
+    ///
+    /// ### Arguments
+    /// - `file`: The opened file
+    ///
+    /// ### Returns
+    /// - `Some(LogFileIdentity)`: The identity of the file object
+    /// - `None`: If the platform could not report it
+    #[cfg(windows)]
+    fn from_file(file: &File) -> Option<Self> {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        };
+        let mut info = BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: the handle is owned by `file` and stays valid for the call,
+        // and `info` is a properly sized out-parameter.
+        unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut info) }.ok()?;
+        Some(Self {
+            device: u64::from(info.dwVolumeSerialNumber),
+            file_index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+        })
+    }
+}
+
+/// The current position of a tailed file: its length and identity, both read
+/// from a single opened handle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LogFilePosition {
+    /// The byte length of the file
+    pub byte_offset: u64,
+    /// The identity of the file object, when the platform reports it
+    pub identity: Option<LogFileIdentity>,
+}
+
+/// Read the length and identity of the file at a path.
+///
+/// ### Arguments
+/// - `path`: The file to inspect
+///
+/// ### Returns
+/// - `Some(LogFilePosition)`: The file length and identity
+/// - `None`: If the file could not be opened or stat-ed
+pub(super) fn log_file_position(path: &Path) -> Option<LogFilePosition> {
+    let file = File::open(path).ok()?;
+    Some(LogFilePosition {
+        byte_offset: file.metadata().ok()?.len(),
+        identity: LogFileIdentity::from_file(&file),
+    })
+}
+
+/// Read the whole file at a path together with its identity.
 ///
 /// ### Arguments
 /// - `path`: The file to read
-/// - `offset`: The byte offset already consumed
 ///
 /// ### Returns
-/// - `Some((String, u64, bool))`: The decoded new text, the new offset, and
-///   whether the file was truncated/rotated (offset reset to a full reread)
-/// - `None`: If the file could not be stat-ed or read
-pub(super) fn read_new_log_bytes(path: &Path, offset: u64) -> Option<(String, u64, bool)> {
-    let len = std::fs::metadata(path).ok()?.len();
+/// - `Ok((Vec<u8>, Option<LogFileIdentity>))`: The file bytes and identity
+/// - `Err(std::io::Error)`: If the file could not be opened or read
+pub(super) fn read_full_log(path: &Path) -> std::io::Result<(Vec<u8>, Option<LogFileIdentity>)> {
+    let mut file = File::open(path)?;
+    let identity = LogFileIdentity::from_file(&file);
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok((bytes, identity))
+}
+
+/// A chunk of newly read log bytes and the position it advanced to.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct LogTailChunk {
+    /// The decoded new text
+    pub text: String,
+    /// The consumed position after this read
+    pub position: LogFilePosition,
+    /// Whether the file was truncated or replaced, so `text` is a full reread
+    pub reset: bool,
+}
+
+/// Read newly appended bytes from a file beyond a known position.
+///
+/// ### Arguments
+/// - `path`: The file to read
+/// - `consumed`: The position already consumed
+///
+/// ### Returns
+/// - `Some(LogTailChunk)`: The new text, the new position, and whether the
+///   file was reset (truncated or replaced)
+/// - `None`: If the file could not be opened, stat-ed, or read
+pub(super) fn read_new_log_bytes(path: &Path, consumed: LogFilePosition) -> Option<LogTailChunk> {
+    let mut file = File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let identity = LogFileIdentity::from_file(&file);
+    let replaced = match (consumed.identity, identity) {
+        (Some(known), Some(current)) => known != current,
+        _ => false,
+    };
+    let offset = consumed.byte_offset;
+    if replaced || len < offset {
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).ok()?;
+        return Some(LogTailChunk {
+            text: String::from_utf8_lossy(&bytes).into_owned(),
+            position: LogFilePosition {
+                byte_offset: bytes.len() as u64,
+                identity,
+            },
+            reset: true,
+        });
+    }
     if len == offset {
-        return Some((String::new(), offset, false));
+        return Some(LogTailChunk {
+            text: String::new(),
+            position: LogFilePosition {
+                byte_offset: offset,
+                identity,
+            },
+            reset: false,
+        });
     }
-    if len < offset {
-        let bytes = std::fs::read(path).ok()?;
-        let new_offset = bytes.len() as u64;
-        return Some((
-            String::from_utf8_lossy(&bytes).into_owned(),
-            new_offset,
-            true,
-        ));
-    }
-    let mut file = std::fs::File::open(path).ok()?;
     file.seek(SeekFrom::Start(offset)).ok()?;
     let to_read = len - offset;
     let mut buf = Vec::with_capacity(usize::try_from(to_read).unwrap_or(0));
     file.take(to_read).read_to_end(&mut buf).ok()?;
-    let new_offset = offset + buf.len() as u64;
-    Some((
-        String::from_utf8_lossy(&buf).into_owned(),
-        new_offset,
-        false,
-    ))
+    Some(LogTailChunk {
+        text: String::from_utf8_lossy(&buf).into_owned(),
+        position: LogFilePosition {
+            byte_offset: offset + buf.len() as u64,
+            identity,
+        },
+        reset: false,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        log_toggle_available, opens_as_log_by_default, read_new_log_bytes, trim_to_last_lines,
+        LogFilePosition, log_file_position, log_toggle_available, opens_as_log_by_default,
+        read_full_log, read_new_log_bytes, trim_to_last_lines,
     };
     use crate::fulgur::ui::log_view::LOG_LINE_CAP;
     use std::io::Write;
@@ -178,12 +307,25 @@ mod tests {
         assert!(!dropped);
     }
 
+    /// Write a seed file and return its consumed position.
+    fn seed_log(path: &Path, content: &str) -> LogFilePosition {
+        std::fs::write(path, content).expect("write seed");
+        log_file_position(path).expect("seed position")
+    }
+
+    /// Atomically replace the file at `path` with a new file holding `content`
+    /// (rename-based rotation, so the path points at a different file object).
+    fn replace_log(path: &Path, content: &str) {
+        let staged = path.with_extension("staged");
+        std::fs::write(&staged, content).expect("write replacement");
+        std::fs::rename(&staged, path).expect("rename replacement over log");
+    }
+
     #[test]
     fn test_read_new_log_bytes_returns_only_appended_text() {
         let dir = tempfile::TempDir::new().expect("temp dir");
         let path = dir.path().join("tail.log");
-        std::fs::write(&path, "line1\n").expect("write seed");
-        let offset = std::fs::metadata(&path).expect("metadata").len();
+        let consumed = seed_log(&path, "line1\n");
 
         let mut file = std::fs::OpenOptions::new()
             .append(true)
@@ -192,41 +334,103 @@ mod tests {
         file.write_all(b"line2\n").expect("append");
         drop(file);
 
-        let (text, new_offset, truncated) =
-            read_new_log_bytes(&path, offset).expect("read new bytes");
-        assert_eq!(text, "line2\n");
-        assert_eq!(new_offset, offset + 6);
-        assert!(!truncated);
+        let chunk = read_new_log_bytes(&path, consumed).expect("read new bytes");
+        assert_eq!(chunk.text, "line2\n");
+        assert_eq!(chunk.position.byte_offset, consumed.byte_offset + 6);
+        assert_eq!(chunk.position.identity, consumed.identity);
+        assert!(!chunk.reset);
     }
 
     #[test]
     fn test_read_new_log_bytes_reports_no_change_when_unchanged() {
         let dir = tempfile::TempDir::new().expect("temp dir");
         let path = dir.path().join("idle.log");
-        std::fs::write(&path, "content\n").expect("write");
-        let offset = std::fs::metadata(&path).expect("metadata").len();
+        let consumed = seed_log(&path, "content\n");
 
-        let (text, new_offset, truncated) =
-            read_new_log_bytes(&path, offset).expect("read new bytes");
-        assert!(text.is_empty());
-        assert_eq!(new_offset, offset);
-        assert!(!truncated);
+        let chunk = read_new_log_bytes(&path, consumed).expect("read new bytes");
+        assert!(chunk.text.is_empty());
+        assert_eq!(chunk.position, consumed);
+        assert!(!chunk.reset);
     }
 
     #[test]
     fn test_read_new_log_bytes_resets_on_truncation() {
         let dir = tempfile::TempDir::new().expect("temp dir");
         let path = dir.path().join("rotated.log");
-        std::fs::write(&path, "old long content\n").expect("write seed");
-        let offset = std::fs::metadata(&path).expect("metadata").len();
+        let consumed = seed_log(&path, "old long content\n");
 
-        // Truncate/rotate: the file is now shorter than the consumed offset.
+        // Truncate in place: same file object, now shorter than the offset.
         std::fs::write(&path, "fresh\n").expect("truncate");
 
-        let (text, new_offset, truncated) =
-            read_new_log_bytes(&path, offset).expect("read new bytes");
-        assert_eq!(text, "fresh\n");
-        assert_eq!(new_offset, 6);
-        assert!(truncated);
+        let chunk = read_new_log_bytes(&path, consumed).expect("read new bytes");
+        assert_eq!(chunk.text, "fresh\n");
+        assert_eq!(chunk.position.byte_offset, 6);
+        assert_eq!(chunk.position.identity, consumed.identity);
+        assert!(chunk.reset);
+    }
+
+    #[test]
+    fn test_read_new_log_bytes_resets_on_equal_size_replacement() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let path = dir.path().join("rotated.log");
+        let consumed = seed_log(&path, "old\n");
+
+        replace_log(&path, "new\n");
+
+        let chunk = read_new_log_bytes(&path, consumed).expect("read new bytes");
+        assert_eq!(chunk.text, "new\n");
+        assert_eq!(chunk.position.byte_offset, 4);
+        assert_ne!(chunk.position.identity, consumed.identity);
+        assert!(chunk.reset);
+    }
+
+    #[test]
+    fn test_read_new_log_bytes_resets_on_larger_replacement() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let path = dir.path().join("rotated.log");
+        let consumed = seed_log(&path, "old\n");
+
+        replace_log(&path, "replacement line 1\nreplacement line 2\n");
+
+        let chunk = read_new_log_bytes(&path, consumed).expect("read new bytes");
+        assert_eq!(chunk.text, "replacement line 1\nreplacement line 2\n");
+        assert_eq!(chunk.position.byte_offset, chunk.text.len() as u64);
+        assert_ne!(chunk.position.identity, consumed.identity);
+        assert!(chunk.reset);
+    }
+
+    #[test]
+    fn test_read_new_log_bytes_appends_after_replacement_is_consumed() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let path = dir.path().join("rotated.log");
+        let consumed = seed_log(&path, "old\n");
+
+        replace_log(&path, "new\n");
+        let rotated = read_new_log_bytes(&path, consumed).expect("read rotation");
+        assert!(rotated.reset);
+
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("open append");
+        file.write_all(b"more\n").expect("append");
+        drop(file);
+
+        let chunk = read_new_log_bytes(&path, rotated.position).expect("read new bytes");
+        assert_eq!(chunk.text, "more\n");
+        assert_eq!(chunk.position.byte_offset, 9);
+        assert!(!chunk.reset);
+    }
+
+    #[test]
+    fn test_read_full_log_reports_identity_matching_position() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let path = dir.path().join("full.log");
+        let position = seed_log(&path, "a\nb\n");
+
+        let (bytes, identity) = read_full_log(&path).expect("read full");
+        assert_eq!(bytes, b"a\nb\n");
+        assert_eq!(identity, position.identity);
+        assert!(identity.is_some());
     }
 }
