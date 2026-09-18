@@ -71,13 +71,17 @@ fields such as the search bar.
 
 ## Screenshots
 
-| ![Markdown preview](assets/readme/fulgur_2.webp) | ![Share panel](assets/readme/fulgur_3.webp) |
+| ![Markdown preview panel](assets/readme/fulgur_2.webp) | ![Markdow preview tab](assets/readme/fulgur_3.webp) |
 |---|---|
-| Markdown preview and toolbar | Sharing a file to your devices |
-| ![Theme selection](assets/readme/fulgur_4.webp) | ![Color toolbar](assets/readme/fulgur_5.webp) |
-| Theme selection | Color picker, converter, and inline color highlighting |
-| ![SSH file browser](assets/readme/fulgur_6.webp) | |
-| Browsing a remote server over SSH | |
+| Markdown preview and toolbar | Markdown preview in a separate tab |
+| ![Share panel](assets/readme/fulgur_4.webp) | ![Theme selection](assets/readme/fulgur_5.webp) |
+| Sharing a file to your devices | Theme selection |
+| ![Color toolbar](assets/readme/fulgur_6.webp) | ![Remote file support](assets/readme/fulgur_7.webp) |
+| Color picker, converter, and inline color highlighting | Edit remote file via SSH |
+| ![Log view](assets/readme/fulgur_8.webp) | ![CSV preview](assets/readme/fulgur_9.webp) |
+| Dedicated log view with follow up | CSV files preview as table and basic editing |
+| ![Rename and color tabs](assets/readme/fulgur_10.webp) | ![Separate title bar](assets/readme/fulgur_11.webp) |
+| Rename and color tabs | Separated title bar |
 
 ## Install
 
