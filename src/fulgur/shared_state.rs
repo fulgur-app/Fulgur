@@ -1,5 +1,5 @@
 use crate::fulgur::settings::ProfileId;
-use crate::fulgur::state::{StateWriter, WindowsState};
+use crate::fulgur::state::{StateWriter, WindowState, WindowsState};
 use crate::fulgur::sync::sse::SseState;
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::sync::ssh::pool::SshSessionPool;
@@ -216,13 +216,19 @@ pub struct SharedAppState {
     pub remote_save_queue: Arc<RemoteSaveQueue>,
     /// Dedicated background writer for `WindowsState` persistence.
     pub state_writer: Arc<StateWriter>,
-    /// In-memory snapshot of `WindowsState` taken once at startup, used to
-    /// restore every window without re-reading the state database per window.
+    /// Per-window restore payloads taken once at startup, indexed by window
+    /// position, used to restore every window without re-reading the state
+    /// database per window.
     ///
-    /// Holding the snapshot read-only also closes the consistency window: a
+    /// Each slot is consumed by `load_state` when its window restores, so the
+    /// persisted buffers live on only inside the editors that took them. Slots
+    /// are never compacted: a window whose creation failed keeps its payload in
+    /// place, and later windows keep their positional index.
+    ///
+    /// Snapshotting at startup also closes the consistency window: a
     /// `save_state` landing between a window's spawn and its restore can no
     /// longer change what that window sees.
-    pub restore_state: Arc<Mutex<Option<WindowsState>>>,
+    pub restore_state: Arc<Mutex<Vec<Option<WindowState>>>>,
     /// Sender for user-facing notifications produced anywhere in the app.
     pub notification_tx: UnboundedSender<AppNotification>,
     /// Receiver side of the notification channel, taken exactly once by `spawn_notification_consumer`.
@@ -238,7 +244,7 @@ impl SharedAppState {
     /// ### Arguments
     /// - `settings`: Already-loaded application settings
     /// - `pending_files_from_macos`: Arc to the pending files queue from macOS open events
-    /// - `restore_state`: Startup snapshot of `WindowsState` shared with every window for restoration
+    /// - `restore_state`: Startup snapshot of `WindowsState`, split into one restore payload per window
     /// - `state_db`: The open session-state database, handed to the writer thread
     ///   which owns it for the lifetime of the process. `None` when none could be
     ///   opened, in which case session state is not persisted.
@@ -286,7 +292,11 @@ impl SharedAppState {
             ssh_session_pool: Arc::new(SshSessionPool::new()),
             remote_save_queue: Arc::new(RemoteSaveQueue::new()),
             state_writer: Arc::new(StateWriter::new(state_db)),
-            restore_state: Arc::new(Mutex::new(restore_state)),
+            restore_state: Arc::new(Mutex::new(
+                restore_state
+                    .map(|state| state.windows.into_iter().map(Some).collect())
+                    .unwrap_or_default(),
+            )),
             notification_tx,
             notification_rx: Mutex::new(Some(notification_rx)),
         }

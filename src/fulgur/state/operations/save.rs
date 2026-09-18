@@ -254,6 +254,7 @@ mod tests {
             SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState,
             WindowsState,
         },
+        ui::components_utils::UNTITLED,
         window_manager::WindowManager,
     };
     use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
@@ -356,7 +357,7 @@ mod tests {
     ) -> WindowState {
         cx.update(|window, cx| {
             let restore_state = Arc::clone(&cx.global::<SharedAppState>().restore_state);
-            *restore_state.lock() = Some(state);
+            *restore_state.lock() = state.windows.into_iter().map(Some).collect();
             fulgur.update(cx, |this, cx| {
                 this.settings.app_settings.persist_unsaved_buffers = true;
                 this.load_state(window, cx, 0);
@@ -479,6 +480,71 @@ mod tests {
             vec![11, 12]
         );
         assert_eq!(restored.active_tab_index, Some(0));
+    }
+
+    #[gpui_kit::test]
+    fn restore_consumes_the_window_slot_and_keeps_other_slots(cx: &mut TestAppContext) {
+        let untouched_window = WindowState {
+            window_id: 43,
+            tabs: vec![TabState {
+                tab_id: 20,
+                title: UNTITLED.to_string(),
+                file_path: None,
+                content: Some(TabContent::from("payload of a window not yet opened")),
+                last_saved: None,
+                remote: None,
+                log_view: false,
+                color_tag: None,
+            }],
+            active_tab_index: Some(0),
+            window_bounds: SerializedWindowBounds::default(),
+        };
+        let mut state = startup_snapshot(TabState {
+            tab_id: 10,
+            title: UNTITLED.to_string(),
+            file_path: None,
+            content: Some(TabContent::from("restored payload")),
+            last_saved: None,
+            remote: None,
+            log_view: false,
+            color_tag: None,
+        });
+        state.windows.push(untouched_window);
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let restored = restore_and_snapshot(&fulgur, &mut visual_cx, state);
+        assert_recovery_content(&restored.tabs[0], "restored payload");
+
+        let slots = visual_cx.update(|_, cx| {
+            let restore_state = Arc::clone(&cx.global::<SharedAppState>().restore_state);
+            let slots = restore_state.lock();
+            (
+                slots.len(),
+                slots[0].is_none(),
+                slots[1].as_ref().map(|window| window.window_id),
+            )
+        });
+        assert_eq!(
+            slots,
+            (2, true, Some(43)),
+            "the restored slot must be released while the other window keeps its payload and index"
+        );
+
+        let restored_again = visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.load_state(window, cx, 0);
+                this.build_window_state_without_bounds(cx)
+            })
+        });
+        assert_eq!(
+            restored_again
+                .tabs
+                .iter()
+                .map(|tab| tab.tab_id)
+                .collect::<Vec<_>>(),
+            vec![10],
+            "a consumed slot must leave the window as it is instead of restoring again"
+        );
     }
 
     #[gpui_kit::test]
