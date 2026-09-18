@@ -17,7 +17,7 @@ mod lifecycle;
 mod polling;
 mod tail;
 
-pub use tail::{log_toggle_available, opens_as_log_by_default};
+pub use tail::{LogFileIdentity, LogFilePosition, log_toggle_available, opens_as_log_by_default};
 
 use gpui_kit::component::input::EditorState;
 use gpui_kit::{Context, Entity, Window};
@@ -34,6 +34,9 @@ pub const LOG_LINE_CAP: usize = 10_000;
 pub struct LogTailState {
     /// Byte offset in the file up to which content has already been consumed.
     pub byte_offset: u64,
+    /// Identity of the file object the offset refers to, used to detect
+    /// rename-based rotation even when the replacement is not shorter.
+    pub identity: Option<LogFileIdentity>,
     /// Whether the line cap has dropped older lines from the display.
     pub dropped_lines: bool,
     /// Newly appended text accumulated while follow is paused (frozen view).
@@ -41,20 +44,41 @@ pub struct LogTailState {
 }
 
 impl LogTailState {
-    /// Create a fresh tail state seeded at the given byte offset.
+    /// Create a fresh tail state seeded at the given file position.
     ///
     /// ### Arguments
-    /// - `byte_offset`: The initial file offset already consumed by the seed
+    /// - `position`: The file length and identity already consumed by the seed
     /// - `dropped_lines`: Whether the seed already exceeded the line cap
     ///
     /// ### Returns
     /// - `LogTailState`: The initialized state
-    fn new(byte_offset: u64, dropped_lines: bool) -> Self {
+    fn new(position: LogFilePosition, dropped_lines: bool) -> Self {
         Self {
-            byte_offset,
+            byte_offset: position.byte_offset,
+            identity: position.identity,
             dropped_lines,
             pending: String::new(),
         }
+    }
+
+    /// Return the consumed position as a single value for the tail reader.
+    ///
+    /// ### Returns
+    /// - `LogFilePosition`: The consumed byte offset and file identity
+    fn position(&self) -> LogFilePosition {
+        LogFilePosition {
+            byte_offset: self.byte_offset,
+            identity: self.identity,
+        }
+    }
+
+    /// Advance the consumed position after a read.
+    ///
+    /// ### Arguments
+    /// - `position`: The new consumed byte offset and file identity
+    fn set_position(&mut self, position: LogFilePosition) {
+        self.byte_offset = position.byte_offset;
+        self.identity = position.identity;
     }
 }
 

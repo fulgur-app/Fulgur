@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use gpui_kit::{Context, Window};
 
-use super::LogDisplayUpdate;
-use super::tail::read_new_log_bytes;
+use super::tail::{LogTailChunk, read_new_log_bytes};
+use super::{LogDisplayUpdate, LogFilePosition, LogTailState};
 use crate::fulgur::Fulgur;
 
 /// How often the active log tab polls its file for newly appended bytes.
@@ -54,25 +54,25 @@ impl Fulgur {
                 if cancel.load(Ordering::Acquire) {
                     break;
                 }
-                let Ok(Ok(Some(offset))) = window
-                    .update(|_, cx| view.update(cx, |this, cx| this.log_tail_offset(tab_id, cx)))
+                let Ok(Ok(Some(consumed))) = window
+                    .update(|_, cx| view.update(cx, |this, cx| this.log_tail_position(tab_id, cx)))
                 else {
                     break;
                 };
                 let read_path = path.clone();
                 let chunk = window
                     .background_executor()
-                    .spawn(async move { read_new_log_bytes(&read_path, offset) })
+                    .spawn(async move { read_new_log_bytes(&read_path, consumed) })
                     .await;
-                let Some((text, new_offset, truncated)) = chunk else {
+                let Some(chunk) = chunk else {
                     continue;
                 };
-                if text.is_empty() && !truncated {
+                if chunk.text.is_empty() && !chunk.reset {
                     continue;
                 }
                 let applied = window.update(|window, cx| {
                     view.update(cx, |this, cx| {
-                        this.apply_log_tail_chunk(tab_id, &text, new_offset, truncated, window, cx);
+                        this.apply_log_tail_chunk(tab_id, &chunk, window, cx);
                     })
                 });
                 if applied.is_err() {
@@ -83,42 +83,39 @@ impl Fulgur {
         .detach();
     }
 
-    /// Return the current consumed byte offset for a tailing tab.
+    /// Return the current consumed position for a tailing tab.
     ///
     /// ### Arguments
     /// - `tab_id`: The tab to query
     ///
     /// ### Returns
-    /// - `Some(u64)`: The byte offset when the tab is still in log view
+    /// - `Some(LogFilePosition)`: The consumed offset and file identity when
+    ///   the tab is still in log view
     /// - `None`: When the tab is gone or no longer in log view (poll should stop)
-    fn log_tail_offset(&self, tab_id: TabId, cx: &gpui_kit::App) -> Option<u64> {
+    fn log_tail_position(&self, tab_id: TabId, cx: &gpui_kit::App) -> Option<LogFilePosition> {
         let editor = self.editor_tab(tab_id, cx)?;
         if !editor.log_view {
             return None;
         }
-        self.log_tail_state
-            .get(&tab_id)
-            .map(|state| state.byte_offset)
+        self.log_tail_state.get(&tab_id).map(LogTailState::position)
     }
 
     /// Apply a freshly read chunk of log bytes to the display buffer.
     ///
     /// ### Arguments
     /// - `tab_id`: The tab being tailed
-    /// - `text`: The newly read text
-    /// - `new_offset`: The new consumed byte offset
-    /// - `truncated`: Whether the file was truncated/rotated
+    /// - `chunk`: The newly read text, the position it advanced to, and
+    ///   whether the file was truncated or replaced
     /// - `window`: The active window
     /// - `cx`: The application context
     fn apply_log_tail_chunk(
         &mut self,
         tab_id: TabId,
-        text: &str,
-        new_offset: u64,
-        truncated: bool,
+        chunk: &LogTailChunk,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let text = chunk.text.as_str();
         let (log_content, log_full, follow) = match self.editor_tab(tab_id, cx) {
             Some(editor) => match editor.log_content.clone() {
                 Some(log_content) => (log_content, editor.log_full, editor.log_follow),
@@ -127,14 +124,14 @@ impl Fulgur {
             None => return,
         };
 
-        // Advance the consumed offset regardless of follow state so paused tabs
-        // resume from the right place.
+        // Advance the consumed position regardless of follow state so paused
+        // tabs resume from the right place.
         if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
-            state.byte_offset = new_offset;
+            state.set_position(chunk.position);
         }
 
-        if truncated {
-            // File was rotated or shrunk: rebuild the view from the new content.
+        if chunk.reset {
+            // File was replaced or shrunk: rebuild the view from the new content.
             self.commit_log_display(
                 tab_id,
                 &log_content,
