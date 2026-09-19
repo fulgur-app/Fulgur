@@ -270,7 +270,7 @@ mod tests {
 
     fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
         cx.update(|cx| {
-            gpui_kit::init(cx);
+            crate::test_support::init_test_app(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
@@ -310,7 +310,7 @@ mod tests {
         let profile_id = profile.id.clone();
 
         cx.update(|cx| {
-            gpui_kit::init(cx);
+            crate::test_support::init_test_app(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             settings
@@ -508,7 +508,7 @@ mod tests {
         let id_b = profile_b.id.clone();
 
         cx.update(|cx| {
-            gpui_kit::init(cx);
+            crate::test_support::init_test_app(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             settings

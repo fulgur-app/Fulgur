@@ -19,7 +19,7 @@ pub(crate) fn temp_test_path(file_name: &str) -> PathBuf {
 
 pub(crate) fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
     cx.update(|cx| {
-        gpui_kit::init(cx);
+        crate::test_support::init_test_app(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<ParkingMutex<Vec<PathBuf>>> =

@@ -243,7 +243,7 @@ mod gpui_tests {
     /// - `cx`: The GPUI test context to initialize.
     fn setup_test_globals(cx: &mut TestAppContext) {
         cx.update(|cx| {
-            gpui_kit::init(cx);
+            crate::test_support::init_test_app(cx);
             let mut settings = Settings::new();
             settings.editor_settings.watch_files = false;
             let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));

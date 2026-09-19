@@ -6,3 +6,6 @@
 #![recursion_limit = "512"]
 
 pub mod fulgur;
+
+#[cfg(any(test, feature = "gpui-test-support"))]
+pub mod test_support;
