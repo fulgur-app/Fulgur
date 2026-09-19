@@ -50,8 +50,8 @@ impl EditorTab {
     /// - `enabled`: Whether color swatches should be shown
     ///
     /// [`NoColorProvider`]: super::hex_color_provider::NoColorProvider
-    fn set_highlight_colors(&mut self, cx: &mut App, enabled: bool) {
-        let enabled = enabled && !self.large_file;
+    pub(crate) fn set_highlight_colors(&mut self, cx: &mut App, enabled: bool) {
+        let enabled = enabled && !self.large_file && !self.log_view;
         if enabled == self.highlight_colors {
             return;
         }

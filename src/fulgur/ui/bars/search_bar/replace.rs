@@ -1,5 +1,5 @@
 use gpui_kit::component::input::EditorState;
-use gpui_kit::{Context, Entity, Window};
+use gpui_kit::{App, Context, Entity, Window};
 
 use super::SearchBar;
 use super::matching::apply_replacements;
@@ -22,6 +22,18 @@ impl SearchBar {
         self.perform_search(content, window, cx);
     }
 
+    /// Return whether a buffer accepts edits from the search bar.
+    ///
+    /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when there is a buffer and it is editable by the user
+    fn content_is_editable(content: Option<&Entity<EditorState>>, cx: &App) -> bool {
+        content.is_some_and(|content| content.read(cx).is_editable())
+    }
+
     /// Replace the current search match
     ///
     /// ### Arguments
@@ -34,6 +46,9 @@ impl SearchBar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !Self::content_is_editable(content.as_ref(), cx) {
+            return;
+        }
         // Recompute matches against the current buffer before slicing: the cached
         // offsets may be stale if the document was edited since the last search.
         self.force_perform_search(content.clone(), window, cx);
@@ -87,6 +102,9 @@ impl SearchBar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !Self::content_is_editable(content.as_ref(), cx) {
+            return;
+        }
         self.force_perform_search(content.clone(), window, cx);
         if self.search_matches.is_empty() {
             return;

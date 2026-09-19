@@ -122,6 +122,18 @@ impl SearchBar {
             .get_active_editor_tab(cx)
             .map(|editor_tab| editor_tab.content.clone())
     }
+
+    /// Return whether the active editor buffer accepts user edits.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when an editor tab is active and its buffer is editable
+    pub(super) fn active_editor_is_editable(&self, cx: &App) -> bool {
+        self.active_editor_content(cx)
+            .is_some_and(|content| content.read(cx).is_editable())
+    }
 }
 
 impl Fulgur {

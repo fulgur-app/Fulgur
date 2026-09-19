@@ -43,35 +43,6 @@ fn extension_lowercase(path: &Path) -> Option<String> {
         .map(str::to_ascii_lowercase)
 }
 
-/// Trim a buffer so that only the last `max_lines` newline-terminated lines
-/// (plus any trailing partial line) remain.
-///
-/// ### Arguments
-/// - `buffer`: The full buffer text
-/// - `max_lines`: The maximum number of lines to keep
-///
-/// ### Returns
-/// - `(String, bool)`: The trimmed buffer and whether any lines were dropped
-pub fn trim_to_last_lines(buffer: String, max_lines: usize) -> (String, bool) {
-    let newline_count = buffer.matches('\n').count();
-    if newline_count <= max_lines {
-        return (buffer, false);
-    }
-    let lines_to_drop = newline_count - max_lines;
-    let mut seen = 0;
-    let mut cut = 0;
-    for (idx, byte) in buffer.bytes().enumerate() {
-        if byte == b'\n' {
-            seen += 1;
-            if seen == lines_to_drop {
-                cut = idx + 1;
-                break;
-            }
-        }
-    }
-    (buffer[cut..].to_string(), true)
-}
-
 /// Identity of the file object behind a path, used to detect rename-based
 /// rotation where the path is re-pointed at a different file.
 ///
@@ -154,22 +125,6 @@ pub(super) fn log_file_position(path: &Path) -> Option<LogFilePosition> {
     })
 }
 
-/// Read the whole file at a path together with its identity.
-///
-/// ### Arguments
-/// - `path`: The file to read
-///
-/// ### Returns
-/// - `Ok((Vec<u8>, Option<LogFileIdentity>))`: The file bytes and identity
-/// - `Err(std::io::Error)`: If the file could not be opened or read
-pub(super) fn read_full_log(path: &Path) -> std::io::Result<(Vec<u8>, Option<LogFileIdentity>)> {
-    let mut file = File::open(path)?;
-    let identity = LogFileIdentity::from_file(&file);
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
-    Ok((bytes, identity))
-}
-
 /// A chunk of newly read log bytes and the position it advanced to.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct LogTailChunk {
@@ -240,9 +195,8 @@ pub(super) fn read_new_log_bytes(path: &Path, consumed: LogFilePosition) -> Opti
 mod tests {
     use super::{
         LogFilePosition, log_file_position, log_toggle_available, opens_as_log_by_default,
-        read_full_log, read_new_log_bytes, trim_to_last_lines,
+        read_new_log_bytes,
     };
-    use crate::fulgur::ui::log_view::LOG_LINE_CAP;
     use std::io::Write;
     use std::path::Path;
 
@@ -268,43 +222,6 @@ mod tests {
         assert!(opens_as_log_by_default(Path::new("SERVER.LOG")));
         assert!(!opens_as_log_by_default(Path::new("notes.txt")));
         assert!(!opens_as_log_by_default(Path::new("build.out")));
-    }
-
-    #[test]
-    fn test_trim_keeps_all_when_under_cap() {
-        let buffer = "a\nb\nc\n".to_string();
-        let (trimmed, dropped) = trim_to_last_lines(buffer.clone(), 10);
-        assert_eq!(trimmed, buffer);
-        assert!(!dropped);
-    }
-
-    #[test]
-    fn test_trim_drops_front_lines_over_cap() {
-        let buffer = "l1\nl2\nl3\nl4\nl5\n".to_string();
-        let (trimmed, dropped) = trim_to_last_lines(buffer, 2);
-        assert_eq!(trimmed, "l4\nl5\n");
-        assert!(dropped);
-    }
-
-    #[test]
-    fn test_trim_keeps_trailing_partial_line() {
-        let buffer = "l1\nl2\nl3\npartial".to_string();
-        let (trimmed, dropped) = trim_to_last_lines(buffer, 1);
-        assert_eq!(trimmed, "l3\npartial");
-        assert!(dropped);
-    }
-
-    #[test]
-    fn test_trim_at_exact_cap_keeps_everything() {
-        use std::fmt::Write as _;
-        let mut buffer = String::new();
-        for index in 0..LOG_LINE_CAP {
-            let _ = writeln!(buffer, "line {index}");
-        }
-        let original = buffer.clone();
-        let (trimmed, dropped) = trim_to_last_lines(buffer, LOG_LINE_CAP);
-        assert_eq!(trimmed, original);
-        assert!(!dropped);
     }
 
     /// Write a seed file and return its consumed position.
@@ -420,17 +337,5 @@ mod tests {
         assert_eq!(chunk.text, "more\n");
         assert_eq!(chunk.position.byte_offset, 9);
         assert!(!chunk.reset);
-    }
-
-    #[test]
-    fn test_read_full_log_reports_identity_matching_position() {
-        let dir = tempfile::TempDir::new().expect("temp dir");
-        let path = dir.path().join("full.log");
-        let position = seed_log(&path, "a\nb\n");
-
-        let (bytes, identity) = read_full_log(&path).expect("read full");
-        assert_eq!(bytes, b"a\nb\n");
-        assert_eq!(identity, position.identity);
-        assert!(identity.is_some());
     }
 }

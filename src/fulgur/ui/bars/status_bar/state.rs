@@ -29,7 +29,6 @@ pub(crate) enum StatusBarEvent {
     ToggleCsvView,
     ToggleLogView,
     ToggleLogFollow,
-    LoadFullLog,
     OpenShareSheet,
     ToggleColorPicker,
 }
@@ -230,7 +229,6 @@ impl Fulgur {
             StatusBarEvent::ToggleCsvView => self.toggle_csv_view_mode(window, cx),
             StatusBarEvent::ToggleLogView => self.toggle_log_view(window, cx),
             StatusBarEvent::ToggleLogFollow => self.toggle_log_follow(window, cx),
-            StatusBarEvent::LoadFullLog => self.load_full_log(window, cx),
             StatusBarEvent::OpenShareSheet => self.open_share_file_sheet(window, cx),
             StatusBarEvent::ToggleColorPicker => self.toggle_color_picker(window, cx),
         }

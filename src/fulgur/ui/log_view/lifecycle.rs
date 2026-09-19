@@ -2,15 +2,12 @@
 
 use crate::fulgur::ui::tabs::tab::TabId;
 use gpui_kit::component::{WindowExt, notification::NotificationType};
-use gpui_kit::{AppContext, Context, Window};
+use gpui_kit::{Context, SharedString, Window};
 
-use super::input::make_log_input_state;
-use super::tail::{log_file_position, log_toggle_available, read_full_log, trim_to_last_lines};
-use super::{LOG_LINE_CAP, LogDisplayUpdate, LogFilePosition, LogTailState};
+use super::polling::snap_to_last_line;
+use super::tail::{log_file_position, log_toggle_available, read_new_log_bytes};
+use super::{LogFilePosition, LogTailState};
 use crate::fulgur::Fulgur;
-
-/// File size beyond which "Load full file" warns the user about memory use.
-const LOAD_FULL_WARN_BYTES: u64 = 50 * 1024 * 1024;
 
 impl Fulgur {
     /// Toggle the active tab between the editor and the log view.
@@ -31,6 +28,16 @@ impl Fulgur {
         let tab_id = editor.id;
         if editor.log_view {
             self.deactivate_log_view(tab_id, cx);
+        } else if editor.modified {
+            window.push_notification(
+                (
+                    NotificationType::Warning,
+                    SharedString::from(
+                        "Save or discard your changes before switching to log view.",
+                    ),
+                ),
+                cx,
+            );
         } else {
             self.activate_log_view(tab_id, window, cx);
         }
@@ -51,81 +58,22 @@ impl Fulgur {
         }
         let tab_id = editor.id;
         let enable = !editor.log_follow;
-        self.set_log_follow(tab_id, enable, cx);
-        if enable {
-            // Flush any text buffered while paused and snap to the bottom.
-            self.flush_log_follow(tab_id, window, cx);
-        }
-        cx.notify();
-    }
-
-    /// Lift the line cap on the active log tab and reload the full file.
-    ///
-    /// ### Arguments
-    /// - `window`: The active window
-    /// - `cx`: The application context
-    pub fn load_full_log(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(editor) = self.get_active_editor_tab(cx) else {
-            return;
-        };
-        if !editor.log_view {
-            return;
-        }
-        let tab_id = editor.id;
-        let Some(path) = editor.file_path().cloned() else {
-            return;
-        };
-        let Some(log_content) = editor.log_content.clone() else {
-            return;
-        };
-        let (bytes, identity) = match read_full_log(&path) {
-            Ok(read) => read,
-            Err(error) => {
-                window.push_notification(
-                    (
-                        NotificationType::Error,
-                        gpui_kit::SharedString::from(format!("Failed to load full log: {error}")),
-                    ),
-                    cx,
-                );
-                return;
-            }
-        };
-        if bytes.len() as u64 > LOAD_FULL_WARN_BYTES {
-            window.push_notification(
-                (
-                    NotificationType::Warning,
-                    gpui_kit::SharedString::from(
-                        "Loading a very large log file may use significant memory.",
-                    ),
-                ),
-                cx,
-            );
-        }
-        let full = String::from_utf8_lossy(&bytes).into_owned();
-        if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
-            state.set_position(LogFilePosition {
-                byte_offset: bytes.len() as u64,
-                identity,
-            });
-        }
-        // The cap is lifted from here on, so commit as a full untrimmed buffer.
-        self.commit_log_display(
-            tab_id,
-            &log_content,
-            LogDisplayUpdate::Replace(&full),
-            true,
-            window,
-            cx,
-        );
+        let content = editor.content.clone();
         self.update_editor_tab(tab_id, cx, |editor, _| {
-            editor.log_full = true;
-            editor.log_follow = true;
+            editor.log_follow = enable;
         });
+        if enable {
+            snap_to_last_line(&content, window, cx);
+        }
         cx.notify();
     }
 
-    /// Activate log view for a tab: seed the buffer and start tailing.
+    /// Activate log view for a tab: make its buffer read-only and start tailing.
+    ///
+    /// The buffer normally already mirrors the file as loaded by the editor, so
+    /// only the consumed position is seeded from the file. When the two byte
+    /// lengths disagree (the file grew while the tab was inactive, or it is not
+    /// plain UTF-8) the file is reread so the buffer and the offset agree.
     ///
     /// ### Arguments
     /// - `tab_id`: The tab to activate log view on
@@ -137,32 +85,50 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (path, seed) = match self.editor_tab(tab_id, cx) {
-            Some(editor) => match editor.file_path().cloned() {
-                Some(path) => (path, editor.content.read(cx).text().to_string()),
-                None => return,
-            },
-            None => return,
+        let Some((path, content)) = self
+            .editor_tab(tab_id, cx)
+            .and_then(|editor| Some((editor.file_path().cloned()?, editor.content.clone())))
+        else {
+            return;
         };
-        let position = log_file_position(&path).unwrap_or(LogFilePosition {
+        let mut position = log_file_position(&path).unwrap_or(LogFilePosition {
             byte_offset: 0,
             identity: None,
         });
-        let (display, dropped) = trim_to_last_lines(seed, LOG_LINE_CAP);
-        let soft_wrap = self.settings.editor_settings.soft_wrap;
-        let log_content = cx.new(|cx| make_log_input_state(window, cx, &display, soft_wrap));
-        self.update_editor_tab(tab_id, cx, |editor, _| {
+        let buffer_len = content.read(cx).text().len() as u64;
+        if position.byte_offset != buffer_len
+            && let Some(full) = read_new_log_bytes(
+                &path,
+                LogFilePosition {
+                    byte_offset: 0,
+                    identity: None,
+                },
+            )
+        {
+            content.update(cx, |state, cx| {
+                state.set_value(full.text.as_str(), window, cx);
+            });
+            position = full.position;
+        }
+        let highlight_colors = self.settings.editor_settings.highlight_colors;
+        self.update_editor_tab(tab_id, cx, |editor, cx| {
             editor.log_view = true;
             editor.log_follow = true;
-            editor.log_full = false;
-            editor.log_content = Some(log_content);
+            // The rendered `Editor` re-applies the flag every frame; setting it
+            // here too keeps `is_editable` right until that first frame.
+            editor.content.update(cx, |state, cx| {
+                state.set_readonly(true, cx);
+            });
+            editor.set_highlight_colors(cx, highlight_colors);
+            editor.mark_as_saved(cx);
         });
+        snap_to_last_line(&content, window, cx);
         self.log_tail_state
-            .insert(tab_id, LogTailState::new(position, dropped));
+            .insert(tab_id, LogTailState::new(position));
         self.start_log_poll_task(tab_id, path, window, cx);
     }
 
-    /// Fully deactivate log view for a tab, returning to the editor surface.
+    /// Fully deactivate log view for a tab, returning to the editable surface.
     ///
     /// ### Arguments
     /// - `tab_id`: The tab to deactivate log view on
@@ -170,15 +136,18 @@ impl Fulgur {
     pub(crate) fn deactivate_log_view(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
         self.stop_log_poll_task(tab_id);
         self.log_tail_state.remove(&tab_id);
-        self.update_editor_tab(tab_id, cx, |editor, _| {
+        let highlight_colors = self.settings.editor_settings.highlight_colors;
+        self.update_editor_tab(tab_id, cx, |editor, cx| {
             editor.log_view = false;
-            editor.log_full = false;
-            editor.log_content = None;
+            editor.content.update(cx, |state, cx| {
+                state.set_readonly(false, cx);
+            });
+            editor.set_highlight_colors(cx, highlight_colors);
         });
         cx.notify();
     }
 
-    /// Resume tailing for an already-seeded log tab, or seed it if needed.
+    /// Resume tailing for a tab that is in log view, or activate it if needed.
     ///
     /// Used when switching to a tab that is in log view.
     ///
@@ -192,13 +161,10 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let needs_seed = self
-            .editor_tab(tab_id, cx)
-            .is_some_and(|editor| editor.log_content.is_none());
         let path = self
             .editor_tab(tab_id, cx)
-            .and_then(|e| e.file_path().cloned());
-        if needs_seed {
+            .and_then(|editor| editor.file_path().cloned());
+        if !self.log_tail_state.contains_key(&tab_id) {
             self.activate_log_view(tab_id, window, cx);
         } else if let Some(path) = path {
             self.start_log_poll_task(tab_id, path, window, cx);

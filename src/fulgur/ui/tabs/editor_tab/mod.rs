@@ -87,16 +87,11 @@ pub struct EditorTab {
     pub csv_table_source_hash: u64,
     /// Optional theme-relative color tag shown as the tab's border color.
     pub color_tag: Option<ColorTag>,
-    /// Whether the log view (live tail) is active for this tab.
+    /// Whether the log view (read-only live tail of `content`) is active for
+    /// this tab.
     pub log_view: bool,
     /// Whether the log view auto-scrolls to follow newly appended lines.
     pub log_follow: bool,
-    /// Whether the line cap is lifted (user requested loading the full file).
-    pub log_full: bool,
-    /// Dedicated read-only display buffer for the tailed log, created lazily when
-    /// log view first activates. Kept separate from the editable `content` so the
-    /// line cap never truncates the saveable buffer.
-    pub log_content: Option<Entity<EditorState>>,
     /// Subscription to the content entity keeping `modified` current. Owned by
     /// the tab entity, attached by `Tab::attach_content_subscription`, and
     /// replaced whenever the content entity is swapped.
