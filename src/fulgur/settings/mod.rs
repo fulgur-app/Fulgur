@@ -8,5 +8,5 @@ pub use types::{
     TabColorStyle, ThemeFile, ThemeInfo, Themes, TitleBarStyle, new_profile_id,
 };
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;

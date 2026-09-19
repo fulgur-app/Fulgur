@@ -52,7 +52,7 @@ fn rebuild_lowercase_text(
 ///
 /// ### Returns
 /// - `Vec<SearchMatch>`: A vector of search matches
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 pub(super) fn find_matches(
     text: &str,
     query: &str,

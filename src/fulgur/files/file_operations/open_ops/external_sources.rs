@@ -126,7 +126,7 @@ impl Fulgur {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
     use crate::fulgur::{shared_state::SharedAppState, window_manager::WindowManager};
