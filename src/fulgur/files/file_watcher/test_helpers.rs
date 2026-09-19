@@ -13,13 +13,13 @@ use std::{cell::RefCell, path::PathBuf, sync::Arc};
 ///
 /// ### Returns
 /// - `PathBuf`: A path under `std::env::temp_dir()` suitable for cross-platform tests.
-pub(super) fn temp_test_path(file_name: &str) -> PathBuf {
+pub(crate) fn temp_test_path(file_name: &str) -> PathBuf {
     std::env::temp_dir().join(file_name)
 }
 
-pub(super) fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+pub(crate) fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
     cx.update(|cx| {
-        gpui_kit::init(cx);
+        crate::test_support::init_test_app(cx);
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
         let pending_files: Arc<ParkingMutex<Vec<PathBuf>>> =

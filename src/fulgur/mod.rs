@@ -67,7 +67,7 @@ pub struct Fulgur {
     pending_jump: Option<editor_tab::Jump>,       // Pending jump to line action
     pub settings: Settings, // The settings for the application (local snapshot, refreshed by the SharedAppState observer)
     _shared_state_observation: Subscription, // Global observer keeping the local settings snapshot in sync with SharedAppState and applying editor settings to tabs
-    log_tail_state: HashMap<TabId, LogTailState>, // Per-log-tab tail bookkeeping (byte offset, dropped lines, pending text) keyed by tab id
+    log_tail_state: HashMap<TabId, LogTailState>, // Per-log-tab tail bookkeeping (consumed byte offset and file identity) keyed by tab id
     log_tail_cancel: HashMap<TabId, Arc<AtomicBool>>, // Cancellation flag for the per-active-log-tab poll task keyed by tab id
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
     save_failed_once: bool, // Flag: save already failed once, allow force-close/quit on next attempt

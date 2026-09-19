@@ -4,7 +4,9 @@ use crate::fulgur::ui::{
     icons::CustomIcon,
 };
 use gpui_kit::component::{ActiveTheme, StyledExt, input::Input};
-use gpui_kit::{Context, Div, IntoElement, ParentElement, Render, Styled, Window, div};
+use gpui_kit::{
+    Context, Div, IntoElement, ParentElement, Render, Styled, Window, div, prelude::FluentBuilder,
+};
 
 impl Render for SearchBar {
     /// Render the search bar
@@ -32,7 +34,9 @@ impl Render for SearchBar {
             .border_color(cx.theme().border)
             .child(self.render_search_input_section(cx))
             .child(self.render_search_navigation_section(cx))
-            .child(self.render_replace_section(cx))
+            .when(self.active_editor_is_editable(cx), |this| {
+                this.child(self.render_replace_section(cx))
+            })
             .child(Self::render_search_close_button(cx))
             .into_any_element()
     }

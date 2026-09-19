@@ -380,7 +380,6 @@ impl Fulgur {
                 csv_view_mode: editor_tab::CsvViewMode,
                 csv_table: Option<Entity<TableState<editor_tab::CsvTableDelegate>>>,
                 log_view: bool,
-                log_content: Option<Entity<EditorState>>,
             },
             Settings,
             MarkdownPreview {
@@ -425,7 +424,6 @@ impl Fulgur {
                     csv_view_mode: editor_tab.csv_view_mode,
                     csv_table: editor_tab.csv_table.clone(),
                     log_view: editor_tab.log_view,
-                    log_content: editor_tab.log_content.clone(),
                 },
                 Tab::Settings(_) => ActiveTabRenderData::Settings,
                 Tab::MarkdownPreview(preview_tab) => ActiveTabRenderData::MarkdownPreview {
@@ -462,23 +460,7 @@ impl Fulgur {
                     csv_view_mode,
                     csv_table,
                     log_view,
-                    log_content,
                 } => {
-                    if log_view && let Some(log_content) = log_content {
-                        let log_input = Editor::new(&log_content)
-                            .aria_label("Log view")
-                            .disabled(true)
-                            .bordered(false)
-                            .p_0()
-                            .h_full()
-                            .font_family(self.settings.editor_settings.font_family.clone())
-                            .text_size(px(self.settings.editor_settings.font_size));
-                        return v_flex()
-                            .w_full()
-                            .flex_1()
-                            .child(log_input)
-                            .into_any_element();
-                    }
                     if language == SupportedLanguage::Csv
                         && csv_view_mode == editor_tab::CsvViewMode::Table
                         && let Some(table) = csv_table
@@ -489,8 +471,10 @@ impl Fulgur {
                             .child(DataTable::new(&table).bordered(true).stripe(true))
                             .into_any_element();
                     }
+
                     let editor_input = Editor::new(&content)
                         .aria_label("Editor")
+                        .readonly(log_view)
                         .bordered(false)
                         .p_0()
                         .h_full()

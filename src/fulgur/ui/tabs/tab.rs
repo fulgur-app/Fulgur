@@ -141,6 +141,11 @@ impl Tab {
                     return;
                 }
                 if let Tab::Editor(editor_tab) = this {
+                    // In log view the tail task owns the buffer and advances the
+                    // saved baseline itself; the user cannot edit a read-only buffer.
+                    if editor_tab.log_view {
+                        return;
+                    }
                     if editor_tab.large_file {
                         if !editor_tab.modified {
                             editor_tab.modified = true;

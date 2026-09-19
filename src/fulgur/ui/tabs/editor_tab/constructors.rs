@@ -67,8 +67,6 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
-            log_full: false,
-            log_content: None,
             highlight_colors: settings.highlight_colors,
             content_subscription: None,
         }
@@ -133,8 +131,6 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
-            log_full: false,
-            log_content: None,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -213,8 +209,6 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
-            log_full: false,
-            log_content: None,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -277,8 +271,6 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
-            log_full: false,
-            log_content: None,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -345,8 +337,6 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
-            log_full: false,
-            log_content: None,
             highlight_colors: settings.highlight_colors,
             content_subscription: None,
         }
@@ -416,8 +406,6 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
-            log_full: false,
-            log_content: None,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -484,8 +472,6 @@ impl EditorTab {
             color_tag: data.color_tag,
             log_view: data.log_view,
             log_follow: true,
-            log_full: false,
-            log_content: None,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }

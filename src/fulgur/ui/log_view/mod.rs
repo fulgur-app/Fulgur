@@ -1,34 +1,27 @@
 //! Log view mode: a live "tail -f" surface for log-like files.
 //!
-//! A log-view tab keeps its editable `content` buffer untouched and instead
-//! renders a dedicated read-only `log_content` buffer that is refreshed by a
-//! per-active-tab polling task. The poll reads only newly appended bytes,
-//! appends them to the display, and trims to the last `LOG_LINE_CAP` lines
-//! (unless the user loaded the full file).
+//! A log-view tab is the regular editor tab with its `content` buffer put in
+//! read-only mode and kept in sync with the file by a per-active-tab polling
+//! task. The poll reads only newly appended bytes and appends them to the
+//! buffer with programmatic edits, which bypass the read-only guard while the
+//! user can still select, copy and search the text.
 //!
 //! Following is an explicit, user-controlled toggle (`log_follow`): when on,
-//! every refresh snaps to the bottom; when off, the view is frozen and new
-//! text is buffered until the user re-enables follow. The mode toggle and the
-//! `Follow` / `Load full` controls live in the status bar; this module owns the
-//! state machine and tailing logic only (it renders no UI of its own).
+//! every refresh snaps the caret to the last line; when off, new text is still
+//! appended but the caret and viewport stay where the user left them. The
+//! mode toggle and the `Follow` control live in the status bar; this module
+//! owns the state machine and tailing logic only (it renders no UI of its own).
 
-mod input;
 mod lifecycle;
 mod polling;
 mod tail;
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod tests;
 
 pub use tail::{LogFileIdentity, LogFilePosition, log_toggle_available, opens_as_log_by_default};
 
-use gpui_kit::component::input::EditorState;
-use gpui_kit::{Context, Entity, Window};
-
-use self::input::{append_log_to_bottom, write_log_to_bottom};
-use self::tail::trim_to_last_lines;
 use crate::fulgur::Fulgur;
 use crate::fulgur::ui::tabs::tab::TabId;
-
-/// Maximum number of trailing lines kept in the log view before trimming.
-pub const LOG_LINE_CAP: usize = 10_000;
 
 /// Per-tab tail bookkeeping, held centrally in `Fulgur` and keyed by tab id.
 pub struct LogTailState {
@@ -37,10 +30,6 @@ pub struct LogTailState {
     /// Identity of the file object the offset refers to, used to detect
     /// rename-based rotation even when the replacement is not shorter.
     pub identity: Option<LogFileIdentity>,
-    /// Whether the line cap has dropped older lines from the display.
-    pub dropped_lines: bool,
-    /// Newly appended text accumulated while follow is paused (frozen view).
-    pub pending: String,
 }
 
 impl LogTailState {
@@ -48,16 +37,13 @@ impl LogTailState {
     ///
     /// ### Arguments
     /// - `position`: The file length and identity already consumed by the seed
-    /// - `dropped_lines`: Whether the seed already exceeded the line cap
     ///
     /// ### Returns
     /// - `LogTailState`: The initialized state
-    fn new(position: LogFilePosition, dropped_lines: bool) -> Self {
+    fn new(position: LogFilePosition) -> Self {
         Self {
             byte_offset: position.byte_offset,
             identity: position.identity,
-            dropped_lines,
-            pending: String::new(),
         }
     }
 
@@ -102,57 +88,5 @@ impl Fulgur {
                 .as_editor()
                 .filter(|editor| editor.id == tab_id)
         })
-    }
-}
-
-/// How a log display buffer should absorb a piece of newly produced text.
-#[derive(Clone, Copy)]
-enum LogDisplayUpdate<'a> {
-    Replace(&'a str),
-    Append(&'a str),
-}
-
-impl Fulgur {
-    /// Write text into a log display buffer and update its tail bookkeeping.
-    ///
-    /// ### Arguments
-    /// - `tab_id`: The tab whose tail state should be updated
-    /// - `log_content`: The read-only display buffer of that tab
-    /// - `update`: The text to write and how to write it
-    /// - `log_full`: Whether the line cap is lifted for this tab
-    /// - `window`: The active window
-    /// - `cx`: The application context
-    fn commit_log_display(
-        &mut self,
-        tab_id: TabId,
-        log_content: &Entity<EditorState>,
-        update: LogDisplayUpdate<'_>,
-        log_full: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let dropped = match update {
-            LogDisplayUpdate::Replace(text) if log_full => {
-                write_log_to_bottom(log_content, text, window, cx);
-                false
-            }
-            LogDisplayUpdate::Replace(text) => {
-                let (display, dropped) = trim_to_last_lines(text.to_string(), LOG_LINE_CAP);
-                write_log_to_bottom(log_content, &display, window, cx);
-                dropped
-            }
-            LogDisplayUpdate::Append(text) => {
-                let dropped_before = self
-                    .log_tail_state
-                    .get(&tab_id)
-                    .is_some_and(|state| state.dropped_lines);
-                let dropped_now = append_log_to_bottom(log_content, text, log_full, window, cx);
-                dropped_before || dropped_now
-            }
-        };
-        if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
-            state.pending.clear();
-            state.dropped_lines = dropped;
-        }
     }
 }
