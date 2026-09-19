@@ -125,6 +125,70 @@ pub(super) fn log_file_position(path: &Path) -> Option<LogFilePosition> {
     })
 }
 
+/// Return the length of an incomplete UTF-8 sequence at the end of a buffer.
+///
+/// ### Arguments
+/// - `bytes`: The raw bytes read from the file
+///
+/// ### Returns
+/// - `usize`: The number of trailing bytes (at most 3) that start a character
+///   whose remaining bytes have not been read yet, or `0`
+fn incomplete_utf8_suffix_len(bytes: &[u8]) -> usize {
+    let Some(last) = bytes.utf8_chunks().last() else {
+        return 0;
+    };
+    let tail = last.invalid();
+    match std::str::from_utf8(tail) {
+        Err(error) if error.error_len().is_none() => tail.len(),
+        _ => 0,
+    }
+}
+
+/// Decode log bytes as UTF-8, holding back an incomplete trailing character.
+///
+/// ### Arguments
+/// - `bytes`: The raw bytes read from the file
+///
+/// ### Returns
+/// - `(String, u64)`: The decoded text and the number of bytes it consumed
+fn decode_log_bytes(bytes: &[u8]) -> (String, u64) {
+    let consumed = bytes.len() - incomplete_utf8_suffix_len(bytes);
+    (
+        String::from_utf8_lossy(&bytes[..consumed]).into_owned(),
+        consumed as u64,
+    )
+}
+
+/// Read the rest of an opened file from its current position as a chunk.
+///
+/// ### Arguments
+/// - `file`: The opened file, positioned where reading should start
+/// - `start_offset`: The file offset that position corresponds to
+/// - `identity`: The identity of the file object
+/// - `reset`: Whether the chunk replaces the display rather than extending it
+///
+/// ### Returns
+/// - `Ok(LogTailChunk)`: The decoded text and the consumed position
+/// - `Err(std::io::Error)`: If the file could not be read
+fn read_chunk_to_end(
+    file: &mut File,
+    start_offset: u64,
+    identity: Option<LogFileIdentity>,
+    reset: bool,
+) -> std::io::Result<LogTailChunk> {
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let (text, consumed) = decode_log_bytes(&bytes);
+    Ok(LogTailChunk {
+        text,
+        position: LogFilePosition {
+            byte_offset: start_offset + consumed,
+            identity,
+        },
+        reset,
+    })
+}
+
 /// A chunk of newly read log bytes and the position it advanced to.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct LogTailChunk {
@@ -156,16 +220,7 @@ pub(super) fn read_new_log_bytes(path: &Path, consumed: LogFilePosition) -> Opti
     };
     let offset = consumed.byte_offset;
     if replaced || len < offset {
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes).ok()?;
-        return Some(LogTailChunk {
-            text: String::from_utf8_lossy(&bytes).into_owned(),
-            position: LogFilePosition {
-                byte_offset: bytes.len() as u64,
-                identity,
-            },
-            reset: true,
-        });
+        return read_chunk_to_end(&mut file, 0, identity, true).ok();
     }
     if len == offset {
         return Some(LogTailChunk {
@@ -178,24 +233,14 @@ pub(super) fn read_new_log_bytes(path: &Path, consumed: LogFilePosition) -> Opti
         });
     }
     file.seek(SeekFrom::Start(offset)).ok()?;
-    let to_read = len - offset;
-    let mut buf = Vec::with_capacity(usize::try_from(to_read).unwrap_or(0));
-    file.take(to_read).read_to_end(&mut buf).ok()?;
-    Some(LogTailChunk {
-        text: String::from_utf8_lossy(&buf).into_owned(),
-        position: LogFilePosition {
-            byte_offset: offset + buf.len() as u64,
-            identity,
-        },
-        reset: false,
-    })
+    read_chunk_to_end(&mut file, offset, identity, false).ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        LogFilePosition, log_file_position, log_toggle_available, opens_as_log_by_default,
-        read_new_log_bytes,
+        LogFilePosition, decode_log_bytes, log_file_position, log_toggle_available,
+        opens_as_log_by_default, read_new_log_bytes,
     };
     use std::io::Write;
     use std::path::Path;
@@ -230,6 +275,59 @@ mod tests {
         log_file_position(path).expect("seed position")
     }
 
+    /// Append raw bytes to the file at `path`.
+    fn append_log(path: &Path, bytes: &[u8]) {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .expect("open append");
+        file.write_all(bytes).expect("append");
+    }
+
+    #[test]
+    fn test_decode_holds_back_every_split_of_multibyte_characters() {
+        for character in ["\u{e9}", "\u{20ac}", "\u{1f600}"] {
+            let bytes = character.as_bytes();
+            let text = format!("before {character} after\n");
+            let text_bytes = text.as_bytes();
+            let char_start = text.find(character).expect("character present");
+            for split in 1..bytes.len() {
+                let (head, consumed) = decode_log_bytes(&text_bytes[..char_start + split]);
+                assert_eq!(head, "before ", "split {split} of {character}");
+                assert_eq!(consumed, char_start as u64, "split {split} of {character}");
+                let (rest, rest_consumed) = decode_log_bytes(&text_bytes[char_start..]);
+                assert_eq!(rest, format!("{character} after\n"));
+                assert_eq!(rest_consumed, (text_bytes.len() - char_start) as u64);
+            }
+        }
+    }
+
+    #[test]
+    fn test_decode_consumes_complete_text_fully() {
+        let text = "caf\u{e9} \u{20ac} \u{1f600}\n";
+        let (decoded, consumed) = decode_log_bytes(text.as_bytes());
+        assert_eq!(decoded, text);
+        assert_eq!(consumed, text.len() as u64);
+        assert_eq!(decode_log_bytes(b""), (String::new(), 0));
+    }
+
+    #[test]
+    fn test_decode_replaces_invalid_bytes_without_holding_them() {
+        let (decoded, consumed) = decode_log_bytes(b"ok\xff");
+        assert_eq!(decoded, "ok\u{fffd}");
+        assert_eq!(consumed, 3);
+
+        let (decoded, consumed) = decode_log_bytes(b"\xe2Ab");
+        assert_eq!(decoded, "\u{fffd}Ab");
+        assert_eq!(consumed, 3);
+
+        // A truncated sequence that is already ill-formed (lone surrogate) is
+        // replaced immediately rather than waiting for more bytes.
+        let (decoded, consumed) = decode_log_bytes(b"x\xed\xa0");
+        assert_eq!(decoded, "x\u{fffd}\u{fffd}");
+        assert_eq!(consumed, 3);
+    }
+
     /// Atomically replace the file at `path` with a new file holding `content`
     /// (rename-based rotation, so the path points at a different file object).
     fn replace_log(path: &Path, content: &str) {
@@ -255,6 +353,49 @@ mod tests {
         assert_eq!(chunk.text, "line2\n");
         assert_eq!(chunk.position.byte_offset, consumed.byte_offset + 6);
         assert_eq!(chunk.position.identity, consumed.identity);
+        assert!(!chunk.reset);
+    }
+
+    #[test]
+    fn test_read_new_log_bytes_completes_character_split_across_polls() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let path = dir.path().join("split.log");
+        let consumed = seed_log(&path, "line1\n");
+
+        append_log(&path, b"\xe2");
+        let first = read_new_log_bytes(&path, consumed).expect("read first half");
+        assert!(first.text.is_empty());
+        assert_eq!(first.position.byte_offset, consumed.byte_offset);
+        assert!(!first.reset);
+
+        // Nothing new: the held-back byte is re-read but still not emitted.
+        let idle = read_new_log_bytes(&path, first.position).expect("read idle");
+        assert!(idle.text.is_empty());
+        assert_eq!(idle.position, first.position);
+
+        append_log(&path, b"\x82\xac\n");
+        let second = read_new_log_bytes(&path, idle.position).expect("read second half");
+        assert_eq!(second.text, "\u{20ac}\n");
+        assert_eq!(second.position.byte_offset, consumed.byte_offset + 4);
+        assert!(!second.reset);
+    }
+
+    #[test]
+    fn test_read_new_log_bytes_holds_back_incomplete_suffix_on_reset() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let path = dir.path().join("rotated.log");
+        let consumed = seed_log(&path, "old long content\n");
+
+        std::fs::write(&path, b"new\xf0\x9f").expect("truncate");
+        let reset = read_new_log_bytes(&path, consumed).expect("read reset");
+        assert_eq!(reset.text, "new");
+        assert_eq!(reset.position.byte_offset, 3);
+        assert!(reset.reset);
+
+        append_log(&path, b"\x98\x80\n");
+        let chunk = read_new_log_bytes(&path, reset.position).expect("read completion");
+        assert_eq!(chunk.text, "\u{1f600}\n");
+        assert_eq!(chunk.position.byte_offset, 8);
         assert!(!chunk.reset);
     }
 
