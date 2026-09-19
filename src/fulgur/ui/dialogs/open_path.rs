@@ -80,7 +80,7 @@ impl Fulgur {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     use super::validate_open_path;
     use core::prelude::v1::test;

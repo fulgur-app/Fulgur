@@ -186,7 +186,7 @@ impl Drop for Worker {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     use super::*;
 

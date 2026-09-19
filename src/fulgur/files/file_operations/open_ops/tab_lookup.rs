@@ -48,7 +48,7 @@ impl Fulgur {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::{editor_tab::TabLocation, sync::ssh::url::RemoteSpec, tab::Tab};

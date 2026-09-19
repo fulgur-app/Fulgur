@@ -290,7 +290,7 @@ impl Render for PathBrowser {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     use super::{parse_input_path, read_and_filter_entries};
     use core::prelude::v1::test;

@@ -147,7 +147,7 @@ impl Fulgur {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     #[cfg(feature = "gpui-test-support")]
     use super::Fulgur;

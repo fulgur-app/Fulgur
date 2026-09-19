@@ -1,3 +1,4 @@
+#[cfg(feature = "gpui-test-support")]
 use crate::fulgur::WindowInit;
 #[cfg(feature = "gpui-test-support")]
 use crate::fulgur::{
