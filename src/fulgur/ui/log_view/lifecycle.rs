@@ -78,8 +78,8 @@ impl Fulgur {
         let Some(log_content) = editor.log_content.clone() else {
             return;
         };
-        let (bytes, identity) = match read_full_log(&path) {
-            Ok(read) => read,
+        let chunk = match read_full_log(&path) {
+            Ok(chunk) => chunk,
             Err(error) => {
                 window.push_notification(
                     (
@@ -91,7 +91,7 @@ impl Fulgur {
                 return;
             }
         };
-        if bytes.len() as u64 > LOAD_FULL_WARN_BYTES {
+        if chunk.position.byte_offset > LOAD_FULL_WARN_BYTES {
             window.push_notification(
                 (
                     NotificationType::Warning,
@@ -102,18 +102,14 @@ impl Fulgur {
                 cx,
             );
         }
-        let full = String::from_utf8_lossy(&bytes).into_owned();
         if let Some(state) = self.log_tail_state.get_mut(&tab_id) {
-            state.set_position(LogFilePosition {
-                byte_offset: bytes.len() as u64,
-                identity,
-            });
+            state.set_position(chunk.position);
         }
         // The cap is lifted from here on, so commit as a full untrimmed buffer.
         self.commit_log_display(
             tab_id,
             &log_content,
-            LogDisplayUpdate::Replace(&full),
+            LogDisplayUpdate::Replace(&chunk.text),
             true,
             window,
             cx,
