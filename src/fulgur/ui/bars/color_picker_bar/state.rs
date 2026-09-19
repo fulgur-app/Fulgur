@@ -232,6 +232,9 @@ impl ColorPickerBar {
 
     /// Insert a value at the cursor position in the active editor tab, replacing the current selection if any.
     ///
+    /// Read-only buffers (log view) are left untouched: the programmatic
+    /// insert would bypass the guard the user relies on.
+    ///
     /// ### Arguments
     /// - `value`: The string to insert
     /// - `window`: The window context
@@ -242,7 +245,9 @@ impl ColorPickerBar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(content) = self.active_editor_content(cx) {
+        if let Some(content) = self.active_editor_content(cx)
+            && content.read(cx).is_editable()
+        {
             content.update(cx, |input_state, cx| {
                 let selection = input_state.selected_text_range(true, window, cx);
                 if selection.is_some() {

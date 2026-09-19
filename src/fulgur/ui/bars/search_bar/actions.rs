@@ -31,6 +31,9 @@ impl SearchBar {
 
     /// Open the search bar with the caret in the replace field
     ///
+    /// When the active buffer is read-only the replace field is not rendered,
+    /// so the caret lands in the search field instead.
+    ///
     /// ### Arguments
     /// - `content`: The active editor tab's content, if any
     /// - `window`: The window context
@@ -41,12 +44,20 @@ impl SearchBar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let editable = content
+            .as_ref()
+            .is_some_and(|content| content.read(cx).is_editable());
         if !self.show_search {
             self.show_search = true;
             self.perform_search(content, window, cx);
         }
-        let replace_focus = self.replace_input.read(cx).focus_handle(cx);
-        window.focus(&replace_focus, cx);
+        let target = if editable {
+            &self.replace_input
+        } else {
+            &self.search_input
+        };
+        let focus = target.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
         cx.notify();
     }
 

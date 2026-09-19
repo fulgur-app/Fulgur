@@ -128,10 +128,6 @@ impl Render for StatusBar {
         let log_toggle_visible = log_path.as_deref().is_some_and(log_toggle_available);
         let log_view_active = active_editor_tab.is_some_and(|tab| tab.log_view);
         let log_follow_active = active_editor_tab.is_some_and(|tab| tab.log_follow);
-        let log_dropped = active_editor_tab
-            .map(|tab| tab.id)
-            .and_then(|id| fulgur.log_tail_state.get(&id))
-            .is_some_and(|state| state.dropped_lines);
         let log_button = status_bar_toggle_button_factory(
             "status-log-view",
             "Log".to_string(),
@@ -156,18 +152,6 @@ impl Render for StatusBar {
             MouseButton::Left,
             cx.listener(|_, _event: &MouseDownEvent, _window, cx| {
                 cx.emit(StatusBarEvent::ToggleLogFollow);
-            }),
-        );
-        let log_load_full_button = status_bar_button_factory(
-            "status-log-load-full",
-            "Load full".to_string(),
-            cx.theme().border,
-            cx.theme().muted,
-        )
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(|_, _event: &MouseDownEvent, _window, cx| {
-                cx.emit(StatusBarEvent::LoadFullLog);
             }),
         );
         let is_markdown = matches!(
@@ -271,10 +255,7 @@ impl Render for StatusBar {
                     .when(is_markdown, |this| this.child(toolbar_button))
                     .when(is_csv && !is_large_file, |this| this.child(csv_view_button))
                     .when(log_toggle_visible, |this| this.child(log_button))
-                    .when(log_view_active, |this| this.child(log_follow_button))
-                    .when(log_view_active && log_dropped, |this| {
-                        this.child(log_load_full_button)
-                    }),
+                    .when(log_view_active, |this| this.child(log_follow_button)),
             )
             .child(
                 div()

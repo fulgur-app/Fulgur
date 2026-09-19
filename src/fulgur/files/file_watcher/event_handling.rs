@@ -24,6 +24,9 @@ impl Fulgur {
         if let Some(tab_index) = self.find_tab_by_path(path, cx)
             && let Some(Tab::Editor(editor_tab)) = self.tabs.get(tab_index).map(|t| t.read(cx))
         {
+            if editor_tab.log_view {
+                return;
+            }
             if editor_tab.modified {
                 let tab_id = editor_tab.id;
                 let is_active = self.active_tab_index(cx) == Some(tab_index);
