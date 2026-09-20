@@ -12,6 +12,7 @@ use crate::fulgur::{
     ui::{components_utils, icons::CustomIcon, window_drag::window_drag_region},
     window_manager::WindowManager,
 };
+use gpui_kit::base::TestSupportExt;
 use gpui_kit::component::{
     ActiveTheme, Sizable, StyledExt,
     button::{Button, ButtonVariants},
@@ -341,6 +342,7 @@ impl TabBar {
             .role(Role::Tab)
             .aria_selected(is_active)
             .aria_label(tab.title())
+            .test_support()
             .flex()
             .items_center()
             .h(TAB_BAR_HEIGHT)

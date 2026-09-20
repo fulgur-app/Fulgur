@@ -4,7 +4,6 @@ use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{
     Fulgur,
     editor_tab::TabLocation,
-    settings::Settings,
     shared_state::SharedAppState,
     state::{StateDb, StateWriter},
 };
@@ -27,12 +26,10 @@ use std::{
 fn setup_test_globals(cx: &mut TestAppContext) {
     cx.update(|cx| {
         crate::test_support::init_test_app(cx);
-        let mut settings = Settings::new();
-        settings.editor_settings.watch_files = false;
         let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
         let state_db = StateDb::open_in_memory().expect("failed to open in-memory state database");
         cx.set_global(SharedAppState::new(
-            settings,
+            crate::test_support::test_settings(),
             pending_files,
             None,
             Some(state_db),

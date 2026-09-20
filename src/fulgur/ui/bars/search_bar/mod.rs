@@ -5,6 +5,8 @@ mod rendering;
 mod replace;
 mod state;
 
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod interaction_tests;
 #[cfg(test)]
 mod tests;
 

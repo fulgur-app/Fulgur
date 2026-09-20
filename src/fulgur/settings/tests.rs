@@ -766,27 +766,12 @@ fn load_from_path_returns_error_when_both_primary_and_backup_are_corrupted() {
 #[cfg(feature = "gpui-test-support")]
 mod gpui_settings_propagation_tests {
     use crate::fulgur::WindowInit;
-    use crate::fulgur::{
-        Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
-    };
+    use crate::fulgur::{Fulgur, shared_state::SharedAppState, window_manager::WindowManager};
     use gpui_kit::{AppContext, BorrowAppContext, Entity, TestAppContext, WindowId, WindowOptions};
-    use parking_lot::Mutex;
-    use std::{cell::RefCell, path::PathBuf, sync::Arc};
 
-    /// Initialize shared globals required by `Fulgur::new` for GPUI tests.
-    ///
-    /// ### Arguments
-    /// - `cx`: The GPUI test app context to initialize.
-    fn setup_test_globals(cx: &mut TestAppContext) {
-        cx.update(|cx| {
-            crate::test_support::init_test_app(cx);
-            let mut settings = Settings::new();
-            settings.editor_settings.watch_files = false;
-            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-            cx.set_global(SharedAppState::new(settings, pending_files, None, None));
-            cx.set_global(WindowManager::new());
-        });
-    }
+    use std::cell::RefCell;
+
+    use crate::test_support::setup_test_globals;
 
     /// Open a test window with a mounted `Fulgur` root view.
     ///
