@@ -316,7 +316,7 @@ impl Fulgur {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
 
     use super::is_current_theme;

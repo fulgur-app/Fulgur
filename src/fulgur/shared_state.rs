@@ -568,7 +568,7 @@ fn notification_delivery(notification: &AppNotification, cx: &App) -> Notificati
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     use super::*;
     use crate::fulgur::state::StateDb;

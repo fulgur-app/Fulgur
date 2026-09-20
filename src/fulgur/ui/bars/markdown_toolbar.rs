@@ -354,7 +354,7 @@ impl Render for MarkdownToolbar {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     #[cfg(feature = "gpui-test-support")]
     use super::MarkdownToolbar;
