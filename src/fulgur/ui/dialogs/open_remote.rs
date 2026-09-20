@@ -12,6 +12,7 @@ use crate::fulgur::{
     sync::ssh::{REMOTE_ROOT_PATH, credentials::SshCredKey, url::parse_remote_url},
     ui::dialogs::remote_path_browser::{
         BrowserDialogTitle, RemotePathBrowser, RemotePathBrowserConnection,
+        normalize_remote_browser_path,
     },
 };
 
@@ -149,7 +150,7 @@ impl Fulgur {
                 .child(browser_for_ok.clone())
                 .on_ok(move |_, window: &mut Window, cx| {
                     let raw_path = browser_for_ok.read(cx).input().read(cx).value().to_string();
-                    let selected_path = normalize_remote_browser_selection(&raw_path);
+                    let selected_path = normalize_remote_browser_path(&raw_path);
                     if selected_path.is_empty() {
                         window.push_notification(
                             (
@@ -177,33 +178,6 @@ impl Fulgur {
     }
 }
 
-/// Normalize browser-selected remote path text for open attempts.
-///
-/// ### Arguments
-/// - `raw`: Browser input value.
-///
-/// ### Returns
-/// - `String`: Absolute remote path, defaulting to `/`.
-fn normalize_remote_browser_selection(raw: &str) -> String {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return REMOTE_ROOT_PATH.to_string();
-    }
-    if trimmed == "~" || trimmed.starts_with("~/") {
-        return REMOTE_ROOT_PATH.to_string();
-    }
-    if trimmed.starts_with(REMOTE_ROOT_PATH) {
-        if trimmed.len() > 1 {
-            return trimmed.trim_end_matches(REMOTE_ROOT_PATH).to_string();
-        }
-        return REMOTE_ROOT_PATH.to_string();
-    }
-    format!(
-        "{REMOTE_ROOT_PATH}{}",
-        trimmed.trim_start_matches(REMOTE_ROOT_PATH)
-    )
-}
-
 /// Format a directory path for the browser input so it behaves as a folder context.
 ///
 /// ### Arguments
@@ -212,7 +186,7 @@ fn normalize_remote_browser_selection(raw: &str) -> String {
 /// ### Returns
 /// - `String`: Browser input value ending with `/` (except for root).
 fn browser_directory_input(path: &str) -> String {
-    let normalized = normalize_remote_browser_selection(path);
+    let normalized = normalize_remote_browser_path(path);
     if normalized == REMOTE_ROOT_PATH {
         REMOTE_ROOT_PATH.to_string()
     } else {
