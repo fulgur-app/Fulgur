@@ -23,11 +23,8 @@ impl Render for ColorPickerBar {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `impl IntoElement`: The rendered color picker bar, or an empty element when hidden
+    /// - `impl IntoElement`: The rendered color picker bar
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if !self.show_color_picker {
-            return div().into_any_element();
-        }
         div()
             .flex()
             .items_center()
@@ -74,7 +71,6 @@ impl Render for ColorPickerBar {
                     ),
             )
             .child(Self::render_close_button(cx))
-            .into_any_element()
     }
 }
 

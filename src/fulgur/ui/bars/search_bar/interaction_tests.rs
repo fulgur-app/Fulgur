@@ -1,6 +1,7 @@
 //! Headless interaction tests for the search and replace bar.
 
 use super::SearchBar;
+use crate::fulgur::ui::motion::SURFACE_DURATION;
 use crate::test_support::open_fulgur_with_root;
 use gpui_kit::component::input::EditorState;
 use gpui_kit::test::TestWindowExt;
@@ -225,6 +226,41 @@ fn test_clicking_close_hides_the_search_bar(cx: &mut TestAppContext) {
         assert!(
             window.try_find("search-input").is_none(),
             "the hidden bar must leave the render tree"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn test_the_collapsing_search_bar_leaves_the_tree_once_its_motion_ends(cx: &mut TestAppContext) {
+    let (search_bar, _editor, mut visual_cx) = setup_visible_search(cx, "foo bar foo");
+
+    visual_cx.update(|window, cx| {
+        cx.set_reduce_motion(false);
+        window.render_frame(cx);
+        window.click("close-search-button", cx);
+    });
+    visual_cx.run_until_parked();
+
+    assert!(
+        !visual_cx.update(|_window, cx| search_bar.read(cx).is_visible()),
+        "clicking close must hide the bar"
+    );
+
+    cx.executor().advance_clock(SURFACE_DURATION / 2);
+    visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(
+            window.try_find("search-input").is_some(),
+            "the bar must stay mounted while it collapses"
+        );
+    });
+
+    cx.executor().advance_clock(SURFACE_DURATION);
+    visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(
+            window.try_find("search-input").is_none(),
+            "the bar must leave the render tree once the collapse ends"
         );
     });
 }

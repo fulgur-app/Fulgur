@@ -154,14 +154,38 @@ impl Fulgur {
             .children((!unified_title_bar).then(|| self.tab_bar.clone()))
             .children(Self::render_session_persistence_warning(cx))
             .child(self.render_content_area(active_tab_index, window, cx))
-            .children(markdown_toolbar_visible.then(|| self.markdown_toolbar.clone()))
-            .children(csv_toolbar_visible.then(|| self.csv_toolbar.clone()))
-            .children(search_bar_visible.then(|| self.search_bar.clone()))
-            .children(color_picker_bar_visible.then(|| self.color_picker_bar.clone()));
+            .children(ui::motion::revealed_bar(
+                "markdown-toolbar-reveal",
+                markdown_toolbar_visible,
+                || self.markdown_toolbar.clone().into_any_element(),
+                window,
+                cx,
+            ))
+            .children(ui::motion::revealed_bar(
+                "csv-toolbar-reveal",
+                csv_toolbar_visible,
+                || self.csv_toolbar.clone().into_any_element(),
+                window,
+                cx,
+            ))
+            .children(ui::motion::revealed_bar(
+                "search-bar-reveal",
+                search_bar_visible,
+                || self.search_bar.clone().into_any_element(),
+                window,
+                cx,
+            ))
+            .children(ui::motion::revealed_bar(
+                "color-picker-bar-reveal",
+                color_picker_bar_visible,
+                || self.color_picker_bar.clone().into_any_element(),
+                window,
+                cx,
+            ));
         if let Some(Tab::Editor(_)) = self.active_tab(cx) {
             app_content = app_content.child(self.status_bar.clone());
         }
-        app_content = app_content.child(Self::render_external_file_drop_overlay(cx));
+        app_content = app_content.child(Self::render_external_file_drop_overlay(window, cx));
         app_content
     }
 
@@ -294,14 +318,27 @@ impl Fulgur {
     /// Render a visual overlay while external files are being dragged over the window.
     ///
     /// ### Arguments
+    /// - `window`: The window being rendered
     /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `impl IntoElement`: The rendered overlay
-    fn render_external_file_drop_overlay(cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_external_file_drop_overlay(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let dragging = cx.has_active_drag();
+        let fade = ui::motion::presence(
+            "external-file-drop-overlay-fade",
+            dragging,
+            ui::motion::affordance(),
+            window,
+            cx,
+        );
         div()
             .id("external-file-drop-overlay")
             .invisible()
+            .opacity(fade.progress)
             .absolute()
             .top_0()
             .right_0()
