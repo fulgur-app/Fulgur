@@ -6,22 +6,12 @@ use core::prelude::v1::test;
 
 #[cfg(feature = "gpui-test-support")]
 use super::SearchBar;
-use crate::fulgur::WindowInit;
 #[cfg(feature = "gpui-test-support")]
-use crate::fulgur::{
-    Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
-};
+use crate::fulgur::Fulgur;
 #[cfg(feature = "gpui-test-support")]
 use gpui_kit::component::input::{EditorState, Undo};
 #[cfg(feature = "gpui-test-support")]
-use gpui_kit::{
-    AppContext, Context, Entity, Focusable, IntoElement, Render, TestAppContext, VisualTestContext,
-    Window, WindowOptions, div,
-};
-#[cfg(feature = "gpui-test-support")]
-use parking_lot::Mutex;
-#[cfg(feature = "gpui-test-support")]
-use std::{cell::RefCell, path::PathBuf, sync::Arc};
+use gpui_kit::{Entity, Focusable, TestAppContext, VisualTestContext};
 
 // ========== Test helpers ==========
 
@@ -47,45 +37,8 @@ fn get_line_col(text: &str, byte_pos: usize) -> (usize, usize) {
 }
 
 #[cfg(feature = "gpui-test-support")]
-struct EmptyView;
-
 #[cfg(feature = "gpui-test-support")]
-impl Render for EmptyView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-    }
-}
-
-#[cfg(feature = "gpui-test-support")]
-fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-    cx.update(|cx| {
-        crate::test_support::init_test_app(cx);
-        let mut settings = Settings::new();
-        settings.editor_settings.watch_files = false;
-        let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-        cx.set_global(SharedAppState::new(settings, pending_files, None, None));
-        cx.set_global(WindowManager::new());
-    });
-
-    let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
-    let window = cx
-        .update(|cx| {
-            cx.open_window(WindowOptions::default(), |window, cx| {
-                let window_id = window.window_handle().window_id();
-                let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
-                *fulgur_slot.borrow_mut() = Some(fulgur);
-                cx.new(|_| EmptyView)
-            })
-        })
-        .expect("failed to open test window");
-
-    let visual_cx = VisualTestContext::from_window(window.into(), cx);
-    visual_cx.run_until_parked();
-    let fulgur = fulgur_slot
-        .into_inner()
-        .expect("failed to capture Fulgur entity");
-    (fulgur, visual_cx)
-}
+use crate::test_support::{setup_fulgur, setup_fulgur_with_root};
 
 /// Set up a `Fulgur` window and return its search bar plus the active editor's content.
 #[cfg(feature = "gpui-test-support")]
@@ -122,32 +75,7 @@ fn setup_search(
 fn setup_search_with_root(
     cx: &mut TestAppContext,
 ) -> (Entity<SearchBar>, Entity<EditorState>, VisualTestContext) {
-    cx.update(|cx| {
-        crate::test_support::init_test_app(cx);
-        let mut settings = Settings::new();
-        settings.editor_settings.watch_files = false;
-        let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-        cx.set_global(SharedAppState::new(settings, pending_files, None, None));
-        cx.set_global(WindowManager::new());
-    });
-
-    let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
-    let window = cx
-        .update(|cx| {
-            cx.open_window(WindowOptions::default(), |window, cx| {
-                let window_id = window.window_handle().window_id();
-                let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
-                *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
-            })
-        })
-        .expect("failed to open test window");
-
-    let mut visual_cx = VisualTestContext::from_window(window.into(), cx);
-    visual_cx.run_until_parked();
-    let fulgur = fulgur_slot
-        .into_inner()
-        .expect("failed to capture Fulgur entity");
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
     let (search_bar, content) = visual_cx.update(|_window, cx| {
         let this = fulgur.read(cx);
         let content = this

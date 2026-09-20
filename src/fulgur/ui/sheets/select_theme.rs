@@ -318,23 +318,18 @@ impl Fulgur {
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
-    #[cfg(feature = "gpui-test-support")]
-    use super::Fulgur;
+
     use super::is_current_theme;
-    use crate::fulgur::WindowInit;
-    #[cfg(feature = "gpui-test-support")]
-    use crate::fulgur::{
-        settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
-    };
+
     use core::prelude::v1::test;
+    #[cfg(feature = "gpui-test-support")]
+    use gpui_kit::TestAppContext;
     #[cfg(feature = "gpui-test-support")]
     use gpui_kit::component::ThemeRegistry;
     #[cfg(feature = "gpui-test-support")]
-    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
-    #[cfg(feature = "gpui-test-support")]
     use parking_lot::Mutex;
     #[cfg(feature = "gpui-test-support")]
-    use std::{cell::RefCell, rc::Rc, sync::Arc};
+    use std::sync::Arc;
 
     #[test]
     fn test_is_current_theme_matches_expected_value() {
@@ -343,37 +338,7 @@ mod tests {
     }
 
     #[cfg(feature = "gpui-test-support")]
-    fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
-        cx.update(gpui_kit::init);
-        cx.update(|cx| {
-            cx.set_global(SharedAppState::new(
-                Settings::new(),
-                Arc::new(Mutex::new(Vec::new())),
-                None,
-                None,
-            ));
-            cx.set_global(WindowManager::new());
-        });
-
-        let fulgur_slot: Rc<RefCell<Option<Entity<Fulgur>>>> = Rc::new(RefCell::new(None));
-        let slot = Rc::clone(&fulgur_slot);
-        let window = cx
-            .update(|cx| {
-                cx.open_window(WindowOptions::default(), |window, cx| {
-                    let window_id = window.window_handle().window_id();
-                    let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
-                    *slot.borrow_mut() = Some(fulgur.clone());
-                    cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
-                })
-            })
-            .expect("failed to open test window");
-        let fulgur = fulgur_slot
-            .borrow_mut()
-            .take()
-            .expect("expected fulgur entity");
-        let visual_cx = VisualTestContext::from_window(window.into(), cx);
-        (fulgur, visual_cx)
-    }
+    use crate::test_support::setup_fulgur_with_root as setup_fulgur;
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui_kit::test]

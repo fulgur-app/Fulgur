@@ -3,6 +3,8 @@ mod rendering;
 mod state;
 
 #[cfg(all(test, feature = "gpui-test-support"))]
+mod interaction_tests;
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;
 
 pub(crate) use state::{TabBar, TabBarEvent};

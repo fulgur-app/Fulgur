@@ -62,6 +62,7 @@ impl SearchBar {
             .text_color(cx.theme().muted_foreground)
             .child(
                 Input::new(&self.search_input)
+                    .id("search-input")
                     .appearance(false)
                     .bordered(false)
                     .flex_1()
@@ -198,6 +199,7 @@ impl SearchBar {
             .border_color(cx.theme().border)
             .child(
                 Input::new(&self.replace_input)
+                    .id("replace-input")
                     .appearance(false)
                     .bordered(false)
                     .flex_1()

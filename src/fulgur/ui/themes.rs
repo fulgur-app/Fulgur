@@ -190,18 +190,15 @@ mod gpui_tests {
     use super::init;
     use super::reload_themes_and_update;
     use crate::fulgur::WindowInit;
-    use crate::fulgur::{
-        Fulgur, settings::Settings, shared_state::SharedAppState, window_manager::WindowManager,
-    };
+    use crate::fulgur::{Fulgur, settings::Settings, shared_state::SharedAppState};
     use gpui_kit::component::ActiveTheme;
     use gpui_kit::component::ThemeRegistry;
     use gpui_kit::{
         AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId, WindowOptions,
     };
-    use parking_lot::Mutex;
+
     use std::{
         cell::RefCell,
-        path::PathBuf,
         sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -237,20 +234,7 @@ mod gpui_tests {
         false
     }
 
-    /// Initialize GPUI globals needed to construct `Fulgur` windows in tests.
-    ///
-    /// ### Arguments
-    /// - `cx`: The GPUI test context to initialize.
-    fn setup_test_globals(cx: &mut TestAppContext) {
-        cx.update(|cx| {
-            crate::test_support::init_test_app(cx);
-            let mut settings = Settings::new();
-            settings.editor_settings.watch_files = false;
-            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
-            cx.set_global(SharedAppState::new(settings, pending_files, None, None));
-            cx.set_global(WindowManager::new());
-        });
-    }
+    use crate::test_support::setup_test_globals;
 
     /// Open a test window that hosts a `Fulgur` root.
     ///
