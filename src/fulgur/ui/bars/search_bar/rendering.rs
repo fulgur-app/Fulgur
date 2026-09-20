@@ -16,11 +16,8 @@ impl Render for SearchBar {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `impl IntoElement`: The rendered search bar, or an empty element when hidden
+    /// - `impl IntoElement`: The rendered search bar
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if !self.show_search {
-            return div().into_any_element();
-        }
         div()
             .flex()
             .justify_between()
@@ -38,7 +35,6 @@ impl Render for SearchBar {
                 this.child(self.render_replace_section(cx))
             })
             .child(Self::render_search_close_button(cx))
-            .into_any_element()
     }
 }
 

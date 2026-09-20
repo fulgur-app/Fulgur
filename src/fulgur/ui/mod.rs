@@ -7,6 +7,7 @@ pub mod icons;
 pub mod insert_button;
 pub mod log_view;
 pub mod menus;
+pub mod motion;
 pub mod notifications;
 pub mod sheets;
 pub mod tabs;
