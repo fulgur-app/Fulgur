@@ -290,7 +290,7 @@ fn parse_remote_browser_input(raw: &str) -> (String, String) {
 ///
 /// ### Returns
 /// - `String`: Normalized absolute remote path.
-fn normalize_remote_browser_path(path: &str) -> String {
+pub(crate) fn normalize_remote_browser_path(path: &str) -> String {
     let trimmed = path.trim();
     if trimmed.is_empty() || trimmed == "~" || trimmed.starts_with("~/") {
         return ssh::REMOTE_ROOT_PATH.to_string();
