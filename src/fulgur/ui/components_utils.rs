@@ -5,7 +5,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::{Corners, DefiniteLength, Hsla, Pixels, Styled, px, relative};
 use std::time::SystemTime;
-use time::OffsetDateTime;
+use time::{OffsetDateTime, UtcOffset};
 
 /// The height of the tab bar
 pub const TAB_BAR_HEIGHT: Pixels = px(34.0);
@@ -90,21 +90,47 @@ pub fn reveal_in_file_manager_label() -> &'static str {
     }
 }
 
-/// Format a date as ISO 8601 string
+/// Format a system time as a date and time in the local time zone
 ///
 /// ### Arguments
 /// - `time`: The time to format
 ///
 /// ### Returns
-/// - `Some(String)`: The formatted date
+/// - `Some(String)`: The formatted date, as `YYYY-MM-DD HH:MM:SS`
 /// - `None`: If the time could not be formatted
 pub fn format_system_time(time: SystemTime) -> Option<String> {
-    let datetime = OffsetDateTime::from(time);
+    format_local_datetime(OffsetDateTime::from(time))
+}
+
+/// Format a date and time in the local time zone. Falls back to UTC
+/// when the platform cannot report the local offset.
+///
+/// ### Arguments
+/// - `datetime`: The date and time to format
+///
+/// ### Returns
+/// - `Some(String)`: The formatted date, as `YYYY-MM-DD HH:MM:SS`
+/// - `None`: If the date could not be formatted
+pub fn format_local_datetime(datetime: OffsetDateTime) -> Option<String> {
+    let offset = UtcOffset::local_offset_at(datetime).unwrap_or(UtcOffset::UTC);
+    format_datetime_in(datetime, offset)
+}
+
+/// Format a date and time at a given UTC offset
+///
+/// ### Arguments
+/// - `datetime`: The date and time to format
+/// - `offset`: The UTC offset to display the date and time in
+///
+/// ### Returns
+/// - `Some(String)`: The formatted date, as `YYYY-MM-DD HH:MM:SS`
+/// - `None`: If the date could not be formatted
+fn format_datetime_in(datetime: OffsetDateTime, offset: UtcOffset) -> Option<String> {
     let format = time::format_description::parse_borrowed::<2>(
         "[year]-[month]-[day] [hour]:[minute]:[second]",
     )
     .ok()?;
-    datetime.format(&format).ok()
+    datetime.to_offset(offset).format(&format).ok()
 }
 
 /// Format file size in a human-readable format.
@@ -135,13 +161,14 @@ mod tests {
     use gpui_kit::component::button::Button;
     use gpui_kit::{px, red, relative};
     use std::time::{Duration, UNIX_EPOCH};
+    use time::{OffsetDateTime, UtcOffset};
 
     use crate::fulgur::ui::{
         components_utils::{
             CORNERS_SIZE, EMPTY, LINE_HEIGHT, MARKDOWN_BAR_BUTTON_SIZE, MARKDOWN_BAR_HEIGHT,
             SEARCH_BAR_BUTTON_SIZE, SEARCH_BAR_HEIGHT, TAB_BAR_BUTTON_SIZE, TAB_BAR_HEIGHT,
-            TEXT_SIZE, UNTITLED, UTF_8, button_factory, format_file_size, format_system_time,
-            reveal_in_file_manager_label,
+            TEXT_SIZE, UNTITLED, UTF_8, button_factory, format_datetime_in, format_file_size,
+            format_system_time, reveal_in_file_manager_label,
         },
         icons::CustomIcon,
     };
@@ -188,16 +215,25 @@ mod tests {
     }
 
     #[test]
-    fn test_format_system_time_epoch() {
-        let formatted = format_system_time(UNIX_EPOCH);
-        assert_eq!(formatted.as_deref(), Some("1970-01-01 00:00:00"));
+    fn test_format_datetime_in_utc() {
+        let datetime = OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(3661);
+        let formatted = format_datetime_in(datetime, UtcOffset::UTC);
+        assert_eq!(formatted.as_deref(), Some("1970-01-01 01:01:01"));
     }
 
     #[test]
-    fn test_format_system_time_with_offset() {
-        let ts = UNIX_EPOCH + Duration::from_secs(3661); // 01:01:01 UTC
-        let formatted = format_system_time(ts);
-        assert_eq!(formatted.as_deref(), Some("1970-01-01 01:01:01"));
+    fn test_format_datetime_in_shifts_to_the_given_offset() {
+        let offset = UtcOffset::from_hms(-2, -30, 0).expect("valid offset");
+        let formatted = format_datetime_in(OffsetDateTime::UNIX_EPOCH, offset);
+        assert_eq!(formatted.as_deref(), Some("1969-12-31 21:30:00"));
+    }
+
+    #[test]
+    fn test_format_system_time_uses_the_local_offset() {
+        let ts = UNIX_EPOCH + Duration::from_secs(3661);
+        let datetime = OffsetDateTime::from(ts);
+        let offset = UtcOffset::local_offset_at(datetime).unwrap_or(UtcOffset::UTC);
+        assert_eq!(format_system_time(ts), format_datetime_in(datetime, offset));
     }
 
     #[test]

@@ -200,7 +200,7 @@ impl EditorTab {
     /// ### Returns
     /// - `bool`: `true` when the tab has no associated file
     pub fn is_renameable(&self) -> bool {
-        self.location.is_untitled()
+        !self.location.has_backing_file()
     }
 
     /// Update the language/syntax highlighting based on the file extension

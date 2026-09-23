@@ -5,8 +5,11 @@ use super::paths::path_from_bytes;
 use crate::fulgur::state::persistence::{
     SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
 };
+use crate::fulgur::sync::share::ShareOrigin;
 use anyhow::anyhow;
 use rusqlite::Row;
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 impl StateDb {
     /// Read every persisted window, in restore order, with its tabs.
@@ -70,7 +73,8 @@ impl StateDb {
             .conn
             .prepare(
                 "SELECT id, title, file_path, content, last_saved, log_view, color_tag,
-                        remote_host, remote_port, remote_user, remote_path
+                        remote_host, remote_port, remote_user, remote_path,
+                        share_device_name, share_shared_at, share_size
                  FROM tabs
                  WHERE window_id = ?1
                  ORDER BY position, id",
@@ -132,6 +136,17 @@ fn tab_state_from_row(row: &Row<'_>) -> rusqlite::Result<TabState> {
         }),
         None => None,
     };
+    let share_size: Option<i64> = row.get(13)?;
+    let share = match share_size {
+        Some(size) => Some(ShareOrigin {
+            source_device_name: row.get(11)?,
+            shared_at: row
+                .get::<_, Option<String>>(12)?
+                .and_then(|shared_at| OffsetDateTime::parse(&shared_at, &Rfc3339).ok()),
+            size_bytes: u64::try_from(size).unwrap_or_default(),
+        }),
+        None => None,
+    };
     Ok(TabState {
         tab_id: u64::try_from(stored_id).unwrap_or_default(),
         title: row.get(1)?,
@@ -141,5 +156,6 @@ fn tab_state_from_row(row: &Row<'_>) -> rusqlite::Result<TabState> {
         remote,
         log_view: row.get(5)?,
         color_tag: row.get(6)?,
+        share,
     })
 }

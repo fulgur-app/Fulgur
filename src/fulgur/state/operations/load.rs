@@ -236,7 +236,9 @@ impl Fulgur {
                 id: tab_id,
                 title: tab_state.title.into(),
                 content: content_entity,
-                location: TabLocation::Untitled,
+                location: tab_state
+                    .share
+                    .map_or(TabLocation::Untitled, TabLocation::Shared),
                 modified: true,
                 original_content_hash:
                     crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str("").0,

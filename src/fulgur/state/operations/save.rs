@@ -101,6 +101,7 @@ impl Fulgur {
                                 content: Some(TabContent::Rope(current_content)),
                                 last_saved: get_file_modified_time(path),
                                 remote: None,
+                                share: None,
                             }
                         } else {
                             TabState {
@@ -112,6 +113,7 @@ impl Fulgur {
                                 content: None,
                                 last_saved: None,
                                 remote: None,
+                                share: None,
                             }
                         }
                     }
@@ -133,9 +135,10 @@ impl Fulgur {
                             content,
                             last_saved: None,
                             remote: Some(SerializedRemoteSpec::from_remote_spec(remote_spec)),
+                            share: None,
                         }
                     }
-                    TabLocation::Untitled => {
+                    TabLocation::Untitled | TabLocation::Shared(_) => {
                         if !persist_unsaved {
                             log::debug!(
                                 "Not persisting untitled tab '{}': unsaved buffer persistence is disabled",
@@ -164,6 +167,7 @@ impl Fulgur {
                             content: Some(current_content),
                             last_saved: None,
                             remote: None,
+                            share: editor_tab.location.share_origin().cloned(),
                         }
                     }
                 };
@@ -253,9 +257,11 @@ mod tests {
             SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState,
             WindowsState,
         },
+        sync::share::ShareOrigin,
         ui::components_utils::UNTITLED,
     };
     use gpui_kit::{Entity, TestAppContext, VisualTestContext};
+    use time::macros::datetime;
 
     use std::{fs, sync::Arc};
     use tempfile::TempDir;
@@ -290,6 +296,18 @@ mod tests {
         fulgur.read_with(cx, |this, cx| {
             this.build_window_state_without_bounds(cx).tabs
         })
+    }
+
+    /// Build the origin of a received share for persistence tests.
+    ///
+    /// ### Returns
+    /// - `ShareOrigin`: A share sent by "Work laptop" with a fixed date and size
+    fn sample_share_origin() -> ShareOrigin {
+        ShareOrigin {
+            source_device_name: Some("Work laptop".to_string()),
+            shared_at: Some(datetime!(2026-09-22 12:30:00 UTC)),
+            size_bytes: 13,
+        }
     }
 
     /// Wrap one persisted tab in the startup snapshot shape used by restoration.
@@ -410,6 +428,7 @@ mod tests {
                         remote: None,
                         log_view: false,
                         color_tag: None,
+                        share: None,
                     },
                     TabState {
                         tab_id: 11,
@@ -420,6 +439,7 @@ mod tests {
                         remote: None,
                         log_view: false,
                         color_tag: None,
+                        share: None,
                     },
                     TabState {
                         tab_id: 12,
@@ -430,6 +450,7 @@ mod tests {
                         remote: None,
                         log_view: false,
                         color_tag: None,
+                        share: None,
                     },
                 ],
                 active_tab_index: Some(1),
@@ -464,6 +485,7 @@ mod tests {
                 remote: None,
                 log_view: false,
                 color_tag: None,
+                share: None,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds::default(),
@@ -477,6 +499,7 @@ mod tests {
             remote: None,
             log_view: false,
             color_tag: None,
+            share: None,
         });
         state.windows.push(untouched_window);
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
@@ -530,6 +553,7 @@ mod tests {
             remote: None,
             log_view: false,
             color_tag: None,
+            share: None,
         };
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -563,6 +587,7 @@ mod tests {
             }),
             log_view: false,
             color_tag: None,
+            share: None,
         };
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -612,5 +637,59 @@ mod tests {
         let tabs = tab_states_with(&fulgur, &mut visual_cx, TabLocation::Untitled, true);
         assert_eq!(tabs.len(), 1);
         assert!(tabs[0].content.is_some());
+    }
+
+    #[gpui_kit::test]
+    fn shared_tab_persists_its_origin_when_setting_is_enabled(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let origin = sample_share_origin();
+        let tabs = tab_states_with(
+            &fulgur,
+            &mut visual_cx,
+            TabLocation::Shared(origin.clone()),
+            true,
+        );
+        assert_eq!(tabs.len(), 1);
+        assert!(tabs[0].content.is_some());
+        assert!(tabs[0].file_path.is_none());
+        assert_eq!(tabs[0].share.as_ref(), Some(&origin));
+    }
+
+    #[gpui_kit::test]
+    fn saved_shared_tab_no_longer_persists_its_origin(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = tab_states_with(
+            &fulgur,
+            &mut visual_cx,
+            TabLocation::Local("/tmp/received.txt".into()),
+            true,
+        );
+        assert_eq!(tabs.len(), 1);
+        assert!(
+            tabs[0].share.is_none(),
+            "a shared tab saved to a file must go back to the regular file state"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn restored_shared_tab_keeps_its_origin(cx: &mut TestAppContext) {
+        let origin = sample_share_origin();
+        let restored = TabState {
+            tab_id: 9,
+            title: "received.md".to_string(),
+            file_path: None,
+            content: Some(TabContent::from("# received")),
+            last_saved: None,
+            remote: None,
+            log_view: false,
+            color_tag: None,
+            share: Some(origin.clone()),
+        };
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let snapshot = restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(restored));
+
+        assert_recovery_content(&snapshot.tabs[0], "# received");
+        assert_eq!(snapshot.tabs[0].share.as_ref(), Some(&origin));
     }
 }

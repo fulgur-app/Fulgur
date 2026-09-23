@@ -4,6 +4,8 @@ use super::StateDb;
 use crate::fulgur::state::persistence::{
     SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
 };
+use crate::fulgur::sync::share::ShareOrigin;
+use time::macros::datetime;
 
 /// Build a tab state with a given identity and title.
 fn tab(tab_id: u64, title: &str, content: Option<&str>) -> TabState {
@@ -16,6 +18,7 @@ fn tab(tab_id: u64, title: &str, content: Option<&str>) -> TabState {
         remote: None,
         log_view: false,
         color_tag: None,
+        share: None,
     }
 }
 
@@ -343,6 +346,64 @@ fn an_untitled_tab_with_no_path_roundtrips() {
         loaded.windows[0].tabs[0].content.as_ref().unwrap(),
         &TabContent::from("scratch")
     );
+}
+
+/// Build an unsaved tab received from another device.
+fn shared_tab(tab_id: u64, origin: ShareOrigin) -> TabState {
+    let mut shared = tab(tab_id, "received.md", Some("# received"));
+    shared.file_path = None;
+    shared.share = Some(origin);
+    shared
+}
+
+#[test]
+fn a_shared_tab_origin_roundtrips() {
+    let mut db = memory_db();
+    let origin = ShareOrigin {
+        source_device_name: Some("Work laptop".to_string()),
+        shared_at: Some(datetime!(2026-09-22 12:30:00 UTC)),
+        size_bytes: 10,
+    };
+    db.apply(&state_with(1, vec![shared_tab(0, origin.clone())]))
+        .expect("apply");
+
+    let loaded = db.load().expect("load");
+    assert_eq!(loaded.windows[0].tabs[0].share.as_ref(), Some(&origin));
+}
+
+#[test]
+fn a_shared_tab_origin_without_name_or_date_roundtrips() {
+    let mut db = memory_db();
+    let origin = ShareOrigin {
+        source_device_name: None,
+        shared_at: None,
+        size_bytes: 0,
+    };
+    db.apply(&state_with(1, vec![shared_tab(0, origin.clone())]))
+        .expect("apply");
+
+    let loaded = db.load().expect("load");
+    assert_eq!(loaded.windows[0].tabs[0].share.as_ref(), Some(&origin));
+}
+
+#[test]
+fn saving_a_shared_tab_clears_its_origin_without_rewriting_content() {
+    let mut db = memory_db();
+    let origin = ShareOrigin {
+        source_device_name: Some("Desk".to_string()),
+        shared_at: None,
+        size_bytes: 10,
+    };
+    db.apply(&state_with(1, vec![shared_tab(0, origin)]))
+        .expect("initial apply");
+
+    let mut saved = tab(0, "received.md", Some("# received"));
+    saved.file_path = Some(std::path::PathBuf::from("/tmp/received.md"));
+    let stats = db.apply(&state_with(1, vec![saved])).expect("apply save");
+
+    assert_eq!(stats.tabs_content_written, 0);
+    assert_eq!(stats.tabs_metadata_updated, 1);
+    assert!(db.load().expect("load").windows[0].tabs[0].share.is_none());
 }
 
 #[cfg(unix)]

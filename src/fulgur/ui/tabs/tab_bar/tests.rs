@@ -1,8 +1,13 @@
+use super::state::TabTooltipContent;
 use super::{TabBar, TabBarEvent};
+use crate::fulgur::Fulgur;
+use crate::fulgur::sync::share::ShareOrigin;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
+use crate::fulgur::ui::components_utils::format_local_datetime;
 use crate::fulgur::ui::tabs::editor_tab::TabLocation;
-use gpui_kit::TestAppContext;
+use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 use std::path::PathBuf;
+use time::macros::datetime;
 
 use crate::test_support::setup_fulgur;
 
@@ -155,6 +160,109 @@ fn test_remote_tab_indicator_label_is_none_for_local_tab(cx: &mut TestAppContext
             assert_eq!(TabBar::remote_tab_indicator_label(tab), None);
         });
     });
+}
+
+// ========== tooltip tests ==========
+
+/// Relocate the first tab, then build its tooltip content.
+fn tooltip_for_location(
+    fulgur: &Entity<Fulgur>,
+    cx: &mut VisualTestContext,
+    location: TabLocation,
+) -> Option<TabTooltipContent> {
+    cx.update(|_window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let tab = this
+                .tabs
+                .first()
+                .expect("expected at least one tab")
+                .clone();
+            tab.update(cx, |tab, _cx| {
+                let editor_tab = tab.as_editor_mut().expect("expected an editor tab");
+                editor_tab.title = "received.md".into();
+                editor_tab.location = location;
+            });
+            TabBar::tab_tooltip_content(tab.read(cx))
+        })
+    })
+}
+
+#[gpui_kit::test]
+fn test_tab_tooltip_describes_a_received_share(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let shared_at = datetime!(2026-09-22 12:30:00 UTC);
+    let origin = ShareOrigin {
+        source_device_name: Some("Work laptop".to_string()),
+        shared_at: Some(shared_at),
+        size_bytes: 2048,
+    };
+
+    let content = tooltip_for_location(&fulgur, &mut visual_cx, TabLocation::Shared(origin));
+
+    let shared_on = format_local_datetime(shared_at).expect("format share date");
+    assert_eq!(
+        content,
+        Some(TabTooltipContent {
+            header: "received.md".to_string(),
+            details: vec![
+                "Size: 2.0 KB".to_string(),
+                "Shared by: Work laptop".to_string(),
+                format!("Shared on: {shared_on}"),
+            ],
+        })
+    );
+}
+
+#[gpui_kit::test]
+fn test_tab_tooltip_for_a_share_without_metadata_names_an_unknown_device(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let origin = ShareOrigin {
+        source_device_name: None,
+        shared_at: None,
+        size_bytes: 5,
+    };
+
+    let content = tooltip_for_location(&fulgur, &mut visual_cx, TabLocation::Shared(origin))
+        .expect("a received share must have a tooltip");
+
+    assert_eq!(
+        content.details,
+        vec![
+            "Size: 5 B".to_string(),
+            "Shared by: Unknown device".to_string()
+        ]
+    );
+}
+
+#[gpui_kit::test]
+fn test_tab_tooltip_shows_the_path_once_a_share_is_saved(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    let content = tooltip_for_location(
+        &fulgur,
+        &mut visual_cx,
+        TabLocation::Local(PathBuf::from("/tmp/received.md")),
+    )
+    .expect("a local file tab must have a tooltip");
+
+    assert_eq!(content.header, "/tmp/received.md");
+    assert!(
+        content
+            .details
+            .iter()
+            .all(|detail| !detail.starts_with("Shared")),
+        "a saved file must show the regular file details, got {:?}",
+        content.details
+    );
+}
+
+#[gpui_kit::test]
+fn test_tab_tooltip_is_none_for_an_untitled_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    assert_eq!(
+        tooltip_for_location(&fulgur, &mut visual_cx, TabLocation::Untitled),
+        None
+    );
 }
 
 // ========== event routing tests ==========

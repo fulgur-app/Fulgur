@@ -4,6 +4,7 @@ use super::{
 };
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
 use crate::fulgur::settings::EditorSettings;
+use crate::fulgur::sync::share::ShareOrigin;
 use crate::fulgur::ui::tabs::tab::TabId;
 use gpui_kit::component::input::Position;
 use gpui_kit::component::table::TableDelegate;
@@ -93,7 +94,7 @@ fn test_editor_tab_new_construction(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
+fn test_editor_tab_from_share_construction(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     let mut settings = EditorSettings::new();
     settings.markdown_settings.show_markdown_toolbar = true;
@@ -102,10 +103,16 @@ fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
     let contents = "fn main() {\n    println!(\"hi\");\n}".to_string();
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
-            let tab = EditorTab::from_content(
+            let origin = ShareOrigin {
+                source_device_name: Some("Work laptop".to_string()),
+                shared_at: None,
+                size_bytes: contents.len() as u64,
+            };
+            let tab = EditorTab::from_share(
                 TabId(9),
                 &contents,
                 "shared.rs".to_string(),
+                origin.clone(),
                 window,
                 cx,
                 &settings,
@@ -113,6 +120,8 @@ fn test_editor_tab_from_content_construction(cx: &mut TestAppContext) {
             assert_eq!(tab.id, TabId(9));
             assert_eq!(tab.title, SharedString::from("shared.rs"));
             assert!(tab.file_path().is_none());
+            assert_eq!(tab.location.share_origin(), Some(&origin));
+            assert!(tab.is_renameable());
             assert!(tab.modified);
             assert_eq!(
                 tab.original_content_hash,

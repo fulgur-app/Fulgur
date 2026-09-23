@@ -2874,8 +2874,8 @@ dependencies = [
 
 [[package]]
 name = "fulgur-common"
-version = "0.6.0"
-source = "git+https://github.com/fulgur-app/Fulgur-common.git?tag=v0.6.0#3f626a46c320d3059ab0bf40a9f17e2e5e109a7b"
+version = "0.7.0"
+source = "git+https://github.com/fulgur-app/Fulgur-common.git?tag=v0.7.0#7367ac4da428481a4102b64728a84768d4708c32"
 dependencies = [
  "serde",
 ]
@@ -5656,6 +5656,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
 dependencies = [
  "hermit-abi",
+ "libc",
+]
+
+[[package]]
+name = "num_threads"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c7398b9c8b70908f6371f47ed36737907c87c52af34c268fed0bf0ceb92ead9"
+dependencies = [
  "libc",
 ]
 
@@ -8547,7 +8556,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
+ "libc",
  "num-conv",
+ "num_threads",
  "powerfmt",
  "serde_core",
  "time-core",

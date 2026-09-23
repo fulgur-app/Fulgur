@@ -69,6 +69,7 @@ fn create_file_tab_unmodified(tab_id: u64) -> TabState {
         remote: None,
         log_view: false,
         color_tag: None,
+        share: None,
     }
 }
 
@@ -96,6 +97,7 @@ fn create_file_tab_modified(tab_id: u64) -> TabState {
         remote: None,
         log_view: false,
         color_tag: None,
+        share: None,
     }
 }
 
@@ -116,6 +118,7 @@ fn create_unsaved_tab(tab_id: u64) -> TabState {
         remote: None,
         log_view: false,
         color_tag: None,
+        share: None,
     }
 }
 
@@ -422,6 +425,7 @@ fn test_state_roundtrip_with_real_temp_files() {
                     remote: None,
                     log_view: false,
                     color_tag: None,
+                    share: None,
                 },
                 TabState {
                     tab_id: 1,
@@ -432,6 +436,7 @@ fn test_state_roundtrip_with_real_temp_files() {
                     remote: None,
                     log_view: false,
                     color_tag: None,
+                    share: None,
                 },
             ],
             active_tab_index: Some(0),
@@ -476,6 +481,7 @@ fn test_state_roundtrip_with_unicode_content() {
                 remote: None,
                 log_view: false,
                 color_tag: None,
+                share: None,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds::default(),
@@ -656,6 +662,7 @@ fn test_state_roundtrip_preserves_remote_spec_without_password_fields() {
                 }),
                 log_view: false,
                 color_tag: None,
+                share: None,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds::default(),
@@ -703,6 +710,7 @@ fn test_state_preserves_window_order() {
                 remote: None,
                 log_view: false,
                 color_tag: None,
+                share: None,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds {

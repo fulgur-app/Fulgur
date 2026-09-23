@@ -77,6 +77,7 @@ fn test_state_concurrent_writes_no_corruption() {
                         remote: None,
                         log_view: false,
                         color_tag: None,
+                        share: None,
                     }],
                     active_tab_index: Some(0),
                     window_bounds: SerializedWindowBounds::default(),
@@ -195,6 +196,7 @@ fn test_state_concurrent_writes_large_data() {
                             remote: None,
                             log_view: false,
                             color_tag: None,
+                            share: None,
                         });
                     }
 

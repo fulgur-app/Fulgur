@@ -34,7 +34,7 @@ impl Fulgur {
             ),
             Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
         };
-        if matches!(location, TabLocation::Untitled) {
+        if !location.has_backing_file() {
             self.save_file_as(window, cx);
             return;
         }
@@ -60,7 +60,7 @@ impl Fulgur {
             TabLocation::Remote(spec) => {
                 self.save_remote_file(window, cx, tab_id, spec, contents, bytes);
             }
-            TabLocation::Untitled => {}
+            TabLocation::Untitled | TabLocation::Shared(_) => {}
         }
     }
 

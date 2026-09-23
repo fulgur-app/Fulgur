@@ -28,7 +28,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Types
-fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.6.0"}
+fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.7.0"}
 lsp-types = "0.97"
 
 # Serialization
@@ -64,7 +64,7 @@ url = "2.5.8"
 log = "0.4.34"
 
 # Time
-time = { version = "0.3.55", features = ["serde", "macros", "formatting", "parsing"] }
+time = { version = "0.3.55", features = ["serde", "macros", "formatting", "parsing", "local-offset"] }
 
 # Error handling
 anyhow = "1.0.104"

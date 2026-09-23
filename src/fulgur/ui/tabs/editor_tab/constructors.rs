@@ -6,6 +6,7 @@ use crate::fulgur::languages::supported_languages::{
     language_from_content, language_registry_name,
 };
 use crate::fulgur::settings::EditorSettings;
+use crate::fulgur::sync::share::ShareOrigin;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
 use crate::fulgur::ui::tabs::tab::TabId;
@@ -72,23 +73,24 @@ impl EditorTab {
         }
     }
 
-    /// Create a new tab from content with a given file name (no path).
-    /// Used for shared files from sync server.
+    /// Create a new unsaved tab from a file received from another device.
     ///
     /// ### Arguments
     /// - `id`: The ID of the tab
-    /// - `contents`: The contents of the file
+    /// - `contents`: The decrypted contents of the file
     /// - `file_name`: The name of the file (displayed in tab bar)
+    /// - `origin`: The sender, date and size of the share, kept until the file is saved
     /// - `window`: The window to create the tab in
     /// - `cx`: The application context
     /// - `settings`: The settings for the input state
     ///
     /// ### Returns
     /// - `EditorTab`: The new tab
-    pub fn from_content(
+    pub fn from_share(
         id: TabId,
         contents: &str,
         file_name: String,
+        origin: ShareOrigin,
         window: &mut Window,
         cx: &mut App,
         settings: &EditorSettings,
@@ -111,7 +113,7 @@ impl EditorTab {
             id,
             title: file_name.into(),
             content,
-            location: TabLocation::Untitled,
+            location: TabLocation::Shared(origin),
             modified: true,
             original_content_hash,
             original_content_len,

@@ -13,4 +13,6 @@ pub use send::{
     JSON_OVERHEAD_PER_SHARE_BYTES, MAX_PENDING_SHARES_PER_RESPONSE, MAX_SYNC_SHARE_PAYLOAD_BYTES,
     share_file,
 };
-pub use types::{ProfileShareOutcome, ShareFileRequest, ShareResult, format_multi_profile_summary};
+pub use types::{
+    ProfileShareOutcome, ShareFileRequest, ShareOrigin, ShareResult, format_multi_profile_summary,
+};

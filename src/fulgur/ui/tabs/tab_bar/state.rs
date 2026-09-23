@@ -1,6 +1,7 @@
 use crate::fulgur::{
     Fulgur,
     tab::{Tab, TabId},
+    ui::components_utils::{format_file_size, format_local_datetime, format_system_time},
     ui::tabs::editor_tab::TabLocation,
     ui::tabs::tab_drag::DraggedTab,
 };
@@ -16,6 +17,15 @@ pub(crate) struct TabBar {
     /// Set while a left button press that started on the trailing strip may still
     /// turn into a window move; only used by the unified title bar layout.
     pub(super) should_move_window: bool,
+}
+
+/// Text of a tab's hover tooltip
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct TabTooltipContent {
+    /// First line, shown in bold next to the file icon
+    pub header: String,
+    /// Secondary facts, shown on one muted line below the header
+    pub details: Vec<String>,
 }
 
 /// Typed events emitted by the tab bar toward the owning `Fulgur` window
@@ -172,6 +182,52 @@ impl TabBar {
         } else {
             None
         }
+    }
+
+    /// Build the hover tooltip text of a tab.
+    ///
+    /// ### Arguments
+    /// - `tab`: The tab to describe.
+    ///
+    /// ### Returns
+    /// - `Some(TabTooltipContent)`: For a local file, its path with its size and last
+    ///   modification date; for a received share not saved yet, its title with the received
+    ///   size, the sending device and the share date.
+    /// - `None`: For untitled, remote, settings, and markdown preview tabs.
+    pub(crate) fn tab_tooltip_content(tab: &Tab) -> Option<TabTooltipContent> {
+        let editor_tab = tab.as_editor()?;
+        if let Some(origin) = editor_tab.location.share_origin() {
+            let sender = origin
+                .source_device_name
+                .as_deref()
+                .unwrap_or("Unknown device");
+            let details = [
+                Some(format!("Size: {}", format_file_size(origin.size_bytes))),
+                Some(format!("Shared by: {sender}")),
+                origin
+                    .shared_at
+                    .and_then(format_local_datetime)
+                    .map(|shared_at| format!("Shared on: {shared_at}")),
+            ];
+            return Some(TabTooltipContent {
+                header: editor_tab.title.to_string(),
+                details: details.into_iter().flatten().collect(),
+            });
+        }
+        let path = editor_tab.file_path()?.to_str()?.to_string();
+        let details = [
+            editor_tab
+                .file_size_bytes
+                .map(|size| format!("Size: {}", format_file_size(size))),
+            editor_tab
+                .file_last_modified
+                .and_then(format_system_time)
+                .map(|last_modified| format!("Last Modified: {last_modified}")),
+        ];
+        Some(TabTooltipContent {
+            header: path,
+            details: details.into_iter().flatten().collect(),
+        })
     }
 }
 

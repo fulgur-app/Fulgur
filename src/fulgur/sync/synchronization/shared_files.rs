@@ -39,10 +39,11 @@ impl Fulgur {
         // that needs `window`/`cx` and mutable tab state, and it is cheap (no crypto).
         for decrypted in decrypted_files {
             let tab_id = self.allocate_tab_id();
-            let new_tab = Tab::Editor(editor_tab::EditorTab::from_content(
+            let new_tab = Tab::Editor(editor_tab::EditorTab::from_share(
                 tab_id,
                 &decrypted.content,
                 decrypted.file_name.clone(),
+                decrypted.origin,
                 window,
                 cx,
                 &self.settings.editor_settings,

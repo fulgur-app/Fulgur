@@ -1,3 +1,4 @@
+use crate::fulgur::sync::share::ShareOrigin;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
@@ -198,6 +199,9 @@ pub struct TabState {
     /// Stable key of the tab's color tag, if any. See `ColorTag::key`.
     #[serde(default)]
     pub color_tag: Option<String>,
+    /// Origin of a received share that has not been saved to a file yet.
+    #[serde(default)]
+    pub share: Option<ShareOrigin>,
 }
 
 #[cfg(test)]
