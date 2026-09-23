@@ -64,7 +64,7 @@ url = "2.5.8"
 log = "0.4.34"
 
 # Time
-time = { version = "0.3.55", features = ["serde", "macros", "formatting", "parsing"] }
+time = { version = "0.3.55", features = ["serde", "macros", "formatting", "parsing", "local-offset"] }
 
 # Error handling
 anyhow = "1.0.104"
@@ -799,3 +799,7 @@ desktop-template = "resources/linux/Fulgur.desktop.hbs"
 "assets/icon_256.png" = "usr/share/icons/hicolor/256x256/apps/Fulgur.png"
 "assets/icon_512.png" = "usr/share/icons/hicolor/512x512/apps/Fulgur.png"
 "assets/icon.png" = "usr/share/pixmaps/Fulgur.png"
+
+# TEMPORARY: local fulgur-common until v0.7.0 is tagged, then bump the tag above and drop this.
+[patch."https://github.com/fulgur-app/Fulgur-common.git"]
+fulgur-common = { path = "../Fulgur-common" }

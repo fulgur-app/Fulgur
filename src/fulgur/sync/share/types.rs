@@ -1,5 +1,9 @@
 use crate::fulgur::sync::synchronization::SynchronizationError;
+use fulgur_common::api::shares::SharedFileResponse;
+use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 /// Parameters for sharing a file
 pub struct ShareFileRequest {
@@ -8,6 +12,47 @@ pub struct ShareFileRequest {
     pub file_name: String,
     pub device_ids: Vec<String>,
     pub file_path: Option<PathBuf>,
+}
+
+/// Where a received share came from, shown on its tab until the file is saved
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ShareOrigin {
+    /// Name of the sending device, `None` when the server did not report it
+    pub source_device_name: Option<String>,
+    /// When the sender shared the file, `None` when the server timestamp is unreadable
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub shared_at: Option<OffsetDateTime>,
+    /// Size of the decrypted file content, in bytes
+    pub size_bytes: u64,
+}
+
+impl ShareOrigin {
+    /// Build the origin of a received share
+    ///
+    /// ### Arguments
+    /// - `share`: The share as served by the sync server
+    /// - `content`: The decrypted and decompressed file content
+    ///
+    /// ### Returns
+    /// - `ShareOrigin`: The origin, measuring the size on the decrypted content because the
+    ///   server-reported size covers the encrypted payload
+    #[must_use]
+    pub fn from_response(share: &SharedFileResponse, content: &str) -> Self {
+        let shared_at = OffsetDateTime::parse(&share.created_at, &Rfc3339)
+            .inspect_err(|e| {
+                log::warn!(
+                    "Unreadable creation date '{}' on share {}: {e}",
+                    share.created_at,
+                    share.id
+                );
+            })
+            .ok();
+        Self {
+            source_device_name: share.source_device_name.clone(),
+            shared_at,
+            size_bytes: content.len() as u64,
+        }
+    }
 }
 
 /// Result of sharing a file with devices
@@ -168,8 +213,10 @@ pub fn format_multi_profile_summary(outcomes: &[(String, ProfileShareOutcome)]) 
 
 #[cfg(test)]
 mod tests {
-    use super::ShareResult;
+    use super::{ShareOrigin, ShareResult};
     use crate::fulgur::sync::synchronization::SynchronizationError;
+    use fulgur_common::api::shares::SharedFileResponse;
+    use time::macros::datetime;
 
     #[test]
     fn test_share_result_is_complete_success_all_successful() {
@@ -391,5 +438,48 @@ mod tests {
         });
         assert!(partial.has_success());
         assert!(partial.has_failure());
+    }
+
+    fn shared_file(created_at: &str, source_device_name: Option<&str>) -> SharedFileResponse {
+        SharedFileResponse {
+            id: "share-1".to_string(),
+            source_device_id: "device-1".to_string(),
+            file_name: "notes.md".to_string(),
+            file_size: 4096,
+            content: String::new(),
+            created_at: created_at.to_string(),
+            expires_at: String::new(),
+            source_device_name: source_device_name.map(ToString::to_string),
+        }
+    }
+
+    #[test]
+    fn test_share_origin_reads_sender_date_and_decrypted_size() {
+        let share = shared_file("2026-09-22T12:30:00Z", Some("Work laptop"));
+        let origin = ShareOrigin::from_response(&share, "héllo");
+        assert_eq!(origin.source_device_name.as_deref(), Some("Work laptop"));
+        assert_eq!(origin.shared_at, Some(datetime!(2026-09-22 12:30:00 UTC)));
+        assert_eq!(origin.size_bytes, 6, "size is the decrypted byte length");
+    }
+
+    #[test]
+    fn test_share_origin_tolerates_missing_name_and_bad_date() {
+        let share = shared_file("not a date", None);
+        let origin = ShareOrigin::from_response(&share, "");
+        assert_eq!(origin.source_device_name, None);
+        assert_eq!(origin.shared_at, None);
+        assert_eq!(origin.size_bytes, 0);
+    }
+
+    #[test]
+    fn test_share_origin_serde_roundtrip() {
+        let origin = ShareOrigin {
+            source_device_name: Some("Desk".to_string()),
+            shared_at: Some(datetime!(2026-01-02 03:04:05 UTC)),
+            size_bytes: 42,
+        };
+        let json = serde_json::to_string(&origin).expect("serialize share origin");
+        let restored: ShareOrigin = serde_json::from_str(&json).expect("deserialize share origin");
+        assert_eq!(restored, origin);
     }
 }

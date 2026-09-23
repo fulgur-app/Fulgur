@@ -296,6 +296,7 @@ mod tests {
             content: String::new(),
             created_at: String::new(),
             expires_at: String::new(),
+            source_device_name: None,
         }
     }
 

@@ -10,7 +10,7 @@ use crate::fulgur::{
     ui::motion,
     ui::tabs::color_tag::ColorTag,
     ui::tabs::tab_drag::DraggedTab,
-    ui::{components_utils, icons::CustomIcon, window_drag::window_drag_region},
+    ui::{icons::CustomIcon, window_drag::window_drag_region},
     window_manager::WindowManager,
 };
 use gpui_kit::base::TestSupportExt;
@@ -28,6 +28,7 @@ use gpui_kit::{
     WeakEntity, Window, div, px,
 };
 use std::collections::HashMap;
+use std::rc::Rc;
 
 impl Render for TabBar {
     /// Render the tab bar from the owning window's current tab list
@@ -330,12 +331,10 @@ impl TabBar {
         let has_tabs_on_left = index > 0;
         let has_tabs_on_right = index < fulgur.tabs.len() - 1;
         let total_tabs = fulgur.tabs.len();
-        let file_path = tab.as_editor().and_then(|editor_tab| {
-            editor_tab
-                .file_path()
-                .and_then(|path| path.to_str().map(std::string::ToString::to_string))
-        });
-        let has_file_path = file_path.is_some();
+        let has_file_path = tab
+            .as_editor()
+            .and_then(|editor_tab| editor_tab.file_path())
+            .is_some_and(|path| path.to_str().is_some());
         let is_editor_tab = tab.as_editor().is_some();
         let is_renameable = tab
             .as_editor()
@@ -356,14 +355,7 @@ impl TabBar {
                 .collect()
         };
         let source_entity = self.fulgur.clone();
-        let cached_file_size = tab
-            .as_editor()
-            .and_then(|editor_tab| editor_tab.file_size_bytes)
-            .map(components_utils::format_file_size);
-        let cached_last_modified = tab
-            .as_editor()
-            .and_then(|editor_tab| editor_tab.file_last_modified)
-            .and_then(components_utils::format_system_time);
+        let tooltip_content = Self::tab_tooltip_content(tab);
         // A markdown preview tab inherits the color tag of its source editor tab.
         let color_tag = if let Some(editor_tab) = tab.as_editor() {
             editor_tab.color_tag
@@ -412,42 +404,36 @@ impl TabBar {
                 .hover(|this| this.bg(cx.theme().muted))
                 .cursor_pointer();
         }
-        if let Some(path) = file_path {
-            tab_div = tab_div.tooltip(move |window, cx| {
-                let path_clone = path.clone();
-                let file_size = cached_file_size.clone();
-                let last_modified = cached_last_modified.clone();
-                Tooltip::element(move |_, cx| {
-                    let mut tooltip = v_flex().gap_1().py_2().px_1().child(
-                        h_flex()
-                            .gap_3()
-                            .child(CustomIcon::File.icon())
-                            .child(path_clone.clone())
-                            .text_sm()
-                            .font_semibold(),
-                    );
-                    let mut details = h_flex().gap_4().justify_between();
-                    if let Some(ref size) = file_size {
-                        details = details.child(
-                            div()
-                                .child(format!("Size: {size}"))
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground),
+        if let Some(content) = tooltip_content {
+            let content = Rc::new(content);
+            tab_div =
+                tab_div.tooltip(move |window, cx| {
+                    let content = Rc::clone(&content);
+                    Tooltip::element(move |_, cx| {
+                        let details = h_flex().gap_4().justify_between().children(
+                            content.details.iter().map(|detail| {
+                                div()
+                                    .child(detail.clone())
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                            }),
                         );
-                    }
-                    if let Some(ref last_modified) = last_modified {
-                        details = details.child(
-                            div()
-                                .child(format!("Last Modified: {last_modified}"))
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground),
-                        );
-                    }
-                    tooltip = tooltip.child(details);
-                    tooltip
-                })
-                .build(window, cx)
-            });
+                        v_flex()
+                            .gap_1()
+                            .py_2()
+                            .px_1()
+                            .child(
+                                h_flex()
+                                    .gap_3()
+                                    .child(CustomIcon::File.icon())
+                                    .child(content.header.clone())
+                                    .text_sm()
+                                    .font_semibold(),
+                            )
+                            .child(details)
+                    })
+                    .build(window, cx)
+                });
         }
         let (filename, folder) = Self::get_tab_display_title(tab, filename_counts);
         let modified_indicator = if tab.is_modified() { " •" } else { "" };

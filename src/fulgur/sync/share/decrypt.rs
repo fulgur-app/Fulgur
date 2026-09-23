@@ -24,6 +24,8 @@ const KEY_RETRY_DELAY: Duration = Duration::from_secs(5);
 pub struct DecryptedShare {
     pub file_name: String,
     pub content: String,
+    /// Sender, date and size of the share, shown on its tab until it is saved.
+    pub origin: share::ShareOrigin,
 }
 
 /// Retry bookkeeping for a pending share that failed to decode.
@@ -177,12 +179,14 @@ fn run_decryption_pass(profile: &ServerProfile, sync_state: &SyncState, http_age
 
                 match decoded {
                     Ok(content) => {
+                        let origin = share::ShareOrigin::from_response(&shared_file, &content);
                         sync_state
                             .pending_decrypted_files
                             .lock()
                             .push(DecryptedShare {
                                 file_name: shared_file.file_name.clone(),
                                 content,
+                                origin,
                             });
                         sync_state.share_retry_state.lock().remove(&shared_file.id);
                         outcome.decrypted_count += 1;

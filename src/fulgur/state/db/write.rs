@@ -6,6 +6,7 @@ use crate::fulgur::state::persistence::{TabState, WindowState, WindowsState};
 use anyhow::anyhow;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::collections::{HashMap, HashSet};
+use time::format_description::well_known::Rfc3339;
 
 /// The persisted identity of a buffer, used to decide whether to rewrite it.
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -27,6 +28,9 @@ struct StoredTab {
     remote_port: Option<u16>,
     remote_user: Option<String>,
     remote_path: Option<String>,
+    share_device_name: Option<String>,
+    share_shared_at: Option<String>,
+    share_size: Option<i64>,
 }
 
 /// The comparable part of a persisted window row.
@@ -273,7 +277,8 @@ fn read_stored_tabs(
     let mut stmt = conn
         .prepare(
             "SELECT id, position, title, file_path, last_saved, log_view, color_tag,
-                    remote_host, remote_port, remote_user, remote_path, content_hash, content_len
+                    remote_host, remote_port, remote_user, remote_path, content_hash, content_len,
+                    share_device_name, share_shared_at, share_size
              FROM tabs WHERE window_id = ?1",
         )
         .map_err(|e| anyhow!("Failed to prepare the stored tab query: {e}"))?;
@@ -291,6 +296,9 @@ fn read_stored_tabs(
                 remote_port: row.get(8)?,
                 remote_user: row.get(9)?,
                 remote_path: row.get(10)?,
+                share_device_name: row.get(13)?,
+                share_shared_at: row.get(14)?,
+                share_size: row.get(15)?,
             };
             let hash: Option<i64> = row.get(11)?;
             let len: Option<i64> = row.get(12)?;
@@ -337,6 +345,19 @@ fn stored_tab_from_snapshot(tab: &TabState, position: i64) -> StoredTab {
         remote_port: tab.remote.as_ref().map(|remote| remote.port),
         remote_user: tab.remote.as_ref().map(|remote| remote.user.clone()),
         remote_path: tab.remote.as_ref().map(|remote| remote.path.clone()),
+        share_device_name: tab
+            .share
+            .as_ref()
+            .and_then(|share| share.source_device_name.clone()),
+        share_shared_at: tab
+            .share
+            .as_ref()
+            .and_then(|share| share.shared_at)
+            .and_then(|shared_at| shared_at.format(&Rfc3339).ok()),
+        share_size: tab
+            .share
+            .as_ref()
+            .map(|share| i64::try_from(share.size_bytes).unwrap_or(i64::MAX)),
     }
 }
 
@@ -395,8 +416,8 @@ fn insert_tab(
         // far better than failing the save and losing every window's state.
         "INSERT INTO tabs (window_id, id, position, title, file_path, content, content_hash,
                            content_len, last_saved, log_view, color_tag, remote_host, remote_port,
-                           remote_user, remote_path)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                           remote_user, remote_path, share_device_name, share_shared_at, share_size)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
          ON CONFLICT(window_id, id) DO UPDATE SET
              position = excluded.position,
              title = excluded.title,
@@ -410,7 +431,10 @@ fn insert_tab(
              remote_host = excluded.remote_host,
              remote_port = excluded.remote_port,
              remote_user = excluded.remote_user,
-             remote_path = excluded.remote_path",
+             remote_path = excluded.remote_path,
+             share_device_name = excluded.share_device_name,
+             share_shared_at = excluded.share_shared_at,
+             share_size = excluded.share_size",
         params![
             window_id,
             id,
@@ -427,6 +451,9 @@ fn insert_tab(
             desired.remote_port,
             desired.remote_user,
             desired.remote_path,
+            desired.share_device_name,
+            desired.share_shared_at,
+            desired.share_size,
         ],
     )
     .map_err(|e| anyhow!("Failed to insert tab {id}: {e}"))?;
@@ -462,7 +489,8 @@ fn update_tab(
         "UPDATE tabs SET position = ?3, title = ?4, file_path = ?5, content = ?6,
                          content_hash = ?7, content_len = ?8, last_saved = ?9, log_view = ?10,
                          color_tag = ?11, remote_host = ?12, remote_port = ?13, remote_user = ?14,
-                         remote_path = ?15
+                         remote_path = ?15, share_device_name = ?16, share_shared_at = ?17,
+                         share_size = ?18
          WHERE window_id = ?1 AND id = ?2",
         params![
             window_id,
@@ -480,6 +508,9 @@ fn update_tab(
             desired.remote_port,
             desired.remote_user,
             desired.remote_path,
+            desired.share_device_name,
+            desired.share_shared_at,
+            desired.share_size,
         ],
     )
     .map_err(|e| anyhow!("Failed to update tab {id}: {e}"))?;
@@ -510,7 +541,8 @@ fn update_tab_metadata(
     conn.execute(
         "UPDATE tabs SET position = ?3, title = ?4, file_path = ?5, last_saved = ?6,
                          log_view = ?7, color_tag = ?8, remote_host = ?9, remote_port = ?10,
-                         remote_user = ?11, remote_path = ?12
+                         remote_user = ?11, remote_path = ?12, share_device_name = ?13,
+                         share_shared_at = ?14, share_size = ?15
          WHERE window_id = ?1 AND id = ?2",
         params![
             window_id,
@@ -525,6 +557,9 @@ fn update_tab_metadata(
             desired.remote_port,
             desired.remote_user,
             desired.remote_path,
+            desired.share_device_name,
+            desired.share_shared_at,
+            desired.share_size,
         ],
     )
     .map_err(|e| anyhow!("Failed to update tab metadata for {id}: {e}"))?;
