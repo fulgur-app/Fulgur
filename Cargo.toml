@@ -28,7 +28,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Types
-fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.6.0"}
+fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.7.0"}
 lsp-types = "0.97"
 
 # Serialization
@@ -799,7 +799,3 @@ desktop-template = "resources/linux/Fulgur.desktop.hbs"
 "assets/icon_256.png" = "usr/share/icons/hicolor/256x256/apps/Fulgur.png"
 "assets/icon_512.png" = "usr/share/icons/hicolor/512x512/apps/Fulgur.png"
 "assets/icon.png" = "usr/share/pixmaps/Fulgur.png"
-
-# TEMPORARY: local fulgur-common until v0.7.0 is tagged, then bump the tag above and drop this.
-[patch."https://github.com/fulgur-app/Fulgur-common.git"]
-fulgur-common = { path = "../Fulgur-common" }
