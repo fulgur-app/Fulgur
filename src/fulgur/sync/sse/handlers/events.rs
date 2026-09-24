@@ -1,11 +1,9 @@
-use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{
     Fulgur, settings::ProfileId, sync::synchronization::SynchronizationStatus,
     window_manager::WindowManager,
 };
 use futures::StreamExt;
 use gpui_kit::App;
-use gpui_kit::component::notification::NotificationType;
 use std::time::{Duration, Instant};
 
 use super::super::types::SseEvent;
@@ -99,10 +97,6 @@ impl Fulgur {
                 "Share doorbell received on consumer task (share_id={})",
                 notification.share_id
             );
-            Fulgur::shared_state(cx).notify(AppNotification::background(
-                NotificationType::Info,
-                "New file received",
-            ));
             Self::notify_all_windows(cx);
         }
     }
