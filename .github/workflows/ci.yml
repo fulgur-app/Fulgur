@@ -2,16 +2,16 @@ name: CI
 
 # Branch-protection assumption: "Require branches to be up to date before merging"
 # is enforced on main. Under that rule, a PR's CI run validates the exact merge
-# commit that lands, so post-merge we only run coverage + docs-deploy + a test
+# commit that lands, so post-merge we only run coverage + a test
 # cache warm-up. If that rule is ever disabled, re-enable the
-# fmt/clippy/test/docs-validate jobs on push-to-main by appending
+# fmt/clippy/test jobs on push-to-main by appending
 # `|| (github.event_name == 'push' && github.ref == 'refs/heads/main')` to their
 # `if:` conditions.
 #
 # Cache strategy: GitHub Actions caches are immutable per key and scoped to the
 # branch that saved them. Only caches saved on main are readable by every PR, so
-# every job uses its own `shared-key` (clippy, test and docs artefacts are not
-# interchangeable) and PR-only jobs never save (`save-if` main only). The
+# every job uses its own `shared-key` (clippy and test artefacts are not
+# interchangeable). The
 # `warm-test-cache` and `warm-clippy-cache` jobs on push-to-main are what keep
 # the PR test jobs and the dev-* clippy smoke warm.
 
@@ -35,7 +35,7 @@ on:
 # push-to-dev-X ref are distinct, so a dev-push smoke and a PR gate will run in
 # parallel when you push with an open PR - they have different scopes (smoke vs
 # full gate) and different notifications, so that is intentional, not duplicated
-# work. Main is excluded from cancellation so a docs deploy cannot be interrupted.
+# work. Main is excluded from cancellation so post-merge jobs cannot be interrupted.
 # The event name is part of the group so a manual Windows dispatch on a branch
 # does not cancel (or get cancelled by) a regular push run on the same branch.
 concurrency:
@@ -250,70 +250,6 @@ jobs:
       - name: Build check artefacts
         run: cargo check --all-targets --all-features
 
-  docs-validate:
-    name: Documentation (validate)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux dependencies
-        run: *linux_deps_install_cmd
-
-      # Restore-only: the main-scoped copy is saved by docs-deploy.
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ubuntu-docs
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Build documentation
-        run: cargo doc --no-deps --all-features
-        env:
-          RUSTDOCFLAGS: '-D warnings'
-
-  docs-deploy:
-    name: Documentation (deploy)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux dependencies
-        run: *linux_deps_install_cmd
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ubuntu-docs
-
-      - name: Build documentation
-        run: cargo doc --no-deps --all-features
-        env:
-          RUSTDOCFLAGS: '-D warnings'
-
-      - name: Deploy to GitHub Pages
-        env:
-          PAGES_DEPLOY_TOKEN: ${{ secrets.PAGES_DEPLOY_TOKEN }}
-        run: |
-          git clone https://x-access-token:${PAGES_DEPLOY_TOKEN}@github.com/fulgur-app/fulgur-app.github.io.git pages-repo
-          rm -rf pages-repo/fulgur
-          cp -r target/doc pages-repo/fulgur
-          cd pages-repo
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add fulgur/
-          git diff --cached --quiet || git commit -m "docs(fulgur): update from ${COMMIT_SHA:0:7}"
-          git push
-
   coverage:
     name: Coverage
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -360,11 +296,11 @@ jobs:
 
   # Aggregator job named "CI" so branch protection can require a single stable
   # status check instead of every individual job. Fails if any PR-gate job
-  # failed; allows "skipped" so dev-push (which skips test/docs-validate) still
+# failed; allows "skipped" so dev-push (which skips test) still
   # reports green.
   ci:
     name: CI
-    needs: [fmt, clippy, test, docs-validate]
+    needs: [fmt, clippy, test]
     # Excludes workflow_dispatch: manual Windows runs report through their own
     # job statuses (and the Telegram notification), not the branch-protection gate.
     if: ${{ always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))) }}
@@ -375,10 +311,9 @@ jobs:
           FMT: ${{ needs.fmt.result }}
           CLIPPY: ${{ needs.clippy.result }}
           TEST: ${{ needs.test.result }}
-          DOCS_VALIDATE: ${{ needs.docs-validate.result }}
         run: |
           failed=0
-          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "docs-validate:$DOCS_VALIDATE"; do
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST"; do
             name="${entry%%:*}"
             result="${entry#*:}"
             if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
@@ -392,7 +327,7 @@ jobs:
   # the per-job notification steps (two Telegram messages per PR) with one.
   notify:
     name: Telegram notification
-    needs: [fmt, clippy, test, warm-test-cache, warm-clippy-cache, docs-validate, docs-deploy, coverage]
+    needs: [fmt, clippy, test, warm-test-cache, warm-clippy-cache, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -406,14 +341,12 @@ jobs:
           TEST: ${{ needs.test.result }}
           WARM_TEST_CACHE: ${{ needs.warm-test-cache.result }}
           WARM_CLIPPY_CACHE: ${{ needs.warm-clippy-cache.result }}
-          DOCS_VALIDATE: ${{ needs.docs-validate.result }}
-          DOCS_DEPLOY: ${{ needs.docs-deploy.result }}
           COVERAGE: ${{ needs.coverage.result }}
           COVERAGE_PCT: ${{ needs.coverage.outputs.percentage }}
         run: |
           # Determine overall status: failure > cancelled > success.
           STATUS="success"
-          for result in "$FMT" "$CLIPPY" "$TEST" "$WARM_TEST_CACHE" "$WARM_CLIPPY_CACHE" "$DOCS_VALIDATE" "$DOCS_DEPLOY" "$COVERAGE"; do
+          for result in "$FMT" "$CLIPPY" "$TEST" "$WARM_TEST_CACHE" "$WARM_CLIPPY_CACHE" "$COVERAGE"; do
             if [ "$result" = "failure" ]; then
               STATUS="failure"
             elif [ "$result" = "cancelled" ] && [ "$STATUS" != "failure" ]; then
@@ -429,7 +362,7 @@ jobs:
 
           # Per-job summary line, omitting jobs that did not run.
           SUMMARY=""
-          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "warm-test-cache:$WARM_TEST_CACHE" "warm-clippy-cache:$WARM_CLIPPY_CACHE" "docs-validate:$DOCS_VALIDATE" "docs-deploy:$DOCS_DEPLOY" "coverage:$COVERAGE"; do
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "warm-test-cache:$WARM_TEST_CACHE" "warm-clippy-cache:$WARM_CLIPPY_CACHE" "coverage:$COVERAGE"; do
             name="${entry%%:*}"
             result="${entry#*:}"
             case "$result" in
@@ -452,17 +385,12 @@ jobs:
             TITLE="Fulgur CI - Build Failed"
           fi
 
-          # Main-only extras: coverage percentage and docs deployment URL.
+          # Main-only extra: coverage percentage.
           EXTRAS=""
           if [ -n "$COVERAGE_PCT" ]; then
             EXTRAS="${EXTRAS}
           Coverage: *${COVERAGE_PCT}%*"
           fi
-          if [ "$DOCS_DEPLOY" = "success" ]; then
-            EXTRAS="${EXTRAS}
-          Docs: https://fulgur-app.github.io/fulgur/"
-          fi
-
           COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
 
           MESSAGE="${ICON} *${TITLE}*
