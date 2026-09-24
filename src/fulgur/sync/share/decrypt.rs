@@ -2,7 +2,9 @@ use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::shared_state::SyncState;
 use crate::fulgur::sync::share;
+use crate::fulgur::ui::components_utils::format_local_datetime;
 use crate::fulgur::utils::crypto_helper::{self, load_private_key_from_keychain};
+use fulgur_common::api::shares::SharedFileResponse;
 use gpui_kit::SharedString;
 use gpui_kit::component::notification::NotificationType;
 use std::sync::Arc;
@@ -45,6 +47,27 @@ pub struct ShareRetryState {
 /// - `Duration`: `DECRYPT_RETRY_BASE_DELAY * 2^(attempts - 1)`.
 fn backoff_delay(attempts: u32) -> Duration {
     DECRYPT_RETRY_BASE_DELAY.saturating_mul(1u32 << (attempts.saturating_sub(1)).min(16))
+}
+
+/// Build the notification message announcing a successfully received shared file.
+///
+/// ### Arguments
+/// - `file_name`: The name of the received file.
+/// - `origin`: The sender and share date of the received file.
+///
+/// ### Returns
+/// - `String`: The message, e.g. `New file received: notes.txt from MacBook, shared on 2026-09-23 16:05:42`.
+fn share_received_message(file_name: &str, origin: &share::ShareOrigin) -> String {
+    let source_name = origin
+        .source_device_name
+        .as_deref()
+        .unwrap_or("an unknown device");
+    match origin.shared_at.and_then(format_local_datetime) {
+        Some(shared_on) => {
+            format!("New file received: {file_name} from {source_name}, shared on {shared_on}")
+        }
+        None => format!("New file received: {file_name} from {source_name}"),
+    }
 }
 
 /// Tallies collected during a single decryption pass, used to decide which
@@ -134,7 +157,7 @@ fn run_decryption_pass(profile: &ServerProfile, sync_state: &SyncState, http_age
     let profile_name = profile.name.as_str();
     let server_max_size = sync_state.max_file_size_bytes.load(Ordering::Acquire);
     let now = Instant::now();
-    let shared_files: Vec<fulgur_common::api::shares::SharedFileResponse> = {
+    let shared_files: Vec<SharedFileResponse> = {
         let mut pending = sync_state.pending_shared_files.lock();
         let retry_state = sync_state.share_retry_state.lock();
         let (due, deferred): (Vec<_>, Vec<_>) = std::mem::take(&mut *pending)
@@ -180,6 +203,7 @@ fn run_decryption_pass(profile: &ServerProfile, sync_state: &SyncState, http_age
                 match decoded {
                     Ok(content) => {
                         let origin = share::ShareOrigin::from_response(&shared_file, &content);
+                        let message = share_received_message(&shared_file.file_name, &origin);
                         sync_state
                             .pending_decrypted_files
                             .lock()
@@ -189,6 +213,8 @@ fn run_decryption_pass(profile: &ServerProfile, sync_state: &SyncState, http_age
                                 origin,
                             });
                         sync_state.share_retry_state.lock().remove(&shared_file.id);
+                        sync_state
+                            .notify(AppNotification::background(NotificationType::Info, message));
                         outcome.decrypted_count += 1;
                         decrypted_ids.push(shared_file.id.clone());
                         log::info!("Decrypted shared file: {}", shared_file.file_name);
@@ -269,10 +295,7 @@ fn run_decryption_pass(profile: &ServerProfile, sync_state: &SyncState, http_age
 /// ### Arguments
 /// - `sync_state`: The shared sync state holding the retry bookkeeping.
 /// - `shared_files`: The batch of shares deferred by the keychain failure.
-fn defer_batch_for_key_retry(
-    sync_state: &SyncState,
-    shared_files: &[fulgur_common::api::shares::SharedFileResponse],
-) {
+fn defer_batch_for_key_retry(sync_state: &SyncState, shared_files: &[SharedFileResponse]) {
     let next_retry_at = Instant::now() + KEY_RETRY_DELAY;
     let mut retry_state = sync_state.share_retry_state.lock();
     for share in shared_files {
@@ -377,5 +400,51 @@ impl DecryptionOutcome {
         } else if self.decrypted_count > 0 || self.retry_count == 0 {
             *sync_state.last_share_receive_error_signature.lock() = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::macros::datetime;
+
+    fn make_origin(source_device_name: Option<&str>) -> share::ShareOrigin {
+        share::ShareOrigin {
+            source_device_name: source_device_name.map(str::to_string),
+            shared_at: Some(datetime!(2026-09-23 14:05:42 UTC)),
+            size_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn test_share_received_message_includes_file_source_and_local_date() {
+        let origin = make_origin(Some("MacBook"));
+        let shared_on =
+            format_local_datetime(datetime!(2026-09-23 14:05:42 UTC)).expect("format share date");
+        assert_eq!(
+            share_received_message("notes.txt", &origin),
+            format!("New file received: notes.txt from MacBook, shared on {shared_on}")
+        );
+    }
+
+    #[test]
+    fn test_share_received_message_falls_back_when_source_name_is_unknown() {
+        let origin = make_origin(None);
+        assert!(
+            share_received_message("notes.txt", &origin)
+                .starts_with("New file received: notes.txt from an unknown device, shared on ")
+        );
+    }
+
+    #[test]
+    fn test_share_received_message_omits_missing_date() {
+        let origin = share::ShareOrigin {
+            shared_at: None,
+            ..make_origin(Some("MacBook"))
+        };
+        assert_eq!(
+            share_received_message("notes.txt", &origin),
+            "New file received: notes.txt from MacBook"
+        );
     }
 }
