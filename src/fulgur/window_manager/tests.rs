@@ -7,10 +7,11 @@ use crate::fulgur::{
     shared_state::SharedAppState,
     state::{StateDb, StateWriter},
 };
+use gpui_kit::base::actions::{Cancel, Confirm};
 use gpui_kit::component::{WindowExt, input::InputEvent, notification::NotificationType};
 use gpui_kit::{
-    AppContext, BorrowAppContext, Entity, Modifiers, SharedString, TestAppContext,
-    VisualTestContext, WindowId, WindowOptions,
+    Action, AnyWindowHandle, AppContext, BorrowAppContext, Entity, Modifiers, SharedString,
+    TestAppContext, VisualTestContext, WindowId, WindowOptions,
 };
 use parking_lot::Mutex;
 use std::{
@@ -804,6 +805,229 @@ fn test_quit_warns_for_large_dirty_file_in_other_window_and_cancel_aborts(cx: &m
             .expect("failed to inspect dirty window after cancellation");
         assert!(!has_dialog, "cancel should close the warning dialog");
     });
+}
+
+/// Replace the test state writer with one backed by a database file on disk.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context containing [`SharedAppState`]
+/// - `path`: Path of the database file, so a second connection can read it back
+fn install_file_backed_writer(cx: &mut TestAppContext, path: &Path) {
+    let db = StateDb::open(path).expect("open file-backed state database");
+    cx.update(|cx| {
+        cx.update_global::<SharedAppState, _>(|shared, _| {
+            shared.state_writer = Arc::new(StateWriter::new(Some(db)));
+        });
+    });
+}
+
+/// Locate an open test window by id.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context
+/// - `window_id`: The id of the window to find
+///
+/// ### Returns
+/// - `Option<AnyWindowHandle>`: The handle, or `None` once the window is closed
+fn find_window_handle(cx: &mut TestAppContext, window_id: WindowId) -> Option<AnyWindowHandle> {
+    cx.update(|cx| {
+        cx.windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)
+    })
+}
+
+/// Give every editor tab of a window unsaved content.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context
+/// - `window_id`: The window owning the tabs
+/// - `fulgur`: The `Fulgur` entity of that window
+/// - `text`: The unsaved text to type into each tab
+fn dirty_every_tab(
+    cx: &mut TestAppContext,
+    window_id: WindowId,
+    fulgur: &Entity<Fulgur>,
+    text: &'static str,
+) {
+    let handle = find_window_handle(cx, window_id).expect("test window should be open");
+    cx.update(|cx| {
+        handle
+            .update(cx, |_, window, cx| {
+                let contents: Vec<_> = fulgur
+                    .read(cx)
+                    .tabs
+                    .iter()
+                    .filter_map(|tab| Some(tab.read(cx).as_editor()?.content.clone()))
+                    .collect();
+                for content in contents {
+                    content.update(cx, |content, cx| {
+                        content.set_value(text, window, cx);
+                        cx.emit(InputEvent::Change);
+                    });
+                }
+            })
+            .expect("failed to dirty the window tabs");
+    });
+    cx.run_until_parked();
+}
+
+/// Whether a window currently shows a dialog.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context
+/// - `window_id`: The window to inspect
+///
+/// ### Returns
+/// - `bool`: `true` when the window has an active dialog
+fn window_has_dialog(cx: &mut TestAppContext, window_id: WindowId) -> bool {
+    let handle = find_window_handle(cx, window_id).expect("test window should be open");
+    cx.update(|cx| {
+        handle
+            .update(cx, |_, window, cx| window.has_active_dialog(cx))
+            .expect("failed to inspect the window dialog")
+    })
+}
+
+/// Dispatch a dialog action in a window, as its OK or Cancel button does, and
+/// let the result settle.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context
+/// - `window_id`: The window showing the dialog
+/// - `action`: The dialog action to dispatch
+fn dispatch_dialog_action(cx: &mut TestAppContext, window_id: WindowId, action: impl Action) {
+    let handle = find_window_handle(cx, window_id).expect("test window should be open");
+    {
+        let mut visual_cx = VisualTestContext::from_window(handle, cx);
+        visual_cx.run_until_parked();
+        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+        visual_cx.dispatch_action(action);
+    }
+    cx.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn test_closing_non_last_window_with_unsaved_tab_prompts_and_cancel_keeps_it(
+    cx: &mut TestAppContext,
+) {
+    setup_test_globals(cx);
+    let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
+    let (window_id_two, fulgur_two) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id_one, &fulgur_one);
+    register_window_in_global_manager(cx, window_id_two, &fulgur_two);
+    dirty_every_tab(cx, window_id_two, &fulgur_two, "unsaved notes");
+
+    assert!(
+        !invoke_window_close_requested(cx, window_id_two, &fulgur_two),
+        "a non-last window with unsaved tabs must not close without confirmation"
+    );
+    cx.run_until_parked();
+    assert!(
+        window_has_dialog(cx, window_id_two),
+        "the unsaved-changes prompt must be shown in the closing window"
+    );
+
+    dispatch_dialog_action(cx, window_id_two, Cancel);
+
+    assert!(
+        !window_has_dialog(cx, window_id_two),
+        "cancel should close the prompt"
+    );
+    cx.update(|cx| {
+        let manager = cx.global::<WindowManager>();
+        assert_eq!(manager.window_count(), 2, "cancel must abort the close");
+        let tab = fulgur_two
+            .read(cx)
+            .tabs
+            .first()
+            .expect("the dirty tab should remain")
+            .read(cx);
+        assert!(
+            tab.as_editor().is_some_and(|editor| editor.modified),
+            "cancel must keep the unsaved buffer"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn test_confirming_every_prompt_closes_window_and_drops_it_from_the_session(
+    cx: &mut TestAppContext,
+) {
+    setup_test_globals(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    let state_path = dir.path().join("state.db");
+    install_file_backed_writer(cx, &state_path);
+    let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
+    let (window_id_two, fulgur_two) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id_one, &fulgur_one);
+    register_window_in_global_manager(cx, window_id_two, &fulgur_two);
+    let handle_two = find_window_handle(cx, window_id_two).expect("second window");
+    cx.update(|cx| {
+        handle_two
+            .update(cx, |_, window, cx| {
+                fulgur_two.update(cx, |this, cx| this.new_tab(window, cx));
+            })
+            .expect("failed to add a second tab");
+    });
+    dirty_every_tab(cx, window_id_two, &fulgur_two, "unsaved notes");
+
+    assert!(!invoke_window_close_requested(
+        cx,
+        window_id_two,
+        &fulgur_two
+    ));
+    cx.run_until_parked();
+    dispatch_dialog_action(cx, window_id_two, Confirm { secondary: false });
+    assert!(
+        window_has_dialog(cx, window_id_two),
+        "the second unsaved tab must get its own prompt"
+    );
+    assert_eq!(
+        cx.update(|cx| cx.global::<WindowManager>().window_count()),
+        2,
+        "the window must stay open until every prompt is confirmed"
+    );
+    dispatch_dialog_action(cx, window_id_two, Confirm { secondary: false });
+
+    assert!(
+        find_window_handle(cx, window_id_two).is_none(),
+        "confirming every prompt must close the window"
+    );
+    let persistent_id_one = cx.update(|cx| fulgur_one.read(cx).persistent_window_id);
+    cx.update(|cx| {
+        assert_eq!(cx.global::<WindowManager>().window_count(), 1);
+    });
+    let persisted = StateDb::open(&state_path)
+        .expect("reopen the state database")
+        .load()
+        .expect("load the persisted session");
+    let persisted_ids: Vec<i64> = persisted.windows.iter().map(|w| w.window_id).collect();
+    assert_eq!(
+        persisted_ids,
+        vec![persistent_id_one],
+        "the closed window must not linger in the session database"
+    );
+}
+
+#[gpui_kit::test]
+fn test_closing_non_last_window_with_persistence_off_skips_the_prompt(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
+    let (window_id_two, fulgur_two) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id_one, &fulgur_one);
+    register_window_in_global_manager(cx, window_id_two, &fulgur_two);
+    cx.update(|cx| {
+        fulgur_two.update(cx, |this, _| {
+            this.settings.app_settings.persist_unsaved_buffers = false;
+        });
+    });
+    dirty_every_tab(cx, window_id_two, &fulgur_two, "unsaved notes");
+
+    assert!(
+        invoke_window_close_requested(cx, window_id_two, &fulgur_two),
+        "with persistence off, closing drops unsaved buffers without a prompt by design"
+    );
 }
 
 #[gpui_kit::test]

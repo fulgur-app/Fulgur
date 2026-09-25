@@ -32,6 +32,29 @@ impl Fulgur {
         Ok(())
     }
 
+    /// Save the state of every other window, dropping this one from the database.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Errors
+    /// - Returns an error if the state cannot be persisted (no state database
+    ///   available, or the transaction failed).
+    ///
+    /// ### Returns
+    /// - `Ok(())`: If the remaining windows were saved successfully
+    /// - `Err(anyhow::Error)`: If the state could not be saved
+    pub fn save_state_without_this_window(&self, cx: &App) -> anyhow::Result<()> {
+        log::debug!(
+            "Saving application state without window {:?}...",
+            self.window_id
+        );
+        let windows_state = self.collect_windows_state(cx, None);
+        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+        shared.state_writer.save_blocking(windows_state)?;
+        Ok(())
+    }
+
     /// Save the current app state to disk without blocking the UI thread.
     ///
     /// ### Arguments
@@ -53,15 +76,29 @@ impl Fulgur {
     /// ### Returns
     /// - `WindowsState`: The snapshot of all open windows
     fn build_windows_state(&self, cx: &App, window: &Window) -> WindowsState {
+        self.collect_windows_state(cx, Some(window))
+    }
+
+    /// Assemble a multi-window state snapshot, optionally leaving this window out.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    /// - `current_window`: This window, needed for its bounds; `None` omits it
+    ///
+    /// ### Returns
+    /// - `WindowsState`: The snapshot of the registered windows
+    fn collect_windows_state(&self, cx: &App, current_window: Option<&Window>) -> WindowsState {
         let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
         let mut windows_state = WindowsState { windows: vec![] };
         let current_window_id = self.window_id;
         let all_window_ids = window_manager.get_all_window_ids();
         for window_id in &all_window_ids {
             if *window_id == current_window_id {
-                windows_state
-                    .windows
-                    .push(self.build_window_state(cx, window));
+                if let Some(window) = current_window {
+                    windows_state
+                        .windows
+                        .push(self.build_window_state(cx, window));
+                }
             } else if let Some(weak_entity) = window_manager.get_window(*window_id)
                 && let Some(entity) = weak_entity.upgrade()
             {
