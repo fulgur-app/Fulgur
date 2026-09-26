@@ -182,12 +182,14 @@ pub fn list_remote_directory(
     Ok(entries)
 }
 
-/// Write bytes to a remote file via SFTP using an atomic temp-then-rename approach.
+/// Write bytes to a remote file via SFTP using a temp-then-rename approach.
 ///
 /// ### Description
-/// Writes to a `.fulgur.tmp.{pid}.{nanos}` sibling then renames it over the destination
-/// atomically, mirroring the local `atomic_write_file` pattern. A partial write therefore
-/// never corrupts the original. The temp file is removed on any failure (best-effort).
+/// Writes to a `.fulgur.tmp.{pid}.{nanos}` sibling, then moves it over the destination with
+/// `replace_with_temp`, which keeps a complete copy of either the original or the new content
+/// on the server at every step. A partial write therefore never corrupts the original. The
+/// non-atomic truncating write is used only when the temp file cannot be created or when the
+/// server refuses every rename.
 ///
 /// ### Arguments
 /// - `session`: Established SSH session with SFTP subsystem.
@@ -230,30 +232,41 @@ pub fn write_remote_file(
         .subsec_nanos();
 
     let tmp_str = format!("{resolved}.fulgur.tmp.{pid}.{nanos}");
+    let backup_str = format!("{resolved}.fulgur.bak.{pid}.{nanos}");
     let tmp_path = Path::new(&tmp_str);
+    let backup_path = Path::new(&backup_str);
     let dest_path = Path::new(&resolved);
 
-    let write_result: Result<(), SshError> = (|| {
-        let mut tmp = session
-            .sftp
-            .open_mode(
-                tmp_path,
-                OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE,
-                dest_mode.cast_signed(),
-                OpenType::File,
-            )
-            .map_err(|e| SshError::SftpError(format!("Cannot create temp file {tmp_str}: {e}")))?;
+    let mut tmp = match session.sftp.open_mode(
+        tmp_path,
+        OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE,
+        dest_mode.cast_signed(),
+        OpenType::File,
+    ) {
+        Ok(tmp) => tmp,
+        Err(create_err) => {
+            log::warn!(
+                "Cannot create temp file {tmp_str} ({create_err}); trying direct write fallback (non-atomic)"
+            );
+            return session
+                .sftp
+                .write_truncating(dest_path, data, dest_mode)
+                .map_err(|write_err| {
+                    SshError::SftpError(format!(
+                        "Cannot create temp file {tmp_str}: {create_err}; direct write to {resolved} failed: {write_err}"
+                    ))
+                });
+        }
+    };
 
-        tmp.write_all(data)
-            .map_err(|e| SshError::SftpError(format!("Write error on {tmp_str}: {e}")))?;
-
-        Ok(())
-    })();
-
-    if write_result.is_err() {
+    if let Err(e) = tmp.write_all(data) {
+        drop(tmp);
         let _ = session.sftp.unlink(tmp_path);
-        return write_result;
+        return Err(SshError::SftpError(format!(
+            "Write error on {tmp_str}: {e}"
+        )));
     }
+    drop(tmp);
 
     // Enforce the exact mode regardless of the remote umask applied at creation.
     let _ = session.sftp.setstat(
@@ -268,96 +281,159 @@ pub fn write_remote_file(
         },
     );
 
-    let rename_result =
-        rename_with_fallback(session, tmp_path, dest_path, &resolved, data, dest_mode)
-            .map_err(|e| SshError::SftpError(format!("Rename failed for {resolved}: {e}")));
-
-    let _ = session.sftp.unlink(tmp_path);
-
-    rename_result
+    replace_with_temp(
+        &session.sftp,
+        tmp_path,
+        dest_path,
+        backup_path,
+        data,
+        dest_mode,
+    )
+    .map_err(|e| SshError::SftpError(format!("Cannot replace {resolved}: {e}")))
 }
 
-/// Try to rename a temporary file over the destination with progressively more compatible modes.
-///
-/// ### Arguments
-/// - `session`: Established SSH session with SFTP subsystem.
-/// - `tmp_path`: Temporary file path containing fully written bytes.
-/// - `dest_path`: Final destination path.
-/// - `remote_path`: Destination path string for logging and error messages.
-/// - `data`: File contents used by the direct-write fallback.
-/// - `mode`: Permission bits to apply when the direct-write fallback creates the file.
-///
-/// ### Returns
-/// - `Ok(())`: Rename succeeded, or compatibility fallback direct-write succeeded.
-/// - `Err(String)`: All rename attempts and fallback write failed.
-fn rename_with_fallback(
-    session: &SshSession,
-    tmp_path: &Path,
-    dest_path: &Path,
-    remote_path: &str,
-    data: &[u8],
-    mode: u32,
-) -> Result<(), String> {
-    let attempts = [
-        (
-            "overwrite+atomic",
-            Some(RenameFlags::OVERWRITE | RenameFlags::ATOMIC),
-        ),
-        ("overwrite", Some(RenameFlags::OVERWRITE)),
-        ("default", None),
-    ];
+/// The SFTP primitives needed to move a fully written temp file over a destination.
+trait RemoteReplaceOps {
+    /// Rename `src` to `dst`, asking the server to overwrite `dst` atomically.
+    ///
+    /// ### Description
+    /// The overwrite request is only honoured by SFTP v5+ servers. SFTP v3 servers (OpenSSH)
+    /// ignore it and fail when `dst` already exists.
+    ///
+    /// ### Arguments
+    /// - `src`: Existing path to move.
+    /// - `dst`: New path.
+    ///
+    /// ### Returns
+    /// - `Ok(())`: `src` now lives at `dst`.
+    /// - `Err(String)`: The server refused or failed the rename.
+    fn rename(&self, src: &Path, dst: &Path) -> Result<(), String>;
 
-    let mut last_err = String::new();
-    for (label, flags) in attempts {
-        match session.sftp.rename(tmp_path, dest_path, flags) {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                last_err = format!("{label}: {e}");
-                log::warn!("SFTP rename mode '{label}' failed for {remote_path}: {e}");
-            }
-        }
+    /// Delete a remote file.
+    ///
+    /// ### Arguments
+    /// - `path`: File to delete.
+    ///
+    /// ### Returns
+    /// - `Ok(())`: File deleted.
+    /// - `Err(String)`: Deletion failed.
+    fn unlink(&self, path: &Path) -> Result<(), String>;
+
+    /// Write `data` to `path` in place, truncating any existing content (non-atomic).
+    ///
+    /// ### Arguments
+    /// - `path`: Destination file, created with `mode` when missing.
+    /// - `data`: File contents to write.
+    /// - `mode`: Permission bits applied when the file is created.
+    ///
+    /// ### Returns
+    /// - `Ok(())`: Write succeeded.
+    /// - `Err(String)`: Open or write failed, possibly leaving `path` truncated.
+    fn write_truncating(&self, path: &Path, data: &[u8], mode: u32) -> Result<(), String>;
+}
+
+impl RemoteReplaceOps for ssh2::Sftp {
+    fn rename(&self, src: &Path, dst: &Path) -> Result<(), String> {
+        ssh2::Sftp::rename(
+            self,
+            src,
+            dst,
+            Some(RenameFlags::OVERWRITE | RenameFlags::ATOMIC),
+        )
+        .map_err(|e| e.to_string())
     }
 
-    log::warn!(
-        "All SFTP rename modes failed for {remote_path}; trying direct write fallback (non-atomic)"
-    );
-    direct_write_fallback(session, dest_path, remote_path, data, mode)
-        .map_err(|fallback_err| format!("{last_err}; fallback direct write failed: {fallback_err}"))
+    fn unlink(&self, path: &Path) -> Result<(), String> {
+        ssh2::Sftp::unlink(self, path).map_err(|e| e.to_string())
+    }
+
+    fn write_truncating(&self, path: &Path, data: &[u8], mode: u32) -> Result<(), String> {
+        let mut file = self
+            .open_mode(
+                path,
+                OpenFlags::WRITE | OpenFlags::TRUNCATE | OpenFlags::CREATE,
+                mode.cast_signed(),
+                OpenType::File,
+            )
+            .map_err(|e| format!("cannot open {} for direct write: {e}", path.display()))?;
+        file.write_all(data)
+            .map_err(|e| format!("write error on {}: {e}", path.display()))
+    }
 }
 
-/// Write file contents directly to the destination path when server-side rename is unsupported.
+/// Move a fully written temp file over the destination without ever losing a complete copy.
 ///
 /// ### Description
-/// This compatibility fallback is non-atomic and is only used when all rename modes fail.
+/// Tries an overwriting rename first, which succeeds on SFTP v5+ servers and whenever the
+/// destination does not exist yet. Otherwise (SFTP v3, e.g. OpenSSH) the original is moved
+/// aside to `backup_path`, the temp file is moved into place, and the backup is deleted. If
+/// moving the temp file into place fails, the original is restored from the backup. When the
+/// server refuses every rename, the destination is written in place as a last resort, and the
+/// temp file is kept unless that write succeeds.
 ///
 /// ### Arguments
-/// - `session`: Established SSH session with SFTP subsystem.
+/// - `ops`: SFTP primitives used to rename, delete, and write.
+/// - `tmp_path`: Temporary file holding the complete new content.
 /// - `dest_path`: Final destination path.
-/// - `remote_path`: Destination path string for error messages.
-/// - `data`: File contents to write.
-/// - `mode`: Permission bits applied when the destination is created.
+/// - `backup_path`: Unused sibling path that receives the original while swapping.
+/// - `data`: New content, used only by the direct-write fallback.
+/// - `mode`: Permission bits applied if the direct-write fallback creates the file.
 ///
 /// ### Returns
-/// - `Ok(())`: Direct write succeeded.
-/// - `Err(String)`: Destination open or write failed.
-fn direct_write_fallback(
-    session: &SshSession,
+/// - `Ok(())`: The destination holds the new content and no temp or backup file is left.
+/// - `Err(String)`: The replacement failed. The message names any temp or backup file left
+///   behind because it holds the only complete copy of the new or original content.
+fn replace_with_temp(
+    ops: &impl RemoteReplaceOps,
+    tmp_path: &Path,
     dest_path: &Path,
-    remote_path: &str,
+    backup_path: &Path,
     data: &[u8],
     mode: u32,
 ) -> Result<(), String> {
-    let mut dest = session
-        .sftp
-        .open_mode(
-            dest_path,
-            OpenFlags::WRITE | OpenFlags::TRUNCATE | OpenFlags::CREATE,
-            mode.cast_signed(),
-            OpenType::File,
-        )
-        .map_err(|e| format!("cannot open destination for direct write: {e}"))?;
-    dest.write_all(data)
-        .map_err(|e| format!("write error during fallback for {remote_path}: {e}"))
+    let Err(overwrite_err) = ops.rename(tmp_path, dest_path) else {
+        return Ok(());
+    };
+    log::debug!(
+        "Overwriting rename to {} failed ({overwrite_err}); swapping through backup {}",
+        dest_path.display(),
+        backup_path.display()
+    );
+
+    if let Err(aside_err) = ops.rename(dest_path, backup_path) {
+        log::warn!(
+            "SFTP server refused to rename {} ({aside_err}); trying direct write fallback (non-atomic)",
+            dest_path.display()
+        );
+        return match ops.write_truncating(dest_path, data, mode) {
+            Ok(()) => {
+                let _ = ops.unlink(tmp_path);
+                Ok(())
+            }
+            Err(write_err) => Err(format!(
+                "rename refused ({aside_err}); direct write failed ({write_err}); new content kept in {}",
+                tmp_path.display()
+            )),
+        };
+    }
+
+    match ops.rename(tmp_path, dest_path) {
+        Ok(()) => {
+            let _ = ops.unlink(backup_path);
+            Ok(())
+        }
+        Err(swap_err) => match ops.rename(backup_path, dest_path) {
+            Ok(()) => {
+                let _ = ops.unlink(tmp_path);
+                Err(format!("cannot move temp file into place: {swap_err}"))
+            }
+            Err(restore_err) => Err(format!(
+                "cannot move temp file into place ({swap_err}) nor restore the original ({restore_err}); original kept in {}, new content kept in {}",
+                backup_path.display(),
+                tmp_path.display()
+            )),
+        },
+    }
 }
 
 /// Normalize remote paths to forward-slash absolute form.
@@ -421,7 +497,200 @@ fn join_remote_path(directory: &str, name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{REMOTE_ROOT_PATH, parent_remote_path};
+    use super::{REMOTE_ROOT_PATH, RemoteReplaceOps, parent_remote_path, replace_with_temp};
+    use std::cell::{Cell, RefCell};
+    use std::collections::{HashMap, HashSet};
+    use std::path::{Path, PathBuf};
+
+    const DEST: &str = "/srv/app/config.toml";
+    const TMP: &str = "/srv/app/config.toml.fulgur.tmp.1.2";
+    const BACKUP: &str = "/srv/app/config.toml.fulgur.bak.1.2";
+    const ORIGINAL: &[u8] = b"original";
+    const UPDATED: &[u8] = b"updated";
+
+    /// In-memory remote filesystem whose renames follow SFTP v3 (OpenSSH) semantics:
+    /// renaming onto an existing path always fails, whatever flags are requested.
+    #[derive(Default)]
+    struct SftpV3Mock {
+        files: RefCell<HashMap<PathBuf, Vec<u8>>>,
+        refused_renames: HashSet<(PathBuf, PathBuf)>,
+        refuse_all_renames: bool,
+        fail_truncating_writes: bool,
+        truncating_writes: Cell<usize>,
+    }
+
+    impl SftpV3Mock {
+        /// Build a mock holding the original destination and the fully written temp file.
+        ///
+        /// ### Returns
+        /// - `SftpV3Mock`: Mock with `DEST` and `TMP` present and no failure injected.
+        fn with_dest_and_tmp() -> Self {
+            let mock = Self::default();
+            mock.files
+                .borrow_mut()
+                .insert(PathBuf::from(DEST), ORIGINAL.to_vec());
+            mock.files
+                .borrow_mut()
+                .insert(PathBuf::from(TMP), UPDATED.to_vec());
+            mock
+        }
+
+        /// Make the server refuse one specific rename.
+        ///
+        /// ### Arguments
+        /// - `src`: Source path of the refused rename.
+        /// - `dst`: Destination path of the refused rename.
+        ///
+        /// ### Returns
+        /// - `SftpV3Mock`: The mock with the rename refused.
+        fn refusing(mut self, src: &str, dst: &str) -> Self {
+            self.refused_renames
+                .insert((PathBuf::from(src), PathBuf::from(dst)));
+            self
+        }
+
+        /// Read the content currently stored at `path`.
+        ///
+        /// ### Arguments
+        /// - `path`: Remote path to read.
+        ///
+        /// ### Returns
+        /// - `Some(Vec<u8>)`: Content of the file.
+        /// - `None`: The file does not exist.
+        fn content(&self, path: &str) -> Option<Vec<u8>> {
+            self.files.borrow().get(Path::new(path)).cloned()
+        }
+    }
+
+    impl RemoteReplaceOps for SftpV3Mock {
+        fn rename(&self, src: &Path, dst: &Path) -> Result<(), String> {
+            let refused = self
+                .refused_renames
+                .contains(&(src.to_path_buf(), dst.to_path_buf()));
+            let mut files = self.files.borrow_mut();
+            if self.refuse_all_renames || refused || files.contains_key(dst) {
+                return Err("SFTP(4) failure".to_string());
+            }
+            let content = files.remove(src).ok_or("SFTP(2) no such file")?;
+            files.insert(dst.to_path_buf(), content);
+            Ok(())
+        }
+
+        fn unlink(&self, path: &Path) -> Result<(), String> {
+            self.files
+                .borrow_mut()
+                .remove(path)
+                .map(|_| ())
+                .ok_or_else(|| "SFTP(2) no such file".to_string())
+        }
+
+        fn write_truncating(&self, path: &Path, data: &[u8], _mode: u32) -> Result<(), String> {
+            self.truncating_writes.set(self.truncating_writes.get() + 1);
+            let mut files = self.files.borrow_mut();
+            if self.fail_truncating_writes {
+                files.insert(path.to_path_buf(), Vec::new());
+                return Err("connection dropped".to_string());
+            }
+            files.insert(path.to_path_buf(), data.to_vec());
+            Ok(())
+        }
+    }
+
+    /// Run `replace_with_temp` against the mock with the shared test paths.
+    ///
+    /// ### Arguments
+    /// - `mock`: Mock remote filesystem to operate on.
+    ///
+    /// ### Returns
+    /// - `Result<(), String>`: The result of `replace_with_temp`.
+    fn replace(mock: &SftpV3Mock) -> Result<(), String> {
+        replace_with_temp(
+            mock,
+            Path::new(TMP),
+            Path::new(DEST),
+            Path::new(BACKUP),
+            UPDATED,
+            0o644,
+        )
+    }
+
+    #[test]
+    fn replace_existing_destination_on_v3_swaps_without_truncating() {
+        let mock = SftpV3Mock::with_dest_and_tmp();
+
+        replace(&mock).expect("replace should succeed");
+
+        assert_eq!(mock.content(DEST).as_deref(), Some(UPDATED));
+        assert_eq!(mock.content(TMP), None);
+        assert_eq!(mock.content(BACKUP), None);
+        assert_eq!(mock.truncating_writes.get(), 0);
+    }
+
+    #[test]
+    fn replace_missing_destination_renames_directly() {
+        let mock = SftpV3Mock::with_dest_and_tmp();
+        mock.files.borrow_mut().remove(Path::new(DEST));
+
+        replace(&mock).expect("replace should succeed");
+
+        assert_eq!(mock.content(DEST).as_deref(), Some(UPDATED));
+        assert_eq!(mock.content(TMP), None);
+        assert_eq!(mock.truncating_writes.get(), 0);
+    }
+
+    #[test]
+    fn replace_restores_original_when_temp_cannot_move_into_place() {
+        let mock = SftpV3Mock::with_dest_and_tmp().refusing(TMP, DEST);
+
+        assert!(replace(&mock).is_err());
+
+        assert_eq!(mock.content(DEST).as_deref(), Some(ORIGINAL));
+        assert_eq!(mock.content(BACKUP), None);
+        assert_eq!(mock.content(TMP), None);
+        assert_eq!(mock.truncating_writes.get(), 0);
+    }
+
+    #[test]
+    fn replace_keeps_backup_and_temp_when_restore_fails() {
+        let mock = SftpV3Mock::with_dest_and_tmp()
+            .refusing(TMP, DEST)
+            .refusing(BACKUP, DEST);
+
+        let err = replace(&mock).expect_err("replace should fail");
+
+        assert_eq!(mock.content(BACKUP).as_deref(), Some(ORIGINAL));
+        assert_eq!(mock.content(TMP).as_deref(), Some(UPDATED));
+        assert!(err.contains(BACKUP) && err.contains(TMP));
+        assert_eq!(mock.truncating_writes.get(), 0);
+    }
+
+    #[test]
+    fn replace_falls_back_to_direct_write_when_server_refuses_renames() {
+        let mock = SftpV3Mock {
+            refuse_all_renames: true,
+            ..SftpV3Mock::with_dest_and_tmp()
+        };
+
+        replace(&mock).expect("direct write fallback should succeed");
+
+        assert_eq!(mock.content(DEST).as_deref(), Some(UPDATED));
+        assert_eq!(mock.content(TMP), None);
+        assert_eq!(mock.truncating_writes.get(), 1);
+    }
+
+    #[test]
+    fn replace_keeps_temp_when_direct_write_fallback_fails() {
+        let mock = SftpV3Mock {
+            refuse_all_renames: true,
+            fail_truncating_writes: true,
+            ..SftpV3Mock::with_dest_and_tmp()
+        };
+
+        let err = replace(&mock).expect_err("replace should fail");
+
+        assert_eq!(mock.content(TMP).as_deref(), Some(UPDATED));
+        assert!(err.contains(TMP));
+    }
 
     #[test]
     fn parent_remote_path_of_root_is_root() {
