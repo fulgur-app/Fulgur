@@ -11,6 +11,7 @@ use crate::fulgur::{
 use gpui_kit::{App, Context, Window};
 use std::fs;
 use std::io::Read;
+use std::path::PathBuf;
 
 impl Fulgur {
     /// Restore tabs from the startup snapshot slot of this window
@@ -43,13 +44,17 @@ impl Fulgur {
             // deleting and reinserting every buffer under a fresh identity.
             let mut highest_tab_id = 0;
             let mut saved_active_editor_id = None;
+            let mut changed_on_disk_tabs = Vec::new();
             let active_tab_index = window_state.active_tab_index;
             for (saved_index, tab_state) in window_state.tabs.into_iter().enumerate() {
                 let tab_id = TabId(tab_state.tab_id);
                 let tab = self.restore_tab_from_state(tab_state, tab_id, window, cx);
-                if let Some(editor_tab) = tab {
+                if let Some((editor_tab, changed_on_disk)) = tab {
                     if active_tab_index == Some(saved_index) {
                         saved_active_editor_id = Some(editor_tab.id);
+                    }
+                    if changed_on_disk && let Some(path) = editor_tab.file_path() {
+                        changed_on_disk_tabs.push((editor_tab.id, path.clone()));
                     }
                     self.tabs.push(Tab::Editor(editor_tab).into_entity(cx));
                     highest_tab_id = highest_tab_id.max(tab_id.0);
@@ -57,6 +62,7 @@ impl Fulgur {
             }
             self.next_tab_id = TabId(highest_tab_id.saturating_add(1));
             self.insert_preview_tabs_for_markdown(cx);
+            self.queue_restore_conflicts(changed_on_disk_tabs, cx);
             self.active_tab_id =
                 saved_active_editor_id.or_else(|| self.tabs.first().map(|t| t.read(cx).id()));
 
@@ -96,10 +102,31 @@ impl Fulgur {
         }
     }
 
+    /// Queue a file conflict for every restored tab whose file changed on disk
+    /// after its unsaved edits were persisted.
+    ///
+    /// ### Arguments
+    /// - `changed_on_disk_tabs`: The restored tab ids with their file paths
+    /// - `cx`: The application context
+    fn queue_restore_conflicts(&mut self, changed_on_disk_tabs: Vec<(TabId, PathBuf)>, cx: &App) {
+        for (tab_id, path) in changed_on_disk_tabs {
+            let Some(tab_index) = self.tab_index_of(tab_id, cx) else {
+                continue;
+            };
+            log::warn!(
+                "{} changed on disk after its unsaved edits were persisted, keeping the edits and raising a conflict",
+                path.display()
+            );
+            self.file_watch_state
+                .pending_conflicts
+                .insert(path, tab_index);
+        }
+    }
+
     /// Restore a single tab from saved state:
     ///
-    /// - If a file exists, it will be loaded from the file.
-    /// - If a file exists and was modified but unsaved in the last state save and not modified after externally, it'll be loaded from the saved state
+    /// - If the tab has no unsaved content and its file exists, it will be loaded from the file.
+    /// - If the tab has unsaved content and its file exists, the saved content is restored as modified. When the file changed on disk after the save, the tab is flagged so a conflict is raised.
     /// - If a file does not exist, the saved content will be used.
     /// - If no path and no content is provided, the tab will be skipped.
     ///
@@ -110,7 +137,7 @@ impl Fulgur {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some(EditorTab)`: The restored tab
+    /// - `Some((EditorTab, bool))`: The restored tab, and whether its file changed on disk after its unsaved edits were persisted
     /// - `None`: If the tab could not be restored
     fn restore_tab_from_state(
         &mut self,
@@ -118,7 +145,7 @@ impl Fulgur {
         tab_id: TabId,
         window: &mut Window,
         cx: &mut App,
-    ) -> Option<EditorTab> {
+    ) -> Option<(EditorTab, bool)> {
         log::debug!("Restoring tab: {}", tab_state.title);
 
         let color_tag = tab_state.color_tag.as_deref().and_then(ColorTag::from_key);
@@ -141,6 +168,7 @@ impl Fulgur {
             file_modified_time,
             can_read_file,
         );
+        let mut changed_on_disk = false;
         let (content, path, encoding, is_modified, lossy_decode) = match decision {
             TabRestoreDecision::RestoreRemote { remote, content } => {
                 let is_modified = content.is_some();
@@ -163,7 +191,7 @@ impl Fulgur {
                 }
                 tab.color_tag = color_tag;
                 self.pending_remote_restore.insert(tab_id);
-                return Some(tab);
+                return Some((tab, false));
             }
             TabRestoreDecision::LoadFromFile { path } => {
                 let mut bytes = Vec::new();
@@ -178,7 +206,12 @@ impl Fulgur {
                     decoded.lossy,
                 )
             }
-            TabRestoreDecision::UseSavedContentWithPath { path, content } => {
+            TabRestoreDecision::UseSavedContentWithPath {
+                path,
+                content,
+                changed_on_disk: file_changed,
+            } => {
+                changed_on_disk = file_changed;
                 (content, Some(path), UTF_8.to_string(), true, false)
             }
             TabRestoreDecision::UseSavedContentNoPath { content } => {
@@ -222,6 +255,6 @@ impl Fulgur {
             tab.log_view = true;
         }
         tab.color_tag = color_tag;
-        Some(tab)
+        Some((tab, changed_on_disk))
     }
 }

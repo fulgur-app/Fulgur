@@ -68,7 +68,7 @@ fn past() -> String {
 
 #[test]
 fn test_restore_modified_file_newer_than_saved() {
-    // File was modified externally after we saved - should load from file
+    // File was modified externally after we saved - keep the edits and flag a conflict
     let decision = determine_tab_restore_strategy(
         Some(test_path()),
         Some(test_content()),
@@ -79,7 +79,11 @@ fn test_restore_modified_file_newer_than_saved() {
     );
     assert_eq!(
         decision,
-        TabRestoreDecision::LoadFromFile { path: test_path() }
+        TabRestoreDecision::UseSavedContentWithPath {
+            path: test_path(),
+            content: test_content(),
+            changed_on_disk: true,
+        }
     );
 }
 
@@ -98,7 +102,8 @@ fn test_restore_modified_file_older_than_saved() {
         decision,
         TabRestoreDecision::UseSavedContentWithPath {
             path: test_path(),
-            content: test_content()
+            content: test_content(),
+            changed_on_disk: false,
         }
     );
 }
@@ -118,7 +123,8 @@ fn test_restore_modified_file_newer_but_cannot_read() {
         decision,
         TabRestoreDecision::UseSavedContentWithPath {
             path: test_path(),
-            content: test_content()
+            content: test_content(),
+            changed_on_disk: false,
         }
     );
 }
@@ -138,7 +144,8 @@ fn test_restore_modified_file_no_timestamp_info() {
         decision,
         TabRestoreDecision::UseSavedContentWithPath {
             path: test_path(),
-            content: test_content()
+            content: test_content(),
+            changed_on_disk: false,
         }
     );
 }
@@ -158,7 +165,8 @@ fn test_restore_modified_file_has_saved_time_but_no_file_time() {
         decision,
         TabRestoreDecision::UseSavedContentWithPath {
             path: test_path(),
-            content: test_content()
+            content: test_content(),
+            changed_on_disk: false,
         }
     );
 }
@@ -178,7 +186,8 @@ fn test_restore_modified_file_has_file_time_but_no_saved_time() {
         decision,
         TabRestoreDecision::UseSavedContentWithPath {
             path: test_path(),
-            content: test_content()
+            content: test_content(),
+            changed_on_disk: false,
         }
     );
 }
@@ -295,14 +304,15 @@ fn test_restore_file_same_timestamp_as_saved() {
         decision,
         TabRestoreDecision::UseSavedContentWithPath {
             path: test_path(),
-            content: test_content()
+            content: test_content(),
+            changed_on_disk: false,
         }
     );
 }
 
 #[test]
 fn test_restore_file_second_newer() {
-    // File is 1 second newer - should detect as newer and load from file
+    // File is 1 second newer - should detect as newer and flag a conflict
     let saved_time = "2024-01-15T12:00:00Z".to_string();
     let file_time = "2024-01-15T12:00:01Z".to_string(); // 1 second later
     let decision = determine_tab_restore_strategy(
@@ -315,7 +325,11 @@ fn test_restore_file_second_newer() {
     );
     assert_eq!(
         decision,
-        TabRestoreDecision::LoadFromFile { path: test_path() }
+        TabRestoreDecision::UseSavedContentWithPath {
+            path: test_path(),
+            content: test_content(),
+            changed_on_disk: true,
+        }
     );
 }
 
