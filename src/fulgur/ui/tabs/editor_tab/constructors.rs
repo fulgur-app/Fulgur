@@ -95,25 +95,58 @@ impl EditorTab {
         cx: &mut App,
         settings: &EditorSettings,
     ) -> Self {
-        let language = language_from_content(&file_name, contents);
+        Self::from_unsaved_content(
+            id,
+            contents.to_string(),
+            file_name,
+            TabLocation::Shared(origin),
+            window,
+            cx,
+            settings,
+        )
+    }
+
+    /// Create a modified tab whose content has never been saved to a file.
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the tab
+    /// - `contents`: The unsaved contents of the tab
+    /// - `title`: The title of the tab, also used to detect the language
+    /// - `location`: Where the content comes from (untitled buffer or received share)
+    /// - `window`: The window to create the tab in
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
+    ///
+    /// ### Returns
+    /// - `EditorTab`: The new tab
+    pub fn from_unsaved_content(
+        id: TabId,
+        contents: String,
+        title: String,
+        location: TabLocation,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) -> Self {
+        let language = language_from_content(&title, &contents);
         let large_file = super::is_large_file(contents.len());
-        let (csv_view_mode, csv_delimiter) = initial_csv_state(language, contents);
+        let (csv_view_mode, csv_delimiter) = initial_csv_state(language, &contents);
         let (original_content_hash, original_content_len) = super::content_fingerprint_from_str("");
         let content = cx.new(|cx| {
             super::make_input_state(
                 window,
                 cx,
                 language_registry_name(&language),
-                Some(contents.to_string()),
+                Some(contents),
                 settings,
                 large_file,
             )
         });
         Self {
             id,
-            title: file_name.into(),
+            title: title.into(),
             content,
-            location: TabLocation::Shared(origin),
+            location,
             modified: true,
             original_content_hash,
             original_content_len,

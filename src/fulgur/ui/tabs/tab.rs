@@ -134,33 +134,31 @@ impl Tab {
             return;
         };
         let content = editor_tab.content.clone();
-        editor_tab.content_subscription = Some(cx.subscribe(
-            &content,
-            |this: &mut Tab, _, event: &InputEvent, cx| {
-                if !matches!(event, InputEvent::Change) {
+        let subscription = cx.subscribe(&content, |this: &mut Tab, _, event: &InputEvent, cx| {
+            if !matches!(event, InputEvent::Change) {
+                return;
+            }
+            if let Tab::Editor(editor_tab) = this {
+                // In log view the tail task owns the buffer and advances the
+                // saved baseline itself; the user cannot edit a read-only buffer.
+                if editor_tab.log_view {
                     return;
                 }
-                if let Tab::Editor(editor_tab) = this {
-                    // In log view the tail task owns the buffer and advances the
-                    // saved baseline itself; the user cannot edit a read-only buffer.
-                    if editor_tab.log_view {
-                        return;
-                    }
-                    if editor_tab.large_file {
-                        if !editor_tab.modified {
-                            editor_tab.modified = true;
-                            cx.notify();
-                        }
-                        return;
-                    }
-                    let old_modified = editor_tab.modified;
-                    editor_tab.check_modified(cx);
-                    if editor_tab.modified != old_modified {
+                if editor_tab.large_file {
+                    if !editor_tab.modified {
+                        editor_tab.modified = true;
                         cx.notify();
                     }
+                    return;
                 }
-            },
-        ));
+                let old_modified = editor_tab.modified;
+                editor_tab.check_modified(cx);
+                if editor_tab.modified != old_modified {
+                    cx.notify();
+                }
+            }
+        });
+        editor_tab.set_content_subscription(subscription);
     }
 
     /// Update the editor's display settings

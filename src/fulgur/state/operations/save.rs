@@ -784,4 +784,45 @@ mod tests {
         assert_recovery_content(&snapshot.tabs[0], "# received");
         assert_eq!(snapshot.tabs[0].share.as_ref(), Some(&origin));
     }
+
+    #[gpui_kit::test]
+    fn restored_untitled_tab_installs_color_provider(cx: &mut TestAppContext) {
+        let restored = TabState {
+            tab_id: 11,
+            title: UNTITLED.to_string(),
+            file_path: None,
+            content: Some(TabContent::from("#B2C299")),
+            last_saved: None,
+            remote: None,
+            log_view: false,
+            color_tag: None,
+            share: None,
+        };
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(restored));
+
+        let (highlight_colors_setting, has_color_provider) =
+            fulgur.read_with(&visual_cx, |this, cx| {
+                let editor_tab = this
+                    .tabs
+                    .first()
+                    .and_then(|tab| tab.read(cx).as_editor())
+                    .expect("expected a restored editor tab");
+                (
+                    this.settings.editor_settings.highlight_colors,
+                    editor_tab
+                        .content
+                        .read(cx)
+                        .lsp()
+                        .document_color_provider
+                        .is_some(),
+                )
+            });
+        assert!(highlight_colors_setting);
+        assert!(
+            has_color_provider,
+            "a restored unsaved buffer must get the same color provider as a new tab"
+        );
+    }
 }
