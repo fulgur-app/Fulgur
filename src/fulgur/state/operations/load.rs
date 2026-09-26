@@ -4,15 +4,11 @@ use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
     files::file_operations::{RemoteFileResult, detect_encoding_and_decode},
-    languages::supported_languages::{
-        SupportedLanguage, language_from_content, language_registry_name,
-    },
     tab::{Tab, TabId},
     ui::components_utils::{UNTITLED, UTF_8},
     ui::tabs::color_tag::ColorTag,
 };
-use gpui_kit::component::input::TabSize;
-use gpui_kit::{App, AppContext, Context, Window};
+use gpui_kit::{App, Context, Window};
 use std::fs;
 use std::io::Read;
 
@@ -206,70 +202,17 @@ impl Fulgur {
             tab.lossy_decode = lossy_decode;
             tab
         } else {
-            let language = language_from_content(&tab_state.title, &content);
-            let large_file = crate::fulgur::ui::tabs::editor_tab::is_large_file(content.len());
-            // In large-file mode, substitute a language with no registered grammar so the background tree-sitter parser never runs.
-            let language_name = if large_file {
-                language_registry_name(&SupportedLanguage::Plain)
-            } else {
-                language_registry_name(&language)
-            };
-            let (csv_view_mode, csv_delimiter) =
-                crate::fulgur::ui::tabs::editor_tab::initial_csv_state(language, &content);
-            let content_entity = cx.new(|cx| {
-                gpui_kit::component::input::EditorState::new(window, cx)
-                    .searchable(false)
-                    .language(language_name)
-                    .line_number(self.settings.editor_settings.show_line_numbers)
-                    .indent_guides(self.settings.editor_settings.show_indent_guides)
-                    .tab_size(TabSize {
-                        tab_size: self.settings.editor_settings.tab_size,
-                        hard_tabs: false,
-                    })
-                    .soft_wrap(self.settings.editor_settings.soft_wrap && !large_file)
-                    .auto_close(self.settings.editor_settings.auto_close_pairs)
-                    .smart_indent(self.settings.editor_settings.smart_indent)
-                    .show_whitespaces(self.settings.editor_settings.show_whitespaces)
-                    .default_value(content)
-            });
-            EditorTab {
-                id: tab_id,
-                title: tab_state.title.into(),
-                content: content_entity,
-                location: tab_state
+            EditorTab::from_unsaved_content(
+                tab_id,
+                content,
+                tab_state.title,
+                tab_state
                     .share
                     .map_or(TabLocation::Untitled, TabLocation::Shared),
-                modified: true,
-                original_content_hash:
-                    crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str("").0,
-                original_content_len: 0,
-                saved_baseline_known: true,
-                encoding: "UTF-8".to_string(),
-                lossy_decode: false,
-                language,
-                show_markdown_toolbar: self
-                    .settings
-                    .editor_settings
-                    .markdown_settings
-                    .show_markdown_toolbar,
-                show_markdown_preview: self
-                    .settings
-                    .editor_settings
-                    .markdown_settings
-                    .show_markdown_preview,
-                file_size_bytes: None,
-                file_last_modified: None,
-                large_file,
-                csv_view_mode,
-                csv_delimiter,
-                csv_table: None,
-                csv_table_source_hash: 0,
-                color_tag: None,
-                log_view: false,
-                log_follow: true,
-                highlight_colors: self.settings.editor_settings.highlight_colors && !large_file,
-                content_subscription: None,
-            }
+                window,
+                cx,
+                &self.settings.editor_settings,
+            )
         };
 
         let opens_as_log = tab

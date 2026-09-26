@@ -66,6 +66,14 @@ impl EditorTab {
         });
     }
 
+    /// Replace the subscription that keeps `modified` in sync with the content entity.
+    ///
+    /// ### Arguments
+    /// - `subscription`: The new subscription to the content entity
+    pub(crate) fn set_content_subscription(&mut self, subscription: gpui_kit::Subscription) {
+        self.content_subscription = Some(subscription);
+    }
+
     /// Check if the tab's content has been modified
     ///
     /// ### Arguments

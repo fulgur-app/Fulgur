@@ -95,7 +95,11 @@ pub struct EditorTab {
     /// Subscription to the content entity keeping `modified` current. Owned by
     /// the tab entity, attached by `Tab::attach_content_subscription`, and
     /// replaced whenever the content entity is swapped.
-    pub(crate) content_subscription: Option<gpui_kit::Subscription>,
+    ///
+    /// Kept private so `EditorTab` cannot be built with a struct literal outside
+    /// this module: every tab must go through a constructor, and therefore
+    /// through `make_input_state`, which owns the editor configuration.
+    content_subscription: Option<gpui_kit::Subscription>,
 }
 
 /// All state required to transfer an editor tab between windows
