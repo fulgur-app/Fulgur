@@ -1304,3 +1304,75 @@ fn test_process_window_state_updates_publishes_menu_tabs_on_tab_change(cx: &mut 
         "published snapshot should carry the new tab title"
     );
 }
+
+#[gpui_kit::test]
+fn test_app_quit_persists_unsaved_buffers_of_every_window(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    let state_path = dir.path().join("state.db");
+    install_file_backed_writer(cx, &state_path);
+    cx.update(Fulgur::register_app_quit_state_save);
+    let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
+    let (window_id_two, fulgur_two) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id_one, &fulgur_one);
+    register_window_in_global_manager(cx, window_id_two, &fulgur_two);
+    dirty_every_tab(cx, window_id_one, &fulgur_one, "typed before logout");
+    dirty_every_tab(cx, window_id_two, &fulgur_two, "typed before restart");
+
+    cx.quit();
+
+    let persisted = StateDb::open(&state_path)
+        .expect("reopen the state database")
+        .load()
+        .expect("load the persisted session");
+    let mut contents: Vec<String> = persisted
+        .windows
+        .iter()
+        .flat_map(|window| &window.tabs)
+        .filter_map(|tab| Some(tab.content.as_ref()?.to_text().into_owned()))
+        .collect();
+    contents.sort();
+    assert_eq!(
+        contents,
+        vec!["typed before logout", "typed before restart"],
+        "an OS-initiated quit must persist the unsaved buffers of every window"
+    );
+}
+
+#[gpui_kit::test]
+fn test_app_quit_without_windows_keeps_the_persisted_session(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    let state_path = dir.path().join("state.db");
+    install_file_backed_writer(cx, &state_path);
+    cx.update(Fulgur::register_app_quit_state_save);
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id, &fulgur);
+    dirty_every_tab(cx, window_id, &fulgur, "saved when the last window closed");
+    cx.update(|cx| {
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)
+            .expect("test window");
+        handle
+            .update(cx, |_, window, cx| {
+                fulgur.update(cx, |this, cx| this.save_state(cx, window))
+            })
+            .expect("update the test window")
+            .expect("save the session");
+        cx.update_global::<WindowManager, _>(|manager, _| manager.unregister(window_id));
+    });
+
+    cx.quit();
+
+    let persisted = StateDb::open(&state_path)
+        .expect("reopen the state database")
+        .load()
+        .expect("load the persisted session");
+    assert_eq!(
+        persisted.windows.len(),
+        1,
+        "a quit with no registered window must not overwrite the session with an empty one"
+    );
+}

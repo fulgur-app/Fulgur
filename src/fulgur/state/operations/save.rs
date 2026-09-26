@@ -55,6 +55,61 @@ impl Fulgur {
         Ok(())
     }
 
+    /// Persist the session when the application quits, whatever triggered the quit.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    pub fn register_app_quit_state_save(cx: &mut App) {
+        cx.on_app_quit(|cx| {
+            Self::save_state_on_app_quit(cx);
+            async {}
+        })
+        .detach();
+    }
+
+    /// Snapshot every registered window and write the session synchronously.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    fn save_state_on_app_quit(cx: &mut App) {
+        let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
+        let entities: Vec<_> = window_manager
+            .get_all_window_ids()
+            .into_iter()
+            .filter_map(|window_id| {
+                let entity = window_manager.get_window(window_id)?.upgrade()?;
+                Some((window_id, entity))
+            })
+            .collect();
+        if entities.is_empty() {
+            log::debug!("No window registered at quit, keeping the persisted session");
+            return;
+        }
+        let handles = cx.windows();
+        let mut windows_state = WindowsState { windows: vec![] };
+        for (window_id, entity) in entities {
+            let with_live_bounds = handles
+                .iter()
+                .find(|handle| handle.window_id() == window_id)
+                .and_then(|handle| {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            entity.read(cx).build_window_state(cx, window)
+                        })
+                        .ok()
+                });
+            let snapshot = with_live_bounds
+                .unwrap_or_else(|| entity.read(cx).build_window_state_without_bounds(cx));
+            windows_state.windows.push(snapshot);
+        }
+        let window_count = windows_state.windows.len();
+        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+        match shared.state_writer.save_blocking(windows_state) {
+            Ok(()) => log::info!("Application state saved on quit ({window_count} windows)"),
+            Err(e) => log::error!("Failed to save app state on quit: {e}"),
+        }
+    }
+
     /// Save the current app state to disk without blocking the UI thread.
     ///
     /// ### Arguments
