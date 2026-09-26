@@ -11,8 +11,14 @@ pub enum TabRestoreDecision {
     },
     /// Load content from file on disk
     LoadFromFile { path: PathBuf },
-    /// Use saved content with file path
-    UseSavedContentWithPath { path: PathBuf, content: String },
+    /// Use saved content with file path. `changed_on_disk` is set when the file
+    /// was modified after the content was persisted, so the user must choose
+    /// between the recovered edits and the disk version.
+    UseSavedContentWithPath {
+        path: PathBuf,
+        content: String,
+        changed_on_disk: bool,
+    },
     /// Use saved content without file path (unsaved tab)
     UseSavedContentNoPath { content: String },
     /// Skip this tab (cannot be restored)
@@ -49,23 +55,18 @@ pub fn determine_tab_restore_strategy(
     }
 
     match (saved_path, saved_content) {
-        // Case 1: Has both path and content (modified file)
+        // Case 1: Has both path and content (modified file). The persisted edits
+        // are never dropped: a newer file on disk raises a conflict instead.
         (Some(path), Some(content)) => {
             if file_exists {
-                if let (Some(ref saved_time), Some(ref file_time)) =
-                    (last_saved, file_modified_time)
-                {
-                    if is_file_newer(file_time, saved_time) {
-                        if can_read_file {
-                            TabRestoreDecision::LoadFromFile { path }
-                        } else {
-                            TabRestoreDecision::UseSavedContentWithPath { path, content }
-                        }
-                    } else {
-                        TabRestoreDecision::UseSavedContentWithPath { path, content }
-                    }
-                } else {
-                    TabRestoreDecision::UseSavedContentWithPath { path, content }
+                let file_is_newer = matches!(
+                    (last_saved, file_modified_time),
+                    (Some(saved_time), Some(file_time)) if is_file_newer(&file_time, &saved_time)
+                );
+                TabRestoreDecision::UseSavedContentWithPath {
+                    path,
+                    content,
+                    changed_on_disk: file_is_newer && can_read_file,
                 }
             } else {
                 TabRestoreDecision::UseSavedContentNoPath { content }
@@ -90,7 +91,7 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn test_determine_tab_restore_strategy_loads_from_file_when_newer_and_readable() {
+    fn test_determine_tab_restore_strategy_keeps_saved_content_and_flags_conflict_when_newer() {
         let decision = determine_tab_restore_strategy(
             Some(PathBuf::from("/tmp/example.md")),
             None,
@@ -102,8 +103,31 @@ mod tests {
         );
         assert_eq!(
             decision,
-            TabRestoreDecision::LoadFromFile {
-                path: PathBuf::from("/tmp/example.md")
+            TabRestoreDecision::UseSavedContentWithPath {
+                path: PathBuf::from("/tmp/example.md"),
+                content: "saved".to_string(),
+                changed_on_disk: true,
+            }
+        );
+    }
+
+    #[test]
+    fn test_determine_tab_restore_strategy_uses_saved_content_without_conflict_when_not_newer() {
+        let decision = determine_tab_restore_strategy(
+            Some(PathBuf::from("/tmp/example.md")),
+            None,
+            Some("saved".to_string()),
+            Some("2026-04-07T10:00:00Z".to_string()),
+            true,
+            Some("2026-04-07T10:00:00Z".to_string()),
+            true,
+        );
+        assert_eq!(
+            decision,
+            TabRestoreDecision::UseSavedContentWithPath {
+                path: PathBuf::from("/tmp/example.md"),
+                content: "saved".to_string(),
+                changed_on_disk: false,
             }
         );
     }
@@ -124,6 +148,7 @@ mod tests {
             TabRestoreDecision::UseSavedContentWithPath {
                 path: PathBuf::from("/tmp/example.md"),
                 content: "saved".to_string(),
+                changed_on_disk: false,
             }
         );
     }

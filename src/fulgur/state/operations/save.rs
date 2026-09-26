@@ -664,6 +664,36 @@ mod tests {
     }
 
     #[gpui_kit::test]
+    fn restored_local_recovery_survives_newer_file_and_queues_conflict(cx: &mut TestAppContext) {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let path = temp_dir.path().join("touched.txt");
+        fs::write(&path, "changed on disk").expect("write saved file");
+        let restored = TabState {
+            tab_id: 9,
+            title: "touched.txt".to_string(),
+            file_path: Some(path.clone()),
+            content: Some(TabContent::from("recovered local edits")),
+            last_saved: Some("2000-01-01T00:00:00Z".to_string()),
+            remote: None,
+            log_view: false,
+            color_tag: None,
+            share: None,
+        };
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let snapshot = restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(restored));
+
+        assert_recovery_content(&snapshot.tabs[0], "recovered local edits");
+        let conflict_queued = fulgur.read_with(&visual_cx, |this, _| {
+            this.file_watch_state.pending_conflicts.contains_key(&path)
+        });
+        assert!(
+            conflict_queued,
+            "a file changed on disk after the edits were persisted must raise a conflict"
+        );
+    }
+
+    #[gpui_kit::test]
     fn restored_remote_recovery_survives_repeated_snapshots(cx: &mut TestAppContext) {
         let restored = TabState {
             tab_id: 8,
