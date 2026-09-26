@@ -128,10 +128,10 @@ tree-sitter-r = "1.3.0"
 # Others
 rust-embed = "8.12.0"
 regex = "1.13.1"
-ropey = "=2.0.0-beta.1"
+ropey = { version = "=2.0.0-beta.1", features = ["metric_lines_lf"] }
 semver = "1.0.28"
 parking_lot = "0.12.5"
-color-lsp = "0.2.0"
+csscolorparser = { version = "0.7.2", default-features = false }
 flexi_logger = "0.31.10"
 uuid = { version = "1.26.0", features = ["v4"] }
 
