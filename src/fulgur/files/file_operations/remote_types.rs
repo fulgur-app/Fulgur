@@ -41,6 +41,8 @@ pub struct RemoteBrowseResult {
 pub enum RemoteOpenResult {
     File(RemoteFileResult),
     Browse(RemoteBrowseResult),
+    /// The remote file looks binary and was not loaded.
+    Binary(RemoteSpec),
 }
 
 /// Existing-tab state that must remain unchanged during a remote reload.

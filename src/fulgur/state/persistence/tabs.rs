@@ -202,6 +202,12 @@ pub struct TabState {
     /// Origin of a received share that has not been saved to a file yet.
     #[serde(default)]
     pub share: Option<ShareOrigin>,
+    /// Encoding label the buffer was decoded from. `None` restores as UTF-8.
+    #[serde(default)]
+    pub encoding: Option<String>,
+    /// Whether decoding the file was lossy, so saving still asks for confirmation.
+    #[serde(default)]
+    pub lossy_decode: bool,
 }
 
 #[cfg(test)]

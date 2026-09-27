@@ -197,6 +197,8 @@ mod tests {
             log_view: false,
             color_tag: None,
             share: None,
+            encoding: None,
+            lossy_decode: false,
         }
     }
 
@@ -295,6 +297,8 @@ mod tests {
                         log_view: false,
                         color_tag: None,
                         share: None,
+                        encoding: None,
+                        lossy_decode: false,
                     }],
                     active_tab_index: Some(0),
                     window_bounds: SerializedWindowBounds {

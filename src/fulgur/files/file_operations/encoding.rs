@@ -111,9 +111,41 @@ pub fn looks_binary(bytes: &[u8]) -> bool {
     prefix.contains(&0)
 }
 
+/// Decode file bytes into editor text, refusing content that looks binary.
+///
+/// ### Arguments
+/// - `bytes`: The raw file bytes
+///
+/// ### Returns
+/// - `Some(DecodedContents)`: The decoded text file
+/// - `None`: The bytes look binary and must not be loaded into an editor
+#[must_use]
+pub fn decode_text_file(bytes: Vec<u8>) -> Option<DecodedContents> {
+    if looks_binary(&bytes) {
+        None
+    } else {
+        Some(detect_encoding_and_decode(bytes))
+    }
+}
+
+/// Build the user-facing message shown when a file is refused as binary.
+///
+/// ### Arguments
+/// - `file_name`: The display name of the refused file
+///
+/// ### Returns
+/// - `String`: The notification text
+#[must_use]
+pub fn binary_file_notice(file_name: &str) -> String {
+    format!("Cannot open '{file_name}': appears to be a binary file")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{EncodedContents, detect_encoding_and_decode, encode_for_save, looks_binary};
+    use super::{
+        EncodedContents, decode_text_file, detect_encoding_and_decode, encode_for_save,
+        looks_binary,
+    };
     use crate::fulgur::ui::components_utils::UTF_8;
 
     #[test]
@@ -182,5 +214,12 @@ mod tests {
     fn test_looks_binary_detects_nul_byte() {
         assert!(looks_binary(&[0x66, 0x6F, 0x00, 0x6F]));
         assert!(!looks_binary(b"plain text content"));
+    }
+
+    #[test]
+    fn test_decode_text_file_refuses_binary_and_decodes_text() {
+        assert!(decode_text_file(vec![0x66, 0x00, 0x6F]).is_none());
+        let decoded = decode_text_file(b"plain text".to_vec()).expect("text must decode");
+        assert_eq!(decoded.content, "plain text");
     }
 }

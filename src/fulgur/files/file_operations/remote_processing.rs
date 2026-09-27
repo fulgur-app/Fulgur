@@ -1,4 +1,6 @@
-use super::{RemoteFileResult, RemoteOpenResult, remote_types::RemoteReloadGuard};
+use super::{
+    RemoteFileResult, RemoteOpenResult, binary_file_notice, remote_types::RemoteReloadGuard,
+};
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{Fulgur, editor_tab, tab::Tab, ui::menus::build_menus};
 use gpui_kit::component::{WindowExt, notification::NotificationType};
@@ -108,6 +110,24 @@ impl Fulgur {
                         self.show_remote_path_browser_dialog(window, cx, &browse);
                     }
                 }
+                Ok(RemoteOpenResult::Binary(spec)) => {
+                    if let Some(tab_id) = target_tab_id {
+                        self.pending_remote_restore.insert(tab_id);
+                    }
+                    log::warn!(
+                        "Refusing to open binary remote file: {}:{}",
+                        spec.host,
+                        spec.path
+                    );
+                    let file_name = spec.path.rsplit('/').next().unwrap_or(&spec.path);
+                    window.push_notification(
+                        (
+                            NotificationType::Warning,
+                            gpui_kit::SharedString::from(binary_file_notice(file_name)),
+                        ),
+                        cx,
+                    );
+                }
                 Err(msg) => {
                     if let Some(tab_id) = target_tab_id {
                         self.pending_remote_restore.insert(tab_id);
@@ -182,6 +202,7 @@ impl Fulgur {
             editor_tab.location =
                 crate::fulgur::editor_tab::TabLocation::Remote(remote_file.spec.clone());
             editor_tab.encoding = remote_file.encoding;
+            editor_tab.lossy_decode = remote_file.lossy;
             editor_tab.set_original_content_from_str(&remote_file.content);
             editor_tab.modified = false;
             editor_tab.update_file_tooltip_cache(remote_file.file_size);
@@ -209,15 +230,17 @@ impl Fulgur {
 mod tests {
     use super::{RemoteFileResult, RemoteOpenResult};
     use crate::fulgur::{
+        Fulgur,
         editor_tab::TabLocation,
         files::file_operations::{
             PendingRemoteOpenOutcome, remote_types::RemoteReloadGuard,
             test_helpers::setup_fulgur_with_root,
         },
         sync::ssh::url::RemoteSpec,
-        ui::components_utils::UTF_8,
+        tab::Tab,
+        ui::{components_utils::UTF_8, tabs::tab::TabId},
     };
-    use gpui_kit::TestAppContext;
+    use gpui_kit::{Context, Entity, TestAppContext};
 
     /// Build the remote location shared by the restored tab and its delayed result.
     ///
@@ -285,6 +308,101 @@ mod tests {
                 assert!(
                     this.pending_remote_restore.contains(&tab_id),
                     "a rejected stale reload must not mark the restored tab as refreshed"
+                );
+            });
+        });
+    }
+
+    /// Turn the first tab into a clean restored remote tab awaiting its lazy reload.
+    ///
+    /// ### Arguments
+    /// - `this`: The application under test
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `(Entity<Tab>, TabId, RemoteReloadGuard)`: The tab, its id and a guard matching its state
+    fn restored_remote_tab(
+        this: &mut Fulgur,
+        cx: &mut Context<Fulgur>,
+    ) -> (Entity<Tab>, TabId, RemoteReloadGuard) {
+        let tab_entity = this.tabs.first().expect("expected an editor tab").clone();
+        let (tab_id, content_revision) = tab_entity.update(cx, |tab, cx| {
+            let editor = tab.as_editor_mut().expect("expected an editor tab");
+            editor.location = TabLocation::Remote(remote_spec());
+            editor.set_original_content_from_str("");
+            editor.modified = false;
+            (editor.id, editor.content_revision(cx))
+        });
+        this.pending_remote_restore.insert(tab_id);
+        let guard = RemoteReloadGuard {
+            content_revision,
+            source_url: crate::fulgur::sync::ssh::url::format_remote_url(&remote_spec()),
+        };
+        (tab_entity, tab_id, guard)
+    }
+
+    #[gpui_kit::test]
+    fn test_remote_reload_carries_the_lossy_decode_flag(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let (tab_entity, tab_id, guard) = restored_remote_tab(this, cx);
+                this.pending_remote_open
+                    .lock()
+                    .push(PendingRemoteOpenOutcome {
+                        target_tab_id: Some(tab_id),
+                        target_request_id: None,
+                        target_reload_guard: Some(guard),
+                        result: Ok(RemoteOpenResult::File(RemoteFileResult {
+                            spec: remote_spec(),
+                            content: "caf\u{fffd}".to_string(),
+                            encoding: UTF_8.to_string(),
+                            lossy: true,
+                            file_size: 4,
+                        })),
+                    });
+                this.process_pending_remote_files(window, cx);
+
+                let editor = tab_entity
+                    .read(cx)
+                    .as_editor()
+                    .expect("expected an editor tab");
+                assert!(
+                    editor.lossy_decode,
+                    "a lossy remote reload must keep the lossy-save confirmation armed"
+                );
+                assert!(!this.pending_remote_restore.contains(&tab_id));
+            });
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_binary_remote_reload_leaves_the_tab_untouched(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let (tab_entity, tab_id, guard) = restored_remote_tab(this, cx);
+                this.pending_remote_open
+                    .lock()
+                    .push(PendingRemoteOpenOutcome {
+                        target_tab_id: Some(tab_id),
+                        target_request_id: None,
+                        target_reload_guard: Some(guard),
+                        result: Ok(RemoteOpenResult::Binary(remote_spec())),
+                    });
+                this.process_pending_remote_files(window, cx);
+
+                let editor = tab_entity
+                    .read(cx)
+                    .as_editor()
+                    .expect("expected an editor tab");
+                assert_eq!(editor.content.read(cx).text().to_string(), "");
+                assert!(!editor.modified);
+                assert!(
+                    this.pending_remote_restore.contains(&tab_id),
+                    "a refused binary reload must leave the tab pending a retry"
                 );
             });
         });

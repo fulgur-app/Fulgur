@@ -1,4 +1,4 @@
-use super::super::{DecodedContents, detect_encoding_and_decode, looks_binary};
+use super::super::{DecodedContents, binary_file_notice, decode_text_file};
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams},
@@ -106,11 +106,8 @@ impl Fulgur {
                             read_path.display(),
                             bytes.len()
                         );
-                        if looks_binary(&bytes) {
-                            FileReadOutcome::Binary
-                        } else {
-                            FileReadOutcome::Decoded(detect_encoding_and_decode(bytes))
-                        }
+                        decode_text_file(bytes)
+                            .map_or(FileReadOutcome::Binary, FileReadOutcome::Decoded)
                     }
                     Err(e) => {
                         log::error!("Failed to read file {}: {e}", read_path.display());
@@ -135,9 +132,7 @@ impl Fulgur {
                         window.push_notification(
                             (
                                 NotificationType::Warning,
-                                SharedString::from(format!(
-                                    "Cannot open '{file_name}': appears to be a binary file"
-                                )),
+                                SharedString::from(binary_file_notice(&file_name)),
                             ),
                             cx,
                         );

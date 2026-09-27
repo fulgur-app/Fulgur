@@ -8,7 +8,8 @@ mod remote_types;
 mod save_ops;
 
 pub use encoding::{
-    DecodedContents, EncodedContents, detect_encoding_and_decode, encode_for_save, looks_binary,
+    DecodedContents, EncodedContents, binary_file_notice, decode_text_file,
+    detect_encoding_and_decode, encode_for_save, looks_binary,
 };
 pub use remote_types::{
     PendingRemoteOpenOutcome, RemoteBrowseResult, RemoteFileResult, RemoteOpenResult,

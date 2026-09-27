@@ -78,6 +78,8 @@ fn test_state_concurrent_writes_no_corruption() {
                         log_view: false,
                         color_tag: None,
                         share: None,
+                        encoding: None,
+                        lossy_decode: false,
                     }],
                     active_tab_index: Some(0),
                     window_bounds: SerializedWindowBounds::default(),
@@ -197,6 +199,8 @@ fn test_state_concurrent_writes_large_data() {
                             log_view: false,
                             color_tag: None,
                             share: None,
+                            encoding: None,
+                            lossy_decode: false,
                         });
                     }
 

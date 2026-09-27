@@ -74,7 +74,7 @@ impl StateDb {
             .prepare(
                 "SELECT id, title, file_path, content, last_saved, log_view, color_tag,
                         remote_host, remote_port, remote_user, remote_path,
-                        share_device_name, share_shared_at, share_size
+                        share_device_name, share_shared_at, share_size, encoding, lossy_decode
                  FROM tabs
                  WHERE window_id = ?1
                  ORDER BY position, id",
@@ -157,5 +157,7 @@ fn tab_state_from_row(row: &Row<'_>) -> rusqlite::Result<TabState> {
         log_view: row.get(5)?,
         color_tag: row.get(6)?,
         share,
+        encoding: row.get(14)?,
+        lossy_decode: row.get(15)?,
     })
 }
