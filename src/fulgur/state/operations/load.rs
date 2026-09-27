@@ -149,6 +149,8 @@ impl Fulgur {
         log::debug!("Restoring tab: {}", tab_state.title);
 
         let color_tag = tab_state.color_tag.as_deref().and_then(ColorTag::from_key);
+        let saved_encoding = tab_state.encoding.unwrap_or_else(|| UTF_8.to_string());
+        let saved_lossy_decode = tab_state.lossy_decode;
         let file_exists = tab_state.file_path.as_ref().is_some_and(|p| p.exists());
         let file_modified_time = tab_state
             .file_path
@@ -179,8 +181,8 @@ impl Fulgur {
                         spec: remote.to_remote_spec(),
                         file_size: restored_content.len(),
                         content: restored_content,
-                        encoding: UTF_8.to_string(),
-                        lossy: false,
+                        encoding: saved_encoding,
+                        lossy: saved_lossy_decode,
                     },
                     window,
                     cx,
@@ -212,7 +214,13 @@ impl Fulgur {
                 changed_on_disk: file_changed,
             } => {
                 changed_on_disk = file_changed;
-                (content, Some(path), UTF_8.to_string(), true, false)
+                (
+                    content,
+                    Some(path),
+                    saved_encoding,
+                    true,
+                    saved_lossy_decode,
+                )
             }
             TabRestoreDecision::UseSavedContentNoPath { content } => {
                 (content, None, UTF_8.to_string(), true, false)

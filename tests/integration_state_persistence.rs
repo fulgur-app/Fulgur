@@ -70,6 +70,8 @@ fn create_file_tab_unmodified(tab_id: u64) -> TabState {
         log_view: false,
         color_tag: None,
         share: None,
+        encoding: None,
+        lossy_decode: false,
     }
 }
 
@@ -98,6 +100,8 @@ fn create_file_tab_modified(tab_id: u64) -> TabState {
         log_view: false,
         color_tag: None,
         share: None,
+        encoding: None,
+        lossy_decode: false,
     }
 }
 
@@ -119,6 +123,8 @@ fn create_unsaved_tab(tab_id: u64) -> TabState {
         log_view: false,
         color_tag: None,
         share: None,
+        encoding: None,
+        lossy_decode: false,
     }
 }
 
@@ -426,6 +432,8 @@ fn test_state_roundtrip_with_real_temp_files() {
                     log_view: false,
                     color_tag: None,
                     share: None,
+                    encoding: None,
+                    lossy_decode: false,
                 },
                 TabState {
                     tab_id: 1,
@@ -437,6 +445,8 @@ fn test_state_roundtrip_with_real_temp_files() {
                     log_view: false,
                     color_tag: None,
                     share: None,
+                    encoding: None,
+                    lossy_decode: false,
                 },
             ],
             active_tab_index: Some(0),
@@ -482,6 +492,8 @@ fn test_state_roundtrip_with_unicode_content() {
                 log_view: false,
                 color_tag: None,
                 share: None,
+                encoding: None,
+                lossy_decode: false,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds::default(),
@@ -663,6 +675,8 @@ fn test_state_roundtrip_preserves_remote_spec_without_password_fields() {
                 log_view: false,
                 color_tag: None,
                 share: None,
+                encoding: None,
+                lossy_decode: false,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds::default(),
@@ -711,6 +725,8 @@ fn test_state_preserves_window_order() {
                 log_view: false,
                 color_tag: None,
                 share: None,
+                encoding: None,
+                lossy_decode: false,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds {

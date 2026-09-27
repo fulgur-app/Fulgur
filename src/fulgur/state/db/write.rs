@@ -31,6 +31,8 @@ struct StoredTab {
     share_device_name: Option<String>,
     share_shared_at: Option<String>,
     share_size: Option<i64>,
+    encoding: Option<String>,
+    lossy_decode: bool,
 }
 
 /// The comparable part of a persisted window row.
@@ -278,7 +280,7 @@ fn read_stored_tabs(
         .prepare(
             "SELECT id, position, title, file_path, last_saved, log_view, color_tag,
                     remote_host, remote_port, remote_user, remote_path, content_hash, content_len,
-                    share_device_name, share_shared_at, share_size
+                    share_device_name, share_shared_at, share_size, encoding, lossy_decode
              FROM tabs WHERE window_id = ?1",
         )
         .map_err(|e| anyhow!("Failed to prepare the stored tab query: {e}"))?;
@@ -299,6 +301,8 @@ fn read_stored_tabs(
                 share_device_name: row.get(13)?,
                 share_shared_at: row.get(14)?,
                 share_size: row.get(15)?,
+                encoding: row.get(16)?,
+                lossy_decode: row.get(17)?,
             };
             let hash: Option<i64> = row.get(11)?;
             let len: Option<i64> = row.get(12)?;
@@ -358,6 +362,8 @@ fn stored_tab_from_snapshot(tab: &TabState, position: i64) -> StoredTab {
             .share
             .as_ref()
             .map(|share| i64::try_from(share.size_bytes).unwrap_or(i64::MAX)),
+        encoding: tab.encoding.clone(),
+        lossy_decode: tab.lossy_decode,
     }
 }
 
@@ -416,8 +422,10 @@ fn insert_tab(
         // far better than failing the save and losing every window's state.
         "INSERT INTO tabs (window_id, id, position, title, file_path, content, content_hash,
                            content_len, last_saved, log_view, color_tag, remote_host, remote_port,
-                           remote_user, remote_path, share_device_name, share_shared_at, share_size)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+                           remote_user, remote_path, share_device_name, share_shared_at, share_size,
+                           encoding, lossy_decode)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
+                 ?19, ?20)
          ON CONFLICT(window_id, id) DO UPDATE SET
              position = excluded.position,
              title = excluded.title,
@@ -434,7 +442,9 @@ fn insert_tab(
              remote_path = excluded.remote_path,
              share_device_name = excluded.share_device_name,
              share_shared_at = excluded.share_shared_at,
-             share_size = excluded.share_size",
+             share_size = excluded.share_size,
+             encoding = excluded.encoding,
+             lossy_decode = excluded.lossy_decode",
         params![
             window_id,
             id,
@@ -454,6 +464,8 @@ fn insert_tab(
             desired.share_device_name,
             desired.share_shared_at,
             desired.share_size,
+            desired.encoding,
+            desired.lossy_decode,
         ],
     )
     .map_err(|e| anyhow!("Failed to insert tab {id}: {e}"))?;
@@ -490,7 +502,7 @@ fn update_tab(
                          content_hash = ?7, content_len = ?8, last_saved = ?9, log_view = ?10,
                          color_tag = ?11, remote_host = ?12, remote_port = ?13, remote_user = ?14,
                          remote_path = ?15, share_device_name = ?16, share_shared_at = ?17,
-                         share_size = ?18
+                         share_size = ?18, encoding = ?19, lossy_decode = ?20
          WHERE window_id = ?1 AND id = ?2",
         params![
             window_id,
@@ -511,6 +523,8 @@ fn update_tab(
             desired.share_device_name,
             desired.share_shared_at,
             desired.share_size,
+            desired.encoding,
+            desired.lossy_decode,
         ],
     )
     .map_err(|e| anyhow!("Failed to update tab {id}: {e}"))?;
@@ -542,7 +556,8 @@ fn update_tab_metadata(
         "UPDATE tabs SET position = ?3, title = ?4, file_path = ?5, last_saved = ?6,
                          log_view = ?7, color_tag = ?8, remote_host = ?9, remote_port = ?10,
                          remote_user = ?11, remote_path = ?12, share_device_name = ?13,
-                         share_shared_at = ?14, share_size = ?15
+                         share_shared_at = ?14, share_size = ?15, encoding = ?16,
+                         lossy_decode = ?17
          WHERE window_id = ?1 AND id = ?2",
         params![
             window_id,
@@ -560,6 +575,8 @@ fn update_tab_metadata(
             desired.share_device_name,
             desired.share_shared_at,
             desired.share_size,
+            desired.encoding,
+            desired.lossy_decode,
         ],
     )
     .map_err(|e| anyhow!("Failed to update tab metadata for {id}: {e}"))?;

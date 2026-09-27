@@ -1,5 +1,5 @@
 use super::{
-    encoding::detect_encoding_and_decode,
+    encoding::decode_text_file,
     remote_ssh_task::{SshTaskContext, spawn_ssh_task},
     remote_types::{
         PendingRemoteOpenOutcome, RemoteBrowseResult, RemoteFileResult, RemoteOpenResult,
@@ -175,6 +175,28 @@ impl Fulgur {
         self.open_remote_file_with_target(window, cx, spec, Some(tab_id));
     }
 
+    /// Decode the bytes of a remote file into an open result, refusing binary content.
+    ///
+    /// ### Arguments
+    /// - `spec`: Location the bytes were read from.
+    /// - `bytes`: Raw remote file contents.
+    ///
+    /// ### Returns
+    /// - `RemoteOpenResult::File`: The decoded text file.
+    /// - `RemoteOpenResult::Binary`: The bytes look binary and were not decoded.
+    fn remote_file_open_result(spec: &RemoteSpec, bytes: Vec<u8>) -> RemoteOpenResult {
+        match decode_text_file(bytes) {
+            Some(decoded) => RemoteOpenResult::File(RemoteFileResult {
+                spec: spec.clone(),
+                file_size: decoded.byte_len,
+                content: decoded.content,
+                encoding: decoded.encoding,
+                lossy: decoded.lossy,
+            }),
+            None => RemoteOpenResult::Binary(spec.clone()),
+        }
+    }
+
     /// Resolve a remote open request into either file contents or a browse fallback.
     ///
     /// ### Arguments
@@ -183,6 +205,7 @@ impl Fulgur {
     ///
     /// ### Returns
     /// - `Ok(RemoteOpenResult::File)`: Target is a readable file.
+    /// - `Ok(RemoteOpenResult::Binary)`: Target is a file whose contents look binary.
     /// - `Ok(RemoteOpenResult::Browse)`: Target is a directory or missing path.
     /// - `Err(SshError)`: Remote classification or I/O failure.
     fn resolve_remote_open_result(
@@ -194,14 +217,7 @@ impl Fulgur {
         match classify_remote_path(session, &spec.path)? {
             RemotePathKind::File => {
                 let bytes = ssh::sftp::read_remote_file(session, &spec.path)?;
-                let decoded = detect_encoding_and_decode(bytes);
-                Ok(RemoteOpenResult::File(RemoteFileResult {
-                    spec: spec.clone(),
-                    file_size: decoded.byte_len,
-                    content: decoded.content,
-                    encoding: decoded.encoding,
-                    lossy: decoded.lossy,
-                }))
+                Ok(Self::remote_file_open_result(spec, bytes))
             }
             RemotePathKind::Directory => {
                 Self::build_remote_browse_result(session, spec, &spec.path, None)
@@ -314,16 +330,8 @@ impl Fulgur {
             },
             move |session, spec| {
                 if target_tab_id.is_some() {
-                    ssh::sftp::read_remote_file(session, &spec.path).map(|bytes| {
-                        let decoded = detect_encoding_and_decode(bytes);
-                        RemoteOpenResult::File(RemoteFileResult {
-                            spec: spec.clone(),
-                            file_size: decoded.byte_len,
-                            content: decoded.content,
-                            encoding: decoded.encoding,
-                            lossy: decoded.lossy,
-                        })
-                    })
+                    ssh::sftp::read_remote_file(session, &spec.path)
+                        .map(|bytes| Self::remote_file_open_result(spec, bytes))
                 } else {
                     Self::resolve_remote_open_result(session, spec)
                 }

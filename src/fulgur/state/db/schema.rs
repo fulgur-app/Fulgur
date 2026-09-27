@@ -5,13 +5,14 @@ use rusqlite::{Connection, TransactionBehavior};
 
 /// Schema version this build expects. Bumping it requires appending a step to
 /// `MIGRATIONS`; the existing steps must never be edited.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// Ordered schema migrations. Index `n` upgrades `user_version` from `n` to
 /// `n + 1`, so a fresh database runs every step in order.
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/001_initial.sql"),
     include_str!("migrations/002_share_origin.sql"),
+    include_str!("migrations/003_tab_encoding.sql"),
 ];
 
 /// How long a connection waits for a lock held by another connection.
@@ -229,6 +230,36 @@ mod tests {
             share_size, None,
             "existing tabs must not become received shares"
         );
+    }
+
+    #[test]
+    fn upgrading_from_version_two_restores_existing_tabs_as_lossless_utf8() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory database");
+        apply_pragmas(&conn).expect("apply pragmas");
+        conn.execute_batch(super::MIGRATIONS[0])
+            .expect("apply the first migration");
+        conn.execute_batch(super::MIGRATIONS[1])
+            .expect("apply the second migration");
+        conn.pragma_update(None, "user_version", 2)
+            .expect("record version two");
+        conn.execute_batch(
+            "INSERT INTO windows (id, position, bounds_state, bounds_x, bounds_y, bounds_width, bounds_height)
+             VALUES (1, 0, 'Windowed', 0.0, 0.0, 100.0, 100.0);
+             INSERT INTO tabs (window_id, id, position, title, log_view) VALUES (1, 0, 0, 'a.txt', 0);",
+        )
+        .expect("seed a version two tab");
+
+        assert!(migrate(&mut conn).expect("migrate to the current version"));
+
+        let (encoding, lossy_decode): (Option<String>, bool) = conn
+            .query_row(
+                "SELECT encoding, lossy_decode FROM tabs WHERE id = 0",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read the new encoding columns");
+        assert_eq!(encoding, None, "existing tabs must fall back to UTF-8");
+        assert!(!lossy_decode, "existing tabs must not become lossy");
     }
 
     #[test]

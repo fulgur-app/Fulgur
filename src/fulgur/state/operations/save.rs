@@ -194,6 +194,8 @@ impl Fulgur {
                                 last_saved: get_file_modified_time(path),
                                 remote: None,
                                 share: None,
+                                encoding: Some(editor_tab.encoding.clone()),
+                                lossy_decode: editor_tab.lossy_decode,
                             }
                         } else {
                             TabState {
@@ -206,6 +208,8 @@ impl Fulgur {
                                 last_saved: None,
                                 remote: None,
                                 share: None,
+                                encoding: Some(editor_tab.encoding.clone()),
+                                lossy_decode: editor_tab.lossy_decode,
                             }
                         }
                     }
@@ -228,6 +232,8 @@ impl Fulgur {
                             last_saved: None,
                             remote: Some(SerializedRemoteSpec::from_remote_spec(remote_spec)),
                             share: None,
+                            encoding: Some(editor_tab.encoding.clone()),
+                            lossy_decode: editor_tab.lossy_decode,
                         }
                     }
                     TabLocation::Untitled | TabLocation::Shared(_) => {
@@ -260,6 +266,8 @@ impl Fulgur {
                             last_saved: None,
                             remote: None,
                             share: editor_tab.location.share_origin().cloned(),
+                            encoding: Some(editor_tab.encoding.clone()),
+                            lossy_decode: editor_tab.lossy_decode,
                         }
                     }
                 };
@@ -521,6 +529,8 @@ mod tests {
                         log_view: false,
                         color_tag: None,
                         share: None,
+                        encoding: None,
+                        lossy_decode: false,
                     },
                     TabState {
                         tab_id: 11,
@@ -532,6 +542,8 @@ mod tests {
                         log_view: false,
                         color_tag: None,
                         share: None,
+                        encoding: None,
+                        lossy_decode: false,
                     },
                     TabState {
                         tab_id: 12,
@@ -543,6 +555,8 @@ mod tests {
                         log_view: false,
                         color_tag: None,
                         share: None,
+                        encoding: None,
+                        lossy_decode: false,
                     },
                 ],
                 active_tab_index: Some(1),
@@ -578,6 +592,8 @@ mod tests {
                 log_view: false,
                 color_tag: None,
                 share: None,
+                encoding: None,
+                lossy_decode: false,
             }],
             active_tab_index: Some(0),
             window_bounds: SerializedWindowBounds::default(),
@@ -592,6 +608,8 @@ mod tests {
             log_view: false,
             color_tag: None,
             share: None,
+            encoding: None,
+            lossy_decode: false,
         });
         state.windows.push(untouched_window);
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
@@ -646,6 +664,8 @@ mod tests {
             log_view: false,
             color_tag: None,
             share: None,
+            encoding: None,
+            lossy_decode: false,
         };
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -678,6 +698,8 @@ mod tests {
             log_view: false,
             color_tag: None,
             share: None,
+            encoding: None,
+            lossy_decode: false,
         };
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -691,6 +713,63 @@ mod tests {
             conflict_queued,
             "a file changed on disk after the edits were persisted must raise a conflict"
         );
+    }
+
+    #[gpui_kit::test]
+    fn restored_local_recovery_keeps_encoding_and_lossy_flag(cx: &mut TestAppContext) {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let path = temp_dir.path().join("legacy.txt");
+        fs::write(&path, [0x63, 0x61, 0x66, 0xE9]).expect("write legacy file");
+        let restored = TabState {
+            tab_id: 5,
+            title: "legacy.txt".to_string(),
+            file_path: Some(path),
+            content: Some(TabContent::from("caf\u{e9} edited")),
+            last_saved: None,
+            remote: None,
+            log_view: false,
+            color_tag: None,
+            share: None,
+            encoding: Some("windows-1252".to_string()),
+            lossy_decode: true,
+        };
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let snapshot = restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(restored));
+
+        assert_eq!(snapshot.tabs[0].encoding.as_deref(), Some("windows-1252"));
+        assert!(
+            snapshot.tabs[0].lossy_decode,
+            "a restored lossy buffer must still require save confirmation"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn restored_remote_tab_keeps_encoding_and_lossy_flag(cx: &mut TestAppContext) {
+        let restored = TabState {
+            tab_id: 6,
+            title: "remote.txt".to_string(),
+            file_path: None,
+            content: Some(TabContent::from("recovered remote edits")),
+            last_saved: None,
+            remote: Some(SerializedRemoteSpec {
+                host: "example.com".to_string(),
+                port: 22,
+                user: "alice".to_string(),
+                path: "/srv/remote.txt".to_string(),
+            }),
+            log_view: false,
+            color_tag: None,
+            share: None,
+            encoding: Some("Shift_JIS".to_string()),
+            lossy_decode: true,
+        };
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let snapshot = restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(restored));
+
+        assert_eq!(snapshot.tabs[0].encoding.as_deref(), Some("Shift_JIS"));
+        assert!(snapshot.tabs[0].lossy_decode);
     }
 
     #[gpui_kit::test]
@@ -710,6 +789,8 @@ mod tests {
             log_view: false,
             color_tag: None,
             share: None,
+            encoding: None,
+            lossy_decode: false,
         };
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -806,6 +887,8 @@ mod tests {
             log_view: false,
             color_tag: None,
             share: Some(origin.clone()),
+            encoding: None,
+            lossy_decode: false,
         };
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
@@ -827,6 +910,8 @@ mod tests {
             log_view: false,
             color_tag: None,
             share: None,
+            encoding: None,
+            lossy_decode: false,
         };
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
 

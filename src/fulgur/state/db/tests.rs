@@ -19,6 +19,8 @@ fn tab(tab_id: u64, title: &str, content: Option<&str>) -> TabState {
         log_view: false,
         color_tag: None,
         share: None,
+        encoding: None,
+        lossy_decode: false,
     }
 }
 
@@ -127,6 +129,30 @@ fn reordering_tabs_does_not_rewrite_their_content() {
         loaded.windows[0].tabs[0].content.as_ref().unwrap(),
         &TabContent::from("second content")
     );
+}
+
+#[test]
+fn tab_encoding_and_lossy_flag_roundtrip_without_rewriting_content() {
+    let mut db = memory_db();
+    db.apply(&state_with(
+        1,
+        vec![tab(0, "legacy.txt", Some("caf\u{e9}"))],
+    ))
+    .expect("initial apply");
+
+    let mut decoded = tab(0, "legacy.txt", Some("caf\u{e9}"));
+    decoded.encoding = Some("windows-1252".to_string());
+    decoded.lossy_decode = true;
+    let stats = db
+        .apply(&state_with(1, vec![decoded]))
+        .expect("apply encoding change");
+    assert_eq!(stats.tabs_content_written, 0);
+    assert_eq!(stats.tabs_metadata_updated, 1);
+
+    let loaded = db.load().expect("load snapshot");
+    let restored = &loaded.windows[0].tabs[0];
+    assert_eq!(restored.encoding.as_deref(), Some("windows-1252"));
+    assert!(restored.lossy_decode);
 }
 
 #[test]
