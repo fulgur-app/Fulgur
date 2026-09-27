@@ -74,16 +74,16 @@ impl Fulgur {
     /// Handle close all other tabs action from context menu
     ///
     /// ### Arguments
-    /// - `_`: The action to handle
+    /// - `action`: The action carrying the ID of the tab to keep
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn on_close_all_other_tabs_action(
         &mut self,
-        _: &CloseAllOtherTabs,
+        action: &CloseAllOtherTabs,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.close_other_tabs(window, cx);
+        self.close_other_tabs(action.0, window, cx);
     }
 
     /// Handle show in file manager action from context menu.

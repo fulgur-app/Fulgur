@@ -2,7 +2,10 @@ use crate::fulgur::{
     Fulgur,
     languages::supported_languages::{SupportedLanguage, language_registry_name},
     tab::{Tab, TabId},
-    ui::tabs::editor_tab::{TabLocation, TabTransferData},
+    ui::tabs::{
+        editor_tab::{TabLocation, TabTransferData},
+        tab_bar::CloseAllOtherTabs,
+    },
 };
 use gpui_kit::component::input::{InputEvent, Position, Undo};
 use gpui_kit::{App, Context, SharedString, TestAppContext, Window, point, px};
@@ -248,7 +251,7 @@ fn test_close_other_tabs_leaves_only_active_tab(cx: &mut TestAppContext) {
             this.set_active_tab(1, window, cx);
             let active_id = this.tabs[1].read(cx).id();
 
-            this.close_other_tabs(window, cx);
+            this.close_other_tabs(active_id, window, cx);
 
             assert_eq!(this.tabs.len(), 1);
             assert_eq!(this.tabs[0].read(cx).id(), active_id);
@@ -265,9 +268,63 @@ fn test_close_other_tabs_is_noop_with_single_tab(cx: &mut TestAppContext) {
         fulgur.update(cx, |this, cx| {
             assert_eq!(this.tabs.len(), 1);
             let tab_id_before = this.tabs[0].read(cx).id();
-            this.close_other_tabs(window, cx);
+            this.close_other_tabs(tab_id_before, window, cx);
             assert_eq!(this.tabs.len(), 1);
             assert_eq!(this.tabs[0].read(cx).id(), tab_id_before);
+        });
+    });
+}
+
+#[gpui_kit::test]
+fn test_close_all_other_tabs_action_keeps_targeted_inactive_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 2, window, cx);
+            this.set_active_tab(0, window, cx);
+
+            this.on_close_all_other_tabs_action(&CloseAllOtherTabs(ids[2]), window, cx);
+
+            assert_eq!(tab_ids(this, cx), vec![ids[2]]);
+            assert_eq!(this.active_tab_id, Some(ids[2]));
+        });
+    });
+}
+
+#[gpui_kit::test]
+fn test_close_other_tabs_stops_at_modified_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 3, window, cx);
+            mark_tab_modified(this, ids[2], cx);
+
+            this.close_other_tabs(ids[3], window, cx);
+
+            // The unmodified tabs before it are gone, the modified tab halts
+            // the loop behind its confirmation dialog, and the kept tab lives.
+            assert_eq!(tab_ids(this, cx), vec![ids[2], ids[3]]);
+            assert_eq!(this.active_tab_id, Some(ids[2]));
+        });
+    });
+}
+
+#[gpui_kit::test]
+fn test_close_other_tabs_is_noop_for_unknown_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 2, window, cx);
+            let missing_id = ids[2];
+            this.remove_tab_by_id(missing_id, window, cx);
+            let remaining = tab_ids(this, cx);
+
+            this.close_other_tabs(missing_id, window, cx);
+
+            assert_eq!(tab_ids(this, cx), remaining);
         });
     });
 }
