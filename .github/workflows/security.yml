@@ -62,7 +62,7 @@ jobs:
           # into annotation noise rather than a failed build. Advisories for crates that sit
           # in Cargo.lock without being reachable in the build graph belong in
           # .cargo/audit.toml instead, since cargo-deny's graph never sees them.
-          ignore: RUSTSEC-2024-0384,RUSTSEC-2024-0436,RUSTSEC-2026-0173,RUSTSEC-2026-0192,RUSTSEC-2026-0206,RUSTSEC-2025-0141,RUSTSEC-2025-0134,RUSTSEC-2026-0194,RUSTSEC-2026-0195
+          ignore: RUSTSEC-2024-0384,RUSTSEC-2024-0436,RUSTSEC-2026-0173,RUSTSEC-2026-0192,RUSTSEC-2026-0206,RUSTSEC-2025-0134,RUSTSEC-2026-0194,RUSTSEC-2026-0195
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2

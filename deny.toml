@@ -20,7 +20,6 @@ allow = [
     "0BSD",
     "CDLA-Permissive-2.0",
     "Unlicense",
-    "GPL-3.0-or-later", #temporary until GPUI is cleaned
     "bzip2-1.0.6"
 ]
 
@@ -55,7 +54,6 @@ ignore = [
     "RUSTSEC-2026-0173",  # proc-macro-error2 - unmaintained (from gpui via stacksafe-macro, and from age via i18n-embed-fl)
     "RUSTSEC-2026-0192",  # ttf-parser - unmaintained; no safe upgrade available (from gpui via fontdb/cosmic-text/usvg/rustybuzz)
     "RUSTSEC-2026-0206",  # rustybuzz - unmaintained; no safe upgrade available (from gpui-pre via usvg/resvg)
-    "RUSTSEC-2025-0141",  # bincode - unmaintained (from gpui-component via gpui-base -> syntect)
     "RUSTSEC-2025-0134",  # rustls-pemfile - unmaintained; no safe upgrade available (from gpui-pre's Reqwest transport)
     # quick-xml DoS advisories - Linux-only, build/protocol XML parsing of trusted local data, not the untrusted remote XML in the advisory threat model.
     # Cannot upgrade: xcb (^0.30) and wayland-scanner (^0.39) pin incompatible ranges in the published GPUI Pre snapshot.
@@ -94,8 +92,8 @@ deny = [
 # Allow crates from crates.io
 unknown-registry = "deny"
 
-# Allow git sources
-unknown-git = "warn"
+# Deny git sources not listed in allow-git
+unknown-git = "deny"
 
 # List of allowed git sources
 allow-git = [
