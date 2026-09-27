@@ -1,5 +1,6 @@
 //! Rewrite local image references in Markdown so the preview can load them.
 
+use crate::fulgur::utils::http::is_network_or_verbatim_path;
 use gpui_kit::http_client::Url;
 use std::path::Path;
 
@@ -175,8 +176,8 @@ fn find_img_src(haystack: &str) -> Option<SrcMatch> {
 ///
 /// ### Returns
 /// - `Some(String)`: A `file://` URL for a resolvable local path.
-/// - `None`: The URL is remote, already a URL, or a relative path that cannot
-///   be resolved without a base directory.
+/// - `None`: The URL is remote, already a URL, a network or verbatim path, or a
+///   relative path that cannot be resolved without a base directory.
 fn local_path_to_file_url(url: &str, base_dir: Option<&Path>) -> Option<String> {
     let trimmed = url.trim();
     if trimmed.is_empty() || is_non_local_reference(trimmed) {
@@ -189,6 +190,9 @@ fn local_path_to_file_url(url: &str, base_dir: Option<&Path>) -> Option<String> 
     } else {
         base_dir?.join(path)
     };
+    if is_network_or_verbatim_path(&absolute) {
+        return None;
+    }
 
     Url::from_file_path(&absolute)
         .ok()
@@ -329,6 +333,21 @@ mod tests {
     #[test]
     fn leaves_plain_text_untouched() {
         let source = "# Heading\n\nSome text with no images.";
+        assert_eq!(rewrite_markdown_image_paths(source, Some(&base())), source);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn leaves_unc_markdown_image_untouched() {
+        // CommonMark unescapes `\\`, so the parsed URL is `\\attacker\share\x.png`.
+        let source = r"![a](\\\\attacker\\share\\x.png)";
+        assert_eq!(rewrite_markdown_image_paths(source, Some(&base())), source);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn leaves_unc_html_img_untouched() {
+        let source = r#"<img src="\\attacker\share\x.png" />"#;
         assert_eq!(rewrite_markdown_image_paths(source, Some(&base())), source);
     }
 }
