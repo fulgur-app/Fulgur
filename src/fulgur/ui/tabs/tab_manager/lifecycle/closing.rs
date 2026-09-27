@@ -208,23 +208,26 @@ impl Fulgur {
         cx.notify();
     }
 
-    /// Close all tabs except the active one
+    /// Close all tabs except the specified one, which becomes the active tab
     ///
     /// ### Arguments
+    /// - `keep_id`: The ID of the tab to keep open
     /// - `window`: The window to close tabs in
     /// - `cx`: The application context
-    pub fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(active_tab_id) = self.active_tab_id else {
-            return;
-        };
-        if self.tabs.len() <= 1 {
+    pub fn close_other_tabs(
+        &mut self,
+        keep_id: TabId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.tabs.len() <= 1 || self.tab_index_of(keep_id, cx).is_none() {
             return;
         }
         let tab_ids: Vec<TabId> = self
             .tabs
             .iter()
             .map(|t| t.read(cx).id())
-            .filter(|id| *id != active_tab_id)
+            .filter(|id| *id != keep_id)
             .collect();
         for tab_id in tab_ids {
             if !self.tabs.iter().any(|t| t.read(cx).id() == tab_id) {
@@ -239,17 +242,20 @@ impl Fulgur {
                 }
                 self.show_unsaved_changes_dialog(window, cx, move |this, window, cx| {
                     this.remove_tab_by_id(tab_id, window, cx);
-                    if this.tabs.iter().any(|t| t.read(cx).id() == active_tab_id) {
-                        this.active_tab_id = Some(active_tab_id);
+                    if this.tab_index_of(keep_id, cx).is_some() {
+                        this.close_other_tabs(keep_id, window, cx);
+                        return;
                     }
-                    this.close_other_tabs(window, cx);
+                    this.save_state_async(cx, window);
+                    cx.notify();
                 });
                 return;
             }
             self.remove_tab_by_id(tab_id, window, cx);
         }
-        self.active_tab_id = Some(active_tab_id);
-        self.focus_active_tab(window, cx);
+        if let Some(keep_index) = self.tab_index_of(keep_id, cx) {
+            self.set_active_tab(keep_index, window, cx);
+        }
         self.save_state_async(cx, window);
         cx.notify();
     }
