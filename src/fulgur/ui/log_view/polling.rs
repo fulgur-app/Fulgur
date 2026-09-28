@@ -1,5 +1,6 @@
 //! The `Fulgur` tail engine: the background poll task and chunk application.
 
+use crate::fulgur::ui::tabs::editor_tab::replace_editor_text;
 use crate::fulgur::ui::tabs::tab::TabId;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -231,7 +232,7 @@ impl Fulgur {
         if chunk.reset {
             // File was replaced or shrunk: rebuild the buffer from the new content.
             content.update(cx, |state, cx| {
-                state.set_value(chunk.text.as_str(), window, cx);
+                replace_editor_text(state, chunk.text.as_str(), window, cx);
             });
             snap_to_last_line(&content, window, cx);
         } else {

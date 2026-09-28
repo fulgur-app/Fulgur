@@ -4,10 +4,31 @@ use crate::fulgur::languages::supported_languages::{
 };
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::UNTITLED;
-use gpui_kit::component::input::{DocumentColorProvider, Position};
-use gpui_kit::{App, Window};
+use gpui_kit::component::input::{DocumentColorProvider, EditorState, InputEvent, Position};
+use gpui_kit::{App, Context, Window};
 use std::rc::Rc;
 use std::time::SystemTime;
+
+/// Replace the whole text of an editor buffer without recording undo history.
+///
+/// `set_value` alone emits no `InputEvent::Change`, which would leave content
+/// subscribers (modified tracking, Markdown previews) on the old text, so every
+/// programmatic full replacement of an editor buffer goes through here.
+///
+/// ### Arguments
+/// - `state`: The editor buffer to replace
+/// - `text`: The new buffer text
+/// - `window`: The window context
+/// - `cx`: The editor buffer context
+pub fn replace_editor_text(
+    state: &mut EditorState,
+    text: &str,
+    window: &mut Window,
+    cx: &mut Context<EditorState>,
+) {
+    state.set_value(text, window, cx);
+    cx.emit(InputEvent::Change);
+}
 
 impl EditorTab {
     /// Update cached metadata used by tab tooltip rendering.
