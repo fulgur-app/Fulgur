@@ -231,11 +231,14 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::{
-        Fulgur, languages::supported_languages::SupportedLanguage,
-        ui::tabs::editor_tab::CsvTableDelegate,
+        Fulgur,
+        languages::supported_languages::SupportedLanguage,
+        ui::tabs::editor_tab::{CsvTableDelegate, replace_editor_text},
     };
     #[cfg(feature = "gpui-test-support")]
     use core::prelude::v1::test;
+    #[cfg(feature = "gpui-test-support")]
+    use gpui_kit::component::table::TableDelegate;
 
     #[cfg(feature = "gpui-test-support")]
     use gpui_kit::test::TestWindowExt;
@@ -458,23 +461,43 @@ mod tests {
         visual_cx.update(|window, cx| {
             toolbar.update(cx, |bar, cx| {
                 bar.edit_active_table(CsvTableDelegate::insert_row_below, window, cx);
+                bar.edit_active_table(CsvTableDelegate::insert_row_below, window, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+        visual_cx.update(TestWindowExt::render_frame);
+
+        let table_after = active_csv_table(&fulgur, &mut visual_cx);
+        assert_eq!(table_before.entity_id(), table_after.entity_id());
+        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), "a,b\n1,2\n,\n,\n");
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_external_edit_rebuilds_table_on_next_render(cx: &mut TestAppContext) {
+        let (fulgur, _toolbar, mut visual_cx) = setup_csv_toolbar(cx);
+        let table_before = active_csv_table(&fulgur, &mut visual_cx);
+
+        visual_cx.update(|window, cx| {
+            let content = fulgur
+                .read(cx)
+                .get_active_editor_tab(cx)
+                .expect("expected active editor tab")
+                .content
+                .clone();
+            content.update(cx, |state, cx| {
+                replace_editor_text(state, "x,y,z\n1,2,3", window, cx);
             });
         });
         visual_cx.run_until_parked();
 
-        // The next ensure pass (normally triggered by the window render) must
-        // keep the table the edit was made through instead of rebuilding it,
-        // which would drop the selection and scroll state.
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                let warning = this
-                    .update_active_editor_tab(cx, |editor, cx| editor.ensure_csv_table(window, cx))
-                    .expect("expected active editor tab");
-                assert!(warning.is_none());
-            });
-        });
-
+        // The tab's notify re-renders the window, which rebuilds the dropped
+        // table from the new text.
+        visual_cx.update(TestWindowExt::render_frame);
         let table_after = active_csv_table(&fulgur, &mut visual_cx);
-        assert_eq!(table_before.entity_id(), table_after.entity_id());
+        assert_ne!(table_before.entity_id(), table_after.entity_id());
+        let columns =
+            visual_cx.update(|_window, cx| table_after.read(cx).delegate().columns_count(cx));
+        assert_eq!(columns, 4, "row-number column plus x, y and z");
     }
 }

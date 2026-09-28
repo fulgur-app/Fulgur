@@ -139,6 +139,9 @@ impl Tab {
                 return;
             }
             if let Tab::Editor(editor_tab) = this {
+                if editor_tab.invalidate_csv_table_on_external_change(cx) {
+                    cx.notify();
+                }
                 // In log view the tail task owns the buffer and advances the
                 // saved baseline itself; the user cannot edit a read-only buffer.
                 if editor_tab.log_view {

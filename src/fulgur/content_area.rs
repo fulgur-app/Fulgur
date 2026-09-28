@@ -413,10 +413,11 @@ impl Fulgur {
             },
         }
 
-        // A CSV tab in table mode needs its grid (re)built from the canonical
-        // text before we snapshot the tab read-only below. When the parse is
-        // lossy, `ensure_csv_table` falls back to text mode and returns a
-        // warning to surface to the user.
+        // A CSV tab in table mode needs its grid built before we snapshot the
+        // tab read-only below. This only parses when the table is missing (first
+        // show, or dropped by an external edit). When the parse is lossy,
+        // `ensure_csv_table` falls back to text mode and returns a warning to
+        // surface to the user.
         let csv_table_warning = if let Some(active_index) = active_tab_index
             && let Some(tab_entity) = self.tabs.get(active_index).cloned()
         {
