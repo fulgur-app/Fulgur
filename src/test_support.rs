@@ -8,9 +8,12 @@ use crate::fulgur::{
     window_manager::WindowManager,
 };
 #[cfg(feature = "gpui-test-support")]
+use gpui_kit::component::WindowExt;
+#[cfg(feature = "gpui-test-support")]
 use gpui_kit::{
-    AnyWindowHandle, AppContext, Bounds, Context, Entity, IntoElement, Render, TestAppContext,
-    VisualTestContext, Window, WindowBounds, WindowId, WindowOptions, div, point, px, size,
+    Action, AnyWindowHandle, AppContext, Bounds, Context, Entity, IntoElement, Render,
+    TestAppContext, VisualTestContext, Window, WindowBounds, WindowId, WindowOptions, div, point,
+    px, size,
 };
 #[cfg(feature = "gpui-test-support")]
 use parking_lot::Mutex;
@@ -266,4 +269,29 @@ pub fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Ful
             .into_inner()
             .expect("failed to capture test Fulgur entity"),
     )
+}
+
+/// Dispatch a dialog action, as a dialog's OK or Cancel button does, and let the result settle.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context of the window showing the dialog
+/// - `action`: The dialog action to dispatch
+#[cfg(feature = "gpui-test-support")]
+pub fn dispatch_dialog_action(visual_cx: &mut VisualTestContext, action: impl Action) {
+    visual_cx.run_until_parked();
+    visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+    visual_cx.dispatch_action(action);
+    visual_cx.run_until_parked();
+}
+
+/// Whether a window currently shows a dialog.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context of the window to inspect
+///
+/// ### Returns
+/// - `bool`: `true` when the window has an active dialog
+#[cfg(feature = "gpui-test-support")]
+pub fn has_active_dialog(visual_cx: &mut VisualTestContext) -> bool {
+    visual_cx.update(WindowExt::has_active_dialog)
 }
