@@ -200,6 +200,20 @@ pub(super) struct LogTailChunk {
     pub reset: bool,
 }
 
+/// Read a whole file from its start as a chunk that replaces the display.
+///
+/// ### Arguments
+/// - `path`: The file to read
+///
+/// ### Returns
+/// - `Some(LogTailChunk)`: The full text, the position it reaches, and `reset` set
+/// - `None`: If the file could not be opened or read
+pub(super) fn read_whole_log(path: &Path) -> Option<LogTailChunk> {
+    let mut file = File::open(path).ok()?;
+    let identity = LogFileIdentity::from_file(&file);
+    read_chunk_to_end(&mut file, 0, identity, true).ok()
+}
+
 /// Read newly appended bytes from a file beyond a known position.
 ///
 /// ### Arguments

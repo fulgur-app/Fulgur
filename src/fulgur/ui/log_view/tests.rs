@@ -4,6 +4,7 @@ use crate::fulgur::Fulgur;
 use crate::fulgur::editor_tab::TabLocation;
 use crate::fulgur::files::file_watcher::FileWatchEvent;
 use crate::fulgur::files::file_watcher::test_helpers::setup_fulgur;
+use crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str;
 use crate::fulgur::ui::tabs::tab::TabId;
 use gpui_kit::component::input::RopeExt;
 use gpui_kit::{Entity, EntityInputHandler, Pixels, TestAppContext, VisualTestContext, point, px};
@@ -260,7 +261,7 @@ fn test_activate_log_view_rereads_a_buffer_that_lags_the_file(cx: &mut TestAppCo
     let path = dir.path().join("lagging.log");
     std::fs::write(&path, "line1\nline2\n").expect("write log file");
 
-    visual_cx.update(|window, cx| {
+    let tab_id = visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             let tab = this.tabs.first().expect("expected one tab").clone();
             let tab_id = tab.update(cx, |tab, cx| {
@@ -274,12 +275,56 @@ fn test_activate_log_view_rereads_a_buffer_that_lags_the_file(cx: &mut TestAppCo
                 editor_tab.id
             });
             this.activate_log_view(tab_id, window, cx);
-            this.stop_log_poll_task(tab_id);
+            let editor = this.editor_tab(tab_id, cx).expect("editor tab");
+            assert_eq!(
+                editor.content.read(cx).text().to_string(),
+                "line1\n",
+                "the reread must not run on the UI thread during activation"
+            );
+            let state = this.log_tail_state.get(&tab_id).expect("tail state");
+            assert!(state.reseed_pending);
+            tab_id
+        })
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_, cx| {
+        fulgur.update(cx, |this, cx| {
             let editor = this.editor_tab(tab_id, cx).expect("editor tab");
             assert_eq!(editor.content.read(cx).text().to_string(), "line1\nline2\n");
             assert!(!editor.modified);
             let state = this.log_tail_state.get(&tab_id).expect("tail state");
             assert_eq!(state.byte_offset, 12);
+            assert!(!state.reseed_pending);
+            this.stop_log_poll_task(tab_id);
+        });
+    });
+}
+
+#[gpui_kit::test]
+fn test_tail_keeps_a_length_baseline_and_leaving_log_view_fingerprints_it(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let (_dir, tab_id) = setup_log_tab(&fulgur, &mut visual_cx, "line1\n");
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.apply_log_tail_chunk(tab_id, &appended("line2\n", 6), window, cx);
+            let editor = this.editor_tab(tab_id, cx).expect("editor tab");
+            assert_eq!(
+                editor.original_content_hash, 0,
+                "a tail chunk must not fingerprint the whole buffer"
+            );
+            assert_eq!(editor.original_content_len, 12);
+            assert!(!editor.content_differs_from_original(cx));
+
+            this.deactivate_log_view(tab_id, cx);
+            let editor = this.editor_tab(tab_id, cx).expect("editor tab");
+            assert_eq!(
+                editor.original_content_hash,
+                content_fingerprint_from_str("line1\nline2\n").0
+            );
+            assert!(!editor.content_differs_from_original(cx));
+            assert!(!editor.modified);
         });
     });
 }
