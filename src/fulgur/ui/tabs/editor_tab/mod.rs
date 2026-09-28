@@ -82,10 +82,10 @@ pub struct EditorTab {
     pub csv_view_mode: CsvViewMode,
     /// The delimiter detected on open and preserved on save (CSV tabs only).
     pub csv_delimiter: u8,
-    /// The lazily built table state, rebuilt when the source text changes.
+    /// The lazily built table state. Dropped by the tab's content subscription
+    /// when the buffer changes from outside the table, and rebuilt by
+    /// `ensure_csv_table` on the next render.
     pub csv_table: Option<Entity<TableState<CsvTableDelegate>>>,
-    /// Fingerprint of the text the current `csv_table` was parsed from.
-    pub csv_table_source_hash: u64,
     /// Optional theme-relative color tag shown as the tab's border color.
     pub color_tag: Option<ColorTag>,
     /// Whether the log view (read-only live tail of `content`) is active for
@@ -181,7 +181,10 @@ impl EditorTab {
         self.location.local_path()
     }
 
-    /// Ensure the CSV table state is built and reflects the current text.
+    /// Build the CSV table state from the current text if it is not built yet.
+    ///
+    /// Cheap when the table exists: staleness is handled by
+    /// `invalidate_csv_table_on_external_change`, not by re-reading the buffer.
     ///
     /// ### Arguments
     /// - `window`: The window the table is created in
@@ -198,15 +201,10 @@ impl EditorTab {
             self.csv_table = None;
             return None;
         }
-        let text = self.content.read(cx).value().to_string();
-        let (hash, _len) = content_fingerprint_from_str(&text);
-        if let Some(table) = &self.csv_table
-            && (self.csv_table_source_hash == hash
-                || table.read(cx).delegate().last_commit_hash() == Some(hash))
-        {
-            self.csv_table_source_hash = hash;
+        if self.csv_table.is_some() {
             return None;
         }
+        let text = self.content.read(cx).text().to_string();
 
         let outcome = parse_csv(&text, self.csv_delimiter);
         if outcome.dropped_records > 0 {
@@ -231,8 +229,29 @@ impl EditorTab {
         CsvTableDelegate::attach_selection_tracking(&table, cx);
 
         self.csv_table = Some(table);
-        self.csv_table_source_hash = hash;
         None
+    }
+
+    /// Drop the CSV table when the buffer changed from outside it, so the next
+    /// `ensure_csv_table` rebuilds it from the new text. The table's own
+    /// commits keep it, preserving its selection and scroll state.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: The table was dropped
+    /// - `false`: There was no table, or the change was the table's own commit
+    pub(crate) fn invalidate_csv_table_on_external_change(&mut self, cx: &mut App) -> bool {
+        let Some(table) = &self.csv_table else {
+            return false;
+        };
+        let own_commit = table.update(cx, |state, _| state.delegate_mut().take_own_commit());
+        if own_commit {
+            return false;
+        }
+        self.csv_table = None;
+        true
     }
 }
 

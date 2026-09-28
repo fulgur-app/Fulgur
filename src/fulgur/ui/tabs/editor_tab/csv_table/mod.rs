@@ -8,12 +8,12 @@ mod rows;
 mod tests;
 
 use gpui_kit::component::{
-    input::{EditorState, InputEvent, InputState},
+    input::{EditorState, InputState},
     table::{Column, TableEvent, TableState},
 };
 use gpui_kit::{App, Context, Entity, SharedString, Window, px};
 
-use super::content_fingerprint_from_str;
+use super::replace_editor_text;
 use crate::fulgur::files::csv_support::{CsvData, serialize_csv};
 
 /// Fixed width of the synthetic row-number column.
@@ -57,9 +57,10 @@ pub struct CsvTableDelegate {
     dialog_input: Entity<InputState>,
     /// The most recent selection event received via `attach_selection_tracking`.
     last_selection: Option<CsvSelection>,
-    /// Fingerprint of the last text this delegate committed to the buffer, so
-    /// `ensure_csv_table` can tell the table's own commits from external edits.
-    last_commit_hash: Option<u64>,
+    /// Number of this delegate's buffer commits whose `InputEvent::Change` has
+    /// not reached the tab's content subscription yet, so the subscription can
+    /// tell the table's own commits from external edits.
+    pending_own_commits: usize,
 }
 
 impl CsvTableDelegate {
@@ -88,7 +89,7 @@ impl CsvTableDelegate {
             content,
             dialog_input,
             last_selection: None,
-            last_commit_hash: None,
+            pending_own_commits: 0,
         }
     }
 
@@ -215,13 +216,17 @@ impl CsvTableDelegate {
         Self::selected_data_column_of(self.last_selection)
     }
 
-    /// Fingerprint of the last text this delegate committed to the buffer.
+    /// Consume one pending own-commit marker for a buffer change being handled.
     ///
     /// ### Returns
-    /// - `Some(u64)`: The fingerprint of the last committed text
-    /// - `None`: If the delegate has not committed yet
-    pub(super) fn last_commit_hash(&self) -> Option<u64> {
-        self.last_commit_hash
+    /// - `true`: The change is one of this delegate's own commits
+    /// - `false`: The change came from outside the table
+    pub(super) fn take_own_commit(&mut self) -> bool {
+        if self.pending_own_commits == 0 {
+            return false;
+        }
+        self.pending_own_commits -= 1;
+        true
     }
 
     /// Serialize the current model back into the canonical text buffer.
@@ -237,11 +242,9 @@ impl CsvTableDelegate {
                 return;
             }
         };
-        let (hash, _len) = content_fingerprint_from_str(&text);
-        self.last_commit_hash = Some(hash);
+        self.pending_own_commits += 1;
         self.content.update(cx, |state, cx| {
-            state.set_value(text, window, cx);
-            cx.emit(InputEvent::Change);
+            replace_editor_text(state, &text, window, cx);
         });
     }
 
