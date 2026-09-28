@@ -181,7 +181,7 @@ impl Fulgur {
                 editor_context_menu: None,
                 editor_context_menu_subscription: None,
                 markdown_preview_focus: cx.focus_handle(),
-                markdown_panel_view_state: None,
+                markdown_panel_preview: None,
                 markdown_preview_pending_copy: None,
                 status_bar,
                 _status_bar_subscription: status_bar_subscription,

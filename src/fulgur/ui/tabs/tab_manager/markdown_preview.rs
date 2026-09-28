@@ -3,10 +3,12 @@ use crate::fulgur::{
     languages::supported_languages::SupportedLanguage,
     settings::MarkdownPreviewMode,
     tab::Tab,
-    ui::tabs::{markdown_preview_tab::MarkdownPreviewTab, tab::TabId},
+    ui::tabs::{
+        markdown_preview_source::MarkdownPreviewSource, markdown_preview_tab::MarkdownPreviewTab,
+        tab::TabId,
+    },
 };
-use gpui_kit::component::{input::EditorState, text::TextViewState};
-use gpui_kit::{App, AppContext, Context, Entity, SharedString, Window};
+use gpui_kit::{App, Context, Entity, SharedString, Window};
 
 impl Fulgur {
     /// Build a Markdown preview tab bound to a source editor tab
@@ -14,26 +16,26 @@ impl Fulgur {
     /// ### Arguments
     /// - `source_tab_id`: Identifier of the editor tab the preview mirrors
     /// - `source_title`: Title of the source editor tab, used to derive the preview title
-    /// - `content`: Input state of the source editor tab, rendered by the preview
-    /// - `cx`: The application context, used to allocate the per-preview view state
+    /// - `source_tab`: The source editor tab, whose content the preview renders
+    /// - `cx`: The application context, used to allocate the per-preview source
     ///
     /// ### Returns
-    /// - `Tab`: A `Tab::MarkdownPreview` carrying a freshly allocated tab id and view state
+    /// - `Some(Tab)`: A `Tab::MarkdownPreview` carrying a freshly allocated tab id and preview source
+    /// - `None`: If `source_tab` is not an editor tab
     fn build_preview_tab(
         &mut self,
         source_tab_id: TabId,
         source_title: &str,
-        content: Entity<EditorState>,
+        source_tab: &Entity<Tab>,
         cx: &mut Context<Self>,
-    ) -> Tab {
-        let view_state = cx.new(|cx| TextViewState::markdown("", cx));
-        Tab::MarkdownPreview(MarkdownPreviewTab {
+    ) -> Option<Tab> {
+        let preview = MarkdownPreviewSource::for_editor_tab(source_tab, cx)?;
+        Some(Tab::MarkdownPreview(MarkdownPreviewTab {
             id: self.allocate_tab_id(),
             title: SharedString::from(format!("Preview - {source_title}")),
             source_tab_id,
-            content,
-            view_state,
-        })
+            preview,
+        }))
     }
 
     /// Collect the data needed to preview the editor tab at the given position
@@ -43,24 +45,21 @@ impl Fulgur {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some((TabId, SharedString, Entity<EditorState>))`: The tab is a Markdown editor tab eligible for a preview
+    /// - `Some((TabId, SharedString, Entity<Tab>))`: The tab is a Markdown editor tab eligible for a preview
     /// - `None`: The position holds no tab, a non-editor tab, a large file, or a non-Markdown language
     fn markdown_preview_source_at(
         &self,
         tab_index: usize,
         cx: &App,
-    ) -> Option<(TabId, SharedString, Entity<EditorState>)> {
-        match self.tabs.get(tab_index).map(|tab| tab.read(cx)) {
-            Some(Tab::Editor(editor_tab))
+    ) -> Option<(TabId, SharedString, Entity<Tab>)> {
+        let tab = self.tabs.get(tab_index)?;
+        match tab.read(cx) {
+            Tab::Editor(editor_tab)
                 if !editor_tab.large_file
                     && (editor_tab.language == SupportedLanguage::Markdown
                         || editor_tab.language == SupportedLanguage::MarkdownInline) =>
             {
-                Some((
-                    editor_tab.id,
-                    editor_tab.title.clone(),
-                    editor_tab.content.clone(),
-                ))
+                Some((editor_tab.id, editor_tab.title.clone(), tab.clone()))
             }
             _ => None,
         }
@@ -96,9 +95,15 @@ impl Fulgur {
                 return;
             }
             let source_title = editor_tab.title.clone();
-            let content = editor_tab.content.clone();
             let editor_pos = self.active_tab_index(cx).unwrap_or(0);
-            let preview_tab = self.build_preview_tab(editor_id, &source_title, content, cx);
+            let Some(source_tab) = self.tabs.get(editor_pos).cloned() else {
+                return;
+            };
+            let Some(preview_tab) =
+                self.build_preview_tab(editor_id, &source_title, &source_tab, cx)
+            else {
+                return;
+            };
             self.tabs
                 .insert(editor_pos + 1, preview_tab.into_entity(cx));
             self.set_active_tab(editor_pos + 1, window, cx);
@@ -120,10 +125,11 @@ impl Fulgur {
         let mut offset = 0;
         for orig_idx in 0..original_count {
             let actual_idx = orig_idx + offset;
-            if let Some((editor_id, title, content)) =
+            if let Some((editor_id, title, source_tab)) =
                 self.markdown_preview_source_at(actual_idx, cx)
+                && let Some(preview_tab) =
+                    self.build_preview_tab(editor_id, &title, &source_tab, cx)
             {
-                let preview_tab = self.build_preview_tab(editor_id, &title, content, cx);
                 self.tabs
                     .insert(actual_idx + 1, preview_tab.into_entity(cx));
                 offset += 1;
@@ -147,10 +153,10 @@ impl Fulgur {
         {
             return;
         }
-        if let Some((editor_id, title, content)) =
+        if let Some((editor_id, title, source_tab)) =
             self.markdown_preview_source_at(editor_tab_index, cx)
+            && let Some(preview_tab) = self.build_preview_tab(editor_id, &title, &source_tab, cx)
         {
-            let preview_tab = self.build_preview_tab(editor_id, &title, content, cx);
             self.tabs
                 .insert(editor_tab_index + 1, preview_tab.into_entity(cx));
         }

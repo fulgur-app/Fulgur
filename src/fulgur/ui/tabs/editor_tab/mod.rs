@@ -11,6 +11,7 @@ mod tests;
 pub use csv_table::CsvTableDelegate;
 pub use location::TabLocation;
 pub use navigation::{Jump, extract_line_number};
+pub use operations::replace_editor_text;
 
 use gpui_kit::component::input::{EditorState, InputState, Rope, TabSize};
 use gpui_kit::component::table::TableState;

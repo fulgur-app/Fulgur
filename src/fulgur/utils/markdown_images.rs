@@ -2,6 +2,7 @@
 
 use crate::fulgur::utils::http::is_network_or_verbatim_path;
 use gpui_kit::http_client::Url;
+use std::borrow::Cow;
 use std::path::Path;
 
 /// Rewrite local image references in `source` to absolute `file://` URLs.
@@ -13,21 +14,41 @@ use std::path::Path;
 ///   be resolved) while absolute paths are still converted.
 ///
 /// ### Returns
-/// - `String`: The Markdown with local image references rewritten; the source
-///   unchanged when it parses to no rewritable image (or fails to parse).
+/// - `Cow<str>`: The Markdown with local image references rewritten; the
+///   source borrowed unchanged when it holds no rewritable image (or fails to
+///   parse).
 #[must_use]
-pub fn rewrite_markdown_image_paths(source: &str, base_dir: Option<&Path>) -> String {
+pub fn rewrite_markdown_image_paths<'a>(source: &'a str, base_dir: Option<&Path>) -> Cow<'a, str> {
+    if !may_reference_image(source) {
+        return Cow::Borrowed(source);
+    }
     let Ok(ast) = markdown::to_mdast(source, &markdown::ParseOptions::gfm()) else {
-        return source.to_string();
+        return Cow::Borrowed(source);
     };
 
     let mut replacements: Vec<(usize, usize, String)> = Vec::new();
     collect_image_replacements(&ast, base_dir, &mut replacements);
     if replacements.is_empty() {
-        return source.to_string();
+        return Cow::Borrowed(source);
     }
 
-    apply_replacements(source, &mut replacements)
+    Cow::Owned(apply_replacements(source, &mut replacements))
+}
+
+/// Cheaply tell whether `source` can contain an image worth parsing for.
+///
+/// ### Arguments
+/// - `source`: The Markdown text about to be rendered in the preview.
+///
+/// ### Returns
+/// - `bool`: `true` when `source` contains a Markdown image opener (`![`) or an
+///   HTML `<img` tag in any case; `false` when a full parse cannot find one.
+fn may_reference_image(source: &str) -> bool {
+    source.contains("![")
+        || source
+            .as_bytes()
+            .windows(4)
+            .any(|window| window.eq_ignore_ascii_case(b"<img"))
 }
 
 /// Walk the AST, collecting `(start, end, replacement)` edits for local images.
@@ -334,6 +355,28 @@ mod tests {
     fn leaves_plain_text_untouched() {
         let source = "# Heading\n\nSome text with no images.";
         assert_eq!(rewrite_markdown_image_paths(source, Some(&base())), source);
+    }
+
+    #[test]
+    fn borrows_source_without_image_markers() {
+        let source = "[a link](docs/readme.md) and `src/main.rs`";
+        assert!(matches!(
+            rewrite_markdown_image_paths(source, Some(&base())),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn rewrites_uppercase_html_img_src() {
+        let out = rewrite_markdown_image_paths(r#"<IMG SRC="logo.png">"#, Some(&base()));
+        assert_eq!(out, format!(r#"<IMG SRC="{}">"#, expected_url("logo.png")));
+    }
+
+    #[test]
+    fn may_reference_image_detects_markers() {
+        assert!(may_reference_image("![a](b.png)"));
+        assert!(may_reference_image("<Img src='b.png'>"));
+        assert!(!may_reference_image("! [not an image] <im g>"));
     }
 
     #[cfg(windows)]

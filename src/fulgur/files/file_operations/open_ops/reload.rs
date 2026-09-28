@@ -1,5 +1,10 @@
 use super::super::{DecodedContents, detect_encoding_and_decode};
-use crate::fulgur::{Fulgur, editor_tab::ContentRevision, tab::Tab, ui::tabs::tab::TabId};
+use crate::fulgur::{
+    Fulgur,
+    editor_tab::{ContentRevision, replace_editor_text},
+    tab::Tab,
+    ui::tabs::tab::TabId,
+};
 use gpui_kit::{Context, Window};
 use std::path::PathBuf;
 
@@ -127,7 +132,7 @@ impl Fulgur {
                 (input_state.cursor(), input_state.scroll_offset())
             };
             editor_tab.content.update(cx, |input_state, cx| {
-                input_state.set_value(&decoded.content, window, cx);
+                replace_editor_text(input_state, &decoded.content, window, cx);
             });
             editor_tab.set_original_content_from_str(&decoded.content);
             editor_tab.encoding = decoded.encoding;

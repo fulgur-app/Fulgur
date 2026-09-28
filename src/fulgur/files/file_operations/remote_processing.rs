@@ -197,7 +197,7 @@ impl Fulgur {
                 return;
             };
             editor_tab.content.update(cx, |input_state, cx| {
-                input_state.set_value(&remote_file.content, window, cx);
+                editor_tab::replace_editor_text(input_state, &remote_file.content, window, cx);
             });
             editor_tab.location =
                 crate::fulgur::editor_tab::TabLocation::Remote(remote_file.spec.clone());

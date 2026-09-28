@@ -77,7 +77,8 @@ pub struct Fulgur {
     editor_context_menu: Option<(Point<Pixels>, Entity<PopupMenu>)>, // Custom right-click context menu for the editor and markdown preview
     editor_context_menu_subscription: Option<Subscription>, // Subscription to clear editor_context_menu on dismiss
     markdown_preview_focus: FocusHandle, // Stable dispatch target for the markdown preview context menu (Copy / Select All)
-    markdown_panel_view_state: Option<Entity<gpui_kit::component::text::TextViewState>>, // Owned text view state backing the inline markdown preview panel, created lazily on render
+    markdown_panel_preview:
+        Option<Entity<crate::fulgur::ui::tabs::markdown_preview_source::MarkdownPreviewSource>>, // Preview source backing the inline markdown preview panel, bound lazily on render to the tab showing it
     markdown_preview_pending_copy: Option<String>, // Preview selection captured at right-click time, before the menu's own click clears it, consumed by the Copy action
     status_bar: Entity<StatusBar>, // The status bar view at the bottom of the window
     _status_bar_subscription: Subscription, // Routes StatusBarEvent from the status bar to window-level handlers

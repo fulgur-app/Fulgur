@@ -1,5 +1,7 @@
 use crate::fulgur::files::csv_support::{DEFAULT_DELIMITER, serialize_csv};
 use crate::fulgur::ui::copy_button::CopyButton;
+use crate::fulgur::ui::tabs::markdown_preview_source::MarkdownPreviewSource;
+use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::utils::markdown_links::{MarkdownLinkTarget, resolve_markdown_link};
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
@@ -17,9 +19,8 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    AnyElement, App, AppContext, ClickEvent, Context, DismissEvent, Div, Entity, Focusable,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString,
-    Styled, Window, div, px,
+    AnyElement, App, ClickEvent, Context, DismissEvent, Div, Entity, Focusable, InteractiveElement,
+    IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, Window, div, px,
 };
 use std::path::PathBuf;
 
@@ -158,31 +159,55 @@ impl Fulgur {
     /// - `None`: If no markdown preview is currently displayed.
     fn active_markdown_preview_state(&self, cx: &App) -> Option<Entity<TextViewState>> {
         match self.active_tab(cx)? {
-            Tab::MarkdownPreview(preview) => Some(preview.view_state.clone()),
-            Tab::Editor(_) => self.markdown_panel_view_state.clone(),
+            Tab::MarkdownPreview(preview_tab) => Some(preview_tab.preview.read(cx).view_state()),
+            Tab::Editor(_) => self
+                .markdown_panel_preview
+                .as_ref()
+                .map(|preview| preview.read(cx).view_state()),
             Tab::Settings(_) => None,
         }
     }
 
-    /// Ensure the inline preview panel owns a persistent text view state.
+    /// Bind the inline preview panel to an editor tab, reusing the current
+    /// preview source when it already mirrors that tab.
     ///
     /// ### Arguments
-    /// - `text`: The rendered markdown source to display
+    /// - `source_tab`: The editor tab shown next to the panel
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Entity<TextViewState>`: The persistent state for the inline preview.
-    fn ensure_markdown_panel_state(
+    /// - `Some(Entity<MarkdownPreviewSource>)`: The preview source of the panel.
+    /// - `None`: If `source_tab` is not an editor tab.
+    fn ensure_markdown_panel_preview(
         &mut self,
-        text: &str,
+        source_tab: &Entity<Tab>,
         cx: &mut Context<Self>,
-    ) -> Entity<TextViewState> {
-        let state = self
-            .markdown_panel_view_state
-            .get_or_insert_with(|| cx.new(|cx| TextViewState::markdown(text, cx)))
-            .clone();
-        state.update(cx, |state, cx| state.set_text(text, cx));
-        state
+    ) -> Option<Entity<MarkdownPreviewSource>> {
+        let source_tab_id = source_tab.read(cx).id();
+        if let Some(preview) = &self.markdown_panel_preview
+            && preview.read(cx).source_tab_id() == source_tab_id
+        {
+            return Some(preview.clone());
+        }
+        let preview = MarkdownPreviewSource::for_editor_tab(source_tab, cx)?;
+        self.markdown_panel_preview = Some(preview.clone());
+        Some(preview)
+    }
+
+    /// Drop the inline preview panel source when it mirrors a tab that no
+    /// longer shows the panel, so hidden previews stop re-rendering on edits.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: The editor tab rendered without the panel
+    /// - `cx`: The application context
+    fn release_markdown_panel_preview_of(&mut self, tab_id: TabId, cx: &App) {
+        if self
+            .markdown_panel_preview
+            .as_ref()
+            .is_some_and(|preview| preview.read(cx).source_tab_id() == tab_id)
+        {
+            self.markdown_panel_preview = None;
+        }
     }
 
     /// Build the link activation handler for a markdown preview.
@@ -372,20 +397,19 @@ impl Fulgur {
     ) -> AnyElement {
         enum ActiveTabRenderData {
             Editor {
+                tab: Entity<Tab>,
+                tab_id: TabId,
                 language: SupportedLanguage,
                 show_markdown_preview: bool,
                 large_file: bool,
                 content: Entity<EditorState>,
-                path: Option<std::path::PathBuf>,
                 csv_view_mode: editor_tab::CsvViewMode,
                 csv_table: Option<Entity<TableState<editor_tab::CsvTableDelegate>>>,
                 log_view: bool,
             },
             Settings,
             MarkdownPreview {
-                content: Entity<EditorState>,
-                source_path: Option<std::path::PathBuf>,
-                view_state: Entity<gpui_kit::component::text::TextViewState>,
+                preview: Entity<MarkdownPreviewSource>,
             },
         }
 
@@ -416,35 +440,19 @@ impl Fulgur {
         let active_tab = active_tab_index.and_then(|active_index| {
             tabs_ref.get(active_index).map(|tab| match tab.read(cx) {
                 Tab::Editor(editor_tab) => ActiveTabRenderData::Editor {
+                    tab: tab.clone(),
+                    tab_id: editor_tab.id,
                     language: editor_tab.language,
                     show_markdown_preview: editor_tab.show_markdown_preview,
                     large_file: editor_tab.large_file,
                     content: editor_tab.content.clone(),
-                    path: editor_tab.location.local_path().cloned(),
                     csv_view_mode: editor_tab.csv_view_mode,
                     csv_table: editor_tab.csv_table.clone(),
                     log_view: editor_tab.log_view,
                 },
                 Tab::Settings(_) => ActiveTabRenderData::Settings,
                 Tab::MarkdownPreview(preview_tab) => ActiveTabRenderData::MarkdownPreview {
-                    content: tabs_ref
-                        .iter()
-                        .find_map(|t| match t.read(cx) {
-                            Tab::Editor(editor_tab)
-                                if editor_tab.id == preview_tab.source_tab_id =>
-                            {
-                                Some(editor_tab.content.clone())
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or_else(|| preview_tab.content.clone()),
-                    source_path: tabs_ref.iter().find_map(|t| match t.read(cx) {
-                        Tab::Editor(editor_tab) if editor_tab.id == preview_tab.source_tab_id => {
-                            editor_tab.location.local_path().cloned()
-                        }
-                        _ => None,
-                    }),
-                    view_state: preview_tab.view_state.clone(),
+                    preview: preview_tab.preview.clone(),
                 },
             })
         });
@@ -452,11 +460,12 @@ impl Fulgur {
         if let Some(tab) = active_tab {
             match tab {
                 ActiveTabRenderData::Editor {
+                    tab,
+                    tab_id,
                     language,
                     show_markdown_preview,
                     large_file,
                     content,
-                    path,
                     csv_view_mode,
                     csv_table,
                     log_view,
@@ -484,26 +493,27 @@ impl Fulgur {
                         cx.listener(|this, event: &MouseDownEvent, window, cx| {
                             this.on_editor_right_click(event, window, cx);
                         });
-                    if language == SupportedLanguage::Markdown
+                    let shows_markdown_panel = language == SupportedLanguage::Markdown
                         && show_markdown_preview
                         && !large_file
                         && self.settings.editor_settings.markdown_settings.preview_mode
-                            == crate::fulgur::settings::MarkdownPreviewMode::Panel
+                            == crate::fulgur::settings::MarkdownPreviewMode::Panel;
+                    if !shows_markdown_panel {
+                        self.release_markdown_panel_preview_of(tab_id, cx);
+                    }
+                    if shows_markdown_panel
+                        && let Some(markdown_preview) = self.ensure_markdown_panel_preview(&tab, cx)
                     {
-                        // Reading the content entity here tracks it for this
-                        // window, so edits re-render the panel automatically.
-                        let preview_text =
-                            crate::fulgur::utils::markdown_images::rewrite_markdown_image_paths(
-                                content.read(cx).value().as_ref(),
-                                path.as_deref().and_then(std::path::Path::parent),
-                            );
-                        let preview_state = self.ensure_markdown_panel_state(&preview_text, cx);
-                        let link_handler = Self::markdown_link_handler(
-                            path.as_deref()
-                                .and_then(std::path::Path::parent)
-                                .map(std::path::Path::to_path_buf),
-                            cx,
-                        );
+                        let (preview_state, base_dir) = {
+                            let markdown_preview = markdown_preview.read(cx);
+                            (
+                                markdown_preview.view_state(),
+                                markdown_preview
+                                    .base_dir()
+                                    .map(std::path::Path::to_path_buf),
+                            )
+                        };
+                        let link_handler = Self::markdown_link_handler(base_dir, cx);
                         let preview = self
                             .layout_markdown_preview(
                                 TextView::new(&preview_state)
@@ -558,22 +568,15 @@ impl Fulgur {
                         .child(self.render_settings(window, cx))
                         .into_any_element();
                 }
-                ActiveTabRenderData::MarkdownPreview {
-                    content,
-                    source_path,
-                    view_state,
-                } => {
-                    let base_dir = source_path.as_deref().and_then(std::path::Path::parent);
-                    let preview_text =
-                        crate::fulgur::utils::markdown_images::rewrite_markdown_image_paths(
-                            content.read(cx).value().as_ref(),
-                            base_dir,
-                        );
-                    view_state.update(cx, |state, cx| {
-                        state.set_text(&preview_text, cx);
-                    });
-                    let link_handler =
-                        Self::markdown_link_handler(base_dir.map(std::path::Path::to_path_buf), cx);
+                ActiveTabRenderData::MarkdownPreview { preview } => {
+                    let (view_state, base_dir) = {
+                        let preview = preview.read(cx);
+                        (
+                            preview.view_state(),
+                            preview.base_dir().map(std::path::Path::to_path_buf),
+                        )
+                    };
+                    let link_handler = Self::markdown_link_handler(base_dir, cx);
                     let preview = self
                         .layout_markdown_preview(
                             TextView::new(&view_state)
@@ -670,7 +673,7 @@ mod tests {
 mod markdown_preview_tests {
     use super::*;
     use core::prelude::v1::test;
-    use gpui_kit::{Render, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::{AppContext, Render, TestAppContext, VisualTestContext, WindowOptions};
 
     /// A window root holding nothing but the preview under test.
     struct PreviewView {

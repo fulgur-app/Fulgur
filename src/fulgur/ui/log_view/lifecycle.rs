@@ -1,5 +1,6 @@
 //! `Fulgur` user actions and the log-view activation lifecycle.
 
+use crate::fulgur::ui::tabs::editor_tab::replace_editor_text;
 use crate::fulgur::ui::tabs::tab::TabId;
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use gpui_kit::{Context, SharedString, Window};
@@ -106,7 +107,7 @@ impl Fulgur {
             )
         {
             content.update(cx, |state, cx| {
-                state.set_value(full.text.as_str(), window, cx);
+                replace_editor_text(state, full.text.as_str(), window, cx);
             });
             position = full.position;
         }
