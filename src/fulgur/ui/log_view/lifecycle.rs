@@ -1,13 +1,12 @@
 //! `Fulgur` user actions and the log-view activation lifecycle.
 
-use crate::fulgur::ui::tabs::editor_tab::replace_editor_text;
 use crate::fulgur::ui::tabs::tab::TabId;
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use gpui_kit::{Context, SharedString, Window};
 
+use super::LogTailState;
 use super::polling::snap_to_last_line;
-use super::tail::{log_file_position, log_toggle_available, read_new_log_bytes};
-use super::{LogFilePosition, LogTailState};
+use super::tail::{log_file_position, log_toggle_available};
 use crate::fulgur::Fulgur;
 
 impl Fulgur {
@@ -74,7 +73,8 @@ impl Fulgur {
     /// The buffer normally already mirrors the file as loaded by the editor, so
     /// only the consumed position is seeded from the file. When the two byte
     /// lengths disagree (the file grew while the tab was inactive, or it is not
-    /// plain UTF-8) the file is reread so the buffer and the offset agree.
+    /// plain UTF-8) the poll task first rereads the whole file in the
+    /// background and replaces the buffer, so the buffer and the offset agree.
     ///
     /// ### Arguments
     /// - `tab_id`: The tab to activate log view on
@@ -92,25 +92,11 @@ impl Fulgur {
         else {
             return;
         };
-        let mut position = log_file_position(&path).unwrap_or(LogFilePosition {
-            byte_offset: 0,
-            identity: None,
-        });
         let buffer_len = content.read(cx).text().len() as u64;
-        if position.byte_offset != buffer_len
-            && let Some(full) = read_new_log_bytes(
-                &path,
-                LogFilePosition {
-                    byte_offset: 0,
-                    identity: None,
-                },
-            )
-        {
-            content.update(cx, |state, cx| {
-                replace_editor_text(state, full.text.as_str(), window, cx);
-            });
-            position = full.position;
-        }
+        let tail_state = match log_file_position(&path) {
+            Some(position) if position.byte_offset == buffer_len => LogTailState::new(position),
+            _ => LogTailState::awaiting_reseed(),
+        };
         let highlight_colors = self.settings.editor_settings.highlight_colors;
         self.update_editor_tab(tab_id, cx, |editor, cx| {
             editor.log_view = true;
@@ -124,8 +110,7 @@ impl Fulgur {
             editor.mark_as_saved(cx);
         });
         snap_to_last_line(&content, window, cx);
-        self.log_tail_state
-            .insert(tab_id, LogTailState::new(position));
+        self.log_tail_state.insert(tab_id, tail_state);
         self.start_log_poll_task(tab_id, path, window, cx);
     }
 
@@ -144,6 +129,7 @@ impl Fulgur {
                 state.set_readonly(false, cx);
             });
             editor.set_highlight_colors(cx, highlight_colors);
+            editor.mark_as_saved(cx);
         });
         cx.notify();
     }

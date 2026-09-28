@@ -10,8 +10,8 @@ use std::time::Duration;
 use gpui_kit::component::input::{EditorState, RopeExt};
 use gpui_kit::{Context, Entity, Window, point, px};
 
-use super::tail::{LogTailChunk, read_new_log_bytes};
-use super::{LogFilePosition, LogTailState};
+use super::LogTailState;
+use super::tail::LogTailChunk;
 use crate::fulgur::Fulgur;
 
 /// How often the active log tab polls its file for newly appended bytes.
@@ -148,58 +148,57 @@ impl Fulgur {
         self.log_tail_cancel.insert(tab_id, cancel.clone());
         cx.spawn_in(window, async move |view, window| {
             loop {
-                window
-                    .background_executor()
-                    .timer(Duration::from_millis(POLL_INTERVAL_MS))
-                    .await;
                 if cancel.load(Ordering::Acquire) {
                     break;
                 }
-                let Ok(Ok(Some(consumed))) = window
-                    .update(|_, cx| view.update(cx, |this, cx| this.log_tail_position(tab_id, cx)))
-                else {
+                let Ok(Ok(Some(tail_state))) = window.update(|_, cx| {
+                    view.update(cx, |this, cx| this.tail_state_snapshot(tab_id, cx))
+                }) else {
                     break;
                 };
                 let read_path = path.clone();
                 let chunk = window
                     .background_executor()
-                    .spawn(async move { read_new_log_bytes(&read_path, consumed) })
+                    .spawn(async move { tail_state.read_next_chunk(&read_path) })
                     .await;
-                let Some(chunk) = chunk else {
-                    continue;
-                };
-                if chunk.text.is_empty() && !chunk.reset {
-                    continue;
-                }
-                let applied = window.update(|window, cx| {
-                    view.update(cx, |this, cx| {
-                        this.apply_log_tail_chunk(tab_id, &chunk, window, cx);
-                    })
-                });
-                if applied.is_err() {
+                if cancel.load(Ordering::Acquire) {
                     break;
                 }
+                if let Some(chunk) = chunk.filter(|chunk| !chunk.text.is_empty() || chunk.reset) {
+                    let applied = window.update(|window, cx| {
+                        view.update(cx, |this, cx| {
+                            this.apply_log_tail_chunk(tab_id, &chunk, window, cx);
+                        })
+                    });
+                    if applied.is_err() {
+                        break;
+                    }
+                }
+                window
+                    .background_executor()
+                    .timer(Duration::from_millis(POLL_INTERVAL_MS))
+                    .await;
             }
         })
         .detach();
     }
 
-    /// Return the current consumed position for a tailing tab.
+    /// Return a snapshot of the tail state for a tailing tab.
     ///
     /// ### Arguments
     /// - `tab_id`: The tab to query
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some(LogFilePosition)`: The consumed offset and file identity when
+    /// - `Some(LogTailState)`: The consumed position and pending reseed when
     ///   the tab is still in log view
     /// - `None`: When the tab is gone or no longer in log view (poll should stop)
-    fn log_tail_position(&self, tab_id: TabId, cx: &gpui_kit::App) -> Option<LogFilePosition> {
+    fn tail_state_snapshot(&self, tab_id: TabId, cx: &gpui_kit::App) -> Option<LogTailState> {
         let editor = self.editor_tab(tab_id, cx)?;
         if !editor.log_view {
             return None;
         }
-        self.log_tail_state.get(&tab_id).map(LogTailState::position)
+        self.log_tail_state.get(&tab_id).copied()
     }
 
     /// Apply a freshly read chunk of log bytes to the tab's buffer.

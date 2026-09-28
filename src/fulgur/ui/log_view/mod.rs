@@ -22,14 +22,20 @@ pub use tail::{LogFileIdentity, LogFilePosition, log_toggle_available, opens_as_
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::ui::tabs::tab::TabId;
+use std::path::Path;
+use tail::{LogTailChunk, read_new_log_bytes, read_whole_log};
 
 /// Per-tab tail bookkeeping, held centrally in `Fulgur` and keyed by tab id.
+#[derive(Clone, Copy)]
 pub struct LogTailState {
     /// Byte offset in the file up to which content has already been consumed.
     pub byte_offset: u64,
     /// Identity of the file object the offset refers to, used to detect
     /// rename-based rotation even when the replacement is not shorter.
     pub identity: Option<LogFileIdentity>,
+    /// Whether the buffer lags the file and must be replaced by a full reread
+    /// before tailing can resume from `byte_offset`.
+    pub reseed_pending: bool,
 }
 
 impl LogTailState {
@@ -44,6 +50,36 @@ impl LogTailState {
         Self {
             byte_offset: position.byte_offset,
             identity: position.identity,
+            reseed_pending: false,
+        }
+    }
+
+    /// Create a tail state whose first read replaces the whole buffer.
+    ///
+    /// ### Returns
+    /// - `LogTailState`: The state awaiting a full reread
+    fn awaiting_reseed() -> Self {
+        Self {
+            byte_offset: 0,
+            identity: None,
+            reseed_pending: true,
+        }
+    }
+
+    /// Read the next chunk of the tailed file: the whole file while a reseed
+    /// is pending, otherwise only the bytes appended past the consumed position.
+    ///
+    /// ### Arguments
+    /// - `path`: The file to read
+    ///
+    /// ### Returns
+    /// - `Some(LogTailChunk)`: The text read and the position it advanced to
+    /// - `None`: If the file could not be opened, stat-ed, or read
+    fn read_next_chunk(&self, path: &Path) -> Option<LogTailChunk> {
+        if self.reseed_pending {
+            read_whole_log(path)
+        } else {
+            read_new_log_bytes(path, self.position())
         }
     }
 
@@ -65,6 +101,7 @@ impl LogTailState {
     fn set_position(&mut self, position: LogFilePosition) {
         self.byte_offset = position.byte_offset;
         self.identity = position.identity;
+        self.reseed_pending = false;
     }
 }
 

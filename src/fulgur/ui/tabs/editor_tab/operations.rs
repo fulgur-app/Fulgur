@@ -108,13 +108,22 @@ impl EditorTab {
         self.modified
     }
 
+    /// Whether the saved baseline is tracked by byte length and the `modified`
+    /// flag alone, without fingerprinting the buffer.
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the baseline hash is not meaningful
+    fn baseline_skips_fingerprint(&self) -> bool {
+        self.large_file || self.log_view
+    }
+
     /// Mark the tab as saved
     ///
     /// ### Arguments
     /// - `cx`: The application context
     pub fn mark_as_saved(&mut self, cx: &mut App) {
         let current_text = self.content.read(cx).text();
-        let (hash, len) = if self.large_file {
+        let (hash, len) = if self.baseline_skips_fingerprint() {
             (0, current_text.len())
         } else {
             super::content_fingerprint_from_rope(current_text)
@@ -188,7 +197,7 @@ impl EditorTab {
         if current_text.len() != self.original_content_len {
             return true;
         }
-        if self.large_file {
+        if self.baseline_skips_fingerprint() {
             return self.modified;
         }
         let (current_hash, _) = super::content_fingerprint_from_rope(current_text);
