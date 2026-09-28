@@ -19,10 +19,8 @@ accepted = [
     "Unicode-3.0",
     "Unlicense",
     "GPL-2.0-only",
+    "bzip2-1.0.6",
 ]
-
-# Filter out certain crates (e.g., your own workspace crates)
-filter-noassertion = true
 
 # openssl-src bundles the entire OpenSSL C source tree (~8000 files), some of which
 # carry legacy GPL-1.0/GPL-2.0 notices in Perl scripts and assembly files.
