@@ -228,13 +228,8 @@ impl Fulgur {
         if let Some(index) = self.tab_index_of(tab_id, cx) {
             self.set_active_tab(index, window, cx);
         }
-        self.show_unsaved_changes_dialog(window, cx, move |_, window, cx| {
-            let rest = rest.clone();
-            // The confirmed dialog closes after this callback returns, and closing
-            // pops the topmost dialog, so the next prompt must open afterwards.
-            cx.defer_in(window, move |this, window, cx| {
-                this.drive_window_close_unsaved_prompts(rest, window, cx);
-            });
+        self.show_unsaved_changes_dialog(window, cx, move |this, window, cx| {
+            this.drive_window_close_unsaved_prompts(rest.clone(), window, cx);
         });
     }
 

@@ -898,12 +898,8 @@ fn window_has_dialog(cx: &mut TestAppContext, window_id: WindowId) -> bool {
 /// - `action`: The dialog action to dispatch
 fn dispatch_dialog_action(cx: &mut TestAppContext, window_id: WindowId, action: impl Action) {
     let handle = find_window_handle(cx, window_id).expect("test window should be open");
-    {
-        let mut visual_cx = VisualTestContext::from_window(handle, cx);
-        visual_cx.run_until_parked();
-        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
-        visual_cx.dispatch_action(action);
-    }
+    let mut visual_cx = VisualTestContext::from_window(handle, cx);
+    crate::test_support::dispatch_dialog_action(&mut visual_cx, action);
     cx.run_until_parked();
 }
 

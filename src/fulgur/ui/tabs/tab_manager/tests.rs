@@ -13,7 +13,8 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use crate::test_support::setup_fulgur;
 
-use crate::test_support::setup_fulgur_with_root;
+use crate::test_support::{dispatch_dialog_action, has_active_dialog, setup_fulgur_with_root};
+use gpui_kit::base::actions::Confirm;
 
 /// Open additional editor tabs on top of the one the test window starts with
 ///
@@ -309,6 +310,62 @@ fn test_close_other_tabs_stops_at_modified_tab(cx: &mut TestAppContext) {
             assert_eq!(this.active_tab_id, Some(ids[2]));
         });
     });
+}
+
+#[gpui_kit::test]
+fn test_close_other_tabs_prompts_for_each_modified_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+    let ids = visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 2, window, cx);
+            mark_tab_modified(this, ids[0], cx);
+            mark_tab_modified(this, ids[1], cx);
+            this.close_other_tabs(ids[2], window, cx);
+            ids
+        })
+    });
+    assert!(has_active_dialog(&mut visual_cx));
+
+    dispatch_dialog_action(&mut visual_cx, Confirm { secondary: false });
+    assert!(
+        has_active_dialog(&mut visual_cx),
+        "the second modified tab must get its own prompt"
+    );
+    visual_cx.update(|_, cx| assert_eq!(tab_ids(fulgur.read(cx), cx), vec![ids[1], ids[2]]));
+
+    dispatch_dialog_action(&mut visual_cx, Confirm { secondary: false });
+    assert!(
+        !has_active_dialog(&mut visual_cx),
+        "confirming the last prompt must leave no dialog behind"
+    );
+    visual_cx.update(|_, cx| {
+        let this = fulgur.read(cx);
+        assert_eq!(tab_ids(this, cx), vec![ids[2]]);
+        assert_eq!(this.active_tab_id, Some(ids[2]));
+    });
+}
+
+#[gpui_kit::test]
+fn test_close_all_tabs_prompts_for_each_modified_tab(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 1, window, cx);
+            mark_tab_modified(this, ids[0], cx);
+            mark_tab_modified(this, ids[1], cx);
+            this.close_all_tabs(window, cx);
+        });
+    });
+
+    dispatch_dialog_action(&mut visual_cx, Confirm { secondary: false });
+    assert!(
+        has_active_dialog(&mut visual_cx),
+        "the second modified tab must get its own prompt"
+    );
+
+    dispatch_dialog_action(&mut visual_cx, Confirm { secondary: false });
+    assert!(!has_active_dialog(&mut visual_cx));
+    visual_cx.update(|_, cx| assert!(fulgur.read(cx).tabs.is_empty()));
 }
 
 #[gpui_kit::test]

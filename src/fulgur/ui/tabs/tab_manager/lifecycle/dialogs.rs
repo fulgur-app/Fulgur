@@ -27,16 +27,14 @@ impl Fulgur {
                 .keyboard(true)
                 .show_cancel(true)
                 .on_ok(move |_, window, cx| {
-                    let entity_ok_footer = entity_ok.clone();
                     let on_confirm_inner = on_confirm_clone.clone();
-                    // Queued before `on_confirm` so a dialog it defers keeps the focus.
-                    entity_ok_footer.update(cx, |_this, cx| {
+                    entity_ok.update(cx, |_this, cx| {
                         cx.defer_in(window, move |this, window, cx| {
-                            this.focus_active_tab(window, cx);
+                            on_confirm_inner(this, window, cx);
+                            if !window.has_active_dialog(cx) {
+                                this.focus_active_tab(window, cx);
+                            }
                         });
-                    });
-                    entity_ok_footer.update(cx, |this, cx| {
-                        on_confirm_inner(this, window, cx);
                     });
                     true
                 })

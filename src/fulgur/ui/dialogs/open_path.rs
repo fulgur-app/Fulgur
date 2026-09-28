@@ -64,8 +64,11 @@ impl Fulgur {
                     let path_str = input_ok.read(cx).value().to_string();
                     match validate_open_path(&path_str) {
                         Ok(path) => {
-                            entity_ok.update(cx, |this, cx| {
-                                this.do_open_file(window, cx, path);
+                            entity_ok.update(cx, |_, cx| {
+                                // Defer so a "File Already Open" prompt opens after this dialog has closed.
+                                cx.defer_in(window, move |this, window, cx| {
+                                    this.do_open_file(window, cx, path);
+                                });
                             });
                             true
                         }
@@ -156,5 +159,44 @@ mod tests {
             });
         });
         // If we reach this point, the dialog opened without panicking
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_open_path_to_modified_open_file_hands_over_to_reload_prompt(cx: &mut TestAppContext) {
+        use crate::fulgur::ui::tabs::editor_tab::TabLocation;
+        use crate::test_support::{dispatch_dialog_action, has_active_dialog};
+        use gpui_kit::base::actions::Confirm;
+
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = make_temp_file(&dir, "already_open.txt", "content on disk")
+            .canonicalize()
+            .expect("failed to canonicalize temp file");
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.tabs[0].clone().update(cx, |tab, _| {
+                    let editor_tab = tab.as_editor_mut().expect("expected an editor tab");
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.modified = true;
+                });
+                this.show_open_from_path_dialog(window, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+        visual_cx.simulate_keystrokes("secondary-a");
+        visual_cx.simulate_input(path.to_str().expect("temp path should be UTF-8"));
+
+        dispatch_dialog_action(&mut visual_cx, Confirm { secondary: false });
+        assert!(
+            has_active_dialog(&mut visual_cx),
+            "the File Already Open prompt must replace the open-path dialog"
+        );
+
+        dispatch_dialog_action(&mut visual_cx, Confirm { secondary: false });
+        assert!(
+            !has_active_dialog(&mut visual_cx),
+            "confirming the reload prompt must leave no dialog behind"
+        );
     }
 }

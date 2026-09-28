@@ -37,12 +37,17 @@ impl Fulgur {
             .and_then(|tab| tab.read(cx).as_editor())
             .is_some_and(|editor_tab| editor_tab.modified);
 
+        // Focus the tab before any prompt opens, so the prompt keeps the keyboard
+        // focus and hands it back to this tab once dismissed.
+        self.active_tab_id = self.tabs.get(tab_index).map(|tab| tab.read(cx).id());
+        self.focus_active_tab(window, cx);
+
         if is_modified {
             log::debug!(
                 "Tab for {} has unsaved changes; asking user which version to keep",
                 path.display()
             );
-            if let Some(tab_id) = self.tabs.get(tab_index).map(|tab| tab.read(cx).id()) {
+            if let Some(tab_id) = self.active_tab_id {
                 self.show_reopen_modified_file_dialog(path, tab_id, window, cx);
             }
         } else {
@@ -51,9 +56,6 @@ impl Fulgur {
                 path.display()
             );
         }
-
-        self.active_tab_id = self.tabs.get(tab_index).map(|tab| tab.read(cx).id());
-        self.focus_active_tab(window, cx);
         cx.notify();
     }
 
