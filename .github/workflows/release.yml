@@ -123,8 +123,11 @@ jobs:
       - name: Install cargo-packager
         run: cargo binstall cargo-packager --locked --no-confirm --force
 
+      # cargo-about's binary is gated behind the non-default `cli` feature, so
+      # cargo-binstall's source fallback builds a crate without the binary.
+      # Only accept a prebuilt binary, and compile with `cli` ourselves otherwise.
       - name: Install cargo-about
-        run: cargo binstall cargo-about --locked --no-confirm --force
+        run: cargo binstall cargo-about --locked --no-confirm --force --disable-strategies quick-install,compile || cargo install cargo-about --locked --features cli --force
 
       - name: Generate third-party licenses
         run: cargo about generate licenses/about.hbs -c licenses/about.toml --workspace -o THIRD-PARTY-LICENSES
