@@ -6,7 +6,7 @@ use crate::fulgur::{
     },
 };
 use crate::register_action;
-use gpui_kit::component::{ActiveTheme, Root, StyledExt, WindowExt, v_flex};
+use gpui_kit::component::{ActiveTheme, StyledExt, WindowExt, v_flex};
 use gpui_kit::{
     Anchor, App, Context, ExternalPaths, FocusHandle, Focusable, InteractiveElement, IntoElement,
     ParentElement, Render, Styled, Window, div, px,
@@ -54,7 +54,7 @@ impl Render for Fulgur {
         self.refresh_window_title(cx);
         let active_tab_index = self.active_tab_index(cx);
         let app_content = self.build_app_content_with_actions(active_tab_index, window, cx);
-        self.assemble_ui_tree(app_content, window, cx)
+        self.assemble_ui_tree(app_content, cx)
     }
 }
 
@@ -219,11 +219,13 @@ impl Fulgur {
         )
     }
 
-    /// Assemble the final UI tree with all layers
+    /// Assemble the final UI tree around the main content
+    ///
+    /// Sheets, dialogs and notifications are not added here: the window's `Root`
+    /// hosts those layers itself once `gpui_kit::init` has run.
     ///
     /// ### Arguments
     /// - `app_content`: The main content area (from `build_app_content_with_actions()`)
-    /// - `window`: The window to assemble the UI for
     /// - `cx`: The application context
     ///
     /// ### Returns
@@ -231,7 +233,6 @@ impl Fulgur {
     fn assemble_ui_tree(
         &self,
         app_content: impl IntoElement,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         // Create root layout: TitleBar OUTSIDE of focus-tracked content, kept for the
@@ -245,12 +246,7 @@ impl Fulgur {
                     .then(|| self.title_bar.clone()),
             )
             .child(app_content);
-        let mut root = div()
-            .size_full()
-            .child(root_content)
-            .children(Root::render_sheet_layer(window, cx))
-            .children(Root::render_notification_layer(window, cx))
-            .children(Root::render_dialog_layer(window, cx));
+        let mut root = div().size_full().child(root_content);
         if let Some((position, menu)) = self
             .editor_context_menu
             .as_ref()
