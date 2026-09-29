@@ -75,10 +75,10 @@ futures = "0.3.34"
 # GUI
 # The facade owns the compatible GPUI Pre family and forwards Fulgur's required
 # runtime_shaders, font-kit, Wayland, and X11 platform features.
-gpui-kit = { version = "0.6.1", features = ["tree-sitter-languages"] }
+gpui-kit = { version = "0.7.0", features = ["tree-sitter-languages"] }
 # GPUI Kit re-exports the HTTP abstractions, but Fulgur also constructs the
 # concrete Zed Reqwest transport directly.
-reqwest_client = { package = "gpui-pre-reqwest-client", version = "0.3.4" }
+reqwest_client = { package = "gpui-pre-reqwest-client", version = "0.3.7" }
 
 # Markdown (same crate and version GPUI Kit parses with; used to locate
 # inline text spans so the preview stopgap only neutralizes soft-break newlines)
