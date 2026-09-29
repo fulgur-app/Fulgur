@@ -687,9 +687,9 @@ dependencies = [
 
 [[package]]
 name = "ashpd"
-version = "0.13.4"
+version = "0.13.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5df42e54d7015b7a00d2db9f5cb9975bc4b0cd46627e666c94c3534207503e71"
+checksum = "fb8421aaa9644a5faf26735f258b669b15f063313ef8f8e2bdb28912a1a6f111"
 dependencies = [
  "enumflags2",
  "futures-channel",
