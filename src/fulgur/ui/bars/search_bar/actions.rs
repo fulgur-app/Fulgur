@@ -5,6 +5,13 @@ use gpui_kit::{App, Context, Entity, Focusable, Window};
 use super::matching::find_matches_with_scratch;
 use super::{SearchBar, SearchBarEvent};
 
+/// Direction of one step through the search matches
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum MatchStep {
+    Next,
+    Previous,
+}
+
 impl SearchBar {
     /// Toggle the search bar open or closed
     ///
@@ -233,6 +240,33 @@ impl SearchBar {
         cx.notify();
     }
 
+    /// Step to the next or previous match, keeping keyboard focus in the bar
+    ///
+    /// ### Arguments
+    /// - `step`: Which way to move through the matches
+    /// - `content`: The active editor tab's content, if any
+    /// - `window`: The window context
+    /// - `cx`: The search bar context
+    pub(super) fn step_match(
+        &mut self,
+        step: MatchStep,
+        content: Option<Entity<EditorState>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let focused_input = [&self.search_input, &self.replace_input]
+            .into_iter()
+            .map(|input| input.read(cx).focus_handle(cx))
+            .find(|focus| focus.is_focused(window));
+        match step {
+            MatchStep::Next => self.search_next(content, window, cx),
+            MatchStep::Previous => self.search_previous(content, window, cx),
+        }
+        if let Some(focus) = focused_input {
+            window.focus(&focus, cx);
+        }
+    }
+
     /// Move the editor cursor to the current search match, scrolling it into view
     ///
     /// ### Arguments
@@ -289,5 +323,37 @@ impl Fulgur {
         self.search_bar
             .update(cx, |bar, cx| bar.open_replace(content, window, cx));
         cx.notify();
+    }
+
+    /// Move to the next search match in this window
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn find_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.step_search_match(MatchStep::Next, window, cx);
+    }
+
+    /// Move to the previous search match in this window
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn find_previous(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.step_search_match(MatchStep::Previous, window, cx);
+    }
+
+    /// Step the search bar through the active editor's matches
+    ///
+    /// ### Arguments
+    /// - `step`: Which way to move through the matches
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    fn step_search_match(&mut self, step: MatchStep, window: &mut Window, cx: &mut Context<Self>) {
+        let content = self
+            .get_active_editor_tab(cx)
+            .map(|editor_tab| editor_tab.content.clone());
+        self.search_bar
+            .update(cx, |bar, cx| bar.step_match(step, content, window, cx));
     }
 }

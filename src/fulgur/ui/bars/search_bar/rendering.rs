@@ -3,9 +3,13 @@ use crate::fulgur::ui::{
     components_utils::{CORNERS_SIZE, LINE_HEIGHT, SEARCH_BAR_HEIGHT, TEXT_SIZE},
     icons::CustomIcon,
 };
-use gpui_kit::component::{ActiveTheme, StyledExt, input::Input};
+use gpui_kit::component::{
+    ActiveTheme, StyledExt,
+    input::{Escape, Input},
+};
 use gpui_kit::{
-    Context, Div, IntoElement, ParentElement, Render, Styled, Window, div, prelude::FluentBuilder,
+    Context, Div, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window, div,
+    prelude::FluentBuilder,
 };
 
 impl Render for SearchBar {
@@ -29,6 +33,7 @@ impl Render for SearchBar {
             .h(SEARCH_BAR_HEIGHT)
             .border_t_1()
             .border_color(cx.theme().border)
+            .on_action(cx.listener(|this, _: &Escape, _window, cx| this.close(cx)))
             .child(self.render_search_input_section(cx))
             .child(self.render_search_navigation_section(cx))
             .when(self.active_editor_is_editable(cx), |this| {

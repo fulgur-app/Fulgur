@@ -20,6 +20,8 @@ actions!(
         CloseAllFiles,
         FindInFile,
         FindAndReplace,
+        SearchNext,
+        SearchPrevious,
         SettingsTab,
         GetTheme,
         NextTab,
