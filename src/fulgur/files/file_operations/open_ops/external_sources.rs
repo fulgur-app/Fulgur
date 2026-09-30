@@ -1,6 +1,6 @@
 use crate::fulgur::{Fulgur, window_manager};
 use gpui_kit::component::{WindowExt, notification::NotificationType};
-use gpui_kit::{Context, ExternalPaths, SharedString, Window};
+use gpui_kit::{App, Context, ExternalPaths, SharedString, Window};
 use std::{collections::HashSet, path::PathBuf};
 
 impl Fulgur {
@@ -122,6 +122,47 @@ impl Fulgur {
         };
         for file_path in files_to_open {
             self.handle_open_file_from_cli(window, cx, file_path);
+        }
+    }
+
+    /// Handle a message forwarded by another Fulgur process (single-instance IPC)
+    ///
+    /// Brings the last focused window to the front and processes the pending
+    /// files and commands in it right away.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    pub fn handle_single_instance_wakeup(cx: &mut App) {
+        let window_manager = cx.global::<window_manager::WindowManager>();
+        let Some(window_id) = window_manager
+            .get_last_focused()
+            .or_else(|| window_manager.get_all_window_ids().into_iter().next())
+        else {
+            log::warn!("Single-instance: no window available to open forwarded files");
+            return;
+        };
+        let Some(fulgur) = window_manager
+            .get_window(window_id)
+            .and_then(|weak| weak.upgrade())
+        else {
+            return;
+        };
+        let Some(handle) = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)
+        else {
+            return;
+        };
+        if let Err(e) = handle.update(cx, |_, window, cx| {
+            window.activate_window();
+            fulgur.update(cx, |this, cx| {
+                this.process_pending_files_from_macos(window, cx);
+                #[cfg(any(target_os = "windows", target_os = "linux"))]
+                this.process_pending_ipc_commands(window, cx);
+            });
+        }) {
+            log::error!("Single-instance: failed to update the target window: {e}");
         }
     }
 }

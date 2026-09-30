@@ -9,7 +9,7 @@ pub mod markdown_links;
 pub mod paths;
 pub mod retry;
 pub mod sanitize;
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 pub mod single_instance;
 pub mod updater;
 pub mod utilities;

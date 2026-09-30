@@ -193,12 +193,12 @@ pub struct SharedAppState {
     pub update_info: Arc<Mutex<Option<UpdateInfo>>>,
     /// Files from macOS "Open with" events (already `Arc<Mutex>`)
     pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
-    /// Pending IPC commands from Windows jump list ("new-tab", "new-window")
-    #[cfg(target_os = "windows")]
+    /// Pending IPC commands forwarded by another instance (Windows jump list) ("new-tab", "new-window")
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     pub pending_ipc_commands: Arc<Mutex<Vec<String>>>,
     /// Drop-owned handle to the single-instance IPC listener thread, set once
     /// at startup by `main.rs`.
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     pub ipc_listener: Option<crate::fulgur::utils::worker::Worker>,
     /// Shared HTTP agent for connection pooling across all short-lived REST
     /// requests (token, ping, share fetch). Carries a 10s global timeout.
@@ -272,9 +272,9 @@ impl SharedAppState {
             sync_error: Arc::new(Mutex::new(sync_error)),
             update_info: Arc::new(Mutex::new(None)),
             pending_files_from_macos,
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
             pending_ipc_commands: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
             ipc_listener: None,
             http_agent: Arc::new(ureq::Agent::new_with_config(
                 ureq::config::Config::builder()
