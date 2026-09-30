@@ -3,6 +3,8 @@ mod lifecycle;
 mod render;
 pub mod system_menus;
 
+pub use lifecycle::open_fulgur_window;
+
 use crate::fulgur::Fulgur;
 use gpui_kit::{App, Global, WeakEntity, WindowId};
 use std::collections::HashMap;

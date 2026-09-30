@@ -2,7 +2,7 @@
 
 use fulgur::fulgur;
 use gpui_kit::component::notification::NotificationType;
-use gpui_kit::{AppContext, AssetSource, BorrowAppContext, SharedString};
+use gpui_kit::{AssetSource, BorrowAppContext, SharedString};
 use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
@@ -398,52 +398,28 @@ fn create_window(
     } else {
         None
     };
-    let window_options = gpui_kit::WindowOptions {
+    let cli_file_paths = cli_file_paths.to_vec();
+    fulgur::window_manager::open_fulgur_window(
+        cx,
+        fulgur::WindowInit::Restore(window_index),
         window_bounds,
         display_id,
-        #[cfg(target_os = "linux")]
-        app_id: Some("Fulgur".to_string()),
-        #[cfg(target_os = "linux")]
-        window_decorations: Some(gpui_kit::WindowDecorations::Client),
-        ..gpui_kit::component::TitleBar::window_options()
-    };
-    let window = cx.open_window(window_options, |window, cx| {
-        window.set_window_title("Fulgur");
-        let window_id = window.window_handle().window_id();
-        let view = fulgur::Fulgur::new(
-            window,
-            cx,
-            window_id,
-            fulgur::WindowInit::Restore(window_index),
-        );
-        cx.update_global::<fulgur::window_manager::WindowManager, _>(|manager, _| {
-            manager.register(window_id, view.downgrade());
-        });
-        if cli_file_paths.is_empty() {
-            view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
-        } else {
-            log::debug!(
-                "Processing {} command-line file arguments",
-                cli_file_paths.len()
-            );
-            for file_path in cli_file_paths {
-                view.update(cx, |fulgur, cx| {
-                    fulgur.handle_open_file_from_cli(window, cx, file_path.clone());
-                });
+        move |view, window, cx| {
+            if cli_file_paths.is_empty() {
+                view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
+            } else {
+                log::debug!(
+                    "Processing {} command-line file arguments",
+                    cli_file_paths.len()
+                );
+                for file_path in cli_file_paths {
+                    view.update(cx, |fulgur, cx| {
+                        fulgur.handle_open_file_from_cli(window, cx, file_path);
+                    });
+                }
             }
-        }
-        let root = cx.new(|cx| gpui_kit::component::Root::new(view.clone(), window, cx));
-        let view_clone = view.clone();
-        window.on_window_should_close(cx, move |window, cx| {
-            view_clone.update(cx, |fulgur, cx| {
-                fulgur.on_window_close_requested(window, cx)
-            })
-        });
-        root
-    })?;
-    window.update(cx, |_, window, _| {
-        window.activate_window();
-    })?;
+        },
+    )?;
 
     // Check for updates on first window only
     if window_index == 0 {

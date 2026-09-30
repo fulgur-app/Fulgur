@@ -6,7 +6,10 @@ use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{Fulgur, PendingSaveCloseAction};
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::notification::NotificationType;
-use gpui_kit::{App, AppContext, BorrowAppContext, Context, Window, WindowOptions};
+use gpui_kit::{
+    App, AppContext, AsyncApp, BorrowAppContext, Context, DisplayId, Entity, Window, WindowBounds,
+    WindowOptions,
+};
 
 impl Fulgur {
     /// Run the guarded window-close lifecycle for an in-app close action.
@@ -238,42 +241,15 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx` - The context for the application
     pub fn open_new_window(&self, cx: &mut Context<Self>) {
-        let async_cx = cx.to_async();
-        async_cx
+        cx.to_async()
             .spawn(async move |cx| {
-                let window_options = WindowOptions {
-                    #[cfg(target_os = "linux")]
-                    window_decorations: Some(gpui_kit::WindowDecorations::Client),
-                    ..gpui_kit::component::TitleBar::window_options()
-                };
-                let window = cx.open_window(window_options, |window, cx| {
-                    window.set_window_title("Fulgur");
-                    let window_id = window.window_handle().window_id();
-                    let view = Fulgur::new(window, cx, window_id, WindowInit::Empty);
-                    cx.update_global::<WindowManager, _>(|manager, _| {
-                        manager.register(window_id, view.downgrade());
-                    });
-                    // Notify all windows so they update their titles to include the window name
-                    for weak in cx.global::<WindowManager>().get_all_windows() {
-                        if let Some(entity) = weak.upgrade() {
-                            entity.update(cx, |_, cx| cx.notify());
-                        }
-                    }
-                    view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
-                    let root =
-                        cx.new(|cx| gpui_kit::component::Root::new(view.clone(), window, cx));
-                    let view_clone = view.clone();
-                    window.on_window_should_close(cx, move |window, cx| {
-                        view_clone.update(cx, |fulgur, cx| {
-                            fulgur.on_window_close_requested(window, cx)
-                        })
-                    });
-                    root
-                })?;
-                window.update(cx, |_, window, _| {
-                    window.activate_window();
-                })?;
-                Ok::<_, anyhow::Error>(())
+                if let Err(e) =
+                    open_fulgur_window(cx, WindowInit::Empty, None, None, |view, window, cx| {
+                        view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
+                    })
+                {
+                    log::error!("Failed to open a new window: {e}");
+                }
             })
             .detach();
     }
@@ -288,46 +264,86 @@ impl Fulgur {
     /// - `data` - The serialized tab state to transfer
     /// - `cx` - The context for the application
     pub fn open_new_window_with_tab(&self, data: TabTransferData, cx: &mut Context<Self>) {
-        let async_cx = cx.to_async();
-        async_cx
+        cx.to_async()
             .spawn(async move |cx| {
-                let window_options = WindowOptions {
-                    #[cfg(target_os = "linux")]
-                    window_decorations: Some(gpui_kit::WindowDecorations::Client),
-                    ..gpui_kit::component::TitleBar::window_options()
-                };
-                let window = cx.open_window(window_options, move |window, cx| {
-                    window.set_window_title("Fulgur");
-                    let window_id = window.window_handle().window_id();
-                    let view = Fulgur::new(window, cx, window_id, WindowInit::AwaitTabTransfer);
-                    cx.update_global::<WindowManager, _>(|manager, _| {
-                        manager.register(window_id, view.downgrade());
-                    });
-                    for weak in cx.global::<WindowManager>().get_all_windows() {
-                        if let Some(entity) = weak.upgrade() {
-                            entity.update(cx, |_, cx| cx.notify());
-                        }
-                    }
-                    view.update(cx, |fulgur, cx| {
-                        fulgur.pending_tab_transfer = Some(data);
-                        cx.notify();
-                    });
-                    view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
-                    let root =
-                        cx.new(|cx| gpui_kit::component::Root::new(view.clone(), window, cx));
-                    let view_clone = view.clone();
-                    window.on_window_should_close(cx, move |window, cx| {
-                        view_clone.update(cx, |fulgur, cx| {
-                            fulgur.on_window_close_requested(window, cx)
-                        })
-                    });
-                    root
-                })?;
-                window.update(cx, |_, window, _| {
-                    window.activate_window();
-                })?;
-                Ok::<_, anyhow::Error>(())
+                let result = open_fulgur_window(
+                    cx,
+                    WindowInit::AwaitTabTransfer,
+                    None,
+                    None,
+                    move |view, window, cx| {
+                        view.update(cx, |fulgur, cx| {
+                            fulgur.pending_tab_transfer = Some(data);
+                            cx.notify();
+                        });
+                        view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
+                    },
+                );
+                if let Err(e) = result {
+                    log::error!("Failed to open a new window for the transferred tab: {e}");
+                }
             })
             .detach();
     }
+}
+
+/// Open a Fulgur window with the options and wiring shared by every window
+///
+/// ### Arguments
+/// - `cx`: The async application context
+/// - `init`: How the new `Fulgur` view initializes its tabs
+/// - `window_bounds`: Saved bounds to restore, or `None` for the default size
+/// - `display_id`: The display to open on, or `None` for the platform default
+/// - `configure`: Per-caller setup run on the registered view before it is wrapped
+///   in a `Root` (focus, CLI files, pending tab transfer)
+///
+/// ### Errors
+/// - Returns an `anyhow::Error` if the platform fails to open or activate the window.
+///
+/// ### Returns
+/// - `Ok(())`: The window was opened and activated
+/// - `Err(e)`: The window could not be opened or activated
+pub fn open_fulgur_window(
+    cx: &mut AsyncApp,
+    init: WindowInit,
+    window_bounds: Option<WindowBounds>,
+    display_id: Option<DisplayId>,
+    configure: impl FnOnce(&Entity<Fulgur>, &mut Window, &mut App) + 'static,
+) -> anyhow::Result<()> {
+    let window_options = WindowOptions {
+        window_bounds,
+        display_id,
+        #[cfg(target_os = "linux")]
+        app_id: Some("Fulgur".to_string()),
+        #[cfg(target_os = "linux")]
+        window_decorations: Some(gpui_kit::WindowDecorations::Client),
+        ..gpui_kit::component::TitleBar::window_options()
+    };
+    let window = cx.open_window(window_options, move |window, cx| {
+        window.set_window_title("Fulgur");
+        let window_id = window.window_handle().window_id();
+        let view = Fulgur::new(window, cx, window_id, init);
+        cx.update_global::<WindowManager, _>(|manager, _| {
+            manager.register(window_id, view.downgrade());
+        });
+        // Notify all windows so they update their titles to include the window name
+        for weak in cx.global::<WindowManager>().get_all_windows() {
+            if let Some(entity) = weak.upgrade() {
+                entity.update(cx, |_, cx| cx.notify());
+            }
+        }
+        configure(&view, window, cx);
+        let root = cx.new(|cx| gpui_kit::component::Root::new(view.clone(), window, cx));
+        let view_clone = view.clone();
+        window.on_window_should_close(cx, move |window, cx| {
+            view_clone.update(cx, |fulgur, cx| {
+                fulgur.on_window_close_requested(window, cx)
+            })
+        });
+        root
+    })?;
+    window.update(cx, |_, window, _| {
+        window.activate_window();
+    })?;
+    Ok(())
 }
