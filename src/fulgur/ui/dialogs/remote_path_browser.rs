@@ -1,5 +1,6 @@
 use crate::fulgur::sync::ssh::{
     self,
+    auth::NoPrompt,
     credentials::{SshCredKey, SshCredentialCache},
     pool::{PooledSession, SshSessionPool},
     sftp::RemoteDirectoryEntry,
@@ -362,7 +363,7 @@ fn checkout_browser_session(
     connection: &RemotePathBrowserConnection,
     directory: &str,
 ) -> Result<PooledSession, String> {
-    let password = connection
+    let cached_auth = connection
         .ssh_session_cache
         .lock()
         .get(&connection.credential_key)
@@ -381,9 +382,14 @@ fn checkout_browser_session(
 
     connection
         .ssh_session_pool
-        .checkout_or_connect(&spec, &connection.user, &password, |_, _, _| {
-            ssh::HostKeyDecision::Reject
-        })
+        .checkout_or_connect(
+            &spec,
+            &connection.user,
+            Some(&cached_auth),
+            |_, _, _| ssh::HostKeyDecision::Reject,
+            &mut NoPrompt,
+        )
+        .map(|(session, _)| session)
         .map_err(|e| e.user_message())
 }
 

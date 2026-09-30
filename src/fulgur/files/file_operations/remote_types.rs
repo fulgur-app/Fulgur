@@ -1,22 +1,22 @@
 use crate::fulgur::sync::ssh::{
-    self, credentials::SshCredKey, pool::SshSessionPool, save_queue::RemoteSavePermit,
-    session::HostKeyDecision, sftp::RemoteDirectoryEntry, url::RemoteSpec,
+    save_queue::RemoteSavePermit, session::HostKeyDecision, sftp::RemoteDirectoryEntry,
+    url::RemoteSpec,
 };
 use crate::fulgur::ui::tabs::editor_tab::ContentRevision;
 use crate::fulgur::ui::tabs::tab::TabId;
-use parking_lot::Mutex;
 use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
+        mpsc::{Receiver, RecvTimeoutError},
     },
     time::Duration,
 };
-use zeroize::Zeroizing;
 
-pub const SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS: u64 = 60;
-pub const SSH_HOST_KEY_APPROVAL_TIMEOUT: Duration =
-    Duration::from_secs(SSH_HOST_KEY_APPROVAL_TIMEOUT_SECS);
+/// Time the user has to answer a host-key or credential prompt, and the budget of the
+/// remote operation after the last prompt.
+pub const SSH_USER_PROMPT_TIMEOUT_SECS: u64 = 60;
+pub const SSH_USER_PROMPT_TIMEOUT: Duration = Duration::from_secs(SSH_USER_PROMPT_TIMEOUT_SECS);
 pub const SSH_CONNECTION_TIMEOUT_LABEL: &str = "SSH connection timed out";
 pub const SSH_SAVE_TIMEOUT_LABEL: &str = "SSH save timed out";
 
@@ -63,13 +63,29 @@ pub struct PendingRemoteOpenOutcome {
 /// Inputs required to execute a remote open in the SSH worker thread.
 pub struct RemoteOpenTaskParams {
     pub spec: RemoteSpec,
-    pub password: Zeroizing<String>,
-    pub credential_key: SshCredKey,
-    pub ssh_session_cache: Arc<Mutex<ssh::credentials::SshCredentialCache>>,
-    pub ssh_session_pool: Arc<SshSessionPool>,
     pub target_tab_id: Option<TabId>,
     pub target_request_id: Option<u64>,
     pub(crate) target_reload_guard: Option<RemoteReloadGuard>,
+}
+
+/// Wait for the user to answer a prompt posted by an SSH worker thread.
+///
+/// ### Arguments
+/// - `answer_rx`: Receiver the prompt dialog delivers its answer on
+/// - `timed_out`: Shared flag set when the wait elapsed without an answer
+///
+/// ### Returns
+/// - `Some(T)`: The user's answer
+/// - `None`: The dialog closed without answering, or `SSH_USER_PROMPT_TIMEOUT` elapsed
+pub fn wait_for_user_answer<T>(answer_rx: &Receiver<T>, timed_out: &AtomicBool) -> Option<T> {
+    match answer_rx.recv_timeout(SSH_USER_PROMPT_TIMEOUT) {
+        Ok(answer) => Some(answer),
+        Err(RecvTimeoutError::Timeout) => {
+            timed_out.store(true, Ordering::Release);
+            None
+        }
+        Err(RecvTimeoutError::Disconnected) => None,
+    }
 }
 
 /// Wait for a host-key trust decision with a bounded timeout.
@@ -82,17 +98,10 @@ pub struct RemoteOpenTaskParams {
 /// - `HostKeyDecision::Accept`: The user accepted the presented host key
 /// - `HostKeyDecision::Reject`: The user rejected the key, the channel closed, or timeout elapsed
 pub fn wait_for_host_key_decision(
-    decision_rx: &std::sync::mpsc::Receiver<HostKeyDecision>,
+    decision_rx: &Receiver<HostKeyDecision>,
     timed_out: &AtomicBool,
 ) -> HostKeyDecision {
-    match decision_rx.recv_timeout(SSH_HOST_KEY_APPROVAL_TIMEOUT) {
-        Ok(decision) => decision,
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            timed_out.store(true, Ordering::Release);
-            HostKeyDecision::Reject
-        }
-        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => HostKeyDecision::Reject,
-    }
+    wait_for_user_answer(decision_rx, timed_out).unwrap_or(HostKeyDecision::Reject)
 }
 
 /// Build a "Verb to user@host:port" label for progress notifications.
@@ -120,9 +129,5 @@ pub struct RemoteSaveTaskParams {
     pub spec: RemoteSpec,
     pub saved_content: Arc<String>,
     pub saved_bytes: Arc<Vec<u8>>,
-    pub password: Zeroizing<String>,
-    pub credential_key: SshCredKey,
-    pub ssh_session_cache: Arc<Mutex<ssh::credentials::SshCredentialCache>>,
-    pub ssh_session_pool: Arc<SshSessionPool>,
     pub remote_save_permit: RemoteSavePermit,
 }

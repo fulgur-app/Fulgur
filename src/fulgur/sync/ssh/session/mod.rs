@@ -1,21 +1,26 @@
+mod authenticate;
 mod host_key;
 mod host_patterns;
+mod identities;
 mod paths;
+mod ssh_config;
 
+pub use identities::expand_tilde;
 pub use paths::home_dir;
+pub use ssh_config::SshHostConfig;
 
+use super::auth::{CredentialPrompter, SshAuth};
 use super::error::SshError;
 use super::url::RemoteSpec;
+use authenticate::authenticate;
 use host_key::check_host_key;
 use host_patterns::hostkey_method_preferences_from_known_hosts;
 use ssh2::Session;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
-use zeroize::Zeroizing;
 
 const CONNECT_TIMEOUT_SECS: u64 = 10;
 const SESSION_TIMEOUT_MS: u32 = 30_000;
-const LIBSSH2_AUTHENTICATION_FAILED_CODE: i32 = -18;
 
 /// An established SSH session with an open SFTP subsystem.
 pub struct SshSession {
@@ -58,23 +63,28 @@ pub struct HostKeyRequest {
 /// ### Arguments
 /// - `spec`: Parsed remote specification supplying host and port.
 /// - `user`: Resolved username; must not be empty.
-/// - `password`: Session-scoped password, zeroed on drop by the `Zeroizing` wrapper.
+/// - `preferred_auth`: Credentials that authenticated this target before, tried first.
 /// - `host_key_cb`: Called with `(fingerprint_sha256_hex, host, port)` when the host key is unknown.
+/// - `prompter`: Source of passphrases, passwords, and key files when automatic methods fail.
 ///
 /// ### Errors
 /// Returns an `SshError` on TCP connect failure, SSH handshake failure, host-key
-/// rejection, password authentication failure, or SFTP subsystem init failure.
+/// rejection, authentication failure or cancellation, or SFTP subsystem init failure.
 ///
 /// ### Returns
-/// - `Ok(SshSession)`: Ready session with an open SFTP subsystem.
+/// - `Ok((SshSession, SshAuth))`: Ready session with an open SFTP subsystem, and the
+///   credentials that authenticated it.
 /// - `Err(SshError)`: Any failure during TCP connect, handshake, host-key check, auth, or SFTP init.
 pub fn connect(
     spec: &RemoteSpec,
     user: &str,
-    password: &Zeroizing<String>,
+    preferred_auth: Option<&SshAuth>,
     host_key_cb: impl FnOnce(&str, &str, u16) -> HostKeyDecision,
-) -> Result<SshSession, SshError> {
-    let addr_str = format!("{}:{}", spec.host, spec.port);
+    prompter: &mut dyn CredentialPrompter,
+) -> Result<(SshSession, SshAuth), SshError> {
+    let host_config = SshHostConfig::load(&spec.host);
+    let (host, port) = host_config.connection_target(&spec.host, spec.port);
+    let addr_str = format!("{host}:{port}");
     let addrs: Vec<_> = addr_str
         .to_socket_addrs()
         .map_err(|e| SshError::ConnectionFailed(format!("Cannot resolve {addr_str}: {e}")))?
@@ -105,8 +115,7 @@ pub fn connect(
         })?;
 
     let mut session = Session::new().map_err(|e| SshError::ConnectionFailed(e.to_string()))?;
-    if let Some(hostkey_prefs) = hostkey_method_preferences_from_known_hosts(&spec.host, spec.port)
-    {
+    if let Some(hostkey_prefs) = hostkey_method_preferences_from_known_hosts(&host, port) {
         let _ = session.method_pref(ssh2::MethodType::HostKey, &hostkey_prefs);
     }
     session.set_timeout(SESSION_TIMEOUT_MS);
@@ -115,12 +124,16 @@ pub fn connect(
         .handshake()
         .map_err(|e| SshError::ConnectionFailed(e.to_string()))?;
 
-    check_host_key(&session, &spec.host, spec.port, host_key_cb)?;
+    check_host_key(&session, &host, port, host_key_cb)?;
 
-    session
-        .userauth_password(user, password.as_str())
-        .map_err(|e| map_password_auth_error(&e))?;
-
+    let auth = authenticate(
+        &session,
+        &spec.host,
+        &host_config,
+        user,
+        preferred_auth,
+        prompter,
+    )?;
     if !session.authenticated() {
         return Err(SshError::AuthFailed);
     }
@@ -129,48 +142,5 @@ pub fn connect(
         .sftp()
         .map_err(|e| SshError::SftpError(e.to_string()))?;
 
-    Ok(SshSession { session, sftp })
-}
-
-/// Classify `userauth_password` failures as credential rejection or transport/session errors.
-///
-/// ### Arguments
-/// - `error`: Raw ssh2 error returned from `userauth_password`.
-///
-/// ### Returns
-/// - `SshError::AuthFailed`: Password authentication was explicitly rejected by the server.
-/// - `SshError::ConnectionFailed`: Any non-auth failure during the authentication request.
-fn map_password_auth_error(error: &ssh2::Error) -> SshError {
-    match error.code() {
-        ssh2::ErrorCode::Session(code) if code == LIBSSH2_AUTHENTICATION_FAILED_CODE => {
-            SshError::AuthFailed
-        }
-        _ => SshError::ConnectionFailed(format!("SSH authentication request failed: {error}")),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::map_password_auth_error;
-    use crate::fulgur::sync::ssh::error::SshError;
-
-    #[test]
-    fn map_password_auth_error_maps_authentication_rejection() {
-        let error = ssh2::Error::from_errno(ssh2::ErrorCode::Session(-18));
-        assert!(matches!(
-            map_password_auth_error(&error),
-            SshError::AuthFailed
-        ));
-    }
-
-    #[test]
-    fn map_password_auth_error_maps_non_auth_errors_to_connection_failed() {
-        let error = ssh2::Error::from_errno(ssh2::ErrorCode::Session(-7));
-        match map_password_auth_error(&error) {
-            SshError::ConnectionFailed(message) => {
-                assert!(message.contains("SSH authentication request failed"));
-            }
-            other => panic!("expected ConnectionFailed, got {other:?}"),
-        }
-    }
+    Ok((SshSession { session, sftp }, auth))
 }

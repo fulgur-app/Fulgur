@@ -1,13 +1,12 @@
+use super::auth::{CredentialPrompter, SshAuth};
 use super::credentials::SshCredKey;
 use super::error::SshError;
 use super::session::{HostKeyDecision, SshSession, connect};
 use super::url::RemoteSpec;
 use parking_lot::Mutex;
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use zeroize::Zeroizing;
 
 /// Time after which an idle SSH session is considered stale and discarded.
 pub const SSH_SESSION_IDLE_TTL: Duration = Duration::from_hours(1);
@@ -15,27 +14,26 @@ pub const SSH_SESSION_IDLE_TTL: Duration = Duration::from_hours(1);
 /// Maximum number of idle sessions held by the pool at once.
 const SSH_SESSION_POOL_CAPACITY: usize = 64;
 
-/// Identifier for a pooled session, derived from connection coordinates and password digest.
+/// Identifier for a pooled session, derived from connection coordinates and a credential digest.
 ///
-/// Including a SHA-256 digest of the password ensures rotated credentials never
-/// silently reuse a session authenticated under the previous password.
+/// Including a SHA-256 digest of the credentials ensures rotated credentials never
+/// silently reuse a session authenticated under the previous ones.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SshSessionKey {
     pub host: String,
     pub port: u16,
     pub user: String,
-    pub password_hash: [u8; 32],
+    pub credential_digest: [u8; 32],
 }
 
 impl SshSessionKey {
-    /// Build a pool key from a `(host, port, user)` triple and a password.
+    /// Build a pool key from a `(host, port, user)` triple and the credentials used.
     ///
     /// ### Arguments
     /// - `host`: Hostname or IP of the remote server.
     /// - `port`: SSH port.
     /// - `user`: Username used for authentication.
-    /// - `password`: Password used for authentication; its SHA-256 digest is
-    ///   stored in the key.
+    /// - `auth`: Credentials used for authentication; only their digest is stored.
     ///
     /// ### Returns
     /// - `Self`: The composite key used to look up cached sessions.
@@ -43,17 +41,13 @@ impl SshSessionKey {
         host: impl Into<String>,
         port: u16,
         user: impl Into<String>,
-        password: &Zeroizing<String>,
+        auth: &SshAuth,
     ) -> Self {
-        let mut hasher = Sha256::new();
-        hasher.update(password.as_bytes());
-        let mut password_hash = [0u8; 32];
-        password_hash.copy_from_slice(&hasher.finalize());
         Self {
             host: host.into(),
             port,
             user: user.into(),
-            password_hash,
+            credential_digest: auth.digest(),
         }
     }
 }
@@ -64,7 +58,7 @@ struct SlotEntry {
     last_used: Instant,
 }
 
-/// Process-wide pool of authenticated SSH sessions keyed by `(host, port, user, password-hash)`.
+/// Process-wide pool of authenticated SSH sessions keyed by `(host, port, user, credential-digest)`.
 ///
 /// Idle sessions are checked out on demand and returned on guard drop. Stale entries are
 /// evicted lazily on every `take`/`put` based on a configurable idle TTL.
@@ -103,7 +97,7 @@ impl SshSessionPool {
         self.entries.lock().clear();
     }
 
-    /// Drop sessions for a `(host, port, user)` triple regardless of stored password digest.
+    /// Drop sessions for a `(host, port, user)` triple regardless of stored credential digest.
     ///
     /// ### Arguments
     /// - `cred_key`: Credential identifier whose sessions should be discarded.
@@ -185,45 +179,60 @@ impl SshSessionPool {
     }
 
     /// Reuse a cached session if one is available, otherwise establish a new one.
+    ///
     /// ### Arguments
     /// - `spec`: Parsed remote specification supplying host and port.
     /// - `user`: Resolved username; must not be empty.
-    /// - `password`: Session-scoped password used to compute the pool key and, on
-    ///   cache miss, to authenticate.
+    /// - `cached_auth`: Credentials that authenticated this target before. They select the
+    ///   pooled session and, on cache miss, are tried first.
     /// - `host_key_cb`: Called only on cache miss when the host key is unknown.
+    /// - `prompter`: Called only on cache miss when automatic authentication fails.
     ///
     /// ### Errors
     /// Returns an `SshError` on connect, handshake, host-key check, authentication,
     /// or SFTP initialization failures when establishing a new session.
     ///
     /// ### Returns
-    /// - `Ok(PooledSession)`: A guard owning the checked-out session. Drop returns
-    ///   it to the pool; `invalidate()` discards it instead.
+    /// - `Ok((PooledSession, SshAuth))`: A guard owning the checked-out session, and the
+    ///   credentials it is authenticated with. Dropping the guard returns the session to
+    ///   the pool; `invalidate()` discards it instead.
     /// - `Err(SshError)`: Any failure during connect, handshake, host-key check,
     ///   auth, or SFTP init when establishing a new session.
     pub fn checkout_or_connect(
         self: &Arc<Self>,
         spec: &RemoteSpec,
         user: &str,
-        password: &Zeroizing<String>,
+        cached_auth: Option<&SshAuth>,
         host_key_cb: impl FnOnce(&str, &str, u16) -> HostKeyDecision,
-    ) -> Result<PooledSession, SshError> {
-        let key = SshSessionKey::new(&spec.host, spec.port, user, password);
-
-        if let Some(session) = self.take(&key)
-            && session.is_authenticated()
-        {
-            return Ok(PooledSession {
-                inner: Some(SessionWithKey { key, session }),
-                pool: Arc::clone(self),
-            });
+        prompter: &mut dyn CredentialPrompter,
+    ) -> Result<(PooledSession, SshAuth), SshError> {
+        if let Some(auth) = cached_auth {
+            let key = SshSessionKey::new(&spec.host, spec.port, user, auth);
+            if let Some(session) = self.take(&key)
+                && session.is_authenticated()
+            {
+                return Ok((self.guard(key, session), auth.clone()));
+            }
         }
 
-        let session = connect(spec, user, password, host_key_cb)?;
-        Ok(PooledSession {
+        let (session, auth) = connect(spec, user, cached_auth, host_key_cb, prompter)?;
+        let key = SshSessionKey::new(&spec.host, spec.port, user, &auth);
+        Ok((self.guard(key, session), auth))
+    }
+
+    /// Wrap a checked-out session in a guard that returns it to this pool on drop.
+    ///
+    /// ### Arguments
+    /// - `key`: Key the session is returned under.
+    /// - `session`: Authenticated session.
+    ///
+    /// ### Returns
+    /// - `PooledSession`: Guard owning the session.
+    fn guard(self: &Arc<Self>, key: SshSessionKey, session: SshSession) -> PooledSession {
+        PooledSession {
             inner: Some(SessionWithKey { key, session }),
             pool: Arc::clone(self),
-        })
+        }
     }
 }
 
@@ -288,20 +297,20 @@ mod tests {
     use zeroize::Zeroizing;
 
     #[test]
-    fn key_includes_password_digest() {
-        let pwd_a = Zeroizing::new("hunter2".to_string());
-        let pwd_b = Zeroizing::new("trustno1".to_string());
-        let key_a = SshSessionKey::new("example.com", 22, "alice", &pwd_a);
-        let key_b = SshSessionKey::new("example.com", 22, "alice", &pwd_b);
+    fn key_includes_credential_digest() {
+        let auth_a = SshAuth::Password(Zeroizing::new("hunter2".to_string()));
+        let auth_b = SshAuth::Password(Zeroizing::new("trustno1".to_string()));
+        let key_a = SshSessionKey::new("example.com", 22, "alice", &auth_a);
+        let key_b = SshSessionKey::new("example.com", 22, "alice", &auth_b);
         assert_ne!(key_a, key_b);
-        assert_ne!(key_a.password_hash, [0u8; 32]);
+        assert_ne!(key_a.credential_digest, [0u8; 32]);
     }
 
     #[test]
-    fn key_is_stable_for_same_password() {
-        let pwd = Zeroizing::new("hunter2".to_string());
-        let key_a = SshSessionKey::new("example.com", 22, "alice", &pwd);
-        let key_b = SshSessionKey::new("example.com", 22, "alice", &pwd);
+    fn key_is_stable_for_same_credentials() {
+        let auth = SshAuth::Password(Zeroizing::new("hunter2".to_string()));
+        let key_a = SshSessionKey::new("example.com", 22, "alice", &auth);
+        let key_b = SshSessionKey::new("example.com", 22, "alice", &auth);
         assert_eq!(key_a, key_b);
     }
 

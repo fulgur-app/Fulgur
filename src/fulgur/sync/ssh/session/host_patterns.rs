@@ -109,16 +109,17 @@ fn host_match_candidates(host: &str, port: u16) -> Vec<String> {
     }
 }
 
-/// Match known-host pattern list with OpenSSH negation semantics.
+/// Match an OpenSSH host pattern list (known-host entry or `ssh_config` `Host` line) with
+/// negation semantics.
 ///
 /// ### Arguments
-/// - `patterns`: Comma-separated host patterns from one known-host entry.
+/// - `patterns`: Host patterns from one known-host entry or one `Host` line.
 /// - `candidates`: Candidate host representations for the current connection.
 ///
 /// ### Returns
 /// - `true`: At least one positive pattern matched and no negated match rejected it.
 /// - `false`: No positive match, or a negated pattern matched.
-fn match_known_host_patterns(patterns: &[String], candidates: &[String]) -> bool {
+pub(super) fn match_known_host_patterns(patterns: &[String], candidates: &[String]) -> bool {
     let mut matched = false;
     for pattern in patterns {
         let (negated, token) = if let Some(stripped) = pattern.strip_prefix('!') {

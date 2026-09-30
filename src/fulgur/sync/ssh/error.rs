@@ -15,8 +15,10 @@ pub enum SshError {
         port: u16,
         fingerprint: String,
     },
-    /// Password authentication was rejected by the server.
+    /// No agent identity, key, or password was accepted by the server.
     AuthFailed,
+    /// The user cancelled a passphrase or login prompt.
+    AuthCancelled,
     /// An SFTP-level error (open, read, write, rename, or unlink).
     SftpError(String),
     /// Local filesystem I/O error, e.g. when reading or writing `known_hosts`.
@@ -38,9 +40,11 @@ impl fmt::Display for SshError {
                 port,
                 fingerprint,
             } => write!(f, "Unknown host {host}:{port} (fingerprint: {fingerprint})"),
-            SshError::AuthFailed => {
-                write!(f, "Authentication failed - check username and password.")
-            }
+            SshError::AuthFailed => write!(
+                f,
+                "Authentication failed - no SSH agent identity, key, or password was accepted."
+            ),
+            SshError::AuthCancelled => write!(f, "SSH login cancelled."),
             SshError::SftpError(msg) => write!(f, "SFTP error: {msg}"),
             SshError::IoError(msg) => write!(f, "I/O error: {msg}"),
         }

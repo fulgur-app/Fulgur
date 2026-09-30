@@ -1,7 +1,7 @@
+use super::auth::SshAuth;
 use std::collections::HashMap;
-use zeroize::Zeroizing;
 
-/// Unique key for a (host, port, user) triple used to look up cached passwords.
+/// Unique key for a (host, port, user) triple used to look up cached credentials.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SshCredKey {
     pub host: String,
@@ -34,8 +34,9 @@ impl SshCredKey {
     }
 }
 
-/// Session-scoped in-memory password cache.
+/// Session-scoped in-memory cache of the credentials that last authenticated each target.
 ///
-/// Stored inside `SharedAppState` behind an `Arc<Mutex<…>>`. Passwords are held as
-/// `Zeroizing<String>` so memory is zeroed on drop. The map is never persisted to disk.
-pub type SshCredentialCache = HashMap<SshCredKey, Zeroizing<String>>;
+/// Stored inside `SharedAppState` behind an `Arc<Mutex<…>>` because SSH worker threads
+/// update it. Secrets are held as `Zeroizing<String>` so memory is zeroed on drop. The map
+/// is never persisted to disk.
+pub type SshCredentialCache = HashMap<SshCredKey, SshAuth>;

@@ -6,7 +6,7 @@ use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur,
     editor_tab::TabLocation,
-    sync::ssh::{self, credentials::SshCredKey, url::RemoteSpec},
+    sync::ssh::{self, url::RemoteSpec},
     ui::notifications::progress::CancelCallback,
 };
 use gpui_kit::component::{WindowExt, notification::NotificationType};
@@ -31,114 +31,44 @@ impl Fulgur {
         window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
         tab_id: TabId,
-        mut spec: RemoteSpec,
+        spec: RemoteSpec,
         contents: String,
         bytes: Vec<u8>,
     ) {
-        let ssh_session_cache = Arc::clone(&Fulgur::shared_state(cx).ssh_session_cache);
-        let ssh_session_pool = Arc::clone(&Fulgur::shared_state(cx).ssh_session_pool);
         let remote_save_queue = Arc::clone(&Fulgur::shared_state(cx).remote_save_queue);
-        if let (Some(user), Some(password)) = (spec.user.clone(), spec.password_in_url.take()) {
-            let key = SshCredKey::new(spec.host.clone(), spec.port, user);
-            ssh_session_cache.lock().insert(key, password);
-        }
-
         let saved_content = Arc::new(contents);
         let saved_bytes = Arc::new(bytes);
-        if let Some(user) = spec.user.clone() {
-            let cache_key = SshCredKey::new(spec.host.clone(), spec.port, user.clone());
-            if let Some(cached_password) = ssh_session_cache.lock().get(&cache_key).cloned() {
-                spec.password_in_url = None;
-                let request_id = self.next_remote_request_id;
-                self.next_remote_request_id = self.next_remote_request_id.wrapping_add(1);
-                self.latest_remote_save_request_by_tab
-                    .insert(tab_id, request_id);
-                let remote_save_permit = remote_save_queue.enqueue(&spec);
-                Self::spawn_ssh_save_task(
-                    window,
-                    cx,
-                    RemoteSaveTaskParams {
-                        tab_id,
-                        request_id,
-                        spec,
-                        saved_content: Arc::clone(&saved_content),
-                        saved_bytes: Arc::clone(&saved_bytes),
-                        password: cached_password,
-                        credential_key: cache_key,
-                        ssh_session_cache: Arc::clone(&ssh_session_cache),
-                        ssh_session_pool: Arc::clone(&ssh_session_pool),
-                        remote_save_permit,
-                    },
-                );
-                return;
+
+        self.with_resolved_remote_user(window, cx, spec, move |fulgur, spec, window, cx| {
+            if let Some(tab_entity) = fulgur.tab_entity_of(tab_id, cx) {
+                tab_entity.update(cx, |tab, _| {
+                    if let Some(editor_tab) = tab.as_editor_mut()
+                        && let TabLocation::Remote(remote_spec) = &mut editor_tab.location
+                        && remote_spec.user != spec.user
+                    {
+                        remote_spec.user.clone_from(&spec.user);
+                    }
+                });
             }
-        }
-
-        let host = spec.host.clone();
-        let port = spec.port;
-        let user = spec.user.clone();
-        let entity = cx.entity().downgrade();
-        let cache_for_callback = Arc::clone(&ssh_session_cache);
-        let pool_for_callback = Arc::clone(&ssh_session_pool);
-        let save_queue_for_callback = Arc::clone(&remote_save_queue);
-
-        self.show_ssh_password_dialog(
-            window,
-            cx,
-            &host,
-            port,
-            user,
-            move |resolved_user, password, window, cx| {
-                let mut spec_with_user = spec.clone();
-                spec_with_user.user = Some(resolved_user.clone());
-                spec_with_user.password_in_url = None;
-                let cache_key = SshCredKey::new(
-                    spec_with_user.host.clone(),
-                    spec_with_user.port,
-                    resolved_user.clone(),
-                );
-                if let Some(entity) = entity.upgrade() {
-                    entity.update(cx, |fulgur, cx| {
-                        cache_for_callback
-                            .lock()
-                            .insert(cache_key.clone(), password.clone());
-                        if let Some(tab_entity) = fulgur.tab_entity_of(tab_id, cx) {
-                            tab_entity.update(cx, |tab, _| {
-                                if let Some(editor_tab) = tab.as_editor_mut()
-                                    && let TabLocation::Remote(remote_spec) =
-                                        &mut editor_tab.location
-                                {
-                                    remote_spec.user = Some(resolved_user.clone());
-                                }
-                            });
-                        }
-                        let request_id = fulgur.next_remote_request_id;
-                        fulgur.next_remote_request_id =
-                            fulgur.next_remote_request_id.wrapping_add(1);
-                        fulgur
-                            .latest_remote_save_request_by_tab
-                            .insert(tab_id, request_id);
-                        let remote_save_permit = save_queue_for_callback.enqueue(&spec_with_user);
-                        Self::spawn_ssh_save_task(
-                            window,
-                            cx,
-                            RemoteSaveTaskParams {
-                                tab_id,
-                                request_id,
-                                spec: spec_with_user,
-                                saved_content: Arc::clone(&saved_content),
-                                saved_bytes: Arc::clone(&saved_bytes),
-                                password,
-                                credential_key: cache_key,
-                                ssh_session_cache: Arc::clone(&cache_for_callback),
-                                ssh_session_pool: Arc::clone(&pool_for_callback),
-                                remote_save_permit,
-                            },
-                        );
-                    });
-                }
-            },
-        );
+            let request_id = fulgur.next_remote_request_id;
+            fulgur.next_remote_request_id = fulgur.next_remote_request_id.wrapping_add(1);
+            fulgur
+                .latest_remote_save_request_by_tab
+                .insert(tab_id, request_id);
+            let remote_save_permit = remote_save_queue.enqueue(&spec);
+            Self::spawn_ssh_save_task(
+                window,
+                cx,
+                RemoteSaveTaskParams {
+                    tab_id,
+                    request_id,
+                    spec,
+                    saved_content: Arc::clone(&saved_content),
+                    saved_bytes: Arc::clone(&saved_bytes),
+                    remote_save_permit,
+                },
+            );
+        });
     }
 
     /// Spawn a blocking SSH/SFTP save worker with host-key UI monitoring.
@@ -158,10 +88,6 @@ impl Fulgur {
             spec,
             saved_content,
             saved_bytes,
-            password,
-            credential_key,
-            ssh_session_cache,
-            ssh_session_pool,
             remote_save_permit,
         } = params;
         let pending_save_result: Arc<Mutex<Option<Result<(), String>>>> =
@@ -189,10 +115,6 @@ impl Fulgur {
             cx,
             SshTaskContext {
                 spec,
-                password,
-                credential_key,
-                ssh_session_cache,
-                ssh_session_pool,
                 progress_prefix: "Saving to ",
                 timeout_label: SSH_SAVE_TIMEOUT_LABEL,
                 cancel_callback,
