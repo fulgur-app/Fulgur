@@ -3,7 +3,6 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants},
     h_flex,
     notification::NotificationType,
-    scroll::ScrollableElement,
     v_flex,
 };
 use gpui_kit::prelude::FluentBuilder;
@@ -236,7 +235,6 @@ impl Fulgur {
         let entity = cx.entity();
         let current_theme = self.settings.app_settings.theme.to_string();
         let current_theme_shared = Arc::new(Mutex::new(current_theme.clone()));
-        let viewport_height = window.viewport_size().height;
         window.open_sheet(cx, move |sheet, _window, cx| {
             let themes = ThemeRegistry::global(cx).sorted_themes();
             let light_themes: Vec<String> = themes
@@ -255,16 +253,13 @@ impl Fulgur {
             let current_theme_shared_dark = current_theme_shared.clone();
             let current_theme_shared_light = current_theme_shared.clone();
             let current_theme_display = current_theme_shared.lock().clone();
-            let max_height = px((viewport_height - px(150.0)).into()); //TODO: Make this dynamic based on the content
             sheet
                 .title("Select Theme")
                 .size(px(400.))
                 .overlay(false)
                 .child(
                     v_flex()
-                        .overflow_y_scrollbar()
                         .gap_2()
-                        .h(max_height)
                         .child(div().text_lg().child("Dark themes"))
                         .child(make_select_theme_list(
                             &entity_dark,
