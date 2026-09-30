@@ -184,16 +184,18 @@ impl Fulgur {
         }
     }
 
-    /// Process pending IPC commands from the Windows jump list listener
+    /// Process pending IPC commands forwarded by another Fulgur process
     ///
-    /// Drains the `pending_ipc_commands` queue and executes each command
+    /// Commands come from the Windows jump list ("new-tab", "new-window") and from
+    /// Linux launches without a file ("focus", already handled by activating the
+    /// window). Drains the `pending_ipc_commands` queue and executes each command
     /// in-process. Only the last-focused window processes the queue, mirroring
     /// the behaviour of `process_pending_files_from_macos`.
     ///
     /// ### Arguments
     /// - `window`: The window being rendered
     /// - `cx`: The application context
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     pub fn process_pending_ipc_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let should_process = cx
             .global::<WindowManager>()
@@ -219,6 +221,9 @@ impl Fulgur {
                 "new-window" => {
                     log::info!("IPC: opening new window");
                     self.open_new_window(cx);
+                }
+                "focus" => {
+                    log::info!("IPC: focusing window");
                 }
                 other => {
                     log::warn!("IPC: unknown command '{other}'");

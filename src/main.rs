@@ -192,11 +192,20 @@ fn main() {
         })
         .collect();
 
-    // On Windows, if we have file paths AND another Fulgur is already running,
+    // On Windows and Linux, if we have file paths AND another Fulgur is already running,
     // forward the paths to it and exit, that instance will open/focus the files.
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     if !cli_file_paths.is_empty()
         && fulgur::utils::single_instance::try_forward_to_existing_instance(&cli_file_paths)
+    {
+        return;
+    }
+
+    // On Linux, a launch without files (e.g. from the app launcher) focuses the running
+    // instance instead of restoring the session into a duplicate window.
+    #[cfg(target_os = "linux")]
+    if cli_file_paths.is_empty()
+        && fulgur::utils::single_instance::try_send_command_to_existing_instance("focus")
     {
         return;
     }
@@ -279,15 +288,27 @@ fn main() {
             state_db,
         );
         cx.set_global(shared_state);
-        // On Windows, start the IPC listener now that SharedAppState is registered.
+        // On Windows and Linux, start the IPC listener now that SharedAppState is registered.
         // We grab the two arcs from the global so there's a single source of truth,
         // and store the Drop-owned worker back on it so the listener has an owner.
-        #[cfg(target_os = "windows")]
-        cx.update_global::<fulgur::shared_state::SharedAppState, _>(|shared, _| {
-            let pf = shared.pending_files_from_macos.clone();
-            let pic = shared.pending_ipc_commands.clone();
-            shared.ipc_listener = fulgur::utils::single_instance::start_ipc_listener(pf, pic);
-        });
+        // Each forwarded message wakes a task that opens it in the last focused window.
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        {
+            let (wake_tx, mut wake_rx) = futures::channel::mpsc::unbounded::<()>();
+            cx.update_global::<fulgur::shared_state::SharedAppState, _>(|shared, _| {
+                let pf = shared.pending_files_from_macos.clone();
+                let pic = shared.pending_ipc_commands.clone();
+                shared.ipc_listener =
+                    fulgur::utils::single_instance::start_ipc_listener(pf, pic, wake_tx);
+            });
+            cx.spawn(async move |cx| {
+                use futures::StreamExt;
+                while wake_rx.next().await.is_some() {
+                    cx.update(fulgur::Fulgur::handle_single_instance_wakeup);
+                }
+            })
+            .detach();
+        }
         cx.set_global(fulgur::window_manager::WindowManager::new());
         fulgur::Fulgur::register_app_quit_state_save(cx);
         fulgur::window_manager::system_menus::init(cx);
