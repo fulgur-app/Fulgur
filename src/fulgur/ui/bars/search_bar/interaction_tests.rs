@@ -1,11 +1,12 @@
 //! Headless interaction tests for the search and replace bar.
 
 use super::SearchBar;
+use crate::fulgur::ui::menus::build_default_key_bindings;
 use crate::fulgur::ui::motion::SURFACE_DURATION;
 use crate::test_support::open_fulgur_with_root;
 use gpui_kit::component::input::EditorState;
 use gpui_kit::test::TestWindowExt;
-use gpui_kit::{Entity, TestAppContext, VisualTestContext};
+use gpui_kit::{Entity, Focusable, TestAppContext, VisualTestContext};
 
 /// Open a window with the search bar visible over an editor holding `content`.
 ///
@@ -263,4 +264,175 @@ fn test_the_collapsing_search_bar_leaves_the_tree_once_its_motion_ends(cx: &mut 
             "the bar must leave the render tree once the collapse ends"
         );
     });
+}
+
+/// Type `query` into the search input, leaving the caret there.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context driving the window
+/// - `query`: The text to type
+fn type_query(visual_cx: &mut VisualTestContext, query: &str) {
+    visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.click("search-input", cx);
+        window.input(query, cx);
+    });
+    visual_cx.run_until_parked();
+}
+
+/// Read the index of the current match.
+///
+/// ### Arguments
+/// - `search_bar`: The search bar under test
+/// - `visual_cx`: The visual test context driving the window
+///
+/// ### Returns
+/// - `Some(usize)`: The index of the current match
+/// - `None`: No match is current
+fn current_match(
+    search_bar: &Entity<SearchBar>,
+    visual_cx: &mut VisualTestContext,
+) -> Option<usize> {
+    visual_cx.update(|_window, cx| search_bar.read(cx).current_match_index)
+}
+
+/// Whether the search input holds keyboard focus.
+///
+/// ### Arguments
+/// - `search_bar`: The search bar under test
+/// - `visual_cx`: The visual test context driving the window
+///
+/// ### Returns
+/// - `bool`: True if the search input is focused
+fn search_input_is_focused(
+    search_bar: &Entity<SearchBar>,
+    visual_cx: &mut VisualTestContext,
+) -> bool {
+    visual_cx.update(|window, cx| {
+        search_bar
+            .read(cx)
+            .search_input
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window)
+    })
+}
+
+#[gpui_kit::test]
+fn test_enter_and_shift_enter_step_through_matches_from_the_search_input(cx: &mut TestAppContext) {
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, "foo bar foo baz foo");
+    type_query(&mut visual_cx, "foo");
+    let first = current_match(&search_bar, &mut visual_cx).expect("expected a current match");
+
+    visual_cx.simulate_keystrokes("enter");
+    visual_cx.run_until_parked();
+    assert_eq!(
+        current_match(&search_bar, &mut visual_cx),
+        Some((first + 1) % 3),
+        "Enter must move to the next match"
+    );
+    assert!(
+        search_input_is_focused(&search_bar, &mut visual_cx),
+        "Enter must keep the caret in the search input so a second Enter keeps navigating"
+    );
+
+    visual_cx.simulate_keystrokes("enter");
+    visual_cx.run_until_parked();
+    assert_eq!(
+        current_match(&search_bar, &mut visual_cx),
+        Some((first + 2) % 3),
+        "a second Enter must keep navigating, not type into the document"
+    );
+
+    visual_cx.simulate_keystrokes("shift-enter");
+    visual_cx.run_until_parked();
+    assert_eq!(
+        current_match(&search_bar, &mut visual_cx),
+        Some((first + 1) % 3),
+        "Shift-Enter must move to the previous match"
+    );
+    assert!(search_input_is_focused(&search_bar, &mut visual_cx));
+    assert_eq!(
+        visual_cx.update(|_window, cx| editor.read(cx).value().to_string()),
+        "foo bar foo baz foo",
+        "navigating with Enter must never type into the document"
+    );
+}
+
+#[gpui_kit::test]
+fn test_escape_in_the_search_input_closes_the_bar_and_refocuses_the_editor(
+    cx: &mut TestAppContext,
+) {
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, "foo bar foo");
+    type_query(&mut visual_cx, "foo");
+
+    visual_cx.simulate_keystrokes("escape");
+    visual_cx.run_until_parked();
+
+    assert!(
+        !visual_cx.update(|_window, cx| search_bar.read(cx).is_visible()),
+        "Escape must close the bar"
+    );
+    assert!(
+        visual_cx.update(|window, cx| editor.read(cx).focus_handle(cx).is_focused(window)),
+        "closing the bar must hand focus back to the editor"
+    );
+}
+
+#[gpui_kit::test]
+fn test_escape_in_the_replace_input_closes_the_bar(cx: &mut TestAppContext) {
+    let (search_bar, _editor, mut visual_cx) = setup_visible_search(cx, "foo bar foo");
+    visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.click("replace-input", cx);
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.simulate_keystrokes("escape");
+    visual_cx.run_until_parked();
+
+    assert!(
+        !visual_cx.update(|_window, cx| search_bar.read(cx).is_visible()),
+        "Escape from the replace input must close the bar too"
+    );
+}
+
+#[gpui_kit::test]
+fn test_find_next_and_previous_shortcuts_step_through_matches_from_the_editor(
+    cx: &mut TestAppContext,
+) {
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, "foo bar foo baz foo");
+    visual_cx.update(|_window, cx| cx.bind_keys(build_default_key_bindings()));
+    type_query(&mut visual_cx, "foo");
+    let first = current_match(&search_bar, &mut visual_cx).expect("expected a current match");
+    visual_cx.update(|window, cx| {
+        let editor_focus = editor.read(cx).focus_handle(cx);
+        window.focus(&editor_focus, cx);
+    });
+    visual_cx.run_until_parked();
+
+    #[cfg(target_os = "macos")]
+    let (next, previous) = ("cmd-g", "cmd-shift-g");
+    #[cfg(not(target_os = "macos"))]
+    let (next, previous) = ("f3", "shift-f3");
+
+    visual_cx.simulate_keystrokes(next);
+    visual_cx.run_until_parked();
+    assert_eq!(
+        current_match(&search_bar, &mut visual_cx),
+        Some((first + 1) % 3),
+        "the find-next shortcut must move to the next match"
+    );
+    assert!(
+        visual_cx.update(|window, cx| editor.read(cx).focus_handle(cx).is_focused(window)),
+        "stepping from the editor must leave focus in the editor"
+    );
+
+    visual_cx.simulate_keystrokes(previous);
+    visual_cx.run_until_parked();
+    assert_eq!(
+        current_match(&search_bar, &mut visual_cx),
+        Some(first),
+        "the find-previous shortcut must move back"
+    );
 }

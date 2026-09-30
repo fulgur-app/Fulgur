@@ -1,4 +1,5 @@
 use super::SearchMatch;
+use super::actions::MatchStep;
 use crate::fulgur::Fulgur;
 use gpui_kit::component::input::{EditorState, InputEvent, InputState, TextDecorationCollection};
 use gpui_kit::{
@@ -51,7 +52,8 @@ impl SearchBar {
     /// Create a new search bar view owning its search and replace inputs
     ///
     /// Subscribes to its own search input so the search re-runs whenever the
-    /// query changes while the bar is visible.
+    /// query changes while the bar is visible, and so Enter / Shift-Enter step
+    /// to the next / previous match.
     ///
     /// ### Arguments
     /// - `fulgur`: Weak handle to the owning window entity the bar reads the active editor from
@@ -71,10 +73,21 @@ impl SearchBar {
             &search_input,
             window,
             |this: &mut Self, _, ev: &InputEvent, window, cx| {
-                if let InputEvent::Change = ev
-                    && this.show_search
-                {
-                    this.on_query_changed(window, cx);
+                if !this.show_search {
+                    return;
+                }
+                match ev {
+                    InputEvent::Change => this.on_query_changed(window, cx),
+                    InputEvent::PressEnter { shift, .. } => {
+                        let step = if *shift {
+                            MatchStep::Previous
+                        } else {
+                            MatchStep::Next
+                        };
+                        let content = this.active_editor_content(cx);
+                        this.step_match(step, content, window, cx);
+                    }
+                    InputEvent::Focus | InputEvent::Blur => {}
                 }
             },
         );
