@@ -295,8 +295,12 @@ impl Fulgur {
             return;
         }
 
-        if let Some(tab_id) = self.pending_initial_active_tab.take()
-            && let Some(index) = self.tab_index_of(tab_id, cx)
+        // Re-activate whichever tab is active now rather than the restored one: a file
+        // opened from the command line may have become active since the restore.
+        if let Some(restored_tab_id) = self.pending_initial_active_tab.take()
+            && let Some(index) = self
+                .tab_index_of(self.active_tab_id.unwrap_or(restored_tab_id), cx)
+                .or_else(|| self.tab_index_of(restored_tab_id, cx))
         {
             self.set_active_tab(index, window, cx);
         }
