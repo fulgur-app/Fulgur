@@ -11,7 +11,6 @@ use crate::fulgur::{
     Fulgur,
     sync::ssh::{
         self,
-        credentials::SshCredKey,
         url::{RemoteSpec, format_remote_url},
     },
     ui::notifications::progress::CancelCallback,
@@ -56,11 +55,9 @@ impl Fulgur {
         &mut self,
         window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
-        mut spec: RemoteSpec,
+        spec: RemoteSpec,
         target_tab_id: Option<TabId>,
     ) {
-        let ssh_session_cache = Arc::clone(&Fulgur::shared_state(cx).ssh_session_cache);
-        let ssh_session_pool = Arc::clone(&Fulgur::shared_state(cx).ssh_session_pool);
         let target_request_id = target_tab_id.map(|tab_id| {
             let request_id = self.next_remote_request_id;
             self.next_remote_request_id = self.next_remote_request_id.wrapping_add(1);
@@ -82,80 +79,18 @@ impl Fulgur {
             })
         });
 
-        // If the URL embeds a password, move it immediately into the session cache.
-        if let (Some(user), Some(password)) = (spec.user.clone(), spec.password_in_url.take()) {
-            let key = SshCredKey::new(spec.host.clone(), spec.port, user);
-            ssh_session_cache.lock().insert(key, password);
-        }
-
-        // Reuse a cached password when we already know the user.
-        if let Some(user) = spec.user.clone() {
-            let cache_key = SshCredKey::new(spec.host.clone(), spec.port, user.clone());
-            if let Some(cached_password) = ssh_session_cache.lock().get(&cache_key).cloned() {
-                spec.password_in_url = None;
-                self.spawn_ssh_open_task(
-                    window,
-                    cx,
-                    RemoteOpenTaskParams {
-                        spec,
-                        password: cached_password,
-                        credential_key: cache_key,
-                        ssh_session_cache: Arc::clone(&ssh_session_cache),
-                        ssh_session_pool: Arc::clone(&ssh_session_pool),
-                        target_tab_id,
-                        target_request_id,
-                        target_reload_guard,
-                    },
-                );
-                return;
-            }
-        }
-
-        let host = spec.host.clone();
-        let port = spec.port;
-        let user = spec.user.clone();
-        let entity = cx.entity().downgrade();
-        let cache_for_callback = Arc::clone(&ssh_session_cache);
-        let pool_for_callback = Arc::clone(&ssh_session_pool);
-
-        self.show_ssh_password_dialog(
-            window,
-            cx,
-            &host,
-            port,
-            user,
-            move |resolved_user, password, window, cx| {
-                let mut spec_with_user = spec.clone();
-                spec_with_user.user = Some(resolved_user);
-                spec_with_user.password_in_url = None;
-                let cache_key = SshCredKey::new(
-                    spec_with_user.host.clone(),
-                    spec_with_user.port,
-                    spec_with_user.user.clone().unwrap_or_default(),
-                );
-                if let Some(entity) = entity.upgrade() {
-                    entity.update(cx, |fulgur, cx| {
-                        cache_for_callback
-                            .lock()
-                            .insert(cache_key.clone(), password.clone());
-                        fulgur.spawn_ssh_open_task(
-                            window,
-                            cx,
-                            RemoteOpenTaskParams {
-                                spec: spec_with_user,
-                                password,
-                                credential_key: cache_key,
-                                ssh_session_cache: Arc::clone(&cache_for_callback),
-                                ssh_session_pool: Arc::clone(&pool_for_callback),
-                                target_tab_id,
-                                target_request_id,
-                                target_reload_guard: target_reload_guard.clone(),
-                            },
-                        );
-                    });
-                }
-            },
-        );
+        self.with_resolved_remote_user(window, cx, spec, move |fulgur, spec, window, cx| {
+            fulgur.spawn_ssh_open_task(
+                window,
+                cx,
+                RemoteOpenTaskParams {
+                    spec,
+                    target_tab_id,
+                    target_request_id,
+                    target_reload_guard: target_reload_guard.clone(),
+                },
+            );
+        });
     }
 
     /// Lazily reconnect and reload a restored remote tab when the user activates it.
@@ -290,10 +225,6 @@ impl Fulgur {
     ) {
         let RemoteOpenTaskParams {
             spec,
-            password,
-            credential_key,
-            ssh_session_cache,
-            ssh_session_pool,
             target_tab_id,
             target_request_id,
             target_reload_guard,
@@ -320,10 +251,6 @@ impl Fulgur {
             cx,
             SshTaskContext {
                 spec,
-                password,
-                credential_key,
-                ssh_session_cache,
-                ssh_session_pool,
                 progress_prefix: "Connecting to ",
                 timeout_label: SSH_CONNECTION_TIMEOUT_LABEL,
                 cancel_callback,
