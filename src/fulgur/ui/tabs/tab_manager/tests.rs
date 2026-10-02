@@ -8,7 +8,7 @@ use crate::fulgur::{
     },
 };
 use gpui_kit::component::input::{InputEvent, Position, Undo};
-use gpui_kit::{App, Context, SharedString, TestAppContext, Window, point, px};
+use gpui_kit::{App, Context, Entity, SharedString, TestAppContext, Window, point, px};
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use crate::test_support::setup_fulgur;
@@ -202,7 +202,7 @@ fn test_close_last_tab_leaves_no_active_index(cx: &mut TestAppContext) {
             assert_eq!(this.tabs.len(), 1);
             let tab_id = this.tabs[0].read(cx).id();
             this.close_tab(tab_id, window, cx);
-            assert!(this.tabs.is_empty());
+            assert_eq!(this.tabs, [] as [Entity<Tab>; 0]);
             assert_eq!(this.active_tab_index(cx), None);
         });
     });
@@ -365,7 +365,7 @@ fn test_close_all_tabs_prompts_for_each_modified_tab(cx: &mut TestAppContext) {
 
     dispatch_dialog_action(&mut visual_cx, Confirm { secondary: false });
     assert!(!has_active_dialog(&mut visual_cx));
-    visual_cx.update(|_, cx| assert!(fulgur.read(cx).tabs.is_empty()));
+    visual_cx.update(|_, cx| assert_eq!(fulgur.read(cx).tabs, [] as [Entity<Tab>; 0]));
 }
 
 #[gpui_kit::test]
@@ -495,11 +495,11 @@ fn test_close_tabs_to_right_is_noop_without_tabs(cx: &mut TestAppContext) {
         fulgur.update(cx, |this, cx| {
             let only_tab = this.tabs[0].read(cx).id();
             this.close_tab(only_tab, window, cx);
-            assert!(this.tabs.is_empty());
+            assert_eq!(this.tabs, [] as [Entity<Tab>; 0]);
 
             this.close_tabs_to_right(0, window, cx);
 
-            assert!(this.tabs.is_empty());
+            assert_eq!(this.tabs, [] as [Entity<Tab>; 0]);
         });
     });
 }
@@ -533,7 +533,7 @@ fn test_close_all_tabs_removes_every_unmodified_tab(cx: &mut TestAppContext) {
 
             this.close_all_tabs(window, cx);
 
-            assert!(this.tabs.is_empty());
+            assert_eq!(this.tabs, [] as [Entity<Tab>; 0]);
             assert_eq!(this.active_tab_id, None);
             assert_eq!(this.active_tab_index(cx), None);
         });
@@ -548,11 +548,11 @@ fn test_close_all_tabs_is_noop_without_tabs(cx: &mut TestAppContext) {
         fulgur.update(cx, |this, cx| {
             let only_tab = this.tabs[0].read(cx).id();
             this.close_tab(only_tab, window, cx);
-            assert!(this.tabs.is_empty());
+            assert_eq!(this.tabs, [] as [Entity<Tab>; 0]);
 
             this.close_all_tabs(window, cx);
 
-            assert!(this.tabs.is_empty());
+            assert_eq!(this.tabs, [] as [Entity<Tab>; 0]);
             assert_eq!(this.active_tab_id, None);
         });
     });

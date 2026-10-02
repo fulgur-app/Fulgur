@@ -485,7 +485,7 @@ mod tests {
     fn parse_remote_browser_input_handles_directory_path() {
         let (directory, filter) = parse_remote_browser_input("/var/log/");
         assert_eq!(directory, "/var/log");
-        assert!(filter.is_empty());
+        assert_eq!(filter, "");
     }
 
     #[test]

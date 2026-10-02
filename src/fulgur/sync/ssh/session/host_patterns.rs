@@ -275,6 +275,6 @@ example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA6rWI3G1sz07DnfFlrouTcysQlj2P+j
 
     #[test]
     fn default_hostkey_algorithms_is_not_empty() {
-        assert!(!default_hostkey_algorithms().is_empty());
+        assert_ne!(default_hostkey_algorithms(), [] as [&str; 0]);
     }
 }

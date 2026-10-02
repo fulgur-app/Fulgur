@@ -379,5 +379,5 @@ fn test_sse_event_debug_output_non_empty() {
         timestamp: "ts".to_string(),
     };
     let debug = format!("{event:?}");
-    assert!(!debug.is_empty());
+    assert_ne!(debug, "");
 }

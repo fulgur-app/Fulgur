@@ -1178,8 +1178,8 @@ fn test_close_search_clears_match_decorations(cx: &mut TestAppContext) {
             bar.close(cx);
 
             let (all, current) = painted_ranges(bar, &content, cx);
-            assert!(all.is_empty());
-            assert!(current.is_empty());
+            assert_eq!(all, [] as [std::ops::Range<usize>; 0]);
+            assert_eq!(current, [] as [std::ops::Range<usize>; 0]);
         });
     });
 }
@@ -1207,8 +1207,8 @@ fn test_clearing_the_query_clears_match_decorations(cx: &mut TestAppContext) {
             bar.perform_search(Some(content.clone()), window, cx);
 
             let (all, current) = painted_ranges(bar, &content, cx);
-            assert!(all.is_empty());
-            assert!(current.is_empty());
+            assert_eq!(all, [] as [std::ops::Range<usize>; 0]);
+            assert_eq!(current, [] as [std::ops::Range<usize>; 0]);
         });
     });
 }
@@ -1262,8 +1262,8 @@ fn test_replace_all_clears_match_decorations(cx: &mut TestAppContext) {
             bar.replace_all(Some(content.clone()), window, cx);
 
             let (all, current) = painted_ranges(bar, &content, cx);
-            assert!(all.is_empty());
-            assert!(current.is_empty());
+            assert_eq!(all, [] as [std::ops::Range<usize>; 0]);
+            assert_eq!(current, [] as [std::ops::Range<usize>; 0]);
         });
     });
 }
