@@ -319,12 +319,12 @@ mod tests {
 
     #[test]
     fn test_rejects_svelte_each() {
-        assert!(extract_colors("{#each items as item}").is_empty());
+        assert_eq!(extract_colors("{#each items as item}"), [] as [&str; 0]);
     }
 
     #[test]
     fn test_rejects_svelte_if() {
-        assert!(extract_colors("{#if condition}").is_empty());
+        assert_eq!(extract_colors("{#if condition}"), [] as [&str; 0]);
     }
 
     #[test]
@@ -347,13 +347,16 @@ mod tests {
 
     #[test]
     fn test_rejects_invalid_hex_lengths() {
-        assert!(extract_colors("#12 #12345 #1234567 #123456789").is_empty());
+        assert_eq!(
+            extract_colors("#12 #12345 #1234567 #123456789"),
+            [] as [&str; 0]
+        );
     }
 
     #[test]
     fn test_rejects_hex_glued_to_identifier() {
-        assert!(extract_colors("page#add").is_empty());
-        assert!(extract_colors("#abc_def").is_empty());
+        assert_eq!(extract_colors("page#add"), [] as [&str; 0]);
+        assert_eq!(extract_colors("#abc_def"), [] as [&str; 0]);
     }
 
     #[test]
@@ -382,12 +385,12 @@ mod tests {
 
     #[test]
     fn test_rejects_function_glued_to_identifier() {
-        assert!(extract_colors("xrgb(255, 0, 0)").is_empty());
+        assert_eq!(extract_colors("xrgb(255, 0, 0)"), [] as [&str; 0]);
     }
 
     #[test]
     fn test_rejects_unclosed_function() {
-        assert!(extract_colors("rgb(255, 0, 0").is_empty());
+        assert_eq!(extract_colors("rgb(255, 0, 0"), [] as [&str; 0]);
     }
 
     #[test]
@@ -453,6 +456,6 @@ mod tests {
             "#fff\n{}",
             "x\n".repeat(usize::try_from(LARGE_FILE_THRESHOLD_BYTES / 2).unwrap())
         );
-        assert!(color_ranges(&text).is_empty());
+        assert_eq!(color_ranges(&text), [] as [(Position, Position); 0]);
     }
 }

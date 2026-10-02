@@ -311,8 +311,14 @@ mod tests {
 
     #[test]
     fn inert_languages_disable_every_pair() {
-        assert!(opening_delimiters(SupportedLanguage::Csv).is_empty());
-        assert!(opening_delimiters(SupportedLanguage::Diff).is_empty());
+        assert_eq!(
+            opening_delimiters(SupportedLanguage::Csv),
+            [] as [String; 0]
+        );
+        assert_eq!(
+            opening_delimiters(SupportedLanguage::Diff),
+            [] as [String; 0]
+        );
     }
 
     #[test]

@@ -173,7 +173,7 @@ mod tests {
         let bytes: Vec<u8> = vec![0x63, 0x61, 0x66, 0xE9]; // "café" in Latin-1
         let decoded = detect_encoding_and_decode(bytes);
         assert_ne!(decoded.encoding, UTF_8);
-        assert!(!decoded.content.is_empty());
+        assert_ne!(decoded.content, "");
     }
 
     #[test]

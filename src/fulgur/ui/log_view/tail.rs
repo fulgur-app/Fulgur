@@ -378,13 +378,13 @@ mod tests {
 
         append_log(&path, b"\xe2");
         let first = read_new_log_bytes(&path, consumed).expect("read first half");
-        assert!(first.text.is_empty());
+        assert_eq!(first.text, "");
         assert_eq!(first.position.byte_offset, consumed.byte_offset);
         assert!(!first.reset);
 
         // Nothing new: the held-back byte is re-read but still not emitted.
         let idle = read_new_log_bytes(&path, first.position).expect("read idle");
-        assert!(idle.text.is_empty());
+        assert_eq!(idle.text, "");
         assert_eq!(idle.position, first.position);
 
         append_log(&path, b"\x82\xac\n");
@@ -420,7 +420,7 @@ mod tests {
         let consumed = seed_log(&path, "content\n");
 
         let chunk = read_new_log_bytes(&path, consumed).expect("read new bytes");
-        assert!(chunk.text.is_empty());
+        assert_eq!(chunk.text, "");
         assert_eq!(chunk.position, consumed);
         assert!(!chunk.reset);
     }
