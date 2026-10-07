@@ -14,11 +14,11 @@ use gpui_kit::component::{
 use gpui_kit::{
     AppContext, Context, Focusable, ParentElement, SharedString, Styled, Window, div, px,
 };
-use zeroize::Zeroizing;
 
 use crate::fulgur::{
     Fulgur,
     sync::ssh::{auth::PassphraseAnswer, session::home_dir},
+    ui::dialogs::ssh_password::read_secret,
 };
 
 impl Fulgur {
@@ -92,8 +92,7 @@ impl Fulgur {
                 .close_button(false)
                 .child(form)
                 .on_ok(move |_, window: &mut Window, cx| {
-                    let passphrase =
-                        Zeroizing::new(passphrase_input_ok.read(cx).value().to_string());
+                    let passphrase = read_secret(passphrase_input_ok.read(cx).text());
                     if passphrase.is_empty() {
                         window.push_notification(
                             (
