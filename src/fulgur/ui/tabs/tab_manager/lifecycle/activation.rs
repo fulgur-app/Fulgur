@@ -10,6 +10,7 @@ impl Fulgur {
     /// - `cx`: The application context
     pub fn set_active_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index < self.tabs.len() {
+            self.pending_initial_active_tab = None;
             let previous_active_id = self.active_tab_id;
             let new_tab_id = self.tabs.get(index).map(|tab| tab.read(cx).id());
             if let Some(prev_id) = previous_active_id
@@ -18,7 +19,11 @@ impl Fulgur {
                 self.stop_log_poll_task(prev_id);
             }
             self.active_tab_id = new_tab_id;
-            self.tab_bar.update(cx, |bar, _| bar.scroll_to_index(index));
+            // Deferred like every other tab bar scroll, so the latest request wins over an
+            // older one (such as the restored tab's) still waiting for the bar's layout.
+            if let Some(tab_id) = new_tab_id {
+                self.request_tab_scroll(tab_id, cx);
+            }
             let pending_path = if let Some(Tab::Editor(editor_tab)) =
                 self.tabs.get(index).map(|tab| tab.read(cx))
             {

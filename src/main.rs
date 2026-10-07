@@ -211,8 +211,12 @@ fn main() {
     }
 
     let app = gpui_kit::application().with_assets(Assets);
-    let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+    // Files to open from outside the app (open events, command-line arguments, other
+    // instances) are queued here and the wake channel asks the app to deliver them.
+    let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(cli_file_paths));
     let pending_files_clone = pending_files.clone();
+    let (open_request_tx, mut open_request_rx) = futures::channel::mpsc::unbounded::<()>();
+    let open_url_wake = open_request_tx.clone();
     app.on_open_urls(move |urls: Vec<String>| {
         log::debug!("Received {} file URL(s) from macOS open event", urls.len());
         let file_paths: Vec<PathBuf> = urls.iter().filter_map(|url| url_to_path(url)).collect();
@@ -233,6 +237,7 @@ fn main() {
                 pending.len()
             );
         }
+        let _ = open_url_wake.unbounded_send(());
     });
     app.run(move |cx| {
         // Must be set before any window opens or any system notification is posted: Windows keys
@@ -288,35 +293,36 @@ fn main() {
             state_db,
         );
         cx.set_global(shared_state);
+        cx.set_global(fulgur::window_manager::WindowManager::new());
         // On Windows and Linux, start the IPC listener now that SharedAppState is registered.
         // We grab the two arcs from the global so there's a single source of truth,
         // and store the Drop-owned worker back on it so the listener has an owner.
-        // Each forwarded message wakes a task that opens it in the last focused window.
         #[cfg(any(target_os = "windows", target_os = "linux"))]
-        {
-            let (wake_tx, mut wake_rx) = futures::channel::mpsc::unbounded::<()>();
-            cx.update_global::<fulgur::shared_state::SharedAppState, _>(|shared, _| {
-                let pf = shared.pending_files_from_macos.clone();
-                let pic = shared.pending_ipc_commands.clone();
-                shared.ipc_listener =
-                    fulgur::utils::single_instance::start_ipc_listener(pf, pic, wake_tx);
-            });
-            cx.spawn(async move |cx| {
-                use futures::StreamExt;
-                while wake_rx.next().await.is_some() {
-                    cx.update(fulgur::Fulgur::handle_single_instance_wakeup);
-                }
-            })
-            .detach();
-        }
-        cx.set_global(fulgur::window_manager::WindowManager::new());
+        cx.update_global::<fulgur::shared_state::SharedAppState, _>(|shared, _| {
+            let pf = shared.pending_files_from_macos.clone();
+            let pic = shared.pending_ipc_commands.clone();
+            shared.ipc_listener =
+                fulgur::utils::single_instance::start_ipc_listener(pf, pic, open_request_tx);
+        });
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+        drop(open_request_tx);
+        // Each wake delivers the queued requests to the last focused window, outside of
+        // any render pass. Requests arriving before a window exists stay queued until
+        // `create_window` delivers them.
+        cx.spawn(async move |cx| {
+            use futures::StreamExt;
+            while open_request_rx.next().await.is_some() {
+                cx.update(fulgur::Fulgur::deliver_external_open_requests);
+            }
+        })
+        .detach();
         fulgur::Fulgur::register_app_quit_state_save(cx);
         fulgur::window_manager::system_menus::init(cx);
         fulgur::shared_state::spawn_notification_consumer(cx);
         if restore_bounds.is_empty() {
             log::info!("No saved state, creating initial window");
             cx.spawn(async move |cx| {
-                if let Err(e) = create_window(cx, 0, None, &cli_file_paths) {
+                if let Err(e) = create_window(cx, 0, None) {
                     report_window_creation_failure(0, false, &e, cx);
                 }
             })
@@ -324,14 +330,9 @@ fn main() {
         } else {
             log::info!("Restoring {} saved window(s)", restore_bounds.len());
             for (index, window_bounds) in restore_bounds.into_iter().enumerate() {
-                let cli_files = if index == 0 {
-                    cli_file_paths.clone()
-                } else {
-                    vec![]
-                };
                 let saved_bounds = Some(window_bounds);
                 cx.spawn(async move |cx| {
-                    if let Err(e) = create_window(cx, index, saved_bounds.as_ref(), &cli_files) {
+                    if let Err(e) = create_window(cx, index, saved_bounds.as_ref()) {
                         report_window_creation_failure(index, true, &e, cx);
                     }
                 })
@@ -371,18 +372,23 @@ fn report_window_creation_failure(
     });
 }
 
-/// Create a new window
+/// Create a new window, then deliver the files queued from outside the app
 ///
 /// ### Arguments
-/// * `cx` - The application context
-/// * `window_index` - The index of the window to create, and of the saved state it restores
-/// * `saved_bounds` - Previously loaded window bounds for this window, if any
-/// * `cli_file_paths` - The paths of the files to open in the window
+/// - `cx`: The application context
+/// - `window_index`: The index of the window to create, and of the saved state it restores
+/// - `saved_bounds`: Previously loaded window bounds for this window, if any
+///
+/// ### Errors
+/// - Returns an `anyhow::Error` if the window cannot be opened or activated.
+///
+/// ### Returns
+/// - `Ok(())`: The window is open and the queued files were handed to a window
+/// - `Err(E)`: The window could not be opened or activated
 fn create_window(
     cx: &mut gpui_kit::AsyncApp,
     window_index: usize,
     saved_bounds: Option<&fulgur::state::SerializedWindowBounds>,
-    cli_file_paths: &[std::path::PathBuf],
 ) -> anyhow::Result<()> {
     let (window_bounds, saved_display_id) = match saved_bounds {
         Some(b) => (Some(b.to_gpui_bounds()), b.display_id),
@@ -419,19 +425,7 @@ fn create_window(
         cx.update_global::<fulgur::window_manager::WindowManager, _>(|manager, _| {
             manager.register(window_id, view.downgrade());
         });
-        if cli_file_paths.is_empty() {
-            view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
-        } else {
-            log::debug!(
-                "Processing {} command-line file arguments",
-                cli_file_paths.len()
-            );
-            for file_path in cli_file_paths {
-                view.update(cx, |fulgur, cx| {
-                    fulgur.handle_open_file_from_cli(window, cx, file_path.clone());
-                });
-            }
-        }
+        view.update(cx, |fulgur, cx| fulgur.focus_active_tab(window, cx));
         let root = cx.new(|cx| gpui_kit::component::Root::new(view.clone(), window, cx));
         let view_clone = view.clone();
         window.on_window_should_close(cx, move |window, cx| {
@@ -444,6 +438,9 @@ fn create_window(
     window.update(cx, |_, window, _| {
         window.activate_window();
     })?;
+    // Files can only open once the window's `Root` is mounted: a file that is already
+    // open with unsaved changes prompts through a dialog, which the `Root` hosts.
+    cx.update(fulgur::Fulgur::deliver_external_open_requests);
 
     // Check for updates on first window only
     if window_index == 0 {

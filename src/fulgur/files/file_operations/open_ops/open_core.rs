@@ -37,12 +37,22 @@ impl Fulgur {
             .and_then(|tab| tab.read(cx).as_editor())
             .is_some_and(|editor_tab| editor_tab.modified);
 
-        // Focus the tab before any prompt opens, so the prompt keeps the keyboard
+        // Activate the tab before any prompt opens, so the prompt keeps the keyboard
         // focus and hands it back to this tab once dismissed.
-        self.active_tab_id = self.tabs.get(tab_index).map(|tab| tab.read(cx).id());
-        self.focus_active_tab(window, cx);
+        self.set_active_tab(tab_index, window, cx);
+        let conflict_prompt_open = self.file_watch_state.open_conflict_dialogs.contains(path);
 
-        if is_modified {
+        if !is_modified {
+            log::debug!(
+                "Tab for {} is already open and not modified; focusing existing tab",
+                path.display()
+            );
+        } else if conflict_prompt_open {
+            log::debug!(
+                "Tab for {} already shows an external-change prompt; not asking twice",
+                path.display()
+            );
+        } else {
             log::debug!(
                 "Tab for {} has unsaved changes; asking user which version to keep",
                 path.display()
@@ -50,11 +60,6 @@ impl Fulgur {
             if let Some(tab_id) = self.active_tab_id {
                 self.show_reopen_modified_file_dialog(path, tab_id, window, cx);
             }
-        } else {
-            log::debug!(
-                "Tab for {} is already open and not modified; focusing existing tab",
-                path.display()
-            );
         }
         cx.notify();
     }

@@ -38,9 +38,6 @@ impl Render for Fulgur {
         self.process_pending_initial_active_tab_activation(window, cx);
         self.process_window_state_updates(window, cx);
         Self::process_update_notifications(window, cx);
-        self.process_pending_files_from_macos(window, cx);
-        #[cfg(any(target_os = "windows", target_os = "linux"))]
-        self.process_pending_ipc_commands(window, cx);
         self.process_shared_files_from_sync(window, cx);
         self.process_pending_remote_files(window, cx);
         self.process_pending_share_sheet(window, cx);

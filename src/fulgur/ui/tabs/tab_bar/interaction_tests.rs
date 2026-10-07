@@ -151,3 +151,31 @@ fn test_dragging_a_tab_onto_another_reorders_the_bar(cx: &mut TestAppContext) {
         "the drop target must survive the reorder"
     );
 }
+
+#[gpui_kit::test]
+fn test_activating_a_tab_overrides_an_older_pending_scroll(cx: &mut TestAppContext) {
+    let (fulgur, _handle, mut visual_cx) = open_fulgur_with_root(cx);
+    let tab_ids = open_tabs(&fulgur, &mut visual_cx, 40);
+    let first = tab_ids[0];
+    let last_index = tab_ids.len() - 1;
+
+    // As at startup: the restored tab's scroll is still pending when a file opened
+    // from outside activates another tab.
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.request_tab_scroll(first, cx);
+            this.set_active_tab(last_index, window, cx);
+        });
+    });
+    for _ in 0..3 {
+        visual_cx.update(TestWindowExt::render_frame);
+        visual_cx.run_until_parked();
+    }
+
+    let offset_x =
+        visual_cx.update(|_window, cx| fulgur.read(cx).tab_bar.read(cx).scroll_handle.offset().x);
+    assert!(
+        offset_x < gpui_kit::px(0.),
+        "the tab bar must scroll to the activated last tab, not the older pending one"
+    );
+}

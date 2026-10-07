@@ -9,12 +9,12 @@
 //!
 //! The listening instance receives the path, appends it to the shared
 //! `pending_files` queue and signals the `wake` channel so the app opens /
-//! focuses the file in the last focused window - the same queue used by the
-//! macOS "Open With" handler.
+//! focuses the file in the last focused window - the same queue and channel
+//! used by the macOS "Open With" handler.
 //!
 //! Jump list Tasks ("New Tab", "New Window") send a `CMD:new-tab` /
 //! `CMD:new-window` line instead of a file path. The listener pushes these into
-//! `pending_ipc_commands` and the render loop dispatches them in-process.
+//! `pending_ipc_commands`, and the same wake delivers them in-process.
 
 use crate::fulgur::utils::worker::Worker;
 use futures::channel::mpsc::UnboundedSender;
@@ -155,12 +155,11 @@ pub fn try_send_command_to_existing_instance(cmd: &str) -> bool {
 
 /// Spawn a background thread that listens for messages from new Fulgur processes.
 ///
-/// File-path lines are appended to `pending_files` so the render cycle can
-/// open them, mirroring the macOS "Open With" path. Lines prefixed with
-/// `CMD:` are appended to `pending_ipc_commands` so the render cycle can
-/// dispatch in-process actions such as opening a new tab or window. After each
-/// connection is read, a message is sent on `wake` so the app processes the
-/// queues right away instead of waiting for a window to re-render.
+/// File-path lines are appended to `pending_files`, mirroring the macOS
+/// "Open With" path. Lines prefixed with `CMD:` are appended to
+/// `pending_ipc_commands` for in-process actions such as opening a new tab or
+/// window. After each connection is read, a message is sent on `wake` so the
+/// app delivers both queues to the last focused window.
 ///
 /// ### Arguments
 /// - `pending_files`: Shared queue to receive file paths forwarded by other instances
