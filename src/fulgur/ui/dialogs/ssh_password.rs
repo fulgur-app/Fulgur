@@ -16,6 +16,7 @@ use gpui_kit::{
     App, AppContext, Context, Entity, Focusable, ParentElement, PathPromptOptions, SharedString,
     Styled, Window, div, px,
 };
+use ropey::Rope;
 use zeroize::Zeroizing;
 
 use crate::fulgur::{
@@ -179,8 +180,7 @@ impl Fulgur {
                 .on_ok(move |_, window: &mut Window, cx| {
                     let key_path = key_input_ok.read(cx).value().trim().to_string();
                     let answer = if key_path.is_empty() {
-                        let password =
-                            Zeroizing::new(password_input_ok.read(cx).value().to_string());
+                        let password = read_secret(password_input_ok.read(cx).text());
                         if password.is_empty() {
                             let message = if password_allowed {
                                 "Enter a password or choose a key file"
@@ -246,6 +246,21 @@ fn expand_key_path(raw: &str) -> PathBuf {
     home_dir().map_or_else(|_| PathBuf::from(raw), |home| expand_tilde(raw, &home))
 }
 
+/// Copy the text of a secret input into a buffer that is wiped on drop.
+///
+/// ### Arguments
+/// - `text`: Rope of the input holding the secret
+///
+/// ### Returns
+/// - `Zeroizing<String>`: The secret, wiped from memory when dropped
+pub(super) fn read_secret(text: &Rope) -> Zeroizing<String> {
+    let mut secret = Zeroizing::new(String::with_capacity(text.len()));
+    for chunk in text.chunks() {
+        secret.push_str(chunk);
+    }
+    secret
+}
+
 /// Format the `user@host[:port]` label used by SSH credential dialogs.
 ///
 /// ### Arguments
@@ -265,7 +280,25 @@ pub(super) fn format_login_target(user: &str, host: &str, port: u16) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_login_target;
+    use ropey::Rope;
+
+    use super::{format_login_target, read_secret};
+
+    #[test]
+    fn read_secret_joins_every_rope_chunk() {
+        let long_secret = "pässwörd-".repeat(500);
+        let text = Rope::from_str(&long_secret);
+        assert!(text.chunks().count() > 1);
+
+        let secret = read_secret(&text);
+
+        assert_eq!(secret.as_str(), long_secret);
+    }
+
+    #[test]
+    fn read_secret_of_empty_rope_is_empty() {
+        assert_eq!(read_secret(&Rope::new()).as_str(), "");
+    }
 
     #[test]
     fn format_login_target_omits_default_port() {

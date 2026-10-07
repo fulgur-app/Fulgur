@@ -12,9 +12,10 @@ use gpui_kit::component::{
 use gpui_kit::{
     AppContext, Context, Focusable, ParentElement, SharedString, Styled, Window, div, px,
 };
-use zeroize::Zeroizing;
 
-use crate::fulgur::{Fulgur, sync::ssh::auth::ChallengeAnswer};
+use crate::fulgur::{
+    Fulgur, sync::ssh::auth::ChallengeAnswer, ui::dialogs::ssh_password::read_secret,
+};
 
 /// A keyboard-interactive question sent by the SSH server.
 pub struct SshChallenge {
@@ -89,7 +90,7 @@ impl Fulgur {
                 .close_button(false)
                 .child(form)
                 .on_ok(move |_, _, cx| {
-                    let response = Zeroizing::new(response_input_ok.read(cx).value().to_string());
+                    let response = read_secret(response_input_ok.read(cx).text());
                     let _ = answer_ok.send(ChallengeAnswer::Response(response));
                     true
                 })
