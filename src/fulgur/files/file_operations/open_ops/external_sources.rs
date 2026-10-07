@@ -1,4 +1,4 @@
-use crate::fulgur::{Fulgur, window_manager};
+use crate::fulgur::{Fulgur, shared_state::SharedAppState, window_manager};
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use gpui_kit::{App, Context, ExternalPaths, SharedString, Window};
 use std::{collections::HashSet, path::PathBuf};
@@ -87,64 +87,56 @@ impl Fulgur {
         }
     }
 
-    /// Process pending files from macOS "Open With" events
+    /// Open, in this window, every file queued from outside the app
     ///
     /// ### Arguments
     /// - `window`: The window to open files in
     /// - `cx`: The application context
-    pub fn process_pending_files_from_macos(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let shared = Fulgur::shared_state(cx);
-        let should_process_files = cx
-            .global::<window_manager::WindowManager>()
-            .get_last_focused()
-            .is_none_or(|id| id == self.window_id); // If no last focused window, allow this one to process
-        let files_to_open = if should_process_files {
-            if let Some(mut pending) = shared.pending_files_from_macos.try_lock() {
-                if pending.is_empty() {
-                    Vec::new()
-                } else {
-                    log::info!(
-                        "Processing {} pending file(s) from macOS open event in window {:?}",
-                        pending.len(),
-                        self.window_id
-                    );
-                    pending.drain(..).collect()
-                }
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
+    pub fn process_pending_external_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let files_to_open: Vec<PathBuf> = Fulgur::shared_state(cx)
+            .pending_files_from_macos
+            .lock()
+            .drain(..)
+            .collect();
+        if files_to_open.is_empty() {
+            return;
+        }
+        log::info!(
+            "Opening {} file(s) requested from outside the app in window {:?}",
+            files_to_open.len(),
+            self.window_id
+        );
         for file_path in files_to_open {
             self.handle_open_file_from_cli(window, cx, file_path);
         }
     }
 
-    /// Handle a message forwarded by another Fulgur process (single-instance IPC)
+    /// Deliver the queued external open requests to a window
     ///
-    /// Brings the last focused window to the front and processes the pending
-    /// files and commands in it right away.
+    /// External requests are macOS open events, command-line file arguments
+    /// and messages forwarded by another Fulgur process. They are queued in
+    /// `SharedAppState` and delivered here, outside of any render pass, to the
+    /// last focused window (or any open window), which is brought to the front.
+    /// When no window exists yet the requests stay queued: window creation calls
+    /// this again once the window and its `Root` are mounted.
     ///
     /// ### Arguments
     /// - `cx`: The application context
-    pub fn handle_single_instance_wakeup(cx: &mut App) {
-        let window_manager = cx.global::<window_manager::WindowManager>();
-        let Some(window_id) = window_manager
-            .get_last_focused()
-            .or_else(|| window_manager.get_all_window_ids().into_iter().next())
-        else {
-            log::warn!("Single-instance: no window available to open forwarded files");
+    pub fn deliver_external_open_requests(cx: &mut App) {
+        if !Self::has_pending_external_open_requests(cx) {
             return;
-        };
-        let Some(fulgur) = window_manager
-            .get_window(window_id)
-            .and_then(|weak| weak.upgrade())
-        else {
+        }
+        let window_manager = cx.global::<window_manager::WindowManager>();
+        let target = window_manager
+            .get_last_focused()
+            .into_iter()
+            .chain(window_manager.get_all_window_ids())
+            .find_map(|window_id| {
+                let fulgur = window_manager.get_window(window_id)?.upgrade()?;
+                Some((window_id, fulgur))
+            });
+        let Some((window_id, fulgur)) = target else {
+            log::debug!("No window yet for external open requests, keeping them queued");
             return;
         };
         let Some(handle) = cx
@@ -157,37 +149,90 @@ impl Fulgur {
         if let Err(e) = handle.update(cx, |_, window, cx| {
             window.activate_window();
             fulgur.update(cx, |this, cx| {
-                this.process_pending_files_from_macos(window, cx);
+                this.process_pending_external_files(window, cx);
                 #[cfg(any(target_os = "windows", target_os = "linux"))]
                 this.process_pending_ipc_commands(window, cx);
             });
         }) {
-            log::error!("Single-instance: failed to update the target window: {e}");
+            log::error!("Failed to deliver external open requests to window {window_id:?}: {e}");
         }
+    }
+
+    /// Whether files or commands from outside the app are waiting to be delivered
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: At least one file or IPC command is queued
+    /// - `false`: Both queues are empty
+    fn has_pending_external_open_requests(cx: &App) -> bool {
+        let shared = cx.global::<SharedAppState>();
+        let has_files = !shared.pending_files_from_macos.lock().is_empty();
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        let has_commands = !shared.pending_ipc_commands.lock().is_empty();
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+        let has_commands = false;
+        has_files || has_commands
     }
 }
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
-    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
-    use crate::fulgur::{shared_state::SharedAppState, window_manager::WindowManager};
-
-    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
-    use crate::fulgur::files::file_operations::test_helpers::invoke_process_pending_files_from_macos;
-    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
-    use crate::fulgur::files::file_operations::test_helpers::{
-        open_window_with_fulgur, setup_test_globals,
+    use crate::fulgur::{
+        Fulgur, WindowInit,
+        files::file_operations::test_helpers::{open_window_with_fulgur, setup_test_globals},
+        shared_state::SharedAppState,
+        ui::tabs::editor_tab::TabLocation,
+        window_manager::WindowManager,
     };
-    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
-    use gpui_kit::BorrowAppContext;
-    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
-    use gpui_kit::TestAppContext;
-    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+    use gpui_kit::component::{Root, WindowExt};
+    use gpui_kit::{
+        AppContext, BorrowAppContext, Entity, Focusable, TestAppContext, VisualTestContext,
+        WindowOptions,
+    };
+    use std::{cell::RefCell, path::Path};
     use tempfile::TempDir;
 
-    #[cfg(all(feature = "gpui-test-support", target_os = "macos"))]
+    /// Queue a file as if it came from outside the app (open event, argument, other instance).
+    ///
+    /// ### Arguments
+    /// - `cx`: The test application context
+    /// - `path`: The file to queue
+    fn queue_external_file(cx: &mut TestAppContext, path: &Path) {
+        cx.update(|cx| {
+            cx.global::<SharedAppState>()
+                .pending_files_from_macos
+                .lock()
+                .push(path.to_path_buf());
+        });
+    }
+
+    /// Whether a window has a tab for the given file.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The window's Fulgur entity
+    /// - `path`: The file to look for
+    /// - `cx`: The test application context
+    ///
+    /// ### Returns
+    /// - `true`: One of the window's tabs points at `path`
+    /// - `false`: No tab points at `path`
+    fn has_tab_for(fulgur: &Entity<Fulgur>, path: &Path, cx: &mut TestAppContext) -> bool {
+        let expected = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        cx.update(|cx| {
+            fulgur.read(cx).tabs.iter().any(|tab| {
+                tab.read(cx)
+                    .as_editor()
+                    .and_then(|editor| editor.file_path().cloned())
+                    .and_then(|p| std::fs::canonicalize(p).ok())
+                    .is_some_and(|p| p == expected)
+            })
+        })
+    }
+
     #[gpui_kit::test]
-    fn test_process_pending_files_from_macos_only_focused_window_drains_queue(
+    fn test_deliver_external_open_requests_opens_files_in_last_focused_window(
         cx: &mut TestAppContext,
     ) {
         setup_test_globals(cx);
@@ -197,48 +242,162 @@ mod tests {
             cx.update_global::<WindowManager, _>(|manager, _| {
                 manager.register(window_id_one, fulgur_one.downgrade());
                 manager.register(window_id_two, fulgur_two.downgrade());
+                manager.set_focused(window_id_two);
             });
         });
         let dir = TempDir::new().expect("failed to create temp dir");
-        let file_path = dir.path().join("macos-open-url-focus-test.txt");
-        std::fs::write(&file_path, "from open-url event").expect("failed to write temp file");
-        cx.update(|cx| {
-            let shared = cx.global::<SharedAppState>();
-            shared
-                .pending_files_from_macos
-                .lock()
-                .push(file_path.clone());
-        });
-        // Window 1 is not last focused, so it must not drain the queue.
-        invoke_process_pending_files_from_macos(cx, window_id_one, &fulgur_one);
-        cx.update(|cx| {
-            let shared = cx.global::<SharedAppState>();
-            assert_eq!(
-                shared.pending_files_from_macos.lock().len(),
-                1,
-                "non-focused windows must not consume pending macOS open-url files"
-            );
-        });
-        invoke_process_pending_files_from_macos(cx, window_id_two, &fulgur_two);
+        let file_path = dir.path().join("external-open-test.txt");
+        std::fs::write(&file_path, "from outside").expect("failed to write temp file");
+        queue_external_file(cx, &file_path);
+
+        cx.update(Fulgur::deliver_external_open_requests);
         cx.run_until_parked();
+
         cx.update(|cx| {
-            let shared = cx.global::<SharedAppState>();
             assert!(
-                shared.pending_files_from_macos.lock().is_empty(),
-                "focused window should consume pending macOS open-url files"
+                cx.global::<SharedAppState>()
+                    .pending_files_from_macos
+                    .lock()
+                    .is_empty(),
+                "delivering must drain the queue"
             );
-            // The focused window starts with an empty scratch tab, which the queued file
-            // reuses, so the file should be open without adding a new tab.
-            let canonical_expected =
-                std::fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
-            let has_file = fulgur_two.read(cx).tabs.iter().any(|tab| {
-                tab.read(cx)
-                    .as_editor()
-                    .and_then(|e| e.file_path().cloned())
-                    .and_then(|p| std::fs::canonicalize(&p).ok())
-                    .is_some_and(|p| p == canonical_expected)
-            });
-            assert!(has_file, "processing a queued file should open it in a tab");
         });
+        assert!(
+            has_tab_for(&fulgur_two, &file_path, cx),
+            "the last focused window must open the queued file"
+        );
+        assert!(
+            !has_tab_for(&fulgur_one, &file_path, cx),
+            "other windows must not open the queued file"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn test_deliver_external_open_requests_keeps_files_queued_without_window(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let file_path = dir.path().join("queued-before-window.txt");
+        std::fs::write(&file_path, "early").expect("failed to write temp file");
+        queue_external_file(cx, &file_path);
+
+        cx.update(Fulgur::deliver_external_open_requests);
+
+        cx.update(|cx| {
+            assert_eq!(
+                cx.global::<SharedAppState>()
+                    .pending_files_from_macos
+                    .lock()
+                    .len(),
+                1,
+                "a request arriving before any window must wait for the first window"
+            );
+        });
+    }
+
+    /// Reproduces a cold start: the session restores a modified buffer for a file
+    /// while another tab is active, and the same file is opened from outside.
+    #[gpui_kit::test]
+    fn test_cold_start_reopen_of_modified_file_prompt_keeps_keyboard_focus(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("PRD.md");
+        std::fs::write(&path, "content on disk").expect("failed to write disk version");
+        let path = path
+            .canonicalize()
+            .expect("failed to canonicalize temp file");
+        queue_external_file(cx, &path);
+
+        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+        let handle = cx
+            .update(|cx| {
+                cx.open_window(WindowOptions::default(), |window, cx| {
+                    let window_id = window.window_handle().window_id();
+                    let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
+                    fulgur.update(cx, |this, cx| {
+                        this.new_tab(window, cx);
+                        this.tabs[1].clone().update(cx, |tab, cx| {
+                            let editor_tab = tab.as_editor_mut().expect("expected an editor tab");
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.content.update(cx, |state, cx| {
+                                state.set_value("local unsaved edits", window, cx);
+                            });
+                            editor_tab.set_original_content_from_str("content on disk");
+                            editor_tab.modified = true;
+                        });
+                        // As restored: another tab is active and its activation is deferred.
+                        let restored_active = this.tabs[0].read(cx).id();
+                        this.active_tab_id = Some(restored_active);
+                        this.pending_initial_active_tab = Some(restored_active);
+                        this.focus_active_tab(window, cx);
+                    });
+                    cx.update_global::<WindowManager, _>(|manager, _| {
+                        manager.register(window_id, fulgur.downgrade());
+                    });
+                    *fulgur_slot.borrow_mut() = Some(fulgur.clone());
+                    cx.new(|cx| Root::new(fulgur, window, cx))
+                })
+            })
+            .expect("failed to open test window");
+        let fulgur = fulgur_slot
+            .into_inner()
+            .expect("failed to capture Fulgur entity");
+        cx.update(Fulgur::deliver_external_open_requests);
+
+        let mut visual_cx = VisualTestContext::from_window(handle.into(), cx);
+        for _ in 0..3 {
+            visual_cx.run_until_parked();
+            visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+        }
+        let (active_tab_id, reopened_tab_id, editor_focused, has_dialog) =
+            visual_cx.update(|window, cx| {
+                let this = fulgur.read(cx);
+                let reopened = this.tabs[1].read(cx);
+                let editor_focused = reopened
+                    .as_editor()
+                    .expect("expected an editor tab")
+                    .content
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window);
+                (
+                    this.active_tab_id,
+                    reopened.id(),
+                    editor_focused,
+                    window.has_active_dialog(cx),
+                )
+            });
+        assert_eq!(
+            active_tab_id,
+            Some(reopened_tab_id),
+            "the reopened file must become the active tab"
+        );
+        assert!(has_dialog, "reopening a modified file must prompt");
+        assert!(
+            !editor_focused,
+            "the deferred startup activation must not pull focus out of the prompt"
+        );
+
+        visual_cx.simulate_keystrokes("enter");
+        visual_cx.run_until_parked();
+        let (has_dialog, text) = visual_cx.update(|window, cx| {
+            let text = fulgur.read(cx).tabs[1]
+                .read(cx)
+                .as_editor()
+                .expect("expected an editor tab")
+                .content
+                .read(cx)
+                .text()
+                .to_string();
+            (window.has_active_dialog(cx), text)
+        });
+        assert!(!has_dialog, "Enter must confirm the prompt");
+        assert_eq!(
+            text, "content on disk",
+            "confirming the prompt must reload the file from disk"
+        );
     }
 }

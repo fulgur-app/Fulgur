@@ -189,29 +189,18 @@ impl Fulgur {
     /// Commands come from the Windows jump list ("new-tab", "new-window") and from
     /// Linux launches without a file ("focus", already handled by activating the
     /// window). Drains the `pending_ipc_commands` queue and executes each command
-    /// in-process. Only the last-focused window processes the queue, mirroring
-    /// the behaviour of `process_pending_files_from_macos`.
+    /// in this window, which `deliver_external_open_requests` has chosen.
     ///
     /// ### Arguments
-    /// - `window`: The window being rendered
+    /// - `window`: The window receiving the commands
     /// - `cx`: The application context
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     pub fn process_pending_ipc_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let should_process = cx
-            .global::<WindowManager>()
-            .get_last_focused()
-            .is_none_or(|id| id == self.window_id);
-        if !should_process {
-            return;
-        }
-        let commands: Vec<String> = {
-            let shared = Fulgur::shared_state(cx);
-            if let Some(mut q) = shared.pending_ipc_commands.try_lock() {
-                q.drain(..).collect()
-            } else {
-                Vec::new()
-            }
-        };
+        let commands: Vec<String> = Fulgur::shared_state(cx)
+            .pending_ipc_commands
+            .lock()
+            .drain(..)
+            .collect();
         for cmd in commands {
             match cmd.as_str() {
                 "new-tab" => {

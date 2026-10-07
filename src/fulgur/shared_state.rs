@@ -191,7 +191,8 @@ pub struct SharedAppState {
     pub sync_error: Arc<Mutex<Option<String>>>,
     /// Update info if available
     pub update_info: Arc<Mutex<Option<UpdateInfo>>>,
-    /// Files from macOS "Open with" events (already `Arc<Mutex>`)
+    /// Files to open from outside the app: macOS open events, command-line arguments
+    /// and files forwarded by another instance.
     pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
     /// Pending IPC commands forwarded by another instance (Windows jump list) ("new-tab", "new-window")
     #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -243,7 +244,7 @@ impl SharedAppState {
     ///
     /// ### Arguments
     /// - `settings`: Already-loaded application settings
-    /// - `pending_files_from_macos`: Arc to the pending files queue from macOS open events
+    /// - `pending_files_from_macos`: Queue of files to open from outside the app, seeded with the command-line files
     /// - `restore_state`: Startup snapshot of `WindowsState`, split into one restore payload per window
     /// - `state_db`: The open session-state database, handed to the writer thread
     ///   which owns it for the lifetime of the process. `None` when none could be

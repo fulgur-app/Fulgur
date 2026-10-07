@@ -81,14 +81,6 @@ impl TabBar {
         cx.notify();
     }
 
-    /// Scroll the tab at the given position into view immediately
-    ///
-    /// ### Arguments
-    /// - `index`: Position of the tab in the owning window's tab list
-    pub(crate) fn scroll_to_index(&self, index: usize) {
-        self.scroll_handle.scroll_to_item(index);
-    }
-
     /// Resolve a pending scroll request once layout bounds are available
     ///
     /// ### Arguments
