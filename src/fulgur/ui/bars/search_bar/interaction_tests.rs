@@ -436,3 +436,98 @@ fn test_find_next_and_previous_shortcuts_step_through_matches_from_the_editor(
         "the find-previous shortcut must move back"
     );
 }
+
+/// Type `text` into whatever element holds keyboard focus.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context driving the window
+/// - `text`: The text to type
+fn type_into_focused(visual_cx: &mut VisualTestContext, text: &str) {
+    visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.input(text, cx);
+    });
+    visual_cx.run_until_parked();
+}
+
+/// Read the search input's current text.
+///
+/// ### Arguments
+/// - `search_bar`: The search bar under test
+/// - `visual_cx`: The visual test context driving the window
+///
+/// ### Returns
+/// - `String`: The query held by the search input
+fn search_query(search_bar: &Entity<SearchBar>, visual_cx: &mut VisualTestContext) -> String {
+    visual_cx.update(|_window, cx| {
+        search_bar
+            .read(cx)
+            .search_input
+            .read(cx)
+            .value()
+            .to_string()
+    })
+}
+
+#[gpui_kit::test]
+fn test_reopening_with_a_remembered_query_keeps_focus_in_the_search_input(cx: &mut TestAppContext) {
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, "foo bar foo baz foo");
+    type_query(&mut visual_cx, "foo");
+    visual_cx.simulate_keystrokes("escape");
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|window, cx| {
+        search_bar.update(cx, |bar, cx| bar.toggle(Some(editor.clone()), window, cx));
+    });
+    visual_cx.run_until_parked();
+    assert!(
+        current_match(&search_bar, &mut visual_cx).is_some(),
+        "the remembered query must find matches on reopen"
+    );
+    assert!(
+        search_input_is_focused(&search_bar, &mut visual_cx),
+        "reopening must leave the caret in the search input even when the search moves the editor caret"
+    );
+
+    type_into_focused(&mut visual_cx, "d");
+    assert_eq!(search_query(&search_bar, &mut visual_cx), "food");
+    assert_eq!(
+        visual_cx.update(|_window, cx| editor.read(cx).value().to_string()),
+        "foo bar foo baz foo",
+        "typing after reopening must never reach the document"
+    );
+}
+
+#[gpui_kit::test]
+fn test_option_toggles_and_next_button_keep_focus_in_the_search_input(cx: &mut TestAppContext) {
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, "Foo bar foo baz foo");
+    type_query(&mut visual_cx, "foo");
+
+    for button in [
+        "match-case-button",
+        "match-whole-word-button",
+        "search-next-button",
+    ] {
+        visual_cx.update(|window, cx| {
+            window.render_frame(cx);
+            window.click(button, cx);
+        });
+        visual_cx.run_until_parked();
+        assert!(
+            current_match(&search_bar, &mut visual_cx).is_some(),
+            "{button} must leave a current match"
+        );
+        assert!(
+            search_input_is_focused(&search_bar, &mut visual_cx),
+            "{button} must not hand focus to the editor"
+        );
+    }
+
+    type_into_focused(&mut visual_cx, "d");
+    assert_eq!(search_query(&search_bar, &mut visual_cx), "food");
+    assert_eq!(
+        visual_cx.update(|_window, cx| editor.read(cx).value().to_string()),
+        "Foo bar foo baz foo",
+        "typing after the clicks must never reach the document"
+    );
+}

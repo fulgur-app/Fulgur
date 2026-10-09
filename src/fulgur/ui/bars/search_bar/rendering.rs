@@ -101,10 +101,10 @@ impl SearchBar {
                             self.match_case,
                         )
                         .line_height(LINE_HEIGHT)
-                        .on_click(cx.listener(|this, _, window, cx| {
+                        .on_click(cx.listener(|this, _, _window, cx| {
                             this.match_case = !this.match_case;
                             let content = this.active_editor_content(cx);
-                            this.perform_search(content, window, cx);
+                            this.perform_search(content, cx);
                         })),
                     )
                     .child(
@@ -118,10 +118,10 @@ impl SearchBar {
                             self.match_whole_word,
                         )
                         .line_height(LINE_HEIGHT)
-                        .on_click(cx.listener(|this, _, window, cx| {
+                        .on_click(cx.listener(|this, _, _window, cx| {
                             this.match_whole_word = !this.match_whole_word;
                             let content = this.active_editor_content(cx);
-                            this.perform_search(content, window, cx);
+                            this.perform_search(content, cx);
                         })),
                     ),
             )
@@ -160,9 +160,9 @@ impl SearchBar {
                     CustomIcon::ChevronUp,
                     cx.theme().border,
                 )
-                .on_click(cx.listener(|this, _, window, cx| {
+                .on_click(cx.listener(|this, _, _window, cx| {
                     let content = this.active_editor_content(cx);
-                    this.search_previous(content, window, cx);
+                    this.search_previous(content, cx);
                 })),
             )
             .child(
@@ -172,9 +172,9 @@ impl SearchBar {
                     CustomIcon::ChevronDown,
                     cx.theme().tab_bar,
                 )
-                .on_click(cx.listener(|this, _, window, cx| {
+                .on_click(cx.listener(|this, _, _window, cx| {
                     let content = this.active_editor_content(cx);
-                    this.search_next(content, window, cx);
+                    this.search_next(content, cx);
                 })),
             )
     }

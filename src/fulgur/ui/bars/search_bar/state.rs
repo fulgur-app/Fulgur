@@ -33,7 +33,6 @@ pub(crate) struct SearchBar {
     pub(super) last_search_match_case: bool,
     pub(super) last_search_match_whole_word: bool,
     pub(super) search_text_scratch: String,
-    pub(super) search_newline_offsets_scratch: Vec<usize>,
     pub(super) search_lowercase_text_scratch: String,
     pub(super) search_lowercase_offsets_scratch: Vec<usize>,
     pub(super) match_decorations: HashMap<EntityId, MatchDecorations>,
@@ -69,15 +68,13 @@ impl SearchBar {
     ) -> Self {
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
-        let search_input_subscription = cx.subscribe_in(
-            &search_input,
-            window,
-            |this: &mut Self, _, ev: &InputEvent, window, cx| {
+        let search_input_subscription =
+            cx.subscribe(&search_input, |this: &mut Self, _, ev: &InputEvent, cx| {
                 if !this.show_search {
                     return;
                 }
                 match ev {
-                    InputEvent::Change => this.on_query_changed(window, cx),
+                    InputEvent::Change => this.on_query_changed(cx),
                     InputEvent::PressEnter { shift, .. } => {
                         let step = if *shift {
                             MatchStep::Previous
@@ -85,12 +82,11 @@ impl SearchBar {
                             MatchStep::Next
                         };
                         let content = this.active_editor_content(cx);
-                        this.step_match(step, content, window, cx);
+                        this.step_match(step, content, cx);
                     }
                     InputEvent::Focus | InputEvent::Blur => {}
                 }
-            },
-        );
+            });
         Self {
             fulgur,
             show_search: false,
@@ -104,7 +100,6 @@ impl SearchBar {
             last_search_match_case: false,
             last_search_match_whole_word: false,
             search_text_scratch: String::new(),
-            search_newline_offsets_scratch: Vec::new(),
             search_lowercase_text_scratch: String::new(),
             search_lowercase_offsets_scratch: Vec::new(),
             match_decorations: HashMap::new(),

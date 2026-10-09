@@ -9,17 +9,15 @@ impl SearchBar {
     ///
     /// ### Arguments
     /// - `content`: The active editor tab's content, if any
-    /// - `window`: The window context
     /// - `cx`: The search bar context
     fn force_perform_search(
         &mut self,
         content: Option<Entity<EditorState>>,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.last_search_query.clear();
         self.search_matches.clear();
-        self.perform_search(content, window, cx);
+        self.perform_search(content, cx);
     }
 
     /// Return whether a buffer accepts edits from the search bar.
@@ -51,7 +49,7 @@ impl SearchBar {
         }
         // Recompute matches against the current buffer before slicing: the cached
         // offsets may be stale if the document was edited since the last search.
-        self.force_perform_search(content.clone(), window, cx);
+        self.force_perform_search(content.clone(), cx);
         if let Some(match_index) = self.current_match_index
             && let Some(search_match) = self.search_matches.get(match_index).cloned()
             && let Some(content_entity) = content
@@ -76,14 +74,14 @@ impl SearchBar {
                 content.replace_all(&new_text, window, cx);
             });
             self.search_matches.clear();
-            self.perform_search(Some(content_entity.clone()), window, cx);
+            self.perform_search(Some(content_entity.clone()), cx);
             if !self.search_matches.is_empty() {
                 if match_index < self.search_matches.len() {
                     self.current_match_index = Some(match_index);
                 } else {
                     self.current_match_index = Some(0);
                 }
-                self.scroll_to_current_match(&content_entity, window, cx);
+                self.scroll_to_current_match(&content_entity, cx);
             }
             self.apply_match_decorations(&content_entity, cx);
         }
@@ -105,7 +103,7 @@ impl SearchBar {
         if !Self::content_is_editable(content.as_ref(), cx) {
             return;
         }
-        self.force_perform_search(content.clone(), window, cx);
+        self.force_perform_search(content.clone(), cx);
         if self.search_matches.is_empty() {
             return;
         }

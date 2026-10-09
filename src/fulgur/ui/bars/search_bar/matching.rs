@@ -2,20 +2,6 @@ use std::borrow::Cow;
 
 use super::SearchMatch;
 
-/// Refresh the newline-offset scratch buffer for fast line/column lookup.
-///
-/// ### Arguments
-/// - `text`: Source text being searched
-/// - `newline_offsets_scratch`: Reusable scratch vector populated with `\n` byte offsets
-fn refresh_newline_offsets(text: &str, newline_offsets_scratch: &mut Vec<usize>) {
-    newline_offsets_scratch.clear();
-    newline_offsets_scratch.extend(
-        text.bytes()
-            .enumerate()
-            .filter_map(|(i, b)| if b == b'\n' { Some(i) } else { None }),
-    );
-}
-
 /// Rebuild the lowercased search text together with a byte-offset map back to the original text.
 ///
 /// ### Arguments
@@ -59,7 +45,6 @@ pub(super) fn find_matches(
     match_case: bool,
     match_whole_word: bool,
 ) -> Vec<SearchMatch> {
-    let mut newline_offsets_scratch = Vec::new();
     let mut lowercase_text_scratch = String::new();
     let mut lowercase_offsets_scratch = Vec::new();
     find_matches_with_scratch(
@@ -67,7 +52,6 @@ pub(super) fn find_matches(
         query,
         match_case,
         match_whole_word,
-        &mut newline_offsets_scratch,
         &mut lowercase_text_scratch,
         &mut lowercase_offsets_scratch,
     )
@@ -80,7 +64,6 @@ pub(super) fn find_matches(
 /// - `query`: The search query
 /// - `match_case`: Whether to match case
 /// - `match_whole_word`: Whether to match whole words only
-/// - `newline_offsets_scratch`: Reusable newline-offset buffer
 /// - `lowercase_text_scratch`: Reusable lowercase-text buffer
 /// - `lowercase_offsets_scratch`: Reusable lowercased-to-original byte-offset map
 ///
@@ -91,7 +74,6 @@ pub(super) fn find_matches_with_scratch(
     query: &str,
     match_case: bool,
     match_whole_word: bool,
-    newline_offsets_scratch: &mut Vec<usize>,
     lowercase_text_scratch: &mut String,
     lowercase_offsets_scratch: &mut Vec<usize>,
 ) -> Vec<SearchMatch> {
@@ -99,8 +81,6 @@ pub(super) fn find_matches_with_scratch(
     if query.is_empty() {
         return matches;
     }
-
-    refresh_newline_offsets(text, newline_offsets_scratch);
 
     let search_text = if match_case {
         text
@@ -145,12 +125,9 @@ pub(super) fn find_matches_with_scratch(
                 continue;
             }
         }
-        let (line, col) = get_line_col_fast(text, match_start, newline_offsets_scratch);
         matches.push(SearchMatch {
             start: match_start,
             end: match_end,
-            line,
-            col,
         });
         start_pos = advance_past_char(search_text, search_start);
     }
@@ -168,31 +145,6 @@ pub(super) fn find_matches_with_scratch(
 fn advance_past_char(text: &str, pos: usize) -> usize {
     let char_len = text[pos..].chars().next().map_or(1, char::len_utf8);
     pos + char_len
-}
-
-/// Get line and column from byte position using precomputed newline offsets
-///
-/// ### Arguments
-/// - `text`: The text
-/// - `byte_pos`: The byte position
-/// - `newline_offsets`: Precomputed byte offsets of all newline characters
-///
-/// ### Returns
-/// - `(usize, usize)`: A tuple of (line, column)
-pub(super) fn get_line_col_fast(
-    text: &str,
-    byte_pos: usize,
-    newline_offsets: &[usize],
-) -> (usize, usize) {
-    let pos = byte_pos.min(text.len());
-    let line = newline_offsets.partition_point(|&nl| nl < pos);
-    let line_start = if line == 0 {
-        0
-    } else {
-        newline_offsets[line - 1] + 1
-    };
-    let col = text[line_start..pos].chars().count();
-    (line, col)
 }
 
 /// Replace text at all match positions with the replacement string

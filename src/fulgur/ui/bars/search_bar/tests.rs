@@ -1,7 +1,5 @@
 use super::SearchMatch;
-use super::matching::{
-    apply_replacements, find_matches, find_matches_with_scratch, get_line_col_fast,
-};
+use super::matching::{apply_replacements, find_matches, find_matches_with_scratch};
 use core::prelude::v1::test;
 
 #[cfg(feature = "gpui-test-support")]
@@ -15,25 +13,8 @@ use gpui_kit::{Entity, Focusable, TestAppContext, VisualTestContext};
 
 // ========== Test helpers ==========
 
-fn create_match(start: usize, end: usize, line: usize, col: usize) -> SearchMatch {
-    SearchMatch {
-        start,
-        end,
-        line,
-        col,
-    }
-}
-
-fn newline_offsets(text: &str) -> Vec<usize> {
-    text.bytes()
-        .enumerate()
-        .filter_map(|(i, b)| if b == b'\n' { Some(i) } else { None })
-        .collect()
-}
-
-fn get_line_col(text: &str, byte_pos: usize) -> (usize, usize) {
-    let offsets = newline_offsets(text);
-    get_line_col_fast(text, byte_pos, &offsets)
+fn create_match(start: usize, end: usize) -> SearchMatch {
+    SearchMatch { start, end }
 }
 
 #[cfg(feature = "gpui-test-support")]
@@ -93,7 +74,7 @@ fn setup_search_with_root(
 #[test]
 fn test_apply_replacements_single_match() {
     let text = "Hello World";
-    let matches = vec![create_match(0, 5, 0, 0)]; // "Hello"
+    let matches = vec![create_match(0, 5)]; // "Hello"
     let result = apply_replacements(&matches, text, "Hi");
     assert_eq!(result, "Hi World");
 }
@@ -102,9 +83,9 @@ fn test_apply_replacements_single_match() {
 fn test_apply_replacements_multiple_matches() {
     let text = "hello hello hello";
     let matches = vec![
-        create_match(0, 5, 0, 0),    // "hello"
-        create_match(6, 11, 0, 6),   // "hello"
-        create_match(12, 17, 0, 12), // "hello"
+        create_match(0, 5),   // "hello"
+        create_match(6, 11),  // "hello"
+        create_match(12, 17), // "hello"
     ];
     let result = apply_replacements(&matches, text, "hi");
     assert_eq!(result, "hi hi hi");
@@ -121,7 +102,7 @@ fn test_apply_replacements_no_matches() {
 #[test]
 fn test_apply_replacements_match_at_start() {
     let text = "test string";
-    let matches = vec![create_match(0, 4, 0, 0)]; // "test"
+    let matches = vec![create_match(0, 4)]; // "test"
     let result = apply_replacements(&matches, text, "example");
     assert_eq!(result, "example string");
 }
@@ -129,7 +110,7 @@ fn test_apply_replacements_match_at_start() {
 #[test]
 fn test_apply_replacements_match_at_end() {
     let text = "test string";
-    let matches = vec![create_match(5, 11, 0, 5)]; // "string"
+    let matches = vec![create_match(5, 11)]; // "string"
     let result = apply_replacements(&matches, text, "text");
     assert_eq!(result, "test text");
 }
@@ -138,9 +119,9 @@ fn test_apply_replacements_match_at_end() {
 fn test_apply_replacements_multiline() {
     let text = "line1\nline2\nline3";
     let matches = vec![
-        create_match(0, 5, 0, 0),   // "line1"
-        create_match(6, 11, 1, 0),  // "line2"
-        create_match(12, 17, 2, 0), // "line3"
+        create_match(0, 5),   // "line1"
+        create_match(6, 11),  // "line2"
+        create_match(12, 17), // "line3"
     ];
     let result = apply_replacements(&matches, text, "replaced");
     assert_eq!(result, "replaced\nreplaced\nreplaced");
@@ -149,7 +130,7 @@ fn test_apply_replacements_multiline() {
 #[test]
 fn test_apply_replacements_empty_replace() {
     let text = "hello world";
-    let matches = vec![create_match(0, 5, 0, 0)]; // "hello"
+    let matches = vec![create_match(0, 5)]; // "hello"
     let result = apply_replacements(&matches, text, "");
     assert_eq!(result, " world");
 }
@@ -158,106 +139,11 @@ fn test_apply_replacements_empty_replace() {
 fn test_apply_replacements_non_sequential_matches() {
     let text = "hello world hello";
     let matches = vec![
-        create_match(0, 5, 0, 0),    // "hello"
-        create_match(12, 17, 0, 12), // "hello"
+        create_match(0, 5),   // "hello"
+        create_match(12, 17), // "hello"
     ];
     let result = apply_replacements(&matches, text, "hi");
     assert_eq!(result, "hi world hi");
-}
-
-// ========== get_line_col_fast ==========
-
-#[test]
-fn test_get_line_col_start_of_text() {
-    let text = "hello world";
-    assert_eq!(get_line_col(text, 0), (0, 0));
-}
-
-#[test]
-fn test_get_line_col_middle_of_first_line() {
-    let text = "hello world";
-    assert_eq!(get_line_col(text, 6), (0, 6)); // 'w' in "world"
-}
-
-#[test]
-fn test_get_line_col_end_of_first_line() {
-    let text = "hello world";
-    assert_eq!(get_line_col(text, 11), (0, 11)); // end of line
-}
-
-#[test]
-fn test_get_line_col_start_of_second_line() {
-    let text = "hello\nworld";
-    assert_eq!(get_line_col(text, 6), (1, 0)); // 'w' in "world"
-}
-
-#[test]
-fn test_get_line_col_middle_of_second_line() {
-    let text = "hello\nworld";
-    assert_eq!(get_line_col(text, 9), (1, 3)); // 'l' in "world"
-}
-
-#[test]
-fn test_get_line_col_multiple_lines() {
-    let text = "line1\nline2\nline3";
-    assert_eq!(get_line_col(text, 0), (0, 0)); // 'l' in "line1"
-    assert_eq!(get_line_col(text, 6), (1, 0)); // 'l' in "line2"
-    assert_eq!(get_line_col(text, 12), (2, 0)); // 'l' in "line3"
-}
-
-#[test]
-fn test_get_line_col_after_newline() {
-    let text = "hello\n\nworld";
-    assert_eq!(get_line_col(text, 6), (1, 0)); // empty line
-    assert_eq!(get_line_col(text, 7), (2, 0)); // 'w' in "world"
-}
-
-#[test]
-fn test_get_line_col_empty_text() {
-    let text = "";
-    assert_eq!(get_line_col(text, 0), (0, 0));
-}
-
-#[test]
-fn test_get_line_col_windows_line_endings() {
-    let text = "hello\r\nworld";
-    assert_eq!(get_line_col(text, 5), (0, 5)); // '\r'
-    assert_eq!(get_line_col(text, 7), (1, 0)); // 'w' in "world"
-}
-
-#[test]
-fn test_get_line_col_mixed_line_endings() {
-    let text = "line1\nline2\r\nline3";
-    assert_eq!(get_line_col(text, 0), (0, 0)); // 'l' in "line1"
-    assert_eq!(get_line_col(text, 6), (1, 0)); // 'l' in "line2"
-    // Note: '\r' is counted as a regular character (col increment), only '\n' triggers new line
-    assert_eq!(get_line_col(text, 14), (2, 1)); // 'l' in "line3" (after \r\n)
-}
-
-#[test]
-fn test_get_line_col_unicode_characters() {
-    // "hello 世界\nworld": '世' starts at byte 6, '界' at byte 9, '\n' at byte 12, 'w' at byte 13
-    let text = "hello 世界\nworld";
-    assert_eq!(get_line_col(text, 6), (0, 6)); // '世' at byte 6: line 0, col 6
-    assert_eq!(get_line_col(text, 9), (0, 7)); // '界' at byte 9: line 0, col 7
-    assert_eq!(get_line_col(text, 13), (1, 0)); // 'w' at byte 13: line 1, col 0
-}
-
-#[test]
-fn test_get_line_col_fast_multiline() {
-    let text = "line1\nline2\nline3";
-    let offsets = newline_offsets(text);
-    assert_eq!(get_line_col_fast(text, 0, &offsets), (0, 0));
-    assert_eq!(get_line_col_fast(text, 6, &offsets), (1, 0));
-    assert_eq!(get_line_col_fast(text, 12, &offsets), (2, 0));
-    assert_eq!(get_line_col_fast(text, 17, &offsets), (2, 5));
-}
-
-#[test]
-fn test_get_line_col_fast_empty_text() {
-    let text = "";
-    let offsets = newline_offsets(text);
-    assert_eq!(get_line_col_fast(text, 0, &offsets), (0, 0));
 }
 
 // ========== find_matches ==========
@@ -276,8 +162,6 @@ fn test_find_matches_single_match() {
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].start, 6);
     assert_eq!(matches[0].end, 11);
-    assert_eq!(matches[0].line, 0);
-    assert_eq!(matches[0].col, 6);
 }
 
 #[test]
@@ -350,9 +234,9 @@ fn test_find_matches_multiline() {
     let text = "line1 hello\nline2 hello\nline3 hello";
     let matches = find_matches(text, "hello", false, false);
     assert_eq!(matches.len(), 3);
-    assert_eq!(matches[0].line, 0);
-    assert_eq!(matches[1].line, 1);
-    assert_eq!(matches[2].line, 2);
+    assert_eq!(matches[0].start, 6);
+    assert_eq!(matches[1].start, 18);
+    assert_eq!(matches[2].start, 30);
 }
 
 #[test]
@@ -392,8 +276,8 @@ fn test_find_matches_unicode() {
     let text = "hello 世界 hello";
     let matches = find_matches(text, "hello", false, false);
     assert_eq!(matches.len(), 2);
-    assert_eq!(matches[0].line, 0);
-    assert_eq!(matches[1].line, 0);
+    assert_eq!(matches[0].start, 0);
+    assert_eq!(matches[1].start, 13); // byte offset, past the two 3-byte characters
 }
 
 // Note: Case-insensitive search with Unicode that changes byte length when lowercased
@@ -486,12 +370,12 @@ fn test_find_matches_single_character_whole_word() {
 }
 
 #[test]
-fn test_find_matches_line_col_accuracy() {
+fn test_find_matches_offsets_after_a_newline() {
     let text = "line1\nline2 hello\nline3";
     let matches = find_matches(text, "hello", false, false);
     assert_eq!(matches.len(), 1);
-    assert_eq!(matches[0].line, 1);
-    assert_eq!(matches[0].col, 6); // "hello" starts at column 6 of line 2
+    assert_eq!(matches[0].start, 12);
+    assert_eq!(matches[0].end, 17);
 }
 
 #[test]
@@ -499,7 +383,6 @@ fn test_find_matches_with_scratch_matches_baseline() {
     let text = "Alpha beta\nalpha BETA\nalpha";
     let query = "alpha";
     let baseline = find_matches(text, query, false, false);
-    let mut newline_offsets_scratch = Vec::new();
     let mut lowercase_text_scratch = String::new();
     let mut lowercase_offsets_scratch = Vec::new();
     let with_scratch = find_matches_with_scratch(
@@ -507,7 +390,6 @@ fn test_find_matches_with_scratch_matches_baseline() {
         query,
         false,
         false,
-        &mut newline_offsets_scratch,
         &mut lowercase_text_scratch,
         &mut lowercase_offsets_scratch,
     );
@@ -519,7 +401,6 @@ fn test_find_matches_with_scratch_matches_baseline() {
 
 #[test]
 fn test_find_matches_with_scratch_rebuilds_offsets_between_calls() {
-    let mut newline_offsets_scratch = vec![999, 1000, 1001];
     let mut lowercase_text_scratch = "stale".repeat(64);
     let mut lowercase_offsets_scratch = vec![42, 43, 44];
     let first = find_matches_with_scratch(
@@ -527,7 +408,6 @@ fn test_find_matches_with_scratch_rebuilds_offsets_between_calls() {
         "line",
         false,
         false,
-        &mut newline_offsets_scratch,
         &mut lowercase_text_scratch,
         &mut lowercase_offsets_scratch,
     );
@@ -538,13 +418,12 @@ fn test_find_matches_with_scratch_rebuilds_offsets_between_calls() {
         "sh",
         false,
         false,
-        &mut newline_offsets_scratch,
         &mut lowercase_text_scratch,
         &mut lowercase_offsets_scratch,
     );
     assert_eq!(second.len(), 1);
-    assert_eq!(second[0].line, 0);
-    assert_eq!(second[0].col, 0);
+    assert_eq!(second[0].start, 0);
+    assert_eq!(second[0].end, 2);
 }
 
 #[test]
@@ -726,11 +605,11 @@ fn test_match_case_toggle_filters_results(cx: &mut TestAppContext) {
             });
 
             bar.match_case = false;
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 3);
 
             bar.match_case = true;
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 1);
         });
     });
@@ -751,11 +630,11 @@ fn test_match_whole_word_toggle_filters_results(cx: &mut TestAppContext) {
             });
 
             bar.match_whole_word = false;
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 4);
 
             bar.match_whole_word = true;
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 2);
         });
     });
@@ -776,7 +655,7 @@ fn test_no_match_state_when_query_not_found(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("zzz", window, cx);
             });
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
 
             assert!(bar.search_matches.is_empty());
             assert!(bar.current_match_index.is_none());
@@ -798,7 +677,7 @@ fn test_close_search_clears_match_state(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 3);
             assert!(bar.current_match_index.is_some());
 
@@ -824,20 +703,16 @@ fn test_gpui_search_next_previous_wrap_and_cursor(cx: &mut TestAppContext) {
         });
 
         search_bar.update(cx, |bar, cx| {
-            bar.search_matches = vec![
-                create_match(0, 1, 0, 0),
-                create_match(4, 5, 1, 0),
-                create_match(8, 9, 2, 0),
-            ];
+            bar.search_matches = vec![create_match(0, 1), create_match(4, 5), create_match(8, 9)];
             bar.current_match_index = Some(2);
 
-            bar.search_next(Some(content.clone()), window, cx);
+            bar.search_next(Some(content.clone()), cx);
             assert_eq!(bar.current_match_index, Some(0));
             let cursor = content.read(cx).cursor_position();
             assert_eq!(cursor.line, 0);
             assert_eq!(cursor.character, 0);
 
-            bar.search_previous(Some(content.clone()), window, cx);
+            bar.search_previous(Some(content.clone()), cx);
             assert_eq!(bar.current_match_index, Some(2));
             let cursor = content.read(cx).cursor_position();
             assert_eq!(cursor.line, 2);
@@ -868,7 +743,7 @@ fn test_gpui_replace_current_updates_text_and_matches(cx: &mut TestAppContext) {
                 input.set_value("baz", window, cx);
             });
 
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 2);
             assert_eq!(bar.current_match_index, Some(0));
 
@@ -906,7 +781,7 @@ fn test_gpui_replace_all_whole_word_only(cx: &mut TestAppContext) {
                 input.set_value("done", window, cx);
             });
 
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 2);
 
             bar.replace_all(Some(content.clone()), window, cx);
@@ -988,7 +863,7 @@ fn test_gpui_replace_current_recomputes_after_buffer_edit(cx: &mut TestAppContex
                 input.set_value("x", window, cx);
             });
 
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 2);
             // Point at the second match, whose offset (11) is about to go stale.
             bar.current_match_index = Some(1);
@@ -1028,7 +903,7 @@ fn test_gpui_replace_all_recomputes_after_buffer_edit(cx: &mut TestAppContext) {
                 input.set_value("baz", window, cx);
             });
 
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 3);
 
             // Shrink the buffer without refreshing matches; offsets 4 and 8 are
@@ -1065,7 +940,7 @@ fn test_gpui_replace_all_case_sensitive_non_whole_word(cx: &mut TestAppContext) 
                 input.set_value("b", window, cx);
             });
 
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 3);
 
             bar.replace_all(Some(content.clone()), window, cx);
@@ -1119,7 +994,7 @@ fn test_search_paints_every_match_and_accents_the_current_one(cx: &mut TestAppCo
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
 
             assert_eq!(bar.current_match_index, Some(0));
             let (all, current) = painted_ranges(bar, &content, cx);
@@ -1143,14 +1018,14 @@ fn test_navigation_moves_the_accented_match(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
 
-            bar.search_next(Some(content.clone()), window, cx);
+            bar.search_next(Some(content.clone()), cx);
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(current, vec![4..7]);
             assert_eq!(all, vec![0..3, 8..11]);
 
-            bar.search_previous(Some(content.clone()), window, cx);
+            bar.search_previous(Some(content.clone()), cx);
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(current, vec![0..3]);
             assert_eq!(all, vec![4..7, 8..11]);
@@ -1172,7 +1047,7 @@ fn test_close_search_clears_match_decorations(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 3);
 
             bar.close(cx);
@@ -1198,13 +1073,13 @@ fn test_clearing_the_query_clears_match_decorations(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             assert_eq!(bar.search_matches.len(), 3);
 
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("", window, cx);
             });
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
 
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(all, [] as [std::ops::Range<usize>; 0]);
@@ -1228,7 +1103,7 @@ fn test_decoration_collections_are_reused_across_searches(cx: &mut TestAppContex
                 bar.search_input.update(cx, |input, cx| {
                     input.set_value(query, window, cx);
                 });
-                bar.perform_search(Some(content.clone()), window, cx);
+                bar.perform_search(Some(content.clone()), cx);
             }
 
             assert_eq!(bar.match_decorations.len(), 1);
@@ -1258,7 +1133,7 @@ fn test_replace_all_clears_match_decorations(cx: &mut TestAppContext) {
             bar.replace_input.update(cx, |input, cx| {
                 input.set_value("baz", window, cx);
             });
-            bar.perform_search(Some(content.clone()), window, cx);
+            bar.perform_search(Some(content.clone()), cx);
             bar.replace_all(Some(content.clone()), window, cx);
 
             let (all, current) = painted_ranges(bar, &content, cx);
