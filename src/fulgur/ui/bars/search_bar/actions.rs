@@ -1,5 +1,5 @@
 use crate::fulgur::Fulgur;
-use gpui_kit::component::input::{EditorState, Position};
+use gpui_kit::component::input::EditorState;
 use gpui_kit::{App, Context, Entity, Focusable, Window};
 
 use super::matching::find_matches_with_scratch;
@@ -31,7 +31,7 @@ impl SearchBar {
             self.show_search = true;
             let search_focus = self.search_input.read(cx).focus_handle(cx);
             window.focus(&search_focus, cx);
-            self.perform_search(content, window, cx);
+            self.perform_search(content, cx);
             cx.notify();
         }
     }
@@ -56,7 +56,7 @@ impl SearchBar {
             .is_some_and(|content| content.read(cx).is_editable());
         if !self.show_search {
             self.show_search = true;
-            self.perform_search(content, window, cx);
+            self.perform_search(content, cx);
         }
         let target = if editable {
             &self.replace_input
@@ -84,41 +84,34 @@ impl SearchBar {
     /// Re-run the search after the query text changed
     ///
     /// ### Arguments
-    /// - `window`: The window context
     /// - `cx`: The search bar context
-    pub(super) fn on_query_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn on_query_changed(&mut self, cx: &mut Context<Self>) {
         let content = self.active_editor_content(cx);
-        self.perform_search(content, window, cx);
-        let search_focus = self.search_input.read(cx).focus_handle(cx);
-        window.focus(&search_focus, cx);
+        self.perform_search(content, cx);
     }
 
     /// Clear the current matches and search the given editor content afresh
     ///
     /// ### Arguments
     /// - `content`: The active editor tab's content, if any
-    /// - `window`: The window context
     /// - `cx`: The search bar context
     pub(crate) fn refresh_matches(
         &mut self,
         content: Option<Entity<EditorState>>,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.search_matches.clear();
-        self.perform_search(content, window, cx);
+        self.perform_search(content, cx);
     }
 
     /// Perform search in the given editor content
     ///
     /// ### Arguments
     /// - `content`: The active editor tab's content, if any
-    /// - `window`: The window context
     /// - `cx`: The search bar context
     pub(super) fn perform_search(
         &mut self,
         content: Option<Entity<EditorState>>,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let query = self.search_input.read(cx).text().to_string();
@@ -156,7 +149,6 @@ impl SearchBar {
                 &query,
                 match_case,
                 match_whole_word,
-                &mut self.search_newline_offsets_scratch,
                 &mut self.search_lowercase_text_scratch,
                 &mut self.search_lowercase_offsets_scratch,
             );
@@ -174,7 +166,7 @@ impl SearchBar {
                 if !found_after_cursor {
                     self.current_match_index = Some(0);
                 }
-                self.scroll_to_current_match(&content_entity, window, cx);
+                self.scroll_to_current_match(&content_entity, cx);
             }
             self.apply_match_decorations(&content_entity, cx);
         }
@@ -186,12 +178,10 @@ impl SearchBar {
     ///
     /// ### Arguments
     /// - `content`: The active editor tab's content, if any
-    /// - `window`: The window context
     /// - `cx`: The search bar context
     pub(super) fn search_next(
         &mut self,
         content: Option<Entity<EditorState>>,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.search_matches.is_empty() {
@@ -203,7 +193,7 @@ impl SearchBar {
             self.current_match_index = Some(0);
         }
         if let Some(content) = content {
-            self.scroll_to_current_match(&content, window, cx);
+            self.scroll_to_current_match(&content, cx);
             self.apply_match_decorations(&content, cx);
         }
         cx.notify();
@@ -213,12 +203,10 @@ impl SearchBar {
     ///
     /// ### Arguments
     /// - `content`: The active editor tab's content, if any
-    /// - `window`: The window context
     /// - `cx`: The search bar context
     pub(super) fn search_previous(
         &mut self,
         content: Option<Entity<EditorState>>,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.search_matches.is_empty() {
@@ -234,63 +222,45 @@ impl SearchBar {
             self.current_match_index = Some(0);
         }
         if let Some(content) = content {
-            self.scroll_to_current_match(&content, window, cx);
+            self.scroll_to_current_match(&content, cx);
             self.apply_match_decorations(&content, cx);
         }
         cx.notify();
     }
 
-    /// Step to the next or previous match, keeping keyboard focus in the bar
+    /// Step to the next or previous match
     ///
     /// ### Arguments
     /// - `step`: Which way to move through the matches
     /// - `content`: The active editor tab's content, if any
-    /// - `window`: The window context
     /// - `cx`: The search bar context
     pub(super) fn step_match(
         &mut self,
         step: MatchStep,
         content: Option<Entity<EditorState>>,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let focused_input = [&self.search_input, &self.replace_input]
-            .into_iter()
-            .map(|input| input.read(cx).focus_handle(cx))
-            .find(|focus| focus.is_focused(window));
         match step {
-            MatchStep::Next => self.search_next(content, window, cx),
-            MatchStep::Previous => self.search_previous(content, window, cx),
-        }
-        if let Some(focus) = focused_input {
-            window.focus(&focus, cx);
+            MatchStep::Next => self.search_next(content, cx),
+            MatchStep::Previous => self.search_previous(content, cx),
         }
     }
 
     /// Move the editor cursor to the current search match, scrolling it into view
     ///
+    /// Keyboard focus is left where it is: `EditorState::set_cursor_position`
+    /// would focus the editor, so a search run from the bar would send the
+    /// user's next keystrokes into the document.
+    ///
     /// ### Arguments
     /// - `content`: The active editor tab's content
-    /// - `window`: The window context
     /// - `cx`: The application context
-    pub(super) fn scroll_to_current_match(
-        &self,
-        content: &Entity<EditorState>,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
+    pub(super) fn scroll_to_current_match(&self, content: &Entity<EditorState>, cx: &mut App) {
         if let Some(match_index) = self.current_match_index
             && let Some(search_match) = self.search_matches.get(match_index)
         {
             content.update(cx, |content, cx| {
-                content.set_cursor_position(
-                    Position {
-                        line: u32::try_from(search_match.line).unwrap_or(u32::MAX),
-                        character: u32::try_from(search_match.col).unwrap_or(u32::MAX),
-                    },
-                    window,
-                    cx,
-                );
+                content.set_selected_range(search_match.start..search_match.start, cx);
             });
         }
     }
@@ -328,32 +298,29 @@ impl Fulgur {
     /// Move to the next search match in this window
     ///
     /// ### Arguments
-    /// - `window`: The window context
     /// - `cx`: The application context
-    pub fn find_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.step_search_match(MatchStep::Next, window, cx);
+    pub fn find_next(&mut self, cx: &mut Context<Self>) {
+        self.step_search_match(MatchStep::Next, cx);
     }
 
     /// Move to the previous search match in this window
     ///
     /// ### Arguments
-    /// - `window`: The window context
     /// - `cx`: The application context
-    pub fn find_previous(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.step_search_match(MatchStep::Previous, window, cx);
+    pub fn find_previous(&mut self, cx: &mut Context<Self>) {
+        self.step_search_match(MatchStep::Previous, cx);
     }
 
     /// Step the search bar through the active editor's matches
     ///
     /// ### Arguments
     /// - `step`: Which way to move through the matches
-    /// - `window`: The window context
     /// - `cx`: The application context
-    fn step_search_match(&mut self, step: MatchStep, window: &mut Window, cx: &mut Context<Self>) {
+    fn step_search_match(&mut self, step: MatchStep, cx: &mut Context<Self>) {
         let content = self
             .get_active_editor_tab(cx)
             .map(|editor_tab| editor_tab.content.clone());
         self.search_bar
-            .update(cx, |bar, cx| bar.step_match(step, content, window, cx));
+            .update(cx, |bar, cx| bar.step_match(step, content, cx));
     }
 }

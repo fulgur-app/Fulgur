@@ -78,7 +78,7 @@ impl Fulgur {
                     .get_active_editor_tab(cx)
                     .map(|editor_tab| editor_tab.content.clone());
                 self.search_bar
-                    .update(cx, |bar, cx| bar.refresh_matches(content, window, cx));
+                    .update(cx, |bar, cx| bar.refresh_matches(content, cx));
             }
             cx.notify();
         }
