@@ -23,8 +23,6 @@ use gpui_kit::{Hsla, Styled};
 pub struct SearchMatch {
     pub start: usize,
     pub end: usize,
-    pub line: usize,
-    pub col: usize,
 }
 
 /// Create a search bar button
