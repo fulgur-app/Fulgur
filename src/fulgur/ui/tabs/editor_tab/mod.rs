@@ -218,8 +218,7 @@ impl EditorTab {
 
         let content = self.content.clone();
         let dialog_input = cx.new(|cx| InputState::new(window, cx));
-        let delegate =
-            CsvTableDelegate::new(outcome.data, self.csv_delimiter, content, dialog_input);
+        let delegate = CsvTableDelegate::new(outcome.data, outcome.dialect, content, dialog_input);
         let table = cx.new(|cx| {
             TableState::new(delegate, window, cx)
                 .cell_selectable(true)

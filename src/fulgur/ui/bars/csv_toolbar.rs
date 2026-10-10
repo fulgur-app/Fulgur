@@ -318,7 +318,7 @@ mod tests {
                 .read(cx)
                 .text()
                 .to_string();
-            assert_eq!(text, "a,b\n1,2\n,\n");
+            assert_eq!(text, "a,b\n1,2\n,");
         });
     }
 
@@ -373,7 +373,7 @@ mod tests {
             });
         });
 
-        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), "a,,b\n1,,2\n");
+        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), "a,,b\n1,,2");
     }
 
     #[cfg(feature = "gpui-test-support")]
@@ -396,14 +396,14 @@ mod tests {
                 bar.edit_active_table(CsvTableDelegate::insert_column_before, window, cx);
             });
         });
-        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), ",a,b\n,1,2\n");
+        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), ",a,b\n,1,2");
 
         visual_cx.update(|window, cx| {
             toolbar.update(cx, |bar, cx| {
                 bar.edit_active_table(CsvTableDelegate::delete_column, window, cx);
             });
         });
-        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), "a,b\n1,2\n");
+        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), "a,b\n1,2");
     }
 
     #[cfg(feature = "gpui-test-support")]
@@ -469,7 +469,7 @@ mod tests {
 
         let table_after = active_csv_table(&fulgur, &mut visual_cx);
         assert_eq!(table_before.entity_id(), table_after.entity_id());
-        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), "a,b\n1,2\n,\n,\n");
+        assert_eq!(active_tab_text(&fulgur, &mut visual_cx), "a,b\n1,2\n,\n,");
     }
 
     #[cfg(feature = "gpui-test-support")]

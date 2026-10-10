@@ -9,9 +9,9 @@ impl CsvTableDelegate {
     /// Insert an empty data column at `index` into a plain headers/rows model.
     ///
     /// ### Description
-    /// The header index is clamped to the header count, and each row's insertion
-    /// position is independently clamped to that row's width, so ragged rows stay
-    /// in bounds.
+    /// The header index is clamped to the header count. A row shorter than the
+    /// header only receives the new cell when it lands among its existing
+    /// fields, so its missing trailing fields stay missing in the file.
     ///
     /// ### Arguments
     /// - `headers`: The column headers to mutate
@@ -22,11 +22,13 @@ impl CsvTableDelegate {
         rows: &mut [Vec<String>],
         index: usize,
     ) {
-        let index = index.min(headers.len());
+        let width = headers.len();
+        let index = index.min(width);
         headers.insert(index, String::new());
         for row in rows {
-            let position = index.min(row.len());
-            row.insert(position, String::new());
+            if index < row.len() || row.len() >= width {
+                row.insert(index.min(row.len()), String::new());
+            }
         }
     }
 
@@ -166,14 +168,41 @@ impl CsvTableDelegate {
             return false;
         }
 
+        let width = headers.len();
         let header = headers.remove(from_data);
         headers.insert(to_data, header);
         for row in rows {
-            if from_data < row.len() {
-                let cell = row.remove(from_data);
-                row.insert(to_data.min(row.len()), cell);
-            }
+            Self::move_cell_in_row(row, from_data, to_data, width);
         }
         true
+    }
+
+    /// Move one cell of a possibly short row, as if the row were padded to the
+    /// header width, then drop the padding that is still empty.
+    ///
+    /// ### Arguments
+    /// - `row`: The data row to mutate
+    /// - `from`: The source data column index, below `width`
+    /// - `to`: The destination data column index, below `width`
+    /// - `width`: The header count the row is displayed against
+    fn move_cell_in_row(row: &mut Vec<String>, from: usize, to: usize, width: usize) {
+        let original_len = row.len();
+        if from >= original_len && to >= original_len {
+            return;
+        }
+        row.resize(width.max(original_len), String::new());
+        let cell = row.remove(from);
+        row.insert(to, cell);
+
+        let mut kept_len = original_len;
+        if from < kept_len {
+            kept_len -= 1;
+        }
+        if to <= kept_len {
+            kept_len += 1;
+        }
+        while row.len() > kept_len && row.last().is_some_and(String::is_empty) {
+            row.pop();
+        }
     }
 }

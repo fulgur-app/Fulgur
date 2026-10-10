@@ -1,5 +1,5 @@
 use super::{CsvSelection, CsvTableDelegate, EditTarget};
-use crate::fulgur::files::csv_support::serialize_csv;
+use crate::fulgur::files::csv_support::{CsvDialect, serialize_csv};
 
 /// Build a `Vec<String>` from string literals for terser test fixtures.
 fn row(values: &[&str]) -> Vec<String> {
@@ -185,14 +185,20 @@ fn test_delete_row_in_selected_last_and_empty() {
 }
 
 #[test]
-fn test_insert_column_at_in_shifts_cells_and_pads_ragged_rows() {
-    let mut headers = row(&["a", "b"]);
-    let mut rows = vec![row(&["1", "2"]), row(&["3"])];
+fn test_insert_column_at_in_leaves_short_rows_short() {
+    let mut headers = row(&["a", "b", "c"]);
+    let mut rows = vec![row(&["1", "2", "3"]), row(&["4", "5"]), row(&["6"])];
     CsvTableDelegate::insert_column_at_in(&mut headers, &mut rows, 1);
-    assert_eq!(headers, row(&["a", "", "b"]));
-    assert_eq!(rows[0], row(&["1", "", "2"]));
-    // The ragged row gets the new cell clamped to its own width.
-    assert_eq!(rows[1], row(&["3", ""]));
+    assert_eq!(headers, row(&["a", "", "b", "c"]));
+    assert_eq!(rows[0], row(&["1", "", "2", "3"]));
+    assert_eq!(rows[1], row(&["4", "", "5"]));
+    // The new column falls in the short row's missing fields.
+    assert_eq!(rows[2], row(&["6"]));
+
+    // Appending a column grows full rows only.
+    CsvTableDelegate::insert_column_at_in(&mut headers, &mut rows, 4);
+    assert_eq!(rows[0], row(&["1", "", "2", "3", ""]));
+    assert_eq!(rows[1], row(&["4", "", "5"]));
 }
 
 #[test]
@@ -293,6 +299,66 @@ fn test_move_column_in_rejects_row_number_column_and_noops() {
 }
 
 #[test]
+fn test_move_column_in_keeps_short_rows_aligned() {
+    let mut headers = row(&["a", "b", "c"]);
+    let mut rows = vec![row(&["1"]), row(&["2", "3"]), row(&["4", "", "5"])];
+    // Move data column 2 to the front.
+    assert!(CsvTableDelegate::move_column_in(
+        &mut headers,
+        &mut rows,
+        3,
+        1
+    ));
+    assert_eq!(headers, row(&["c", "a", "b"]));
+    assert_eq!(rows[0], row(&["", "1"]));
+    assert_eq!(rows[1], row(&["", "2", "3"]));
+    assert_eq!(rows[2], row(&["5", "4", ""]));
+
+    // Moving a value past a short row's end extends it.
+    let mut headers = row(&["a", "b", "c"]);
+    let mut rows = vec![row(&["1"])];
+    assert!(CsvTableDelegate::move_column_in(
+        &mut headers,
+        &mut rows,
+        1,
+        3
+    ));
+    assert_eq!(rows[0], row(&["", "", "1"]));
+
+    // Moving among a short row's missing fields leaves it untouched.
+    let mut headers = row(&["a", "b", "c"]);
+    let mut rows = vec![row(&["1"])];
+    assert!(CsvTableDelegate::move_column_in(
+        &mut headers,
+        &mut rows,
+        3,
+        2
+    ));
+    assert_eq!(rows[0], row(&["1"]));
+}
+
+#[test]
+fn test_apply_edit_in_extends_short_row_only_for_a_value() {
+    let mut headers = row(&["a", "b", "c"]);
+    let mut rows = vec![row(&["1"])];
+    CsvTableDelegate::apply_edit_in(
+        &mut headers,
+        &mut rows,
+        EditTarget::Cell(0, 2),
+        String::new(),
+    );
+    assert_eq!(rows[0], row(&["1"]));
+
+    CsvTableDelegate::apply_edit_in(
+        &mut headers,
+        &mut rows,
+        EditTarget::Cell(0, 2),
+        "x".to_string(),
+    );
+    assert_eq!(rows[0], row(&["1", "", "x"]));
+}
+
+#[test]
 fn test_edits_round_trip_through_serialize_csv() {
     let (mut headers, mut rows) = sample();
     CsvTableDelegate::insert_row_below_in(&headers, &mut rows, Some(0));
@@ -303,7 +369,7 @@ fn test_edits_round_trip_through_serialize_csv() {
         "5".to_string(),
     );
     assert_eq!(
-        serialize_csv(&headers, &rows, b','),
+        serialize_csv(&headers, &rows, &CsvDialect::default()),
         Ok("a,b\n1,2\n5,\n3,4\n".to_string())
     );
 }

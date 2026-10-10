@@ -135,9 +135,16 @@ impl CsvTableDelegate {
                 }
             }
             EditTarget::Cell(row, col) => {
-                if let Some(cell) = rows.get_mut(row).and_then(|cells| cells.get_mut(col)) {
-                    *cell = value;
+                let Some(cells) = rows.get_mut(row) else {
+                    return;
+                };
+                if col >= headers.len() || (col >= cells.len() && value.is_empty()) {
+                    return;
                 }
+                if col >= cells.len() {
+                    cells.resize(col + 1, String::new());
+                }
+                cells[col] = value;
             }
         }
     }
