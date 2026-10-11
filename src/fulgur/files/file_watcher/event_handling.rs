@@ -5,8 +5,6 @@ use crate::fulgur::tab::Tab;
 use crate::fulgur::ui::components_utils::UNTITLED;
 use gpui_kit::{Context, Window};
 use std::path::PathBuf;
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-use std::time::Instant;
 
 impl Fulgur {
     /// Apply an external-modification event to the tab backing a path.
@@ -65,12 +63,55 @@ impl Fulgur {
         }
     }
 
+    /// Re-check a watched path once its watch events have gone quiet and apply
+    /// the change the file actually went through
+    ///
+    /// ### Description
+    /// - If a save of the editor is writing the path, nothing happens: its completion records the new state
+    /// - If the file's size and modification time match the known state (an echo of the editor's own save, or a metadata-only change), nothing happens
+    /// - If the file exists, it is an external modification (an atomic-rename replacement included): the tab is reloaded or a conflict is raised
+    /// - If the file is gone, the tab is marked modified and a deletion notification is shown
+    ///
+    /// ### Arguments
+    /// - `path`: The path whose scheduled check fired
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub(super) fn run_file_change_check(
+        &mut self,
+        path: &PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.file_watch_state.scheduled_checks.remove(path);
+        if self.is_saving_path(path) {
+            return;
+        }
+        if let Some(watcher) = &mut self.file_watch_state.file_watcher
+            && !watcher.acknowledge_disk_change(path)
+        {
+            return;
+        }
+        if path.exists() {
+            // Inode-based backends lose the watch when the file is replaced.
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            {
+                if let Some(watcher) = &mut self.file_watch_state.file_watcher
+                    && let Err(e) = watcher.rewatch_file(path)
+                {
+                    log::warn!("{e}");
+                }
+            }
+            self.apply_external_modification(path, window, cx);
+        } else {
+            self.mark_tab_deleted_externally(path, cx);
+            Self::show_notification_file_deleted(path, window, cx);
+        }
+    }
+
     /// Handle file watch events received from the file watcher
     ///
     /// ### Description
-    /// - If the event is a modification, it shows a conflict dialog if the file is modified and the tab is active
-    /// - If the event is a deletion whose path still exists, it is treated as an atomic-rename replacement (re-watch and reload)
-    /// - If the event is a deletion whose path is gone, it shows a notification that the file was deleted
+    /// - If the event is a modification or a deletion, the path is re-checked once its events go quiet (see `run_file_change_check`)
     /// - If the event is a rename, it shows a notification that the file was renamed
     /// - If the event is an error, it logs the error
     ///
@@ -85,35 +126,11 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         match event {
-            FileWatchEvent::Modified(path) => {
-                if self.should_suppress_file_watch_event(&path) {
-                    return;
-                }
-                self.apply_external_modification(&path, window, cx);
-            }
-            FileWatchEvent::Deleted(path) => {
-                if self.should_suppress_file_watch_event(&path) {
-                    return;
-                }
-                // A "deleted" event whose path still exists on disk is an atomic save.
-                if path.exists() {
-                    // Re-register only on inode-based backends..
-                    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                    {
-                        self.unwatch_file(&path);
-                        self.watch_file(&path);
-                        self.file_watch_state
-                            .last_file_events
-                            .insert(path.clone(), Instant::now());
-                    }
-                    self.apply_external_modification(&path, window, cx);
-                    return;
-                }
-                self.mark_tab_deleted_externally(&path, cx);
-                Self::show_notification_file_deleted(&path, window, cx);
+            FileWatchEvent::Modified(path) | FileWatchEvent::Deleted(path) => {
+                self.schedule_file_change_check(path, window, cx);
             }
             FileWatchEvent::Renamed { from, to } => {
-                if self.should_suppress_file_watch_event(&from) {
+                if self.is_saving_path(&from) {
                     return;
                 }
                 if let Some(tab_entity) = self
@@ -147,20 +164,101 @@ impl Fulgur {
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
+    use crate::fulgur::Fulgur;
     use crate::fulgur::editor_tab::TabLocation;
     use crate::fulgur::files::file_watcher::FileWatchEvent;
-    use crate::fulgur::files::file_watcher::test_helpers::{setup_fulgur, temp_test_path};
+    use crate::fulgur::files::file_watcher::test_helpers::{
+        settle_file_checks, setup_fulgur, temp_test_path,
+    };
     use crate::fulgur::languages::supported_languages::SupportedLanguage;
-    use gpui_kit::TestAppContext;
-    use std::time::{Duration, Instant};
+    use gpui_kit::{Entity, TestAppContext, VisualTestContext};
+    use std::path::{Path, PathBuf};
     use tempfile::TempDir;
+
+    /// Create a file on disk so a scheduled check sees it as modified rather than deleted.
+    ///
+    /// ### Arguments
+    /// - `dir`: The temporary directory holding the file
+    /// - `file_name`: The file name inside `dir`
+    ///
+    /// ### Returns
+    /// - `PathBuf`: The path of the created file
+    fn existing_file(dir: &TempDir, file_name: &str) -> PathBuf {
+        let path = dir.path().join(file_name);
+        std::fs::write(&path, "content-from-disk").expect("failed to write test file");
+        path
+    }
+
+    /// Point the first tab at a path with locally modified, unsaved content.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The Fulgur entity under test
+    /// - `visual_cx`: The visual test context driving the window
+    /// - `path`: The file backing the tab
+    fn open_dirty_active_tab(
+        fulgur: &Entity<Fulgur>,
+        visual_cx: &mut VisualTestContext,
+        path: &Path,
+    ) {
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.to_path_buf());
+                            editor_tab.modified = true;
+                            editor_tab.content.update(cx, |input_state, cx| {
+                                input_state.set_value("local-edits", window, cx);
+                            });
+                        }
+                    });
+                this.active_tab_id = this.tabs.first().map(|t| t.read(cx).id());
+            });
+        });
+    }
+
+    /// Deliver a watch event to the window.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The Fulgur entity under test
+    /// - `visual_cx`: The visual test context driving the window
+    /// - `event`: The file watch event to deliver
+    fn deliver(fulgur: &Entity<Fulgur>, visual_cx: &mut VisualTestContext, event: FileWatchEvent) {
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.handle_file_watch_event(event, window, cx);
+            });
+        });
+    }
+
+    /// Read the first tab's buffer text.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The Fulgur entity under test
+    /// - `visual_cx`: The visual test context driving the window
+    ///
+    /// ### Returns
+    /// - `String`: The buffer text, empty if the first tab is not an editor
+    fn first_tab_text(fulgur: &Entity<Fulgur>, visual_cx: &mut VisualTestContext) -> String {
+        visual_cx.update(|_window, cx| {
+            fulgur
+                .read(cx)
+                .tabs
+                .first()
+                .and_then(|t| t.read(cx).as_editor())
+                .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
+                .unwrap_or_default()
+        })
+    }
 
     #[gpui_kit::test]
     fn test_handle_file_watch_event_modified_reloads_unmodified_tab(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
-        let path = dir.path().join("modified_reload_test.txt");
-        std::fs::write(&path, "content-from-disk").expect("failed to write test file");
+        let path = existing_file(&dir, "modified_reload_test.txt");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.tabs
@@ -179,25 +277,18 @@ mod tests {
                     });
                 this.handle_file_watch_event(FileWatchEvent::Modified(path.clone()), window, cx);
                 assert!(
-                    this.file_watch_state.last_file_events.contains_key(&path),
-                    "modified event should update debounce map"
+                    this.file_watch_state.scheduled_checks.contains_key(&path),
+                    "modified event should schedule a check of the path"
                 );
             });
         });
-        // Reloading runs on the background executor, so wait for it to apply.
-        visual_cx.run_until_parked();
-
-        visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, cx| {
-                let content = this
-                    .tabs
-                    .first()
-                    .and_then(|t| t.read(cx).as_editor())
-                    .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
-                    .unwrap_or_default();
-                assert_eq!(content, "content-from-disk");
-            });
-        });
+        assert_eq!(
+            first_tab_text(&fulgur, &mut visual_cx),
+            "stale-content",
+            "the reload must wait for the events to go quiet"
+        );
+        settle_file_checks(&mut visual_cx);
+        assert_eq!(first_tab_text(&fulgur, &mut visual_cx), "content-from-disk");
     }
 
     #[gpui_kit::test]
@@ -205,75 +296,47 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        let path = temp_test_path("fulgur_conflict_active.txt");
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.tabs
-                    .first()
-                    .expect("expected at least one tab")
-                    .clone()
-                    .update(cx, |tab, cx| {
-                        if let Some(editor_tab) = tab.as_editor_mut() {
-                            editor_tab.location = TabLocation::Local(path.clone());
-                            editor_tab.modified = true;
-                            editor_tab.content.update(cx, |input_state, cx| {
-                                input_state.set_value("local-edits", window, cx);
-                            });
-                        }
-                    });
-                this.active_tab_id = this.tabs.first().map(|t| t.read(cx).id());
-                this.handle_file_watch_event(FileWatchEvent::Modified(path.clone()), window, cx);
-                assert!(
-                    !this.file_watch_state.pending_conflicts.contains_key(&path),
-                    "active-tab conflict should prompt immediately, not queue"
-                );
-            });
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = existing_file(&dir, "conflict_active.txt");
+        open_dirty_active_tab(&fulgur, &mut visual_cx, &path);
+        deliver(
+            &fulgur,
+            &mut visual_cx,
+            FileWatchEvent::Modified(path.clone()),
+        );
+        settle_file_checks(&mut visual_cx);
+        visual_cx.update(|_window, cx| {
+            let state = &fulgur.read(cx).file_watch_state;
+            assert!(
+                !state.pending_conflicts.contains_key(&path),
+                "active-tab conflict should prompt immediately, not queue"
+            );
+            assert!(state.open_conflict_dialogs.contains(&path));
         });
     }
 
     #[gpui_kit::test]
     fn test_repeated_external_modifications_show_a_single_conflict_dialog(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        let path = temp_test_path("fulgur_conflict_repeated.txt");
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.tabs
-                    .first()
-                    .expect("expected at least one tab")
-                    .clone()
-                    .update(cx, |tab, cx| {
-                        if let Some(editor_tab) = tab.as_editor_mut() {
-                            editor_tab.location = TabLocation::Local(path.clone());
-                            editor_tab.modified = true;
-                            editor_tab.content.update(cx, |input_state, cx| {
-                                input_state.set_value("local-edits", window, cx);
-                            });
-                        }
-                    });
-                this.active_tab_id = this.tabs.first().map(|t| t.read(cx).id());
-
-                for _ in 0..3 {
-                    // Backdate the debounce marker so every iteration counts as
-                    // a genuinely separate external write rather than a burst.
-                    let stale = Instant::now()
-                        .checked_sub(Duration::from_secs(1))
-                        .expect("instant subtraction should not underflow");
-                    this.file_watch_state
-                        .last_file_events
-                        .insert(path.clone(), stale);
-                    this.handle_file_watch_event(
-                        FileWatchEvent::Modified(path.clone()),
-                        window,
-                        cx,
-                    );
-                }
-
-                assert_eq!(
-                    this.file_watch_state.open_conflict_dialogs.len(),
-                    1,
-                    "repeated external writes must not stack conflict dialogs"
-                );
-            });
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = existing_file(&dir, "conflict_repeated.txt");
+        open_dirty_active_tab(&fulgur, &mut visual_cx, &path);
+        for _ in 0..3 {
+            // Let each event settle so every iteration counts as a genuinely
+            // separate external write rather than a burst.
+            deliver(
+                &fulgur,
+                &mut visual_cx,
+                FileWatchEvent::Modified(path.clone()),
+            );
+            settle_file_checks(&mut visual_cx);
+        }
+        visual_cx.update(|_window, cx| {
+            assert_eq!(
+                fulgur.read(cx).file_watch_state.open_conflict_dialogs.len(),
+                1,
+                "repeated external writes must not stack conflict dialogs"
+            );
         });
     }
 
@@ -282,7 +345,8 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        let deferred_path = temp_test_path("fulgur_conflict_inactive.txt");
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let deferred_path = existing_file(&dir, "conflict_inactive.txt");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.new_tab(window, cx);
@@ -297,11 +361,16 @@ mod tests {
                         }
                     });
                 this.set_active_tab(1, window, cx);
-                this.handle_file_watch_event(
-                    FileWatchEvent::Modified(deferred_path.clone()),
-                    window,
-                    cx,
-                );
+            });
+        });
+        deliver(
+            &fulgur,
+            &mut visual_cx,
+            FileWatchEvent::Modified(deferred_path.clone()),
+        );
+        settle_file_checks(&mut visual_cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
                 assert_eq!(
                     this.file_watch_state.pending_conflicts.get(&deferred_path),
                     Some(&0),
@@ -325,38 +394,50 @@ mod tests {
         let path = temp_test_path("fulgur_deleted_branch.txt");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                this.tabs.first().expect("expected at least one tab").clone().update(cx, |tab, cx| {
-                    if let Some(editor_tab) = tab.as_editor_mut() {
-                        editor_tab.location = TabLocation::Local(path.clone());
-                        editor_tab.content.update(cx, |input_state, cx| {
-                            input_state.set_value("current-content", window, cx);
-                        });
-                        editor_tab.set_original_content_from_str("current-content");
-                        editor_tab.title = "deleted_branch.txt".into();
-                    }
-                });
-                this.handle_file_watch_event(FileWatchEvent::Deleted(path.clone()), window, cx);
-                let (current_path, current_title, current_content, current_modified) = this
-                    .tabs
+                this.tabs
                     .first()
-                    .and_then(|t| t.read(cx).as_editor())
-                    .map(|editor_tab| {
-                        (
-                            editor_tab.file_path().cloned(),
-                            editor_tab.title.to_string(),
-                            editor_tab.content.read(cx).text().to_string(),
-                            editor_tab.modified,
-                        )
-                    })
-                    .expect("expected active editor tab");
-                assert_eq!(current_path, Some(path));
-                assert_eq!(current_title, "deleted_branch.txt");
-                assert_eq!(current_content, "current-content");
-                assert!(
-                    current_modified,
-                    "a genuine external deletion should mark the tab modified so closing prompts to save"
-                );
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.content.update(cx, |input_state, cx| {
+                                input_state.set_value("current-content", window, cx);
+                            });
+                            editor_tab.set_original_content_from_str("current-content");
+                            editor_tab.title = "deleted_branch.txt".into();
+                        }
+                    });
             });
+        });
+        deliver(
+            &fulgur,
+            &mut visual_cx,
+            FileWatchEvent::Deleted(path.clone()),
+        );
+        settle_file_checks(&mut visual_cx);
+        visual_cx.update(|_window, cx| {
+            let (current_path, current_title, current_content, current_modified) = fulgur
+                .read(cx)
+                .tabs
+                .first()
+                .and_then(|t| t.read(cx).as_editor())
+                .map(|editor_tab| {
+                    (
+                        editor_tab.file_path().cloned(),
+                        editor_tab.title.to_string(),
+                        editor_tab.content.read(cx).text().to_string(),
+                        editor_tab.modified,
+                    )
+                })
+                .expect("expected active editor tab");
+            assert_eq!(current_path, Some(path));
+            assert_eq!(current_title, "deleted_branch.txt");
+            assert_eq!(current_content, "current-content");
+            assert!(
+                current_modified,
+                "a genuine external deletion should mark the tab modified so closing prompts to save"
+            );
         });
     }
 
@@ -364,8 +445,7 @@ mod tests {
     fn test_handle_file_watch_event_deleted_existing_path_reloads(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
-        let path = dir.path().join("atomic_rename_reload.txt");
-        std::fs::write(&path, "content-from-disk").expect("failed to write test file");
+        let path = existing_file(&dir, "atomic_rename_reload.txt");
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.tabs
@@ -382,26 +462,19 @@ mod tests {
                             editor_tab.modified = false;
                         }
                     });
-                this.handle_file_watch_event(FileWatchEvent::Deleted(path.clone()), window, cx);
             });
         });
-        // Reloading runs on the background executor, so wait for it to apply.
-        visual_cx.run_until_parked();
-
-        visual_cx.update(|_window, cx| {
-            fulgur.update(cx, |this, cx| {
-                let content = this
-                    .tabs
-                    .first()
-                    .and_then(|t| t.read(cx).as_editor())
-                    .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
-                    .unwrap_or_default();
-                assert_eq!(
-                    content, "content-from-disk",
-                    "a delete whose path still exists is an atomic-rename replacement and should reload"
-                );
-            });
-        });
+        deliver(
+            &fulgur,
+            &mut visual_cx,
+            FileWatchEvent::Deleted(path.clone()),
+        );
+        settle_file_checks(&mut visual_cx);
+        assert_eq!(
+            first_tab_text(&fulgur, &mut visual_cx),
+            "content-from-disk",
+            "a delete whose path still exists is an atomic-rename replacement and should reload"
+        );
     }
 
     #[gpui_kit::test]
@@ -409,7 +482,7 @@ mod tests {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let from = temp_test_path("fulgur_rename_from.rs");
         let to = temp_test_path("fulgur_rename_to.rs");
-        visual_cx.update(|window, cx| {
+        visual_cx.update(|_window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.tabs
                     .first()
@@ -421,55 +494,48 @@ mod tests {
                             editor_tab.title = "fulgur_rename_from.rs".into();
                         }
                     });
-                // Seed stale bookkeeping (older than the 500 ms suppression
-                // window): a genuine external rename happens long after any
-                // prior save, so it must still be processed and prune these.
-                let stale = Instant::now()
-                    .checked_sub(Duration::from_secs(1))
-                    .expect("instant subtraction should not underflow");
-                this.file_watch_state
-                    .last_file_events
-                    .insert(from.clone(), stale);
-                this.file_watch_state
-                    .last_file_saves
-                    .insert(from.clone(), stale);
                 this.file_watch_state
                     .pending_conflicts
                     .insert(from.clone(), 0);
-                this.handle_file_watch_event(
-                    FileWatchEvent::Renamed {
-                        from: from.clone(),
-                        to: to.clone(),
-                    },
-                    window,
-                    cx,
-                );
-                let (current_path, current_title) = this
-                    .tabs
-                    .first()
-                    .and_then(|t| t.read(cx).as_editor())
-                    .map(|editor_tab| {
-                        (
-                            editor_tab.file_path().cloned(),
-                            editor_tab.title.to_string(),
-                        )
-                    })
-                    .expect("expected active editor tab");
-                assert_eq!(current_path, Some(to));
-                assert_eq!(current_title, "fulgur_rename_to.rs");
-                assert!(
-                    !this.file_watch_state.last_file_events.contains_key(&from),
-                    "rename should prune old-path debounce bookkeeping"
-                );
-                assert!(
-                    !this.file_watch_state.last_file_saves.contains_key(&from),
-                    "rename should prune old-path save bookkeeping"
-                );
-                assert!(
-                    !this.file_watch_state.pending_conflicts.contains_key(&from),
-                    "rename should prune old-path deferred conflict bookkeeping"
-                );
             });
+        });
+        // A check still scheduled for the old path must not outlive the rename.
+        deliver(
+            &fulgur,
+            &mut visual_cx,
+            FileWatchEvent::Modified(from.clone()),
+        );
+        deliver(
+            &fulgur,
+            &mut visual_cx,
+            FileWatchEvent::Renamed {
+                from: from.clone(),
+                to: to.clone(),
+            },
+        );
+        visual_cx.update(|_window, cx| {
+            let this = fulgur.read(cx);
+            let (current_path, current_title) = this
+                .tabs
+                .first()
+                .and_then(|t| t.read(cx).as_editor())
+                .map(|editor_tab| {
+                    (
+                        editor_tab.file_path().cloned(),
+                        editor_tab.title.to_string(),
+                    )
+                })
+                .expect("expected active editor tab");
+            assert_eq!(current_path, Some(to));
+            assert_eq!(current_title, "fulgur_rename_to.rs");
+            assert!(
+                !this.file_watch_state.scheduled_checks.contains_key(&from),
+                "rename should cancel the old path's scheduled check"
+            );
+            assert!(
+                !this.file_watch_state.pending_conflicts.contains_key(&from),
+                "rename should prune old-path deferred conflict bookkeeping"
+            );
         });
     }
 

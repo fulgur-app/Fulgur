@@ -149,6 +149,7 @@ impl FileWatcher {
     /// - If the event is a modification, it sends a Modified event to the event sender
     /// - If the event is a deletion, it sends a Deleted event to the event sender
     /// - If the event is a creation after a rename or save, it sends a Modified event to the event sender
+    /// - If the event is a writer closing the file (Linux `IN_CLOSE_WRITE`), it sends a Modified event to the event sender
     /// - If the event is a metadata-only change (extended attributes, permissions, timestamps), it ignores it
     /// - If the event is other, it ignores it
     /// - Ignore other event types (access, etc.)
@@ -170,7 +171,7 @@ impl FileWatcher {
         event_tx: &mut Sender<FileWatchEvent>,
         pending_rename_from: &Mutex<Option<(PathBuf, Instant)>>,
     ) {
-        use notify::event::{ModifyKind, RenameMode};
+        use notify::event::{AccessKind, AccessMode, ModifyKind, RenameMode};
 
         // Any incoming event is a chance to flush a From whose matching To never came.
         Self::expire_pending_rename_from(pending_rename_from, event_tx);
@@ -238,7 +239,11 @@ impl FileWatcher {
             // macOS sets extended attributes such as `com.apple.provenance` on files
             // some time after they are written, which must not count as an edit.
             EventKind::Modify(ModifyKind::Metadata(_)) => {}
-            EventKind::Modify(_) | EventKind::Create(_) => {
+            // Linux inotify reports a writer closing the file, which marks the end of
+            // a write whose last data events may have been coalesced away.
+            EventKind::Modify(_)
+            | EventKind::Create(_)
+            | EventKind::Access(AccessKind::Close(AccessMode::Write)) => {
                 for path in event.paths {
                     Self::send_event(event_tx, FileWatchEvent::Modified(path));
                 }
@@ -280,6 +285,33 @@ impl FileWatcher {
         self.watched_paths.insert(path.clone(), signature);
         log::debug!("Started watching file: {}", path.display());
         Ok(())
+    }
+
+    /// Re-register the OS watch of a watched file whose inode may have been
+    /// replaced (atomic save by another program), keeping its known disk signature
+    ///
+    /// ### Arguments
+    /// - `path`: The watched file to re-register
+    ///
+    /// ### Errors
+    /// - Returns an error if the watcher fails to register the path again.
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The path is watched again, or it is not tracked by this watcher
+    /// - `Err(String)`: The path could not be watched again
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    pub fn rewatch_file(&mut self, path: &Path) -> Result<(), String> {
+        if !self.watched_paths.contains_key(path) {
+            return Ok(());
+        }
+        let Some(watcher) = &mut self.watcher else {
+            return Ok(());
+        };
+        // The watch on the replaced inode may already be gone, so a failed unwatch is expected.
+        let _ = watcher.unwatch(path);
+        watcher
+            .watch(path, RecursiveMode::NonRecursive)
+            .map_err(|e| format!("Failed to watch file {} again: {}", path.display(), e))
     }
 
     /// Track a file's disk signature without registering it with the OS watcher,
@@ -369,7 +401,9 @@ mod tests {
     use gpui_kit::TestAppContext;
     use notify::{
         Event, EventKind,
-        event::{DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode},
+        event::{
+            AccessKind, AccessMode, DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode,
+        },
     };
     use std::{
         sync::Mutex,
@@ -389,6 +423,20 @@ mod tests {
             event_rx.try_recv(),
             Ok(FileWatchEvent::Modified(actual)) if actual == path
         ));
+    }
+
+    #[gpui_kit::test]
+    fn test_handle_notify_event_maps_close_write_to_modified(_cx: &mut TestAppContext) {
+        let (mut event_tx, mut event_rx) = channel(FILE_WATCH_EVENT_CHANNEL_CAPACITY);
+        let pending_rename_from = Mutex::new(None);
+        let path = temp_test_path("fulgur_notify_close_write.txt");
+        let event = Event::new(EventKind::Access(AccessKind::Close(AccessMode::Write)))
+            .add_path(path.clone());
+        FileWatcher::handle_notify_event(event, &mut event_tx, &pending_rename_from);
+        assert!(
+            matches!(event_rx.try_recv(), Ok(FileWatchEvent::Modified(actual)) if actual == path),
+            "a writer closing the file marks the end of a write and must be reported"
+        );
     }
 
     #[gpui_kit::test]
