@@ -1,15 +1,24 @@
 //! Classify Markdown preview link targets so activation can be routed.
 
 use gpui_kit::http_client::Url;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf, Prefix};
+
+/// URL schemes handed to the system handler without confirmation.
+const TRUSTED_SCHEMES: [&str; 3] = ["http", "https", "mailto"];
 
 /// What a link in the Markdown preview points at.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MarkdownLinkTarget {
     /// A local file that should be opened in an editor tab.
     LocalFile(PathBuf),
-    /// A remote or non-file URL that belongs to the system handler.
-    External(String),
+    /// A file on a network share (Windows UNC or device path), refused so a
+    /// click never reaches out to a remote host.
+    NetworkFile(PathBuf),
+    /// An `http`, `https` or `mailto` URL, safe for the system handler.
+    Web(String),
+    /// A URL with any other scheme, which may launch an arbitrary OS or
+    /// third-party protocol handler and so needs user confirmation.
+    OtherScheme(String),
     /// An in-document anchor, which the preview cannot navigate to.
     Anchor,
 }
@@ -38,7 +47,7 @@ pub fn resolve_markdown_link(
         return Some(MarkdownLinkTarget::Anchor);
     }
     if trimmed.starts_with("//") {
-        return Some(MarkdownLinkTarget::External(format!("https:{trimmed}")));
+        return Some(MarkdownLinkTarget::Web(format!("https:{trimmed}")));
     }
 
     match scheme_of(trimmed) {
@@ -46,10 +55,54 @@ pub fn resolve_markdown_link(
             .ok()?
             .to_file_path()
             .ok()
-            .map(MarkdownLinkTarget::LocalFile),
-        Some(_) => Some(MarkdownLinkTarget::External(trimmed.to_string())),
-        None => resolve_local_path(trimmed, base_dir).map(MarkdownLinkTarget::LocalFile),
+            .map(classify_file),
+        Some(scheme)
+            if TRUSTED_SCHEMES
+                .iter()
+                .any(|trusted| scheme.eq_ignore_ascii_case(trusted)) =>
+        {
+            Some(MarkdownLinkTarget::Web(trimmed.to_string()))
+        }
+        Some(_) => Some(MarkdownLinkTarget::OtherScheme(trimmed.to_string())),
+        None => resolve_local_path(trimmed, base_dir).map(classify_file),
     }
+}
+
+/// Classify a resolved filesystem path as local or on a network share.
+///
+/// ### Arguments
+/// - `path`: The resolved path of the link target.
+///
+/// ### Returns
+/// - `MarkdownLinkTarget::NetworkFile`: The path is a Windows UNC or device
+///   path.
+/// - `MarkdownLinkTarget::LocalFile`: Any other path.
+fn classify_file(path: PathBuf) -> MarkdownLinkTarget {
+    if is_network_path(&path) {
+        MarkdownLinkTarget::NetworkFile(path)
+    } else {
+        MarkdownLinkTarget::LocalFile(path)
+    }
+}
+
+/// Tell whether a path names a network share or a device namespace.
+///
+/// ### Arguments
+/// - `path`: The path to inspect.
+///
+/// ### Returns
+/// - `bool`: `true` for `\\server\share`, `\\?\UNC\server\share` and
+///   `\\.\device` paths. Always `false` outside Windows, where paths carry no
+///   prefix.
+fn is_network_path(path: &Path) -> bool {
+    matches!(
+        path.components().next(),
+        Some(Component::Prefix(prefix))
+            if matches!(
+                prefix.kind(),
+                Prefix::UNC(..) | Prefix::VerbatimUNC(..) | Prefix::DeviceNS(..)
+            )
+    )
 }
 
 /// Extract the URL scheme of a reference, if it carries one.
@@ -167,20 +220,18 @@ mod tests {
     }
 
     #[test]
-    fn classifies_http_links_as_external() {
+    fn classifies_http_links_as_web() {
         assert_eq!(
             resolve_markdown_link("https://example.com/a", Some(&base())),
-            Some(MarkdownLinkTarget::External(
-                "https://example.com/a".to_string()
-            ))
+            Some(MarkdownLinkTarget::Web("https://example.com/a".to_string()))
         );
     }
 
     #[test]
-    fn classifies_mailto_links_as_external() {
+    fn classifies_mailto_links_as_web() {
         assert_eq!(
             resolve_markdown_link("mailto:someone@example.com", None),
-            Some(MarkdownLinkTarget::External(
+            Some(MarkdownLinkTarget::Web(
                 "mailto:someone@example.com".to_string()
             ))
         );
@@ -190,9 +241,7 @@ mod tests {
     fn upgrades_protocol_relative_links_to_https() {
         assert_eq!(
             resolve_markdown_link("//example.com/a", None),
-            Some(MarkdownLinkTarget::External(
-                "https://example.com/a".to_string()
-            ))
+            Some(MarkdownLinkTarget::Web("https://example.com/a".to_string()))
         );
     }
 
@@ -220,7 +269,65 @@ mod tests {
         // path to the system browser on any platform.
         assert!(!matches!(
             resolve_markdown_link(r"C:\docs\other.md", None),
-            Some(MarkdownLinkTarget::External(_))
+            Some(MarkdownLinkTarget::Web(_) | MarkdownLinkTarget::OtherScheme(_))
         ));
+    }
+
+    #[test]
+    fn trusted_scheme_match_is_case_insensitive() {
+        assert_eq!(
+            resolve_markdown_link("HTTPS://example.com", None),
+            Some(MarkdownLinkTarget::Web("HTTPS://example.com".to_string()))
+        );
+    }
+
+    #[test]
+    fn classifies_protocol_handler_links_as_other_scheme() {
+        for reference in [
+            "ms-msdt:/id PCWDiagnostic",
+            "search-ms:query=x",
+            "smb://host/share/file.md",
+            "vscode://file/tmp/x",
+            "ftp://example.com/file",
+            "javascript:alert(1)",
+        ] {
+            assert_eq!(
+                resolve_markdown_link(reference, Some(&base())),
+                Some(MarkdownLinkTarget::OtherScheme(reference.to_string())),
+                "{reference}"
+            );
+        }
+    }
+
+    #[test]
+    fn local_paths_are_not_network_paths() {
+        assert!(!is_network_path(&base().join("other.md")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn classifies_unc_reference_as_network_file() {
+        assert!(matches!(
+            resolve_markdown_link(r"\\host\share\x.md", Some(&base())),
+            Some(MarkdownLinkTarget::NetworkFile(_))
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn classifies_file_url_with_host_as_network_file() {
+        assert!(matches!(
+            resolve_markdown_link("file://host/share/x.md", None),
+            Some(MarkdownLinkTarget::NetworkFile(_))
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn detects_windows_network_and_device_prefixes() {
+        assert!(is_network_path(Path::new(r"\\host\share\x.md")));
+        assert!(is_network_path(Path::new(r"\\?\UNC\host\share\x.md")));
+        assert!(is_network_path(Path::new(r"\\.\pipe\name")));
+        assert!(!is_network_path(Path::new(r"\\?\C:\docs\x.md")));
     }
 }
