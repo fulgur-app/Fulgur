@@ -141,9 +141,7 @@ impl Fulgur {
                     self.unwatch_file(&completion.path);
                     self.watch_file(&completion.path);
                 }
-                self.file_watch_state
-                    .last_file_saves
-                    .insert(completion.path.clone(), std::time::Instant::now());
+                self.record_local_file_save(&completion.path);
                 let byte_len = completion.byte_len;
                 self.update_editor_tab(completion.tab_id, cx, |editor_tab, cx| {
                     editor_tab.mark_snapshot_as_saved(

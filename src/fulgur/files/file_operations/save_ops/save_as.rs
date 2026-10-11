@@ -174,9 +174,7 @@ impl Fulgur {
                     if let Some(old_path) = old_path {
                         self.unwatch_file(&old_path);
                     }
-                    self.file_watch_state
-                        .last_file_saves
-                        .insert(path.to_path_buf(), std::time::Instant::now());
+                    self.record_local_file_save(path);
                     tab_entity.update(cx, |tab, cx| {
                         let Some(editor_tab) = tab.as_editor_mut() else {
                             return;

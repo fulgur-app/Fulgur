@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use anyhow::anyhow;
 use gpui_kit::component::{
     WindowExt, button::Button, button::ButtonVariant, button::ButtonVariants, h_flex,
@@ -312,9 +310,7 @@ impl Fulgur {
         };
         let byte_len = bytes.len();
         atomic_write_file(&path, &bytes)?;
-        self.file_watch_state
-            .last_file_saves
-            .insert(path.clone(), Instant::now());
+        self.record_local_file_save(&path);
         self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
             editor_tab.mark_as_saved(cx);
             editor_tab.update_file_tooltip_cache(byte_len);
