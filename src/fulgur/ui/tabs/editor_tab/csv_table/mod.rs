@@ -14,7 +14,7 @@ use gpui_kit::component::{
 use gpui_kit::{App, Context, Entity, SharedString, Window, px};
 
 use super::replace_editor_text;
-use crate::fulgur::files::csv_support::{CsvData, serialize_csv};
+use crate::fulgur::files::csv_support::{CsvData, CsvDialect, serialize_csv};
 
 /// Fixed width of the synthetic row-number column.
 const ROW_NUMBER_COLUMN_WIDTH: f32 = 52.0;
@@ -52,7 +52,7 @@ pub struct CsvTableDelegate {
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
     columns: Vec<Column>,
-    delimiter: u8,
+    dialect: CsvDialect,
     content: Entity<EditorState>,
     dialog_input: Entity<InputState>,
     /// The most recent selection event received via `attach_selection_tracking`.
@@ -68,7 +68,7 @@ impl CsvTableDelegate {
     ///
     /// ### Arguments
     /// - `data`: The parsed headers and rows
-    /// - `delimiter`: The delimiter to use when serializing back to text
+    /// - `dialect`: The source document's dialect, reused when serializing back to text
     /// - `content`: The canonical `EditorState` buffer to write edits back into
     /// - `dialog_input`: A reusable input entity for the edit dialog
     ///
@@ -76,7 +76,7 @@ impl CsvTableDelegate {
     /// - `CsvTableDelegate`: The constructed delegate
     pub fn new(
         data: CsvData,
-        delimiter: u8,
+        dialect: CsvDialect,
         content: Entity<EditorState>,
         dialog_input: Entity<InputState>,
     ) -> Self {
@@ -85,7 +85,7 @@ impl CsvTableDelegate {
             headers: data.headers,
             rows: data.rows,
             columns,
-            delimiter,
+            dialect,
             content,
             dialog_input,
             last_selection: None,
@@ -235,7 +235,7 @@ impl CsvTableDelegate {
     /// - `window`: The active window
     /// - `cx`: The table state context
     fn commit_to_buffer(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        let text = match serialize_csv(&self.headers, &self.rows, self.delimiter) {
+        let text = match serialize_csv(&self.headers, &self.rows, &self.dialect) {
             Ok(text) => text,
             Err(error) => {
                 log::error!("Refusing to commit CSV edit, serialization failed: {error}");

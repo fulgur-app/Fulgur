@@ -1,4 +1,4 @@
-use crate::fulgur::files::csv_support::{DEFAULT_DELIMITER, serialize_csv};
+use crate::fulgur::files::csv_support::{CsvDialect, serialize_csv};
 use crate::fulgur::ui::copy_button::CopyButton;
 use crate::fulgur::ui::tabs::markdown_preview_source::MarkdownPreviewSource;
 use crate::fulgur::ui::tabs::tab::TabId;
@@ -615,7 +615,7 @@ impl Fulgur {
 ///   view defaults to
 /// - `None`: The rows could not be serialized; the reason is logged
 fn markdown_table_as_csv(table: &TableData) -> Option<String> {
-    serialize_csv(&table.headers, &table.rows, DEFAULT_DELIMITER)
+    serialize_csv(&table.headers, &table.rows, &CsvDialect::default())
         .inspect_err(|error| log::warn!("Cannot offer the preview table as CSV: {error}"))
         .ok()
 }
