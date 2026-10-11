@@ -1,5 +1,6 @@
 use crate::fulgur::files::csv_support::{CsvDialect, serialize_csv};
 use crate::fulgur::ui::copy_button::CopyButton;
+use crate::fulgur::ui::dialogs::external_link::show_external_link_dialog;
 use crate::fulgur::ui::tabs::markdown_preview_source::MarkdownPreviewSource;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::utils::markdown_links::{MarkdownLinkTarget, resolve_markdown_link};
@@ -218,18 +219,41 @@ impl Fulgur {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `impl Fn(...)`: A handler that hands remote links to the system and
-    ///   opens local files in a tab of this window.
+    /// - `impl Fn(...)`: A handler that hands web links to the system, asks
+    ///   before opening any other scheme, refuses network shares, and opens
+    ///   local files in a tab of this window.
     fn markdown_link_handler(
         base_dir: Option<PathBuf>,
         cx: &Context<Self>,
     ) -> impl Fn(&SharedString, &ClickEvent, &mut Window, &mut App) + use<> {
         let view = cx.entity().downgrade();
-        move |target, _event, window, cx| {
+        move |target, event, window, cx| {
+            if !is_link_activation(event) {
+                return;
+            }
             match resolve_markdown_link(target, base_dir.as_deref()) {
-                Some(MarkdownLinkTarget::External(url)) => {
+                Some(MarkdownLinkTarget::Web(url)) => {
                     log::debug!("Opening markdown preview link {url} in the system handler");
                     cx.open_url(&url);
+                }
+                Some(MarkdownLinkTarget::OtherScheme(url)) => {
+                    show_external_link_dialog(url, window, cx);
+                }
+                Some(MarkdownLinkTarget::NetworkFile(path)) => {
+                    log::warn!(
+                        "Refusing markdown preview link to a network share: {}",
+                        path.display()
+                    );
+                    window.push_notification(
+                        (
+                            NotificationType::Warning,
+                            SharedString::from(format!(
+                                "Links to network shares are not opened from the preview: {}",
+                                path.display()
+                            )),
+                        ),
+                        cx,
+                    );
                 }
                 Some(MarkdownLinkTarget::LocalFile(path)) => {
                     if !path.is_file() {
@@ -620,9 +644,68 @@ fn markdown_table_as_csv(table: &TableData) -> Option<String> {
         .ok()
 }
 
+/// Tell whether a click on a preview link should activate it, mirroring the
+/// default handler of gpui-base's `TextView`.
+///
+/// ### Arguments
+/// - `event`: The click that hit the link
+///
+/// ### Returns
+/// - `bool`: `true` for a left or middle mouse click, a keyboard activation,
+///   or a touch tap. `false` for any other mouse button or a touch long press,
+///   which are secondary activations.
+fn is_link_activation(event: &ClickEvent) -> bool {
+    match event {
+        ClickEvent::Mouse(click) => {
+            matches!(click.up.button, MouseButton::Left | MouseButton::Middle)
+        }
+        ClickEvent::Keyboard(_) => true,
+        ClickEvent::Touch(tap) => !tap.long_press,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui_kit::{KeyboardClickEvent, MouseClickEvent, MouseUpEvent, TouchClickEvent};
+
+    fn mouse_click(button: MouseButton) -> ClickEvent {
+        ClickEvent::Mouse(MouseClickEvent {
+            up: MouseUpEvent {
+                button,
+                ..MouseUpEvent::default()
+            },
+            ..MouseClickEvent::default()
+        })
+    }
+
+    #[test]
+    fn left_and_middle_clicks_activate_links() {
+        assert!(is_link_activation(&mouse_click(MouseButton::Left)));
+        assert!(is_link_activation(&mouse_click(MouseButton::Middle)));
+    }
+
+    #[test]
+    fn right_click_does_not_activate_links() {
+        assert!(!is_link_activation(&mouse_click(MouseButton::Right)));
+    }
+
+    #[test]
+    fn keyboard_activation_opens_links() {
+        assert!(is_link_activation(&ClickEvent::Keyboard(
+            KeyboardClickEvent::default()
+        )));
+    }
+
+    #[test]
+    fn touch_tap_activates_but_long_press_does_not() {
+        let tap = TouchClickEvent::default();
+        assert!(is_link_activation(&ClickEvent::Touch(tap.clone())));
+        assert!(!is_link_activation(&ClickEvent::Touch(TouchClickEvent {
+            long_press: true,
+            ..tap
+        })));
+    }
 
     fn table(headers: &[&str], rows: &[&[&str]]) -> TableData {
         TableData {
