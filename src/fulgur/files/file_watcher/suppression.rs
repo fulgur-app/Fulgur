@@ -88,8 +88,8 @@ impl Fulgur {
 mod tests {
     use crate::fulgur::Fulgur;
     use crate::fulgur::editor_tab::TabLocation;
-    use crate::fulgur::files::file_watcher::FileWatchEvent;
     use crate::fulgur::files::file_watcher::test_helpers::setup_fulgur;
+    use crate::fulgur::files::file_watcher::{FileWatchEvent, FileWatcher};
     use gpui_kit::{Context, TestAppContext, Window};
     use std::path::Path;
     use std::time::Instant;
@@ -125,10 +125,9 @@ mod tests {
                     editor_tab.modified = false;
                 }
             });
-        if this.file_watch_state.file_watcher.is_none() {
-            this.start_file_watcher(cx);
-        }
-        this.watch_file(path);
+        let (mut watcher, _events) = FileWatcher::new();
+        watcher.track_without_os_watch(path);
+        this.file_watch_state.file_watcher = Some(watcher);
     }
 
     /// Read the first tab's buffer text.

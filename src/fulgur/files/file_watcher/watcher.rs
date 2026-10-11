@@ -282,6 +282,18 @@ impl FileWatcher {
         Ok(())
     }
 
+    /// Track a file's disk signature without registering it with the OS watcher,
+    /// so tests can exercise echo suppression without a live notify thread waking
+    /// tasks on gpui's deterministic test scheduler.
+    ///
+    /// ### Arguments
+    /// - `path`: The file whose current signature becomes the known state
+    #[cfg(all(test, feature = "gpui-test-support"))]
+    pub(super) fn track_without_os_watch(&mut self, path: &Path) {
+        self.watched_paths
+            .insert(path.to_path_buf(), DiskSignature::read(path));
+    }
+
     /// Record the current on-disk state of a watched file as known to the editor
     ///
     /// ### Arguments
