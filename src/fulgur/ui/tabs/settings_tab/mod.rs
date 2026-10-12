@@ -160,14 +160,6 @@ impl Fulgur {
         if let Err(e) = self.update_and_propagate_settings(cx) {
             log::error!("Failed to save settings: {e}");
         }
-        let menus = crate::fulgur::ui::menus::build_menus(
-            self.settings.recent_files.get_files(),
-            Fulgur::shared_state(cx)
-                .update_info
-                .lock()
-                .as_ref()
-                .map(|info| info.download_url.as_str()),
-        );
-        self.update_menus(menus, cx);
+        self.rebuild_menus(cx);
     }
 }

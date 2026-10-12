@@ -3,7 +3,6 @@ use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams},
     tab::Tab,
-    ui::menus,
 };
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use gpui_kit::{AsyncWindowContext, Context, SharedString, WeakEntity, Window};
@@ -179,14 +178,7 @@ impl Fulgur {
                     if let Err(e) = this.settings.add_file(path.to_path_buf()) {
                         log::error!("Failed to add file to recent files: {e}");
                     }
-                    let shared = Fulgur::shared_state(cx);
-                    let update_info = shared.update_info.lock().clone();
-                    let update_link = update_info.as_ref().map(|info| info.download_url.clone());
-                    let menus = menus::build_menus(
-                        &this.settings.get_recent_files(),
-                        update_link.as_deref(),
-                    );
-                    this.update_menus(menus, cx);
+                    this.rebuild_menus(cx);
                     let title = path.file_name().map(|file_name| {
                         SharedString::from(file_name.to_string_lossy().to_string())
                     });

@@ -4,7 +4,7 @@ mod render;
 pub mod system_menus;
 
 use crate::fulgur::Fulgur;
-use gpui_kit::{App, Global, WeakEntity, WindowId};
+use gpui_kit::{AnyWindowHandle, App, Entity, Global, WeakEntity, WindowId};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use system_menus::WindowMenuTab;
@@ -173,6 +173,32 @@ impl WindowManager {
     #[must_use]
     pub fn get_window(&self, window_id: WindowId) -> Option<WeakEntity<Fulgur>> {
         self.windows.get(&window_id).cloned()
+    }
+
+    /// Resolve the window that app-level work targets: the last focused window, or any open one
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some((AnyWindowHandle, Entity<Fulgur>))`: The target window and its Fulgur entity
+    /// - `None`: No Fulgur window is open
+    #[must_use]
+    pub fn target_window(cx: &App) -> Option<(AnyWindowHandle, Entity<Fulgur>)> {
+        let window_manager = cx.try_global::<Self>()?;
+        let (window_id, fulgur) = window_manager
+            .get_last_focused()
+            .into_iter()
+            .chain(window_manager.get_all_window_ids())
+            .find_map(|window_id| {
+                let fulgur = window_manager.get_window(window_id)?.upgrade()?;
+                Some((window_id, fulgur))
+            })?;
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)?;
+        Some((handle, fulgur))
     }
 
     /// Publish the menu-relevant tab snapshot for one window.
