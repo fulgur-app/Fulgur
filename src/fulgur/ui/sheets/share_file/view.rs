@@ -264,11 +264,8 @@ pub(super) fn render_footer(state: Arc<ShareSheetState>, entity: Entity<Fulgur>)
                 .small()
                 .cursor_pointer()
                 .on_click(move |_, window, cx| {
-                    state_for_cancel
-                        .active
-                        .store(false, std::sync::atomic::Ordering::Release);
                     entity_for_cancel.update(cx, |this, _| {
-                        this.share_sheet_state = None;
+                        this.release_share_sheet_state(&state_for_cancel);
                     });
                     window.close_sheet(cx);
                 }),

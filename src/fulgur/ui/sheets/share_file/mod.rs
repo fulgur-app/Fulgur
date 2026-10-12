@@ -115,6 +115,23 @@ impl Fulgur {
             .detach();
     }
 
+    /// Stop a share sheet's render pump and drop its state when it is still the open sheet.
+    ///
+    /// ### Arguments
+    /// - `state`: The state of the sheet being closed.
+    fn release_share_sheet_state(&mut self, state: &Arc<ShareSheetState>) {
+        state
+            .active
+            .store(false, std::sync::atomic::Ordering::Release);
+        if self
+            .share_sheet_state
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, state))
+        {
+            self.share_sheet_state = None;
+        }
+    }
+
     /// Drain pending SSE restart requests posted by share-sheet device fetches.
     ///
     /// ### Arguments
@@ -147,10 +164,17 @@ impl Fulgur {
             let max_height = px((viewport_height - sheet_overhead).into());
             let state_for_list = Arc::clone(&state);
             let state_for_footer = Arc::clone(&state);
+            let state_for_close = Arc::clone(&state);
+            let entity_for_close = entity.clone();
             sheet
                 .title("Share with...")
                 .size(px(400.))
                 .overlay(true)
+                .on_close(move |_, _, cx| {
+                    entity_for_close.update(cx, |this, _| {
+                        this.release_share_sheet_state(&state_for_close);
+                    });
+                })
                 .child(
                     v_flex()
                         .overflow_y_scrollbar()
@@ -262,6 +286,39 @@ mod tests {
             fulgur.update(cx, |this, cx| {
                 this.share_sheet_state = None;
                 this.process_pending_share_sheet(window, cx);
+            });
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_release_share_sheet_state_clears_the_open_sheet(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|_, cx| {
+            fulgur.update(cx, |this, _| {
+                let state = Arc::new(ShareSheetState::new(vec![ServerProfile::new("open")]));
+                this.share_sheet_state = Some(Arc::clone(&state));
+                this.release_share_sheet_state(&state);
+                assert!(this.share_sheet_state.is_none());
+                assert!(!state.active.load(std::sync::atomic::Ordering::Acquire));
+            });
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_release_share_sheet_state_keeps_a_newer_sheet(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        visual_cx.update(|_, cx| {
+            fulgur.update(cx, |this, _| {
+                let stale = Arc::new(ShareSheetState::new(vec![ServerProfile::new("stale")]));
+                let current = Arc::new(ShareSheetState::new(vec![ServerProfile::new("current")]));
+                this.share_sheet_state = Some(Arc::clone(&current));
+                this.release_share_sheet_state(&stale);
+                assert!(
+                    this.share_sheet_state
+                        .as_ref()
+                        .is_some_and(|open| Arc::ptr_eq(open, &current))
+                );
+                assert!(current.active.load(std::sync::atomic::Ordering::Acquire));
             });
         });
     }

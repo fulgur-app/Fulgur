@@ -211,12 +211,7 @@ pub(super) fn handle_share_file(
     let http_agent = entity.update(cx, |_, cx| Arc::clone(&Fulgur::shared_state(cx).http_agent));
     let notification_tx =
         entity.update(cx, |_, cx| Fulgur::shared_state(cx).notification_tx.clone());
-    state
-        .active
-        .store(false, std::sync::atomic::Ordering::Release);
-    entity.update(cx, |this, _| {
-        this.share_sheet_state = None;
-    });
+    entity.update(cx, |this, _| this.release_share_sheet_state(state));
     window.close_sheet(cx);
     let progress_label = format!("Sharing {}...", share_context.file_name);
     // No Cancel button: every per-device upload is dispatched in parallel via

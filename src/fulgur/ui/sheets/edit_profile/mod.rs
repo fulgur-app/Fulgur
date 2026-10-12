@@ -17,7 +17,9 @@ use gpui_kit::component::{
     v_flex,
 };
 use gpui_kit::{AppContext, Context, ParentElement, SharedString, Styled, Window, div, px};
-use handlers::{confirm_delete_profile, handle_cancel, handle_save, handle_test_connection};
+use handlers::{
+    confirm_delete_profile, handle_cancel, handle_dismiss, handle_save, handle_test_connection,
+};
 use parking_lot::Mutex;
 use render::render_form_body;
 use std::sync::Arc;
@@ -142,6 +144,7 @@ impl Fulgur {
             let state_for_begin = Arc::clone(&state);
             let state_for_delete = Arc::clone(&state);
             let state_for_cancel = Arc::clone(&state);
+            let state_for_close = Arc::clone(&state);
             let entity_save = entity.clone();
             let entity_begin = entity.clone();
             let entity_delete = entity.clone();
@@ -155,6 +158,7 @@ impl Fulgur {
                 .title(title.clone())
                 .size(px(440.))
                 .overlay(true)
+                .on_close(move |_, _, _| handle_dismiss(&state_for_close))
                 .child(
                     v_flex()
                         .gap_3()
