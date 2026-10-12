@@ -126,24 +126,8 @@ impl Fulgur {
         if !Self::has_pending_external_open_requests(cx) {
             return;
         }
-        let window_manager = cx.global::<window_manager::WindowManager>();
-        let target = window_manager
-            .get_last_focused()
-            .into_iter()
-            .chain(window_manager.get_all_window_ids())
-            .find_map(|window_id| {
-                let fulgur = window_manager.get_window(window_id)?.upgrade()?;
-                Some((window_id, fulgur))
-            });
-        let Some((window_id, fulgur)) = target else {
+        let Some((handle, fulgur)) = window_manager::WindowManager::target_window(cx) else {
             log::debug!("No window yet for external open requests, keeping them queued");
-            return;
-        };
-        let Some(handle) = cx
-            .windows()
-            .into_iter()
-            .find(|handle| handle.window_id() == window_id)
-        else {
             return;
         };
         if let Err(e) = handle.update(cx, |_, window, cx| {
@@ -154,7 +138,10 @@ impl Fulgur {
                 this.process_pending_ipc_commands(window, cx);
             });
         }) {
-            log::error!("Failed to deliver external open requests to window {window_id:?}: {e}");
+            log::error!(
+                "Failed to deliver external open requests to window {:?}: {e}",
+                handle.window_id()
+            );
         }
     }
 

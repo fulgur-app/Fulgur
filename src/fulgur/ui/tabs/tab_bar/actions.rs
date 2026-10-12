@@ -258,9 +258,7 @@ impl Fulgur {
             let _ = self.update_and_propagate_settings(cx);
         }
         cx.refresh_windows();
-        let menus =
-            crate::fulgur::ui::menus::build_menus(self.settings.recent_files.get_files(), None);
-        self.update_menus(menus, cx);
+        self.rebuild_menus(cx);
     }
 }
 

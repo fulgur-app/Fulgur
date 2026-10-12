@@ -2,7 +2,7 @@ use super::{
     RemoteFileResult, RemoteOpenResult, binary_file_notice, remote_types::RemoteReloadGuard,
 };
 use crate::fulgur::ui::tabs::tab::TabId;
-use crate::fulgur::{Fulgur, editor_tab, tab::Tab, ui::menus::build_menus};
+use crate::fulgur::{Fulgur, editor_tab, tab::Tab};
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use gpui_kit::{Context, Window};
 use std::path::PathBuf;
@@ -82,14 +82,7 @@ impl Fulgur {
                         if let Err(e) = self.settings.add_file(PathBuf::from(recent_remote_url)) {
                             log::error!("Failed to add remote file to recent files: {e}");
                         }
-                        let update_link = Fulgur::shared_state(cx)
-                            .update_info
-                            .lock()
-                            .as_ref()
-                            .map(|info| info.download_url.clone());
-                        let menus =
-                            build_menus(&self.settings.get_recent_files(), update_link.as_deref());
-                        self.update_menus(menus, cx);
+                        self.rebuild_menus(cx);
                         self.save_state_async(cx, window);
                         cx.notify();
                     }

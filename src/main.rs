@@ -319,6 +319,7 @@ fn main() {
         fulgur::Fulgur::register_app_quit_state_save(cx);
         fulgur::window_manager::system_menus::init(cx);
         fulgur::shared_state::spawn_notification_consumer(cx);
+        fulgur::Fulgur::spawn_startup_update_check(cx);
         if restore_bounds.is_empty() {
             log::info!("No saved state, creating initial window");
             cx.spawn(async move |cx| {
@@ -441,30 +442,6 @@ fn create_window(
     // Files can only open once the window's `Root` is mounted: a file that is already
     // open with unsaved changes prompts through a dialog, which the `Root` hosts.
     cx.update(fulgur::Fulgur::deliver_external_open_requests);
-
-    // Check for updates on first window only
-    if window_index == 0 {
-        let update_info = cx.update(|cx| {
-            cx.global::<fulgur::shared_state::SharedAppState>()
-                .update_info
-                .clone()
-        });
-        let current_version = env!("CARGO_PKG_VERSION").to_string();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(5));
-            log::info!("Checking for updates...");
-            match fulgur::utils::updater::check_for_updates(&current_version) {
-                Ok(Some(new_update_info)) => {
-                    *update_info.lock() = Some(new_update_info);
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    log::warn!("Failed to check for updates: {e}");
-                }
-            }
-        });
-    }
-
     Ok(())
 }
 

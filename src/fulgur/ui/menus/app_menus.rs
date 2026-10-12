@@ -14,12 +14,12 @@ use std::path::PathBuf;
 /// Build the menus for the Fulgur instance
 ///
 /// ### Arguments
-/// - `recent_files`: The list of recent files to display
-/// - `update_link`: The optional link to the update
+/// - `recent_files`: The list of recent files to display, most recent first
+/// - `update_available`: Whether an update check found a newer release
 ///
 /// ### Returns
 /// - `Vec<Menu>`: The menus for the Fulgur instance
-pub fn build_menus(recent_files: &[PathBuf], update_link: Option<&str>) -> Vec<Menu> {
+pub fn build_menus(recent_files: &[PathBuf], update_available: bool) -> Vec<Menu> {
     let recent_files_items = if recent_files.is_empty() {
         vec![MenuItem::action("No recent files", NoneAction)]
     } else {
@@ -37,7 +37,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<&str>) -> Vec<M
             disabled: false,
             items: vec![
                 MenuItem::action("About Fulgur", About),
-                if update_link.is_some() {
+                if update_available {
                     MenuItem::action("Update available", CheckForUpdates)
                 } else {
                     MenuItem::action("Check for updates", CheckForUpdates)
@@ -116,13 +116,17 @@ pub fn build_menus(recent_files: &[PathBuf], update_link: Option<&str>) -> Vec<M
 }
 
 impl Fulgur {
-    /// Set the application menus and sync them to the `AppMenuBar` on non-macOS platforms.
+    /// Rebuild the application menus from the recent files and the update state, and sync them
+    /// to the `AppMenuBar` on non-macOS platforms.
     ///
     /// ### Arguments
-    /// - `menus`: The menus to set
     /// - `cx`: The application context
-    pub fn update_menus(&mut self, menus: Vec<Menu>, cx: &mut Context<Self>) {
-        cx.set_menus(menus);
+    pub fn rebuild_menus(&mut self, cx: &mut Context<Self>) {
+        let update_available = Fulgur::shared_state(cx).available_update.is_some();
+        cx.set_menus(build_menus(
+            &self.settings.get_recent_files(),
+            update_available,
+        ));
         #[cfg(not(target_os = "macos"))]
         {
             if let Some(owned_menus) = cx.get_menus() {
@@ -144,7 +148,7 @@ mod tests {
     use gpui_kit::{Action, MenuItem};
 
     fn edit_menu_exposes(action: &dyn Action) -> bool {
-        build_menus(&[], None)
+        build_menus(&[], false)
             .iter()
             .filter(|menu| menu.name == "Edit")
             .flat_map(|menu| menu.items.iter())

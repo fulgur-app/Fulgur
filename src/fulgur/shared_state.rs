@@ -189,8 +189,8 @@ pub struct SharedAppState {
     pub sync_initialized: Arc<AtomicBool>,
     /// Synchronization initialization error (if key generation failed)
     pub sync_error: Arc<Mutex<Option<String>>>,
-    /// Update info if available
-    pub update_info: Arc<Mutex<Option<UpdateInfo>>>,
+    /// Newer release found by the last successful update check. Mutate via `cx.update_global` only.
+    pub available_update: Option<UpdateInfo>,
     /// Files to open from outside the app: macOS open events, command-line arguments
     /// and files forwarded by another instance.
     pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
@@ -271,7 +271,7 @@ impl SharedAppState {
             sync_states: Arc::new(RwLock::new(sync_states)),
             sync_initialized: Arc::new(AtomicBool::new(false)),
             sync_error: Arc::new(Mutex::new(sync_error)),
-            update_info: Arc::new(Mutex::new(None)),
+            available_update: None,
             pending_files_from_macos,
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             pending_ipc_commands: Arc::new(Mutex::new(Vec::new())),

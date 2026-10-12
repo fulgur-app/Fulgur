@@ -259,7 +259,7 @@ impl Fulgur {
         languages::language_configs::register_language_configs(cx);
         themes::init(settings, cx, move |cx| {
             cx.bind_keys(build_default_key_bindings());
-            let menus = build_menus(&recent_files, None);
+            let menus = build_menus(&recent_files, false);
             cx.set_menus(menus);
             #[cfg(not(target_os = "macos"))]
             if let Some(owned_menus) = cx.get_menus() {

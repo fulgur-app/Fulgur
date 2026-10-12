@@ -1,12 +1,10 @@
 use crate::fulgur::{
     Fulgur,
     tab::Tab,
-    ui::{
-        self, dialogs::about::about, notifications::update_notification::make_update_notification,
-    },
+    ui::{self, dialogs::about::about},
 };
 use crate::register_action;
-use gpui_kit::component::{ActiveTheme, StyledExt, WindowExt, v_flex};
+use gpui_kit::component::{ActiveTheme, StyledExt, v_flex};
 use gpui_kit::{
     Anchor, App, Context, ExternalPaths, FocusHandle, Focusable, InteractiveElement, IntoElement,
     ParentElement, Render, Styled, Window, div, px,
@@ -37,7 +35,6 @@ impl Render for Fulgur {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.process_pending_initial_active_tab_activation(window, cx);
         self.process_window_state_updates(window, cx);
-        Self::process_update_notifications(window, cx);
         self.process_shared_files_from_sync(window, cx);
         self.process_pending_remote_files(window, cx);
         self.process_pending_share_sheet(window, cx);
@@ -56,22 +53,6 @@ impl Render for Fulgur {
 }
 
 impl Fulgur {
-    /// Process update notifications from the background update checker
-    ///
-    /// ### Arguments
-    /// - `window`: The window to display the notification in
-    /// - `cx`: The application context
-    fn process_update_notifications(window: &mut Window, cx: &mut Context<Self>) {
-        let update_info = {
-            let shared = Fulgur::shared_state(cx);
-            shared.update_info.lock().take()
-        };
-        if let Some(update_info) = update_info {
-            let notification = make_update_notification(&update_info);
-            window.push_notification(notification, cx);
-        }
-    }
-
     /// Build the main application content with all action handlers
     ///
     /// ### Arguments
