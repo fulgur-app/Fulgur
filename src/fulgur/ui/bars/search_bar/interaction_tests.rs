@@ -531,3 +531,147 @@ fn test_option_toggles_and_next_button_keep_focus_in_the_search_input(cx: &mut T
         "typing after the clicks must never reach the document"
     );
 }
+
+/// Type `text` into the editor at byte offset `offset`, leaving focus in the editor.
+///
+/// ### Arguments
+/// - `editor`: The editor content to type into
+/// - `offset`: The byte offset the caret is placed at before typing
+/// - `text`: The text to type
+/// - `visual_cx`: The visual test context driving the window
+fn type_into_editor_at(
+    editor: &Entity<EditorState>,
+    offset: usize,
+    text: &str,
+    visual_cx: &mut VisualTestContext,
+) {
+    visual_cx.update(|window, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.set_selected_range(offset..offset, cx);
+        });
+        let editor_focus = editor.read(cx).focus_handle(cx);
+        window.focus(&editor_focus, cx);
+    });
+    visual_cx.run_until_parked();
+    type_into_focused(visual_cx, text);
+}
+
+/// Click the next-match button.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context driving the window
+fn click_next(visual_cx: &mut VisualTestContext) {
+    visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.click("search-next-button", cx);
+    });
+    visual_cx.run_until_parked();
+}
+
+/// Read the start offsets of every match the bar currently holds.
+///
+/// ### Arguments
+/// - `search_bar`: The search bar under test
+/// - `visual_cx`: The visual test context driving the window
+///
+/// ### Returns
+/// - `Vec<usize>`: The byte offset each match starts at
+fn match_starts(search_bar: &Entity<SearchBar>, visual_cx: &mut VisualTestContext) -> Vec<usize> {
+    visual_cx.update(|_window, cx| {
+        search_bar
+            .read(cx)
+            .search_matches
+            .iter()
+            .map(|search_match| search_match.start)
+            .collect()
+    })
+}
+
+/// Read the editor's caret offset.
+///
+/// ### Arguments
+/// - `editor`: The editor content under test
+/// - `visual_cx`: The visual test context driving the window
+///
+/// ### Returns
+/// - `usize`: The caret's byte offset
+fn editor_cursor(editor: &Entity<EditorState>, visual_cx: &mut VisualTestContext) -> usize {
+    visual_cx.update(|_window, cx| editor.read(cx).cursor())
+}
+
+#[gpui_kit::test]
+fn test_editing_the_buffer_rescans_the_matches_without_moving_the_caret(cx: &mut TestAppContext) {
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, "bar foo baz foo");
+    type_query(&mut visual_cx, "foo");
+    assert_eq!(match_starts(&search_bar, &mut visual_cx), vec![4, 12]);
+
+    type_into_editor_at(&editor, 0, "foo ", &mut visual_cx);
+    assert_eq!(
+        match_starts(&search_bar, &mut visual_cx),
+        vec![0, 8, 16],
+        "an edit must shift the existing matches and find the new one"
+    );
+    assert_eq!(
+        editor_cursor(&editor, &mut visual_cx),
+        4,
+        "rescanning after an edit must leave the caret where the user typed"
+    );
+    assert_eq!(
+        current_match(&search_bar, &mut visual_cx),
+        Some(1),
+        "the current match must be the first one after the caret"
+    );
+
+    click_next(&mut visual_cx);
+    assert_eq!(current_match(&search_bar, &mut visual_cx), Some(2));
+    assert_eq!(
+        editor_cursor(&editor, &mut visual_cx),
+        16,
+        "Next must land on the shifted match, not on a stale offset"
+    );
+}
+
+#[gpui_kit::test]
+fn test_large_buffer_edits_rescan_after_the_debounce(cx: &mut TestAppContext) {
+    let filler = "x\n".repeat(super::actions::MAX_IMMEDIATE_RESCAN_BYTES / 2 + 1);
+    let content = format!("bar\n{filler}foo");
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, &content);
+    type_query(&mut visual_cx, "foo");
+    assert_eq!(match_count(&search_bar, &mut visual_cx), 1);
+
+    type_into_editor_at(&editor, 0, "foo", &mut visual_cx);
+    assert_eq!(
+        match_count(&search_bar, &mut visual_cx),
+        1,
+        "a large buffer must not be rescanned on every keystroke"
+    );
+
+    visual_cx
+        .background_executor
+        .advance_clock(super::actions::EDIT_RESCAN_DEBOUNCE);
+    visual_cx.run_until_parked();
+    assert_eq!(
+        match_count(&search_bar, &mut visual_cx),
+        2,
+        "the rescan must run once the edits settle"
+    );
+}
+
+#[gpui_kit::test]
+fn test_stepping_flushes_a_pending_large_buffer_rescan(cx: &mut TestAppContext) {
+    let filler = "x\n".repeat(super::actions::MAX_IMMEDIATE_RESCAN_BYTES / 2 + 1);
+    let content = format!("bar\n{filler}foo");
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, &content);
+    type_query(&mut visual_cx, "foo");
+
+    type_into_editor_at(&editor, 0, "foo", &mut visual_cx);
+    click_next(&mut visual_cx);
+    let starts = match_starts(&search_bar, &mut visual_cx);
+    assert_eq!(
+        starts.len(),
+        2,
+        "stepping must rescan before moving instead of using stale matches"
+    );
+    let current = current_match(&search_bar, &mut visual_cx).expect("expected a current match");
+    assert_eq!(editor_cursor(&editor, &mut visual_cx), starts[current]);
+}

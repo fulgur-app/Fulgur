@@ -3,7 +3,8 @@ use super::actions::MatchStep;
 use crate::fulgur::Fulgur;
 use gpui_kit::component::input::{EditorState, InputEvent, InputState, TextDecorationCollection};
 use gpui_kit::{
-    App, AppContext, Context, Entity, EntityId, EventEmitter, Subscription, WeakEntity, Window,
+    App, AppContext, Context, Entity, EntityId, EventEmitter, Subscription, Task, WeakEntity,
+    Window,
 };
 use std::collections::HashMap;
 
@@ -29,13 +30,12 @@ pub(crate) struct SearchBar {
     pub(super) match_whole_word: bool,
     pub(super) search_matches: Vec<SearchMatch>,
     pub(super) current_match_index: Option<usize>,
-    pub(super) last_search_query: String,
-    pub(super) last_search_match_case: bool,
-    pub(super) last_search_match_whole_word: bool,
     pub(super) search_text_scratch: String,
     pub(super) search_lowercase_text_scratch: String,
     pub(super) search_lowercase_offsets_scratch: Vec<usize>,
     pub(super) match_decorations: HashMap<EntityId, MatchDecorations>,
+    pub(super) editor_subscription: Option<Subscription>,
+    pub(super) pending_rescan: Option<Task<()>>,
     _search_input_subscription: Subscription,
 }
 
@@ -96,13 +96,12 @@ impl SearchBar {
             match_whole_word: false,
             search_matches: Vec::new(),
             current_match_index: None,
-            last_search_query: String::new(),
-            last_search_match_case: false,
-            last_search_match_whole_word: false,
             search_text_scratch: String::new(),
             search_lowercase_text_scratch: String::new(),
             search_lowercase_offsets_scratch: Vec::new(),
             match_decorations: HashMap::new(),
+            editor_subscription: None,
+            pending_rescan: None,
             _search_input_subscription: search_input_subscription,
         }
     }
