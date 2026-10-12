@@ -1,3 +1,4 @@
+use super::actions::MatchStep;
 use super::{SearchBar, search_bar_button_factory, search_bar_toggle_button_factory};
 use crate::fulgur::ui::{
     components_utils::{CORNERS_SIZE, LINE_HEIGHT, SEARCH_BAR_HEIGHT, TEXT_SIZE},
@@ -162,7 +163,7 @@ impl SearchBar {
                 )
                 .on_click(cx.listener(|this, _, _window, cx| {
                     let content = this.active_editor_content(cx);
-                    this.search_previous(content, cx);
+                    this.step_match(MatchStep::Previous, content, cx);
                 })),
             )
             .child(
@@ -174,7 +175,7 @@ impl SearchBar {
                 )
                 .on_click(cx.listener(|this, _, _window, cx| {
                     let content = this.active_editor_content(cx);
-                    this.search_next(content, cx);
+                    this.step_match(MatchStep::Next, content, cx);
                 })),
             )
     }
