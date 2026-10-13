@@ -351,14 +351,16 @@ mod tests {
 
     use crate::fulgur::{
         Fulgur,
-        editor_tab::TabLocation,
+        editor_tab::{EditorTab, TabLocation},
+        languages::supported_languages::SupportedLanguage,
         shared_state::SharedAppState,
         state::persistence::{
             SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState,
             WindowsState,
         },
-        sync::share::ShareOrigin,
-        ui::components_utils::UNTITLED,
+        sync::{share::ShareOrigin, ssh::url::RemoteSpec},
+        tab::Tab,
+        ui::{components_utils::UNTITLED, tabs::color_tag::ColorTag},
     };
     use gpui_kit::{Entity, TestAppContext, VisualTestContext};
     use time::macros::datetime;
@@ -375,6 +377,36 @@ mod tests {
         location: TabLocation,
         persist_unsaved_buffers: bool,
     ) -> Vec<TabState> {
+        configured_tab_states(
+            fulgur,
+            cx,
+            location,
+            persist_unsaved_buffers,
+            "dirty content",
+            |_| {},
+        )
+    }
+
+    /// Give the first tab a location, buffer text and extra editor state, then snapshot the window.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The application entity whose first tab is configured
+    /// - `cx`: The visual test context containing the application window
+    /// - `location`: The location assigned to the first tab
+    /// - `persist_unsaved_buffers`: The value of the unsaved buffer persistence setting
+    /// - `text`: The buffer text written into the first tab
+    /// - `configure`: Extra changes applied to the first editor tab before the snapshot
+    ///
+    /// ### Returns
+    /// - `Vec<TabState>`: The persisted tabs of the window snapshot
+    fn configured_tab_states(
+        fulgur: &Entity<Fulgur>,
+        cx: &mut VisualTestContext,
+        location: TabLocation,
+        persist_unsaved_buffers: bool,
+        text: &str,
+        configure: impl FnOnce(&mut EditorTab),
+    ) -> Vec<TabState> {
         cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.settings.app_settings.persist_unsaved_buffers = persist_unsaved_buffers;
@@ -387,14 +419,29 @@ mod tests {
                     if let Some(editor_tab) = tab.as_editor_mut() {
                         editor_tab.location = location;
                         editor_tab.content.update(cx, |content, cx| {
-                            content.set_value("dirty content", window, cx);
+                            content.set_value(text, window, cx);
                         });
+                        configure(editor_tab);
                     }
                 });
             });
         });
         fulgur.read_with(cx, |this, cx| {
             this.build_window_state_without_bounds(cx).tabs
+        })
+    }
+
+    /// Build the remote location used by the remote tab snapshot tests.
+    ///
+    /// ### Returns
+    /// - `TabLocation`: A remote file on `example.com` opened as `alice`
+    fn sample_remote_location() -> TabLocation {
+        TabLocation::Remote(RemoteSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: Some("alice".to_string()),
+            path: "/srv/remote.txt".to_string(),
+            password_in_url: None,
         })
     }
 
@@ -840,6 +887,183 @@ mod tests {
         let tabs = tab_states_with(&fulgur, &mut visual_cx, TabLocation::Untitled, true);
         assert_eq!(tabs.len(), 1);
         assert!(tabs[0].content.is_some());
+    }
+
+    #[gpui_kit::test]
+    fn large_dirty_file_tab_persists_path_only(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = configured_tab_states(
+            &fulgur,
+            &mut visual_cx,
+            TabLocation::Local("/tmp/huge.log".into()),
+            true,
+            "dirty content",
+            |editor_tab| editor_tab.large_file = true,
+        );
+        assert_eq!(tabs.len(), 1, "the large file must still be reopened");
+        assert!(
+            tabs[0].content.is_none(),
+            "edits to a large file must not be embedded in the state database"
+        );
+        assert!(tabs[0].file_path.is_some());
+        assert!(tabs[0].last_saved.is_none());
+    }
+
+    #[gpui_kit::test]
+    fn large_untitled_tab_is_dropped(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = configured_tab_states(
+            &fulgur,
+            &mut visual_cx,
+            TabLocation::Untitled,
+            true,
+            "dirty content",
+            |editor_tab| editor_tab.large_file = true,
+        );
+        assert!(
+            tabs.is_empty(),
+            "a large untitled buffer has no path to reopen, so it must be dropped"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn large_shared_tab_is_dropped(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = configured_tab_states(
+            &fulgur,
+            &mut visual_cx,
+            TabLocation::Shared(sample_share_origin()),
+            true,
+            "dirty content",
+            |editor_tab| editor_tab.large_file = true,
+        );
+        assert!(
+            tabs.is_empty(),
+            "a large shared buffer has no path to reopen, so it must be dropped"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn empty_untitled_tab_is_skipped(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = configured_tab_states(
+            &fulgur,
+            &mut visual_cx,
+            TabLocation::Untitled,
+            true,
+            "",
+            |editor_tab| assert!(editor_tab.title.starts_with(UNTITLED)),
+        );
+        assert!(
+            tabs.is_empty(),
+            "an empty tab that still has its default title carries nothing to restore"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn empty_renamed_untitled_tab_is_persisted(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = configured_tab_states(
+            &fulgur,
+            &mut visual_cx,
+            TabLocation::Untitled,
+            true,
+            "",
+            |editor_tab| editor_tab.title = "Scratch".into(),
+        );
+        assert_eq!(tabs.len(), 1, "a renamed tab must survive even when empty");
+        assert_eq!(tabs[0].title, "Scratch");
+    }
+
+    #[gpui_kit::test]
+    fn dirty_remote_tab_persists_content_when_setting_is_enabled(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = tab_states_with(&fulgur, &mut visual_cx, sample_remote_location(), true);
+        assert_eq!(tabs.len(), 1);
+        assert_recovery_content(&tabs[0], "dirty content");
+        assert!(tabs[0].file_path.is_none());
+        assert_eq!(
+            tabs[0].remote.as_ref().map(|remote| remote.path.as_str()),
+            Some("/srv/remote.txt")
+        );
+    }
+
+    #[gpui_kit::test]
+    fn dirty_remote_tab_persists_location_only_when_setting_is_disabled(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = tab_states_with(&fulgur, &mut visual_cx, sample_remote_location(), false);
+        assert_eq!(
+            tabs.len(),
+            1,
+            "the remote tab itself must still be restored"
+        );
+        assert!(
+            tabs[0].content.is_none(),
+            "unsaved remote content must not be persisted when the setting is disabled"
+        );
+        assert!(tabs[0].remote.is_some());
+    }
+
+    #[gpui_kit::test]
+    fn snapshot_carries_color_tag_and_log_view(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = configured_tab_states(
+            &fulgur,
+            &mut visual_cx,
+            TabLocation::Local("/tmp/server.log".into()),
+            true,
+            "dirty content",
+            |editor_tab| {
+                editor_tab.color_tag = Some(ColorTag::Red);
+                editor_tab.log_view = true;
+            },
+        );
+        assert_eq!(tabs.len(), 1);
+        assert_eq!(tabs[0].color_tag.as_deref(), Some(ColorTag::Red.key()));
+        assert!(tabs[0].log_view);
+    }
+
+    #[gpui_kit::test]
+    fn active_index_maps_preview_tab_to_its_source(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let snapshot = visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.settings.app_settings.persist_unsaved_buffers = true;
+                this.update_active_editor_tab(cx, |editor_tab, _| {
+                    editor_tab.language = SupportedLanguage::Markdown;
+                });
+                let active_tab = this
+                    .active_tab_entity(cx)
+                    .expect("expected an active editor tab");
+                active_tab.update(cx, |tab, cx| {
+                    tab.as_editor_mut()
+                        .expect("expected an editor tab")
+                        .content
+                        .update(cx, |content, cx| {
+                            content.set_value("# notes", window, cx);
+                        });
+                });
+                this.open_markdown_preview_tab(window, cx);
+                assert!(matches!(this.active_tab(cx), Some(Tab::MarkdownPreview(_))));
+                this.build_window_state_without_bounds(cx)
+            })
+        });
+        assert_eq!(snapshot.tabs.len(), 1, "preview tabs must not be persisted");
+        assert_eq!(snapshot.active_tab_index, Some(0));
+    }
+
+    #[gpui_kit::test]
+    fn active_index_is_none_when_settings_tab_is_active(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        tab_states_with(&fulgur, &mut visual_cx, TabLocation::Untitled, true);
+        let snapshot = visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.open_settings(window, cx);
+                this.build_window_state_without_bounds(cx)
+            })
+        });
+        assert_eq!(snapshot.tabs.len(), 1);
+        assert_eq!(snapshot.active_tab_index, None);
     }
 
     #[gpui_kit::test]
