@@ -1,8 +1,9 @@
+use super::auth_session::AuthSession;
 use super::errors::{auth_request_error, is_authentication_rejection};
 use super::methods::AllowedMethods;
 use crate::fulgur::sync::ssh::auth::{ChallengeAnswer, CredentialPrompter};
 use crate::fulgur::sync::ssh::error::SshError;
-use ssh2::{KeyboardInteractivePrompt, Prompt, Session};
+use ssh2::{KeyboardInteractivePrompt, Prompt};
 use zeroize::Zeroizing;
 
 /// Answers keyboard-interactive prompts: the user's password goes to the first hidden
@@ -65,8 +66,8 @@ impl KeyboardInteractivePrompt for KeyboardInteractiveResponder<'_> {
 /// - `Ok(true)`: The password authenticated the session.
 /// - `Ok(false)`: The server rejected the login.
 /// - `Err(SshError)`: The user cancelled or the request failed for another reason.
-pub(super) fn try_password(
-    session: &Session,
+pub(super) fn try_password<S: AuthSession>(
+    session: &S,
     user: &str,
     password: &Zeroizing<String>,
     methods: AllowedMethods,
@@ -100,8 +101,8 @@ pub(super) fn try_password(
 /// - `Ok(true)`: The session is authenticated.
 /// - `Ok(false)`: The server rejected the credentials.
 /// - `Err(SshError)`: The request failed for another reason.
-fn auth_request_outcome(
-    session: &Session,
+fn auth_request_outcome<S: AuthSession>(
+    session: &S,
     result: Result<(), ssh2::Error>,
 ) -> Result<bool, SshError> {
     match result {

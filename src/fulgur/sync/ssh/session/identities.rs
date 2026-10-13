@@ -1,4 +1,3 @@
-use super::paths::home_dir;
 use super::ssh_config::SshHostConfig;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
@@ -15,19 +14,17 @@ const DEFAULT_IDENTITY_FILES: &[&str] = &["id_ed25519", "id_ecdsa", "id_rsa"];
 /// - `host_config`: Settings from `~/.ssh/config` for the host.
 /// - `alias`: Host as typed in the remote URL.
 /// - `user`: Remote username, substituted for `%r` in `IdentityFile` values.
+/// - `home`: Home directory holding `~/.ssh`.
 ///
 /// ### Returns
-/// - `Vec<PathBuf>`: Existing key files without duplicates; empty when the home directory
-///   cannot be resolved.
+/// - `Vec<PathBuf>`: Existing key files without duplicates.
 pub(super) fn identity_files_for_host(
     host_config: &SshHostConfig,
     alias: &str,
     user: &str,
+    home: &Path,
 ) -> Vec<PathBuf> {
-    let Ok(home) = home_dir() else {
-        return Vec::new();
-    };
-    let mut candidates = host_config.identity_files(alias, user, &home);
+    let mut candidates = host_config.identity_files(alias, user, home);
     if candidates.is_empty() {
         let ssh_dir = home.join(".ssh");
         candidates.extend(DEFAULT_IDENTITY_FILES.iter().map(|name| ssh_dir.join(name)));
@@ -121,7 +118,8 @@ fn key_text_is_encrypted(contents: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{expand_tilde, key_text_is_encrypted, public_key_blob};
+    use super::{expand_tilde, identity_files_for_host, key_text_is_encrypted, public_key_blob};
+    use crate::fulgur::sync::ssh::session::ssh_config::SshHostConfig;
     use std::path::{Path, PathBuf};
 
     const ENCRYPTED_OPENSSH_KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
@@ -149,6 +147,44 @@ Iikg22nEzznF2gsIKHpnAAAADWZpeHR1cmUtcGxhaW4=
         } else {
             PathBuf::from("/home/alice")
         }
+    }
+
+    fn home_with_keys(keys: &[&str]) -> tempfile::TempDir {
+        let home = tempfile::tempdir().expect("failed to create temp dir");
+        let ssh_dir = home.path().join(".ssh");
+        std::fs::create_dir(&ssh_dir).expect("failed to create .ssh");
+        for key in keys {
+            std::fs::write(ssh_dir.join(key), "fixture key").expect("failed to write key");
+        }
+        home
+    }
+
+    #[test]
+    fn identity_files_for_host_falls_back_to_existing_default_keys_in_openssh_order() {
+        let home = home_with_keys(&["id_rsa", "id_ed25519"]);
+        let ssh_dir = home.path().join(".ssh");
+
+        let files =
+            identity_files_for_host(&SshHostConfig::default(), "server", "alice", home.path());
+
+        assert_eq!(
+            files,
+            vec![ssh_dir.join("id_ed25519"), ssh_dir.join("id_rsa")]
+        );
+    }
+
+    #[test]
+    fn identity_files_for_host_skips_defaults_when_configured_and_deduplicates() {
+        let home = home_with_keys(&["id_work", "id_ed25519"]);
+        let host_config = SshHostConfig::parse(
+            "Host server\n  IdentityFile ~/.ssh/id_work\n  IdentityFile ~/.ssh/id_missing\n\
+             IdentityFile %d/.ssh/id_work\n",
+            "server",
+        );
+
+        let files = identity_files_for_host(&host_config, "server", "alice", home.path());
+
+        assert_eq!(files, vec![home.path().join(".ssh").join("id_work")]);
     }
 
     #[test]

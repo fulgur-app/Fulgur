@@ -1,3 +1,4 @@
+mod auth_session;
 mod errors;
 mod methods;
 mod password;
@@ -7,11 +8,12 @@ use super::identities::{identity_files_for_host, public_key_blob};
 use super::ssh_config::SshHostConfig;
 use crate::fulgur::sync::ssh::auth::{CredentialPrompter, LoginAnswer, SshAuth};
 use crate::fulgur::sync::ssh::error::SshError;
+use auth_session::AuthSession;
 use errors::{auth_request_error, is_transport_error};
 use methods::AllowedMethods;
 use password::try_password;
 use public_key::{KeyAttempt, KeyOutcome, authenticate_with_key_file, try_agent, try_key_file};
-use ssh2::Session;
+use std::path::Path;
 
 /// Number of times a passphrase or login prompt is repeated after a failed attempt.
 const MAX_PROMPT_ATTEMPTS: usize = 3;
@@ -27,6 +29,7 @@ const MAX_PROMPT_ATTEMPTS: usize = 3;
 /// - `alias`: Host as typed in the remote URL.
 /// - `host_config`: Settings from `~/.ssh/config` for the host.
 /// - `user`: Remote username.
+/// - `home`: Home directory holding `~/.ssh`; `None` skips key files.
 /// - `preferred`: Credentials that authenticated this target before, tried first.
 /// - `prompter`: Source of passphrases, passwords, and key files typed by the user.
 ///
@@ -38,11 +41,12 @@ const MAX_PROMPT_ATTEMPTS: usize = 3;
 /// ### Returns
 /// - `Ok(SshAuth)`: The credentials that authenticated the session.
 /// - `Err(SshError)`: Authentication did not succeed.
-pub(super) fn authenticate(
-    session: &Session,
+pub(super) fn authenticate<S: AuthSession>(
+    session: &S,
     alias: &str,
     host_config: &SshHostConfig,
     user: &str,
+    home: Option<&Path>,
     preferred: Option<&SshAuth>,
     prompter: &mut dyn CredentialPrompter,
 ) -> Result<SshAuth, SshError> {
@@ -65,7 +69,9 @@ pub(super) fn authenticate(
     }
 
     if methods.publickey {
-        let identity_files = identity_files_for_host(host_config, alias, user);
+        let identity_files = home
+            .map(|home| identity_files_for_host(host_config, alias, user, home))
+            .unwrap_or_default();
         let agent_filter = host_config.identities_only.then(|| {
             identity_files
                 .iter()
@@ -107,8 +113,8 @@ pub(super) fn authenticate(
 /// - `Ok(true)`: The cached credentials authenticated the session.
 /// - `Ok(false)`: They were rejected, or they are `Automatic` and left to discovery.
 /// - `Err(SshError)`: The user cancelled or the connection failed.
-fn try_preferred(
-    session: &Session,
+fn try_preferred<S: AuthSession>(
+    session: &S,
     user: &str,
     auth: &SshAuth,
     methods: AllowedMethods,
@@ -152,8 +158,8 @@ fn try_preferred(
 /// ### Returns
 /// - `Ok(SshAuth)`: The credentials that authenticated the session.
 /// - `Err(SshError)`: Authentication did not succeed.
-fn authenticate_with_login_prompt(
-    session: &Session,
+fn authenticate_with_login_prompt<S: AuthSession>(
+    session: &S,
     user: &str,
     methods: AllowedMethods,
     prompter: &mut dyn CredentialPrompter,
@@ -192,3 +198,8 @@ fn authenticate_with_login_prompt(
     }
     Err(SshError::AuthFailed)
 }
+
+#[cfg(test)]
+mod fake_session;
+#[cfg(test)]
+mod tests;

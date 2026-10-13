@@ -1,9 +1,9 @@
 use super::MAX_PROMPT_ATTEMPTS;
+use super::auth_session::{AgentConnection, AgentIdentity, AuthSession};
 use super::errors::{auth_request_error, is_authentication_rejection, is_transport_error};
 use crate::fulgur::sync::ssh::auth::{CredentialPrompter, PassphraseAnswer, SshAuth};
 use crate::fulgur::sync::ssh::error::SshError;
 use crate::fulgur::sync::ssh::session::identities::private_key_is_encrypted;
-use ssh2::Session;
 use std::path::{Path, PathBuf};
 
 /// Outcome of a single public-key authentication request.
@@ -40,22 +40,18 @@ pub(super) enum KeyOutcome {
 /// - `Ok(true)`: An agent identity authenticated the session.
 /// - `Ok(false)`: No agent is running, it holds no identities, or all were rejected.
 /// - `Err(SshError)`: The connection failed.
-pub(super) fn try_agent(
-    session: &Session,
+pub(super) fn try_agent<S: AuthSession>(
+    session: &S,
     user: &str,
     allowed_blobs: Option<&[Vec<u8>]>,
 ) -> Result<bool, SshError> {
-    let mut agent = match session.agent() {
+    let mut agent = match session.connect_agent() {
         Ok(agent) => agent,
         Err(error) => {
             log::debug!("ssh-agent unavailable: {error}");
             return Ok(false);
         }
     };
-    if let Err(error) = agent.connect().and_then(|()| agent.list_identities()) {
-        log::debug!("ssh-agent unavailable: {error}");
-        return Ok(false);
-    }
     let identities = agent.identities().unwrap_or_default();
     let offered = identities.iter().filter(|identity| {
         allowed_blobs.is_none_or(|blobs| blobs.iter().any(|blob| blob == identity.blob()))
@@ -104,8 +100,8 @@ pub(super) fn try_agent(
 /// - `Ok(KeyOutcome::Unusable)`: The key could not be loaded, or no correct passphrase was given.
 /// - `Ok(KeyOutcome::Skipped)`: The user chose not to unlock this key.
 /// - `Err(SshError)`: The user cancelled or the connection failed.
-pub(super) fn authenticate_with_key_file(
-    session: &Session,
+pub(super) fn authenticate_with_key_file<S: AuthSession>(
+    session: &S,
     user: &str,
     path: &Path,
     prompter: &mut dyn CredentialPrompter,
@@ -159,8 +155,8 @@ pub(super) fn authenticate_with_key_file(
 /// ### Returns
 /// - `Ok(KeyAttempt)`: How the server or the local key loading responded.
 /// - `Err(SshError)`: The connection failed.
-pub(super) fn try_key_file(
-    session: &Session,
+pub(super) fn try_key_file<S: AuthSession>(
+    session: &S,
     user: &str,
     private_key: &Path,
     passphrase: Option<&str>,
