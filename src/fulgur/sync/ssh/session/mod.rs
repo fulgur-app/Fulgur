@@ -126,11 +126,13 @@ pub fn connect(
 
     check_host_key(&session, &host, port, host_key_cb)?;
 
+    let home = home_dir().ok();
     let auth = authenticate(
         &session,
         &spec.host,
         &host_config,
         user,
+        home.as_deref(),
         preferred_auth,
         prompter,
     )?;

@@ -52,7 +52,7 @@ impl SshHostConfig {
     ///
     /// ### Returns
     /// - `SshHostConfig`: Settings in effect for the alias.
-    fn parse(config: &str, alias: &str) -> Self {
+    pub(super) fn parse(config: &str, alias: &str) -> Self {
         let alias_candidates = [alias.to_string()];
         let mut block_applies = true;
         let mut host_config = Self::default();
