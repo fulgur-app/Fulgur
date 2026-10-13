@@ -1,6 +1,7 @@
 use super::form_state::{
-    DeviceKeyEdit, ProfileFormState, apply_device_key_edit, build_profile_from_form, optional_text,
-    read_device_key_edit, rollback_device_key, snapshot_device_key_for_rollback,
+    DeviceKeyEdit, ProfileFormState, apply_device_key_edit, build_profile_from_form,
+    discard_device_key_rollback, optional_text, read_device_key_edit, rollback_device_key,
+    snapshot_device_key_for_rollback,
 };
 use super::validation::{should_warn_for_http_url, validate_form, validate_url};
 use crate::fulgur::Fulgur;
@@ -161,6 +162,7 @@ fn handle_save_internal(
     });
     match result {
         Ok(true) => {
+            discard_device_key_rollback(state);
             // Clear the cached JWT so the next call uses the latest key/email.
             cx.global::<crate::fulgur::shared_state::SharedAppState>()
                 .sync_state_for(&profile_id)
@@ -254,13 +256,21 @@ pub(super) fn handle_cancel(
     window: &mut Window,
     cx: &mut App,
 ) {
+    handle_dismiss(state);
+    window.close_sheet(cx);
+}
+
+/// Undo any Test-connection keychain write when the sheet is dismissed without saving.
+///
+/// ### Arguments
+/// - `state`: The shared form state.
+pub(super) fn handle_dismiss(state: &ProfileFormState) {
     if let Err(e) = rollback_device_key(state) {
         log::warn!(
             "Failed to roll back device key for profile '{}': {e}",
             state.profile_id
         );
     }
-    window.close_sheet(cx);
 }
 
 /// Open a confirmation dialog before deleting a profile.
@@ -310,6 +320,7 @@ pub(super) fn confirm_delete_profile(
                 let outcome = entity_ok.update(cx, |this, cx| this.delete_profile(&profile_id, cx));
                 match outcome {
                     Ok(_) => {
+                        discard_device_key_rollback(&state_ok);
                         window.close_sheet(cx);
                     }
                     Err(e) => {

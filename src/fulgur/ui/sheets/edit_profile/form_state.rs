@@ -149,7 +149,8 @@ pub(super) fn snapshot_device_key_for_rollback(state: &ProfileFormState) {
     }
 }
 
-/// Restore the keychain device key to its pre-test snapshot.
+/// Restore the keychain device key to its pre-test snapshot, then clear the snapshot so a
+/// second dismissal path cannot replay it.
 ///
 /// ### Arguments
 /// - `state`: The shared form state holding the rollback slot.
@@ -161,11 +162,21 @@ pub(super) fn snapshot_device_key_for_rollback(state: &ProfileFormState) {
 /// - `Ok(())`: Either nothing needed rolling back, or the previous key was restored.
 /// - `Err(anyhow::Error)`: The keychain restore write failed.
 pub(super) fn rollback_device_key(state: &ProfileFormState) -> anyhow::Result<()> {
-    let rollback = state.device_key_rollback.lock();
+    let mut rollback = state.device_key_rollback.lock();
     if let KeyRollback::Written(previous) = &*rollback {
         save_device_api_key_to_keychain(&state.profile_id, previous.as_deref())?;
     }
+    *rollback = KeyRollback::NoWrite;
     Ok(())
+}
+
+/// Drop the pre-test snapshot once the keychain state has been committed (Save) or
+/// removed (Delete), so a later sheet dismissal leaves the keychain untouched.
+///
+/// ### Arguments
+/// - `state`: The shared form state holding the rollback slot.
+pub(super) fn discard_device_key_rollback(state: &ProfileFormState) {
+    *state.device_key_rollback.lock() = KeyRollback::NoWrite;
 }
 
 #[cfg(test)]
@@ -192,7 +203,11 @@ mod tests {
 mod gpui_tests {
     use super::{
         DEVICE_KEY_PLACEHOLDER, DeviceKeyEdit, KeyRollback, ProfileFormState,
-        build_profile_from_form, read_device_key_edit,
+        apply_device_key_edit, build_profile_from_form, discard_device_key_rollback,
+        read_device_key_edit, rollback_device_key, snapshot_device_key_for_rollback,
+    };
+    use crate::fulgur::utils::crypto_helper::{
+        load_device_api_key_from_keychain, save_device_api_key_to_keychain,
     };
     use gpui_kit::component::input::InputState;
     use gpui_kit::{App, AppContext, TestAppContext, Window, WindowOptions};
@@ -339,6 +354,106 @@ mod gpui_tests {
             })
             .expect("failed to open test window");
         });
+    }
+
+    /// Seed the keychain, simulate a Test-connection write, then run `finish` and return
+    /// what the keychain holds afterwards.
+    fn device_key_after_test_write(
+        profile_id: &str,
+        initial: Option<&str>,
+        is_new: bool,
+        finish: impl FnOnce(&ProfileFormState),
+        cx: &mut TestAppContext,
+    ) -> Option<String> {
+        let profile_id = profile_id.to_string();
+        let initial = initial.map(str::to_string);
+        let result = Arc::new(Mutex::new(None));
+        let result_out = Arc::clone(&result);
+        cx.update(gpui_kit::init);
+        cx.update(|cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
+                save_device_api_key_to_keychain(&profile_id, initial.as_deref())
+                    .expect("seed keychain");
+                let state = make_form_state(
+                    &profile_id,
+                    is_new,
+                    "n",
+                    "",
+                    "",
+                    "typed-key",
+                    true,
+                    false,
+                    window,
+                    cx,
+                );
+                snapshot_device_key_for_rollback(&state);
+                apply_device_key_edit(&profile_id, &read_device_key_edit(&state, cx))
+                    .expect("test-connection write");
+                finish(&state);
+                *result_out.lock() =
+                    load_device_api_key_from_keychain(&profile_id).expect("read keychain");
+                save_device_api_key_to_keychain(&profile_id, None).expect("clean keychain");
+                cx.new(|_| EmptyView)
+            })
+            .expect("failed to open test window");
+        });
+        result.lock().take()
+    }
+
+    #[gpui_kit::test]
+    fn rollback_restores_the_previous_key_of_an_existing_profile(cx: &mut TestAppContext) {
+        let stored = device_key_after_test_write(
+            "rollback-existing",
+            Some("original-key"),
+            false,
+            |state| rollback_device_key(state).expect("rollback"),
+            cx,
+        );
+        assert_eq!(stored.as_deref(), Some("original-key"));
+    }
+
+    #[gpui_kit::test]
+    fn rollback_removes_the_orphan_key_of_a_new_profile(cx: &mut TestAppContext) {
+        let stored = device_key_after_test_write(
+            "rollback-new",
+            None,
+            true,
+            |state| rollback_device_key(state).expect("rollback"),
+            cx,
+        );
+        assert_eq!(stored, None);
+    }
+
+    #[gpui_kit::test]
+    fn rollback_runs_once_across_dismissal_paths(cx: &mut TestAppContext) {
+        let stored = device_key_after_test_write(
+            "rollback-once",
+            Some("original-key"),
+            false,
+            |state| {
+                rollback_device_key(state).expect("first rollback");
+                save_device_api_key_to_keychain(&state.profile_id, Some("later-key"))
+                    .expect("later write");
+                rollback_device_key(state).expect("second rollback");
+            },
+            cx,
+        );
+        assert_eq!(stored.as_deref(), Some("later-key"));
+    }
+
+    #[gpui_kit::test]
+    fn discarded_rollback_keeps_the_committed_key(cx: &mut TestAppContext) {
+        let stored = device_key_after_test_write(
+            "rollback-discarded",
+            Some("original-key"),
+            false,
+            |state| {
+                discard_device_key_rollback(state);
+                rollback_device_key(state).expect("rollback");
+            },
+            cx,
+        );
+        assert_eq!(stored.as_deref(), Some("typed-key"));
     }
 
     struct EmptyView;
