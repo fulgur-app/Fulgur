@@ -114,15 +114,68 @@ mod tests {
     use std::path::PathBuf;
 
     #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::Fulgur;
+    #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::files::file_operations::test_helpers::{
         setup_fulgur, setup_fulgur_with_root, temp_test_path,
     };
     #[cfg(feature = "gpui-test-support")]
-    use gpui_kit::TestAppContext;
-    #[cfg(feature = "gpui-test-support")]
     use gpui_kit::component::input::InputEvent;
     #[cfg(feature = "gpui-test-support")]
+    use gpui_kit::{Entity, TestAppContext, VisualTestContext};
+    #[cfg(feature = "gpui-test-support")]
+    use std::path::Path;
+    #[cfg(feature = "gpui-test-support")]
     use tempfile::TempDir;
+
+    /// Open a local path through `do_open_file` and wait for the background read to land.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The window's Fulgur entity
+    /// - `visual_cx`: The window's visual test context
+    /// - `path`: The path to open
+    #[cfg(feature = "gpui-test-support")]
+    fn open_and_settle(fulgur: &Entity<Fulgur>, visual_cx: &mut VisualTestContext, path: &Path) {
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.do_open_file(window, cx, path.to_path_buf());
+            });
+        });
+        visual_cx.run_until_parked();
+    }
+
+    /// Snapshot the tab list as `(tab count, whether every tab is still untitled)`.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The window's Fulgur entity
+    /// - `visual_cx`: The window's visual test context
+    ///
+    /// ### Returns
+    /// - `(usize, bool)`: The tab count, and `true` when no editor tab points at a file
+    #[cfg(feature = "gpui-test-support")]
+    fn tab_snapshot(fulgur: &Entity<Fulgur>, visual_cx: &VisualTestContext) -> (usize, bool) {
+        fulgur.read_with(visual_cx, |this, cx| {
+            let all_untitled = this.tabs.iter().all(|tab| {
+                tab.read(cx)
+                    .as_editor()
+                    .is_none_or(|editor| editor.location.is_untitled())
+            });
+            (this.tabs.len(), all_untitled)
+        })
+    }
+
+    /// Count the notifications currently shown in the window.
+    ///
+    /// ### Arguments
+    /// - `visual_cx`: The visual test context of a window mounted in a `Root`
+    ///
+    /// ### Returns
+    /// - `usize`: The number of displayed notifications
+    #[cfg(feature = "gpui-test-support")]
+    fn notification_count(visual_cx: &mut VisualTestContext) -> usize {
+        use gpui_kit::component::WindowExt;
+        visual_cx.update(|window, cx| window.notifications(cx).len())
+    }
 
     // ========== do_open_file tests ==========
 
@@ -378,6 +431,92 @@ mod tests {
             "the earlier blank scratch tab must remain blank"
         );
         assert!(last_has_path, "the opened file must land in the last tab");
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_do_open_file_refuses_binary_file_with_a_notice(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("image.dat");
+        std::fs::write(&path, b"PNG\0\x01\x02binary").expect("failed to write binary file");
+
+        let tabs_before = tab_snapshot(&fulgur, &visual_cx);
+        let notifications_before = notification_count(&mut visual_cx);
+        open_and_settle(&fulgur, &mut visual_cx, &path);
+
+        assert_eq!(
+            tab_snapshot(&fulgur, &visual_cx),
+            tabs_before,
+            "a binary file must neither add a tab nor replace the scratch tab"
+        );
+        assert_eq!(
+            notification_count(&mut visual_cx),
+            notifications_before + 1,
+            "refusing a binary file must push the binary notice"
+        );
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_do_open_file_creates_no_tab_when_read_fails(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("does_not_exist.txt");
+
+        let tabs_before = tab_snapshot(&fulgur, &visual_cx);
+        open_and_settle(&fulgur, &mut visual_cx, &path);
+
+        assert_eq!(
+            tab_snapshot(&fulgur, &visual_cx),
+            tabs_before,
+            "an unreadable path must neither add a tab nor replace the scratch tab"
+        );
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_do_open_file_opens_log_file_in_log_view(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("app.log");
+        std::fs::write(&path, "INFO started\nWARN slow\n").expect("failed to write log file");
+
+        open_and_settle(&fulgur, &mut visual_cx, &path);
+
+        let log_view = fulgur.read_with(&visual_cx, |this, cx| {
+            this.get_active_editor_tab(cx)
+                .expect("expected an active editor tab")
+                .log_view
+        });
+        assert!(log_view, "a .log file must open directly in log view");
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_do_open_file_adds_canonical_path_to_recent_files(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("recent.txt");
+        std::fs::write(&path, "hello").expect("failed to write file");
+        let canonical_path = std::fs::canonicalize(&path).expect("failed to canonicalize path");
+
+        open_and_settle(&fulgur, &mut visual_cx, &path);
+
+        let (recent_files, log_view) = fulgur.read_with(&visual_cx, |this, cx| {
+            (
+                this.settings.get_recent_files(),
+                this.get_active_editor_tab(cx)
+                    .expect("expected an active editor tab")
+                    .log_view,
+            )
+        });
+        assert_eq!(
+            recent_files.first(),
+            Some(&canonical_path),
+            "a successful open must put the canonical path first in recent files"
+        );
+        assert!(!log_view, "a plain text file must not open in log view");
     }
 
     #[cfg(feature = "gpui-test-support")]
