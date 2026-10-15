@@ -142,3 +142,127 @@ mod tests {
         assert!(validate_email("a@b.c").is_ok());
     }
 }
+
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod gpui_tests {
+    use super::validate_form;
+    use crate::fulgur::settings::ServerProfile;
+    use crate::fulgur::ui::sheets::edit_profile::form_state::{
+        DEVICE_KEY_PLACEHOLDER, gpui_tests::make_form_state,
+    };
+    use crate::test_support::{open_inert_window, setup_test_globals_with};
+    use gpui_kit::TestAppContext;
+
+    const EXISTING_PROFILE_ID: &str = "validate-existing";
+    const NEW_PROFILE_ID: &str = "validate-new";
+
+    /// One form submission and the validation outcome it must produce.
+    struct Case {
+        profile_id: &'static str,
+        name: &'static str,
+        url: &'static str,
+        email: &'static str,
+        expected: Result<(), &'static str>,
+    }
+
+    /// Describe a submission made from the form of `profile_id`.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The id of the profile the form edits.
+    /// - `name`: The server name typed in the form.
+    /// - `url`: The server URL typed in the form.
+    /// - `email`: The email address typed in the form.
+    /// - `expected`: `Ok(())` or the user-facing error message `validate_form` must return.
+    ///
+    /// ### Returns
+    /// - `Case`: The table row.
+    const fn case(
+        profile_id: &'static str,
+        name: &'static str,
+        url: &'static str,
+        email: &'static str,
+        expected: Result<(), &'static str>,
+    ) -> Case {
+        Case {
+            profile_id,
+            name,
+            url,
+            email,
+            expected,
+        }
+    }
+
+    #[gpui_kit::test]
+    fn validate_form_reports_the_first_failing_field(cx: &mut TestAppContext) {
+        setup_test_globals_with(cx, |settings| {
+            let mut existing = ServerProfile::new("Existing Server");
+            existing.id = EXISTING_PROFILE_ID.to_string();
+            settings
+                .app_settings
+                .synchronization_settings
+                .profiles
+                .push(existing);
+        });
+        let (fulgur, mut visual_cx) = open_inert_window(cx);
+        let empty_name = Err("Server name cannot be empty.");
+        let cases = [
+            case(NEW_PROFILE_ID, "", "", "", empty_name),
+            case(NEW_PROFILE_ID, "   ", "", "", empty_name),
+            case(
+                NEW_PROFILE_ID,
+                " existing server ",
+                "",
+                "",
+                Err("Another server already uses this name."),
+            ),
+            case(EXISTING_PROFILE_ID, "Existing Server", "", "", Ok(())),
+            case(
+                NEW_PROFILE_ID,
+                "Other",
+                "not-a-url",
+                "",
+                Err("Server URL is not a valid URL."),
+            ),
+            case(
+                NEW_PROFILE_ID,
+                "Other",
+                "https://example.com",
+                "invalid",
+                Err("Email address is not valid."),
+            ),
+            case(
+                NEW_PROFILE_ID,
+                "Other",
+                "https://example.com",
+                "user@example.com",
+                Ok(()),
+            ),
+            case(NEW_PROFILE_ID, "Other", "  ", "  ", Ok(())),
+        ];
+        visual_cx.update(|window, cx| {
+            for case in cases {
+                let state = make_form_state(
+                    case.profile_id,
+                    case.profile_id == NEW_PROFILE_ID,
+                    case.name,
+                    case.url,
+                    case.email,
+                    DEVICE_KEY_PLACEHOLDER,
+                    false,
+                    false,
+                    window,
+                    cx,
+                );
+                let outcome = validate_form(&state, &fulgur, cx);
+                assert_eq!(
+                    outcome.map_err(|message| message.to_string()),
+                    case.expected.map_err(str::to_string),
+                    "name {:?}, url {:?}, email {:?}",
+                    case.name,
+                    case.url,
+                    case.email
+                );
+            }
+        });
+    }
+}
