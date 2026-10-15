@@ -96,6 +96,29 @@ pub fn ensure_profile_keypair(profile: &mut ServerProfile) -> anyhow::Result<boo
 /// - `Err(anyhow::Error)`: If keychain access or key generation failed for
 ///   any profile (the operation stops at the first failure).
 pub fn check_private_public_keys(settings: &mut Settings) -> anyhow::Result<()> {
+    check_private_public_keys_with(settings, Settings::save)
+}
+
+/// Ensure each active profile has a keypair, persisting settings through `save`
+/// only when at least one profile's public key changed.
+///
+/// ### Arguments
+/// - `settings`: The application settings; active profiles missing a public
+///   key are mutated to carry one.
+/// - `save`: Persists the updated settings, called at most once.
+///
+/// ### Errors
+/// - Returns an error if keychain access or key generation fails for any active
+///   profile, or if `save` fails.
+///
+/// ### Returns
+/// - `Ok(())`: All active profiles have valid keys.
+/// - `Err(anyhow::Error)`: Key handling failed for a profile (the operation
+///   stops at the first failure), or persisting the settings failed.
+fn check_private_public_keys_with(
+    settings: &mut Settings,
+    save: impl FnOnce(&Settings) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
     if !settings
         .app_settings
         .synchronization_settings
@@ -128,7 +151,7 @@ pub fn check_private_public_keys(settings: &mut Settings) -> anyhow::Result<()> 
     }
     if settings_changed {
         log::debug!("Saving updated settings after key generation");
-        settings.save()?;
+        save(settings)?;
     }
     Ok(())
 }
@@ -218,10 +241,139 @@ mod tests {
         save_private_key_to_keychain,
     };
     use super::{
-        decrypt_bytes, encrypt_bytes, ensure_profile_keypair, generate_key_pair,
-        is_valid_public_key, serialize,
+        check_private_public_keys_with, decrypt_bytes, encrypt_bytes, ensure_profile_keypair,
+        generate_key_pair, is_valid_public_key, serialize,
     };
-    use crate::fulgur::settings::ServerProfile;
+    use crate::fulgur::settings::{ServerProfile, Settings};
+    use std::cell::Cell;
+
+    /// Build settings holding the given profiles, with the synchronization master switch set.
+    ///
+    /// ### Arguments
+    /// - `sync_activated`: The value of the synchronization master switch.
+    /// - `profiles`: The server profiles to store.
+    ///
+    /// ### Returns
+    /// - `Settings`: Default settings carrying the profiles and master switch.
+    fn settings_with_profiles(sync_activated: bool, profiles: Vec<ServerProfile>) -> Settings {
+        let mut settings = Settings::new();
+        let sync = &mut settings.app_settings.synchronization_settings;
+        sync.is_synchronization_activated = sync_activated;
+        sync.profiles = profiles;
+        settings
+    }
+
+    /// Build a profile with the given activation flag.
+    ///
+    /// ### Arguments
+    /// - `name`: The profile name.
+    /// - `is_active`: Whether the profile takes part in synchronization.
+    ///
+    /// ### Returns
+    /// - `ServerProfile`: A fresh profile without a public key.
+    fn profile(name: &str, is_active: bool) -> ServerProfile {
+        let mut profile = ServerProfile::new(name);
+        profile.is_active = is_active;
+        profile
+    }
+
+    /// Remove the keychain entry of every profile in `settings`.
+    ///
+    /// ### Arguments
+    /// - `settings`: The settings whose profiles' private keys are removed.
+    fn remove_profile_keys(settings: &Settings) {
+        for profile in &settings.app_settings.synchronization_settings.profiles {
+            let _ = save_or_remove_to_keychain(&private_key_user(&profile.id), None);
+        }
+    }
+
+    #[test]
+    fn test_check_keys_is_noop_when_synchronization_is_off() {
+        let mut settings = settings_with_profiles(false, vec![profile("Active", true)]);
+        let saves = Cell::new(0);
+        check_private_public_keys_with(&mut settings, |_| {
+            saves.set(saves.get() + 1);
+            Ok(())
+        })
+        .expect("an inactive master switch must not fail");
+
+        let active = &settings.app_settings.synchronization_settings.profiles[0];
+        assert!(active.public_key.is_none(), "no key may be generated");
+        assert!(
+            load_private_key_from_keychain(&active.id)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(saves.get(), 0, "settings must not be saved");
+    }
+
+    #[test]
+    fn test_check_keys_only_touches_active_profiles_and_saves_once() {
+        let mut settings = settings_with_profiles(
+            true,
+            vec![
+                profile("Active", true),
+                profile("Inactive", false),
+                profile("Also-Active", true),
+            ],
+        );
+        let saves = Cell::new(0);
+        check_private_public_keys_with(&mut settings, |saved| {
+            saves.set(saves.get() + 1);
+            assert!(
+                saved.app_settings.synchronization_settings.profiles[0]
+                    .public_key
+                    .is_some(),
+                "the saved settings must carry the generated public key"
+            );
+            Ok(())
+        })
+        .expect("key generation should succeed with the in-memory keychain");
+
+        let profiles = &settings.app_settings.synchronization_settings.profiles;
+        assert!(profiles[0].public_key.is_some());
+        assert!(profiles[2].public_key.is_some());
+        assert!(
+            profiles[1].public_key.is_none(),
+            "an inactive profile must not gain a public key"
+        );
+        assert!(
+            load_private_key_from_keychain(&profiles[1].id)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(saves.get(), 1, "settings must be saved exactly once");
+        remove_profile_keys(&settings);
+    }
+
+    #[test]
+    fn test_check_keys_does_not_save_when_keys_already_present() {
+        let mut existing = profile("Existing", true);
+        let (private_key, public_key) = generate_key_pair();
+        save_private_key_to_keychain(&existing.id, Some(&serialize(&private_key))).unwrap();
+        existing.public_key = Some(public_key.to_string());
+        let mut settings = settings_with_profiles(true, vec![existing]);
+        let saves = Cell::new(0);
+        check_private_public_keys_with(&mut settings, |_| {
+            saves.set(saves.get() + 1);
+            Ok(())
+        })
+        .expect("an existing keypair must validate");
+
+        assert_eq!(saves.get(), 0, "unchanged settings must not be saved");
+        remove_profile_keys(&settings);
+    }
+
+    #[test]
+    fn test_check_keys_propagates_save_failure() {
+        let mut settings = settings_with_profiles(true, vec![profile("Unsaved", true)]);
+        let result =
+            check_private_public_keys_with(&mut settings, |_| Err(anyhow::anyhow!("disk full")));
+
+        let error = result.expect_err("a failed save must be reported");
+        assert!(error.to_string().contains("disk full"));
+        remove_profile_keys(&settings);
+    }
 
     #[test]
     fn test_encrypt_decrypt_bytes() {
