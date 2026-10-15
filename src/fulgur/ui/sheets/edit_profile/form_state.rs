@@ -200,7 +200,7 @@ mod tests {
 }
 
 #[cfg(all(test, feature = "gpui-test-support"))]
-mod gpui_tests {
+pub(super) mod gpui_tests {
     use super::{
         DEVICE_KEY_PLACEHOLDER, DeviceKeyEdit, KeyRollback, ProfileFormState,
         apply_device_key_edit, build_profile_from_form, discard_device_key_rollback,
@@ -216,8 +216,23 @@ mod gpui_tests {
 
     /// Build a `ProfileFormState` whose inputs carry the given values, mirroring how the
     /// Add/Edit sheet seeds them, so the form-state assembly can be exercised in isolation.
+    ///
+    /// ### Arguments
+    /// - `profile_id`: The id of the profile the form edits.
+    /// - `is_new`: Whether the form creates a new profile.
+    /// - `name`: The initial server name.
+    /// - `url`: The initial server URL.
+    /// - `email`: The initial email address.
+    /// - `device_key`: The initial device key field value.
+    /// - `is_active`: The initial activation flag.
+    /// - `is_deduplication`: The initial deduplication flag.
+    /// - `window`: The window owning the input entities.
+    /// - `cx`: The application context.
+    ///
+    /// ### Returns
+    /// - `ProfileFormState`: A form state with no pending keychain rollback.
     #[allow(clippy::too_many_arguments)]
-    fn make_form_state(
+    pub(in crate::fulgur::ui::sheets::edit_profile) fn make_form_state(
         profile_id: &str,
         is_new: bool,
         name: &str,
@@ -439,6 +454,21 @@ mod gpui_tests {
             cx,
         );
         assert_eq!(stored.as_deref(), Some("later-key"));
+    }
+
+    #[gpui_kit::test]
+    fn snapshot_keeps_the_first_key_across_repeated_tests(cx: &mut TestAppContext) {
+        let stored = device_key_after_test_write(
+            "rollback-snapshot-once",
+            Some("original-key"),
+            false,
+            |state| {
+                snapshot_device_key_for_rollback(state);
+                rollback_device_key(state).expect("rollback");
+            },
+            cx,
+        );
+        assert_eq!(stored.as_deref(), Some("original-key"));
     }
 
     #[gpui_kit::test]
