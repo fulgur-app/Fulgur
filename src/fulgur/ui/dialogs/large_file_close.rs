@@ -342,3 +342,104 @@ impl Fulgur {
             .unwrap_or_else(|| "file".to_string())
     }
 }
+
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod tests {
+    use crate::fulgur::{
+        Fulgur,
+        editor_tab::{TabLocation, replace_editor_text},
+        tab::TabId,
+    };
+    use crate::test_support::setup_fulgur;
+    use gpui_kit::{Entity, TestAppContext, VisualTestContext};
+    use std::path::Path;
+    use tempfile::TempDir;
+
+    /// "café" as stored in windows-1252, where the accented letter is the single byte 0xE9.
+    const LEGACY_BYTES: &[u8] = b"caf\xE9";
+
+    /// Point the window's tab at a windows-1252 file on disk and type `text` into it.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The window state owning the tab
+    /// - `visual_cx`: The visual test context of the window
+    /// - `path`: The legacy-encoded file the tab is backed by
+    /// - `text`: The edited buffer content
+    /// - `lossy_decode`: Whether the file is flagged as decoded with replacement characters
+    ///
+    /// ### Returns
+    /// - `TabId`: The id of the prepared tab
+    fn open_legacy_tab(
+        fulgur: &Entity<Fulgur>,
+        visual_cx: &mut VisualTestContext,
+        path: &Path,
+        text: &str,
+        lossy_decode: bool,
+    ) -> TabId {
+        std::fs::write(path, LEGACY_BYTES).expect("failed to write legacy file");
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let tab = this.tabs.last().expect("expected a tab").clone();
+                tab.update(cx, |tab, cx| {
+                    let editor_tab = tab.as_editor_mut().expect("expected an editor tab");
+                    editor_tab.location = TabLocation::Local(path.to_path_buf());
+                    editor_tab.encoding = "windows-1252".to_string();
+                    editor_tab.lossy_decode = lossy_decode;
+                    editor_tab.content.update(cx, |state, cx| {
+                        replace_editor_text(state, text, window, cx);
+                    });
+                });
+                tab.read(cx).id()
+            })
+        })
+    }
+
+    /// Run the blocking close-time save and check it refused without touching the tab or file.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The window state owning the tab
+    /// - `visual_cx`: The visual test context of the window
+    /// - `tab_id`: The tab to save
+    /// - `path`: The tab's backing file
+    fn assert_blocking_save_refused(
+        fulgur: &Entity<Fulgur>,
+        visual_cx: &mut VisualTestContext,
+        tab_id: TabId,
+        path: &Path,
+    ) {
+        visual_cx.update(|_, cx| {
+            fulgur.update(cx, |this, cx| {
+                assert!(this.save_local_tab_blocking(tab_id, cx).is_err());
+                let tab = this.tab_entity_of(tab_id, cx).expect("tab should exist");
+                assert!(
+                    tab.read(cx).as_editor().expect("editor tab").modified,
+                    "a refused save must keep the edits dirty"
+                );
+            });
+        });
+        assert_eq!(
+            std::fs::read(path).expect("file should exist"),
+            LEGACY_BYTES
+        );
+    }
+
+    #[gpui_kit::test]
+    fn test_blocking_save_refuses_unmappable_content(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("large.txt");
+        let tab_id = open_legacy_tab(&fulgur, &mut visual_cx, &path, "café ☃", false);
+
+        assert_blocking_save_refused(&fulgur, &mut visual_cx, tab_id, &path);
+    }
+
+    #[gpui_kit::test]
+    fn test_blocking_save_refuses_lossy_decoded_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("large.txt");
+        let tab_id = open_legacy_tab(&fulgur, &mut visual_cx, &path, "café", true);
+
+        assert_blocking_save_refused(&fulgur, &mut visual_cx, tab_id, &path);
+    }
+}
