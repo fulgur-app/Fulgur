@@ -258,7 +258,7 @@ impl SharedAppState {
         restore_state: Option<WindowsState>,
         state_db: Option<crate::fulgur::state::StateDb>,
     ) -> Self {
-        let (settings, sync_error) = Self::validate_settings(settings);
+        let (settings, sync_error) = Self::validate_settings(settings, check_private_public_keys);
         let themes = Self::load_themes();
         let synchronization_status = Self::determine_initial_sync_status(&settings);
         let (notification_tx, notification_rx) = unbounded();
@@ -320,17 +320,22 @@ impl SharedAppState {
     ///
     /// ### Arguments
     /// - `settings`: Application settings to validate
+    /// - `check_keys`: Ensures the active profiles have keypairs, called only
+    ///   when synchronization is activated
     ///
     /// ### Returns
     /// - `(Settings, Option<String>)`: The validated settings and an optional error message
     ///   if key validation failed
-    fn validate_settings(mut settings: Settings) -> (Settings, Option<String>) {
+    fn validate_settings(
+        mut settings: Settings,
+        check_keys: impl FnOnce(&mut Settings) -> anyhow::Result<()>,
+    ) -> (Settings, Option<String>) {
         let sync_error = if settings
             .app_settings
             .synchronization_settings
             .is_synchronization_activated
         {
-            match check_private_public_keys(&mut settings) {
+            match check_keys(&mut settings) {
                 Ok(()) => None,
                 Err(e) => {
                     let error_msg = format!(
@@ -620,6 +625,71 @@ mod tests {
             delivery,
             NotificationDelivery::InApp,
             "a notification the user just triggered is already on screen"
+        );
+    }
+
+    /// Build settings whose synchronization master switch has the given value.
+    ///
+    /// ### Arguments
+    /// - `sync_activated`: The value of the synchronization master switch.
+    ///
+    /// ### Returns
+    /// - `Settings`: Default settings with the master switch set.
+    fn settings_with_sync(sync_activated: bool) -> Settings {
+        let mut settings = Settings::new();
+        settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated = sync_activated;
+        settings
+    }
+
+    #[test]
+    fn test_validate_settings_skips_key_check_when_sync_is_off() {
+        let (settings, sync_error) =
+            SharedAppState::validate_settings(settings_with_sync(false), |_| {
+                panic!("the key check must not run while synchronization is off")
+            });
+        assert!(sync_error.is_none());
+        assert!(
+            !settings
+                .app_settings
+                .synchronization_settings
+                .is_synchronization_activated
+        );
+    }
+
+    #[test]
+    fn test_validate_settings_keeps_sync_on_when_keys_are_valid() {
+        let (settings, sync_error) =
+            SharedAppState::validate_settings(settings_with_sync(true), |_| Ok(()));
+        assert!(sync_error.is_none());
+        assert!(
+            settings
+                .app_settings
+                .synchronization_settings
+                .is_synchronization_activated
+        );
+    }
+
+    #[test]
+    fn test_validate_settings_disables_sync_and_reports_key_failure() {
+        let (settings, sync_error) =
+            SharedAppState::validate_settings(settings_with_sync(true), |_| {
+                Err(anyhow::anyhow!("keychain locked"))
+            });
+        let message = sync_error.expect("a key failure must produce a user-facing message");
+        assert!(message.contains("Synchronization has been disabled"));
+        assert!(
+            message.contains("keychain locked"),
+            "the message must carry the underlying error"
+        );
+        assert!(
+            !settings
+                .app_settings
+                .synchronization_settings
+                .is_synchronization_activated,
+            "a key failure must switch synchronization off"
         );
     }
 
