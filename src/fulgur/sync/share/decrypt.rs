@@ -406,7 +406,122 @@ impl DecryptionOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fulgur::sync::synchronization::SynchronizationStatus;
+    use futures::channel::mpsc::unbounded;
     use time::macros::datetime;
+
+    fn make_sync_state() -> SyncState {
+        let (notification_tx, _notification_rx) = unbounded();
+        SyncState::new(SynchronizationStatus::Connected, notification_tx)
+    }
+
+    fn make_share(id: &str) -> SharedFileResponse {
+        SharedFileResponse {
+            id: id.to_string(),
+            source_device_id: "device".to_string(),
+            file_name: format!("{id}.txt"),
+            file_size: 0,
+            content: String::new(),
+            created_at: String::new(),
+            expires_at: String::new(),
+            source_device_name: None,
+        }
+    }
+
+    fn set_retry(sync_state: &SyncState, id: &str, attempts: u32, next_retry_at: Instant) {
+        sync_state.share_retry_state.lock().insert(
+            id.to_string(),
+            ShareRetryState {
+                attempts,
+                next_retry_at,
+            },
+        );
+    }
+
+    #[test]
+    fn test_backoff_delay_treats_zero_attempts_as_the_base_delay() {
+        assert_eq!(backoff_delay(0), DECRYPT_RETRY_BASE_DELAY);
+    }
+
+    #[test]
+    fn test_backoff_delay_doubles_per_attempt() {
+        assert_eq!(backoff_delay(1), DECRYPT_RETRY_BASE_DELAY);
+        assert_eq!(backoff_delay(2), DECRYPT_RETRY_BASE_DELAY * 2);
+        assert_eq!(backoff_delay(3), DECRYPT_RETRY_BASE_DELAY * 4);
+    }
+
+    #[test]
+    fn test_backoff_delay_caps_the_exponent_without_overflowing() {
+        let capped = DECRYPT_RETRY_BASE_DELAY * (1 << 16);
+        assert_eq!(backoff_delay(17), capped);
+        assert_eq!(backoff_delay(64), capped);
+        assert_eq!(backoff_delay(u32::MAX), capped);
+    }
+
+    #[test]
+    fn test_any_share_due_is_false_for_an_empty_queue() {
+        let sync_state = make_sync_state();
+        assert!(!any_share_due(&sync_state, Instant::now()));
+    }
+
+    #[test]
+    fn test_any_share_due_is_true_for_a_share_without_retry_state() {
+        let sync_state = make_sync_state();
+        sync_state.pending_shared_files.lock().push(make_share("a"));
+        assert!(any_share_due(&sync_state, Instant::now()));
+    }
+
+    #[test]
+    fn test_any_share_due_is_false_while_every_share_is_backed_off() {
+        let sync_state = make_sync_state();
+        let now = Instant::now();
+        sync_state.pending_shared_files.lock().push(make_share("a"));
+        set_retry(&sync_state, "a", 1, now + Duration::from_secs(1));
+        assert!(!any_share_due(&sync_state, now));
+    }
+
+    #[test]
+    fn test_any_share_due_is_true_once_the_retry_deadline_is_reached() {
+        let sync_state = make_sync_state();
+        let now = Instant::now();
+        sync_state.pending_shared_files.lock().push(make_share("a"));
+        set_retry(&sync_state, "a", 1, now);
+        assert!(any_share_due(&sync_state, now));
+    }
+
+    #[test]
+    fn test_any_share_due_is_true_when_one_share_among_backed_off_ones_is_due() {
+        let sync_state = make_sync_state();
+        let past_deadline = Instant::now();
+        let now = past_deadline + Duration::from_millis(1);
+        sync_state
+            .pending_shared_files
+            .lock()
+            .extend([make_share("a"), make_share("b")]);
+        set_retry(&sync_state, "a", 2, now + Duration::from_secs(60));
+        set_retry(&sync_state, "b", 1, past_deadline);
+        assert!(any_share_due(&sync_state, now));
+    }
+
+    #[test]
+    fn test_defer_batch_for_key_retry_keeps_attempts_and_only_moves_the_deadline() {
+        let sync_state = make_sync_state();
+        let stale_deadline = Instant::now();
+        set_retry(&sync_state, "a", 3, stale_deadline);
+        let before = Instant::now();
+        defer_batch_for_key_retry(&sync_state, &[make_share("a"), make_share("b")]);
+        let after = Instant::now();
+
+        let retry_state = sync_state.share_retry_state.lock();
+        let existing = retry_state.get("a").expect("existing retry state kept");
+        let inserted = retry_state.get("b").expect("retry state inserted");
+        assert_eq!(existing.attempts, 3);
+        assert_eq!(inserted.attempts, 0);
+        for retry in [existing, inserted] {
+            assert!(retry.next_retry_at >= before + KEY_RETRY_DELAY);
+            assert!(retry.next_retry_at <= after + KEY_RETRY_DELAY);
+        }
+    }
 
     fn make_origin(source_device_name: Option<&str>) -> share::ShareOrigin {
         share::ShareOrigin {
