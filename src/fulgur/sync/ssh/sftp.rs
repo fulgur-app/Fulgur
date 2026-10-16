@@ -497,7 +497,10 @@ fn join_remote_path(directory: &str, name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{REMOTE_ROOT_PATH, RemoteReplaceOps, parent_remote_path, replace_with_temp};
+    use super::{
+        REMOTE_ROOT_PATH, RemoteReplaceOps, join_remote_path, normalize_remote_path,
+        parent_remote_path, replace_with_temp,
+    };
     use std::cell::{Cell, RefCell};
     use std::collections::{HashMap, HashSet};
     use std::path::{Path, PathBuf};
@@ -705,5 +708,50 @@ mod tests {
     #[test]
     fn parent_remote_path_of_nested_path_returns_parent() {
         assert_eq!(parent_remote_path("/tmp/nested/file.txt"), "/tmp/nested");
+    }
+
+    #[test]
+    fn normalize_remote_path_produces_forward_slash_absolute_paths() {
+        let cases = [
+            ("", "/"),
+            ("  ", "/"),
+            ("/", "/"),
+            ("~", "~"),
+            ("  ~  ", "~"),
+            ("~/a", "~/a"),
+            ("a\\b", "/a/b"),
+            ("\\a\\b", "/a/b"),
+            ("a/b", "/a/b"),
+            ("/a/b", "/a/b"),
+            ("/a/", "/a/"),
+            (" /a/b ", "/a/b"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                normalize_remote_path(input),
+                expected,
+                "normalize_remote_path({input:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn join_remote_path_inserts_exactly_one_separator() {
+        let cases = [
+            ("/", "file.txt", "/file.txt"),
+            ("", "file.txt", "/file.txt"),
+            ("/a", "file.txt", "/a/file.txt"),
+            ("/a/", "file.txt", "/a/file.txt"),
+            ("a\\b", "file.txt", "/a/b/file.txt"),
+            ("~", "file.txt", "~/file.txt"),
+            ("~/a", "file.txt", "~/a/file.txt"),
+        ];
+        for (directory, name, expected) in cases {
+            assert_eq!(
+                join_remote_path(directory, name),
+                expected,
+                "join_remote_path({directory:?}, {name:?})"
+            );
+        }
     }
 }
