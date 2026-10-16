@@ -2,7 +2,7 @@ use crate::fulgur::settings::{Settings, Themes};
 use crate::fulgur::shared_state::SharedAppState;
 
 use gpui_kit::component::{Theme, ThemeConfig, ThemeMode, ThemeRegistry};
-use gpui_kit::{Action, App, BorrowAppContext};
+use gpui_kit::{Action, App, BorrowAppContext, SharedString};
 use rust_embed::RustEmbed;
 use std::fs;
 use std::path::PathBuf;
@@ -46,9 +46,7 @@ pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut Ap
         }
     };
     if let Err(err) = ThemeRegistry::watch_dir(themes_directory, cx, move |cx| {
-        if let Some(theme) = ThemeRegistry::global(cx).themes().get(&theme_name).cloned() {
-            apply_theme_config(&theme, cx);
-        }
+        apply_selected_theme(&theme_name, cx);
         on_themes_loaded(cx);
     }) {
         log::error!("Failed to watch themes directory: {err}");
@@ -62,6 +60,17 @@ pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut Ap
         Theme::change(mode, None, cx);
         cx.refresh_windows();
     });
+}
+
+/// Apply the selected theme if the theme registry knows it, otherwise keep the current theme
+///
+/// ### Arguments
+/// - `theme_name`: The name of the theme selected in the settings
+/// - `cx`: The application context
+fn apply_selected_theme(theme_name: &SharedString, cx: &mut App) {
+    if let Some(theme) = ThemeRegistry::global(cx).themes().get(theme_name).cloned() {
+        apply_theme_config(&theme, cx);
+    }
 }
 
 /// Extract bundled themes to the themes directory if they don't exist
@@ -100,20 +109,20 @@ pub fn themes_directory_path() -> anyhow::Result<PathBuf> {
 /// - `settings`: The application settings
 /// - `cx`: The application context
 pub fn reload_themes_and_update(settings: &Settings, cx: &mut App) {
-    init(settings, cx, move |cx| {
-        let themes = match Themes::load() {
-            Ok(themes) => Some(themes),
-            Err(e) => {
-                log::error!("Failed to load themes: {e}");
-                None
-            }
-        };
-        if let Some(themes) = themes {
-            cx.update_global::<SharedAppState, _>(|shared, _| {
-                shared.themes = Some(themes);
-            });
-        }
-    });
+    init(settings, cx, publish_themes);
+}
+
+/// Load the theme catalog from disk and publish it to `SharedAppState`, keeping the previous catalog when loading fails
+///
+/// ### Arguments
+/// - `cx`: The application context
+fn publish_themes(cx: &mut App) {
+    match Themes::load() {
+        Ok(themes) => cx.update_global::<SharedAppState, _>(|shared, _| {
+            shared.themes = Some(themes);
+        }),
+        Err(e) => log::error!("Failed to load themes: {e}"),
+    }
 }
 
 #[derive(Action, Clone, PartialEq)]
@@ -187,137 +196,78 @@ mod tests {
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod gpui_tests {
-    use super::init;
-    use super::reload_themes_and_update;
-    use crate::fulgur::WindowInit;
-    use crate::fulgur::{Fulgur, settings::Settings, shared_state::SharedAppState};
-    use gpui_kit::component::ActiveTheme;
-    use gpui_kit::component::ThemeRegistry;
-    use gpui_kit::{
-        AppContext, BorrowAppContext, Entity, SharedString, TestAppContext, WindowId, WindowOptions,
+    use super::{
+        BundledThemes, apply_selected_theme, extract_bundled_themes, publish_themes,
+        themes_directory_path,
     };
-
-    use std::{
-        cell::RefCell,
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
-        thread,
-        time::Duration,
-    };
-
-    /// Wait until a condition becomes true while pumping the GPUI async runtime.
-    ///
-    /// ### Arguments
-    /// - `cx`: The GPUI test context to drive.
-    /// - `attempts`: Maximum polling attempts before timing out.
-    /// - `delay`: Sleep duration between attempts.
-    /// - `predicate`: The condition to evaluate after each pump.
-    ///
-    /// ### Returns
-    /// - `true`: The predicate returned true within the allowed attempts.
-    /// - `false`: The predicate never became true before timeout.
-    fn wait_until(
-        cx: &mut TestAppContext,
-        attempts: usize,
-        delay: Duration,
-        mut predicate: impl FnMut(&mut TestAppContext) -> bool,
-    ) -> bool {
-        for _ in 0..attempts {
-            cx.run_until_parked();
-            if predicate(cx) {
-                return true;
-            }
-            thread::sleep(delay);
-        }
-        false
-    }
-
+    use crate::fulgur::shared_state::SharedAppState;
     use crate::test_support::setup_test_globals;
+    use gpui_kit::component::{ActiveTheme, ThemeRegistry};
+    use gpui_kit::{BorrowAppContext, SharedString, TestAppContext};
 
-    /// Open a test window that hosts a `Fulgur` root.
+    const SELECTED_THEME: &str = "Catppuccin Latte";
+
+    /// Register the bundled Catppuccin themes without starting the theme directory watcher,
+    /// whose OS thread would wake GPUI tasks from outside the deterministic test scheduler.
     ///
     /// ### Arguments
-    /// - `cx`: The GPUI test context used to open the window.
-    ///
-    /// ### Returns
-    /// - `(WindowId, Entity<Fulgur>)`: The opened window ID and associated `Fulgur` entity.
-    fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Fulgur>) {
-        let window_id_slot: RefCell<Option<WindowId>> = RefCell::new(None);
-        let fulgur_slot: RefCell<Option<Entity<Fulgur>>> = RefCell::new(None);
+    /// - `cx`: The GPUI test context holding the theme registry
+    fn register_bundled_catppuccin_themes(cx: &mut TestAppContext) {
+        let theme_file =
+            BundledThemes::get("catppuccin.json").expect("catppuccin theme should be bundled");
+        let content = std::str::from_utf8(theme_file.data.as_ref())
+            .expect("bundled theme file should be valid UTF-8");
         cx.update(|cx| {
-            cx.open_window(WindowOptions::default(), |window, cx| {
-                let window_id = window.window_handle().window_id();
-                let fulgur = Fulgur::new(window, cx, window_id, WindowInit::Empty);
-                *window_id_slot.borrow_mut() = Some(window_id);
-                *fulgur_slot.borrow_mut() = Some(fulgur.clone());
-                cx.new(|cx| gpui_kit::component::Root::new(fulgur, window, cx))
-            })
-            .expect("failed to open test window");
+            ThemeRegistry::global_mut(cx)
+                .load_themes_from_str(content)
+                .expect("bundled catppuccin theme should parse");
         });
-        (
-            window_id_slot
-                .into_inner()
-                .expect("failed to capture test window id"),
-            fulgur_slot
-                .into_inner()
-                .expect("failed to capture test Fulgur entity"),
-        )
     }
 
     #[gpui_kit::test]
-    fn test_init_runs_watch_load_callback_and_applies_selected_theme(cx: &mut TestAppContext) {
+    fn test_apply_selected_theme_applies_registered_theme(cx: &mut TestAppContext) {
         setup_test_globals(cx);
-        let selected_theme: SharedString = "Catppuccin Latte".into();
-        let callback_count = Arc::new(AtomicUsize::new(0));
-        let callback_count_for_init = callback_count.clone();
-        let mut settings = Settings::new();
-        settings.app_settings.theme = selected_theme.clone();
+        register_bundled_catppuccin_themes(cx);
+        let selected_theme = SharedString::from(SELECTED_THEME);
         cx.update(|cx| {
-            init(&settings, cx, move |_| {
-                callback_count_for_init.fetch_add(1, Ordering::SeqCst);
-            });
-        });
-        assert!(
-            wait_until(cx, 40, Duration::from_millis(25), |_| {
-                callback_count.load(Ordering::SeqCst) > 0
-            }),
-            "theme watch initialization callback should run at least once"
-        );
-        cx.update(|cx| {
-            assert!(
-                ThemeRegistry::global(cx)
-                    .themes()
-                    .contains_key(&selected_theme),
-                "selected bundled theme should be present after watched load"
-            );
+            apply_selected_theme(&selected_theme, cx);
             assert_eq!(
                 cx.theme().theme_name(),
                 &selected_theme,
-                "init callback should apply configured selected theme"
+                "the selected registered theme should become the active theme"
             );
         });
     }
 
     #[gpui_kit::test]
-    fn test_reload_themes_and_update_refreshes_shared_theme_state(cx: &mut TestAppContext) {
+    fn test_apply_selected_theme_keeps_current_theme_when_name_is_unknown(cx: &mut TestAppContext) {
         setup_test_globals(cx);
-        let (_, fulgur) = open_window_with_fulgur(cx);
-        let settings = cx.update(|cx| fulgur.read(cx).settings.clone());
+        register_bundled_catppuccin_themes(cx);
+        cx.update(|cx| {
+            let theme_before = cx.theme().theme_name().clone();
+            apply_selected_theme(&SharedString::from("Missing Theme"), cx);
+            assert_eq!(
+                cx.theme().theme_name(),
+                &theme_before,
+                "an unknown theme name should leave the active theme untouched"
+            );
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_publish_themes_refreshes_shared_theme_state(cx: &mut TestAppContext) {
+        setup_test_globals(cx);
+        let themes_dir = themes_directory_path().expect("themes directory should resolve");
+        extract_bundled_themes(&themes_dir).expect("bundled themes should be extracted");
         cx.update(|cx| {
             cx.update_global::<SharedAppState, _>(|shared, _| {
                 shared.themes = None;
             });
+            publish_themes(cx);
+            assert!(
+                cx.global::<SharedAppState>().themes.is_some(),
+                "publishing themes should repopulate the shared theme catalog"
+            );
         });
-        cx.update(|cx| {
-            reload_themes_and_update(&settings, cx);
-        });
-        assert!(
-            wait_until(cx, 80, Duration::from_millis(25), |cx| {
-                cx.update(|cx| cx.global::<SharedAppState>().themes.is_some())
-            }),
-            "reloading themes should repopulate shared theme catalog"
-        );
     }
 }
