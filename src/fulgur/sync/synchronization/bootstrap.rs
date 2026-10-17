@@ -340,3 +340,173 @@ pub fn set_sync_server_connection_status(
     }
     *status = new_status;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fulgur::shared_state::NotificationOrigin;
+
+    const PROFILE: &str = "Work";
+    const CURRENT_FULGUR: &str = env!("CARGO_PKG_VERSION");
+
+    fn slot(value: Option<&str>) -> Arc<Mutex<Option<String>>> {
+        Arc::new(Mutex::new(value.map(str::to_string)))
+    }
+
+    fn stored(slot: &Arc<Mutex<Option<String>>>) -> Option<String> {
+        slot.lock().clone()
+    }
+
+    fn shift_minor(version: &str, delta: i64) -> String {
+        let parsed = semver::Version::parse(version).expect("test base version is valid semver");
+        let minor = parsed
+            .minor
+            .checked_add_signed(delta)
+            .expect("test base version has room for the minor shift");
+        format!("{}.{minor}.0", parsed.major)
+    }
+
+    fn assert_background_warning(notification: &AppNotification, expected_fragments: &[&str]) {
+        assert!(matches!(
+            notification.notification_type,
+            NotificationType::Warning
+        ));
+        assert_eq!(notification.origin, NotificationOrigin::Background);
+        for fragment in expected_fragments {
+            assert!(
+                notification.message.contains(fragment),
+                "message {:?} should contain {fragment:?}",
+                notification.message
+            );
+        }
+    }
+
+    #[test]
+    fn min_fulgur_absent_clears_the_slot_without_notifying() {
+        let slot = slot(Some("0.1.0"));
+        assert!(record_server_min_fulgur_version(&slot, PROFILE, None).is_none());
+        assert_eq!(stored(&slot), None);
+    }
+
+    #[test]
+    fn min_fulgur_equal_to_current_is_stored_without_notifying() {
+        let slot = slot(None);
+        let notification =
+            record_server_min_fulgur_version(&slot, PROFILE, Some(CURRENT_FULGUR.to_string()));
+        assert!(notification.is_none());
+        assert_eq!(stored(&slot).as_deref(), Some(CURRENT_FULGUR));
+    }
+
+    #[test]
+    fn min_fulgur_within_the_recommended_gap_does_not_notify() {
+        let required = shift_minor(CURRENT_FULGUR, 1);
+        let slot = slot(None);
+        let notification = record_server_min_fulgur_version(&slot, PROFILE, Some(required.clone()));
+        assert!(notification.is_none());
+        assert_eq!(stored(&slot), Some(required));
+    }
+
+    #[test]
+    fn min_fulgur_three_minors_ahead_requires_a_fulgur_update() {
+        let required = shift_minor(CURRENT_FULGUR, 3);
+        let slot = slot(None);
+        let notification = record_server_min_fulgur_version(&slot, PROFILE, Some(required.clone()))
+            .expect("a required update notifies");
+        assert_background_warning(
+            &notification,
+            &[
+                PROFILE,
+                &format!("v{required}"),
+                &format!("v{CURRENT_FULGUR}"),
+                "update Fulgur",
+            ],
+        );
+        assert_eq!(stored(&slot), Some(required));
+    }
+
+    #[test]
+    fn fulgurant_at_or_above_recommended_does_not_notify() {
+        for version in [
+            RECOMMENDED_FULGURANT_VERSION.to_string(),
+            shift_minor(RECOMMENDED_FULGURANT_VERSION, 1),
+        ] {
+            let slot = slot(None);
+            assert!(record_fulgurant_version(&slot, PROFILE, Some(version.clone())).is_none());
+            assert_eq!(stored(&slot), Some(version));
+        }
+    }
+
+    #[test]
+    fn fulgurant_within_the_recommended_gap_does_not_notify() {
+        let version = shift_minor(RECOMMENDED_FULGURANT_VERSION, -1);
+        let slot = slot(None);
+        assert!(record_fulgurant_version(&slot, PROFILE, Some(version.clone())).is_none());
+        assert_eq!(stored(&slot), Some(version));
+    }
+
+    #[test]
+    fn fulgurant_three_minors_behind_requires_a_fulgurant_update() {
+        let version = shift_minor(RECOMMENDED_FULGURANT_VERSION, -3);
+        let slot = slot(None);
+        let notification = record_fulgurant_version(&slot, PROFILE, Some(version.clone()))
+            .expect("a required update notifies");
+        assert_background_warning(
+            &notification,
+            &[
+                PROFILE,
+                &format!("v{RECOMMENDED_FULGURANT_VERSION}"),
+                &format!("v{version}"),
+                "update Fulgurant",
+            ],
+        );
+        assert_eq!(stored(&slot), Some(version));
+    }
+
+    #[test]
+    fn fulgurant_without_header_is_judged_as_the_assumed_version_but_stored_as_absent() {
+        let slot = slot(Some("0.8.0"));
+        let notification = record_fulgurant_version(&slot, PROFILE, None);
+        let expects_notification = compare_required_version(
+            FULGURANT_VERSION_WITHOUT_HEADER,
+            RECOMMENDED_FULGURANT_VERSION,
+        ) == VersionCompatibility::UpdateRequired;
+        assert_eq!(notification.is_some(), expects_notification);
+        if let Some(notification) = notification {
+            assert_background_warning(
+                &notification,
+                &[&format!("v{FULGURANT_VERSION_WITHOUT_HEADER}")],
+            );
+        }
+        assert_eq!(stored(&slot), None);
+    }
+
+    #[test]
+    fn both_required_updates_produce_fulgur_then_fulgurant_notifications() {
+        let min_fulgur_slot = slot(None);
+        let server_version_slot = slot(None);
+        let notifications = record_versions_and_build_notifications(
+            &min_fulgur_slot,
+            &server_version_slot,
+            PROFILE,
+            Some(shift_minor(CURRENT_FULGUR, 3)),
+            Some(shift_minor(RECOMMENDED_FULGURANT_VERSION, -3)),
+        );
+        assert_eq!(notifications.len(), 2);
+        assert_background_warning(&notifications[0], &["update Fulgur."]);
+        assert_background_warning(&notifications[1], &["update Fulgurant."]);
+        assert!(stored(&min_fulgur_slot).is_some());
+        assert!(stored(&server_version_slot).is_some());
+    }
+
+    #[test]
+    fn compatible_versions_produce_no_notifications() {
+        let notifications = record_versions_and_build_notifications(
+            &slot(None),
+            &slot(None),
+            PROFILE,
+            Some(CURRENT_FULGUR.to_string()),
+            Some(RECOMMENDED_FULGURANT_VERSION.to_string()),
+        );
+        assert!(notifications.is_empty());
+    }
+}
