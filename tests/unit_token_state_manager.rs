@@ -44,6 +44,7 @@ fn test_clear_token_on_empty_state() {
 #[test]
 fn test_clear_token_is_thread_safe() {
     let manager = Arc::new(TokenStateManager::new());
+    inject_valid_token(&manager);
     let mut handles = vec![];
 
     // Spawn 10 threads that all try to clear the token simultaneously
@@ -60,7 +61,7 @@ fn test_clear_token_is_thread_safe() {
         handle.join().expect("Thread should complete successfully");
     }
 
-    // No assertion needed - if we got here without deadlock/panic, test passes
+    assert_token_cleared(&manager);
 }
 
 // Note: Full concurrent token refresh testing requires mocking network calls.
@@ -72,10 +73,13 @@ fn test_concurrent_clear_token_calls() {
     let mut handles = vec![];
     let iterations = 100;
 
+    // Every thread ends each iteration with a clear, so whichever write lands
+    // last is a clear and the final state is deterministic despite contention.
     for thread_id in 0..5 {
         let manager_clone = Arc::clone(&manager);
         let handle = thread::spawn(move || {
             for i in 0..iterations {
+                inject_valid_token(&manager_clone);
                 manager_clone.clear_token();
                 // Add tiny sleep to increase chance of interleaving
                 if (thread_id + i) % 10 == 0 {
@@ -90,13 +94,17 @@ fn test_concurrent_clear_token_calls() {
         handle.join().expect("Thread should complete");
     }
 
-    // Verify manager is still functional after concurrent access
-    manager.clear_token();
+    assert_token_cleared(&manager);
+
+    // The manager must stay usable after the contention
+    let token = inject_valid_token(&manager);
+    assert_token_cached(&manager, &token);
 }
 
 #[test]
 fn test_token_manager_can_be_shared_across_threads() {
     let manager = Arc::new(TokenStateManager::new());
+    inject_valid_token(&manager);
     let manager1 = Arc::clone(&manager);
     let manager2 = Arc::clone(&manager);
 
@@ -115,7 +123,7 @@ fn test_token_manager_can_be_shared_across_threads() {
     handle1.join().expect("Thread 1 should complete");
     handle2.join().expect("Thread 2 should complete");
 
-    // If we got here, Arc<TokenStateManager> is Send + Sync
+    assert_token_cleared(&manager);
 }
 
 // These tests document the expected behavior and API usage patterns
@@ -127,13 +135,16 @@ fn test_token_manager_usage_pattern() {
 
     // Initially, token should be clearable
     manager.clear_token();
+    assert_token_cleared(&manager);
 
     // Manager can be cloned for use in other threads/contexts
     let manager_clone = Arc::clone(&manager);
 
-    // Both references work independently
-    manager.clear_token();
+    // Both references share the same cached token
+    let token = inject_valid_token(&manager);
+    assert_token_cached(&manager_clone, &token);
     manager_clone.clear_token();
+    assert_token_cleared(&manager);
 }
 
 #[test]
@@ -168,6 +179,37 @@ fn inject_valid_token(manager: &TokenStateManager) -> String {
     let expires_at = OffsetDateTime::now_utc() + time::Duration::hours(1);
     manager.inject_token_for_test(token.clone(), expires_at);
     token
+}
+
+/// Assert that the manager serves `expected` from its cache
+///
+/// Uses an unconfigured profile, so a cache miss would fail with
+/// `ServerUrlMissing` instead of reaching the network.
+///
+/// ### Arguments
+/// - `manager`: The token manager to inspect
+/// - `expected`: The token the cache must return
+fn assert_token_cached(manager: &Arc<TokenStateManager>, expected: &str) {
+    let profile = ServerProfile::new("Test");
+    let result = get_valid_token(&profile, manager, &make_http_agent());
+    assert_eq!(result.ok().as_deref(), Some(expected));
+}
+
+/// Assert that the manager holds no cached token
+///
+/// With an unconfigured profile, a cache miss falls through to the refresh
+/// path and fails with `ServerUrlMissing` before any network I/O, which is
+/// the observable proof that the token was cleared.
+///
+/// ### Arguments
+/// - `manager`: The token manager to inspect
+fn assert_token_cleared(manager: &Arc<TokenStateManager>) {
+    let profile = ServerProfile::new("Test");
+    let result = get_valid_token(&profile, manager, &make_http_agent());
+    assert!(
+        matches!(result, Err(SynchronizationError::ServerUrlMissing)),
+        "Expected a cleared token to require a refresh, got: {result:?}"
+    );
 }
 
 #[test]
