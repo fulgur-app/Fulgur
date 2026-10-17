@@ -334,3 +334,148 @@ pub(super) fn spawn_ssh_task<Work, Payload>(
     })
     .detach();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ChannelPrompter;
+    use crate::fulgur::sync::ssh::auth::{
+        CredentialPrompter, CredentialRequest, CredentialRequestKind, LoginAnswer,
+    };
+    use parking_lot::Mutex;
+    use std::{
+        sync::{Arc, atomic::AtomicBool},
+        thread,
+        time::{Duration, Instant},
+    };
+    use zeroize::Zeroizing;
+
+    /// Longest time a test waits for the worker thread to post its prompt.
+    const POSTED_REQUEST_DEADLINE: Duration = Duration::from_secs(5);
+
+    /// Build a prompter for `alice@example.com:2222` and the slot it posts requests to.
+    ///
+    /// ### Returns
+    /// - `(ChannelPrompter, Arc<Mutex<Option<CredentialRequest>>>)`: The prompter and its
+    ///   pending request slot, as read by the monitor task
+    fn make_prompter() -> (ChannelPrompter, Arc<Mutex<Option<CredentialRequest>>>) {
+        let pending_request = Arc::new(Mutex::new(None));
+        let prompter = ChannelPrompter {
+            pending_request: Arc::clone(&pending_request),
+            host: "example.com".to_string(),
+            port: 2222,
+            user: "alice".to_string(),
+            timed_out: Arc::new(AtomicBool::new(false)),
+        };
+        (prompter, pending_request)
+    }
+
+    /// Wait for the worker thread to post a prompt, then take it as the monitor task does.
+    ///
+    /// ### Arguments
+    /// - `pending_request`: Slot the prompter posts its request to
+    ///
+    /// ### Returns
+    /// - `CredentialRequest`: The posted request; panics after `POSTED_REQUEST_DEADLINE`
+    fn take_posted_request(
+        pending_request: &Mutex<Option<CredentialRequest>>,
+    ) -> CredentialRequest {
+        let deadline = Instant::now() + POSTED_REQUEST_DEADLINE;
+        loop {
+            if let Some(request) = pending_request.lock().take() {
+                return request;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the prompter never posted a request"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn test_channel_prompter_login_forwards_answer_from_ui_thread() {
+        let (mut prompter, pending_request) = make_prompter();
+        let worker = thread::spawn(move || prompter.login(true, Some("denied".to_string())));
+
+        let request = take_posted_request(&pending_request);
+        assert_eq!(request.host, "example.com");
+        assert_eq!(request.port, 2222);
+        assert_eq!(request.user, "alice");
+        let CredentialRequestKind::Login {
+            password_allowed,
+            error,
+            answer_tx,
+        } = request.kind
+        else {
+            panic!("expected a login request");
+        };
+        assert!(password_allowed);
+        assert_eq!(error.as_deref(), Some("denied"));
+        answer_tx
+            .send(LoginAnswer::Password(Zeroizing::new("secret".to_string())))
+            .expect("worker is waiting for the answer");
+
+        let answer = worker.join().expect("worker thread panicked");
+        assert!(matches!(answer, LoginAnswer::Password(password) if password.as_str() == "secret"));
+    }
+
+    #[test]
+    fn test_channel_prompter_login_cancels_when_monitor_drops_request() {
+        let (mut prompter, pending_request) = make_prompter();
+        let worker = thread::spawn(move || prompter.login(true, None));
+
+        // On timeout the monitor task drops the unanswered request, closing its channel.
+        drop(take_posted_request(&pending_request));
+
+        let answer = worker.join().expect("worker thread panicked");
+        assert!(matches!(answer, LoginAnswer::Cancel));
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_with_resolved_remote_user_moves_url_password_to_cache(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        use crate::fulgur::{
+            Fulgur,
+            files::file_operations::test_helpers::setup_fulgur,
+            sync::ssh::{
+                auth::SshAuth,
+                credentials::SshCredKey,
+                url::{RemoteSpec, parse_remote_url},
+            },
+        };
+        use std::{cell::RefCell, rc::Rc};
+
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let spec = parse_remote_url("ssh://alice:secret@example.com:2222/tmp/notes.txt")
+            .expect("valid remote URL");
+        assert!(spec.password_in_url.is_some());
+        let resolved: Rc<RefCell<Option<RemoteSpec>>> = Rc::new(RefCell::new(None));
+        let resolved_in_callback = Rc::clone(&resolved);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.with_resolved_remote_user(window, cx, spec, move |_, spec, _, _| {
+                    *resolved_in_callback.borrow_mut() = Some(spec);
+                });
+            });
+        });
+
+        let resolved = resolved
+            .take()
+            .expect("a URL with a user resolves without the username dialog");
+        assert_eq!(resolved.user.as_deref(), Some("alice"));
+        assert!(
+            resolved.password_in_url.is_none(),
+            "the password must not travel further in the spec"
+        );
+        visual_cx.update(|_, cx| {
+            let cache = Fulgur::shared_state(cx).ssh_session_cache.lock();
+            let cached = cache.get(&SshCredKey::new("example.com", 2222, "alice"));
+            assert!(
+                matches!(cached, Some(SshAuth::Password(password)) if password.as_str() == "secret")
+            );
+        });
+    }
+}

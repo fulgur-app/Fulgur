@@ -78,7 +78,25 @@ pub struct RemoteOpenTaskParams {
 /// - `Some(T)`: The user's answer
 /// - `None`: The dialog closed without answering, or `SSH_USER_PROMPT_TIMEOUT` elapsed
 pub fn wait_for_user_answer<T>(answer_rx: &Receiver<T>, timed_out: &AtomicBool) -> Option<T> {
-    match answer_rx.recv_timeout(SSH_USER_PROMPT_TIMEOUT) {
+    wait_for_user_answer_within(answer_rx, timed_out, SSH_USER_PROMPT_TIMEOUT)
+}
+
+/// Wait at most `timeout` for the user to answer a prompt posted by an SSH worker thread.
+///
+/// ### Arguments
+/// - `answer_rx`: Receiver the prompt dialog delivers its answer on
+/// - `timed_out`: Shared flag set when the wait elapsed without an answer
+/// - `timeout`: Longest time to wait for the answer
+///
+/// ### Returns
+/// - `Some(T)`: The user's answer
+/// - `None`: The dialog closed without answering, or `timeout` elapsed
+fn wait_for_user_answer_within<T>(
+    answer_rx: &Receiver<T>,
+    timed_out: &AtomicBool,
+    timeout: Duration,
+) -> Option<T> {
+    match answer_rx.recv_timeout(timeout) {
         Ok(answer) => Some(answer),
         Err(RecvTimeoutError::Timeout) => {
             timed_out.store(true, Ordering::Release);
@@ -130,4 +148,79 @@ pub struct RemoteSaveTaskParams {
     pub saved_content: Arc<String>,
     pub saved_bytes: Arc<Vec<u8>>,
     pub remote_save_permit: RemoteSavePermit,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{wait_for_host_key_decision, wait_for_user_answer, wait_for_user_answer_within};
+    use crate::fulgur::sync::ssh::session::HostKeyDecision;
+    use std::{
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        },
+        time::Duration,
+    };
+
+    #[test]
+    fn test_wait_for_user_answer_returns_delivered_answer() {
+        let (answer_tx, answer_rx) = mpsc::channel();
+        let timed_out = AtomicBool::new(false);
+        answer_tx.send(42).expect("receiver is alive");
+
+        assert_eq!(wait_for_user_answer(&answer_rx, &timed_out), Some(42));
+        assert!(!timed_out.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn test_wait_for_user_answer_returns_none_when_sender_dropped() {
+        let (answer_tx, answer_rx) = mpsc::channel::<u32>();
+        let timed_out = AtomicBool::new(false);
+        drop(answer_tx);
+
+        assert_eq!(wait_for_user_answer(&answer_rx, &timed_out), None);
+        assert!(
+            !timed_out.load(Ordering::Acquire),
+            "a closed dialog is not a timeout"
+        );
+    }
+
+    #[test]
+    fn test_wait_for_user_answer_sets_timed_out_flag_when_unanswered() {
+        let (_answer_tx, answer_rx) = mpsc::channel::<u32>();
+        let timed_out = AtomicBool::new(false);
+
+        let answer = wait_for_user_answer_within(&answer_rx, &timed_out, Duration::from_millis(10));
+
+        assert_eq!(answer, None);
+        assert!(timed_out.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn test_wait_for_host_key_decision_returns_delivered_decision() {
+        let (decision_tx, decision_rx) = mpsc::channel();
+        let timed_out = AtomicBool::new(false);
+        decision_tx
+            .send(HostKeyDecision::Accept)
+            .expect("receiver is alive");
+
+        assert!(matches!(
+            wait_for_host_key_decision(&decision_rx, &timed_out),
+            HostKeyDecision::Accept
+        ));
+        assert!(!timed_out.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn test_wait_for_host_key_decision_rejects_when_sender_dropped() {
+        let (decision_tx, decision_rx) = mpsc::channel();
+        let timed_out = AtomicBool::new(false);
+        drop(decision_tx);
+
+        assert!(matches!(
+            wait_for_host_key_decision(&decision_rx, &timed_out),
+            HostKeyDecision::Reject
+        ));
+        assert!(!timed_out.load(Ordering::Acquire));
+    }
 }
