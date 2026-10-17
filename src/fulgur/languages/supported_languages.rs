@@ -625,8 +625,65 @@ pub fn register_external_languages() {
 
 #[cfg(test)]
 mod tests {
-    use super::{SupportedLanguage, language_from_content, language_from_filename, pretty_name};
+    use super::{
+        SupportedLanguage, from_language, language_from_content, language_from_filename,
+        pretty_name, to_language,
+    };
+    use gpui_kit::component::highlighter::Language;
     use std::collections::HashSet;
+
+    /// Supported languages that borrow another language's native grammar, so
+    /// mapping them to a native language and back lands on the grammar's owner.
+    const SHARED_NATIVE_GRAMMAR: &[(SupportedLanguage, SupportedLanguage)] =
+        &[(SupportedLanguage::Svg, SupportedLanguage::Html)];
+
+    /// Native languages Fulgur highlights with a custom-registered grammar
+    /// instead, so their supported language maps back to `Language::Plain`.
+    const CUSTOM_GRAMMAR_OVERRIDES: &[Language] = &[Language::Tsx];
+
+    #[test]
+    fn test_every_native_language_round_trips_through_supported_language() {
+        for language in Language::all() {
+            if CUSTOM_GRAMMAR_OVERRIDES.contains(&language) {
+                continue;
+            }
+            assert_eq!(
+                to_language(&from_language(language)),
+                language,
+                "{language:?} must map to a supported language that maps back to it"
+            );
+        }
+    }
+
+    #[test]
+    fn test_natively_backed_supported_languages_round_trip() {
+        for language in SupportedLanguage::all() {
+            let native = to_language(language);
+            if native == Language::Plain && *language != SupportedLanguage::Plain {
+                continue;
+            }
+            let expected = SHARED_NATIVE_GRAMMAR
+                .iter()
+                .find(|(borrower, _)| borrower == language)
+                .map_or(*language, |(_, owner)| *owner);
+            assert_eq!(
+                from_language(native),
+                expected,
+                "{language:?} maps to {native:?}, which must map back to {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_custom_grammar_overrides_fall_back_to_plain() {
+        for language in CUSTOM_GRAMMAR_OVERRIDES {
+            assert_eq!(
+                to_language(&from_language(*language)),
+                Language::Plain,
+                "{language:?} is listed as overridden, so its supported language must not map back to it"
+            );
+        }
+    }
 
     #[test]
     fn test_all_languages_have_a_distinct_pretty_name() {
