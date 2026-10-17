@@ -47,18 +47,19 @@ yanked = "warn"
 
 # List of advisory IDs to ignore
 ignore = [
-    # Unmaintained transitive dependencies from GPUI/gpui-component
-    # These are outside of Fulgur's control and come from the GUI framework
-    "RUSTSEC-2024-0384",  # instant - unmaintained (from gpui-component)
+    # Unmaintained transitive dependencies from GPUI/gpui-component and age
+    # These are outside of Fulgur's control
+    "RUSTSEC-2024-0384",  # instant - unmaintained (from gpui-component and gpui-base, directly and via notify 7)
     "RUSTSEC-2024-0436",  # paste - unmaintained (from gpui-component)
-    "RUSTSEC-2026-0173",  # proc-macro-error2 - unmaintained (from gpui via stacksafe-macro, and from age via i18n-embed-fl)
+    "RUSTSEC-2026-0173",  # proc-macro-error2 - unmaintained (from age via i18n-embed-fl)
     "RUSTSEC-2026-0192",  # ttf-parser - unmaintained; no safe upgrade available (from gpui via fontdb/cosmic-text/usvg/rustybuzz)
     "RUSTSEC-2026-0206",  # rustybuzz - unmaintained; no safe upgrade available (from gpui-pre via usvg/resvg)
     "RUSTSEC-2025-0134",  # rustls-pemfile - unmaintained; no safe upgrade available (from gpui-pre's Reqwest transport)
     # quick-xml DoS advisories - Linux-only, build/protocol XML parsing of trusted local data, not the untrusted remote XML in the advisory threat model.
-    # Cannot upgrade: xcb (^0.30) and wayland-scanner (^0.39) pin incompatible ranges in the published GPUI Pre snapshot.
-    "RUSTSEC-2026-0194",  # quick-xml - quadratic runtime on duplicate attribute names (from gpui via xcb and wayland-scanner)
-    "RUSTSEC-2026-0195",  # quick-xml - unbounded namespace-declaration allocation in NsReader (from gpui via wayland-scanner)
+    # Cannot upgrade: the fix is quick-xml >= 0.41 and wayland-scanner 0.31 pins ^0.39.
+    # quick-xml 0.30 (via xcb <- zed-scap) also sits in Cargo.lock but is never built; the same IDs cover it in cargo-audit.
+    "RUSTSEC-2026-0194",  # quick-xml - quadratic runtime on duplicate attribute names (from gpui-pre-linux via wayland-scanner)
+    "RUSTSEC-2026-0195",  # quick-xml - unbounded namespace-declaration allocation in NsReader (from gpui-pre-linux via wayland-scanner)
 ]
 
 # Check unmaintained crates in transitive dependencies
