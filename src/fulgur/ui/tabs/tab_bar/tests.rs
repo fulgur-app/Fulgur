@@ -1,15 +1,21 @@
 use super::state::TabTooltipContent;
-use super::{TabBar, TabBarEvent};
+use super::{SetTabColor, TabBar, TabBarEvent};
 use crate::fulgur::Fulgur;
+use crate::fulgur::shared_state::SharedAppState;
+use crate::fulgur::state::{StateDb, StateWriter};
 use crate::fulgur::sync::share::ShareOrigin;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::components_utils::format_local_datetime;
+use crate::fulgur::ui::tabs::color_tag::ColorTag;
 use crate::fulgur::ui::tabs::editor_tab::TabLocation;
-use gpui_kit::{Entity, TestAppContext, VisualTestContext};
-use std::path::PathBuf;
+use crate::fulgur::ui::tabs::tab::TabId;
+use crate::fulgur::window_manager::WindowManager;
+use gpui_kit::{BorrowAppContext, Entity, TestAppContext, VisualTestContext};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use time::macros::datetime;
 
-use crate::test_support::setup_fulgur;
+use crate::test_support::{setup_fulgur, setup_fulgur_with_root};
 
 // ========== get_tab_display_title tests ==========
 
@@ -398,4 +404,112 @@ fn test_on_previous_tab_is_noop_when_no_active_tab(cx: &mut TestAppContext) {
             assert_eq!(this.active_tab_index(cx), None);
         });
     });
+}
+
+// ========== on_set_tab_color tests ==========
+
+/// Point the shared state writer at a fresh writer over the database file at `path`.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context of the window
+/// - `path`: Path of the database file the new writer persists to
+fn install_file_backed_writer(visual_cx: &mut VisualTestContext, path: &Path) {
+    let db = StateDb::open(path).expect("open file-backed state database");
+    visual_cx.update(|_window, cx| {
+        cx.update_global::<SharedAppState, _>(|shared, _| {
+            shared.state_writer = Arc::new(StateWriter::new(Some(db)));
+        });
+    });
+}
+
+/// Read back the color tag key persisted for a tab.
+///
+/// ### Arguments
+/// - `path`: Path of the state database file
+/// - `tab_id`: Id of the persisted tab to look up
+///
+/// ### Returns
+/// - `Some(String)`: The persisted color tag key
+/// - `None`: The tab was persisted without a color tag
+fn persisted_color_tag(path: &Path, tab_id: TabId) -> Option<String> {
+    StateDb::open(path)
+        .expect("reopen the state database")
+        .load()
+        .expect("load the persisted session")
+        .windows
+        .iter()
+        .flat_map(|window| &window.tabs)
+        .find(|tab| tab.tab_id == tab_id.0)
+        .expect("the tab must be persisted")
+        .color_tag
+        .clone()
+}
+
+/// Read the color tag currently assigned to the first editor tab.
+///
+/// ### Arguments
+/// - `fulgur`: The window entity
+/// - `visual_cx`: The visual test context of the window
+///
+/// ### Returns
+/// - `Some(ColorTag)`: The assigned color tag
+/// - `None`: The tab has no color tag
+fn first_tab_color(fulgur: &Entity<Fulgur>, visual_cx: &mut VisualTestContext) -> Option<ColorTag> {
+    visual_cx.update(|_window, cx| {
+        fulgur.read(cx).tabs[0]
+            .read(cx)
+            .as_editor()
+            .expect("expected an editor tab")
+            .color_tag
+    })
+}
+
+#[gpui_kit::test]
+fn test_set_tab_color_action_sets_clears_and_persists_the_tag(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    let state_path = dir.path().join("state.db");
+    install_file_backed_writer(&mut visual_cx, &state_path);
+    let tab_id = visual_cx.update(|window, cx| {
+        let window_id = window.window_handle().window_id();
+        cx.update_global::<WindowManager, _>(|manager, _| {
+            manager.register(window_id, fulgur.downgrade());
+        });
+        // An empty untitled tab is never persisted, a clean file tab is
+        let tab = fulgur.read(cx).tabs[0].clone();
+        tab.update(cx, |tab, _cx| {
+            if let Some(editor_tab) = tab.as_editor_mut() {
+                editor_tab.location = TabLocation::Local(dir.path().join("colored.rs"));
+            }
+        });
+        tab.read(cx).id()
+    });
+    // The action is handled inside the window content, so the dispatch path must start there
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| this.focus_active_tab(window, cx));
+        window.draw(cx).clear(cx);
+    });
+
+    visual_cx.dispatch_action(SetTabColor(tab_id, Some(ColorTag::BlueLight)));
+    visual_cx.run_until_parked();
+    assert_eq!(
+        first_tab_color(&fulgur, &mut visual_cx),
+        Some(ColorTag::BlueLight)
+    );
+    install_file_backed_writer(&mut visual_cx, &state_path);
+    assert_eq!(
+        persisted_color_tag(&state_path, tab_id).as_deref(),
+        Some(ColorTag::BlueLight.key()),
+        "setting a color tag must persist it"
+    );
+
+    visual_cx.dispatch_action(SetTabColor(tab_id, None));
+    visual_cx.run_until_parked();
+    assert_eq!(first_tab_color(&fulgur, &mut visual_cx), None);
+    install_file_backed_writer(&mut visual_cx, &state_path);
+    assert_eq!(
+        persisted_color_tag(&state_path, tab_id),
+        None,
+        "clearing a color tag must persist the removal"
+    );
 }

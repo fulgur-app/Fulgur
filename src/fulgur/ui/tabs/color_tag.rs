@@ -153,3 +153,39 @@ impl ColorTag {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ColorTag;
+
+    #[test]
+    fn test_every_color_tag_key_round_trips() {
+        for tag in ColorTag::all() {
+            assert_eq!(
+                ColorTag::from_key(tag.key()),
+                Some(tag),
+                "key {:?} must restore the tag that produced it",
+                tag.key()
+            );
+        }
+    }
+
+    #[test]
+    fn test_color_tag_keys_are_distinct() {
+        let mut keys: Vec<&str> = ColorTag::all().iter().map(|tag| tag.key()).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), ColorTag::all().len());
+    }
+
+    #[test]
+    fn test_unknown_color_tag_key_is_rejected() {
+        assert_eq!(ColorTag::from_key("ultraviolet"), None);
+        assert_eq!(ColorTag::from_key(""), None);
+        assert_eq!(
+            ColorTag::from_key("Red"),
+            None,
+            "keys are case-sensitive, the display label is not a key"
+        );
+    }
+}
