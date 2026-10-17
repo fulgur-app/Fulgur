@@ -1,6 +1,8 @@
 use crate::fulgur::sync::ssh::{
-    save_queue::RemoteSavePermit, session::HostKeyDecision, sftp::RemoteDirectoryEntry,
-    url::RemoteSpec,
+    save_queue::RemoteSavePermit,
+    session::HostKeyDecision,
+    sftp::RemoteDirectoryEntry,
+    url::{RemoteSpec, format_host_for_url},
 };
 use crate::fulgur::ui::tabs::editor_tab::ContentRevision;
 use crate::fulgur::ui::tabs::tab::TabId;
@@ -126,13 +128,14 @@ pub fn wait_for_host_key_decision(
 ///
 /// ### Arguments
 /// - `prefix`: Verb prefix ending with a space, e.g. `"Connecting to "`.
-/// - `host`: Remote host or IP.
+/// - `host`: Remote host or IP; IPv6 literals are bracketed so the port stays unambiguous.
 /// - `port`: SSH port.
 /// - `user`: Username; an empty string omits the `user@` prefix.
 ///
 /// ### Returns
 /// - `String`: Composed label.
 pub fn format_remote_endpoint_label(prefix: &str, host: &str, port: u16, user: &str) -> String {
+    let host = format_host_for_url(host);
     if user.is_empty() {
         format!("{prefix}{host}:{port}")
     } else {
@@ -152,7 +155,10 @@ pub struct RemoteSaveTaskParams {
 
 #[cfg(test)]
 mod tests {
-    use super::{wait_for_host_key_decision, wait_for_user_answer, wait_for_user_answer_within};
+    use super::{
+        format_remote_endpoint_label, wait_for_host_key_decision, wait_for_user_answer,
+        wait_for_user_answer_within,
+    };
     use crate::fulgur::sync::ssh::session::HostKeyDecision;
     use std::{
         sync::{
@@ -222,5 +228,49 @@ mod tests {
             HostKeyDecision::Reject
         ));
         assert!(!timed_out.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn test_format_remote_endpoint_label_cases() {
+        let cases = [
+            (
+                "Connecting to ",
+                "example.com",
+                22,
+                "alice",
+                "Connecting to alice@example.com:22",
+            ),
+            (
+                "Connecting to ",
+                "example.com",
+                2222,
+                "alice",
+                "Connecting to alice@example.com:2222",
+            ),
+            (
+                "Saving to ",
+                "example.com",
+                22,
+                "",
+                "Saving to example.com:22",
+            ),
+            ("", "10.0.0.1", 22, "bob", "bob@10.0.0.1:22"),
+            (
+                "Connecting to ",
+                "::1",
+                2222,
+                "alice",
+                "Connecting to alice@[::1]:2222",
+            ),
+            ("Connecting to ", "[::1]", 22, "", "Connecting to [::1]:22"),
+        ];
+
+        for (prefix, host, port, user, expected) in cases {
+            assert_eq!(
+                format_remote_endpoint_label(prefix, host, port, user),
+                expected,
+                "prefix={prefix:?} host={host:?} port={port} user={user:?}"
+            );
+        }
     }
 }

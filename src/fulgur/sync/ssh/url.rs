@@ -169,7 +169,7 @@ fn normalize_url_style_path(path: &str) -> String {
 ///
 /// ### Returns
 /// - `String`: URL authority-safe host string.
-fn format_host_for_url(host: &str) -> String {
+pub(crate) fn format_host_for_url(host: &str) -> String {
     if host.contains(':') && !host.starts_with('[') && !host.ends_with(']') {
         format!("[{host}]")
     } else {
