@@ -49,7 +49,7 @@ yanked = "warn"
 ignore = [
     # Unmaintained transitive dependencies from GPUI/gpui-component and age
     # These are outside of Fulgur's control
-    "RUSTSEC-2024-0384",  # instant - unmaintained (from gpui-component and gpui-base, directly and via notify 7)
+    "RUSTSEC-2024-0384",  # instant - unmaintained (from gpui-component and gpui-base)
     "RUSTSEC-2024-0436",  # paste - unmaintained (from gpui-component)
     "RUSTSEC-2026-0173",  # proc-macro-error2 - unmaintained (from age via i18n-embed-fl)
     "RUSTSEC-2026-0192",  # ttf-parser - unmaintained; no safe upgrade available (from gpui via fontdb/cosmic-text/usvg/rustybuzz)
@@ -60,6 +60,12 @@ ignore = [
     # quick-xml 0.30 (via xcb <- zed-scap) also sits in Cargo.lock but is never built; the same IDs cover it in cargo-audit.
     "RUSTSEC-2026-0194",  # quick-xml - quadratic runtime on duplicate attribute names (from gpui-pre-linux via wayland-scanner)
     "RUSTSEC-2026-0195",  # quick-xml - unbounded namespace-declaration allocation in NsReader (from gpui-pre-linux via wayland-scanner)
+    # zbus 5 split crates - unmaintained since their merge into zbus 6. Linux-only, pulled by
+    # zbus 5 through gpui-pre-linux (accesskit_unix, ashpd, notify-rust, oo7) and gpui-base (ashpd).
+    # Cleared only when those upstreams move to zbus 6.
+    "RUSTSEC-2026-0370",  # zvariant - unmaintained, now zbus 6's `wire` module
+    "RUSTSEC-2026-0371",  # zbus_names - unmaintained, now zbus 6's `names` module
+    "RUSTSEC-2026-0372",  # zvariant_derive - unmaintained, now zbus 6's derive macros
 ]
 
 # Check unmaintained crates in transitive dependencies
