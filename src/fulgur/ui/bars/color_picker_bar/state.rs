@@ -5,8 +5,8 @@ use gpui_kit::component::{
     input::{EditorState, InputEvent, InputState},
 };
 use gpui_kit::{
-    App, AppContext, Context, Entity, EntityInputHandler, EventEmitter, Hsla, Subscription,
-    WeakEntity, Window,
+    App, AppContext, Context, Entity, EntityInputHandler, EventEmitter, Hsla, SharedString,
+    Subscription, WeakEntity, Window,
 };
 
 use super::color::{format_hsla, format_oklch, parse_hex, parse_hsla, parse_oklch};
@@ -78,9 +78,6 @@ pub(crate) struct ColorPickerBar {
     pub(super) hex_input: Entity<InputState>,
     pub(super) oklch_input: Entity<InputState>,
     pub(super) hsla_input: Entity<InputState>,
-    pub(super) cached_hex: String,
-    pub(super) cached_oklch: String,
-    pub(super) cached_hsla: String,
     _color_picker_subscription: Subscription,
     _hex_input_subscription: Subscription,
     _oklch_input_subscription: Subscription,
@@ -114,35 +111,23 @@ impl ColorPickerBar {
         let color_picker_state =
             cx.new(|cx| ColorPickerState::new(window, cx).default_value(gpui_kit::white()));
         let initial = gpui_kit::white();
-        let initial_hex = gpui_kit::component::Colorize::to_hex(&initial).clone();
-        let initial_oklch = format_oklch(initial);
-        let initial_hsla = format_hsla(initial);
-        let hex_input = cx.new(|cx| InputState::new(window, cx).default_value(initial_hex.clone()));
-        let oklch_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(initial_oklch.clone()));
-        let hsla_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(initial_hsla.clone()));
+        let hex_input =
+            cx.new(|cx| InputState::new(window, cx).default_value(ColorInput::Hex.format(initial)));
+        let oklch_input = cx
+            .new(|cx| InputState::new(window, cx).default_value(ColorInput::Oklch.format(initial)));
+        let hsla_input = cx
+            .new(|cx| InputState::new(window, cx).default_value(ColorInput::Hsla.format(initial)));
         let color_picker_subscription = cx.subscribe_in(
             &color_picker_state,
             window,
             |this: &mut Self, _, event: &ColorPickerEvent, window, cx| {
                 if let ColorPickerEvent::Change(Some(color)) = event {
-                    let color = *color;
-                    let hex = gpui_kit::component::Colorize::to_hex(&color);
-                    let oklch = format_oklch(color);
-                    let hsla_str = format_hsla(color);
-                    this.cached_hex.clone_from(&hex);
-                    this.cached_oklch.clone_from(&oklch);
-                    this.cached_hsla.clone_from(&hsla_str);
-                    this.hex_input.update(cx, |state, cx| {
-                        state.set_value(hex, window, cx);
-                    });
-                    this.oklch_input.update(cx, |state, cx| {
-                        state.set_value(oklch, window, cx);
-                    });
-                    this.hsla_input.update(cx, |state, cx| {
-                        state.set_value(hsla_str, window, cx);
-                    });
+                    for target in ColorInput::ALL {
+                        let formatted = target.format(*color);
+                        target.input(this).update(cx, |state, cx| {
+                            state.set_value(formatted, window, cx);
+                        });
+                    }
                 }
                 cx.notify();
             },
@@ -177,9 +162,6 @@ impl ColorPickerBar {
             hex_input,
             oklch_input,
             hsla_input,
-            cached_hex: initial_hex,
-            cached_oklch: initial_oklch,
-            cached_hsla: initial_hsla,
             _color_picker_subscription: color_picker_subscription,
             _hex_input_subscription: hex_input_subscription,
             _oklch_input_subscription: oklch_input_subscription,
@@ -241,7 +223,7 @@ impl ColorPickerBar {
     /// - `cx`: The color picker bar context
     pub(super) fn insert_color_value(
         &mut self,
-        value: String,
+        value: SharedString,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
