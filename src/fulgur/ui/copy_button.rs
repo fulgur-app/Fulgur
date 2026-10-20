@@ -7,8 +7,8 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants},
 };
 use gpui_kit::{
-    App, ClipboardItem, ElementId, IntoElement, RenderOnce, SharedString, Styled, Window,
-    prelude::FluentBuilder,
+    App, ClipboardItem, ElementId, InteractiveElement, IntoElement, RenderOnce, SharedString,
+    Styled, Window, prelude::FluentBuilder,
 };
 use std::time::Duration;
 
@@ -120,6 +120,7 @@ impl RenderOnce for CopyButton {
             CustomIcon::Copy
         };
         let button = Button::new(button_id)
+            .debug_selector(|| self.id.to_string())
             .icon(icon)
             .text()
             .tooltip(self.tooltip.clone())

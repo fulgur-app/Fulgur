@@ -7,7 +7,8 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants},
 };
 use gpui_kit::{
-    App, ClickEvent, ElementId, IntoElement, RenderOnce, Styled, Window, prelude::FluentBuilder,
+    App, ClickEvent, ElementId, InteractiveElement, IntoElement, RenderOnce, Styled, Window,
+    prelude::FluentBuilder,
 };
 
 type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -64,7 +65,8 @@ impl RenderOnce for InsertButton {
     /// ### Returns
     /// - `impl IntoElement`: The rendered button element
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        Button::new(self.id)
+        Button::new(self.id.clone())
+            .debug_selector(|| self.id.to_string())
             .icon(CustomIcon::InserHorizontal)
             .text()
             .small()

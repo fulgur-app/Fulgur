@@ -49,21 +49,14 @@ impl Render for ColorPickerBar {
                             .items_center()
                             .h(SEARCH_BAR_HEIGHT)
                             .child(self.render_color_picker_section(cx))
-                            .child(Self::render_color_value_section(
-                                "Hex",
-                                &self.cached_hex,
-                                &self.hex_input,
-                                cx,
-                            ))
+                            .child(Self::render_color_value_section("Hex", &self.hex_input, cx))
                             .child(Self::render_color_value_section(
                                 "OkLCH",
-                                &self.cached_oklch,
                                 &self.oklch_input,
                                 cx,
                             ))
                             .child(Self::render_color_value_section(
                                 "HSLA",
-                                &self.cached_hsla,
                                 &self.hsla_input,
                                 cx,
                             ))
@@ -96,7 +89,6 @@ impl ColorPickerBar {
     ///
     /// ### Arguments
     /// - `label`: The label for the color format (e.g. "Hex", "`OkLCH`", "HSLA")
-    /// - `value`: The current formatted color value string (used for the insert and clipboard buttons)
     /// - `input_state`: The input state entity for this field
     /// - `cx`: The application context
     ///
@@ -104,10 +96,10 @@ impl ColorPickerBar {
     /// - `Div`: The rendered color value section
     fn render_color_value_section(
         label: &'static str,
-        value: &str,
         input_state: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> Div {
+        let value = input_state.read(cx).value();
         div()
             .flex()
             .items_center()
@@ -132,17 +124,15 @@ impl ColorPickerBar {
             .child(
                 InsertButton::new(SharedString::from(format!("color-insert-{label}"))).on_click(
                     cx.listener({
-                        let value = value.to_string();
+                        let input_state = input_state.clone();
                         move |this, _, window, cx| {
-                            this.insert_color_value(value.clone(), window, cx);
+                            let value = input_state.read(cx).value();
+                            this.insert_color_value(value, window, cx);
                         }
                     }),
                 ),
             )
-            .child(
-                CopyButton::new(SharedString::from(format!("color-copy-{label}")))
-                    .value(SharedString::from(value.to_string())),
-            )
+            .child(CopyButton::new(SharedString::from(format!("color-copy-{label}"))).value(value))
     }
 
     /// Render the highlight colors toggle button for the color picker bar.
@@ -213,10 +203,69 @@ impl ColorPickerBar {
 mod gpui_tests {
     use super::super::state::ColorPickerBarEvent;
 
-    use gpui_kit::TestAppContext;
-    use gpui_kit::component::input::Position;
+    use gpui_kit::component::input::{InputEvent, Position};
+    use gpui_kit::{Entity, Modifiers, TestAppContext, VisualTestContext};
 
-    use crate::test_support::setup_fulgur;
+    use crate::fulgur::Fulgur;
+    use crate::test_support::{setup_fulgur, setup_fulgur_with_root};
+
+    /// Show the color picker bar in a rendered window, then type `#FF0000` into the Hex
+    /// input and press Enter, the way a user commits a typed color
+    ///
+    /// ### Arguments
+    /// - `cx`: The test application context
+    ///
+    /// ### Returns
+    /// - `(Entity<Fulgur>, VisualTestContext)`: The Fulgur entity and a visual test context
+    ///   whose window has been drawn with the committed color
+    fn show_bar_with_typed_red_hex(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| this.toggle_color_picker(window, cx));
+            let hex_input = fulgur.read(cx).color_picker_bar.read(cx).hex_input.clone();
+            hex_input.update(cx, |state, cx| {
+                state.set_value("#FF0000", window, cx);
+                cx.emit(InputEvent::PressEnter {
+                    secondary: false,
+                    shift: false,
+                });
+            });
+        });
+        visual_cx.run_until_parked();
+        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+        (fulgur, visual_cx)
+    }
+
+    #[gpui_kit::test]
+    fn test_insert_button_uses_typed_hex_value(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = show_bar_with_typed_red_hex(cx);
+        let insert = visual_cx
+            .debug_bounds("color-insert-Hex")
+            .expect("hex insert button should be rendered");
+        visual_cx.simulate_click(insert.center(), Modifiers::none());
+        let text = visual_cx.update(|_window, cx| {
+            fulgur
+                .read(cx)
+                .get_active_editor_tab(cx)
+                .expect("expected active editor tab")
+                .content
+                .read(cx)
+                .text()
+                .to_string()
+        });
+        assert_eq!(text, "#FF0000");
+    }
+
+    #[gpui_kit::test]
+    fn test_copy_button_uses_synced_sibling_value(cx: &mut TestAppContext) {
+        let (_fulgur, mut visual_cx) = show_bar_with_typed_red_hex(cx);
+        let copy = visual_cx
+            .debug_bounds("color-copy-HSLA")
+            .expect("hsla copy button should be rendered");
+        visual_cx.simulate_click(copy.center(), Modifiers::none());
+        let copied = visual_cx.read_from_clipboard().and_then(|item| item.text());
+        assert_eq!(copied.as_deref(), Some("hsla(0, 100%, 50%, 1.00)"));
+    }
 
     #[gpui_kit::test]
     fn test_color_picker_bar_hidden_by_default(cx: &mut TestAppContext) {
@@ -293,7 +342,7 @@ mod gpui_tests {
                 this.color_picker_bar.clone()
             });
             bar.update(cx, |bar, cx| {
-                bar.insert_color_value("#FF0000".to_string(), window, cx);
+                bar.insert_color_value("#FF0000".into(), window, cx);
             });
             let text = fulgur
                 .read(cx)
@@ -316,7 +365,7 @@ mod gpui_tests {
                 this.color_picker_bar.clone()
             });
             bar.update(cx, |bar, cx| {
-                bar.insert_color_value("#FF0000".to_string(), window, cx);
+                bar.insert_color_value("#FF0000".into(), window, cx);
             });
         });
     }
