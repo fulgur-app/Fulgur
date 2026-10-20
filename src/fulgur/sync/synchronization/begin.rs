@@ -5,7 +5,7 @@ use super::version::{
 };
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::sync::access_token::{TokenStateManager, get_valid_token};
-use crate::fulgur::sync::share;
+use crate::fulgur::sync::share::{self, ClaimedFetch};
 use fulgur_common::api::shares::SharedFileResponse;
 use fulgur_common::api::sync::{BeginV2Response, InitialSynchronizationPayload};
 use parking_lot::Mutex;
@@ -175,23 +175,20 @@ pub fn queue_pending_shares(
 /// Maximum number of concurrent share fetch worker threads.
 const MAX_FETCH_WORKERS: usize = 8;
 
-/// Fetch each announced share by id in parallel.
+/// Fetch each announced share that is not already claimed, in parallel.
 ///
 /// ### Arguments
-/// - `profile`: The server profile to fetch from
-/// - `token_state`: Per-profile JWT token state manager
-/// - `http_agent`: Shared HTTP agent for connection pooling
 /// - `share_ids`: The announced pending share ids to retrieve
-/// - `server_max_file_size`: Server-advertised max file size used to bound each response
+/// - `claimed_ids`: The profile's claim set; each id is claimed before its download
+/// - `fetch`: Downloads one share by id
 ///
 /// ### Returns
-/// - `Vec<SharedFileResponse>`: The successfully fetched shares; failures are logged and skipped
+/// - `Vec<SharedFileResponse>`: The newly fetched shares; claimed ids are skipped
+///   and failures are logged and skipped
 fn fetch_shares_for_ids(
-    profile: &ServerProfile,
-    token_state: &Arc<TokenStateManager>,
-    http_agent: &ureq::Agent,
     share_ids: &[String],
-    server_max_file_size: u64,
+    claimed_ids: &Mutex<HashSet<String>>,
+    fetch: impl Fn(&str) -> Result<SharedFileResponse, SynchronizationError> + Sync,
 ) -> Vec<SharedFileResponse> {
     if share_ids.is_empty() {
         return Vec::new();
@@ -207,15 +204,12 @@ fn fetch_shares_for_ids(
                     let Some(id) = share_ids.get(index) else {
                         break;
                     };
-                    match share::fetch_share_by_id(
-                        profile,
-                        token_state,
-                        http_agent,
-                        id,
-                        server_max_file_size,
-                    ) {
-                        Ok(s) => results.lock().push(s),
-                        Err(e) => log::warn!("Skipping share id {id}: {e}"),
+                    match share::fetch_unclaimed_share(claimed_ids, id, || fetch(id)) {
+                        ClaimedFetch::Fetched(s) => results.lock().push(s),
+                        ClaimedFetch::AlreadyClaimed => {
+                            log::debug!("Skipping share id {id}: already claimed");
+                        }
+                        ClaimedFetch::Failed(e) => log::warn!("Skipping share id {id}: {e}"),
                     }
                 }
             });
@@ -230,7 +224,7 @@ fn fetch_shares_for_ids(
 /// - `profile`: The server profile to synchronize with
 /// - `token_state`: Per-profile JWT token state manager
 /// - `http_agent`: Shared HTTP agent for connection pooling
-/// - `pending_ack_share_ids`: Ack set the fetched ids are registered into
+/// - `pending_ack_share_ids`: The profile's claim set; ids already in it are not fetched
 ///
 /// ### Errors
 /// - Returns a `SynchronizationError` if the begin request fails (network failure,
@@ -254,19 +248,9 @@ pub fn initial_synchronization(
     } = perform_begin(profile, token_state, http_agent)?;
     let min_fulgur_version = begin.min_fulgur_version.clone();
     let server_max_file_size = resolve_server_max_file_size(begin.max_file_size_bytes);
-    let shares = fetch_shares_for_ids(
-        profile,
-        token_state,
-        http_agent,
-        &begin.share_ids,
-        server_max_file_size,
-    );
-    {
-        let mut ack_set = pending_ack_share_ids.lock();
-        for share in &shares {
-            ack_set.insert(share.id.clone());
-        }
-    }
+    let shares = fetch_shares_for_ids(&begin.share_ids, pending_ack_share_ids, |id| {
+        share::fetch_share_by_id(profile, token_state, http_agent, id, server_max_file_size)
+    });
     log::info!(
         "Initial synchronization successful: {} announced, {} retrieved",
         begin.share_ids.len(),
@@ -330,5 +314,61 @@ mod tests {
         let pending = Mutex::new(vec![share("a")]);
         queue_pending_shares(&pending, Vec::new());
         assert_eq!(queued_ids(&pending), vec!["a"]);
+    }
+
+    fn sorted_ids(shares: &[SharedFileResponse]) -> Vec<String> {
+        let mut ids: Vec<String> = shares.iter().map(|s| s.id.clone()).collect();
+        ids.sort();
+        ids
+    }
+
+    #[test]
+    fn a_restarted_initial_sync_does_not_refetch_shares_it_already_holds() {
+        // The server keeps announcing a share until it is acknowledged, so a
+        // share whose ack failed, or that was quarantined, comes back on every
+        // SSE restart. Fetching it again would open a second tab for it.
+        let claimed = Mutex::new(HashSet::new());
+        let announced = vec!["a".to_string(), "b".to_string()];
+        let fetch_calls = AtomicUsize::new(0);
+        let fetch = |id: &str| {
+            fetch_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(share(id))
+        };
+
+        let first_pass = fetch_shares_for_ids(&announced, &claimed, fetch);
+        let restarted_pass = fetch_shares_for_ids(&announced, &claimed, fetch);
+
+        assert_eq!(sorted_ids(&first_pass), vec!["a", "b"]);
+        assert!(restarted_pass.is_empty());
+        assert_eq!(fetch_calls.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn a_share_whose_fetch_failed_is_fetched_by_the_next_pass() {
+        let claimed = Mutex::new(HashSet::new());
+        let announced = vec!["a".to_string()];
+
+        let failed_pass = fetch_shares_for_ids(&announced, &claimed, |_| {
+            Err(SynchronizationError::Other("network down".to_string()))
+        });
+        let next_pass = fetch_shares_for_ids(&announced, &claimed, |id| Ok(share(id)));
+
+        assert!(failed_pass.is_empty());
+        assert_eq!(sorted_ids(&next_pass), vec!["a"]);
+    }
+
+    #[test]
+    fn concurrent_workers_fetch_a_repeated_id_once() {
+        let claimed = Mutex::new(HashSet::new());
+        let announced = vec!["a".to_string(); MAX_FETCH_WORKERS];
+        let fetch_calls = AtomicUsize::new(0);
+
+        let shares = fetch_shares_for_ids(&announced, &claimed, |id| {
+            fetch_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(share(id))
+        });
+
+        assert_eq!(sorted_ids(&shares), vec!["a"]);
+        assert_eq!(fetch_calls.load(Ordering::Relaxed), 1);
     }
 }

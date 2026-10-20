@@ -2,7 +2,9 @@ use crate::fulgur::{
     settings::ServerProfile,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
-        share::{MAX_SYNC_SHARE_PAYLOAD_BYTES, fetch_share_by_id},
+        share::{
+            ClaimedFetch, MAX_SYNC_SHARE_PAYLOAD_BYTES, fetch_share_by_id, fetch_unclaimed_share,
+        },
         synchronization::{
             FULGURANT_VERSION_HEADER, MIN_SUPPORTED_FULGURANT_VERSION_DISPLAY,
             SynchronizationError, SynchronizationStatus, list_pending_share_ids,
@@ -65,8 +67,8 @@ pub struct SseAgents {
 pub struct SseShareState {
     /// Queue the UI tick drains incoming shares from.
     pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
-    /// Share IDs fetched via the v2 read/ack flow awaiting acknowledgement once
-    /// decryption succeeds. The bulk drain skips IDs present here.
+    /// Claimed share ids, never fetched again until acknowledged (see
+    /// `SyncState::pending_ack_share_ids`).
     pub pending_ack_share_ids: Arc<Mutex<HashSet<String>>>,
     /// Server-advertised max file size, used to bound the bulk drain response.
     pub max_file_size_bytes: Arc<AtomicU64>,
@@ -236,19 +238,20 @@ fn fetch_single_share_into(
     share_state: &SseShareState,
     share_id: &str,
 ) {
-    if share_state.pending_ack_share_ids.lock().contains(share_id) {
-        log::debug!("Fetch (doorbell): share id {share_id} already in flight, skipping");
-        return;
-    }
     let server_max_file_size = share_state.max_file_size_bytes.load(Ordering::Acquire);
-    match fetch_share_by_id(
-        profile,
-        token_state,
-        http_agent,
-        share_id,
-        server_max_file_size,
-    ) {
-        Ok(share) => {
+    match fetch_unclaimed_share(&share_state.pending_ack_share_ids, share_id, || {
+        fetch_share_by_id(
+            profile,
+            token_state,
+            http_agent,
+            share_id,
+            server_max_file_size,
+        )
+    }) {
+        ClaimedFetch::AlreadyClaimed => {
+            log::debug!("Fetch (doorbell): share id {share_id} already claimed, skipping");
+        }
+        ClaimedFetch::Fetched(share) => {
             if share_payload_exceeds_limit(share.content.len(), server_max_file_size) {
                 log::warn!(
                     "Dropping shared file '{}' from device {}: encrypted payload ({} bytes) exceeds 2x the server max ({} bytes)",
@@ -259,14 +262,10 @@ fn fetch_single_share_into(
                 );
                 return;
             }
-            share_state
-                .pending_ack_share_ids
-                .lock()
-                .insert(share.id.clone());
             share_state.pending_shared_files.lock().push(share);
             log::info!("Fetch (doorbell): queued share id {share_id}, pending ack");
         }
-        Err(e) => {
+        ClaimedFetch::Failed(e) => {
             log::warn!("Fetch (doorbell) for id {share_id} failed: {e}");
         }
     }
@@ -279,8 +278,8 @@ fn fetch_single_share_into(
 /// connection was down, so the catch-up enumerates the device's pending share
 /// ids with the non-consuming `POST /api/v2/begin` (Fulgurant exposes no
 /// standalone listing endpoint) and routes each through
-/// `fetch_single_share_into`, which deduplicates against in-flight doorbell
-/// fetches and registers ids for acknowledgement after a successful download.
+/// `fetch_single_share_into`, which claims each id before downloading it so
+/// shares already queued, awaiting acknowledgement, or quarantined are skipped.
 ///
 /// ### Arguments
 /// - `profile`: The server profile to fetch from
