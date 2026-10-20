@@ -9,7 +9,49 @@ use crate::fulgur::{
     utils::sanitize::sanitize_filename,
 };
 use fulgur_common::api::shares::SharedFileResponse;
+use parking_lot::Mutex;
+use std::collections::HashSet;
 use std::sync::Arc;
+
+/// Outcome of fetching a share through the profile's claim set.
+pub enum ClaimedFetch {
+    /// The id was already claimed: the share is queued, being decrypted,
+    /// awaiting its acknowledgement, or quarantined. Nothing was downloaded.
+    AlreadyClaimed,
+    /// The share was downloaded and its id stays claimed.
+    Fetched(SharedFileResponse),
+    /// The download failed and the claim was released so a later pass can retry.
+    Failed(SynchronizationError),
+}
+
+/// Claim a share id, then download the share unless it was already claimed.
+///
+/// ### Arguments
+/// - `claimed_ids`: The profile's set of claimed share ids
+/// - `share_id`: The share id to claim and fetch
+/// - `fetch`: Downloads the share once the id is claimed
+///
+/// ### Returns
+/// - `ClaimedFetch::AlreadyClaimed`: The id was claimed before; `fetch` was not called
+/// - `ClaimedFetch::Fetched`: The downloaded share, its id left claimed
+/// - `ClaimedFetch::Failed`: The download error, the claim released
+#[allow(clippy::implicit_hasher)]
+pub fn fetch_unclaimed_share(
+    claimed_ids: &Mutex<HashSet<String>>,
+    share_id: &str,
+    fetch: impl FnOnce() -> Result<SharedFileResponse, SynchronizationError>,
+) -> ClaimedFetch {
+    if !claimed_ids.lock().insert(share_id.to_owned()) {
+        return ClaimedFetch::AlreadyClaimed;
+    }
+    match fetch() {
+        Ok(share) => ClaimedFetch::Fetched(share),
+        Err(e) => {
+            claimed_ids.lock().remove(share_id);
+            ClaimedFetch::Failed(e)
+        }
+    }
+}
 
 /// Fetch a single available share by ID without consuming it.
 ///
@@ -108,5 +150,54 @@ pub fn acknowledge_share_download(
             Ok(())
         }
         Err(e) => Err(handle_ureq_error(e, "Failed to acknowledge share download")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn share(id: &str) -> SharedFileResponse {
+        SharedFileResponse {
+            id: id.to_string(),
+            source_device_id: "device".to_string(),
+            file_name: format!("{id}.txt"),
+            file_size: 0,
+            content: String::new(),
+            created_at: String::new(),
+            expires_at: String::new(),
+            source_device_name: None,
+        }
+    }
+
+    #[test]
+    fn an_already_claimed_share_is_not_downloaded_again() {
+        let claimed = Mutex::new(HashSet::from(["a".to_string()]));
+        let fetch_calls = Cell::new(0);
+        let outcome = fetch_unclaimed_share(&claimed, "a", || {
+            fetch_calls.set(fetch_calls.get() + 1);
+            Ok(share("a"))
+        });
+        assert!(matches!(outcome, ClaimedFetch::AlreadyClaimed));
+        assert_eq!(fetch_calls.get(), 0);
+    }
+
+    #[test]
+    fn a_downloaded_share_stays_claimed() {
+        let claimed = Mutex::new(HashSet::new());
+        let outcome = fetch_unclaimed_share(&claimed, "a", || Ok(share("a")));
+        assert!(matches!(outcome, ClaimedFetch::Fetched(ref s) if s.id == "a"));
+        assert!(claimed.lock().contains("a"));
+    }
+
+    #[test]
+    fn a_failed_download_releases_the_claim_for_a_later_pass() {
+        let claimed = Mutex::new(HashSet::new());
+        let outcome = fetch_unclaimed_share(&claimed, "a", || {
+            Err(SynchronizationError::Other("network down".to_string()))
+        });
+        assert!(matches!(outcome, ClaimedFetch::Failed(_)));
+        assert!(!claimed.lock().contains("a"));
     }
 }
