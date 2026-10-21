@@ -397,7 +397,7 @@ mod tests {
     fn test_gpui_float_colors_use_turn_based_hue() {
         let found = colors_in_line("hsla(0.5, 1.0, 0.5, 1.0)");
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].color.to_css_hex(), "#00ffff");
+        assert_eq!(found[0].color.to_css_hex().to_string(), "#00ffff");
     }
 
     #[test]
