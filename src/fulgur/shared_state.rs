@@ -99,9 +99,9 @@ pub struct SyncState {
     pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
     /// Share IDs claimed for the v2 read/ack flow (`GET /api/v2/shares/:id`) that still need acknowledging
     /// (`POST /api/v2/shares/:id/successful`) once decryption succeeds. An id is claimed before its
-    /// download and released only by a failed download or a successful acknowledgement, so shares
-    /// whose acknowledgement failed and quarantined shares stay claimed and are never fetched again
-    /// (see `share::fetch_unclaimed_share`).
+    /// download and released only by a transient download failure or a successful acknowledgement,
+    /// so shares whose acknowledgement failed, quarantined shares, and shares rejected as too large
+    /// or malformed stay claimed and are never fetched again (see `share::fetch_unclaimed_share`).
     pub pending_ack_share_ids: Arc<Mutex<HashSet<String>>>,
     /// Shares already decrypted off the UI thread, awaiting tab creation in the render loop.
     pub pending_decrypted_files: Arc<Mutex<Vec<crate::fulgur::sync::share::DecryptedShare>>>,

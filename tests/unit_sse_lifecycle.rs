@@ -29,6 +29,7 @@ fn make_sse_share_state() -> SseShareState {
         pending_ack_share_ids: Arc::new(Mutex::new(std::collections::HashSet::new())),
         max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),
         server_version: Arc::new(Mutex::new(None)),
+        notification_tx: futures::channel::mpsc::unbounded().0,
     }
 }
 

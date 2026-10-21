@@ -80,6 +80,7 @@ pub enum SynchronizationError {
     ServerError(u16),
     ServerTooOld { required: &'static str },
     ServerUrlMissing,
+    ShareTooLarge { limit_bytes: u64 },
     Timeout(String),
 }
 
@@ -127,6 +128,11 @@ impl fmt::Display for SynchronizationError {
                 "Server is too old: Fulgurant {required} or newer is required"
             ),
             SynchronizationError::ServerUrlMissing => write!(f, "Server URL is missing"),
+            SynchronizationError::ShareTooLarge { limit_bytes } => write!(
+                f,
+                "Shared file exceeds the {} KB download limit",
+                limit_bytes / 1024
+            ),
             SynchronizationError::Timeout(timeout) => write!(f, "Timeout: {timeout}"),
         }
     }
