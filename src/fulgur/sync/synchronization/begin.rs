@@ -19,6 +19,9 @@ pub struct BeginOutcome {
     pub device_name: String,
     /// The shares announced by the begin response that were successfully fetched.
     pub shares: Vec<SharedFileResponse>,
+    /// Download errors of announced shares rejected for a permanent failure;
+    /// their ids stay claimed so they are reported once and never fetched again.
+    pub rejected_shares: Vec<SynchronizationError>,
     /// Server-advertised maximum file size, or `None` when the server sets no limit.
     pub max_file_size_bytes: Option<u64>,
 }
@@ -175,6 +178,15 @@ pub fn queue_pending_shares(
 /// Maximum number of concurrent share fetch worker threads.
 const MAX_FETCH_WORKERS: usize = 8;
 
+/// Shares downloaded by one pass over the announced share ids.
+#[derive(Default)]
+struct FetchedShares {
+    /// The newly fetched shares.
+    shares: Vec<SharedFileResponse>,
+    /// Download errors of shares rejected for a permanent failure.
+    rejected: Vec<SynchronizationError>,
+}
+
 /// Fetch each announced share that is not already claimed, in parallel.
 ///
 /// ### Arguments
@@ -183,19 +195,22 @@ const MAX_FETCH_WORKERS: usize = 8;
 /// - `fetch`: Downloads one share by id
 ///
 /// ### Returns
-/// - `Vec<SharedFileResponse>`: The newly fetched shares; claimed ids are skipped
-///   and failures are logged and skipped
+/// - `FetchedShares`: The newly fetched shares and the permanent download
+///   errors; claimed ids are skipped and transient failures are logged and skipped
 fn fetch_shares_for_ids(
     share_ids: &[String],
     claimed_ids: &Mutex<HashSet<String>>,
     fetch: impl Fn(&str) -> Result<SharedFileResponse, SynchronizationError> + Sync,
-) -> Vec<SharedFileResponse> {
+) -> FetchedShares {
     if share_ids.is_empty() {
-        return Vec::new();
+        return FetchedShares::default();
     }
     let worker_count = MAX_FETCH_WORKERS.min(share_ids.len());
     let next_index = AtomicUsize::new(0);
-    let results = Mutex::new(Vec::with_capacity(share_ids.len()));
+    let results = Mutex::new(FetchedShares {
+        shares: Vec::with_capacity(share_ids.len()),
+        rejected: Vec::new(),
+    });
     std::thread::scope(|scope| {
         for _ in 0..worker_count {
             scope.spawn(|| {
@@ -205,11 +220,15 @@ fn fetch_shares_for_ids(
                         break;
                     };
                     match share::fetch_unclaimed_share(claimed_ids, id, || fetch(id)) {
-                        ClaimedFetch::Fetched(s) => results.lock().push(s),
+                        ClaimedFetch::Fetched(s) => results.lock().shares.push(s),
                         ClaimedFetch::AlreadyClaimed => {
                             log::debug!("Skipping share id {id}: already claimed");
                         }
                         ClaimedFetch::Failed(e) => log::warn!("Skipping share id {id}: {e}"),
+                        ClaimedFetch::Rejected(e) => {
+                            log::warn!("Rejecting share id {id}, not retrying: {e}");
+                            results.lock().rejected.push(e);
+                        }
                     }
                 }
             });
@@ -248,18 +267,21 @@ pub fn initial_synchronization(
     } = perform_begin(profile, token_state, http_agent)?;
     let min_fulgur_version = begin.min_fulgur_version.clone();
     let server_max_file_size = resolve_server_max_file_size(begin.max_file_size_bytes);
-    let shares = fetch_shares_for_ids(&begin.share_ids, pending_ack_share_ids, |id| {
-        share::fetch_share_by_id(profile, token_state, http_agent, id, server_max_file_size)
-    });
+    let FetchedShares { shares, rejected } =
+        fetch_shares_for_ids(&begin.share_ids, pending_ack_share_ids, |id| {
+            share::fetch_share_by_id(profile, token_state, http_agent, id, server_max_file_size)
+        });
     log::info!(
-        "Initial synchronization successful: {} announced, {} retrieved",
+        "Initial synchronization successful: {} announced, {} retrieved, {} rejected",
         begin.share_ids.len(),
-        shares.len()
+        shares.len(),
+        rejected.len()
     );
     Ok(InitialSyncOutcome {
         begin: BeginOutcome {
             device_name: begin.device_name,
             shares,
+            rejected_shares: rejected,
             max_file_size_bytes: begin.max_file_size_bytes,
         },
         min_fulgur_version,
@@ -338,8 +360,8 @@ mod tests {
         let first_pass = fetch_shares_for_ids(&announced, &claimed, fetch);
         let restarted_pass = fetch_shares_for_ids(&announced, &claimed, fetch);
 
-        assert_eq!(sorted_ids(&first_pass), vec!["a", "b"]);
-        assert!(restarted_pass.is_empty());
+        assert_eq!(sorted_ids(&first_pass.shares), vec!["a", "b"]);
+        assert!(restarted_pass.shares.is_empty());
         assert_eq!(fetch_calls.load(Ordering::Relaxed), 2);
     }
 
@@ -353,8 +375,38 @@ mod tests {
         });
         let next_pass = fetch_shares_for_ids(&announced, &claimed, |id| Ok(share(id)));
 
-        assert!(failed_pass.is_empty());
-        assert_eq!(sorted_ids(&next_pass), vec!["a"]);
+        assert!(failed_pass.shares.is_empty());
+        assert!(failed_pass.rejected.is_empty());
+        assert_eq!(sorted_ids(&next_pass.shares), vec!["a"]);
+    }
+
+    #[test]
+    fn an_oversized_share_is_reported_once_and_skipped_by_later_passes() {
+        // An oversized share stays pending server-side and is announced again
+        // on every SSE restart; it must not be downloaded again each time.
+        let claimed = Mutex::new(HashSet::new());
+        let announced = vec!["big".to_string(), "small".to_string()];
+        let fetch_calls = AtomicUsize::new(0);
+        let fetch = |id: &str| {
+            fetch_calls.fetch_add(1, Ordering::Relaxed);
+            if id == "big" {
+                Err(SynchronizationError::ShareTooLarge { limit_bytes: 1024 })
+            } else {
+                Ok(share(id))
+            }
+        };
+
+        let first_pass = fetch_shares_for_ids(&announced, &claimed, fetch);
+        let restarted_pass = fetch_shares_for_ids(&announced, &claimed, fetch);
+
+        assert_eq!(sorted_ids(&first_pass.shares), vec!["small"]);
+        assert!(matches!(
+            first_pass.rejected.as_slice(),
+            [SynchronizationError::ShareTooLarge { limit_bytes: 1024 }]
+        ));
+        assert!(restarted_pass.shares.is_empty());
+        assert!(restarted_pass.rejected.is_empty());
+        assert_eq!(fetch_calls.load(Ordering::Relaxed), 2);
     }
 
     #[test]
@@ -368,7 +420,7 @@ mod tests {
             Ok(share(id))
         });
 
-        assert_eq!(sorted_ids(&shares), vec!["a"]);
+        assert_eq!(sorted_ids(&shares.shares), vec!["a"]);
         assert_eq!(fetch_calls.load(Ordering::Relaxed), 1);
     }
 }

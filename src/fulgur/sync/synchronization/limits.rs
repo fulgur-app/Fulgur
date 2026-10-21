@@ -11,13 +11,6 @@ pub const MAX_HTTP_DEVICES_RESPONSE_BYTES: u64 = 1024 * 1024;
 /// (object braces, sibling fields like `id`, `file_name`, timestamps).
 const SHARE_RESPONSE_FRAMING_BYTES: u64 = 4 * 1024;
 
-/// Maximum number of bytes accepted from a single-share HTTP response
-/// (`GET /api/v2/shares/:id`) when the server advertises no size limit.
-pub const MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES: u64 = (share::MAX_SYNC_SHARE_PAYLOAD_BYTES as u64)
-    * 2
-    + (share::JSON_OVERHEAD_PER_SHARE_BYTES as u64)
-    + SHARE_RESPONSE_FRAMING_BYTES;
-
 /// Compute the wire-size cap for a single `GET /api/v2/shares/:id` fetch, derived from the server's advertised maximum file size.
 ///
 /// ### Arguments
@@ -25,11 +18,12 @@ pub const MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES: u64 = (share::MAX_SYNC_SHARE_PAY
 ///   `u64::MAX` when the server reports no limit.
 ///
 /// ### Returns
-/// - `u64`: The maximum number of bytes to accept from the single-share response.
+/// - `u64`: The maximum number of bytes to accept from the single-share response,
+///   or `u64::MAX` when the server reports no limit.
 #[must_use]
 pub fn max_http_single_share_response_bytes(server_max_file_size: u64) -> u64 {
     if server_max_file_size == u64::MAX {
-        return MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES;
+        return u64::MAX;
     }
     server_max_file_size
         .saturating_mul(2)
@@ -74,18 +68,15 @@ pub fn store_server_max_file_size(atomic: &std::sync::atomic::AtomicU64, adverti
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES, max_http_single_share_response_bytes,
-        resolve_server_max_file_size, store_server_max_file_size,
+        max_http_single_share_response_bytes, resolve_server_max_file_size,
+        store_server_max_file_size,
     };
     use crate::fulgur::sync::share;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     #[test]
-    fn single_share_cap_falls_back_to_static_bound_when_unlimited() {
-        assert_eq!(
-            max_http_single_share_response_bytes(u64::MAX),
-            MAX_HTTP_SINGLE_SHARE_RESPONSE_BYTES
-        );
+    fn single_share_cap_is_lifted_when_the_server_is_unlimited() {
+        assert_eq!(max_http_single_share_response_bytes(u64::MAX), u64::MAX);
     }
 
     #[test]
@@ -99,7 +90,6 @@ mod tests {
     fn single_share_cap_covers_incompressible_default_file() {
         let default_plaintext = share::MAX_SYNC_SHARE_PAYLOAD_BYTES as u64;
         let worst_case_wire = default_plaintext * 137 / 100;
-        assert!(max_http_single_share_response_bytes(u64::MAX) >= worst_case_wire);
         assert!(max_http_single_share_response_bytes(default_plaintext) >= worst_case_wire);
     }
 

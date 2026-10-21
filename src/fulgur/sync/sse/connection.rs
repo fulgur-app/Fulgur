@@ -1,9 +1,11 @@
 use crate::fulgur::{
     settings::ServerProfile,
+    shared_state::AppNotification,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
         share::{
             ClaimedFetch, MAX_SYNC_SHARE_PAYLOAD_BYTES, fetch_share_by_id, fetch_unclaimed_share,
+            rejected_share_notification,
         },
         synchronization::{
             FULGURANT_VERSION_HEADER, MIN_SUPPORTED_FULGURANT_VERSION_DISPLAY,
@@ -75,6 +77,9 @@ pub struct SseShareState {
     /// Raw `x-fulgurant-version` value, updated each time the SSE handshake
     /// succeeds. `None` means the server did not advertise a version.
     pub server_version: Arc<Mutex<Option<String>>>,
+    /// Sender for user-facing notifications, used to report shares rejected
+    /// for a permanent download failure (see `SyncState::notification_tx`).
+    pub notification_tx: UnboundedSender<AppNotification>,
 }
 
 /// Publish a connection status and wake the windows displaying it.
@@ -268,6 +273,17 @@ fn fetch_single_share_into(
         ClaimedFetch::Failed(e) => {
             log::warn!("Fetch (doorbell) for id {share_id} failed: {e}");
         }
+        ClaimedFetch::Rejected(e) => {
+            log::warn!("Fetch (doorbell) for id {share_id} rejected, not retrying: {e}");
+            let notification = rejected_share_notification(&profile.name, &e);
+            if share_state
+                .notification_tx
+                .unbounded_send(notification)
+                .is_err()
+            {
+                log::warn!("Notification channel closed, dropping rejected share notification");
+            }
+        }
     }
 }
 
@@ -358,6 +374,7 @@ pub fn connect_sse(
         pending_ack_share_ids: Arc::clone(&share_state.pending_ack_share_ids),
         max_file_size_bytes: Arc::clone(&share_state.max_file_size_bytes),
         server_version: Arc::clone(&share_state.server_version),
+        notification_tx: share_state.notification_tx.clone(),
     };
     let shutdown_flag = Arc::clone(&hooks.shutdown_flag);
     let handle = thread::Builder::new()

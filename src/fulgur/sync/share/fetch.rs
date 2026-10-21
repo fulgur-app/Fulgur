@@ -1,5 +1,6 @@
 use crate::fulgur::{
     settings::ServerProfile,
+    shared_state::AppNotification,
     sync::{
         access_token::{TokenStateManager, get_valid_token},
         synchronization::{
@@ -9,6 +10,7 @@ use crate::fulgur::{
     utils::sanitize::sanitize_filename,
 };
 use fulgur_common::api::shares::SharedFileResponse;
+use gpui_kit::component::notification::NotificationType;
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -16,12 +18,30 @@ use std::sync::Arc;
 /// Outcome of fetching a share through the profile's claim set.
 pub enum ClaimedFetch {
     /// The id was already claimed: the share is queued, being decrypted,
-    /// awaiting its acknowledgement, or quarantined. Nothing was downloaded.
+    /// awaiting its acknowledgement, quarantined, or rejected. Nothing was downloaded.
     AlreadyClaimed,
     /// The share was downloaded and its id stays claimed.
     Fetched(SharedFileResponse),
     /// The download failed and the claim was released so a later pass can retry.
     Failed(SynchronizationError),
+    /// The download failed in a way no retry can fix; the id stays claimed so
+    /// later passes never download it again.
+    Rejected(SynchronizationError),
+}
+
+/// Decide whether a share download failure would repeat on every retry.
+///
+/// ### Arguments
+/// - `error`: The error returned by the share download
+///
+/// ### Returns
+/// - `true`: The share body is too large or malformed, so retrying is pointless
+/// - `false`: The failure may be transient (network, authentication, server error)
+fn is_permanent_fetch_failure(error: &SynchronizationError) -> bool {
+    matches!(
+        error,
+        SynchronizationError::ShareTooLarge { .. } | SynchronizationError::InvalidResponse(_)
+    )
 }
 
 /// Claim a share id, then download the share unless it was already claimed.
@@ -34,7 +54,8 @@ pub enum ClaimedFetch {
 /// ### Returns
 /// - `ClaimedFetch::AlreadyClaimed`: The id was claimed before; `fetch` was not called
 /// - `ClaimedFetch::Fetched`: The downloaded share, its id left claimed
-/// - `ClaimedFetch::Failed`: The download error, the claim released
+/// - `ClaimedFetch::Failed`: A transient download error, the claim released
+/// - `ClaimedFetch::Rejected`: A permanent download error, the id left claimed
 #[allow(clippy::implicit_hasher)]
 pub fn fetch_unclaimed_share(
     claimed_ids: &Mutex<HashSet<String>>,
@@ -46,11 +67,33 @@ pub fn fetch_unclaimed_share(
     }
     match fetch() {
         Ok(share) => ClaimedFetch::Fetched(share),
+        Err(e) if is_permanent_fetch_failure(&e) => ClaimedFetch::Rejected(e),
         Err(e) => {
             claimed_ids.lock().remove(share_id);
             ClaimedFetch::Failed(e)
         }
     }
+}
+
+/// Build the notification telling the user a share was rejected for good.
+///
+/// ### Arguments
+/// - `profile_name`: The human-readable profile name used in the message
+/// - `error`: The permanent download error
+///
+/// ### Returns
+/// - `AppNotification`: An error notification for the background channel
+#[must_use]
+pub fn rejected_share_notification(
+    profile_name: &str,
+    error: &SynchronizationError,
+) -> AppNotification {
+    AppNotification::background(
+        NotificationType::Error,
+        format!(
+            "{profile_name}: Could not download a shared file ({error}). It will not be retried."
+        ),
+    )
 }
 
 /// Fetch a single available share by ID without consuming it.
@@ -72,7 +115,7 @@ pub fn fetch_unclaimed_share(
 /// - `Ok(SharedFileResponse)`: The share content, left intact server-side, with
 ///   `file_name` sanitized against path traversal and control characters
 /// - `Err(SynchronizationError)`: If the request failed, the share is gone,
-///   or the response was invalid or too large
+///   the response was invalid, or it exceeded the cap (`ShareTooLarge`)
 pub fn fetch_share_by_id(
     profile: &ServerProfile,
     token_state: &Arc<TokenStateManager>,
@@ -97,7 +140,12 @@ pub fn fetch_share_by_id(
         .read_to_string()
         .map_err(|e| {
             log::error!("Failed to read share response body for id {id}: {e}");
-            SynchronizationError::Other(e.to_string())
+            match e {
+                ureq::Error::BodyExceedsLimit(limit_bytes) => {
+                    SynchronizationError::ShareTooLarge { limit_bytes }
+                }
+                e => SynchronizationError::Other(e.to_string()),
+            }
         })?;
     let mut share = serde_json::from_str::<SharedFileResponse>(&body).map_err(|e| {
         log::error!("Failed to parse share response body for id {id}: {e}");
@@ -199,5 +247,52 @@ mod tests {
         });
         assert!(matches!(outcome, ClaimedFetch::Failed(_)));
         assert!(!claimed.lock().contains("a"));
+    }
+
+    #[test]
+    fn an_oversized_share_is_rejected_and_never_downloaded_again() {
+        let claimed = Mutex::new(HashSet::new());
+        let fetch_calls = Cell::new(0);
+        let oversized = || {
+            fetch_calls.set(fetch_calls.get() + 1);
+            Err(SynchronizationError::ShareTooLarge { limit_bytes: 1024 })
+        };
+
+        let first = fetch_unclaimed_share(&claimed, "a", oversized);
+        let reconnect = fetch_unclaimed_share(&claimed, "a", oversized);
+
+        assert!(matches!(first, ClaimedFetch::Rejected(_)));
+        assert!(matches!(reconnect, ClaimedFetch::AlreadyClaimed));
+        assert_eq!(fetch_calls.get(), 1);
+    }
+
+    #[test]
+    fn a_malformed_share_is_rejected_and_stays_claimed() {
+        let claimed = Mutex::new(HashSet::new());
+        let outcome = fetch_unclaimed_share(&claimed, "a", || {
+            Err(SynchronizationError::InvalidResponse(
+                "missing field".to_string(),
+            ))
+        });
+        assert!(matches!(outcome, ClaimedFetch::Rejected(_)));
+        assert!(claimed.lock().contains("a"));
+    }
+
+    #[test]
+    fn a_rejected_share_notification_names_the_profile_and_the_cause() {
+        let notification = rejected_share_notification(
+            "Work",
+            &SynchronizationError::ShareTooLarge {
+                limit_bytes: 2048 * 1024,
+            },
+        );
+        assert!(matches!(
+            notification.notification_type,
+            NotificationType::Error
+        ));
+        assert_eq!(
+            notification.message.as_ref(),
+            "Work: Could not download a shared file (Shared file exceeds the 2048 KB download limit). It will not be retried."
+        );
     }
 }
