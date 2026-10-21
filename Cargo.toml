@@ -93,7 +93,10 @@ flate2 = "1.1.10"
 # Fix RUSTSEC-2026-0007: Integer overflow in BytesMut::reserve
 bytes = "1.12.1"
 # Fix RUSTSEC-2026-0098/0099: Name constraint bypass in rustls-webpki
-rustls-webpki = "0.103.15"
+# Fix RUSTSEC-2026-0382: Distrusted intermediates accepted by rustls-webpki
+rustls-webpki = "0.103.16"
+# Fix RUSTSEC-2026-0381: Distrusted emSign intermediates in webpki-roots (via ureq and gpui-pre-http-client-tls)
+webpki-roots = "1.0.10"
 # Fix RUSTSEC-2026-0186: Unchecked pointer offset in memmap2 (via fontdb -> usvg -> gpui)
 memmap2 = "0.9.11"
 
