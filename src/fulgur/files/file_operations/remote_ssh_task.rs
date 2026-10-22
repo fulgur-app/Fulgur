@@ -11,6 +11,7 @@ use crate::fulgur::{
             LoginAnswer, PassphraseAnswer, SshAuth,
         },
         credentials::SshCredKey,
+        pool::{SessionAttempt, retry_once_on_reused_session},
         session::{HostKeyDecision, HostKeyRequest, SshHostConfig, SshSession},
         url::RemoteSpec,
     },
@@ -162,7 +163,9 @@ impl Fulgur {
 /// - `window`: The window used to show progress and spawn the monitor task
 /// - `cx`: The application context
 /// - `context`: Connection inputs and labels for this operation
-/// - `work`: Operation to run on the established session, given the session and the request spec
+/// - `work`: Operation to run on the established session, given the session and the request
+///   spec. It runs a second time on a new connection when it fails on a session reused from
+///   the pool, so it must be safe to repeat.
 /// - `publish`: Records an outcome exactly once, guarded by the shared completion flag
 /// - `poll_completion`: Returns the payload to deliver once the operation has completed
 /// - `on_complete`: Applies the delivered payload on the UI thread
@@ -170,7 +173,7 @@ pub(super) fn spawn_ssh_task<Work, Payload>(
     window: &mut gpui_kit::Window,
     cx: &mut gpui_kit::Context<Fulgur>,
     context: SshTaskContext,
-    work: impl FnOnce(&SshSession, &RemoteSpec) -> Result<Work, ssh::error::SshError> + Send + 'static,
+    work: impl Fn(&SshSession, &RemoteSpec) -> Result<Work, ssh::error::SshError> + Send + 'static,
     publish: impl Fn(&AtomicBool, Result<Work, String>) -> bool + Send + Sync + 'static,
     poll_completion: impl Fn(&AtomicBool) -> Option<Payload> + 'static,
     on_complete: impl Fn(&mut Fulgur, Payload, &mut gpui_kit::Window, &mut gpui_kit::Context<Fulgur>)
@@ -218,6 +221,16 @@ pub(super) fn spawn_ssh_task<Work, Payload>(
         let cached_auth = cache_for_thread.lock().get(&credential_key).cloned();
         let host_key_slot = pending_host_key_for_thread;
         let host_key_timed_out = Arc::clone(&prompt_timed_out_for_thread);
+        let request_host_key_decision = move |fingerprint: &str, host: &str, port: u16| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            *host_key_slot.lock() = Some(HostKeyRequest {
+                fingerprint: fingerprint.to_string(),
+                host: host.to_string(),
+                port,
+                decision_tx: tx,
+            });
+            wait_for_host_key_decision(&rx, &host_key_timed_out)
+        };
         let mut prompter = ChannelPrompter {
             pending_request: pending_credential_for_thread,
             host: spec_for_thread.host.clone(),
@@ -225,43 +238,35 @@ pub(super) fn spawn_ssh_task<Work, Payload>(
             user: user.clone(),
             timed_out: Arc::clone(&prompt_timed_out_for_thread),
         };
-        let session_result = pool_for_thread.checkout_or_connect(
-            &spec_for_thread,
-            &user,
-            cached_auth.as_ref(),
-            move |fingerprint, host, port| {
-                let (tx, rx) = std::sync::mpsc::channel();
-                *host_key_slot.lock() = Some(HostKeyRequest {
-                    fingerprint: fingerprint.to_string(),
-                    host: host.to_string(),
-                    port,
-                    decision_tx: tx,
-                });
-                wait_for_host_key_decision(&rx, &host_key_timed_out)
-            },
-            &mut prompter,
-        );
-        match &session_result {
-            Ok((_, auth)) => {
-                cache_for_thread
-                    .lock()
-                    .insert(credential_key.clone(), auth.clone());
-            }
-            Err(ssh::error::SshError::AuthFailed) => {
-                cache_for_thread.lock().remove(&credential_key);
-            }
-            Err(_) => {}
-        }
 
-        let mut outcome = session_result
-            .and_then(|(pooled_session, _)| {
-                let result = work(pooled_session.session(), &spec_for_thread);
-                if result.is_err() {
-                    pooled_session.invalidate();
+        let outcome = retry_once_on_reused_session(
+            || {
+                let session_result = pool_for_thread.checkout_or_connect(
+                    &spec_for_thread,
+                    &user,
+                    cached_auth.as_ref(),
+                    &request_host_key_decision,
+                    &mut prompter,
+                );
+                match session_result {
+                    Ok((pooled_session, auth)) => {
+                        cache_for_thread.lock().insert(credential_key.clone(), auth);
+                        pooled_session.run(|session| work(session, &spec_for_thread))
+                    }
+                    Err(error) => {
+                        if matches!(error, ssh::error::SshError::AuthFailed) {
+                            cache_for_thread.lock().remove(&credential_key);
+                        }
+                        SessionAttempt::checkout_failed(error)
+                    }
                 }
-                result
-            })
-            .map_err(|e| e.user_message());
+            },
+            || {
+                !cancel_flag_for_thread.load(Ordering::Acquire)
+                    && !prompt_timed_out_for_thread.load(Ordering::Acquire)
+            },
+        );
+        let mut outcome = outcome.map_err(|e| e.user_message());
         if prompt_timed_out_for_thread.load(Ordering::Acquire) {
             outcome = Err(timeout_message_for_thread);
         }
