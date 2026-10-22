@@ -7,6 +7,7 @@ use super::version::{
 };
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::{AppNotification, SyncState};
+use crate::fulgur::sync::share::rejected_share_notification;
 use crate::fulgur::sync::sse::{SSE_WORKER_JOIN_TIMEOUT, SseAgents, SseShareState, connect_sse};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use crate::fulgur::utils::worker::{Worker, WorkerHooks};
@@ -158,6 +159,7 @@ fn run_profile_bootstrap(
                     pending_ack_share_ids: Arc::clone(&sync_state.pending_ack_share_ids),
                     max_file_size_bytes: Arc::clone(&sync_state.max_file_size_bytes),
                     server_version: Arc::clone(&sync_state.server_version),
+                    notification_tx: sync_state.notification_tx.clone(),
                 };
                 if let Err(e) = connect_sse(
                     profile,
@@ -215,6 +217,9 @@ pub fn apply_initial_sync_outcome(
     store_server_max_file_size(&sync_state.max_file_size_bytes, begin.max_file_size_bytes);
     *sync_state.device_name.lock() = Some(begin.device_name.clone());
     queue_pending_shares(&sync_state.pending_shared_files, begin.shares);
+    for error in &begin.rejected_shares {
+        sync_state.notify(rejected_share_notification(profile_name, error));
+    }
     let notifications = record_versions_and_build_notifications(
         &sync_state.server_min_fulgur_version,
         &sync_state.server_version,

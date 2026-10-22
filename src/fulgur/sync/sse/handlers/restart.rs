@@ -111,6 +111,7 @@ impl SseRestartJob {
             pending_ack_share_ids: Arc::clone(&self.sync_state.pending_ack_share_ids),
             max_file_size_bytes: Arc::clone(&self.sync_state.max_file_size_bytes),
             server_version: Arc::clone(&self.sync_state.server_version),
+            notification_tx: self.sync_state.notification_tx.clone(),
         };
         if let Err(e) = connect_sse(
             &self.profile,
