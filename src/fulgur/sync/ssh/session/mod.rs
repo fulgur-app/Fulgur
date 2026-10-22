@@ -21,6 +21,7 @@ use std::time::Duration;
 
 const CONNECT_TIMEOUT_SECS: u64 = 10;
 const SESSION_TIMEOUT_MS: u32 = 30_000;
+const SESSION_CLOSE_TIMEOUT_MS: u32 = 2_000;
 
 /// An established SSH session with an open SFTP subsystem.
 pub struct SshSession {
@@ -37,6 +38,12 @@ impl SshSession {
     #[must_use]
     pub fn is_authenticated(&self) -> bool {
         self.session.authenticated()
+    }
+}
+
+impl Drop for SshSession {
+    fn drop(&mut self) {
+        self.session.set_timeout(SESSION_CLOSE_TIMEOUT_MS);
     }
 }
 

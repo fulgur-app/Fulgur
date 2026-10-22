@@ -2,7 +2,7 @@ use crate::fulgur::sync::ssh::{
     self,
     auth::NoPrompt,
     credentials::{SshCredKey, SshCredentialCache},
-    pool::{PooledSession, SshSessionPool},
+    pool::{PooledSession, SessionAttempt, SshSessionPool, retry_once_on_reused_session},
     sftp::RemoteDirectoryEntry,
     url::RemoteSpec,
 };
@@ -320,34 +320,22 @@ fn list_entries_for_input(
 ) -> Result<Vec<RemoteDirectoryEntry>, String> {
     let (directory, filter) = parse_remote_browser_input(raw_input);
 
-    for attempt in 0..=1 {
-        let pooled = checkout_browser_session(connection, &directory)?;
-        let listing_result: Result<Vec<RemoteDirectoryEntry>, String> = (|| {
-            let parent = ssh::sftp::closest_existing_remote_directory(pooled.session(), &directory)
-                .map_err(|e| e.user_message())?;
-            ssh::sftp::list_remote_directory(pooled.session(), &parent)
-                .map_err(|e| e.user_message())
-        })();
-
-        match listing_result {
-            Ok(mut entries) => {
-                if !filter.is_empty() {
-                    let filter_lower = filter.to_lowercase();
-                    entries.retain(|entry| entry.name.to_lowercase().starts_with(&filter_lower));
-                }
-                return Ok(entries);
-            }
-            Err(_) if attempt == 0 => {
-                pooled.invalidate();
-            }
-            Err(error) => {
-                pooled.invalidate();
-                return Err(error);
-            }
-        }
+    let mut entries = retry_once_on_reused_session(
+        || match checkout_browser_session(connection, &directory) {
+            Ok(pooled) => pooled.run(|session| {
+                ssh::sftp::closest_existing_remote_directory(session, &directory)
+                    .and_then(|parent| ssh::sftp::list_remote_directory(session, &parent))
+                    .map_err(|e| e.user_message())
+            }),
+            Err(error) => SessionAttempt::checkout_failed(error),
+        },
+        || true,
+    )?;
+    if !filter.is_empty() {
+        let filter_lower = filter.to_lowercase();
+        entries.retain(|entry| entry.name.to_lowercase().starts_with(&filter_lower));
     }
-
-    Err("Failed to list remote directory".to_string())
+    Ok(entries)
 }
 
 /// Check out an SSH session for one browser listing call.
