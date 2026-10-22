@@ -1,5 +1,5 @@
 use crate::fulgur::settings::ProfileId;
-use crate::fulgur::state::{StateWriter, WindowState, WindowsState};
+use crate::fulgur::state::{RemoteHistory, StateDb, StateWriter, WindowState, WindowsState};
 use crate::fulgur::sync::sse::SseState;
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::sync::ssh::pool::SshSessionPool;
@@ -220,6 +220,9 @@ pub struct SharedAppState {
     pub remote_save_queue: Arc<RemoteSaveQueue>,
     /// Dedicated background writer for `WindowsState` persistence.
     pub state_writer: Arc<StateWriter>,
+    /// URLs recently opened through the Open Remote File dialog. Mutate via
+    /// `cx.update_global` only, then hand the result to `state_writer`.
+    pub remote_history: RemoteHistory,
     /// Per-window restore payloads taken once at startup, indexed by window
     /// position, used to restore every window without re-reading the state
     /// database per window.
@@ -249,9 +252,10 @@ impl SharedAppState {
     /// - `settings`: Already-loaded application settings
     /// - `pending_files_from_macos`: Queue of files to open from outside the app, seeded with the command-line files
     /// - `restore_state`: Startup snapshot of `WindowsState`, split into one restore payload per window
-    /// - `state_db`: The open session-state database, handed to the writer thread
-    ///   which owns it for the lifetime of the process. `None` when none could be
-    ///   opened, in which case session state is not persisted.
+    /// - `state_db`: The open session-state database, read for the remote URL
+    ///   history, then handed to the writer thread which owns it for the lifetime
+    ///   of the process. `None` when none could be opened, in which case session
+    ///   state is not persisted.
     ///
     /// ### Returns
     /// - `Self`: The new shared app state
@@ -259,7 +263,7 @@ impl SharedAppState {
         settings: Settings,
         pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
         restore_state: Option<WindowsState>,
-        state_db: Option<crate::fulgur::state::StateDb>,
+        state_db: Option<StateDb>,
     ) -> Self {
         let (settings, sync_error) = Self::validate_settings(settings, check_private_public_keys);
         let themes = Self::load_themes();
@@ -267,6 +271,7 @@ impl SharedAppState {
         let (notification_tx, notification_rx) = unbounded();
         let sync_states =
             Self::seed_sync_states(&settings, synchronization_status, &notification_tx);
+        let remote_history = Self::load_remote_history(state_db.as_ref());
 
         Self {
             settings,
@@ -296,6 +301,7 @@ impl SharedAppState {
             ssh_session_pool: Arc::new(SshSessionPool::new()),
             remote_save_queue: Arc::new(RemoteSaveQueue::new()),
             state_writer: Arc::new(StateWriter::new(state_db)),
+            remote_history,
             restore_state: Arc::new(Mutex::new(
                 restore_state
                     .map(|state| state.windows.into_iter().map(Some).collect())
@@ -314,6 +320,24 @@ impl SharedAppState {
         if self.notification_tx.unbounded_send(notification).is_err() {
             log::warn!("Notification channel closed, dropping notification");
         }
+    }
+
+    /// Read the remote URL history persisted in the session-state database.
+    ///
+    /// ### Arguments
+    /// - `state_db`: The session-state database, `None` when none could be opened
+    ///
+    /// ### Returns
+    /// - `RemoteHistory`: The persisted history, empty when there is no database
+    ///   or when it cannot be read
+    fn load_remote_history(state_db: Option<&StateDb>) -> RemoteHistory {
+        let Some(state_db) = state_db else {
+            return RemoteHistory::default();
+        };
+        state_db.load_remote_history().unwrap_or_else(|e| {
+            log::error!("Failed to load the remote URL history: {e}");
+            RemoteHistory::default()
+        })
     }
 
     /// Validate encryption keys against pre-loaded settings.

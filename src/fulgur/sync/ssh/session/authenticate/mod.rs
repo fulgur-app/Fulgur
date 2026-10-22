@@ -51,7 +51,10 @@ pub(super) fn authenticate<S: AuthSession>(
     prompter: &mut dyn CredentialPrompter,
 ) -> Result<SshAuth, SshError> {
     let methods = match session.auth_methods(user) {
-        Ok(list) => AllowedMethods::parse(list),
+        Ok(list) => {
+            log::debug!("SSH server accepts authentication methods: {list}");
+            AllowedMethods::parse(list)
+        }
         Err(error) if is_transport_error(&error) => return Err(auth_request_error(&error)),
         Err(error) => {
             log::debug!("SSH server did not list its authentication methods: {error}");
@@ -59,13 +62,19 @@ pub(super) fn authenticate<S: AuthSession>(
         }
     };
     if session.authenticated() {
+        log::debug!("SSH server requires no authentication");
         return Ok(SshAuth::Automatic);
     }
 
-    if let Some(auth) = preferred
-        && try_preferred(session, user, auth, methods, prompter)?
-    {
-        return Ok(auth.clone());
+    if let Some(auth) = preferred {
+        log::debug!(
+            "Trying the cached SSH credentials ({})",
+            auth.method_label()
+        );
+        if try_preferred(session, user, auth, methods, prompter)? {
+            return Ok(auth.clone());
+        }
+        log::debug!("The cached SSH credentials were not accepted");
     }
 
     if methods.publickey {
@@ -91,6 +100,7 @@ pub(super) fn authenticate<S: AuthSession>(
     }
 
     if methods.publickey || methods.accepts_password() {
+        log::debug!("No automatic SSH authentication worked, asking the user to log in");
         return authenticate_with_login_prompt(session, user, methods, prompter);
     }
     Err(SshError::AuthFailed)

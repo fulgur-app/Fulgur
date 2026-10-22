@@ -4,7 +4,7 @@ use super::{
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{Fulgur, editor_tab, tab::Tab};
 use gpui_kit::component::{WindowExt, notification::NotificationType};
-use gpui_kit::{Context, Window};
+use gpui_kit::{App, Context, Window};
 use std::path::PathBuf;
 
 impl Fulgur {
@@ -29,6 +29,7 @@ impl Fulgur {
         for outcome in outcomes {
             let target_tab_id = outcome.target_tab_id;
             let target_reload_guard = outcome.target_reload_guard;
+            let history_url = outcome.history_url;
             if let Some(tab_id) = target_tab_id {
                 if let Some(request_id) = outcome.target_request_id
                     && self.latest_remote_open_request_by_tab.get(&tab_id).copied()
@@ -62,6 +63,11 @@ impl Fulgur {
                         }
                     } else {
                         self.last_failed_remote_open_url = None;
+                        Self::record_remote_history_url_if_opened(
+                            history_url,
+                            &remote_file.spec,
+                            cx,
+                        );
                         let recent_remote_url =
                             crate::fulgur::sync::ssh::url::format_remote_url(&remote_file.spec);
                         log::debug!(
@@ -100,6 +106,11 @@ impl Fulgur {
                             cx,
                         );
                     } else {
+                        Self::record_remote_history_url_if_opened(
+                            history_url,
+                            &browse.directory_spec,
+                            cx,
+                        );
                         self.show_remote_path_browser_dialog(window, cx, &browse);
                     }
                 }
@@ -131,6 +142,25 @@ impl Fulgur {
                     );
                 }
             }
+        }
+    }
+
+    /// Record a dialog URL in the remote history once its exact location was opened.
+    ///
+    /// ### Arguments
+    /// - `history_url`: URL submitted in the Open Remote File dialog, `None` for other opens
+    /// - `opened`: Location actually opened, as a file or in the remote browser
+    /// - `cx`: The application context
+    fn record_remote_history_url_if_opened(
+        history_url: Option<String>,
+        opened: &crate::fulgur::sync::ssh::url::RemoteSpec,
+        cx: &mut App,
+    ) {
+        let Some(history_url) = history_url else {
+            return;
+        };
+        if crate::fulgur::sync::ssh::url::format_remote_history_url(opened) == history_url {
+            Self::record_remote_history_url(history_url, cx);
         }
     }
 
@@ -249,6 +279,59 @@ mod tests {
         }
     }
 
+    /// Run the dialog-URL recording rule against an opened location.
+    ///
+    /// ### Arguments
+    /// - `cx`: The test application context
+    /// - `history_url`: URL submitted in the dialog, `None` for other opens
+    /// - `opened`: Location actually opened
+    ///
+    /// ### Returns
+    /// - `Vec<String>`: The remote history afterwards, most recent first
+    fn history_after_opening(
+        cx: &mut TestAppContext,
+        history_url: Option<String>,
+        opened: &RemoteSpec,
+    ) -> Vec<String> {
+        let (_fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+        visual_cx.update(|_window, cx| {
+            Fulgur::record_remote_history_url_if_opened(history_url, opened, cx);
+            Fulgur::shared_state(cx).remote_history.urls().to_vec()
+        })
+    }
+
+    #[gpui_kit::test]
+    fn test_a_dialog_url_is_recorded_once_its_location_opens(cx: &mut TestAppContext) {
+        let history = history_after_opening(
+            cx,
+            Some("ssh://alice@example.com/tmp/reconnect.txt".to_string()),
+            &remote_spec(),
+        );
+        assert_eq!(history, ["ssh://alice@example.com/tmp/reconnect.txt"]);
+    }
+
+    #[gpui_kit::test]
+    fn test_a_missing_path_shown_as_its_parent_directory_is_not_recorded(cx: &mut TestAppContext) {
+        let mut parent_directory = remote_spec();
+        parent_directory.path = "/tmp".to_string();
+        let history = history_after_opening(
+            cx,
+            Some("ssh://alice@example.com/tmp/reconnect.txt".to_string()),
+            &parent_directory,
+        );
+        assert_eq!(
+            history,
+            Vec::<String>::new(),
+            "a mistyped path must not be offered again"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn test_opens_from_outside_the_dialog_are_not_recorded(cx: &mut TestAppContext) {
+        let history = history_after_opening(cx, None, &remote_spec());
+        assert_eq!(history, Vec::<String>::new());
+    }
+
     #[gpui_kit::test]
     fn test_remote_reconnect_keeps_edits_made_while_loading(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
@@ -282,6 +365,7 @@ mod tests {
                                 &remote_spec(),
                             ),
                         }),
+                        history_url: None,
                         result: Ok(RemoteOpenResult::File(RemoteFileResult {
                             spec: remote_spec(),
                             content: "remote content".to_string(),
@@ -347,6 +431,7 @@ mod tests {
                         target_tab_id: Some(tab_id),
                         target_request_id: None,
                         target_reload_guard: Some(guard),
+                        history_url: None,
                         result: Ok(RemoteOpenResult::File(RemoteFileResult {
                             spec: remote_spec(),
                             content: "caf\u{fffd}".to_string(),
@@ -383,6 +468,7 @@ mod tests {
                         target_tab_id: Some(tab_id),
                         target_request_id: None,
                         target_reload_guard: Some(guard),
+                        history_url: None,
                         result: Ok(RemoteOpenResult::Binary(remote_spec())),
                     });
                 this.process_pending_remote_files(window, cx);

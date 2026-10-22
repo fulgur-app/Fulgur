@@ -104,6 +104,7 @@ pub enum PaletteCommand {
     CloseFile,
     CloseAllFiles,
     ClearRecentFiles,
+    ClearRemoteHistory,
     Quit,
     AddCursorAbove,
     AddCursorBelow,
@@ -137,7 +138,7 @@ impl PaletteCommand {
     ///
     /// Grouping is derived from [`Self::group`], so a command added here lands in its
     /// group automatically and cannot go missing from the palette.
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 39] = [
         Self::NewFile,
         Self::NewWindow,
         Self::OpenFile,
@@ -150,6 +151,7 @@ impl PaletteCommand {
         Self::CloseFile,
         Self::CloseAllFiles,
         Self::ClearRecentFiles,
+        Self::ClearRemoteHistory,
         Self::Quit,
         Self::AddCursorAbove,
         Self::AddCursorBelow,
@@ -196,6 +198,7 @@ impl PaletteCommand {
             | Self::CloseFile
             | Self::CloseAllFiles
             | Self::ClearRecentFiles
+            | Self::ClearRemoteHistory
             | Self::Quit => PaletteGroup::File,
             Self::AddCursorAbove | Self::AddCursorBelow => PaletteGroup::Edit,
             Self::FindInFile | Self::FindAndReplace | Self::JumpToLine => PaletteGroup::Search,
@@ -238,6 +241,7 @@ impl PaletteCommand {
             Self::CloseFile => "Close file",
             Self::CloseAllFiles => "Close all files",
             Self::ClearRecentFiles => "Clear recent files",
+            Self::ClearRemoteHistory => "Clear remote URL history",
             Self::Quit => "Quit Fulgur",
             Self::AddCursorAbove => "Add cursor above",
             Self::AddCursorBelow => "Add cursor below",
@@ -285,6 +289,7 @@ impl PaletteCommand {
             Self::CloseFile => &["quit tab", "dismiss"],
             Self::CloseAllFiles => &["dismiss", "everything"],
             Self::ClearRecentFiles => &["history", "forget", "purge"],
+            Self::ClearRemoteHistory => &["ssh", "sftp", "server", "forget", "purge"],
             Self::Quit => &["exit", "close application"],
             Self::AddCursorAbove => &["multi cursor", "multiple carets", "column", "up"],
             Self::AddCursorBelow => &["multi cursor", "multiple carets", "column", "down"],
@@ -332,7 +337,7 @@ impl PaletteCommand {
             | Self::CloseAllFiles
             | Self::CloseTabsToLeft
             | Self::CloseOtherTabs => CustomIcon::Close,
-            Self::ClearRecentFiles => CustomIcon::Minus,
+            Self::ClearRecentFiles | Self::ClearRemoteHistory => CustomIcon::Minus,
             Self::AddCursorAbove => CustomIcon::ChevronUp,
             Self::AddCursorBelow => CustomIcon::ChevronDown,
             Self::Quit => CustomIcon::WindowClose,
@@ -387,6 +392,7 @@ impl PaletteCommand {
             Self::AddCursorAbove => Some(KeybindingHint::editor(AddCursorAbove)),
             Self::AddCursorBelow => Some(KeybindingHint::editor(AddCursorBelow)),
             Self::ShareFile
+            | Self::ClearRemoteHistory
             | Self::SelectLanguage
             | Self::ToggleMarkdownPreview
             | Self::ToggleMarkdownToolbar
@@ -439,6 +445,7 @@ impl PaletteCommand {
             Self::ShareFile => context.has_editor_tab && context.has_active_sync_profile,
             Self::CloseFile | Self::CloseAllFiles | Self::RenameActiveTab => context.tab_count > 0,
             Self::ClearRecentFiles => context.has_recent_files,
+            Self::ClearRemoteHistory => context.has_remote_history,
             Self::ToggleMarkdownPreview => context.is_markdown && !context.is_large_file,
             Self::ToggleMarkdownToolbar => context.is_markdown,
             Self::ToggleCsvView => context.is_csv && !context.is_large_file,

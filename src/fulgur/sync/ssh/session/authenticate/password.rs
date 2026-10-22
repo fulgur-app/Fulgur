@@ -73,19 +73,30 @@ pub(super) fn try_password<S: AuthSession>(
     methods: AllowedMethods,
     prompter: &mut dyn CredentialPrompter,
 ) -> Result<bool, SshError> {
-    if methods.password {
-        return auth_request_outcome(session, session.userauth_password(user, password.as_str()));
-    }
-    let mut responder = KeyboardInteractiveResponder {
-        password: Some(password),
-        prompter,
-        cancelled: false,
+    let (method, accepted) = if methods.password {
+        let result = session.userauth_password(user, password.as_str());
+        ("password", auth_request_outcome(session, result)?)
+    } else {
+        let mut responder = KeyboardInteractiveResponder {
+            password: Some(password),
+            prompter,
+            cancelled: false,
+        };
+        let result = session.userauth_keyboard_interactive(user, &mut responder);
+        if responder.cancelled {
+            return Err(SshError::AuthCancelled);
+        }
+        (
+            "keyboard-interactive",
+            auth_request_outcome(session, result)?,
+        )
     };
-    let result = session.userauth_keyboard_interactive(user, &mut responder);
-    if responder.cancelled {
-        return Err(SshError::AuthCancelled);
+    if accepted {
+        log::debug!("SSH {method} login was accepted");
+    } else {
+        log::debug!("SSH {method} login was rejected by the server");
     }
-    auth_request_outcome(session, result)
+    Ok(accepted)
 }
 
 /// Interpret the result of a password or keyboard-interactive request.

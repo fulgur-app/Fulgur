@@ -1,4 +1,4 @@
-use super::{REMOTE_ROOT_PATH, error::SshError};
+use super::{DEFAULT_SSH_PORT, REMOTE_ROOT_PATH, error::SshError};
 use zeroize::Zeroizing;
 
 /// Parsed remote file specification extracted from a user-supplied SSH URL.
@@ -29,13 +29,42 @@ pub struct RemoteSpec {
 /// - `String`: Canonical URL that can be fed back into `parse_remote_url`.
 #[must_use]
 pub fn format_remote_url(spec: &RemoteSpec) -> String {
+    format_url(spec, true)
+}
+
+/// Build the `ssh://` URL a `RemoteSpec` is remembered under in the remote history.
+///
+/// ### Arguments
+/// - `spec`: Remote location to encode.
+///
+/// ### Returns
+/// - `String`: Canonical URL that can be fed back into `parse_remote_url`.
+#[must_use]
+pub fn format_remote_history_url(spec: &RemoteSpec) -> String {
+    format_url(spec, spec.port != DEFAULT_SSH_PORT)
+}
+
+/// Build an `ssh://` URL from a `RemoteSpec`, never including a password.
+///
+/// ### Arguments
+/// - `spec`: Remote location to encode.
+/// - `include_port`: Whether the port is written into the authority.
+///
+/// ### Returns
+/// - `String`: URL that can be fed back into `parse_remote_url`.
+fn format_url(spec: &RemoteSpec, include_port: bool) -> String {
     let host = format_host_for_url(&spec.host);
-    let authority = match spec.user.as_deref() {
-        Some(user) if !user.is_empty() => format!("{user}@{host}:{}", spec.port),
-        _ => format!("{host}:{}", spec.port),
+    let user_prefix = match spec.user.as_deref() {
+        Some(user) if !user.is_empty() => format!("{user}@"),
+        _ => String::new(),
+    };
+    let port_suffix = if include_port {
+        format!(":{}", spec.port)
+    } else {
+        String::new()
     };
     let path = format_path_for_url(&spec.path);
-    format!("ssh://{authority}{path}")
+    format!("ssh://{user_prefix}{host}{port_suffix}{path}")
 }
 
 /// Parse a user-supplied string into a `RemoteSpec`.
@@ -440,6 +469,61 @@ mod tests {
     fn whitespace_trimmed() {
         let spec = parse_remote_url("  ssh://user@host/path  ").unwrap();
         assert_eq!(spec.host, "host");
+    }
+
+    #[test]
+    fn history_url_omits_the_default_port_and_the_password() {
+        let spec = parse_remote_url("ssh://alice:secret@example.com:22/etc/hosts").unwrap();
+        assert_eq!(
+            format_remote_history_url(&spec),
+            "ssh://alice@example.com/etc/hosts"
+        );
+    }
+
+    #[test]
+    fn history_url_keeps_a_non_default_port() {
+        let spec = parse_remote_url("ssh://alice@example.com:2222").unwrap();
+        assert_eq!(
+            format_remote_history_url(&spec),
+            "ssh://alice@example.com:2222/"
+        );
+    }
+
+    #[test]
+    fn history_url_merges_spellings_of_the_same_location() {
+        let canonical = [
+            "10.0.0.1",
+            "ssh://10.0.0.1",
+            "ssh://10.0.0.1:22/",
+            "sftp://10.0.0.1/",
+        ]
+        .map(|input| format_remote_history_url(&parse_remote_url(input).unwrap()));
+        assert!(
+            canonical.iter().all(|url| url == "ssh://10.0.0.1/"),
+            "every spelling must share one entry, got {canonical:?}"
+        );
+    }
+
+    #[test]
+    fn history_url_keeps_a_host_and_a_file_on_it_distinct() {
+        let host = format_remote_history_url(&parse_remote_url("ssh://10.0.0.1").unwrap());
+        let file =
+            format_remote_history_url(&parse_remote_url("ssh://10.0.0.1/path/to/file").unwrap());
+        assert_eq!(host, "ssh://10.0.0.1/");
+        assert_eq!(file, "ssh://10.0.0.1/path/to/file");
+    }
+
+    #[test]
+    fn history_url_roundtrips_home_relative_and_ipv6_locations() {
+        for input in ["ssh://bob@[::1]:2200/~/notes.md", "bob@[::1]:notes.md"] {
+            let original = parse_remote_url(input).unwrap();
+            let formatted = format_remote_history_url(&original);
+            let parsed = parse_remote_url(&formatted).unwrap();
+            assert_eq!(parsed.host, original.host, "{formatted}");
+            assert_eq!(parsed.port, original.port, "{formatted}");
+            assert_eq!(parsed.user, original.user, "{formatted}");
+            assert_eq!(parsed.path, original.path, "{formatted}");
+        }
     }
 
     #[test]

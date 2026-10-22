@@ -37,6 +37,8 @@ pub(super) struct SshTaskContext {
     pub spec: RemoteSpec,
     /// Verb prefix of the progress label, ending with a space, e.g. `"Connecting to "`.
     pub progress_prefix: &'static str,
+    /// Operation named in the logs, e.g. `"open"`.
+    pub operation: &'static str,
     /// Label used to build the timeout message, e.g. `SSH_CONNECTION_TIMEOUT_LABEL`.
     pub timeout_label: &'static str,
     pub cancel_callback: Option<CancelCallback>,
@@ -185,6 +187,7 @@ pub(super) fn spawn_ssh_task<Work, Payload>(
     let SshTaskContext {
         spec,
         progress_prefix,
+        operation,
         timeout_label,
         cancel_callback,
     } = context;
@@ -207,6 +210,12 @@ pub(super) fn spawn_ssh_task<Work, Payload>(
     let credential_key = SshCredKey::new(spec.host.clone(), spec.port, user.clone());
     let progress_label =
         format_remote_endpoint_label(progress_prefix, &spec.host, spec.port, &user);
+    let log_label = format!(
+        "Remote {operation} of {} on {}",
+        spec.path,
+        format_remote_endpoint_label("", &spec.host, spec.port, &user)
+    );
+    let log_label_for_thread = log_label.clone();
     let progress = start_progress(window, cx, progress_label.into(), cancel_callback);
     let cancel_flag = progress.cancel_flag();
     let cancel_flag_for_thread = Arc::clone(&cancel_flag);
@@ -251,7 +260,16 @@ pub(super) fn spawn_ssh_task<Work, Payload>(
                 match session_result {
                     Ok((pooled_session, auth)) => {
                         cache_for_thread.lock().insert(credential_key.clone(), auth);
-                        pooled_session.run(|session| work(session, &spec_for_thread))
+                        pooled_session.run(|session| {
+                            let result = work(session, &spec_for_thread);
+                            match &result {
+                                Ok(_) => log::info!("{log_label_for_thread} succeeded"),
+                                Err(error) => {
+                                    log::warn!("{log_label_for_thread} failed: {error}");
+                                }
+                            }
+                            result
+                        })
                     }
                     Err(error) => {
                         if matches!(error, ssh::error::SshError::AuthFailed) {
@@ -268,10 +286,12 @@ pub(super) fn spawn_ssh_task<Work, Payload>(
         );
         let mut outcome = outcome.map_err(|e| e.user_message());
         if prompt_timed_out_for_thread.load(Ordering::Acquire) {
+            log::warn!("{log_label_for_thread} failed: {timeout_message_for_thread}");
             outcome = Err(timeout_message_for_thread);
         }
 
         if cancel_flag_for_thread.load(Ordering::Acquire) {
+            log::info!("{log_label_for_thread} cancelled");
             // User cancelled, discard the outcome and unblock the monitor task.
             finished_for_thread.store(true, Ordering::Release);
         } else {
@@ -321,7 +341,9 @@ pub(super) fn spawn_ssh_task<Work, Payload>(
                 }
                 // Dropping an unanswered credential request unblocks the worker.
                 pending_credential.lock().take();
-                (*publish)(&finished, Err(timeout_message.clone()));
+                if (*publish)(&finished, Err(timeout_message.clone())) {
+                    log::warn!("{log_label} failed: {timeout_message}");
+                }
                 poll_completion(&finished)
             };
 

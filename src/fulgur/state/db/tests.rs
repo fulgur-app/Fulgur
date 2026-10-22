@@ -2,7 +2,8 @@
 
 use super::StateDb;
 use crate::fulgur::state::persistence::{
-    SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
+    RemoteHistory, SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState,
+    WindowsState,
 };
 use crate::fulgur::sync::share::ShareOrigin;
 use time::macros::datetime;
@@ -665,4 +666,91 @@ fn concurrent_opens_of_a_fresh_database_all_succeed() {
     }
     let windows = StateDb::open(&path).expect("reopen").load().expect("load");
     assert_eq!(windows.windows.len(), 8);
+}
+
+/// Build a remote history from URLs ordered most recent first.
+fn remote_history(urls: &[&str]) -> RemoteHistory {
+    RemoteHistory::from_urls(urls.iter().map(ToString::to_string))
+}
+
+#[test]
+fn a_fresh_database_has_an_empty_remote_history() {
+    let db = memory_db();
+    assert!(db.load_remote_history().expect("load history").is_empty());
+}
+
+#[test]
+fn remote_history_roundtrips_in_recency_order() {
+    let mut db = memory_db();
+    let history = remote_history(&["ssh://b/", "ssh://a/path/to/file", "ssh://a/"]);
+    assert_eq!(db.apply_remote_history(&history).expect("apply history"), 3);
+    assert_eq!(db.load_remote_history().expect("load history"), history);
+}
+
+#[test]
+fn reapplying_an_unchanged_remote_history_writes_nothing() {
+    let mut db = memory_db();
+    let history = remote_history(&["ssh://b/", "ssh://a/"]);
+    db.apply_remote_history(&history).expect("apply history");
+    assert_eq!(
+        db.apply_remote_history(&history).expect("reapply history"),
+        0
+    );
+}
+
+#[test]
+fn moving_a_url_to_the_top_rewrites_only_the_shifted_positions() {
+    let mut db = memory_db();
+    db.apply_remote_history(&remote_history(&[
+        "ssh://a/", "ssh://b/", "ssh://c/", "ssh://d/",
+    ]))
+    .expect("apply history");
+    let reordered = remote_history(&["ssh://c/", "ssh://a/", "ssh://b/", "ssh://d/"]);
+    assert_eq!(
+        db.apply_remote_history(&reordered).expect("apply reorder"),
+        3,
+        "the entry below the moved one keeps its position and must not be rewritten"
+    );
+    assert_eq!(db.load_remote_history().expect("load history"), reordered);
+}
+
+#[test]
+fn clearing_the_remote_history_deletes_every_row() {
+    let mut db = memory_db();
+    db.apply_remote_history(&remote_history(&["ssh://a/", "ssh://b/"]))
+        .expect("apply history");
+    assert_eq!(
+        db.apply_remote_history(&RemoteHistory::default())
+            .expect("apply cleared history"),
+        2
+    );
+    assert!(db.load_remote_history().expect("load history").is_empty());
+}
+
+#[test]
+fn window_snapshots_leave_the_remote_history_alone() {
+    let mut db = memory_db();
+    let history = remote_history(&["ssh://a/"]);
+    db.apply_remote_history(&history).expect("apply history");
+    db.apply(&state_with(1, vec![tab(0, "a.txt", None)]))
+        .expect("apply snapshot");
+    db.apply(&WindowsState { windows: vec![] })
+        .expect("apply empty snapshot");
+    assert_eq!(db.load_remote_history().expect("load history"), history);
+}
+
+#[test]
+fn remote_history_survives_reopening_the_database() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("state.db");
+    let history = remote_history(&["ssh://user@host:2222/etc/hosts", "ssh://host/"]);
+    StateDb::open(&path)
+        .expect("open file database")
+        .apply_remote_history(&history)
+        .expect("apply history");
+    let reopened = StateDb::open(&path).expect("reopen file database");
+    assert_eq!(
+        reopened.load_remote_history().expect("load history"),
+        history
+    );
 }

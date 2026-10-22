@@ -3,6 +3,7 @@
 mod legacy;
 mod paths;
 mod read;
+mod remote_history;
 mod schema;
 #[cfg(test)]
 mod tests;

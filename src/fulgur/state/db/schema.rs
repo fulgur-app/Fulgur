@@ -5,7 +5,7 @@ use rusqlite::{Connection, TransactionBehavior};
 
 /// Schema version this build expects. Bumping it requires appending a step to
 /// `MIGRATIONS`; the existing steps must never be edited.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 /// Ordered schema migrations. Index `n` upgrades `user_version` from `n` to
 /// `n + 1`, so a fresh database runs every step in order.
@@ -13,6 +13,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/001_initial.sql"),
     include_str!("migrations/002_share_origin.sql"),
     include_str!("migrations/003_tab_encoding.sql"),
+    include_str!("migrations/004_remote_history.sql"),
 ];
 
 /// How long a connection waits for a lock held by another connection.
@@ -156,7 +157,7 @@ mod tests {
     #[test]
     fn expected_tables_exist_after_migration() {
         let conn = migrated_connection();
-        for table in ["windows", "tabs"] {
+        for table in ["windows", "tabs", "remote_history"] {
             let count: i64 = conn
                 .query_row(
                     "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -260,6 +261,35 @@ mod tests {
             .expect("read the new encoding columns");
         assert_eq!(encoding, None, "existing tabs must fall back to UTF-8");
         assert!(!lossy_decode, "existing tabs must not become lossy");
+    }
+
+    #[test]
+    fn upgrading_from_version_three_keeps_tabs_and_starts_an_empty_remote_history() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory database");
+        apply_pragmas(&conn).expect("apply pragmas");
+        for migration in &super::MIGRATIONS[..3] {
+            conn.execute_batch(migration)
+                .expect("apply the first three migrations");
+        }
+        conn.pragma_update(None, "user_version", 3)
+            .expect("record version three");
+        conn.execute_batch(
+            "INSERT INTO windows (id, position, bounds_state, bounds_x, bounds_y, bounds_width, bounds_height)
+             VALUES (1, 0, 'Windowed', 0.0, 0.0, 100.0, 100.0);
+             INSERT INTO tabs (window_id, id, position, title, log_view) VALUES (1, 0, 0, 'a.txt', 0);",
+        )
+        .expect("seed a version three tab");
+
+        assert!(migrate(&mut conn).expect("migrate to the current version"));
+
+        let tabs: i64 = conn
+            .query_row("SELECT count(*) FROM tabs", [], |row| row.get(0))
+            .expect("count tabs");
+        assert_eq!(tabs, 1, "existing tabs must survive the migration");
+        let urls: i64 = conn
+            .query_row("SELECT count(*) FROM remote_history", [], |row| row.get(0))
+            .expect("count remote history rows");
+        assert_eq!(urls, 0, "the remote history must start empty");
     }
 
     #[test]

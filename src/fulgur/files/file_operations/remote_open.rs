@@ -11,7 +11,7 @@ use crate::fulgur::{
     Fulgur,
     sync::ssh::{
         self,
-        url::{RemoteSpec, format_remote_url},
+        url::{RemoteSpec, format_remote_history_url, format_remote_url},
     },
     ui::notifications::progress::CancelCallback,
 };
@@ -34,14 +34,49 @@ impl Fulgur {
         cx: &mut gpui_kit::Context<Self>,
         spec: RemoteSpec,
     ) {
+        self.open_remote_file_in_new_tab(window, cx, spec, false);
+    }
+
+    /// Open a remote file from the URL submitted in the Open Remote File dialog.
+    ///
+    /// ### Arguments
+    /// - `window`: The window to open the tab in
+    /// - `cx`: The application context
+    /// - `spec`: The parsed remote file specification
+    pub fn open_remote_url_from_dialog(
+        &mut self,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
+        spec: RemoteSpec,
+    ) {
+        self.open_remote_file_in_new_tab(window, cx, spec, true);
+    }
+
+    /// Focus the tab already showing a remote location, or load it in a new tab.
+    ///
+    /// ### Arguments
+    /// - `window`: The window to open the tab in
+    /// - `cx`: The application context
+    /// - `spec`: The parsed remote file specification
+    /// - `record_in_history`: Whether the URL joins the remote history once opened
+    fn open_remote_file_in_new_tab(
+        &mut self,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
+        spec: RemoteSpec,
+        record_in_history: bool,
+    ) {
         if let Some(tab_index) = self.find_tab_by_remote_spec(&spec, cx) {
             self.active_tab_id = self.tabs.get(tab_index).map(|t| t.read(cx).id());
             self.focus_active_tab(window, cx);
+            if record_in_history {
+                Self::record_remote_history_url(format_remote_history_url(&spec), cx);
+            }
             cx.notify();
             return;
         }
         self.last_failed_remote_open_url = Some(format_remote_url(&spec));
-        self.open_remote_file_with_target(window, cx, spec, None);
+        self.open_remote_file_with_target(window, cx, spec, None, record_in_history);
     }
 
     /// Start loading a remote file and apply the result either to a new tab or an existing tab.
@@ -51,12 +86,15 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `spec`: The remote specification
     /// - `target_tab_id`: Existing tab to refresh, or `None` to open in a new tab
+    /// - `record_in_history`: Whether the URL, completed with the resolved user,
+    ///   joins the remote history once opened
     fn open_remote_file_with_target(
         &mut self,
         window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
         spec: RemoteSpec,
         target_tab_id: Option<TabId>,
+        record_in_history: bool,
     ) {
         let target_request_id = target_tab_id.map(|tab_id| {
             let request_id = self.next_remote_request_id;
@@ -80,6 +118,7 @@ impl Fulgur {
         });
 
         self.with_resolved_remote_user(window, cx, spec, move |fulgur, spec, window, cx| {
+            let history_url = record_in_history.then(|| format_remote_history_url(&spec));
             fulgur.spawn_ssh_open_task(
                 window,
                 cx,
@@ -88,6 +127,7 @@ impl Fulgur {
                     target_tab_id,
                     target_request_id,
                     target_reload_guard: target_reload_guard.clone(),
+                    history_url,
                 },
             );
         });
@@ -107,7 +147,7 @@ impl Fulgur {
         tab_id: TabId,
         spec: RemoteSpec,
     ) {
-        self.open_remote_file_with_target(window, cx, spec, Some(tab_id));
+        self.open_remote_file_with_target(window, cx, spec, Some(tab_id), false);
     }
 
     /// Decode the bytes of a remote file into an open result, refusing binary content.
@@ -228,6 +268,7 @@ impl Fulgur {
             target_tab_id,
             target_request_id,
             target_reload_guard,
+            history_url,
         } = params;
         if let Some(tab_id) = target_tab_id {
             self.inflight_remote_restore.insert(tab_id);
@@ -252,6 +293,7 @@ impl Fulgur {
             SshTaskContext {
                 spec,
                 progress_prefix: "Connecting to ",
+                operation: "open",
                 timeout_label: SSH_CONNECTION_TIMEOUT_LABEL,
                 cancel_callback,
             },
@@ -270,6 +312,7 @@ impl Fulgur {
                     target_tab_id,
                     target_request_id,
                     target_reload_guard.clone(),
+                    history_url.clone(),
                     outcome,
                 )
             },
@@ -286,6 +329,7 @@ impl Fulgur {
     /// - `target_tab_id`: Existing tab id for a reload operation, or `None` for new-tab opens.
     /// - `target_request_id`: Monotonic request token used to reject stale completions.
     /// - `target_reload_guard`: Editor revision and source captured before a targeted reload.
+    /// - `history_url`: Remote history URL to record if the location opens as asked.
     /// - `outcome`: Success or failure result to enqueue.
     ///
     /// ### Returns
@@ -297,6 +341,7 @@ impl Fulgur {
         target_tab_id: Option<TabId>,
         target_request_id: Option<u64>,
         target_reload_guard: Option<RemoteReloadGuard>,
+        history_url: Option<String>,
         outcome: Result<RemoteOpenResult, String>,
     ) -> bool {
         if open_finished.swap(true, Ordering::AcqRel) {
@@ -306,6 +351,7 @@ impl Fulgur {
                 target_tab_id,
                 target_request_id,
                 target_reload_guard,
+                history_url,
                 result: outcome,
             });
             true
@@ -347,11 +393,13 @@ mod tests {
             None,
             None,
             None,
+            None,
             Ok(make_remote_result()),
         );
         let published_timeout = Fulgur::publish_remote_open_outcome(
             &open_finished,
             &pending_remote,
+            None,
             None,
             None,
             None,
@@ -379,11 +427,13 @@ mod tests {
             None,
             None,
             None,
+            None,
             Err("SSH connection timed out (60 s)".to_string()),
         );
         let published_success = Fulgur::publish_remote_open_outcome(
             &open_finished,
             &pending_remote,
+            None,
             None,
             None,
             None,

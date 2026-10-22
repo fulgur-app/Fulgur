@@ -6,7 +6,7 @@ mod writer;
 pub use db::{StateDb, import_legacy_json};
 pub use operations::{TabRestoreDecision, determine_tab_restore_strategy};
 pub use persistence::{
-    SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
-    get_file_modified_time, is_file_newer,
+    MAX_REMOTE_HISTORY_ENTRIES, RemoteHistory, SerializedRemoteSpec, SerializedWindowBounds,
+    TabContent, TabState, WindowState, WindowsState, get_file_modified_time, is_file_newer,
 };
 pub use writer::StateWriter;
