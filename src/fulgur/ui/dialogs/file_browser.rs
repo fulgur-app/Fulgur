@@ -1,18 +1,35 @@
 use gpui_kit::component::{
+    Disableable, FocusableExt, Sizable,
+    button::{Button, ButtonVariants},
     h_flex,
-    input::{InputEvent, InputState},
+    input::{Input, InputEvent, InputGroup, InputGroupAddon, InputGroupAddonAlignment, InputState},
     scroll::ScrollableElement,
     v_flex,
 };
 use gpui_kit::{
-    Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels, SharedString,
-    StatefulInteractiveElement, Styled, div, px,
+    App, ClickEvent, Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
+    Pixels, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
-use crate::fulgur::ui::icons::CustomIcon;
+use crate::fulgur::ui::{
+    icons::CustomIcon,
+    menus::{GoToParentFolder, KEY_CONTEXT_PATH_BROWSER},
+};
 
 pub const MAX_VISIBLE_BROWSER_ROWS: usize = 10;
 pub const BROWSER_ROW_HEIGHT_PX: f32 = 28.0;
+
+/// Element id of the input group framing a browser path and its actions.
+const BROWSER_PATH_FIELD_ID: &str = "browser-path-field";
+
+/// Element id of the addon holding the browser path actions.
+const BROWSER_PATH_ACTIONS_ID: &str = "browser-path-actions";
+
+/// Element id of the button replacing a browser path with its parent folder.
+pub const PARENT_FOLDER_BUTTON_ID: &str = "browser-parent-folder";
+
+/// Label of the button replacing a browser path with its parent folder.
+const PARENT_FOLDER_BUTTON_LABEL: &str = "Parent folder";
 
 /// A normalized browser entry used by `render_browser_list`.
 pub struct BrowserEntry {
@@ -54,6 +71,86 @@ pub fn build_browser_entry(
             full_path.to_owned()
         },
     }
+}
+
+/// Truncate a browser path to its previous separator.
+///
+/// ### Description
+/// Trailing separators are skipped first, so a folder path drops its last
+/// folder while a partial name drops only that name.
+///
+/// ### Arguments
+/// - `path`: Browser path, already trimmed.
+/// - `is_separator`: Whether a character separates two path segments.
+///
+/// ### Returns
+/// - `Some(&str)`: The path up to and including its previous separator.
+/// - `None`: When the path has no segment left to drop.
+pub fn truncate_to_parent_folder(path: &str, is_separator: fn(char) -> bool) -> Option<&str> {
+    let folder = path.trim_end_matches(is_separator);
+    let separator_index = folder.rfind(is_separator)?;
+    Some(&path[..=separator_index])
+}
+
+/// Replace a browser input with its parent folder, when it has one.
+///
+/// ### Description
+/// The replacement is undoable and emits `InputEvent::Change`, so the browser
+/// lists the parent folder through its usual refresh.
+///
+/// ### Arguments
+/// - `input`: Input state holding the browser path.
+/// - `parent_folder`: Browser-specific parent of a raw input value.
+/// - `window`: Window hosting the browser.
+/// - `cx`: Application context.
+pub fn replace_with_parent_folder(
+    input: &Entity<InputState>,
+    parent_folder: fn(&str) -> Option<String>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let Some(parent) = parent_folder(&input.read(cx).value()) else {
+        return;
+    };
+    input.update(cx, |state, cx| state.replace_all(parent, window, cx));
+}
+
+/// Render a browser path input with its parent folder button on the right.
+///
+/// ### Arguments
+/// - `input`: Input state holding the browser path.
+/// - `has_parent_folder`: Whether the path has a parent folder to go to.
+/// - `on_parent_folder`: Handler run when the parent folder button is clicked.
+///
+/// ### Returns
+/// - `InputGroup`: The input framed together with its parent folder button.
+pub fn render_browser_path_field(
+    input: &Entity<InputState>,
+    has_parent_folder: bool,
+    on_parent_folder: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> InputGroup {
+    InputGroup::new(BROWSER_PATH_FIELD_ID)
+        .focus_ring(false)
+        .input(Input::new(input))
+        .addon(
+            InputGroupAddon::new(BROWSER_PATH_ACTIONS_ID)
+                .align(InputGroupAddonAlignment::InlineEnd)
+                .child(
+                    Button::new(PARENT_FOLDER_BUTTON_ID)
+                        .debug_selector(|| PARENT_FOLDER_BUTTON_ID.to_string())
+                        .icon(CustomIcon::CornerLeftUp)
+                        .ghost()
+                        .xsmall()
+                        .disabled(!has_parent_folder)
+                        .tooltip_with_action(
+                            PARENT_FOLDER_BUTTON_LABEL,
+                            &GoToParentFolder,
+                            Some(KEY_CONTEXT_PATH_BROWSER),
+                        )
+                        .accessibility_label(PARENT_FOLDER_BUTTON_LABEL)
+                        .on_click(on_parent_folder),
+                ),
+        )
 }
 
 /// Compute the fixed pixel height for a browser file list.
@@ -153,4 +250,61 @@ pub fn render_browser_row(
                 cx.emit(InputEvent::Change);
             });
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_to_parent_folder;
+    use core::prelude::v1::test;
+
+    /// Separator predicate of the remote browser, used to keep the tests platform-independent.
+    fn is_slash(c: char) -> bool {
+        c == '/'
+    }
+
+    #[test]
+    fn test_truncate_to_parent_folder_drops_the_last_folder_of_a_folder_path() {
+        assert_eq!(
+            truncate_to_parent_folder("/var/log/", is_slash),
+            Some("/var/")
+        );
+        assert_eq!(
+            truncate_to_parent_folder("/var/log", is_slash),
+            Some("/var/")
+        );
+    }
+
+    #[test]
+    fn test_truncate_to_parent_folder_drops_only_a_partial_name() {
+        assert_eq!(
+            truncate_to_parent_folder("/var/log/sys", is_slash),
+            Some("/var/log/")
+        );
+    }
+
+    #[test]
+    fn test_truncate_to_parent_folder_reaches_the_root() {
+        assert_eq!(truncate_to_parent_folder("/var/", is_slash), Some("/"));
+    }
+
+    #[test]
+    fn test_truncate_to_parent_folder_has_nothing_to_drop_at_the_root() {
+        assert_eq!(truncate_to_parent_folder("/", is_slash), None);
+        assert_eq!(truncate_to_parent_folder("//", is_slash), None);
+        assert_eq!(truncate_to_parent_folder("", is_slash), None);
+    }
+
+    #[test]
+    fn test_truncate_to_parent_folder_needs_a_separator() {
+        assert_eq!(truncate_to_parent_folder("notes.txt", is_slash), None);
+    }
+
+    #[test]
+    fn test_truncate_to_parent_folder_uses_the_given_separators() {
+        let is_any_separator = |c: char| c == '/' || c == '\\';
+        assert_eq!(
+            truncate_to_parent_folder(r"C:\Users\me\", is_any_separator),
+            Some(r"C:\Users\")
+        );
+    }
 }

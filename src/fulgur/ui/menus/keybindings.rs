@@ -1,7 +1,8 @@
 use super::actions::{
-    CloseAllFiles, CloseFile, FindAndReplace, FindInFile, JumpToLine, NewFile, NewWindow, NextTab,
-    OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs, SearchNext,
-    SearchPrevious, ShowRemoteUrlHistory, ToggleColorPicker, ToggleCommandPalette,
+    CloseAllFiles, CloseFile, FindAndReplace, FindInFile, GoToParentFolder, JumpToLine, NewFile,
+    NewWindow, NextTab, OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile,
+    SaveFileAs, SearchNext, SearchPrevious, ShowRemoteUrlHistory, ToggleColorPicker,
+    ToggleCommandPalette,
 };
 use gpui_kit::KeyBinding;
 
@@ -13,6 +14,9 @@ pub const KEY_CONTEXT_INPUT: &str = "Input";
 
 /// Key context set on the URL combo box of the Open Remote File dialog.
 pub const KEY_CONTEXT_REMOTE_URL_COMBO: &str = "RemoteUrlCombo";
+
+/// Key context set on the local and remote path browsers of the open dialogs.
+pub const KEY_CONTEXT_PATH_BROWSER: &str = "PathBrowser";
 
 /// Context predicate for keybindings scoped to the application content.
 const SCOPED_BINDING_PREDICATE: &str = "Fulgur || (Fulgur > Input)";
@@ -41,6 +45,7 @@ enum KeybindingDispatchAction {
     ToggleColorPicker,
     ToggleCommandPalette,
     ShowRemoteUrlHistory,
+    GoToParentFolder,
 }
 
 /// A platform keybinding dispatch specification used to build runtime keybindings.
@@ -128,6 +133,9 @@ impl KeybindingDispatchSpec {
             KeybindingDispatchAction::ShowRemoteUrlHistory => {
                 KeyBinding::new(self.keystroke, ShowRemoteUrlHistory, context)
             }
+            KeybindingDispatchAction::GoToParentFolder => {
+                KeyBinding::new(self.keystroke, GoToParentFolder, context)
+            }
         }
     }
 }
@@ -161,6 +169,7 @@ impl KeybindingDispatchAction {
             | Self::ToggleColorPicker
             | Self::ToggleCommandPalette => Some(SCOPED_BINDING_PREDICATE),
             Self::ShowRemoteUrlHistory => Some(KEY_CONTEXT_REMOTE_URL_COMBO),
+            Self::GoToParentFolder => Some(KEY_CONTEXT_PATH_BROWSER),
         }
     }
 }
@@ -255,6 +264,7 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
             KeybindingDispatchAction::ToggleCommandPalette,
         ),
         KeybindingDispatchSpec::new("alt-down", KeybindingDispatchAction::ShowRemoteUrlHistory),
+        KeybindingDispatchSpec::new("alt-up", KeybindingDispatchAction::GoToParentFolder),
     ]
 }
 
@@ -466,6 +476,34 @@ mod tests {
         ];
         assert_eq!(
             combo.depth_of(&editor_stack),
+            None,
+            "the shortcut must leave the editor alone"
+        );
+    }
+
+    #[test]
+    fn test_parent_folder_shortcut_only_fires_inside_a_path_browser() {
+        let context = KeybindingDispatchAction::GoToParentFolder
+            .key_context()
+            .expect("the parent folder shortcut must be scoped");
+        let browser = gpui_kit::KeyBindingContextPredicate::parse(context).unwrap();
+
+        let dialog_input_stack = [
+            gpui_kit::KeyContext::parse("Dialog").unwrap(),
+            gpui_kit::KeyContext::parse(super::KEY_CONTEXT_PATH_BROWSER).unwrap(),
+            gpui_kit::KeyContext::parse("Input").unwrap(),
+        ];
+        assert!(
+            browser.depth_of(&dialog_input_stack).is_some(),
+            "the shortcut must reach the path input of an open dialog browser"
+        );
+
+        let editor_stack = [
+            gpui_kit::KeyContext::parse("Fulgur").unwrap(),
+            gpui_kit::KeyContext::parse("Input").unwrap(),
+        ];
+        assert_eq!(
+            browser.depth_of(&editor_stack),
             None,
             "the shortcut must leave the editor alone"
         );

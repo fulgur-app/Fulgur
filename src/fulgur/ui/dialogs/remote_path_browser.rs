@@ -8,18 +8,24 @@ use crate::fulgur::sync::ssh::{
 };
 use gpui_kit::component::{
     ActiveTheme, Sizable, h_flex,
-    input::{Input, InputEvent, InputState},
+    input::{InputEvent, InputState},
     spinner::Spinner,
     v_flex,
 };
 use gpui_kit::{
-    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
-    div, prelude::FluentBuilder, px,
+    AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled,
+    Subscription, Window, div, prelude::FluentBuilder, px,
 };
 
-use crate::fulgur::ui::icons::CustomIcon;
+use crate::fulgur::ui::{
+    icons::CustomIcon,
+    menus::{GoToParentFolder, KEY_CONTEXT_PATH_BROWSER},
+};
 
-use super::file_browser::{BrowserEntry, build_browser_entry, render_browser_list};
+use super::file_browser::{
+    BrowserEntry, build_browser_entry, render_browser_list, render_browser_path_field,
+    replace_with_parent_folder, truncate_to_parent_folder,
+};
 use std::{
     sync::{Arc, mpsc},
     time::Duration,
@@ -130,6 +136,21 @@ impl RemotePathBrowser {
         &self.input
     }
 
+    /// Replace the input with its parent folder, which the refresh then lists.
+    ///
+    /// ### Arguments
+    /// - `_action`: The parent folder action.
+    /// - `window`: Window hosting the browser.
+    /// - `cx`: Component context.
+    fn go_to_parent_folder(
+        &mut self,
+        _action: &GoToParentFolder,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        replace_with_parent_folder(&self.input, remote_parent_folder, window, cx);
+    }
+
     /// Schedule a debounced remote-directory refresh for the current input path.
     ///
     /// ### Arguments
@@ -221,7 +242,20 @@ impl Render for RemotePathBrowser {
     /// ### Returns
     /// - `impl IntoElement`: Rendered browser UI.
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut container = v_flex().w_full().gap_1().child(Input::new(&self.input));
+        let has_parent_folder = remote_parent_folder(&self.input.read(cx).value()).is_some();
+        let path_field = render_browser_path_field(
+            &self.input,
+            has_parent_folder,
+            cx.listener(|this, _, window, cx| {
+                this.go_to_parent_folder(&GoToParentFolder, window, cx);
+            }),
+        );
+        let mut container = v_flex()
+            .key_context(KEY_CONTEXT_PATH_BROWSER)
+            .on_action(cx.listener(Self::go_to_parent_folder))
+            .w_full()
+            .gap_1()
+            .child(path_field);
 
         if let Some(notice) = &self.notice {
             container = container.child(
@@ -303,6 +337,19 @@ pub(crate) fn normalize_remote_browser_path(path: &str) -> String {
         return ssh::REMOTE_ROOT_PATH.to_string();
     }
     format!("/{}", trimmed.trim_start_matches('/'))
+}
+
+/// Truncate a remote browser input to its parent folder.
+///
+/// ### Arguments
+/// - `raw`: Raw input path string.
+///
+/// ### Returns
+/// - `Some(String)`: The normalized input up to and including its previous `/`.
+/// - `None`: When the input normalizes to the remote root.
+fn remote_parent_folder(raw: &str) -> Option<String> {
+    let path = normalize_remote_browser_path(raw);
+    truncate_to_parent_folder(&path, |c| c == '/').map(str::to_owned)
 }
 
 /// Fetch and filter remote directory entries for one browser input value.
@@ -466,6 +513,7 @@ mod tests {
     };
     use super::{
         BROWSER_REFRESH_DEBOUNCE_MS, normalize_remote_browser_path, parse_remote_browser_input,
+        remote_parent_folder,
     };
     use gpui_kit::px;
 
@@ -493,6 +541,32 @@ mod tests {
             normalize_remote_browser_path("~/tmp"),
             super::ssh::REMOTE_ROOT_PATH
         );
+    }
+
+    #[test]
+    fn remote_parent_folder_drops_the_last_folder_of_a_folder_path() {
+        assert_eq!(remote_parent_folder("/var/log/").as_deref(), Some("/var/"));
+        assert_eq!(remote_parent_folder("/var/").as_deref(), Some("/"));
+    }
+
+    #[test]
+    fn remote_parent_folder_drops_only_a_partial_name() {
+        assert_eq!(
+            remote_parent_folder("/var/log/sys").as_deref(),
+            Some("/var/log/")
+        );
+    }
+
+    #[test]
+    fn remote_parent_folder_normalizes_relative_input() {
+        assert_eq!(remote_parent_folder("var/log").as_deref(), Some("/var/"));
+    }
+
+    #[test]
+    fn remote_parent_folder_stops_at_the_root() {
+        assert_eq!(remote_parent_folder("/"), None);
+        assert_eq!(remote_parent_folder(""), None);
+        assert_eq!(remote_parent_folder("~/notes"), None);
     }
 
     #[test]
