@@ -14,5 +14,6 @@ pub use dock::DockMenuTab;
 #[cfg(target_os = "macos")]
 pub use dock::build_dock_menu;
 pub use keybindings::{
-    KEY_CONTEXT_FULGUR, KEY_CONTEXT_INPUT, KEY_CONTEXT_REMOTE_URL_COMBO, build_default_key_bindings,
+    KEY_CONTEXT_FULGUR, KEY_CONTEXT_INPUT, KEY_CONTEXT_PATH_BROWSER, KEY_CONTEXT_REMOTE_URL_COMBO,
+    build_default_key_bindings,
 };
