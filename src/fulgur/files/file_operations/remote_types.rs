@@ -15,8 +15,8 @@ use std::{
     time::Duration,
 };
 
-/// Time the user has to answer a host-key or credential prompt, and the budget of the
-/// remote operation after the last prompt.
+/// Time the user has to answer a host-key or credential prompt. It bounds only the wait
+/// for the answer: the connection and each SFTP call are bounded by the session timeouts.
 pub const SSH_USER_PROMPT_TIMEOUT_SECS: u64 = 60;
 pub const SSH_USER_PROMPT_TIMEOUT: Duration = Duration::from_secs(SSH_USER_PROMPT_TIMEOUT_SECS);
 pub const SSH_CONNECTION_TIMEOUT_LABEL: &str = "SSH connection timed out";

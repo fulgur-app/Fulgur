@@ -19,6 +19,8 @@ pub enum SshError {
     AuthFailed,
     /// The user cancelled a passphrase or login prompt.
     AuthCancelled,
+    /// The user cancelled the operation before it reached the remote file.
+    Cancelled,
     /// An SFTP-level error (open, read, write, rename, or unlink).
     SftpError(String),
     /// Local filesystem I/O error, e.g. when reading or writing `known_hosts`.
@@ -45,6 +47,7 @@ impl fmt::Display for SshError {
                 "Authentication failed - no SSH agent identity, key, or password was accepted."
             ),
             SshError::AuthCancelled => write!(f, "SSH login cancelled."),
+            SshError::Cancelled => write!(f, "Remote operation cancelled."),
             SshError::SftpError(msg) => write!(f, "SFTP error: {msg}"),
             SshError::IoError(msg) => write!(f, "I/O error: {msg}"),
         }

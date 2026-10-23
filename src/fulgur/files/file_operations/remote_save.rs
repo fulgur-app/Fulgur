@@ -120,8 +120,12 @@ impl Fulgur {
                 timeout_label: SSH_SAVE_TIMEOUT_LABEL,
                 cancel_callback,
             },
-            move |session, spec| {
+            move |session, spec, cancelled| {
                 remote_save_permit.wait();
+                // A save queued behind a slow one may have been cancelled while it waited.
+                if cancelled.load(Ordering::Acquire) {
+                    return Err(ssh::error::SshError::Cancelled);
+                }
                 ssh::sftp::write_remote_file(session, &spec.path, content_for_thread.as_slice())
             },
             move |save_finished, outcome| {
