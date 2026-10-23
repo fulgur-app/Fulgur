@@ -1,5 +1,5 @@
 use crate::fulgur::ui::tabs::tab::TabId;
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
 
 use gpui_kit::component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, v_flex};
 use gpui_kit::{Context, ParentElement, Styled, Window, div, px};
@@ -79,10 +79,12 @@ impl Fulgur {
     ) {
         let entity = cx.entity().clone();
         let encoding = encoding.to_string();
+        // The builder runs on every render, so it must share the buffer rather than copy it.
+        let contents: Rc<str> = contents.into();
         window.open_alert_dialog(cx, move |modal, _, _| {
             let entity_for_ok = entity.clone();
             let path = path.clone();
-            let contents = contents.clone();
+            let contents = Rc::clone(&contents);
             modal
                 .title(div().text_size(px(16.)).child("Cannot Save in Encoding"))
                 .keyboard(true)

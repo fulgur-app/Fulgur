@@ -3,14 +3,19 @@ use std::time::Duration;
 
 use gpui_kit::component::{
     ActiveTheme,
-    input::{Input, InputEvent, InputState},
+    input::{InputEvent, InputState},
     v_flex,
 };
 use gpui_kit::{
-    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
+    AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled,
+    Subscription, Window,
 };
 
-use super::file_browser::{BrowserEntry, build_browser_entry, render_browser_list};
+use super::file_browser::{
+    BrowserEntry, build_browser_entry, render_browser_list, render_browser_path_field,
+    replace_with_parent_folder, truncate_to_parent_folder,
+};
+use crate::fulgur::ui::menus::{GoToParentFolder, KEY_CONTEXT_PATH_BROWSER};
 
 const PATH_BROWSER_REFRESH_DEBOUNCE_MS: u64 = 150;
 const PATH_BROWSER_REFRESH_DEBOUNCE: Duration =
@@ -97,6 +102,34 @@ fn parse_input_path(raw: &str) -> Option<(PathBuf, String)> {
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_default();
     Some((parent.to_path_buf(), filter))
+}
+
+/// Truncate a local browser input to its parent folder.
+///
+/// ### Description
+/// A bare `~` stands for the home folder, so its parent is the folder holding
+/// the home folder. Roots such as `/`, `C:\` or `\\server\share` have no parent.
+///
+/// ### Arguments
+/// - `raw`: The raw input string from the user
+///
+/// ### Returns
+/// - `Some(String)`: The input up to and including its previous separator
+/// - `None`: When the input names a root, or a single relative segment
+fn local_parent_folder(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let path = if trimmed.trim_end_matches(std::path::is_separator) == "~" {
+        home_dir()?.to_string_lossy().into_owned()
+    } else {
+        trimmed.to_owned()
+    };
+    // The platform decides where the roots are: `\\server\share` holds separators
+    // but has no parent folder.
+    let folder = Path::new(path.trim_end_matches(std::path::is_separator));
+    folder
+        .parent()
+        .and(truncate_to_parent_folder(&path, std::path::is_separator))
+        .map(str::to_owned)
 }
 
 /// Read the directory and filter entries by a case-insensitive prefix.
@@ -201,6 +234,21 @@ impl PathBrowser {
         &self.input
     }
 
+    /// Replace the input with its parent folder, which the refresh then lists.
+    ///
+    /// ### Arguments
+    /// - `_action`: The parent folder action
+    /// - `window`: The window hosting the browser
+    /// - `cx`: User interface context
+    fn go_to_parent_folder(
+        &mut self,
+        _action: &GoToParentFolder,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        replace_with_parent_folder(&self.input, local_parent_folder, window, cx);
+    }
+
     /// Schedule a debounced directory refresh for the current input value.
     ///
     /// ### Description
@@ -277,7 +325,20 @@ impl Render for PathBrowser {
     /// ### Returns
     /// - `impl IntoElement`: The rendered path browser.
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut container = v_flex().w_full().gap_1().child(Input::new(&self.input));
+        let has_parent_folder = local_parent_folder(&self.input.read(cx).value()).is_some();
+        let path_field = render_browser_path_field(
+            &self.input,
+            has_parent_folder,
+            cx.listener(|this, _, window, cx| {
+                this.go_to_parent_folder(&GoToParentFolder, window, cx);
+            }),
+        );
+        let mut container = v_flex()
+            .key_context(KEY_CONTEXT_PATH_BROWSER)
+            .on_action(cx.listener(Self::go_to_parent_folder))
+            .w_full()
+            .gap_1()
+            .child(path_field);
         if let Some(list) = render_browser_list(
             self.entries.iter().map(BrowserEntry::from),
             &self.input,
@@ -292,16 +353,213 @@ impl Render for PathBrowser {
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
-    use super::{parse_input_path, read_and_filter_entries};
+    use super::{home_dir, local_parent_folder, parse_input_path, read_and_filter_entries};
     use core::prelude::v1::test;
-    use std::path::{Path, PathBuf};
+    use std::path::{MAIN_SEPARATOR, Path, PathBuf};
     #[cfg(feature = "gpui-test-support")]
     use tempfile::tempdir;
 
     #[cfg(feature = "gpui-test-support")]
+    use crate::fulgur::ui::{
+        dialogs::file_browser::PARENT_FOLDER_BUTTON_ID, menus::build_default_key_bindings,
+    };
+    #[cfg(feature = "gpui-test-support")]
     use gpui_kit::component::input::{InputEvent, InputState};
     #[cfg(feature = "gpui-test-support")]
-    use gpui_kit::{AppContext, Entity, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::{
+        AppContext, Entity, Focusable, Modifiers, TestAppContext, VisualTestContext, WindowOptions,
+    };
+
+    /// Open a window hosting a path browser, its input set to a path and listed.
+    ///
+    /// ### Arguments
+    /// - `cx`: The test application context
+    /// - `path`: The path to type in the browser input
+    ///
+    /// ### Returns
+    /// - `(Entity<PathBrowser>, Entity<InputState>, VisualTestContext)`: The browser,
+    ///   its input and the visual test context of its window
+    #[cfg(feature = "gpui-test-support")]
+    fn open_browser_at(
+        cx: &mut TestAppContext,
+        path: &str,
+    ) -> (
+        Entity<super::PathBrowser>,
+        Entity<InputState>,
+        VisualTestContext,
+    ) {
+        cx.update(gpui_kit::init);
+        let window = cx.update(|cx| {
+            cx.open_window(WindowOptions::default(), |window, cx| {
+                cx.new(|cx| super::PathBrowser::new(window, cx))
+            })
+            .expect("failed to open test window")
+        });
+        let mut visual_cx = VisualTestContext::from_window(window.into(), cx);
+        let browser = window
+            .root(&mut visual_cx)
+            .expect("failed to read root view from window");
+        let input = browser.read_with(&visual_cx, |browser, _| browser.input.clone());
+        visual_cx.update(|window, cx| {
+            input.update(cx, |state, cx| {
+                state.set_value(path, window, cx);
+                cx.emit(InputEvent::Change);
+            });
+        });
+        wait_for_refresh(&mut visual_cx);
+        (browser, input, visual_cx)
+    }
+
+    /// Let the debounced listing run, then draw a frame so hit testing sees the result.
+    ///
+    /// ### Arguments
+    /// - `visual_cx`: The visual test context of the browser window
+    #[cfg(feature = "gpui-test-support")]
+    fn wait_for_refresh(visual_cx: &mut VisualTestContext) {
+        visual_cx
+            .background_executor
+            .advance_clock(super::PATH_BROWSER_REFRESH_DEBOUNCE);
+        visual_cx.run_until_parked();
+        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+    }
+
+    /// Read the browser input value and the names of the listed entries.
+    ///
+    /// ### Arguments
+    /// - `browser`: The path browser
+    /// - `visual_cx`: The visual test context of the browser window
+    ///
+    /// ### Returns
+    /// - `(String, Vec<String>)`: The input value and the listed entry names
+    #[cfg(feature = "gpui-test-support")]
+    fn browser_state(
+        browser: &Entity<super::PathBrowser>,
+        visual_cx: &VisualTestContext,
+    ) -> (String, Vec<String>) {
+        browser.read_with(visual_cx, |browser, cx| {
+            (
+                browser.input.read(cx).value().to_string(),
+                browser
+                    .entries
+                    .iter()
+                    .map(|entry| entry.name.clone())
+                    .collect(),
+            )
+        })
+    }
+
+    #[test]
+    fn test_local_parent_folder_drops_the_last_folder_of_a_folder_path() {
+        assert_eq!(local_parent_folder("/var/log/").as_deref(), Some("/var/"));
+        assert_eq!(local_parent_folder("/var/").as_deref(), Some("/"));
+    }
+
+    #[test]
+    fn test_local_parent_folder_drops_only_a_partial_name() {
+        assert_eq!(
+            local_parent_folder("/var/log/sys").as_deref(),
+            Some("/var/log/")
+        );
+    }
+
+    #[test]
+    fn test_local_parent_folder_trims_whitespace() {
+        assert_eq!(
+            local_parent_folder("  /var/log/  ").as_deref(),
+            Some("/var/")
+        );
+    }
+
+    #[test]
+    fn test_local_parent_folder_stops_at_the_root() {
+        assert_eq!(local_parent_folder("/"), None);
+        assert_eq!(local_parent_folder(""), None);
+        assert_eq!(local_parent_folder("notes.txt"), None);
+    }
+
+    #[test]
+    fn test_local_parent_folder_keeps_the_tilde_below_home() {
+        assert_eq!(local_parent_folder("~/Documents/").as_deref(), Some("~/"));
+    }
+
+    #[test]
+    fn test_local_parent_folder_expands_a_bare_tilde() {
+        let home = home_dir().expect("the test environment must define a home folder");
+        let home_parent = local_parent_folder(&home.to_string_lossy());
+        assert!(home_parent.is_some(), "the home folder must have a parent");
+        assert_eq!(local_parent_folder("~"), home_parent);
+        assert_eq!(
+            local_parent_folder(&format!("~{MAIN_SEPARATOR}")),
+            home_parent
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_local_parent_folder_stops_at_windows_roots() {
+        assert_eq!(local_parent_folder(r"C:\Users\").as_deref(), Some(r"C:\"));
+        assert_eq!(local_parent_folder(r"C:\"), None);
+        assert_eq!(local_parent_folder(r"\\server\share\"), None);
+        assert_eq!(
+            local_parent_folder(r"\\server\share\dir").as_deref(),
+            Some(r"\\server\share\")
+        );
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_gpui_parent_folder_button_lists_the_parent_folder(cx: &mut TestAppContext) {
+        let temp_dir = tempdir().expect("failed to create temp dir");
+        let child_dir = temp_dir.path().join("child_dir");
+        std::fs::create_dir(&child_dir).expect("failed to create child_dir fixture");
+        let start = format!("{}{MAIN_SEPARATOR}", child_dir.to_string_lossy());
+        let (browser, _input, mut visual_cx) = open_browser_at(cx, &start);
+
+        let bounds = visual_cx
+            .debug_bounds(PARENT_FOLDER_BUTTON_ID)
+            .expect("the parent folder button should be rendered");
+        visual_cx.simulate_click(bounds.center(), Modifiers::none());
+        wait_for_refresh(&mut visual_cx);
+
+        let (value, entries) = browser_state(&browser, &visual_cx);
+        assert_eq!(
+            value,
+            format!("{}{MAIN_SEPARATOR}", temp_dir.path().to_string_lossy()),
+            "the input must hold the parent folder"
+        );
+        assert_eq!(entries, ["child_dir"], "the parent folder must be listed");
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_gpui_alt_up_goes_to_the_parent_folder_and_undo_restores_the_path(
+        cx: &mut TestAppContext,
+    ) {
+        let temp_dir = tempdir().expect("failed to create temp dir");
+        std::fs::write(temp_dir.path().join("alpha.txt"), "alpha")
+            .expect("failed to create alpha.txt fixture");
+        let start = temp_dir.path().join("al").to_string_lossy().to_string();
+        let (browser, input, mut visual_cx) = open_browser_at(cx, &start);
+        visual_cx.update(|window, cx| {
+            cx.bind_keys(build_default_key_bindings());
+            let focus_handle = input.read(cx).focus_handle(cx);
+            window.focus(&focus_handle, cx);
+        });
+
+        visual_cx.simulate_keystrokes("alt-up");
+        wait_for_refresh(&mut visual_cx);
+        let (value, entries) = browser_state(&browser, &visual_cx);
+        assert_eq!(
+            value,
+            format!("{}{MAIN_SEPARATOR}", temp_dir.path().to_string_lossy()),
+            "alt-up must drop the partial name only"
+        );
+        assert_eq!(entries, ["alpha.txt"]);
+
+        visual_cx.simulate_keystrokes("secondary-z");
+        let (value, _) = browser_state(&browser, &visual_cx);
+        assert_eq!(value, start, "undo must restore the previous path");
+    }
 
     #[test]
     fn test_empty_input() {

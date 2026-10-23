@@ -34,6 +34,7 @@ actions!(
         ToggleColorPicker,
         ToggleCommandPalette,
         ShowRemoteUrlHistory,
+        GoToParentFolder,
     ]
 );
 
