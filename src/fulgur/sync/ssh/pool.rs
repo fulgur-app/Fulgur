@@ -2,7 +2,7 @@ use super::auth::{CredentialPrompter, SshAuth};
 use super::credentials::SshCredKey;
 use super::error::SshError;
 use super::session::{HostKeyDecision, SshSession, connect};
-use super::url::RemoteSpec;
+use super::url::{RemoteSpec, format_host_for_url};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -203,10 +203,14 @@ impl SshSessionPool {
         idle_ttl: Duration,
     ) -> Vec<SlotEntry> {
         let now = Instant::now();
-        entries
+        let stale: Vec<SlotEntry> = entries
             .extract_if(|_, slot| now.saturating_duration_since(slot.last_used) >= idle_ttl)
             .map(|(_, slot)| slot)
-            .collect()
+            .collect();
+        if !stale.is_empty() {
+            log::debug!("Closing {} idle SSH sessions", stale.len());
+        }
+        stale
     }
 
     /// Reuse a cached session if one is available, otherwise establish a new one.
@@ -240,10 +244,21 @@ impl SshSessionPool {
     ) -> Result<(PooledSession, SshAuth), SshError> {
         if let Some(auth) = cached_auth {
             let key = SshSessionKey::new(&spec.host, spec.port, user, auth);
-            if let Some(session) = self.take(&key)
-                && session.is_authenticated()
-            {
-                return Ok((self.guard(key, session, true), auth.clone()));
+            match self.take(&key) {
+                Some(session) if session.is_authenticated() => {
+                    log::debug!(
+                        "Reusing the pooled SSH session of {user}@{}:{}",
+                        format_host_for_url(&spec.host),
+                        spec.port
+                    );
+                    return Ok((self.guard(key, session, true), auth.clone()));
+                }
+                Some(_) => log::debug!(
+                    "Discarding the pooled SSH session of {user}@{}:{}, no longer authenticated",
+                    format_host_for_url(&spec.host),
+                    spec.port
+                ),
+                None => {}
             }
         }
 

@@ -5,10 +5,12 @@ use gpui_kit::{App, Entity};
 mod general;
 mod profile_status;
 mod profiles_table;
+mod remote;
 mod sync_controls;
 
 use general::{render_tab_color_style_select, render_title_bar_style_select};
 use profiles_table::render_profiles_table;
+use remote::remote_history_item;
 use sync_controls::{render_add_server_button, render_master_switch, render_sync_error_banner};
 
 /// Create the Application settings page
@@ -150,6 +152,9 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
         .default_open(true)
         .groups(vec![
             SettingGroup::new().title("General").items(general_items),
+            SettingGroup::new()
+                .title("Remote")
+                .items(vec![remote_history_item()]),
             SettingGroup::new().title("Synchronization").items(vec![
                 render_sync_error_banner(),
                 render_master_switch(entity),

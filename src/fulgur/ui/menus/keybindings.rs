@@ -1,7 +1,7 @@
 use super::actions::{
     CloseAllFiles, CloseFile, FindAndReplace, FindInFile, JumpToLine, NewFile, NewWindow, NextTab,
     OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs, SearchNext,
-    SearchPrevious, ToggleColorPicker, ToggleCommandPalette,
+    SearchPrevious, ShowRemoteUrlHistory, ToggleColorPicker, ToggleCommandPalette,
 };
 use gpui_kit::KeyBinding;
 
@@ -10,6 +10,9 @@ pub const KEY_CONTEXT_FULGUR: &str = "Fulgur";
 
 /// Key context the editor binds its own actions under.
 pub const KEY_CONTEXT_INPUT: &str = "Input";
+
+/// Key context set on the URL combo box of the Open Remote File dialog.
+pub const KEY_CONTEXT_REMOTE_URL_COMBO: &str = "RemoteUrlCombo";
 
 /// Context predicate for keybindings scoped to the application content.
 const SCOPED_BINDING_PREDICATE: &str = "Fulgur || (Fulgur > Input)";
@@ -37,6 +40,7 @@ enum KeybindingDispatchAction {
     PrintFile,
     ToggleColorPicker,
     ToggleCommandPalette,
+    ShowRemoteUrlHistory,
 }
 
 /// A platform keybinding dispatch specification used to build runtime keybindings.
@@ -121,6 +125,9 @@ impl KeybindingDispatchSpec {
             KeybindingDispatchAction::ToggleCommandPalette => {
                 KeyBinding::new(self.keystroke, ToggleCommandPalette, context)
             }
+            KeybindingDispatchAction::ShowRemoteUrlHistory => {
+                KeyBinding::new(self.keystroke, ShowRemoteUrlHistory, context)
+            }
         }
     }
 }
@@ -153,6 +160,7 @@ impl KeybindingDispatchAction {
             | Self::PrintFile
             | Self::ToggleColorPicker
             | Self::ToggleCommandPalette => Some(SCOPED_BINDING_PREDICATE),
+            Self::ShowRemoteUrlHistory => Some(KEY_CONTEXT_REMOTE_URL_COMBO),
         }
     }
 }
@@ -246,6 +254,7 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
             "ctrl-shift-p",
             KeybindingDispatchAction::ToggleCommandPalette,
         ),
+        KeybindingDispatchSpec::new("alt-down", KeybindingDispatchAction::ShowRemoteUrlHistory),
     ]
 }
 
@@ -431,6 +440,34 @@ mod tests {
         assert!(
             scoped.depth_of(&content_stack).is_some(),
             "scoped bindings must fire when the app content itself is focused"
+        );
+    }
+
+    #[test]
+    fn test_remote_url_history_shortcut_only_fires_inside_the_url_combo_box() {
+        let context = KeybindingDispatchAction::ShowRemoteUrlHistory
+            .key_context()
+            .expect("the remote URL history shortcut must be scoped");
+        let combo = gpui_kit::KeyBindingContextPredicate::parse(context).unwrap();
+
+        let dialog_input_stack = [
+            gpui_kit::KeyContext::parse("Dialog").unwrap(),
+            gpui_kit::KeyContext::parse(super::KEY_CONTEXT_REMOTE_URL_COMBO).unwrap(),
+            gpui_kit::KeyContext::parse("Input").unwrap(),
+        ];
+        assert!(
+            combo.depth_of(&dialog_input_stack).is_some(),
+            "the shortcut must reach the URL input of the Open Remote File dialog"
+        );
+
+        let editor_stack = [
+            gpui_kit::KeyContext::parse("Fulgur").unwrap(),
+            gpui_kit::KeyContext::parse("Input").unwrap(),
+        ];
+        assert_eq!(
+            combo.depth_of(&editor_stack),
+            None,
+            "the shortcut must leave the editor alone"
         );
     }
 

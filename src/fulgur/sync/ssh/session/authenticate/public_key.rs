@@ -53,13 +53,22 @@ pub(super) fn try_agent<S: AuthSession>(
         }
     };
     let identities = agent.identities().unwrap_or_default();
-    let offered = identities.iter().filter(|identity| {
-        allowed_blobs.is_none_or(|blobs| blobs.iter().any(|blob| blob == identity.blob()))
-    });
+    let offered: Vec<_> = identities
+        .iter()
+        .filter(|identity| {
+            allowed_blobs.is_none_or(|blobs| blobs.iter().any(|blob| blob == identity.blob()))
+        })
+        .collect();
+    log::debug!(
+        "ssh-agent holds {} identities, {} offered",
+        identities.len(),
+        offered.len()
+    );
     let mut outcome = Ok(false);
     for identity in offered {
         match agent.userauth(user, identity) {
             Ok(()) => {
+                log::debug!("ssh-agent identity '{}' was accepted", identity.comment());
                 outcome = Ok(session.authenticated());
                 break;
             }
@@ -165,16 +174,30 @@ pub(super) fn try_key_file<S: AuthSession>(
     // Never pass a NULL passphrase: libssh2's OpenSSL callback reads it unconditionally
     // for encrypted PEM keys.
     let passphrase = passphrase.unwrap_or("");
-    match session.userauth_pubkey_file(user, public_key.as_deref(), private_key, Some(passphrase)) {
-        Ok(()) if session.authenticated() => Ok(KeyAttempt::Accepted),
-        Ok(()) => Ok(KeyAttempt::Rejected),
-        Err(error) if is_transport_error(&error) => Err(auth_request_error(&error)),
-        Err(error) if is_authentication_rejection(&error) => Ok(KeyAttempt::Rejected),
+    let attempt = match session.userauth_pubkey_file(
+        user,
+        public_key.as_deref(),
+        private_key,
+        Some(passphrase),
+    ) {
+        Ok(()) if session.authenticated() => KeyAttempt::Accepted,
+        Ok(()) => KeyAttempt::Rejected,
+        Err(error) if is_transport_error(&error) => return Err(auth_request_error(&error)),
+        Err(error) if is_authentication_rejection(&error) => KeyAttempt::Rejected,
         Err(error) => {
             log::debug!("Cannot use SSH key {}: {error}", private_key.display());
-            Ok(KeyAttempt::Unusable)
+            KeyAttempt::Unusable
         }
+    };
+    match attempt {
+        KeyAttempt::Accepted => log::debug!("SSH key {} was accepted", private_key.display()),
+        KeyAttempt::Rejected => log::debug!(
+            "SSH key {} was rejected by the server",
+            private_key.display()
+        ),
+        KeyAttempt::Unusable => {}
     }
+    Ok(attempt)
 }
 
 /// Locate the `.pub` file next to a private key.

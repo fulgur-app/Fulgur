@@ -59,6 +59,9 @@ pub struct PendingRemoteOpenOutcome {
     pub target_tab_id: Option<TabId>,
     pub target_request_id: Option<u64>,
     pub(crate) target_reload_guard: Option<RemoteReloadGuard>,
+    /// Remote history URL to record if the requested location opens as asked,
+    /// `None` when the open did not come from the Open Remote File dialog.
+    pub history_url: Option<String>,
     pub result: Result<RemoteOpenResult, String>,
 }
 
@@ -68,6 +71,9 @@ pub struct RemoteOpenTaskParams {
     pub target_tab_id: Option<TabId>,
     pub target_request_id: Option<u64>,
     pub(crate) target_reload_guard: Option<RemoteReloadGuard>,
+    /// Remote history URL to record if the requested location opens as asked,
+    /// `None` when the open did not come from the Open Remote File dialog.
+    pub history_url: Option<String>,
 }
 
 /// Wait for the user to answer a prompt posted by an SSH worker thread.

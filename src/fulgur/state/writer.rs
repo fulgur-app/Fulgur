@@ -1,5 +1,5 @@
 use super::db::StateDb;
-use super::persistence::WindowsState;
+use super::persistence::{RemoteHistory, WindowsState};
 use crate::fulgur::utils::worker::Worker;
 use parking_lot::Mutex;
 use std::sync::{Arc, mpsc};
@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 
 /// Bounded channel capacity for writer messages.
 ///
-/// Asynchronous snapshots never travel through this channel: they are coalesced
-/// in the `SnapshotMailbox`, so the queue only ever holds blocking requests,
+/// Asynchronous snapshots and remote histories never travel through this
+/// channel: they are coalesced in the `SnapshotMailbox`, so the queue only ever
+/// holds blocking requests,
 /// whose callers wait on the reply before issuing another one, plus zero-sized
 /// wakeups. A full queue therefore indicates an abnormal backlog of blocking
 /// saves and makes those callers back off naturally.
@@ -28,18 +29,21 @@ enum WriterMessage {
         state: WindowsState,
         reply: mpsc::Sender<anyhow::Result<()>>,
     },
-    /// Signals that the mailbox now holds a snapshot waiting to be written.
+    /// Signals that the mailbox now holds a snapshot or a remote history
+    /// waiting to be written.
     MailboxFilled,
 }
 
-/// Coalescing hand-off for asynchronous snapshots.
+/// Coalescing hand-off for asynchronous snapshots and remote histories.
 ///
 /// Only the newest snapshot matters, since each one describes the whole session,
 /// so a burst collapses into a single write instead of queueing one snapshot per
-/// request.
+/// request. The remote history follows the same rule in its own slot, so a
+/// window snapshot never overwrites a history waiting to be written.
 #[derive(Default)]
 struct SnapshotMailbox {
     pending: Mutex<Option<WindowsState>>,
+    remote_history: Mutex<Option<RemoteHistory>>,
 }
 
 impl SnapshotMailbox {
@@ -66,6 +70,23 @@ impl SnapshotMailbox {
     /// - `bool`: `true` when the mailbox holds a snapshot to write
     fn has_pending(&self) -> bool {
         self.pending.lock().is_some()
+    }
+
+    /// Store a remote history, replacing any history already waiting.
+    ///
+    /// ### Arguments
+    /// - `history`: The history to hand to the writer thread.
+    fn put_remote_history(&self, history: RemoteHistory) {
+        *self.remote_history.lock() = Some(history);
+    }
+
+    /// Take the waiting remote history, leaving its slot empty.
+    ///
+    /// ### Returns
+    /// - `Some(RemoteHistory)`: The history that was waiting
+    /// - `None`: No history was waiting
+    fn take_remote_history(&self) -> Option<RemoteHistory> {
+        self.remote_history.lock().take()
     }
 }
 
@@ -170,6 +191,23 @@ impl WriterState {
         )
     }
 
+    /// Write the remote history waiting in the mailbox, if any.
+    fn flush_remote_history(&mut self) {
+        let Some(history) = self.mailbox.take_remote_history() else {
+            return;
+        };
+        let Some(db) = self.db.as_mut() else {
+            log::error!(
+                "State writer failed to save the remote history: no state database is available"
+            );
+            return;
+        };
+        match db.apply_remote_history(&history) {
+            Ok(rows) => log::debug!("Remote history written ({rows} rows changed)"),
+            Err(e) => log::error!("State writer failed to save the remote history: {e}"),
+        }
+    }
+
     /// Write the snapshot waiting in the mailbox, ignoring the throttle.
     fn flush_mailbox(&mut self) {
         if let Some(state) = self.mailbox.take()
@@ -197,6 +235,7 @@ impl WriterState {
 
     /// Flush anything outstanding and leave the database ready for next launch.
     fn shut_down(&mut self) {
+        self.flush_remote_history();
         self.flush_mailbox();
         if let Some(db) = self.db.as_ref() {
             db.checkpoint();
@@ -298,6 +337,7 @@ impl StateWriter {
                 Some(WriterMessage::MailboxFilled) => {}
                 None => writer_state.flush_mailbox(),
             }
+            writer_state.flush_remote_history();
         }
         writer_state.shut_down();
         log::debug!("State writer thread exiting (no more senders)");
@@ -345,12 +385,33 @@ impl StateWriter {
     /// - `state`: The fully-assembled windows state snapshot to persist.
     pub fn save_async(&self, state: WindowsState) {
         self.mailbox.put(state);
+        if !self.wake_writer() {
+            self.mailbox.take();
+            log::error!("State writer thread has exited; dropped async save request");
+        }
+    }
+
+    /// Hand the remote URL history to the writer without waiting for the write.
+    ///
+    /// ### Arguments
+    /// - `history`: The complete history to persist.
+    pub fn save_remote_history(&self, history: RemoteHistory) {
+        self.mailbox.put_remote_history(history);
+        if !self.wake_writer() {
+            self.mailbox.take_remote_history();
+            log::error!("State writer thread has exited; dropped remote history save request");
+        }
+    }
+
+    /// Wake the writer thread so it drains the mailbox.
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the writer will drain the mailbox, `false` when the
+    ///   writer thread has exited
+    fn wake_writer(&self) -> bool {
         match self.sender.try_send(WriterMessage::MailboxFilled) {
-            Ok(()) | Err(mpsc::TrySendError::Full(_)) => {}
-            Err(mpsc::TrySendError::Disconnected(_)) => {
-                self.mailbox.take();
-                log::error!("State writer thread has exited; dropped async save request");
-            }
+            Ok(()) | Err(mpsc::TrySendError::Full(_)) => true,
+            Err(mpsc::TrySendError::Disconnected(_)) => false,
         }
     }
 }
@@ -535,6 +596,76 @@ mod tests {
         writer.save_async(sample_state("held-back"));
         drop(writer);
         assert_eq!(persisted_title(&path), "held-back");
+    }
+
+    /// Read back the remote history persisted at `path`.
+    fn persisted_remote_history(path: &Path) -> RemoteHistory {
+        StateDb::open(path)
+            .expect("reopen state database")
+            .load_remote_history()
+            .expect("load remote history")
+    }
+
+    /// Build a remote history from URLs ordered most recent first.
+    fn remote_history(urls: &[&str]) -> RemoteHistory {
+        RemoteHistory::from_urls(urls.iter().map(ToString::to_string))
+    }
+
+    #[test]
+    fn writer_persists_the_remote_history_without_waiting_for_the_throttle() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.db");
+        let writer = writer_at(&path, NEVER_ELAPSES);
+        writer.save_blocking(sample_state("seed")).unwrap();
+        let history = remote_history(&["ssh://host/"]);
+        writer.save_remote_history(history.clone());
+        // A blocking save is processed after the history wakeup, so once it
+        // returns the history has been written even though the throttle never
+        // elapses.
+        writer.save_blocking(sample_state("seed")).unwrap();
+        assert_eq!(persisted_remote_history(&path), history);
+    }
+
+    #[test]
+    fn writer_keeps_only_the_newest_pending_remote_history() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.db");
+        let writer = writer_at(&path, NEVER_ELAPSES);
+        writer
+            .mailbox
+            .put_remote_history(remote_history(&["ssh://old/"]));
+        writer
+            .mailbox
+            .put_remote_history(remote_history(&["ssh://new/"]));
+        assert_eq!(
+            writer.mailbox.take_remote_history(),
+            Some(remote_history(&["ssh://new/"]))
+        );
+        assert_eq!(writer.mailbox.take_remote_history(), None);
+    }
+
+    #[test]
+    fn writer_flushes_a_pending_remote_history_on_shutdown() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.db");
+        let writer = writer_at(&path, NEVER_ELAPSES);
+        let history = remote_history(&["ssh://b/", "ssh://a/"]);
+        writer.save_remote_history(history.clone());
+        drop(writer);
+        assert_eq!(persisted_remote_history(&path), history);
+    }
+
+    #[test]
+    fn writer_blocking_save_does_not_drop_a_pending_remote_history() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.db");
+        let writer = writer_at(&path, NEVER_ELAPSES);
+        let history = remote_history(&["ssh://host/etc/hosts"]);
+        writer.mailbox.put_remote_history(history.clone());
+        writer.save_blocking(sample_state("blocking")).unwrap();
+        drop(writer);
+        assert_eq!(persisted_title(&path), "blocking");
+        assert_eq!(persisted_remote_history(&path), history);
     }
 
     #[test]

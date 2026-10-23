@@ -24,6 +24,8 @@ pub struct PaletteContext {
     pub log_toggle_available: bool,
     /// Whether the recent files list holds at least one entry.
     pub has_recent_files: bool,
+    /// Whether the Open Remote File dialog history holds at least one URL.
+    pub has_remote_history: bool,
     /// Whether synchronization is on and at least one profile is active.
     pub has_active_sync_profile: bool,
 }
@@ -69,6 +71,7 @@ mod tests {
             is_large_file: false,
             log_toggle_available: true,
             has_recent_files: true,
+            has_remote_history: true,
             has_active_sync_profile: true,
         }
     }

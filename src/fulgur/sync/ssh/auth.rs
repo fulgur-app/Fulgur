@@ -47,6 +47,19 @@ impl SshAuth {
         digest.copy_from_slice(&hasher.finalize());
         digest
     }
+
+    /// Name the authentication method for logs, without exposing any secret.
+    ///
+    /// ### Returns
+    /// - `String`: `automatic`, `password`, or `key file <path>`
+    #[must_use]
+    pub fn method_label(&self) -> String {
+        match self {
+            SshAuth::Automatic => "automatic".to_string(),
+            SshAuth::KeyFile { path, .. } => format!("key file {}", path.display()),
+            SshAuth::Password(_) => "password".to_string(),
+        }
+    }
 }
 
 /// Answer to a key passphrase prompt.
@@ -188,6 +201,18 @@ mod tests {
                 assert_ne!(digest, other);
             }
         }
+    }
+
+    #[test]
+    fn method_label_never_contains_a_secret() {
+        let password = SshAuth::Password(Zeroizing::new("hunter2".to_string()));
+        let key = SshAuth::KeyFile {
+            path: PathBuf::from("/home/alice/.ssh/id_ed25519"),
+            passphrase: Some(Zeroizing::new("hunter2".to_string())),
+        };
+        assert_eq!(SshAuth::Automatic.method_label(), "automatic");
+        assert_eq!(password.method_label(), "password");
+        assert_eq!(key.method_label(), "key file /home/alice/.ssh/id_ed25519");
     }
 
     #[test]

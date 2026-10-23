@@ -1,10 +1,8 @@
 use super::host_patterns::match_known_host_patterns;
 use super::identities::expand_tilde;
 use super::paths::home_dir;
+use crate::fulgur::sync::ssh::DEFAULT_SSH_PORT;
 use std::path::{Path, PathBuf};
-
-/// Port assumed by `RemoteSpec` when the URL does not name one.
-const DEFAULT_SSH_PORT: u16 = 22;
 
 /// Settings from `~/.ssh/config` that apply to one host alias.
 ///

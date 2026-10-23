@@ -50,6 +50,7 @@ impl Fulgur {
                 .map(std::path::PathBuf::as_path)
                 .is_some_and(log_toggle_available),
             has_recent_files: !self.settings.recent_files.get_files().is_empty(),
+            has_remote_history: !Self::shared_state(cx).remote_history.is_empty(),
             has_active_sync_profile: !self.collect_active_profiles().is_empty(),
         }
     }
@@ -112,6 +113,7 @@ impl Fulgur {
             PaletteCommand::CloseFile => self.close_active_tab(window, cx),
             PaletteCommand::CloseAllFiles => self.close_all_tabs(window, cx),
             PaletteCommand::ClearRecentFiles => self.clear_recent_files(cx),
+            PaletteCommand::ClearRemoteHistory => Self::clear_remote_history(cx),
             PaletteCommand::Quit => self.quit(window, cx),
             PaletteCommand::AddCursorAbove => {
                 self.dispatch_to_active_editor(Box::new(AddCursorAbove), window, cx);
@@ -425,6 +427,28 @@ mod tests {
         assert!(inactive_profile.has_recent_files);
         assert!(!inactive_profile.has_active_sync_profile);
         assert!(active_profile.has_active_sync_profile);
+    }
+
+    #[gpui_kit::test]
+    fn the_remote_history_reaches_the_context_and_its_command_clears_it(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        let (empty, filled, cleared) = visual_cx.update(|window, cx| {
+            let empty = fulgur.read(cx).palette_context(cx);
+            Fulgur::record_remote_history_url("ssh://host/".to_string(), cx);
+            let filled = fulgur.read(cx).palette_context(cx);
+            fulgur.update(cx, |this, cx| {
+                run(this, PaletteCommand::ClearRemoteHistory, window, cx);
+            });
+            (empty, filled, fulgur.read(cx).palette_context(cx))
+        });
+
+        assert!(!empty.has_remote_history);
+        assert!(filled.has_remote_history);
+        assert!(
+            !cleared.has_remote_history,
+            "running the command must forget every remote URL"
+        );
     }
 
     // ========== dispatch ==========

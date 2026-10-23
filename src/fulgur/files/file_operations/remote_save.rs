@@ -116,6 +116,7 @@ impl Fulgur {
             SshTaskContext {
                 spec,
                 progress_prefix: "Saving to ",
+                operation: "save",
                 timeout_label: SSH_SAVE_TIMEOUT_LABEL,
                 cancel_callback,
             },

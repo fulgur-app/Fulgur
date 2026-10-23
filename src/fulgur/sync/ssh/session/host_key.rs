@@ -54,13 +54,17 @@ pub(super) fn check_host_key(
         key,
         &kh_path,
     ) {
-        ssh2::CheckResult::Match => Ok(()),
+        ssh2::CheckResult::Match => {
+            log::debug!("Host key of {host}:{port} matches known_hosts");
+            Ok(())
+        }
         ssh2::CheckResult::Mismatch => Err(SshError::HostKeyMismatch {
             host: host.to_string(),
             port,
         }),
         ssh2::CheckResult::NotFound | ssh2::CheckResult::Failure => {
             let fingerprint = sha256_fingerprint(key);
+            log::debug!("Host key of {host}:{port} is unknown, asking the user to trust it");
             match host_key_cb(&fingerprint, host, port) {
                 HostKeyDecision::Reject => Err(SshError::ConnectionFailed(format!(
                     "Host key rejected for {host}:{port}"
@@ -70,6 +74,9 @@ pub(super) fn check_host_key(
                     let known_host = known_hosts_entry_host(host, port);
                     append_known_hosts_entry(&kh_path, &known_host, key)?;
                     set_file_permissions_600(&kh_path);
+                    log::info!(
+                        "Trusted the host key of {host}:{port} ({fingerprint}) and added it to known_hosts"
+                    );
                     Ok(())
                 }
             }

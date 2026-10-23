@@ -33,6 +33,7 @@ actions!(
         PrintFile,
         ToggleColorPicker,
         ToggleCommandPalette,
+        ShowRemoteUrlHistory,
     ]
 );
 
