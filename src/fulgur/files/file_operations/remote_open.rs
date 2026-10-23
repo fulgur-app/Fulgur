@@ -297,7 +297,7 @@ impl Fulgur {
                 timeout_label: SSH_CONNECTION_TIMEOUT_LABEL,
                 cancel_callback,
             },
-            move |session, spec| {
+            move |session, spec, _cancelled| {
                 if target_tab_id.is_some() {
                     ssh::sftp::read_remote_file(session, &spec.path)
                         .map(|bytes| Self::remote_file_open_result(spec, bytes))
