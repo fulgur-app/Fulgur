@@ -71,12 +71,7 @@ impl Fulgur {
                         }
                         EncodedContents::Lossy => {
                             this.show_lossy_save_as_dialog(
-                                tab_id,
-                                path.clone(),
-                                contents.clone(),
-                                &encoding,
-                                window,
-                                cx,
+                                tab_id, path, contents, &encoding, window, cx,
                             );
                         }
                     });
