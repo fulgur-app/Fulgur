@@ -24,7 +24,7 @@ impl Fulgur {
             return;
         }
         let bg = cx.background_executor().clone();
-        cx.spawn_in(window, async move |view, window| {
+        cx.spawn_in(window, async move |_, window| {
             log::debug!("Checking for updates");
             let result = bg
                 .spawn(async move { check_for_updates(env!("CARGO_PKG_VERSION")) })
@@ -32,9 +32,7 @@ impl Fulgur {
             window
                 .update(|window, cx| match result {
                     Ok(Some(update_info)) => {
-                        let _ = view.update(cx, |this, cx| {
-                            this.record_available_update(update_info, window, cx);
-                        });
+                        Self::record_available_update(update_info, window, cx);
                     }
                     Ok(None) => {
                         let notification = SharedString::from("No update found");
@@ -83,16 +81,14 @@ impl Fulgur {
     /// - `update_info`: The newer release found by the update check
     /// - `cx`: The application context
     fn announce_available_update(update_info: UpdateInfo, cx: &mut App) {
-        let Some((handle, fulgur)) = WindowManager::target_window(cx) else {
+        let Some((handle, _)) = WindowManager::target_window(cx) else {
             cx.update_global::<SharedAppState, _>(|shared, _| {
                 shared.available_update = Some(update_info);
             });
             return;
         };
         if let Err(e) = handle.update(cx, |_, window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.record_available_update(update_info, window, cx);
-            });
+            Self::record_available_update(update_info, window, cx);
         }) {
             log::error!("Failed to announce the available update: {e}");
         }
@@ -105,10 +101,9 @@ impl Fulgur {
     /// - `window`: The window showing the toast
     /// - `cx`: The application context
     pub(crate) fn record_available_update(
-        &mut self,
         update_info: UpdateInfo,
         window: &mut Window,
-        cx: &mut Context<Self>,
+        cx: &mut App,
     ) {
         log::info!(
             "Update available: {} -> {}",
@@ -119,7 +114,6 @@ impl Fulgur {
         cx.update_global::<SharedAppState, _>(|shared, _| {
             shared.available_update = Some(update_info);
         });
-        self.rebuild_menus(cx);
     }
 }
 
@@ -141,8 +135,9 @@ fn open_release_page(url: &str) {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     use crate::fulgur::{Fulgur, shared_state::SharedAppState, utils::updater::UpdateInfo};
-    use crate::test_support::setup_fulgur_with_root;
+    use crate::test_support::{setup_fulgur_with_root, temp_test_path};
     use gpui_kit::{App, OwnedMenuItem, TestAppContext};
+    use std::path::Path;
 
     /// Build a newer release as the update check would report it.
     ///
@@ -182,11 +177,9 @@ mod tests {
 
     #[gpui_kit::test]
     fn test_available_update_survives_renders(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+        let (_fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
         visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.record_available_update(newer_release(), window, cx);
-            });
+            Fulgur::record_available_update(newer_release(), window, cx);
         });
         visual_cx.run_until_parked();
         visual_cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -200,26 +193,69 @@ mod tests {
         assert_eq!(latest_version.as_deref(), Some("99.0.0"));
     }
 
+    /// Check whether the application menus list a file in the "Recent Files" submenu.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    /// - `file`: The recent file to look for
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the submenu has an entry labelled with the file path
+    fn menus_list_recent_file(cx: &App, file: &Path) -> bool {
+        let label = file.display().to_string();
+        cx.get_menus().is_some_and(|menus| {
+            menus
+                .into_iter()
+                .flat_map(|menu| menu.items)
+                .filter_map(|item| match item {
+                    OwnedMenuItem::Submenu(submenu) if submenu.name == "Recent Files" => {
+                        Some(submenu.items)
+                    }
+                    _ => None,
+                })
+                .flatten()
+                .any(|item| matches!(item, OwnedMenuItem::Action { name, .. } if name == label))
+        })
+    }
+
     #[gpui_kit::test]
     fn test_menu_rebuild_keeps_update_entry(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
-        visual_cx.update(|_, cx| fulgur.update(cx, Fulgur::rebuild_menus));
+        visual_cx.update(|_, cx| Fulgur::register_app_menus_observer(cx));
+        let first_file = temp_test_path("update_menu_first.txt");
+        visual_cx.update(|_, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.record_recent_file(first_file.clone(), cx);
+            });
+        });
+        visual_cx.run_until_parked();
         assert_eq!(
             visual_cx.update(|_, cx| update_menu_entry(cx)).as_deref(),
             Some("Check for updates")
         );
         visual_cx.update(|window, cx| {
+            Fulgur::record_available_update(newer_release(), window, cx);
+        });
+        visual_cx.run_until_parked();
+        assert_eq!(
+            visual_cx.update(|_, cx| update_menu_entry(cx)).as_deref(),
+            Some("Update available")
+        );
+        let second_file = temp_test_path("update_menu_second.txt");
+        visual_cx.update(|_, cx| {
             fulgur.update(cx, |this, cx| {
-                this.record_available_update(newer_release(), window, cx);
+                this.record_recent_file(second_file.clone(), cx);
             });
         });
         visual_cx.run_until_parked();
-        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
-        visual_cx.update(|_, cx| fulgur.update(cx, Fulgur::rebuild_menus));
         assert_eq!(
             visual_cx.update(|_, cx| update_menu_entry(cx)).as_deref(),
             Some("Update available"),
-            "a later menu rebuild (file open, theme switch) must keep the update entry"
+            "a later menu rebuild (recent file opened) must keep the update entry"
+        );
+        assert!(
+            visual_cx.update(|_, cx| menus_list_recent_file(cx, &second_file)),
+            "recording a recent file must rebuild the menus with it"
         );
     }
 }

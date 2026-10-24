@@ -258,7 +258,6 @@ impl Fulgur {
             let _ = self.update_and_propagate_settings(cx);
         }
         cx.refresh_windows();
-        self.rebuild_menus(cx);
     }
 }
 

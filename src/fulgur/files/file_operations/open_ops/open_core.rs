@@ -175,10 +175,7 @@ impl Fulgur {
                         this.activate_log_view(tab_id, window, cx);
                     }
                     this.focus_active_tab(window, cx);
-                    if let Err(e) = this.settings.add_file(path.to_path_buf()) {
-                        log::error!("Failed to add file to recent files: {e}");
-                    }
-                    this.rebuild_menus(cx);
+                    this.record_recent_file(path.to_path_buf(), cx);
                     let title = path.file_name().map(|file_name| {
                         SharedString::from(file_name.to_string_lossy().to_string())
                     });

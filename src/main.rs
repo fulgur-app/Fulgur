@@ -322,6 +322,7 @@ fn main() {
         .detach();
         fulgur::Fulgur::register_app_quit_state_save(cx);
         fulgur::window_manager::system_menus::init(cx);
+        fulgur::Fulgur::register_app_menus_observer(cx);
         fulgur::shared_state::spawn_notification_consumer(cx);
         fulgur::Fulgur::spawn_startup_update_check(cx);
         if restore_bounds.is_empty() {

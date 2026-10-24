@@ -160,6 +160,5 @@ impl Fulgur {
         if let Err(e) = self.update_and_propagate_settings(cx) {
             log::error!("Failed to save settings: {e}");
         }
-        self.rebuild_menus(cx);
     }
 }
