@@ -23,7 +23,8 @@ impl Fulgur {
     /// Handle window close request
     ///
     /// ### Behavior
-    /// - If this is the last window: treat as quit (show confirm dialog if enabled)
+    /// - If this is the last window: treat as quit (show confirm dialog if enabled,
+    ///   otherwise save state and let the window close, which quits the app)
     /// - If multiple windows exist: just close this window (after saving state)
     ///
     /// ### Arguments

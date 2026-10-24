@@ -210,7 +210,11 @@ fn main() {
         return;
     }
 
-    let app = gpui_kit::application().with_assets(Assets);
+    // Closing the last window quits on every platform: macOS would otherwise keep a
+    // windowless app running, with nothing left to open a new window from.
+    let app = gpui_kit::application()
+        .with_assets(Assets)
+        .with_quit_mode(gpui_kit::QuitMode::LastWindowClosed);
     // Files to open from outside the app (open events, command-line arguments, other
     // instances) are queued here and the wake channel asks the app to deliver them.
     let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(cli_file_paths));
