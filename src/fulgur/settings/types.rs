@@ -195,6 +195,7 @@ pub enum MarkdownPreviewMode {
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct MarkdownSettings {
     #[serde(default)]
     pub preview_mode: MarkdownPreviewMode,
@@ -230,6 +231,7 @@ impl MarkdownSettings {
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct EditorSettings {
     pub show_line_numbers: bool,
     pub show_indent_guides: bool,
@@ -277,6 +279,7 @@ pub enum TitleBarStyle {
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct AppSettings {
     pub confirm_exit: bool,
     #[serde(default = "default_debug_mode")]
@@ -594,6 +597,7 @@ impl Themes {
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct Settings {
     pub editor_settings: EditorSettings,
     pub app_settings: AppSettings,

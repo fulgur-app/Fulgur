@@ -763,6 +763,149 @@ fn load_from_path_returns_error_when_both_primary_and_backup_are_corrupted() {
     assert!(result.is_err());
 }
 
+/// List the files an unusable settings file was moved aside to.
+///
+/// ### Arguments
+/// - `dir`: The directory holding `settings.json`
+///
+/// ### Returns
+/// - `Vec<PathBuf>`: Every `settings.json.corrupt-*` file in `dir`
+fn files_kept_aside(dir: &std::path::Path) -> Vec<PathBuf> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("settings.json.corrupt-"))
+        })
+        .collect()
+}
+
+#[test]
+fn settings_load_with_missing_required_fields_keeps_present_ones_and_defaults_the_rest() {
+    let json = r#"{
+        "editor_settings": { "font_size": 18.0 },
+        "app_settings": { "theme": "Default Dark" }
+    }"#;
+    let settings: Settings = serde_json::from_str(json).unwrap();
+    let defaults = Settings::new();
+    assert!((settings.editor_settings.font_size - 18.0_f32).abs() < f32::EPSILON);
+    assert_eq!(settings.app_settings.theme, "Default Dark");
+    assert_eq!(
+        settings.editor_settings.tab_size,
+        defaults.editor_settings.tab_size
+    );
+    assert!(
+        settings.editor_settings.markdown_settings == defaults.editor_settings.markdown_settings
+    );
+    assert_eq!(
+        settings.app_settings.confirm_exit,
+        defaults.app_settings.confirm_exit
+    );
+    assert!(settings.recent_files == defaults.recent_files);
+}
+
+#[test]
+fn load_for_startup_treats_a_missing_file_as_a_first_run() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+
+    let startup = Settings::load_for_startup_from_path(&path);
+
+    assert!(startup.is_first_run);
+    assert!(startup.load_problem.is_none());
+    assert!(startup.settings == Settings::new());
+}
+
+#[test]
+fn load_for_startup_reads_a_valid_file_without_reporting_a_problem() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    let mut settings = Settings::new();
+    settings.editor_settings.font_size = 18.0;
+    settings.save_to_path(&path).unwrap();
+
+    let startup = Settings::load_for_startup_from_path(&path);
+
+    assert!(!startup.is_first_run);
+    assert!(startup.load_problem.is_none());
+    assert!(startup.settings == settings);
+    assert!(path.exists(), "a valid settings file must stay in place");
+}
+
+#[test]
+fn load_for_startup_keeps_an_unparsable_file_out_of_later_saves() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    let hand_edited = b"{ \"editor_settings\": { \"font_size\": 18.0, } }";
+    std::fs::write(&path, hand_edited).unwrap();
+
+    let startup = Settings::load_for_startup_from_path(&path);
+
+    assert!(!startup.is_first_run, "a broken file is not a first run");
+    assert!(startup.load_problem.is_some());
+    assert!(startup.settings == Settings::new());
+    assert!(!path.exists(), "the unusable file must be moved aside");
+    let kept = files_kept_aside(dir.path());
+    assert_eq!(kept.len(), 1);
+    assert_eq!(std::fs::read(&kept[0]).unwrap(), hand_edited);
+
+    startup.settings.save_to_path(&path).unwrap();
+    startup.settings.save_to_path(&path).unwrap();
+    assert_eq!(
+        std::fs::read(&kept[0]).unwrap(),
+        hand_edited,
+        "saving the defaults must not touch the file kept aside"
+    );
+}
+
+#[test]
+fn load_for_startup_restores_the_backup_and_keeps_both_files() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    let backup = dir.path().join("settings.json.bak");
+    let mut backed_up = Settings::new();
+    backed_up.editor_settings.font_size = 18.0;
+    backed_up.save_to_path(&backup).unwrap();
+    std::fs::write(&path, b"not valid json").unwrap();
+
+    let startup = Settings::load_for_startup_from_path(&path);
+
+    assert!(!startup.is_first_run);
+    assert!(startup.load_problem.is_some());
+    assert!(startup.settings == backed_up);
+    assert_eq!(
+        std::fs::read(&files_kept_aside(dir.path())[0]).unwrap(),
+        b"not valid json"
+    );
+
+    startup.settings.save_to_path(&path).unwrap();
+    assert!(
+        Settings::load_from_path(&backup).unwrap() == backed_up,
+        "the first save after recovery must leave the good backup alone"
+    );
+}
+
+#[test]
+fn load_for_startup_reports_an_unreadable_file_instead_of_a_first_run() {
+    // A directory in place of the file fails to read with an error other than
+    // `NotFound` on every platform, without relying on permissions that a root
+    // test runner would bypass.
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    std::fs::create_dir(&path).unwrap();
+
+    let startup = Settings::load_for_startup_from_path(&path);
+
+    assert!(
+        !startup.is_first_run,
+        "an unreadable file is not a first run"
+    );
+    assert!(startup.load_problem.is_some());
+    assert!(!path.exists(), "the unreadable entry must be moved aside");
+    assert_eq!(files_kept_aside(dir.path()).len(), 1);
+}
+
 #[cfg(feature = "gpui-test-support")]
 mod gpui_settings_propagation_tests {
     use crate::fulgur::WindowInit;

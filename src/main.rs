@@ -139,12 +139,11 @@ fn main() {
     if let Ok(config_dir) = fulgur::utils::paths::config_dir() {
         fulgur::utils::atomic_write::cleanup_orphan_temp_files(&config_dir);
     }
-    let settings_load_result = fulgur::settings::Settings::load();
-    let is_first_run = settings_load_result.is_err();
-    let mut settings = settings_load_result.unwrap_or_else(|e| {
-        eprintln!("Failed to load settings, using defaults: {e}");
-        fulgur::settings::Settings::new()
-    });
+    let fulgur::settings::StartupSettings {
+        mut settings,
+        is_first_run,
+        load_problem: settings_load_problem,
+    } = fulgur::settings::Settings::load_for_startup();
     let debug_mode = settings.app_settings.debug_mode;
     fulgur::utils::logger::set_debug_mode(debug_mode);
     let current_version = env!("CARGO_PKG_VERSION");
@@ -297,6 +296,11 @@ fn main() {
             state_db,
         );
         cx.set_global(shared_state);
+        if let Some(problem) = settings_load_problem {
+            cx.global::<fulgur::shared_state::SharedAppState>().notify(
+                fulgur::shared_state::AppNotification::foreground(NotificationType::Error, problem),
+            );
+        }
         cx.set_global(fulgur::window_manager::WindowManager::new());
         // On Windows and Linux, start the IPC listener now that SharedAppState is registered.
         // We grab the two arcs from the global so there's a single source of truth,
