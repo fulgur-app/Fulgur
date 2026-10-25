@@ -9,7 +9,8 @@ pub struct RemoteSpec {
     pub port: u16,
     /// Username parsed from the URL, if present. `None` means the UI must prompt.
     pub user: Option<String>,
-    /// Absolute remote path, or a `~/`-prefixed relative path.
+    /// Absolute remote path, or a home-relative `~` / `~/...` path that the SFTP
+    /// helpers resolve against the remote home directory.
     pub path: String,
     /// Password embedded in the URL (immediately moved to the session cache, never re-emitted).
     pub password_in_url: Option<Zeroizing<String>>,

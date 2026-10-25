@@ -301,7 +301,7 @@ fn parse_remote_browser_input(raw: &str) -> (String, String) {
         return (ssh::REMOTE_ROOT_PATH.to_string(), String::new());
     }
 
-    if trimmed.ends_with('/') {
+    if trimmed == "~" || trimmed.ends_with('/') {
         return (normalize_remote_browser_path(trimmed), String::new());
     }
 
@@ -318,17 +318,20 @@ fn parse_remote_browser_input(raw: &str) -> (String, String) {
     (ssh::REMOTE_ROOT_PATH.to_string(), trimmed.to_string())
 }
 
-/// Normalize remote browser path text into an absolute path.
+/// Normalize remote browser path text into an absolute or home-relative path.
 ///
 /// ### Arguments
 /// - `path`: Input path from the browser field.
 ///
 /// ### Returns
-/// - `String`: Normalized absolute remote path.
+/// - `String`: Normalized absolute or home-relative remote path.
 pub(crate) fn normalize_remote_browser_path(path: &str) -> String {
     let trimmed = path.trim();
-    if trimmed.is_empty() || trimmed == "~" || trimmed.starts_with("~/") {
+    if trimmed.is_empty() {
         return ssh::REMOTE_ROOT_PATH.to_string();
+    }
+    if trimmed == "~" || trimmed.starts_with("~/") {
+        return trimmed.trim_end_matches('/').to_string();
     }
     if trimmed.starts_with('/') {
         if trimmed.len() > 1 {
@@ -346,7 +349,7 @@ pub(crate) fn normalize_remote_browser_path(path: &str) -> String {
 ///
 /// ### Returns
 /// - `Some(String)`: The normalized input up to and including its previous `/`.
-/// - `None`: When the input normalizes to the remote root.
+/// - `None`: When the input normalizes to the remote root or to the home folder `~`.
 fn remote_parent_folder(raw: &str) -> Option<String> {
     let path = normalize_remote_browser_path(raw);
     truncate_to_parent_folder(&path, |c| c == '/').map(str::to_owned)
@@ -532,15 +535,41 @@ mod tests {
     }
 
     #[test]
+    fn parse_remote_browser_input_lists_the_home_folder() {
+        for input in ["~", "~/"] {
+            let (directory, filter) = parse_remote_browser_input(input);
+            assert_eq!(directory, "~", "{input:?}");
+            assert_eq!(filter, "", "{input:?}");
+        }
+        assert_eq!(
+            parse_remote_browser_input("~/notes/"),
+            ("~/notes".to_string(), String::new())
+        );
+        assert_eq!(
+            parse_remote_browser_input("~/no"),
+            ("~".to_string(), "no".to_string())
+        );
+    }
+
+    #[test]
     fn normalize_remote_browser_path_defaults_to_root() {
         assert_eq!(
             normalize_remote_browser_path(""),
             super::ssh::REMOTE_ROOT_PATH
         );
-        assert_eq!(
-            normalize_remote_browser_path("~/tmp"),
-            super::ssh::REMOTE_ROOT_PATH
-        );
+    }
+
+    #[test]
+    fn normalize_remote_browser_path_keeps_home_relative_paths() {
+        let cases = [
+            ("~", "~"),
+            ("~/", "~"),
+            (" ~/tmp ", "~/tmp"),
+            ("~/tmp/", "~/tmp"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(normalize_remote_browser_path(input), expected, "{input:?}");
+        }
     }
 
     #[test]
@@ -566,7 +595,17 @@ mod tests {
     fn remote_parent_folder_stops_at_the_root() {
         assert_eq!(remote_parent_folder("/"), None);
         assert_eq!(remote_parent_folder(""), None);
-        assert_eq!(remote_parent_folder("~/notes"), None);
+    }
+
+    #[test]
+    fn remote_parent_folder_stays_within_the_home_folder() {
+        assert_eq!(
+            remote_parent_folder("~/notes/todo").as_deref(),
+            Some("~/notes/")
+        );
+        assert_eq!(remote_parent_folder("~/notes").as_deref(), Some("~/"));
+        assert_eq!(remote_parent_folder("~/"), None);
+        assert_eq!(remote_parent_folder("~"), None);
     }
 
     #[test]
