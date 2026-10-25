@@ -1,6 +1,7 @@
 mod persistence;
 mod propagation;
 mod types;
+mod writer;
 
 pub use persistence::StartupSettings;
 
@@ -9,6 +10,7 @@ pub use types::{
     MarkdownSettings, ProfileId, RecentFiles, ServerProfile, Settings, SynchronizationSettings,
     TabColorStyle, ThemeFile, ThemeInfo, Themes, TitleBarStyle, new_profile_id,
 };
+pub use writer::SettingsWriter;
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;

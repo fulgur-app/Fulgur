@@ -85,10 +85,7 @@ impl Fulgur {
                         );
                         self.place_editor_tab_reusing_scratch(Tab::Editor(editor_tab), window, cx);
                         self.focus_active_tab(window, cx);
-                        if let Err(e) = self.settings.add_file(PathBuf::from(recent_remote_url)) {
-                            log::error!("Failed to add remote file to recent files: {e}");
-                        }
-                        self.rebuild_menus(cx);
+                        self.record_recent_file(PathBuf::from(recent_remote_url), cx);
                         self.save_state_async(cx, window);
                         cx.notify();
                     }

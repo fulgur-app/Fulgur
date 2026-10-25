@@ -913,6 +913,7 @@ mod gpui_settings_propagation_tests {
     use gpui_kit::{AppContext, BorrowAppContext, Entity, TestAppContext, WindowId, WindowOptions};
 
     use std::cell::RefCell;
+    use std::path::PathBuf;
 
     use crate::test_support::setup_test_globals;
 
@@ -1037,6 +1038,51 @@ mod gpui_settings_propagation_tests {
             let target = fulgur_two.read(cx);
             assert_eq!(target.settings.app_settings.theme, "Catppuccin Frappe");
             assert!(!target.settings.editor_settings.show_line_numbers);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_recent_files_from_two_windows_survive_a_settings_change(cx: &mut TestAppContext) {
+        setup_test_globals(cx);
+        let (_, fulgur_one) = open_window_with_fulgur(cx);
+        let (_, fulgur_two) = open_window_with_fulgur(cx);
+        let first_file = PathBuf::from("/two-windows/first.txt");
+        let second_file = PathBuf::from("/two-windows/second.txt");
+        cx.update(|cx| {
+            fulgur_one.update(cx, |this, cx| {
+                this.record_recent_file(first_file.clone(), cx);
+            });
+        });
+        cx.update(|cx| {
+            fulgur_two.update(cx, |this, cx| {
+                this.record_recent_file(second_file.clone(), cx);
+            });
+        });
+        cx.run_until_parked();
+        let expected = vec![second_file, first_file];
+        cx.update(|cx| {
+            assert_eq!(
+                cx.global::<SharedAppState>().settings.get_recent_files(),
+                expected
+            );
+            assert_eq!(fulgur_one.read(cx).settings.get_recent_files(), expected);
+            assert_eq!(fulgur_two.read(cx).settings.get_recent_files(), expected);
+        });
+        cx.update(|cx| {
+            fulgur_two.update(cx, |this, cx| {
+                this.settings.app_settings.confirm_exit = false;
+                this.update_and_propagate_settings(cx)
+                    .expect("settings update should succeed");
+            });
+        });
+        cx.run_until_parked();
+        cx.update(|cx| {
+            assert_eq!(
+                cx.global::<SharedAppState>().settings.get_recent_files(),
+                expected,
+                "a settings change in one window must not drop files recorded by another"
+            );
+            assert_eq!(fulgur_one.read(cx).settings.get_recent_files(), expected);
         });
     }
 

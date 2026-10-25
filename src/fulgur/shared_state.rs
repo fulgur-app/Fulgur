@@ -7,7 +7,8 @@ use crate::fulgur::sync::ssh::save_queue::RemoteSaveQueue;
 use crate::fulgur::utils::crypto_helper::check_private_public_keys;
 use crate::fulgur::utils::updater::UpdateInfo;
 use crate::fulgur::{
-    settings::Settings, settings::Themes, sync::synchronization::SynchronizationStatus,
+    settings::Settings, settings::SettingsWriter, settings::Themes,
+    sync::synchronization::SynchronizationStatus,
 };
 use fulgur_common::api::shares::SharedFileResponse;
 use futures::StreamExt;
@@ -184,6 +185,8 @@ impl SyncState {
 pub struct SharedAppState {
     /// Settings (shared across all windows). Mutate via `cx.update_global` only.
     pub settings: Settings,
+    /// Serialized writer of the settings file. Every settings write goes through it.
+    pub settings_writer: SettingsWriter,
     /// Available themes. Mutate via `cx.update_global` only.
     pub themes: Option<Themes>,
     /// Per-profile sync states keyed by profile id.
@@ -275,6 +278,7 @@ impl SharedAppState {
 
         Self {
             settings,
+            settings_writer: SettingsWriter::default(),
             themes,
             sync_states: Arc::new(RwLock::new(sync_states)),
             sync_initialized: Arc::new(AtomicBool::new(false)),

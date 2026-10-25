@@ -291,23 +291,15 @@ impl Settings {
         files
     }
 
-    /// Add a file to the recent files
+    /// Move a file to the top of the recent files, in memory only
     ///
     /// ### Arguments
     /// - `file`: The file to add
-    ///
-    /// ### Errors
-    /// Returns an error if persisting the updated settings to disk fails.
-    ///
-    /// ### Returns
-    /// - `Ok(())`: The result of the operation
-    /// - `Err(anyhow::Error)`: If there was an error adding the file
-    pub fn add_file(&mut self, file: PathBuf) -> anyhow::Result<()> {
+    pub fn add_recent_file(&mut self, file: PathBuf) {
         if self.recent_files.get_files().contains(&file) {
             self.recent_files.remove_file(&file);
         }
         self.recent_files.add_file(file);
-        self.save()
     }
 }
 

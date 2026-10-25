@@ -5,10 +5,11 @@ use super::actions::{
     SettingsTab, ToggleColorPicker, ToggleCommandPalette,
 };
 use crate::fulgur::Fulgur;
+use crate::fulgur::shared_state::SharedAppState;
 use gpui_kit::base::input::{AddCursorAbove, AddCursorBelow};
 #[cfg(not(target_os = "macos"))]
 use gpui_kit::component::GlobalState;
-use gpui_kit::{Context, Menu, MenuItem};
+use gpui_kit::{App, Menu, MenuItem};
 use std::path::PathBuf;
 
 /// Build the menus for the Fulgur instance
@@ -115,27 +116,73 @@ pub fn build_menus(recent_files: &[PathBuf], update_available: bool) -> Vec<Menu
     ]
 }
 
-impl Fulgur {
-    /// Rebuild the application menus from the recent files and the update state, and sync them
-    /// to the `AppMenuBar` on non-macOS platforms.
+/// Inputs of the application menus, compared between rebuilds
+#[derive(PartialEq, Eq)]
+struct AppMenuInputs {
+    /// Recent file paths, most recent first
+    recent_files: Vec<PathBuf>,
+    /// Whether an update check found a newer release
+    update_available: bool,
+}
+
+impl AppMenuInputs {
+    /// Read the menu inputs from the shared application state.
     ///
     /// ### Arguments
     /// - `cx`: The application context
-    pub fn rebuild_menus(&mut self, cx: &mut Context<Self>) {
-        let update_available = Fulgur::shared_state(cx).available_update.is_some();
-        cx.set_menus(build_menus(
-            &self.settings.get_recent_files(),
-            update_available,
-        ));
-        #[cfg(not(target_os = "macos"))]
-        {
-            if let Some(owned_menus) = cx.get_menus() {
-                GlobalState::global_mut(cx).set_app_menus(owned_menus);
+    ///
+    /// ### Returns
+    /// - `AppMenuInputs`: The current recent files and update state
+    fn current(cx: &App) -> Self {
+        let shared = cx.global::<SharedAppState>();
+        Self {
+            recent_files: shared.settings.get_recent_files(),
+            update_available: shared.available_update.is_some(),
+        }
+    }
+}
+
+impl Fulgur {
+    /// Register the app-scope observer that rebuilds the application menus when their inputs change.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    pub fn register_app_menus_observer(cx: &mut App) {
+        let mut last_inputs = AppMenuInputs::current(cx);
+        cx.observe_global::<SharedAppState>(move |cx| {
+            let inputs = AppMenuInputs::current(cx);
+            if last_inputs == inputs {
+                return;
             }
-            self.title_bar.update(
-                cx,
-                crate::fulgur::ui::bars::titlebar::CustomTitleBar::reload_app_menu_bar,
-            );
+            rebuild_app_menus(&inputs, cx);
+            last_inputs = inputs;
+        })
+        .detach();
+    }
+}
+
+/// Rebuild the application menus, and reload every window's `AppMenuBar` on non-macOS platforms.
+///
+/// ### Arguments
+/// - `inputs`: The recent files and update state to show
+/// - `cx`: The application context
+fn rebuild_app_menus(inputs: &AppMenuInputs, cx: &mut App) {
+    cx.set_menus(build_menus(&inputs.recent_files, inputs.update_available));
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Some(owned_menus) = cx.get_menus() {
+            GlobalState::global_mut(cx).set_app_menus(owned_menus);
+        }
+        let windows = cx
+            .global::<crate::fulgur::window_manager::WindowManager>()
+            .get_all_windows();
+        for fulgur in windows.into_iter().filter_map(|weak| weak.upgrade()) {
+            fulgur.update(cx, |this: &mut Fulgur, cx| {
+                this.title_bar.update(
+                    cx,
+                    crate::fulgur::ui::bars::titlebar::CustomTitleBar::reload_app_menu_bar,
+                );
+            });
         }
     }
 }
