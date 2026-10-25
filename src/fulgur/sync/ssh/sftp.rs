@@ -12,20 +12,21 @@ const DEFAULT_REMOTE_FILE_MODE: u32 = 0o644;
 ///
 /// ### Arguments
 /// - `session`: Established SSH session with SFTP subsystem.
-/// - `remote_path`: Absolute path on the remote host.
+/// - `remote_path`: Absolute or home-relative (`~/...`) path on the remote host.
 ///
 /// ### Errors
-/// Returns an `SshError::SftpError` when the remote file cannot be opened
-/// (missing, permission denied) or when an I/O error occurs while reading.
+/// - Returns an `SshError::SftpError` when the remote home directory cannot be resolved,
+///   when the remote file cannot be opened (missing, permission denied), or when an I/O
+///   error occurs while reading.
 ///
 /// ### Returns
 /// - `Ok(Vec<u8>)`: Raw file contents.
 /// - `Err(SshError::SftpError)`: File not found, permission denied, or I/O error.
 pub fn read_remote_file(session: &SshSession, remote_path: &str) -> Result<Vec<u8>, SshError> {
-    let path = Path::new(remote_path);
+    let remote_path = resolve_home_relative_path(session, remote_path)?;
     let mut file = session
         .sftp
-        .open(path)
+        .open(Path::new(&remote_path))
         .map_err(|e| SshError::SftpError(format!("Cannot open {remote_path}: {e}")))?;
 
     let mut buf = Vec::new();
@@ -60,8 +61,9 @@ pub struct RemoteDirectoryEntry {
 /// - `remote_path`: Path to classify on the remote host.
 ///
 /// ### Errors
-/// Returns an `SshError::SftpError` if the SFTP metadata lookup fails for a
-/// reason other than the path being missing.
+/// - Returns an `SshError::SftpError` if the remote home directory cannot be
+///   resolved, or if the SFTP metadata lookup fails for a reason other than the
+///   path being missing.
 ///
 /// ### Returns
 /// - `Ok(RemotePathKind::File)`: Path exists and is a file.
@@ -72,7 +74,7 @@ pub fn classify_remote_path(
     session: &SshSession,
     remote_path: &str,
 ) -> Result<RemotePathKind, SshError> {
-    let normalized = normalize_remote_path(remote_path);
+    let normalized = resolve_home_relative_path(session, &normalize_remote_path(remote_path))?;
     let path = Path::new(&normalized);
     match session.sftp.stat(path) {
         Ok(stat) => {
@@ -111,17 +113,18 @@ pub fn classify_remote_path(
 /// - `path`: Candidate path to resolve.
 ///
 /// ### Errors
-/// Returns an `SshError::SftpError` if a path classification check fails
-/// unexpectedly while walking upward.
+/// - Returns an `SshError::SftpError` if the remote home directory cannot be
+///   resolved, or if a path classification check fails unexpectedly while walking
+///   upward.
 ///
 /// ### Returns
-/// - `Ok(String)`: Closest existing directory path.
+/// - `Ok(String)`: Closest existing directory path, always absolute.
 /// - `Err(SshError::SftpError)`: Path checks failed unexpectedly.
 pub fn closest_existing_remote_directory(
     session: &SshSession,
     path: &str,
 ) -> Result<String, SshError> {
-    let mut candidate = normalize_remote_path(path);
+    let mut candidate = resolve_home_relative_path(session, &normalize_remote_path(path))?;
     loop {
         match classify_remote_path(session, &candidate)? {
             RemotePathKind::Directory => return Ok(candidate),
@@ -142,16 +145,18 @@ pub fn closest_existing_remote_directory(
 /// - `directory`: Existing remote directory path.
 ///
 /// ### Errors
-/// Returns an `SshError::SftpError` if the remote directory cannot be read.
+/// - Returns an `SshError::SftpError` if the remote home directory cannot be
+///   resolved, or if the remote directory cannot be read.
 ///
 /// ### Returns
-/// - `Ok(Vec<RemoteDirectoryEntry>)`: Directory entries sorted with directories first.
+/// - `Ok(Vec<RemoteDirectoryEntry>)`: Directory entries sorted with directories first,
+///   each with an absolute `full_path`.
 /// - `Err(SshError::SftpError)`: Directory read failed.
 pub fn list_remote_directory(
     session: &SshSession,
     directory: &str,
 ) -> Result<Vec<RemoteDirectoryEntry>, SshError> {
-    let directory = normalize_remote_path(directory);
+    let directory = resolve_home_relative_path(session, &normalize_remote_path(directory))?;
     let path = Path::new(&directory);
     let mut entries = session
         .sftp
@@ -193,12 +198,13 @@ pub fn list_remote_directory(
 ///
 /// ### Arguments
 /// - `session`: Established SSH session with SFTP subsystem.
-/// - `remote_path`: Absolute destination path on the remote host.
+/// - `remote_path`: Absolute or home-relative (`~/...`) destination path on the remote host.
 /// - `data`: File contents to write.
 ///
 /// ### Errors
-/// Returns an `SshError::SftpError` on any write, rename, or permission failure
-/// against the temporary file or the destination path.
+/// - Returns an `SshError::SftpError` when the remote home directory cannot be resolved,
+///   or on any write, rename, or permission failure against the temporary file or the
+///   destination path.
 ///
 /// ### Returns
 /// - `Ok(())`: File written and renamed successfully.
@@ -208,13 +214,14 @@ pub fn write_remote_file(
     remote_path: &str,
     data: &[u8],
 ) -> Result<(), SshError> {
-    // Resolve symlinks so the write targets the real file instead of replacingn the link.
+    let remote_path = resolve_home_relative_path(session, remote_path)?;
+    // Resolve symlinks so the write targets the real file instead of replacing the link.
     let resolved = session
         .sftp
-        .realpath(Path::new(remote_path))
+        .realpath(Path::new(&remote_path))
         .ok()
         .and_then(|path| path.to_str().map(str::to_string))
-        .unwrap_or_else(|| remote_path.to_string());
+        .unwrap_or(remote_path);
 
     // Preserve the destination permission bits across the temp-then-rename so a
     // private or executable remote file is not reset to a default mode.
@@ -436,6 +443,78 @@ fn replace_with_temp(
     }
 }
 
+/// Resolve a home-relative remote path (`~` or `~/...`) to an absolute path.
+///
+/// ### Arguments
+/// - `session`: Established SSH session with SFTP subsystem.
+/// - `path`: Remote path, possibly home-relative.
+///
+/// ### Errors
+/// - Returns an `SshError::SftpError` when the remote home directory cannot be resolved.
+///
+/// ### Returns
+/// - `Ok(String)`: Absolute path, or `path` unchanged when it is not home-relative.
+/// - `Err(SshError::SftpError)`: The remote home directory could not be resolved.
+pub fn resolve_home_relative_path(session: &SshSession, path: &str) -> Result<String, SshError> {
+    expand_home_relative_path(path, || remote_home_directory(session))
+}
+
+/// Ask the SFTP server for the absolute path of its login directory.
+///
+/// ### Arguments
+/// - `session`: Established SSH session with SFTP subsystem.
+///
+/// ### Errors
+/// - Returns an `SshError::SftpError` when the server cannot resolve `.` or returns a
+///   path that is not valid UTF-8.
+///
+/// ### Returns
+/// - `Ok(String)`: Absolute remote home directory.
+/// - `Err(SshError::SftpError)`: The lookup failed.
+fn remote_home_directory(session: &SshSession) -> Result<String, SshError> {
+    let home = session.sftp.realpath(Path::new(".")).map_err(|e| {
+        SshError::SftpError(format!("Cannot resolve the remote home directory: {e}"))
+    })?;
+    home.to_str().map(str::to_string).ok_or_else(|| {
+        SshError::SftpError(format!(
+            "Remote home directory {} is not valid UTF-8",
+            home.display()
+        ))
+    })
+}
+
+/// Expand a home-relative remote path against the remote home directory.
+///
+/// ### Arguments
+/// - `path`: Remote path, possibly home-relative.
+/// - `home_directory`: Looks up the absolute remote home directory; called only when
+///   `path` is home-relative.
+///
+/// ### Errors
+/// - Returns the error of `home_directory` when the lookup fails.
+///
+/// ### Returns
+/// - `Ok(String)`: Absolute path, or `path` unchanged when it is not home-relative.
+/// - `Err(SshError)`: The home directory lookup failed.
+fn expand_home_relative_path(
+    path: &str,
+    home_directory: impl FnOnce() -> Result<String, SshError>,
+) -> Result<String, SshError> {
+    let below_home = if path == "~" {
+        ""
+    } else if let Some(below_home) = path.strip_prefix("~/") {
+        below_home.trim_start_matches('/')
+    } else {
+        return Ok(path.to_string());
+    };
+    let home = home_directory()?;
+    if below_home.is_empty() {
+        Ok(home)
+    } else {
+        Ok(join_remote_path(&home, below_home))
+    }
+}
+
 /// Normalize remote paths to forward-slash absolute form.
 ///
 /// ### Arguments
@@ -498,8 +577,8 @@ fn join_remote_path(directory: &str, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        REMOTE_ROOT_PATH, RemoteReplaceOps, join_remote_path, normalize_remote_path,
-        parent_remote_path, replace_with_temp,
+        REMOTE_ROOT_PATH, RemoteReplaceOps, SshError, expand_home_relative_path, join_remote_path,
+        normalize_remote_path, parent_remote_path, replace_with_temp,
     };
     use std::cell::{Cell, RefCell};
     use std::collections::{HashMap, HashSet};
@@ -733,6 +812,55 @@ mod tests {
                 "normalize_remote_path({input:?})"
             );
         }
+    }
+
+    #[test]
+    fn expand_home_relative_path_resolves_against_the_home_directory() {
+        let cases = [
+            ("/home/alice", "~", "/home/alice"),
+            ("/home/alice", "~/", "/home/alice"),
+            ("/home/alice", "~/notes.txt", "/home/alice/notes.txt"),
+            (
+                "/home/alice",
+                "~/notes/todo.txt",
+                "/home/alice/notes/todo.txt",
+            ),
+            ("/home/alice", "~//notes.txt", "/home/alice/notes.txt"),
+            ("/home/alice/", "~/notes.txt", "/home/alice/notes.txt"),
+            ("/", "~/notes.txt", "/notes.txt"),
+        ];
+        for (home, path, expected) in cases {
+            let expanded = expand_home_relative_path(path, || Ok(home.to_string()))
+                .expect("home lookup succeeds");
+            assert_eq!(expanded, expected, "expand_home_relative_path({path:?})");
+        }
+    }
+
+    #[test]
+    fn expand_home_relative_path_leaves_other_paths_without_a_home_lookup() {
+        for path in [
+            "/",
+            "/etc/hosts",
+            "/srv/~/notes.txt",
+            "~notes.txt",
+            "~bob/notes.txt",
+        ] {
+            let expanded = expand_home_relative_path(path, || {
+                panic!("{path:?} must not look up the home directory")
+            })
+            .expect("no lookup, no error");
+            assert_eq!(expanded, path);
+        }
+    }
+
+    #[test]
+    fn expand_home_relative_path_propagates_the_lookup_error() {
+        let result = expand_home_relative_path("~/notes.txt", || {
+            Err(SshError::SftpError("realpath refused".to_string()))
+        });
+        assert!(
+            matches!(result, Err(SshError::SftpError(message)) if message == "realpath refused")
+        );
     }
 
     #[test]

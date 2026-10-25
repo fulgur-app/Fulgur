@@ -187,18 +187,22 @@ impl Fulgur {
         session: &ssh::session::SshSession,
         spec: &RemoteSpec,
     ) -> Result<RemoteOpenResult, ssh::error::SshError> {
-        use ssh::sftp::{RemotePathKind, classify_remote_path, closest_existing_remote_directory};
+        use ssh::sftp::{
+            RemotePathKind, classify_remote_path, closest_existing_remote_directory,
+            resolve_home_relative_path,
+        };
 
-        match classify_remote_path(session, &spec.path)? {
+        let path = resolve_home_relative_path(session, &spec.path)?;
+        match classify_remote_path(session, &path)? {
             RemotePathKind::File => {
-                let bytes = ssh::sftp::read_remote_file(session, &spec.path)?;
+                let bytes = ssh::sftp::read_remote_file(session, &path)?;
                 Ok(Self::remote_file_open_result(spec, bytes))
             }
             RemotePathKind::Directory => {
-                Self::build_remote_browse_result(session, spec, &spec.path, None)
+                Self::build_remote_browse_result(session, spec, &path, None)
             }
             RemotePathKind::Missing => {
-                let fallback_directory = closest_existing_remote_directory(session, &spec.path)?;
+                let fallback_directory = closest_existing_remote_directory(session, &path)?;
                 let notice = Some(format!(
                     "Remote path '{}' was not found. Showing closest existing directory '{}'.",
                     spec.path, fallback_directory
