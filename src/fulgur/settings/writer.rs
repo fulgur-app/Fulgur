@@ -135,7 +135,7 @@ mod tests {
     /// ### Returns
     /// - `Vec<PathBuf>`: The persisted recent files, most recent first
     fn persisted_recent_files(path: &Path) -> Vec<PathBuf> {
-        Settings::load_from_path(&path.to_path_buf())
+        Settings::load_from_path(path)
             .expect("settings file should load")
             .get_recent_files()
     }

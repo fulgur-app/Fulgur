@@ -3,6 +3,8 @@ mod propagation;
 mod types;
 mod writer;
 
+pub use persistence::StartupSettings;
+
 pub use types::{
     AppSettings, DEFAULT_PROFILE_NAME, EditorSettings, MAX_PROFILES, MarkdownPreviewMode,
     MarkdownSettings, ProfileId, RecentFiles, ServerProfile, Settings, SynchronizationSettings,
