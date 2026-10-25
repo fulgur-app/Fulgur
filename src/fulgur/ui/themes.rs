@@ -20,7 +20,9 @@ pub struct BundledThemes;
 /// - `config`: The theme configuration to apply
 /// - `cx`: The application context
 pub fn apply_theme_config(config: &Rc<ThemeConfig>, cx: &mut App) {
-    Theme::global_mut(cx).apply_config(config);
+    let theme = Theme::global_mut(cx);
+    theme.apply_config(config);
+    theme.focus_ring = false;
     Theme::change(config.mode, None, cx);
 }
 
