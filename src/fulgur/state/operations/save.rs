@@ -55,13 +55,16 @@ impl Fulgur {
         Ok(())
     }
 
-    /// Persist the session when the application quits, whatever triggered the quit.
+    /// Persist the session and any pending settings write when the application quits, whatever triggered the quit.
     ///
     /// ### Arguments
     /// - `cx`: The application context
     pub fn register_app_quit_state_save(cx: &mut App) {
         cx.on_app_quit(|cx| {
             Self::save_state_on_app_quit(cx);
+            cx.global::<crate::fulgur::shared_state::SharedAppState>()
+                .settings_writer
+                .flush();
             async {}
         })
         .detach();

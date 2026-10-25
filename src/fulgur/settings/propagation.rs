@@ -2,6 +2,7 @@ use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{Fulgur, shared_state::SharedAppState};
 use gpui_kit::component::notification::NotificationType;
 use gpui_kit::{BorrowAppContext, Context, Window};
+use std::path::PathBuf;
 
 impl Fulgur {
     /// Update settings and propagate to all windows
@@ -27,8 +28,10 @@ impl Fulgur {
         // Apply log level immediately so the change takes effect in this session.
         crate::fulgur::utils::logger::set_debug_mode(self.settings.app_settings.debug_mode);
 
-        // Save settings to disk
-        if let Err(e) = self.settings.save() {
+        if let Err(e) = Fulgur::shared_state(cx)
+            .settings_writer
+            .save_blocking(&self.settings)
+        {
             log::error!("Failed to save settings: {e}");
             Fulgur::shared_state(cx).notify(AppNotification::foreground(
                 NotificationType::Error,
@@ -43,6 +46,22 @@ impl Fulgur {
         });
 
         Ok(())
+    }
+
+    /// Move a file to the top of the shared recent files and persist them in the background
+    ///
+    /// ### Arguments
+    /// - `file`: The opened file path, or the URL of a remote file
+    /// - `cx`: The application context
+    pub fn record_recent_file(&mut self, file: PathBuf, cx: &mut Context<Self>) {
+        let recent_files = cx.update_global::<SharedAppState, _>(|shared, cx| {
+            shared.settings.add_recent_file(file);
+            shared
+                .settings_writer
+                .save_in_background(shared.settings.clone(), cx.background_executor());
+            shared.settings.recent_files.clone()
+        });
+        self.settings.recent_files = recent_files;
     }
 
     /// Apply the current editor settings to every tab in this window
