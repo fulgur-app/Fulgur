@@ -1,8 +1,8 @@
 use super::actions::{
-    CloseAllFiles, CloseFile, FindAndReplace, FindInFile, GoToParentFolder, JumpToLine, NewFile,
-    NewWindow, NextTab, OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile,
-    SaveFileAs, SearchNext, SearchPrevious, ShowRemoteUrlHistory, ToggleColorPicker,
-    ToggleCommandPalette,
+    CloseAllFiles, CloseFile, CloseWindow, FindAndReplace, FindInFile, GoToParentFolder,
+    JumpToLine, NewFile, NewWindow, NextTab, OpenFile, OpenPath, OpenRemote, PreviousTab,
+    PrintFile, Quit, SaveFile, SaveFileAs, SearchNext, SearchPrevious, ShowRemoteUrlHistory,
+    ToggleColorPicker, ToggleCommandPalette,
 };
 use gpui_kit::KeyBinding;
 
@@ -31,6 +31,7 @@ enum KeybindingDispatchAction {
     NewWindow,
     CloseFile,
     CloseAllFiles,
+    CloseWindow,
     Quit,
     SaveFile,
     SaveFileAs,
@@ -95,6 +96,9 @@ impl KeybindingDispatchSpec {
             KeybindingDispatchAction::CloseAllFiles => {
                 KeyBinding::new(self.keystroke, CloseAllFiles, context)
             }
+            KeybindingDispatchAction::CloseWindow => {
+                KeyBinding::new(self.keystroke, CloseWindow, context)
+            }
             KeybindingDispatchAction::Quit => KeyBinding::new(self.keystroke, Quit, context),
             KeybindingDispatchAction::SaveFile => {
                 KeyBinding::new(self.keystroke, SaveFile, context)
@@ -153,6 +157,7 @@ impl KeybindingDispatchAction {
             | Self::OpenPath
             | Self::OpenRemote
             | Self::NewWindow
+            | Self::CloseWindow
             | Self::Quit => None,
             Self::CloseFile
             | Self::CloseAllFiles
@@ -205,13 +210,19 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
         #[cfg(not(target_os = "macos"))]
         KeybindingDispatchSpec::new("ctrl-w", KeybindingDispatchAction::CloseFile),
         #[cfg(target_os = "macos")]
-        KeybindingDispatchSpec::new("cmd-shift-w", KeybindingDispatchAction::CloseAllFiles),
+        KeybindingDispatchSpec::new("cmd-k cmd-w", KeybindingDispatchAction::CloseAllFiles),
         #[cfg(not(target_os = "macos"))]
-        KeybindingDispatchSpec::new("ctrl-shift-w", KeybindingDispatchAction::CloseAllFiles),
+        KeybindingDispatchSpec::new("ctrl-k ctrl-w", KeybindingDispatchAction::CloseAllFiles),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-shift-w", KeybindingDispatchAction::CloseWindow),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-shift-w", KeybindingDispatchAction::CloseWindow),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("alt-f4", KeybindingDispatchAction::CloseWindow),
         #[cfg(target_os = "macos")]
         KeybindingDispatchSpec::new("cmd-q", KeybindingDispatchAction::Quit),
         #[cfg(not(target_os = "macos"))]
-        KeybindingDispatchSpec::new("alt-f4", KeybindingDispatchAction::Quit),
+        KeybindingDispatchSpec::new("ctrl-q", KeybindingDispatchAction::Quit),
         #[cfg(target_os = "macos")]
         KeybindingDispatchSpec::new("cmd-s", KeybindingDispatchAction::SaveFile),
         #[cfg(not(target_os = "macos"))]
@@ -395,21 +406,66 @@ mod tests {
             ));
             assert!(has_binding(
                 &specs,
-                "alt-f4",
+                "ctrl-q",
                 KeybindingDispatchAction::Quit
+            ));
+            assert!(
+                !has_binding(&specs, "alt-f4", KeybindingDispatchAction::Quit),
+                "alt-f4 closes the current window on Windows and Linux, not the application"
+            );
+        }
+    }
+
+    #[test]
+    fn test_default_keybinding_dispatch_specs_include_platform_close_window_shortcuts() {
+        let specs = default_keybinding_dispatch_specs();
+
+        #[cfg(target_os = "macos")]
+        assert!(has_binding(
+            &specs,
+            "cmd-shift-w",
+            KeybindingDispatchAction::CloseWindow
+        ));
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert!(has_binding(
+                &specs,
+                "ctrl-shift-w",
+                KeybindingDispatchAction::CloseWindow
+            ));
+            assert!(has_binding(
+                &specs,
+                "alt-f4",
+                KeybindingDispatchAction::CloseWindow
             ));
         }
     }
 
     #[test]
-    fn test_default_keybinding_dispatch_specs_do_not_duplicate_same_shortcut_action() {
+    fn test_close_all_files_uses_the_close_all_chord() {
         let specs = default_keybinding_dispatch_specs();
-        let unique_pairs: HashSet<(&str, KeybindingDispatchAction)> = specs
-            .iter()
-            .map(|spec| (spec.keystroke, spec.action))
-            .collect();
 
-        assert_eq!(unique_pairs.len(), specs.len());
+        #[cfg(target_os = "macos")]
+        assert!(has_binding(
+            &specs,
+            "cmd-k cmd-w",
+            KeybindingDispatchAction::CloseAllFiles
+        ));
+        #[cfg(not(target_os = "macos"))]
+        assert!(has_binding(
+            &specs,
+            "ctrl-k ctrl-w",
+            KeybindingDispatchAction::CloseAllFiles
+        ));
+    }
+
+    #[test]
+    fn test_default_keybinding_dispatch_specs_bind_each_keystroke_once() {
+        let specs = default_keybinding_dispatch_specs();
+        let unique_keystrokes: HashSet<&str> = specs.iter().map(|spec| spec.keystroke).collect();
+
+        assert_eq!(unique_keystrokes.len(), specs.len());
     }
 
     #[test]
@@ -517,6 +573,7 @@ mod tests {
             KeybindingDispatchAction::OpenPath,
             KeybindingDispatchAction::OpenRemote,
             KeybindingDispatchAction::NewWindow,
+            KeybindingDispatchAction::CloseWindow,
             KeybindingDispatchAction::Quit,
         ];
         for action in window_level {

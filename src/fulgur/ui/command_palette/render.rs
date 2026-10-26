@@ -9,8 +9,8 @@ use gpui_kit::component::{
     kbd::Kbd,
 };
 use gpui_kit::{
-    App, Context, Focusable, IntoElement, ParentElement, Styled, Window,
-    prelude::FluentBuilder as _, px,
+    App, AsKeystroke, Context, Div, Focusable, IntoElement, KeyContext, ParentElement, Styled,
+    Window, prelude::FluentBuilder as _, px,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -136,8 +136,7 @@ fn render_row(
     window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    let binding = hint
-        .and_then(|hint| Kbd::binding_for_action(hint.action.as_ref(), Some(hint.context), window));
+    let binding = hint.and_then(|hint| render_binding(hint, window));
 
     h_flex()
         .w_full()
@@ -150,6 +149,29 @@ fn render_row(
         )
         .child(command.label())
         .when_some(binding, |this, binding| this.child(binding.ml_auto()))
+}
+
+/// Render every keystroke of the binding a hint resolves to, so a chord shows in full.
+///
+/// ### Arguments
+/// - `hint`: The keybinding hint to resolve
+/// - `window`: The window the keybinding is resolved against
+///
+/// ### Returns
+/// - `Some(Div)`: One `Kbd` per keystroke of the highest-precedence binding, in order
+/// - `None`: The action has no binding in the hint's key context
+fn render_binding(hint: &KeybindingHint, window: &Window) -> Option<Div> {
+    let context = KeyContext::parse(hint.context).ok()?;
+    let binding =
+        window.highest_precedence_binding_for_action_in_context(hint.action.as_ref(), context)?;
+    Some(
+        h_flex().gap_1().children(
+            binding
+                .keystrokes()
+                .iter()
+                .map(|keystroke| Kbd::new(keystroke.as_keystroke().clone())),
+        ),
+    )
 }
 
 /// Render the palette's key hint footer.

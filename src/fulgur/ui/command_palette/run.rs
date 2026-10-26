@@ -112,6 +112,7 @@ impl Fulgur {
             PaletteCommand::ShareFile => self.open_share_file_sheet(window, cx),
             PaletteCommand::CloseFile => self.close_active_tab(window, cx),
             PaletteCommand::CloseAllFiles => self.close_all_tabs(window, cx),
+            PaletteCommand::CloseWindow => self.request_window_close(window, cx),
             PaletteCommand::ClearRecentFiles => self.clear_recent_files(cx),
             PaletteCommand::ClearRemoteHistory => Self::clear_remote_history(cx),
             PaletteCommand::Quit => self.quit(window, cx),

@@ -1,6 +1,7 @@
 use super::WindowManager;
 use crate::fulgur::WindowInit;
 use crate::fulgur::shared_state::AppNotification;
+use crate::fulgur::ui::command_palette::{CommandPaletteEvent, PaletteCommand};
 use crate::fulgur::ui::dialogs::application_close::CloseScope;
 use crate::fulgur::{
     Fulgur,
@@ -650,6 +651,49 @@ fn test_close_window_action_runs_the_guarded_close_lifecycle(cx: &mut TestAppCon
             cx.global::<WindowManager>().window_count(),
             0,
             "Close Window must unregister the window through the lifecycle guard"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn test_close_window_palette_command_runs_the_guarded_close_lifecycle(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id, &fulgur);
+    cx.update(|cx| {
+        fulgur.update(cx, |this, _| {
+            this.settings.app_settings.confirm_exit = false;
+        });
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == window_id)
+            .expect("test window");
+        handle
+            .update(cx, |_, window, cx| {
+                fulgur.update(cx, |this, cx| {
+                    this.on_command_palette_event(
+                        CommandPaletteEvent::Run(PaletteCommand::CloseWindow),
+                        window,
+                        cx,
+                    );
+                });
+            })
+            .expect("run the Close window palette command");
+    });
+    cx.run_until_parked();
+
+    cx.update(|cx| {
+        assert!(
+            cx.windows()
+                .into_iter()
+                .all(|handle| handle.window_id() != window_id),
+            "the Close window palette command must remove its window"
+        );
+        assert_eq!(
+            cx.global::<WindowManager>().window_count(),
+            0,
+            "the Close window palette command must unregister the window through the lifecycle guard"
         );
     });
 }

@@ -156,6 +156,7 @@ mod tests {
             PaletteCommand::OpenFile,
             PaletteCommand::OpenFromPath,
             PaletteCommand::OpenRemoteFile,
+            PaletteCommand::CloseWindow,
             PaletteCommand::Quit,
             PaletteCommand::SelectTheme,
             PaletteCommand::GetMoreThemes,
