@@ -1,5 +1,5 @@
 use gpui_kit::component::{
-    Disableable, FocusableExt, Sizable,
+    Disableable, Sizable,
     button::{Button, ButtonVariants},
     h_flex,
     input::{Input, InputEvent, InputGroup, InputGroupAddon, InputGroupAddonAlignment, InputState},
@@ -130,7 +130,6 @@ pub fn render_browser_path_field(
     on_parent_folder: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> InputGroup {
     InputGroup::new(BROWSER_PATH_FIELD_ID)
-        .focus_ring(false)
         .input(Input::new(input))
         .addon(
             InputGroupAddon::new(BROWSER_PATH_ACTIONS_ID)
