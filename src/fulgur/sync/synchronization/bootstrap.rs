@@ -20,6 +20,9 @@ use std::time::Duration;
 /// Fetches shared files from each active profile's server and starts SSE
 /// connections for real-time updates.
 ///
+/// Profiles whose encryption keys could not be ensured at startup are skipped
+/// and stay disconnected until they are reconnected.
+///
 /// ### Arguments
 /// - `entity`: The Fulgur entity
 /// - `cx`: The application context.
@@ -53,6 +56,16 @@ pub fn begin_synchronization(
         .profiles
         .iter()
         .filter(|p| p.is_active)
+        .filter(|p| {
+            let keys_failed = shared.startup_key_failures.contains(&p.id);
+            if keys_failed {
+                log::warn!(
+                    "Profile '{}': encryption keys unavailable at startup, not connecting",
+                    p.name
+                );
+            }
+            !keys_failed
+        })
         .cloned()
         .collect();
     let http_agent = Arc::clone(&shared.http_agent);

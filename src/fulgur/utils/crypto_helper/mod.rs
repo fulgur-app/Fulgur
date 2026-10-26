@@ -4,8 +4,8 @@ mod keychain;
 
 pub use backend::init_keychain_backend;
 pub use crypto::{
-    check_private_public_keys, decrypt_bytes, encrypt_bytes, ensure_profile_keypair,
-    generate_key_pair, is_valid_public_key, serialize,
+    ProfileKeyFailure, check_private_public_keys, decrypt_bytes, encrypt_bytes,
+    ensure_profile_keypair, generate_key_pair, is_valid_public_key, serialize,
 };
 pub use keychain::{
     load_device_api_key_from_keychain, load_private_key_from_keychain,

@@ -4,7 +4,7 @@ use crate::fulgur::sync::sse::SseState;
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::sync::ssh::pool::SshSessionPool;
 use crate::fulgur::sync::ssh::save_queue::RemoteSaveQueue;
-use crate::fulgur::utils::crypto_helper::check_private_public_keys;
+use crate::fulgur::utils::crypto_helper::{ProfileKeyFailure, check_private_public_keys};
 use crate::fulgur::utils::updater::UpdateInfo;
 use crate::fulgur::{
     settings::Settings, settings::SettingsWriter, settings::Themes,
@@ -87,6 +87,15 @@ pub type PendingDevicesResult = (
     Result<Vec<fulgur_common::api::devices::DeviceResponse>, String>,
     bool,
 );
+
+/// Outcome of the encryption key check run when the app starts.
+#[derive(Debug, Default)]
+struct StartupKeyCheck {
+    /// Active profiles whose keypair could not be ensured.
+    failed_profiles: HashSet<ProfileId>,
+    /// User-facing description of what failed, `None` when every check passed.
+    error: Option<String>,
+}
 
 /// Sync-related state for a single profile, shared across all windows.
 pub struct SyncState {
@@ -195,6 +204,8 @@ pub struct SharedAppState {
     pub sync_initialized: Arc<AtomicBool>,
     /// Synchronization initialization error (if key generation failed)
     pub sync_error: Arc<Mutex<Option<String>>>,
+    /// Active profiles whose encryption keys could not be ensured at startup.
+    pub startup_key_failures: HashSet<ProfileId>,
     /// Newer release found by the last successful update check. Mutate via `cx.update_global` only.
     pub available_update: Option<UpdateInfo>,
     /// Files to open from outside the app: macOS open events, command-line arguments
@@ -263,17 +274,21 @@ impl SharedAppState {
     /// ### Returns
     /// - `Self`: The new shared app state
     pub fn new(
-        settings: Settings,
+        mut settings: Settings,
         pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
         restore_state: Option<WindowsState>,
         state_db: Option<StateDb>,
     ) -> Self {
-        let (settings, sync_error) = Self::validate_settings(settings, check_private_public_keys);
+        let key_check = Self::check_startup_keys(&mut settings, check_private_public_keys);
         let themes = Self::load_themes();
         let synchronization_status = Self::determine_initial_sync_status(&settings);
         let (notification_tx, notification_rx) = unbounded();
-        let sync_states =
-            Self::seed_sync_states(&settings, synchronization_status, &notification_tx);
+        let sync_states = Self::seed_sync_states(
+            &settings,
+            synchronization_status,
+            &key_check.failed_profiles,
+            &notification_tx,
+        );
         let remote_history = Self::load_remote_history(state_db.as_ref());
 
         Self {
@@ -282,7 +297,8 @@ impl SharedAppState {
             themes,
             sync_states: Arc::new(RwLock::new(sync_states)),
             sync_initialized: Arc::new(AtomicBool::new(false)),
-            sync_error: Arc::new(Mutex::new(sync_error)),
+            sync_error: Arc::new(Mutex::new(key_check.error)),
+            startup_key_failures: key_check.failed_profiles,
             available_update: None,
             pending_files_from_macos,
             #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -344,46 +360,54 @@ impl SharedAppState {
         })
     }
 
-    /// Validate encryption keys against pre-loaded settings.
-    ///
-    /// If synchronization is activated but keys cannot be validated, disables
-    /// synchronization and returns the error message for user notification.
+    /// Ensure the active profiles have encryption keys before synchronization starts.
     ///
     /// ### Arguments
-    /// - `settings`: Application settings to validate
+    /// - `settings`: Application settings; active profiles whose public key had to
+    ///   be generated or recovered are updated in place
     /// - `check_keys`: Ensures the active profiles have keypairs, called only
     ///   when synchronization is activated
     ///
     /// ### Returns
-    /// - `(Settings, Option<String>)`: The validated settings and an optional error message
-    ///   if key validation failed
-    fn validate_settings(
-        mut settings: Settings,
-        check_keys: impl FnOnce(&mut Settings) -> anyhow::Result<()>,
-    ) -> (Settings, Option<String>) {
-        let sync_error = if settings
+    /// - `StartupKeyCheck`: The profiles whose keys failed and the message to show the user
+    fn check_startup_keys(
+        settings: &mut Settings,
+        check_keys: impl FnOnce(&mut Settings) -> anyhow::Result<Vec<ProfileKeyFailure>>,
+    ) -> StartupKeyCheck {
+        if !settings
             .app_settings
             .synchronization_settings
             .is_synchronization_activated
         {
-            match check_keys(&mut settings) {
-                Ok(()) => None,
-                Err(e) => {
-                    let error_msg = format!(
-                        "Failed to initialize encryption keys. Synchronization has been disabled. Error: {e}"
-                    );
-                    log::error!("{error_msg}");
-                    settings
-                        .app_settings
-                        .synchronization_settings
-                        .is_synchronization_activated = false;
-                    Some(error_msg)
+            return StartupKeyCheck::default();
+        }
+        match check_keys(settings) {
+            Ok(failures) if failures.is_empty() => StartupKeyCheck::default(),
+            Ok(failures) => {
+                let details = failures
+                    .iter()
+                    .map(|failure| format!("{}: {}", failure.profile_name, failure.error))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                StartupKeyCheck {
+                    failed_profiles: failures
+                        .into_iter()
+                        .map(|failure| failure.profile_id)
+                        .collect(),
+                    error: Some(format!(
+                        "Failed to initialize encryption keys. The affected servers stay disconnected until you reconnect them or restart Fulgur. Error: {details}"
+                    )),
                 }
             }
-        } else {
-            None
-        };
-        (settings, sync_error)
+            Err(e) => {
+                let error_msg = format!("Failed to save the generated encryption keys: {e}");
+                log::error!("{error_msg}");
+                StartupKeyCheck {
+                    failed_profiles: HashSet::new(),
+                    error: Some(error_msg),
+                }
+            }
+        }
     }
 
     /// Load themes from disk
@@ -420,6 +444,8 @@ impl SharedAppState {
     /// - `settings`: The application settings.
     /// - `default_status`: The status assigned to profiles flagged as active
     ///   when the master switch is on; ignored otherwise.
+    /// - `key_failures`: Active profiles whose encryption keys could not be
+    ///   ensured, seeded as disconnected instead of `default_status`.
     /// - `notification_tx`: The app-wide notification sender cloned into each state.
     ///
     /// ### Returns
@@ -427,6 +453,7 @@ impl SharedAppState {
     fn seed_sync_states(
         settings: &Settings,
         default_status: SynchronizationStatus,
+        key_failures: &HashSet<ProfileId>,
         notification_tx: &UnboundedSender<AppNotification>,
     ) -> HashMap<ProfileId, Arc<SyncState>> {
         let master_on = settings
@@ -439,10 +466,12 @@ impl SharedAppState {
             .profiles
             .iter()
             .map(|profile| {
-                let status = if master_on && profile.is_active {
-                    default_status
-                } else {
+                let status = if !master_on || !profile.is_active {
                     SynchronizationStatus::NotActivated
+                } else if key_failures.contains(&profile.id) {
+                    SynchronizationStatus::Disconnected
+                } else {
+                    default_status
                 };
                 (
                     profile.id.clone(),
@@ -608,6 +637,7 @@ fn notification_delivery(notification: &AppNotification, cx: &App) -> Notificati
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     use super::*;
+    use crate::fulgur::settings::ServerProfile;
     use crate::fulgur::state::StateDb;
     use gpui_kit::TestAppContext;
 
@@ -675,52 +705,126 @@ mod tests {
         settings
     }
 
-    #[test]
-    fn test_validate_settings_skips_key_check_when_sync_is_off() {
-        let (settings, sync_error) =
-            SharedAppState::validate_settings(settings_with_sync(false), |_| {
-                panic!("the key check must not run while synchronization is off")
-            });
-        assert!(sync_error.is_none());
-        assert!(
-            !settings
-                .app_settings
-                .synchronization_settings
-                .is_synchronization_activated
-        );
+    /// Build a key failure report for a profile.
+    ///
+    /// ### Arguments
+    /// - `profile`: The profile whose keys failed.
+    /// - `error`: The error text to carry.
+    ///
+    /// ### Returns
+    /// - `ProfileKeyFailure`: The failure report.
+    fn key_failure(profile: &ServerProfile, error: &str) -> ProfileKeyFailure {
+        ProfileKeyFailure {
+            profile_id: profile.id.clone(),
+            profile_name: profile.name.clone(),
+            error: anyhow::anyhow!(error.to_string()),
+        }
+    }
+
+    /// Read the master switch of the given settings.
+    ///
+    /// ### Arguments
+    /// - `settings`: The settings to read.
+    ///
+    /// ### Returns
+    /// - `bool`: The value of the synchronization master switch.
+    fn master_switch(settings: &Settings) -> bool {
+        settings
+            .app_settings
+            .synchronization_settings
+            .is_synchronization_activated
     }
 
     #[test]
-    fn test_validate_settings_keeps_sync_on_when_keys_are_valid() {
-        let (settings, sync_error) =
-            SharedAppState::validate_settings(settings_with_sync(true), |_| Ok(()));
-        assert!(sync_error.is_none());
-        assert!(
-            settings
-                .app_settings
-                .synchronization_settings
-                .is_synchronization_activated
-        );
+    fn test_check_startup_keys_skips_key_check_when_sync_is_off() {
+        let mut settings = settings_with_sync(false);
+        let key_check = SharedAppState::check_startup_keys(&mut settings, |_| {
+            panic!("the key check must not run while synchronization is off")
+        });
+        assert!(key_check.error.is_none());
+        assert!(key_check.failed_profiles.is_empty());
+        assert!(!master_switch(&settings));
     }
 
     #[test]
-    fn test_validate_settings_disables_sync_and_reports_key_failure() {
-        let (settings, sync_error) =
-            SharedAppState::validate_settings(settings_with_sync(true), |_| {
-                Err(anyhow::anyhow!("keychain locked"))
-            });
-        let message = sync_error.expect("a key failure must produce a user-facing message");
-        assert!(message.contains("Synchronization has been disabled"));
+    fn test_check_startup_keys_reports_nothing_when_keys_are_valid() {
+        let mut settings = settings_with_sync(true);
+        let key_check = SharedAppState::check_startup_keys(&mut settings, |_| Ok(Vec::new()));
+        assert!(key_check.error.is_none());
+        assert!(key_check.failed_profiles.is_empty());
+        assert!(master_switch(&settings));
+    }
+
+    #[test]
+    fn test_check_startup_keys_keeps_sync_on_and_reports_failing_profiles() {
+        let mut settings = settings_with_sync(true);
+        let locked = ServerProfile::new("Locked");
+        let healthy = ServerProfile::new("Healthy");
+        settings.app_settings.synchronization_settings.profiles =
+            vec![locked.clone(), healthy.clone()];
+
+        let key_check = SharedAppState::check_startup_keys(&mut settings, |_| {
+            Ok(vec![key_failure(&locked, "keychain locked")])
+        });
+
         assert!(
-            message.contains("keychain locked"),
-            "the message must carry the underlying error"
+            master_switch(&settings),
+            "a key failure must never switch synchronization off, or the next save persists it"
         );
+        assert_eq!(
+            key_check.failed_profiles,
+            HashSet::from([locked.id.clone()])
+        );
+        let message = key_check
+            .error
+            .expect("a key failure must produce a user-facing message");
         assert!(
-            !settings
-                .app_settings
-                .synchronization_settings
-                .is_synchronization_activated,
-            "a key failure must switch synchronization off"
+            message.contains("Locked: keychain locked"),
+            "the message must name the profile and carry the underlying error: {message}"
+        );
+        assert!(!message.contains("Healthy"));
+    }
+
+    #[test]
+    fn test_check_startup_keys_reports_save_failure_without_skipping_profiles() {
+        let mut settings = settings_with_sync(true);
+        let key_check = SharedAppState::check_startup_keys(&mut settings, |_| {
+            Err(anyhow::anyhow!("disk full"))
+        });
+        assert!(master_switch(&settings));
+        assert!(
+            key_check.failed_profiles.is_empty(),
+            "the keys exist in the keychain, only their persistence failed"
+        );
+        let message = key_check.error.expect("a save failure must be reported");
+        assert!(message.contains("disk full"));
+    }
+
+    #[test]
+    fn test_seed_sync_states_leaves_key_failures_disconnected() {
+        let mut settings = settings_with_sync(true);
+        let mut locked = ServerProfile::new("Locked");
+        locked.is_active = true;
+        let mut healthy = ServerProfile::new("Healthy");
+        healthy.is_active = true;
+        settings.app_settings.synchronization_settings.profiles =
+            vec![locked.clone(), healthy.clone()];
+        let (notification_tx, _notification_rx) = unbounded();
+
+        let sync_states = SharedAppState::seed_sync_states(
+            &settings,
+            SynchronizationStatus::Connecting,
+            &HashSet::from([locked.id.clone()]),
+            &notification_tx,
+        );
+
+        assert_eq!(
+            *sync_states[&locked.id].connection_status.lock(),
+            SynchronizationStatus::Disconnected
+        );
+        assert_eq!(
+            *sync_states[&healthy.id].connection_status.lock(),
+            SynchronizationStatus::Connecting
         );
     }
 
