@@ -4,10 +4,10 @@ use super::layout::PaletteContext;
 use crate::fulgur::ui::{
     icons::CustomIcon,
     menus::{
-        About, CheckForUpdates, ClearRecentFiles, CloseAllFiles, CloseFile, FindAndReplace,
-        FindInFile, GetTheme, JumpToLine, KEY_CONTEXT_FULGUR, KEY_CONTEXT_INPUT, NewFile,
-        NewWindow, NextTab, OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile,
-        SaveFileAs, SelectTheme, SettingsTab, ToggleColorPicker,
+        About, CheckForUpdates, ClearRecentFiles, CloseAllFiles, CloseFile, CloseWindow,
+        FindAndReplace, FindInFile, GetTheme, JumpToLine, KEY_CONTEXT_FULGUR, KEY_CONTEXT_INPUT,
+        NewFile, NewWindow, NextTab, OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit,
+        SaveFile, SaveFileAs, SelectTheme, SettingsTab, ToggleColorPicker,
     },
 };
 use gpui_kit::Action;
@@ -103,6 +103,7 @@ pub enum PaletteCommand {
     ShareFile,
     CloseFile,
     CloseAllFiles,
+    CloseWindow,
     ClearRecentFiles,
     ClearRemoteHistory,
     Quit,
@@ -138,7 +139,7 @@ impl PaletteCommand {
     ///
     /// Grouping is derived from [`Self::group`], so a command added here lands in its
     /// group automatically and cannot go missing from the palette.
-    pub const ALL: [Self; 39] = [
+    pub const ALL: [Self; 40] = [
         Self::NewFile,
         Self::NewWindow,
         Self::OpenFile,
@@ -150,6 +151,7 @@ impl PaletteCommand {
         Self::ShareFile,
         Self::CloseFile,
         Self::CloseAllFiles,
+        Self::CloseWindow,
         Self::ClearRecentFiles,
         Self::ClearRemoteHistory,
         Self::Quit,
@@ -197,6 +199,7 @@ impl PaletteCommand {
             | Self::ShareFile
             | Self::CloseFile
             | Self::CloseAllFiles
+            | Self::CloseWindow
             | Self::ClearRecentFiles
             | Self::ClearRemoteHistory
             | Self::Quit => PaletteGroup::File,
@@ -240,6 +243,7 @@ impl PaletteCommand {
             Self::ShareFile => "Share file...",
             Self::CloseFile => "Close file",
             Self::CloseAllFiles => "Close all files",
+            Self::CloseWindow => "Close window",
             Self::ClearRecentFiles => "Clear recent files",
             Self::ClearRemoteHistory => "Clear remote URL history",
             Self::Quit => "Quit Fulgur",
@@ -288,6 +292,7 @@ impl PaletteCommand {
             Self::ShareFile => &["send", "sync", "device", "encrypt"],
             Self::CloseFile => &["quit tab", "dismiss"],
             Self::CloseAllFiles => &["dismiss", "everything"],
+            Self::CloseWindow => &["dismiss", "shut"],
             Self::ClearRecentFiles => &["history", "forget", "purge"],
             Self::ClearRemoteHistory => &["ssh", "sftp", "server", "forget", "purge"],
             Self::Quit => &["exit", "close application"],
@@ -340,7 +345,7 @@ impl PaletteCommand {
             Self::ClearRecentFiles | Self::ClearRemoteHistory => CustomIcon::Minus,
             Self::AddCursorAbove => CustomIcon::ChevronUp,
             Self::AddCursorBelow => CustomIcon::ChevronDown,
-            Self::Quit => CustomIcon::WindowClose,
+            Self::CloseWindow | Self::Quit => CustomIcon::WindowClose,
             Self::FindInFile => CustomIcon::Search,
             Self::FindAndReplace => CustomIcon::Replace,
             Self::JumpToLine | Self::ToggleLogView => CustomIcon::List,
@@ -376,6 +381,7 @@ impl PaletteCommand {
             Self::PrintFile => Some(KeybindingHint::fulgur(PrintFile)),
             Self::CloseFile => Some(KeybindingHint::fulgur(CloseFile)),
             Self::CloseAllFiles => Some(KeybindingHint::fulgur(CloseAllFiles)),
+            Self::CloseWindow => Some(KeybindingHint::fulgur(CloseWindow)),
             Self::ClearRecentFiles => Some(KeybindingHint::fulgur(ClearRecentFiles)),
             Self::Quit => Some(KeybindingHint::fulgur(Quit)),
             Self::FindInFile => Some(KeybindingHint::fulgur(FindInFile)),
@@ -425,6 +431,7 @@ impl PaletteCommand {
             | Self::OpenFile
             | Self::OpenFromPath
             | Self::OpenRemoteFile
+            | Self::CloseWindow
             | Self::Quit
             | Self::SelectTheme
             | Self::GetMoreThemes

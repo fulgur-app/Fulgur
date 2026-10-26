@@ -48,7 +48,6 @@ pub fn build_menus(recent_files: &[PathBuf], update_available: bool) -> Vec<Menu
                 MenuItem::action("Select theme", SelectTheme),
                 MenuItem::action("Get more themes...", GetTheme),
                 MenuItem::Separator,
-                MenuItem::action("Close Window", CloseWindow),
                 MenuItem::action("Quit", Quit),
             ],
         },
@@ -74,6 +73,7 @@ pub fn build_menus(recent_files: &[PathBuf], update_available: bool) -> Vec<Menu
                 MenuItem::separator(),
                 MenuItem::action("Close file", CloseFile),
                 MenuItem::action("Close all files", CloseAllFiles),
+                MenuItem::action("Close Window", CloseWindow),
             ],
         },
         Menu {
@@ -190,14 +190,15 @@ fn rebuild_app_menus(inputs: &AppMenuInputs, cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::build_menus;
+    use crate::fulgur::ui::menus::CloseWindow;
     use core::prelude::v1::test;
     use gpui_kit::base::input::{AddCursorAbove, AddCursorBelow};
     use gpui_kit::{Action, MenuItem};
 
-    fn edit_menu_exposes(action: &dyn Action) -> bool {
+    fn menu_exposes(menu_name: &str, action: &dyn Action) -> bool {
         build_menus(&[], false)
             .iter()
-            .filter(|menu| menu.name == "Edit")
+            .filter(|menu| menu.name == menu_name)
             .flat_map(|menu| menu.items.iter())
             .any(|item| match item {
                 MenuItem::Action { action: bound, .. } => bound.partial_eq(action),
@@ -207,7 +208,13 @@ mod tests {
 
     #[test]
     fn test_edit_menu_exposes_multi_cursor_actions() {
-        assert!(edit_menu_exposes(&AddCursorAbove));
-        assert!(edit_menu_exposes(&AddCursorBelow));
+        assert!(menu_exposes("Edit", &AddCursorAbove));
+        assert!(menu_exposes("Edit", &AddCursorBelow));
+    }
+
+    #[test]
+    fn test_close_window_lives_in_the_file_menu_only() {
+        assert!(menu_exposes("File", &CloseWindow));
+        assert!(!menu_exposes("Fulgur", &CloseWindow));
     }
 }
