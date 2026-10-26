@@ -1,6 +1,7 @@
 use super::WindowManager;
 use crate::fulgur::WindowInit;
 use crate::fulgur::shared_state::AppNotification;
+use crate::fulgur::ui::dialogs::application_close::CloseScope;
 use crate::fulgur::{
     Fulgur,
     editor_tab::TabLocation,
@@ -10,8 +11,8 @@ use crate::fulgur::{
 use gpui_kit::base::actions::{Cancel, Confirm};
 use gpui_kit::component::{WindowExt, input::InputEvent, notification::NotificationType};
 use gpui_kit::{
-    Action, AnyWindowHandle, AppContext, BorrowAppContext, Entity, Modifiers, SharedString,
-    TestAppContext, VisualTestContext, WindowId, WindowOptions,
+    Action, AnyWindowHandle, AppContext, BorrowAppContext, Bounds, Entity, Modifiers, Pixels,
+    SharedString, TestAppContext, VisualTestContext, WindowId, WindowOptions,
 };
 use parking_lot::Mutex;
 use std::{
@@ -191,7 +192,9 @@ fn invoke_quit_persistence_gate(
             .expect("failed to locate target test window by id");
         handle
             .update(cx, |_, window, cx| {
-                fulgur.update(cx, |this, cx| this.can_quit_after_state_save(window, cx))
+                fulgur.update(cx, |this, cx| {
+                    this.can_close_after_state_save(CloseScope::Application, window, cx)
+                })
             })
             .expect("failed to invoke the Quit persistence gate")
     })
@@ -709,35 +712,13 @@ fn test_quit_warns_for_large_dirty_file_in_other_window_and_cancel_aborts(cx: &m
         initiator.update(cx, |this, _| {
             this.settings.app_settings.confirm_exit = false;
         });
-        let handle = cx
-            .windows()
-            .into_iter()
-            .find(|handle| handle.window_id() == dirty_window_id)
-            .expect("dirty test window should exist");
-        handle
-            .update(cx, |_, window, cx| {
-                dirty_window.update(cx, |this, cx| {
-                    let tab = this
-                        .tabs
-                        .first()
-                        .expect("dirty window should have an editor tab")
-                        .clone();
-                    let content = tab.update(cx, |tab, _| {
-                        let editor = tab.as_editor_mut().expect("expected editor tab");
-                        editor.large_file = true;
-                        editor.location =
-                            TabLocation::Local(temp_test_path("fulgur-large-other-window.txt"));
-                        editor.content.clone()
-                    });
-                    content.update(cx, |content, cx| {
-                        content.set_value("unsaved oversized content", window, cx);
-                        cx.emit(InputEvent::Change);
-                    });
-                });
-            })
-            .expect("failed to dirty the second window");
     });
-    cx.run_until_parked();
+    dirty_first_tab_as_large_local_file(
+        cx,
+        dirty_window_id,
+        &dirty_window,
+        "fulgur-large-other-window.txt",
+    );
 
     invoke_quit(cx, initiator_window_id, &initiator);
     cx.run_until_parked();
@@ -765,22 +746,7 @@ fn test_quit_warns_for_large_dirty_file_in_other_window_and_cancel_aborts(cx: &m
         "Quit must route the warning to the window that owns the dirty large file"
     );
 
-    let dirty_handle = cx.update(|cx| {
-        cx.windows()
-            .into_iter()
-            .find(|handle| handle.window_id() == dirty_window_id)
-            .expect("dirty test window should still exist")
-    });
-    {
-        let mut visual_cx = VisualTestContext::from_window(dirty_handle, cx);
-        visual_cx.run_until_parked();
-        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
-        let cancel = visual_cx
-            .debug_bounds("large-file-close-cancel")
-            .expect("cancel button should be rendered in the dirty window");
-        visual_cx.simulate_click(cancel.center(), Modifiers::none());
-    }
-    cx.run_until_parked();
+    click_debug_selector(cx, dirty_window_id, "large-file-close-cancel");
 
     cx.update(|cx| {
         assert_eq!(
@@ -900,6 +866,83 @@ fn dispatch_dialog_action(cx: &mut TestAppContext, window_id: WindowId, action: 
     let handle = find_window_handle(cx, window_id).expect("test window should be open");
     let mut visual_cx = VisualTestContext::from_window(handle, cx);
     crate::test_support::dispatch_dialog_action(&mut visual_cx, action);
+    cx.run_until_parked();
+}
+
+/// Turn a window's first tab into a large local file with unsaved changes.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context
+/// - `window_id`: The window owning the tab
+/// - `fulgur`: The `Fulgur` entity of that window
+/// - `file_name`: Name of the backing file under the platform temp directory
+fn dirty_first_tab_as_large_local_file(
+    cx: &mut TestAppContext,
+    window_id: WindowId,
+    fulgur: &Entity<Fulgur>,
+    file_name: &str,
+) {
+    let handle = find_window_handle(cx, window_id).expect("test window should be open");
+    let path = temp_test_path(file_name);
+    cx.update(|cx| {
+        handle
+            .update(cx, |_, window, cx| {
+                fulgur.update(cx, |this, cx| {
+                    let tab = this
+                        .tabs
+                        .first()
+                        .expect("window should have an editor tab")
+                        .clone();
+                    let content = tab.update(cx, |tab, _| {
+                        let editor = tab.as_editor_mut().expect("expected editor tab");
+                        editor.large_file = true;
+                        editor.location = TabLocation::Local(path);
+                        editor.content.clone()
+                    });
+                    content.update(cx, |content, cx| {
+                        content.set_value("unsaved oversized content", window, cx);
+                        cx.emit(InputEvent::Change);
+                    });
+                });
+            })
+            .expect("failed to dirty the window's first tab");
+    });
+    cx.run_until_parked();
+}
+
+/// Draw a window and locate the element tagged with a debug selector.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context
+/// - `window_id`: The window to draw
+/// - `selector`: The debug selector to look up
+///
+/// ### Returns
+/// - `Some(Bounds<Pixels>)`: The bounds of the rendered element
+/// - `None`: No rendered element carries the selector
+fn debug_selector_bounds(
+    cx: &mut TestAppContext,
+    window_id: WindowId,
+    selector: &'static str,
+) -> Option<Bounds<Pixels>> {
+    let handle = find_window_handle(cx, window_id).expect("test window should be open");
+    let mut visual_cx = VisualTestContext::from_window(handle, cx);
+    visual_cx.run_until_parked();
+    visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+    visual_cx.debug_bounds(selector)
+}
+
+/// Click the element tagged with a debug selector in a window and let the result settle.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context
+/// - `window_id`: The window showing the element
+/// - `selector`: The debug selector of the element to click
+fn click_debug_selector(cx: &mut TestAppContext, window_id: WindowId, selector: &'static str) {
+    let bounds = debug_selector_bounds(cx, window_id, selector)
+        .unwrap_or_else(|| panic!("`{selector}` should be rendered"));
+    let handle = find_window_handle(cx, window_id).expect("test window should be open");
+    VisualTestContext::from_window(handle, cx).simulate_click(bounds.center(), Modifiers::none());
     cx.run_until_parked();
 }
 
@@ -1023,6 +1066,113 @@ fn test_closing_non_last_window_with_persistence_off_skips_the_prompt(cx: &mut T
     assert!(
         invoke_window_close_requested(cx, window_id_two, &fulgur_two),
         "with persistence off, closing drops unsaved buffers without a prompt by design"
+    );
+}
+
+#[gpui_kit::test]
+fn test_ephemeral_non_last_window_with_large_dirty_file_force_closes_on_second_attempt(
+    cx: &mut TestAppContext,
+) {
+    setup_test_globals(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    install_ephemeral_fallback_writer(cx, &dir.path().join("state.db"));
+    let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
+    let (window_id_two, fulgur_two) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id_one, &fulgur_one);
+    register_window_in_global_manager(cx, window_id_two, &fulgur_two);
+    dirty_first_tab_as_large_local_file(
+        cx,
+        window_id_two,
+        &fulgur_two,
+        "fulgur-large-ephemeral-window.txt",
+    );
+
+    assert!(!invoke_window_close_requested(
+        cx,
+        window_id_two,
+        &fulgur_two
+    ));
+    cx.run_until_parked();
+    click_debug_selector(cx, window_id_two, "large-file-close-discard");
+    assert!(
+        find_window_handle(cx, window_id_two).is_some(),
+        "the first failed session save must keep the window open"
+    );
+    assert_eq!(
+        cx.update(|cx| cx.global::<WindowManager>().window_count()),
+        2
+    );
+
+    assert!(!invoke_window_close_requested(
+        cx,
+        window_id_two,
+        &fulgur_two
+    ));
+    cx.run_until_parked();
+    click_debug_selector(cx, window_id_two, "large-file-close-discard");
+    assert!(
+        find_window_handle(cx, window_id_two).is_none(),
+        "repeating the close after the save failure warning must force it"
+    );
+    assert_eq!(
+        cx.update(|cx| cx.global::<WindowManager>().window_count()),
+        1
+    );
+}
+
+#[gpui_kit::test]
+fn test_closing_last_window_with_large_dirty_file_confirms_quit_without_repeating_the_warning(
+    cx: &mut TestAppContext,
+) {
+    setup_test_globals(cx);
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id, &fulgur);
+    cx.update(|cx| {
+        fulgur.update(cx, |this, _| {
+            this.settings.app_settings.confirm_exit = true;
+        });
+    });
+    dirty_first_tab_as_large_local_file(cx, window_id, &fulgur, "fulgur-large-last-window.txt");
+
+    assert!(!invoke_window_close_requested(cx, window_id, &fulgur));
+    cx.run_until_parked();
+    click_debug_selector(cx, window_id, "large-file-close-discard");
+
+    assert!(
+        window_has_dialog(cx, window_id),
+        "discarding the last warning must lead to the quit confirmation"
+    );
+    assert!(
+        debug_selector_bounds(cx, window_id, "large-file-close-discard").is_none(),
+        "a discarded file must not be warned about a second time"
+    );
+    dispatch_dialog_action(cx, window_id, Cancel);
+    assert!(!window_has_dialog(cx, window_id));
+    assert_eq!(
+        cx.update(|cx| cx.global::<WindowManager>().window_count()),
+        1,
+        "cancelling the quit confirmation must keep the window open"
+    );
+}
+
+#[gpui_kit::test]
+fn test_successful_state_save_clears_the_force_close_escape(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    install_ephemeral_fallback_writer(cx, &dir.path().join("first-broken.db"));
+    let (window_id, fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id, &fulgur);
+
+    assert!(
+        !invoke_quit_persistence_gate(cx, window_id, &fulgur),
+        "the first persistence failure must block the close"
+    );
+    install_file_backed_writer(cx, &dir.path().join("state.db"));
+    assert!(invoke_quit_persistence_gate(cx, window_id, &fulgur));
+    install_ephemeral_fallback_writer(cx, &dir.path().join("second-broken.db"));
+    assert!(
+        !invoke_quit_persistence_gate(cx, window_id, &fulgur),
+        "a failure after a successful save must warn again instead of forcing the close"
     );
 }
 

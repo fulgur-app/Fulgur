@@ -1,11 +1,9 @@
 use super::WindowManager;
 use crate::fulgur::WindowInit;
-use crate::fulgur::ui::dialogs::large_file_close::CloseContinuation;
-use crate::fulgur::ui::tabs::editor_tab::{TabLocation, TabTransferData};
+use crate::fulgur::ui::dialogs::application_close::CloseScope;
+use crate::fulgur::ui::tabs::editor_tab::TabTransferData;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{Fulgur, PendingSaveCloseAction};
-use gpui_kit::component::WindowExt;
-use gpui_kit::component::notification::NotificationType;
 use gpui_kit::{App, AppContext, BorrowAppContext, Context, Window, WindowOptions};
 
 impl Fulgur {
@@ -22,10 +20,12 @@ impl Fulgur {
 
     /// Handle window close request
     ///
-    /// ### Behavior
-    /// - If this is the last window: treat as quit (show confirm dialog if enabled,
-    ///   otherwise save state and let the window close, which quits the app)
-    /// - If multiple windows exist: just close this window (after saving state)
+    /// ### Description
+    /// - If this is the last window: treat as quit, through the application
+    ///   close plan when an exit confirmation or a large-file warning is due,
+    ///   otherwise save state and let the window close, which quits the app
+    /// - If multiple windows exist: confirm unsaved and large modified tabs,
+    ///   then save state without this window and close it
     ///
     /// ### Arguments
     /// - `window`: The window being closed
@@ -43,9 +43,18 @@ impl Fulgur {
             return false;
         }
         let window_count = cx.global::<WindowManager>().window_count();
+        if window_count == 1 {
+            if self.settings.app_settings.confirm_exit
+                || !self.large_modified_local_tabs(cx).is_empty()
+            {
+                self.quit(window, cx);
+                return false;
+            }
+            return self.save_and_unregister_window(window, cx);
+        }
         // A closed non-last window cannot be reopened, so its persisted buffers
         // would be lost; confirm each one like closing the tab would.
-        if window_count > 1 && self.settings.app_settings.persist_unsaved_buffers {
+        if self.settings.app_settings.persist_unsaved_buffers {
             let unsaved = self.tabs_needing_window_close_prompt(cx);
             if !unsaved.is_empty() {
                 self.drive_window_close_unsaved_prompts(unsaved, window, cx);
@@ -53,79 +62,16 @@ impl Fulgur {
             }
         }
         // Large, modified local files cannot be persisted, so warn about each before closing.
-        let large_modified = self.large_modified_local_tabs(cx);
-        if !large_modified.is_empty() {
-            let continuation = if window_count == 1 {
-                CloseContinuation::Quit
-            } else {
-                CloseContinuation::CloseWindow
-            };
-            self.drive_large_file_close_warnings(large_modified, continuation, window, cx);
+        if !self.large_modified_local_tabs(cx).is_empty() {
+            self.start_close_plan(CloseScope::Window, cx);
             return false;
         }
-        if window_count == 1 {
-            if self.settings.app_settings.confirm_exit {
-                self.quit(window, cx);
-                false
-            } else {
-                if let Err(e) = self.save_state(cx, window) {
-                    log::error!("Failed to save app state on window close: {e}");
-                    if self.save_failed_once {
-                        log::warn!("Save failed again - allowing force-close");
-                    } else {
-                        self.save_failed_once = true;
-                        window.push_notification(
-                            (
-                                NotificationType::Error,
-                                gpui_kit::SharedString::from(format!(
-                                    "Failed to save application state: {e}. Close again to force-close."
-                                )),
-                            ),
-                            cx,
-                        );
-                        return false;
-                    }
-                }
-                cx.update_global::<WindowManager, _>(|manager, _| {
-                    manager.unregister(self.window_id);
-                });
-                true
-            }
-        } else {
-            log::debug!(
-                "Closing window {:?} ({} windows remaining)",
-                self.window_id,
-                window_count - 1
-            );
-            if let Err(e) = self.save_state_without_this_window(cx) {
-                log::error!("Failed to save app state on window close: {e}");
-                if self.save_failed_once {
-                    log::warn!("Save failed again, allowing force-close");
-                } else {
-                    self.save_failed_once = true;
-                    window.push_notification(
-                        (
-                            NotificationType::Error,
-                            gpui_kit::SharedString::from(format!(
-                                "Failed to save application state: {e}. Close again to force-close."
-                            )),
-                        ),
-                        cx,
-                    );
-                    return false;
-                }
-            }
-            cx.update_global::<WindowManager, _>(|manager, _| {
-                manager.unregister(self.window_id);
-            });
-            // Notify remaining windows so they update their titles (remove or reassign suffix)
-            for weak in cx.global::<WindowManager>().get_all_windows() {
-                if let Some(entity) = weak.upgrade() {
-                    entity.update(cx, |_, cx| cx.notify());
-                }
-            }
-            true
-        }
+        log::debug!(
+            "Closing window {:?} ({} windows remaining)",
+            self.window_id,
+            window_count - 1
+        );
+        self.save_and_unregister_window(window, cx)
     }
 
     /// Finish closing this window programmatically after close warnings.
@@ -134,34 +80,34 @@ impl Fulgur {
     /// - `window`: The window being closed
     /// - `cx`: The application context
     pub(crate) fn finish_window_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Another window may have closed while the warnings were open; the last
-        // window keeps its session so it is restored on the next launch.
-        let is_last_window = cx.global::<WindowManager>().window_count() <= 1;
-        let save_result = if is_last_window {
-            self.save_state(cx, window)
-        } else {
-            self.save_state_without_this_window(cx)
-        };
-        if let Err(e) = save_result {
-            log::error!("Failed to save app state on window close: {e}");
-            window.push_notification(
-                (
-                    NotificationType::Error,
-                    gpui_kit::SharedString::from(format!("Failed to save application state: {e}.")),
-                ),
-                cx,
-            );
-            return;
+        if self.save_and_unregister_window(window, cx) {
+            window.remove_window();
+        }
+    }
+
+    /// Persist the session for a closing window, then drop the window from the manager.
+    ///
+    /// ### Arguments
+    /// - `window`: The window being closed
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: The window may close
+    /// - `false`: The first session save failure blocks the close
+    fn save_and_unregister_window(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if !self.can_close_after_state_save(CloseScope::Window, window, cx) {
+            return false;
         }
         cx.update_global::<WindowManager, _>(|manager, _| {
             manager.unregister(self.window_id);
         });
+        // Notify remaining windows so they update their titles (remove or reassign suffix)
         for weak in cx.global::<WindowManager>().get_all_windows() {
             if let Some(entity) = weak.upgrade() {
                 entity.update(cx, |_, cx| cx.notify());
             }
         }
-        window.remove_window();
+        true
     }
 
     /// Whether a tab's unsaved changes need confirming before this window closes.
@@ -177,10 +123,7 @@ impl Fulgur {
             .and_then(|tab| {
                 let tab = tab.read(cx);
                 let editor_tab = tab.as_editor()?;
-                let has_large_file_warning = matches!(editor_tab.location, TabLocation::Local(_))
-                    && editor_tab.content_too_large_to_persist(cx)
-                    && editor_tab.content_differs_from_original(cx);
-                Some(editor_tab.modified && !has_large_file_warning)
+                Some(editor_tab.modified && !editor_tab.needs_large_file_close_warning(cx))
             })
             .unwrap_or(false)
     }
@@ -216,13 +159,7 @@ impl Fulgur {
             .into_iter()
             .skip_while(|tab_id| !self.tab_needs_window_close_prompt(*tab_id, cx));
         let Some(tab_id) = queue.next() else {
-            let large_modified = self.large_modified_local_tabs(cx);
-            self.drive_large_file_close_warnings(
-                large_modified,
-                CloseContinuation::CloseWindow,
-                window,
-                cx,
-            );
+            self.start_close_plan(CloseScope::Window, cx);
             return;
         };
         let rest: Vec<TabId> = queue.collect();

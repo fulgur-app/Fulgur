@@ -1,7 +1,7 @@
-use crate::fulgur::ui::dialogs::application_close::ApplicationClosePlan;
+use crate::fulgur::ui::dialogs::application_close::CloseScope;
 use crate::fulgur::{Fulgur, PendingSaveCloseAction};
 use gpui_kit::component::WindowExt;
-use gpui_kit::{App, Context, ParentElement, Styled, Window, div, px};
+use gpui_kit::{Context, ParentElement, Styled, Window, div, px};
 
 impl Fulgur {
     /// Show confirmation dialog for unsaved changes
@@ -48,7 +48,8 @@ impl Fulgur {
         });
     }
 
-    /// Quit the application.
+    /// Quit the application once every window's large-file warnings and the
+    /// optional exit confirmation are resolved.
     ///
     /// ### Arguments
     /// - `window`: The window to quit the application in
@@ -57,67 +58,6 @@ impl Fulgur {
         if self.defer_close_for_pending_saves(PendingSaveCloseAction::Quit) {
             return;
         }
-        let plan = ApplicationClosePlan::new(self.window_id);
-        cx.defer(move |cx| Fulgur::drive_application_close_plan(plan, cx));
-    }
-
-    /// Quit the application. If `confirm_exit` is enabled, a modal will be shown to confirm the action.
-    ///
-    /// ### Arguments
-    /// - `window`: The window to quit the application in
-    /// - `cx`: The application context
-    pub(crate) fn quit_inner(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.settings.app_settings.confirm_exit {
-            let entity = cx.entity().clone();
-            window.open_alert_dialog(cx, move |modal, _, _| {
-                let entity_ok = entity.clone();
-                modal
-                    .title(div().text_size(px(16.)).child("Quit Fulgur"))
-                    .keyboard(true)
-                    .show_cancel(true)
-                    .on_ok(move |_, window: &mut Window, cx: &mut App| {
-                        let entity_ok_footer = entity_ok.clone();
-                        let save_result =
-                            entity_ok_footer.update(cx, |this, cx| this.save_state(cx, window));
-                        if let Err(e) = save_result {
-                            log::error!("Failed to save app state on quit: {e}");
-                            window.push_notification(
-                                (
-                                    gpui_kit::component::notification::NotificationType::Error,
-                                    gpui_kit::SharedString::from(format!(
-                                        "Failed to save application state: {e}. Quit anyway?"
-                                    )),
-                                ),
-                                cx,
-                            );
-                            return false; // Don't quit, show notification
-                        }
-                        cx.quit();
-                        true
-                    })
-                    .on_cancel(move |_, _window, _cx| true)
-                    .child(
-                        div()
-                            .text_size(px(14.))
-                            .child("Are you sure you want to quit Fulgur?"),
-                    )
-                    .close_button(false)
-            });
-            return;
-        }
-        if let Err(e) = self.save_state(cx, window) {
-            log::error!("Failed to save app state on quit: {e}");
-            window.push_notification(
-                (
-                    gpui_kit::component::notification::NotificationType::Error,
-                    gpui_kit::SharedString::from(format!(
-                        "Failed to save application state: {e}. Try again or close the app to quit without saving."
-                    )),
-                ),
-                cx,
-            );
-            return; // Don't quit, show notification and let user try again
-        }
-        cx.quit();
+        self.start_close_plan(CloseScope::Application, cx);
     }
 }

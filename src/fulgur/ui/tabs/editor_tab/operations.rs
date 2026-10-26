@@ -1,4 +1,4 @@
-use super::{EditorTab, Jump, hex_color_provider};
+use super::{EditorTab, Jump, TabLocation, hex_color_provider};
 use crate::fulgur::languages::supported_languages::{
     SupportedLanguage, language_from_content, language_registry_name,
 };
@@ -179,6 +179,20 @@ impl EditorTab {
     /// - `bool`: `true` when the content must not be persisted
     pub fn content_too_large_to_persist(&self, cx: &App) -> bool {
         self.large_file || super::is_large_file(self.content.read(cx).text().len())
+    }
+
+    /// Whether closing would silently drop this tab's unsaved changes, so the
+    /// close flows must offer to save it first.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the tab is a modified local file too large to persist
+    pub fn needs_large_file_close_warning(&self, cx: &App) -> bool {
+        matches!(self.location, TabLocation::Local(_))
+            && self.content_too_large_to_persist(cx)
+            && self.content_differs_from_original(cx)
     }
 
     /// Check whether current buffer content differs from the saved baseline.
