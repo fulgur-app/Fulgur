@@ -102,7 +102,7 @@ fn handle_master_toggle(entity: &Entity<Fulgur>, value: bool, cx: &mut App) {
             .synchronization_settings
             .is_synchronization_activated = value;
         if value && let Err(e) = crypto_helper::check_private_public_keys(&mut this.settings) {
-            log::error!("Failed to check private/public keys: {e}");
+            log::error!("Failed to save the generated encryption keys: {e}");
         }
         if let Err(e) = this.update_and_propagate_settings(cx) {
             log::error!("Failed to save settings: {e}");

@@ -6,7 +6,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use zeroize::Zeroizing;
 
 use super::keychain::{load_private_key_from_keychain, save_private_key_to_keychain};
-use crate::fulgur::settings::{ServerProfile, Settings};
+use crate::fulgur::settings::{ProfileId, ServerProfile, Settings};
 
 /// Generate a matching pair of private/public keys
 ///
@@ -80,80 +80,97 @@ pub fn ensure_profile_keypair(profile: &mut ServerProfile) -> anyhow::Result<boo
     Ok(true)
 }
 
+/// An active profile whose keypair could not be ensured.
+#[derive(Debug)]
+pub struct ProfileKeyFailure {
+    /// Id of the failing profile.
+    pub profile_id: ProfileId,
+    /// Display name of the failing profile.
+    pub profile_name: String,
+    /// The keychain or key parsing error.
+    pub error: anyhow::Error,
+}
+
 /// Ensure each active profile has a valid X25519 keypair available in the
 /// keychain and a paired public key in settings.
+///
+/// Every active profile is checked: a failing profile is reported and skipped,
+/// never stopping the check of the others.
 ///
 /// ### Arguments
 /// - `settings`: The application settings; profiles whose keys had to be
 ///   generated will be mutated to carry the new public key.
 ///
 /// ### Errors
-/// - Returns an error if keychain access or key generation fails for any active
-///   profile, or if persisting the updated settings fails.
+/// - Returns an error if persisting the updated settings fails.
 ///
 /// ### Returns
-/// - `Ok(())`: All active profiles have valid keys.
-/// - `Err(anyhow::Error)`: If keychain access or key generation failed for
-///   any profile (the operation stops at the first failure).
-pub fn check_private_public_keys(settings: &mut Settings) -> anyhow::Result<()> {
-    check_private_public_keys_with(settings, Settings::save)
+/// - `Ok(Vec<ProfileKeyFailure>)`: The active profiles whose keypair could not
+///   be ensured, empty when every active profile has valid keys.
+/// - `Err(anyhow::Error)`: Persisting the updated settings failed.
+pub fn check_private_public_keys(
+    settings: &mut Settings,
+) -> anyhow::Result<Vec<ProfileKeyFailure>> {
+    check_private_public_keys_with(settings, ensure_profile_keypair, Settings::save)
 }
 
-/// Ensure each active profile has a keypair, persisting settings through `save`
-/// only when at least one profile's public key changed.
+/// Ensure each active profile has a keypair through `ensure_keypair`, persisting
+/// settings through `save` only when at least one profile's public key changed.
 ///
 /// ### Arguments
 /// - `settings`: The application settings; active profiles missing a public
 ///   key are mutated to carry one.
+/// - `ensure_keypair`: Ensures one profile has a keypair, called once per active profile.
 /// - `save`: Persists the updated settings, called at most once.
 ///
 /// ### Errors
-/// - Returns an error if keychain access or key generation fails for any active
-///   profile, or if `save` fails.
+/// - Returns an error if `save` fails.
 ///
 /// ### Returns
-/// - `Ok(())`: All active profiles have valid keys.
-/// - `Err(anyhow::Error)`: Key handling failed for a profile (the operation
-///   stops at the first failure), or persisting the settings failed.
+/// - `Ok(Vec<ProfileKeyFailure>)`: The active profiles for which `ensure_keypair`
+///   failed, empty when it succeeded for all of them.
+/// - `Err(anyhow::Error)`: Persisting the settings failed.
 fn check_private_public_keys_with(
     settings: &mut Settings,
+    mut ensure_keypair: impl FnMut(&mut ServerProfile) -> anyhow::Result<bool>,
     save: impl FnOnce(&Settings) -> anyhow::Result<()>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<ProfileKeyFailure>> {
+    let mut failures = Vec::new();
     if !settings
         .app_settings
         .synchronization_settings
         .is_synchronization_activated
     {
-        return Ok(());
+        return Ok(failures);
     }
     let mut settings_changed = false;
-    let profile_ids: Vec<String> = settings
+    let active_profiles = settings
         .app_settings
         .synchronization_settings
         .profiles
-        .iter()
-        .filter(|p| p.is_active)
-        .map(|p| p.id.clone())
-        .collect();
-    for profile_id in profile_ids {
-        let Some(profile) = settings
-            .app_settings
-            .synchronization_settings
-            .profiles
-            .iter_mut()
-            .find(|p| p.id == profile_id)
-        else {
-            continue;
-        };
-        if ensure_profile_keypair(profile)? {
-            settings_changed = true;
+        .iter_mut()
+        .filter(|p| p.is_active);
+    for profile in active_profiles {
+        match ensure_keypair(profile) {
+            Ok(changed) => settings_changed |= changed,
+            Err(error) => {
+                log::error!(
+                    "Profile '{}': failed to ensure its encryption keypair: {error}",
+                    profile.name
+                );
+                failures.push(ProfileKeyFailure {
+                    profile_id: profile.id.clone(),
+                    profile_name: profile.name.clone(),
+                    error,
+                });
+            }
         }
     }
     if settings_changed {
         log::debug!("Saving updated settings after key generation");
         save(settings)?;
     }
-    Ok(())
+    Ok(failures)
 }
 
 /// Checks whether a string is a valid age x25519 public key.
@@ -291,7 +308,7 @@ mod tests {
     fn test_check_keys_is_noop_when_synchronization_is_off() {
         let mut settings = settings_with_profiles(false, vec![profile("Active", true)]);
         let saves = Cell::new(0);
-        check_private_public_keys_with(&mut settings, |_| {
+        check_private_public_keys_with(&mut settings, ensure_profile_keypair, |_| {
             saves.set(saves.get() + 1);
             Ok(())
         })
@@ -318,17 +335,20 @@ mod tests {
             ],
         );
         let saves = Cell::new(0);
-        check_private_public_keys_with(&mut settings, |saved| {
-            saves.set(saves.get() + 1);
-            assert!(
-                saved.app_settings.synchronization_settings.profiles[0]
-                    .public_key
-                    .is_some(),
-                "the saved settings must carry the generated public key"
-            );
-            Ok(())
-        })
-        .expect("key generation should succeed with the in-memory keychain");
+        let failures =
+            check_private_public_keys_with(&mut settings, ensure_profile_keypair, |saved| {
+                saves.set(saves.get() + 1);
+                assert!(
+                    saved.app_settings.synchronization_settings.profiles[0]
+                        .public_key
+                        .is_some(),
+                    "the saved settings must carry the generated public key"
+                );
+                Ok(())
+            })
+            .expect("key generation should succeed with the in-memory keychain");
+
+        assert!(failures.is_empty());
 
         let profiles = &settings.app_settings.synchronization_settings.profiles;
         assert!(profiles[0].public_key.is_some());
@@ -354,12 +374,14 @@ mod tests {
         existing.public_key = Some(public_key.to_string());
         let mut settings = settings_with_profiles(true, vec![existing]);
         let saves = Cell::new(0);
-        check_private_public_keys_with(&mut settings, |_| {
-            saves.set(saves.get() + 1);
-            Ok(())
-        })
-        .expect("an existing keypair must validate");
+        let failures =
+            check_private_public_keys_with(&mut settings, ensure_profile_keypair, |_| {
+                saves.set(saves.get() + 1);
+                Ok(())
+            })
+            .expect("an existing keypair must validate");
 
+        assert!(failures.is_empty());
         assert_eq!(saves.get(), 0, "unchanged settings must not be saved");
         remove_profile_keys(&settings);
     }
@@ -367,11 +389,53 @@ mod tests {
     #[test]
     fn test_check_keys_propagates_save_failure() {
         let mut settings = settings_with_profiles(true, vec![profile("Unsaved", true)]);
-        let result =
-            check_private_public_keys_with(&mut settings, |_| Err(anyhow::anyhow!("disk full")));
+        let result = check_private_public_keys_with(&mut settings, ensure_profile_keypair, |_| {
+            Err(anyhow::anyhow!("disk full"))
+        });
 
         let error = result.expect_err("a failed save must be reported");
         assert!(error.to_string().contains("disk full"));
+        remove_profile_keys(&settings);
+    }
+
+    #[test]
+    fn test_check_keys_reports_a_failing_profile_and_still_checks_the_others() {
+        let mut settings = settings_with_profiles(
+            true,
+            vec![profile("Locked", true), profile("Healthy", true)],
+        );
+        let saves = Cell::new(0);
+        let failures = check_private_public_keys_with(
+            &mut settings,
+            |profile| {
+                if profile.name == "Locked" {
+                    Err(anyhow::anyhow!("keychain locked"))
+                } else {
+                    ensure_profile_keypair(profile)
+                }
+            },
+            |_| {
+                saves.set(saves.get() + 1);
+                Ok(())
+            },
+        )
+        .expect("a profile key failure must not fail the whole check");
+
+        let profiles = &settings.app_settings.synchronization_settings.profiles;
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].profile_id, profiles[0].id);
+        assert_eq!(failures[0].profile_name, "Locked");
+        assert!(failures[0].error.to_string().contains("keychain locked"));
+        assert!(profiles[0].public_key.is_none());
+        assert!(
+            profiles[1].public_key.is_some(),
+            "a profile after the failing one must still get its keypair"
+        );
+        assert_eq!(
+            saves.get(),
+            1,
+            "the healthy profile's new public key must be saved"
+        );
         remove_profile_keys(&settings);
     }
 
