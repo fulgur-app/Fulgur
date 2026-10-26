@@ -70,7 +70,7 @@ pub struct Fulgur {
     log_tail_state: HashMap<TabId, LogTailState>, // Per-log-tab tail bookkeeping (consumed byte offset and file identity) keyed by tab id
     log_tail_cancel: HashMap<TabId, Arc<AtomicBool>>, // Cancellation flag for the per-active-log-tab poll task keyed by tab id
     pub file_watch_state: FileWatchState, // File watching state for external file change detection
-    save_failed_once: bool, // Flag: save already failed once, allow force-close/quit on next attempt
+    save_failed_once: bool, // Flag: the last close-time session save failed, so the next close or quit attempt is forced
     pub share_sheet_state: Option<Arc<ui::sheets::share_file::ShareSheetState>>, // When Some, a share sheet is open and devices are being fetched per profile
     cached_window_bounds: Option<state::SerializedWindowBounds>, // Cached window bounds for cross-window saves
     font_select_subscription: Option<Subscription>, // Subscription for font family selection events (set when settings tab is opened)
