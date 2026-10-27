@@ -213,14 +213,9 @@ impl EditorTab {
                 large_file,
             )
         });
-        let title = format!(
-            "{}{}",
-            file_name,
-            if params.is_modified { " •" } else { "" }
-        );
         Self {
             id: params.id,
-            title: title.into(),
+            title: file_name.into(),
             content,
             location: TabLocation::Local(params.path),
             modified: params.is_modified,
