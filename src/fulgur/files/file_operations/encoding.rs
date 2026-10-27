@@ -29,6 +29,17 @@ pub enum EncodedContents {
 #[must_use]
 pub fn detect_encoding_and_decode(bytes: Vec<u8>) -> DecodedContents {
     let byte_len = bytes.len();
+    if let Some((encoding, _)) = utf16_bom(&bytes) {
+        let (decoded, had_errors) = encoding.decode_with_bom_removal(&bytes);
+        let encoding_name = encoding.name().to_string();
+        log::debug!("File encoding detected from BOM as: {encoding_name}");
+        return DecodedContents {
+            encoding: encoding_name,
+            content: decoded.into_owned(),
+            lossy: had_errors,
+            byte_len,
+        };
+    }
     let bytes = match String::from_utf8(bytes) {
         Ok(text) => {
             log::debug!("File encoding detected as UTF-8");
@@ -83,10 +94,13 @@ pub fn encode_for_save(contents: &str, label: &str) -> EncodedContents {
         log::warn!("Unknown encoding label '{label}', saving as UTF-8");
         return EncodedContents::Encoded(contents.as_bytes().to_vec());
     };
-    if encoding == encoding_rs::UTF_16LE
-        || encoding == encoding_rs::UTF_16BE
-        || encoding == encoding_rs::REPLACEMENT
-    {
+    if encoding == encoding_rs::UTF_16LE || encoding == encoding_rs::UTF_16BE {
+        return EncodedContents::Encoded(encode_utf16_with_bom(
+            contents,
+            encoding == encoding_rs::UTF_16BE,
+        ));
+    }
+    if encoding == encoding_rs::REPLACEMENT {
         log::warn!("Cannot encode to '{label}', saving as UTF-8");
         return EncodedContents::Encoded(contents.as_bytes().to_vec());
     }
@@ -98,17 +112,56 @@ pub fn encode_for_save(contents: &str, label: &str) -> EncodedContents {
     }
 }
 
+/// Encode text as UTF-16 preceded by a byte order mark.
+///
+/// ### Arguments
+/// - `contents`: The editor text to encode
+/// - `big_endian`: Whether to write UTF-16BE instead of UTF-16LE
+///
+/// ### Returns
+/// - `Vec<u8>`: The BOM followed by the encoded code units
+fn encode_utf16_with_bom(contents: &str, big_endian: bool) -> Vec<u8> {
+    let unit_to_bytes: fn(u16) -> [u8; 2] = if big_endian {
+        u16::to_be_bytes
+    } else {
+        u16::to_le_bytes
+    };
+    let mut bytes = Vec::with_capacity(2 + contents.len() * 2);
+    bytes.extend_from_slice(&unit_to_bytes(0xFEFF));
+    for unit in contents.encode_utf16() {
+        bytes.extend_from_slice(&unit_to_bytes(unit));
+    }
+    bytes
+}
+
+/// Detect a UTF-16 byte order mark at the start of the bytes.
+///
+/// ### Arguments
+/// - `bytes`: The file bytes to inspect
+///
+/// ### Returns
+/// - `Some((encoding, bom_len))`: The UTF-16 variant named by the BOM and the BOM length
+/// - `None`: The bytes do not start with a UTF-16 BOM
+fn utf16_bom(bytes: &[u8]) -> Option<(&'static encoding_rs::Encoding, usize)> {
+    encoding_rs::Encoding::for_bom(bytes).filter(|(encoding, _)| {
+        *encoding == encoding_rs::UTF_16LE || *encoding == encoding_rs::UTF_16BE
+    })
+}
+
 /// Heuristically determine whether bytes represent a binary (non-text) file.
 ///
 /// ### Arguments
 /// - `bytes`: The file bytes to inspect
 ///
 /// ### Returns
-/// - `bool`: `true` if the prefix contains a NUL byte
+/// - `bool`: `true` if the prefix contains a NUL character
 #[must_use]
 pub fn looks_binary(bytes: &[u8]) -> bool {
     let prefix = &bytes[..bytes.len().min(BINARY_SNIFF_LEN)];
-    prefix.contains(&0)
+    match utf16_bom(prefix) {
+        Some((_, bom_len)) => prefix[bom_len..].as_chunks::<2>().0.contains(&[0, 0]),
+        None => prefix.contains(&0),
+    }
 }
 
 /// Decode file bytes into editor text, refusing content that looks binary.
@@ -221,5 +274,77 @@ mod tests {
         assert!(decode_text_file(vec![0x66, 0x00, 0x6F]).is_none());
         let decoded = decode_text_file(b"plain text".to_vec()).expect("text must decode");
         assert_eq!(decoded.content, "plain text");
+    }
+
+    /// CRLF, Latin-1 and an astral character (U+1D11E, a surrogate pair in UTF-16).
+    const UTF16_SAMPLE: &str = "Windows Registry Editor\r\ncaf\u{E9} \u{1D11E}";
+
+    /// Serialize text as UTF-16 with a leading BOM, independently of the code under test.
+    ///
+    /// ### Arguments
+    /// - `text`: The text to serialize
+    /// - `big_endian`: Whether to produce UTF-16BE instead of UTF-16LE
+    ///
+    /// ### Returns
+    /// - `Vec<u8>`: The BOM followed by the encoded code units
+    fn utf16_file_bytes(text: &str, big_endian: bool) -> Vec<u8> {
+        std::iter::once(0xFEFF)
+            .chain(text.encode_utf16())
+            .flat_map(|unit| {
+                if big_endian {
+                    unit.to_be_bytes()
+                } else {
+                    unit.to_le_bytes()
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_decode_text_file_accepts_utf16_with_bom() {
+        for (big_endian, label) in [(false, "UTF-16LE"), (true, "UTF-16BE")] {
+            let bytes = utf16_file_bytes(UTF16_SAMPLE, big_endian);
+            let byte_len = bytes.len();
+            let decoded = decode_text_file(bytes).expect("UTF-16 text must not look binary");
+            assert_eq!(decoded.encoding, label);
+            assert_eq!(decoded.content, UTF16_SAMPLE, "the BOM must be stripped");
+            assert!(!decoded.lossy);
+            assert_eq!(decoded.byte_len, byte_len);
+        }
+    }
+
+    #[test]
+    fn test_encode_for_save_roundtrips_utf16_with_bom() {
+        for big_endian in [false, true] {
+            let original = utf16_file_bytes(UTF16_SAMPLE, big_endian);
+            let decoded = detect_encoding_and_decode(original.clone());
+            let EncodedContents::Encoded(bytes) =
+                encode_for_save(&decoded.content, &decoded.encoding)
+            else {
+                panic!("UTF-16 must always encode losslessly");
+            };
+            assert_eq!(bytes, original);
+        }
+    }
+
+    #[test]
+    fn test_detect_encoding_flags_malformed_utf16_as_lossy() {
+        let mut bytes = utf16_file_bytes("text", false);
+        bytes.push(0x41);
+        let decoded = detect_encoding_and_decode(bytes);
+        assert_eq!(decoded.encoding, "UTF-16LE");
+        assert!(
+            decoded.lossy,
+            "a dangling odd byte must flag the decode as lossy"
+        );
+    }
+
+    #[test]
+    fn test_looks_binary_detects_nul_code_unit_after_utf16_bom() {
+        assert!(looks_binary(&[0xFF, 0xFE, 0x68, 0x00, 0x00, 0x00]));
+        // A UTF-32LE BOM reads as a UTF-16LE BOM followed by a NUL code unit.
+        assert!(looks_binary(&[
+            0xFF, 0xFE, 0x00, 0x00, 0x68, 0x00, 0x00, 0x00
+        ]));
     }
 }
