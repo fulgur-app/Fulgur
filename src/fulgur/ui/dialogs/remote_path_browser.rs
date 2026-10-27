@@ -26,6 +26,7 @@ use super::file_browser::{
     BrowserEntry, build_browser_entry, render_browser_list, render_browser_path_field,
     replace_with_parent_folder, truncate_to_parent_folder,
 };
+use futures::channel::oneshot;
 use std::{
     sync::{Arc, mpsc},
     time::Duration,
@@ -64,7 +65,7 @@ pub struct RemotePathBrowser {
 /// Background-worker request for one remote browser listing.
 struct BrowserListRequest {
     raw_input: String,
-    response_tx: mpsc::Sender<Result<Vec<RemoteDirectoryEntry>, String>>,
+    response_tx: oneshot::Sender<Result<Vec<RemoteDirectoryEntry>, String>>,
 }
 
 impl From<&RemoteDirectoryEntry> for BrowserEntry {
@@ -188,24 +189,18 @@ impl RemotePathBrowser {
         self.error_message = None;
         self.notice = None;
 
+        let (response_tx, response_rx) = oneshot::channel();
+        // A failed send drops `response_tx`, so `response_rx` resolves to `Canceled` below.
+        let _ = self.worker_tx.send(BrowserListRequest {
+            raw_input: raw,
+            response_tx,
+        });
+
         let weak = cx.entity().downgrade();
-        let worker_tx = self.worker_tx.clone();
         cx.spawn(async move |_, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    let (response_tx, response_rx) = mpsc::channel();
-                    worker_tx
-                        .send(BrowserListRequest {
-                            raw_input: raw,
-                            response_tx,
-                        })
-                        .map_err(|_| BROWSER_WORKER_DISCONNECTED_MESSAGE.to_string())?;
-                    response_rx
-                        .recv()
-                        .map_err(|_| BROWSER_WORKER_DISCONNECTED_MESSAGE.to_string())?
-                })
-                .await;
+            let result = response_rx
+                .await
+                .unwrap_or_else(|_| Err(BROWSER_WORKER_DISCONNECTED_MESSAGE.to_string()));
 
             let Some(entity) = weak.upgrade() else {
                 return;
