@@ -607,16 +607,8 @@ impl TabBar {
                         let Some(src_entity) = src.upgrade() else {
                             return;
                         };
-                        let data = src_entity.update(cx, |fulgur, cx| {
-                            fulgur.extract_tab_transfer_data(tab_id, cx)
-                        });
-                        let Some(data) = data else { return };
                         src_entity.update(cx, |fulgur, cx| {
-                            fulgur.pending_tab_removal = Some(tab_id);
-                            cx.notify();
-                        });
-                        src_entity.update(cx, |fulgur, cx| {
-                            fulgur.open_new_window_with_tab(data, cx);
+                            fulgur.move_tab_to_new_window(tab_id, cx);
                         });
                     }));
                     sub

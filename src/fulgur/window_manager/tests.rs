@@ -1566,3 +1566,73 @@ fn test_app_quit_without_windows_keeps_the_persisted_session(cx: &mut TestAppCon
         "a quit with no registered window must not overwrite the session with an empty one"
     );
 }
+
+#[gpui_kit::test]
+fn test_move_tab_to_new_window_drops_source_tab_only_once_the_window_opened(
+    cx: &mut TestAppContext,
+) {
+    setup_test_globals(cx);
+    let (source_window_id, source) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, source_window_id, &source);
+    let source_handle = find_window_handle(cx, source_window_id).expect("source window");
+    cx.update(|cx| {
+        source_handle
+            .update(cx, |_, window, cx| {
+                source.update(cx, |this, cx| this.new_tab(window, cx));
+            })
+            .expect("failed to add a second tab");
+    });
+    dirty_every_tab(cx, source_window_id, &source, "unsaved notes");
+    let moved_tab_id = cx.update(|cx| source.read(cx).tabs[1].read(cx).id());
+
+    cx.update(|cx| source.update(cx, |this, cx| this.move_tab_to_new_window(moved_tab_id, cx)));
+    assert!(
+        cx.update(|cx| source.read(cx).pending_tab_removal.is_none()),
+        "the source must keep the tab until the new window is open"
+    );
+
+    cx.run_until_parked();
+    let new_window = cx.update(|cx| {
+        let manager = cx.global::<WindowManager>();
+        assert_eq!(
+            manager.window_count(),
+            2,
+            "the new window must be registered"
+        );
+        manager
+            .get_all_windows()
+            .into_iter()
+            .filter_map(|weak| weak.upgrade())
+            .find(|fulgur| fulgur.entity_id() != source.entity_id())
+            .expect("the new window's Fulgur")
+    });
+    let (moved_text, moved_modified) = cx.update(|cx| {
+        let new_fulgur = new_window.read(cx);
+        assert_eq!(
+            new_fulgur.tabs.len(),
+            1,
+            "the new window holds the moved tab"
+        );
+        let editor = new_fulgur.tabs[0]
+            .read(cx)
+            .as_editor()
+            .expect("the moved tab is an editor tab");
+        (editor.content.read(cx).text().to_string(), editor.modified)
+    });
+    assert_eq!(moved_text, "unsaved notes");
+    assert!(moved_modified, "the moved tab keeps its unsaved state");
+
+    cx.update(|cx| {
+        source_handle
+            .update(cx, |_, window, cx| window.draw(cx).clear(cx))
+            .expect("failed to draw the source window");
+    });
+    assert!(
+        cx.update(|cx| source
+            .read(cx)
+            .tabs
+            .iter()
+            .all(|tab| tab.read(cx).id() != moved_tab_id)),
+        "the source drops the tab once the new window holds it"
+    );
+}
