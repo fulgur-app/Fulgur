@@ -224,12 +224,11 @@ impl EditorTab {
     /// - `Some(String)`: The suggested filename
     /// - `None`: If the title is UNTITLED
     pub fn get_suggested_filename(&self) -> Option<String> {
-        let title_str = self.title.to_string();
-        let cleaned = title_str.trim_end_matches(" •").trim();
-        if cleaned.is_empty() || cleaned.starts_with(UNTITLED) {
+        let title = self.title.trim();
+        if title.is_empty() || title.starts_with(UNTITLED) {
             None
         } else {
-            Some(crate::fulgur::utils::sanitize::sanitize_filename(cleaned))
+            Some(crate::fulgur::utils::sanitize::sanitize_filename(title))
         }
     }
 

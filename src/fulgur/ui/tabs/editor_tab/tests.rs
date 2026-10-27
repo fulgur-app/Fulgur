@@ -159,7 +159,7 @@ fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
         cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_file(params, window, cx, &settings);
             assert_eq!(tab.id, TabId(13));
-            assert_eq!(tab.title, SharedString::from("test_file.md •"));
+            assert_eq!(tab.title, SharedString::from("test_file.md"));
             assert_eq!(tab.file_path().cloned(), Some(path));
             assert!(tab.modified);
             assert_eq!(
@@ -352,7 +352,7 @@ fn test_editor_tab_check_modified_handles_multibyte_utf8_content(cx: &mut TestAp
 }
 
 #[gpui_kit::test]
-fn test_editor_tab_from_file_title_indicator_clean_and_dirty(cx: &mut TestAppContext) {
+fn test_editor_tab_from_file_title_is_file_name_clean_and_dirty(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
 
@@ -377,7 +377,8 @@ fn test_editor_tab_from_file_title_indicator_clean_and_dirty(cx: &mut TestAppCon
             let dirty_tab = EditorTab::from_file(dirty, window, cx, &settings);
 
             assert_eq!(clean_tab.title, SharedString::from("clean.md"));
-            assert_eq!(dirty_tab.title, SharedString::from("dirty.md •"));
+            assert_eq!(dirty_tab.title, SharedString::from("dirty.md"));
+            assert!(dirty_tab.modified);
 
             cx.new(|_| EmptyView)
         })
@@ -386,7 +387,7 @@ fn test_editor_tab_from_file_title_indicator_clean_and_dirty(cx: &mut TestAppCon
 }
 
 #[gpui_kit::test]
-fn test_editor_tab_get_suggested_filename_trims_modified_indicator(cx: &mut TestAppContext) {
+fn test_editor_tab_get_suggested_filename_of_modified_file(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     let settings = EditorSettings::new();
     let params = FromFileParams {
@@ -400,7 +401,7 @@ fn test_editor_tab_get_suggested_filename_trims_modified_indicator(cx: &mut Test
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
             let tab = EditorTab::from_file(params, window, cx, &settings);
-            assert_eq!(tab.title, SharedString::from("suggested_name.md •"));
+            assert_eq!(tab.title, SharedString::from("suggested_name.md"));
             assert_eq!(
                 tab.get_suggested_filename(),
                 Some("suggested_name.md".to_string())
