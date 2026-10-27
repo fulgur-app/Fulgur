@@ -459,6 +459,41 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui_kit::test]
+    fn test_do_open_file_opens_and_saves_utf16_file_with_bom(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("export.reg");
+        let original: Vec<u8> = std::iter::once(0xFEFF)
+            .chain("caf\u{E9}\n".encode_utf16())
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        std::fs::write(&path, &original).expect("failed to write UTF-16 file");
+
+        open_and_settle(&fulgur, &mut visual_cx, &path);
+
+        let (encoding, content) = fulgur.read_with(&visual_cx, |this, cx| {
+            let editor_tab = this
+                .get_active_editor_tab(cx)
+                .expect("a UTF-16 file must open in an editor tab");
+            (
+                editor_tab.encoding.clone(),
+                editor_tab.content.read(cx).text().to_string(),
+            )
+        });
+        assert_eq!(encoding, "UTF-16LE");
+        assert_eq!(content, "caf\u{E9}\n");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| this.save_file(window, cx));
+        });
+        visual_cx.run_until_parked();
+
+        let saved = std::fs::read(&path).expect("file should exist after save");
+        assert_eq!(saved, original, "saving must keep UTF-16LE and its BOM");
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
     fn test_do_open_file_creates_no_tab_when_read_fails(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
