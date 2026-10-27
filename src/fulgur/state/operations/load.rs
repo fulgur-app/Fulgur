@@ -246,7 +246,7 @@ impl Fulgur {
             EditorTab::from_unsaved_content(
                 tab_id,
                 content,
-                tab_state.title,
+                strip_legacy_modified_indicator(tab_state.title),
                 tab_state
                     .share
                     .map_or(TabLocation::Untitled, TabLocation::Shared),
@@ -264,5 +264,40 @@ impl Fulgur {
         }
         tab.color_tag = color_tag;
         Some((tab, changed_on_disk))
+    }
+}
+
+/// Remove the " •" suffix that older versions baked into restored dirty tab titles
+///
+/// ### Arguments
+/// - `title`: The title read from the session database
+///
+/// ### Returns
+/// - `String`: The title without the legacy modified indicator
+fn strip_legacy_modified_indicator(title: String) -> String {
+    match title.strip_suffix(" •") {
+        Some(stripped) => stripped.to_string(),
+        None => title,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_legacy_modified_indicator;
+
+    #[test]
+    fn test_strip_legacy_modified_indicator_removes_baked_suffix() {
+        assert_eq!(
+            strip_legacy_modified_indicator("notes.md •".to_string()),
+            "notes.md"
+        );
+    }
+
+    #[test]
+    fn test_strip_legacy_modified_indicator_keeps_clean_title() {
+        assert_eq!(
+            strip_legacy_modified_indicator("notes.md".to_string()),
+            "notes.md"
+        );
     }
 }
