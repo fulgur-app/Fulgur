@@ -67,6 +67,11 @@ ignore = [
     "RUSTSEC-2026-0370",  # zvariant - unmaintained, now zbus 6's `wire` module
     "RUSTSEC-2026-0371",  # zbus_names - unmaintained, now zbus 6's `names` module
     "RUSTSEC-2026-0372",  # zvariant_derive - unmaintained, now zbus 6's derive macros
+    # crypto-bigint 0.5 timing side-channels - fixed only in 0.7.6, but age 0.12.1 (latest) pins
+    # p256 0.13 -> elliptic-curve 0.13 -> crypto-bigint ^0.5. age only reaches it through its P-256
+    # `tag`/`tagpq` recipients; Fulgur uses X25519 exclusively, so the affected code never runs.
+    # Cleared when age moves to p256 0.14.
+    "RUSTSEC-2026-0387",  # crypto-bigint - non-constant-time arithmetic (from age via p256/elliptic-curve)
 ]
 
 # Check unmaintained crates in transitive dependencies
