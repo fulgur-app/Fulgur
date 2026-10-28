@@ -26,7 +26,7 @@ pub fn apply_theme_config(config: &Rc<ThemeConfig>, cx: &mut App) {
     Theme::change(config.mode, None, cx);
 }
 
-/// Initialize the themes
+/// Initialize theme extraction, directory watching, and action listeners once at startup
 ///
 /// ### Arguments
 /// - `settings`: The application settings containing theme preferences
@@ -53,6 +53,12 @@ pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut Ap
     }) {
         log::error!("Failed to watch themes directory: {err}");
     }
+    cx.observe_global::<ThemeRegistry>(|cx| {
+        if cx.has_global::<SharedAppState>() {
+            reload_theme_catalog(cx);
+        }
+    })
+    .detach();
     if let Some(scrollbar_show) = scrollbar_show {
         Theme::set_scrollbar_mode(scrollbar_show, cx);
     }
@@ -105,24 +111,24 @@ pub fn themes_directory_path() -> anyhow::Result<PathBuf> {
     crate::fulgur::utils::paths::config_subdir("themes")
 }
 
-/// Reload themes and publish them to `SharedAppState`: this function initializes the theme registry, reloads themes from disk, and publishes the theme catalog through `cx.update_global` so every window's observer picks it up.
+/// Reload the catalog and reapply the current selection without repeating startup setup
 ///
 /// ### Arguments
-/// - `settings`: The application settings
-/// - `cx`: The application context
-pub fn reload_themes_and_update(settings: &Settings, cx: &mut App) {
-    init(settings, cx, publish_themes);
-}
-
-/// Load the theme catalog from disk and publish it to `SharedAppState`, keeping the previous catalog when loading fails
-///
-/// ### Arguments
-/// - `cx`: The application context
-fn publish_themes(cx: &mut App) {
+/// - `cx`: The application context containing the registry and shared settings
+pub fn reload_theme_catalog(cx: &mut App) {
     match Themes::load() {
-        Ok(themes) => cx.update_global::<SharedAppState, _>(|shared, _| {
-            shared.themes = Some(themes);
-        }),
+        Ok(themes) => {
+            cx.update_global::<SharedAppState, _>(|shared, _| {
+                shared.themes = Some(themes);
+            });
+            let theme_name = cx
+                .global::<SharedAppState>()
+                .settings
+                .app_settings
+                .theme
+                .clone();
+            apply_selected_theme(&theme_name, cx);
+        }
         Err(e) => log::error!("Failed to load themes: {e}"),
     }
 }
@@ -199,7 +205,7 @@ mod tests {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod gpui_tests {
     use super::{
-        BundledThemes, apply_selected_theme, extract_bundled_themes, publish_themes,
+        BundledThemes, apply_selected_theme, extract_bundled_themes, reload_theme_catalog,
         themes_directory_path,
     };
     use crate::fulgur::shared_state::SharedAppState;
@@ -256,20 +262,34 @@ mod gpui_tests {
         });
     }
 
+    /// Verify repeated catalog reloads apply the selection currently stored in settings.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test context
     #[gpui_kit::test]
-    fn test_publish_themes_refreshes_shared_theme_state(cx: &mut TestAppContext) {
+    fn test_reload_theme_catalog_refreshes_catalog_and_current_selection(cx: &mut TestAppContext) {
         setup_test_globals(cx);
+        register_bundled_catppuccin_themes(cx);
         let themes_dir = themes_directory_path().expect("themes directory should resolve");
         extract_bundled_themes(&themes_dir).expect("bundled themes should be extracted");
         cx.update(|cx| {
             cx.update_global::<SharedAppState, _>(|shared, _| {
                 shared.themes = None;
+                shared.settings.app_settings.theme = SELECTED_THEME.into();
             });
-            publish_themes(cx);
+            reload_theme_catalog(cx);
             assert!(
                 cx.global::<SharedAppState>().themes.is_some(),
-                "publishing themes should repopulate the shared theme catalog"
+                "reloading themes should repopulate the shared theme catalog"
             );
+            assert_eq!(cx.theme().theme_name().as_ref(), SELECTED_THEME);
+
+            // A later refresh must use the current settings rather than the startup selection.
+            cx.update_global::<SharedAppState, _>(|shared, _| {
+                shared.settings.app_settings.theme = "Catppuccin Mocha".into();
+            });
+            reload_theme_catalog(cx);
+            assert_eq!(cx.theme().theme_name().as_ref(), "Catppuccin Mocha");
         });
     }
 }

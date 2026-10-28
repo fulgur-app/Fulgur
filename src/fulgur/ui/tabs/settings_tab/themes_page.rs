@@ -1,8 +1,4 @@
-use crate::fulgur::{
-    Fulgur,
-    settings::Themes,
-    ui::{icons::CustomIcon, themes},
-};
+use crate::fulgur::{Fulgur, settings::Themes, ui::icons::CustomIcon};
 use gpui_kit::component::{
     ActiveTheme, Sizable, StyledExt,
     button::Button,
@@ -10,19 +6,18 @@ use gpui_kit::component::{
     setting::{SettingGroup, SettingItem, SettingPage},
     v_flex,
 };
-use gpui_kit::{Entity, IntoElement, ParentElement, SharedString, Styled, div};
+use gpui_kit::{IntoElement, ParentElement, SharedString, Styled, div};
 
 impl Fulgur {
     /// Create the Themes settings page
     ///
     /// ### Arguments
-    /// - `entity`: The Fulgur entity
     /// - `themes`: The themes to display
     ///
     /// ### Returns
     /// - `SettingPage`: The Themes settings page
     #[must_use]
-    pub fn create_themes_page(entity: &Entity<Self>, themes: &Themes) -> SettingPage {
+    pub fn create_themes_page(themes: &Themes) -> SettingPage {
         let mut user_theme_items = Vec::new();
         let mut default_theme_items = Vec::new();
         for theme in &themes.user_themes {
@@ -38,10 +33,8 @@ impl Fulgur {
             let button_id = SharedString::from(format!("delete-theme-{theme_name}"));
             let delete_label = SharedString::from(format!("Delete theme {theme_name}"));
             user_theme_items.push(SettingItem::render({
-                let entity = entity.clone();
                 move |_options, _window, cx| {
                     let theme_path = theme_path.clone();
-                    let entity_clone = entity.clone();
                     h_flex()
                         .w_full()
                         .justify_between()
@@ -68,7 +61,7 @@ impl Fulgur {
                                 .accessibility_label(delete_label.clone())
                                 .small()
                                 .cursor_pointer()
-                                .on_click(move |_, _window, cx| {
+                                .on_click(move |_, _window, _cx| {
                                     if let Err(e) = std::fs::remove_file(&theme_path) {
                                         log::error!(
                                             "Failed to delete theme file {}: {}",
@@ -78,9 +71,6 @@ impl Fulgur {
                                     } else {
                                         log::info!("Deleted theme file: {}", theme_path.display());
                                     }
-                                    entity_clone.update(cx, |this, cx| {
-                                        themes::reload_themes_and_update(&this.settings, cx);
-                                    });
                                 }),
                         )
                         .into_any_element()

@@ -110,7 +110,7 @@ impl Fulgur {
         ];
         let themes = Fulgur::shared_state(cx).themes.clone();
         if let Some(ref themes) = themes {
-            pages.push(Self::create_themes_page(&entity, themes));
+            pages.push(Self::create_themes_page(themes));
         }
         pages
     }
