@@ -32,6 +32,7 @@ dependencies = [
  "chardetng",
  "csscolorparser",
  "csv",
+ "data-url",
  "dbus-secret-service-keyring-store",
  "embed-resource",
  "encoding_rs",
