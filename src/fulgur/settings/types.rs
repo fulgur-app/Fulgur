@@ -201,6 +201,9 @@ pub struct MarkdownSettings {
     pub preview_mode: MarkdownPreviewMode,
     pub show_markdown_preview: bool,
     pub show_markdown_toolbar: bool,
+    /// Allow Markdown previews to fetch images over HTTP and HTTPS.
+    #[serde(default)]
+    pub load_remote_images: bool,
     #[serde(default = "default_limit_preview_width")]
     pub limit_preview_width: bool,
     #[serde(default = "default_render_frontmatter")]
@@ -224,6 +227,7 @@ impl MarkdownSettings {
             preview_mode: MarkdownPreviewMode::DedicatedTab,
             show_markdown_preview: true,
             show_markdown_toolbar: false,
+            load_remote_images: false,
             limit_preview_width: true,
             render_frontmatter: true,
         }
