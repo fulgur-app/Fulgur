@@ -13,10 +13,7 @@ use gpui_kit::{
 use parking_lot::Mutex;
 use std::{fs, sync::Arc};
 
-use crate::fulgur::{
-    Fulgur,
-    ui::themes::{reload_themes_and_update, themes_directory_path},
-};
+use crate::fulgur::{Fulgur, ui::themes::themes_directory_path};
 
 /// Make a select theme item.
 ///
@@ -154,7 +151,6 @@ impl Fulgur {
             multiple: false,
             prompt: Some("Select theme".into()),
         });
-        let settings = self.settings.clone();
         cx.spawn_in(window, async move |_view, window| {
             let paths = path_future.await.ok()?.ok()??;
             let theme_path = paths.first()?.clone();
@@ -204,7 +200,6 @@ impl Fulgur {
                                 filename.to_string_lossy()
                             ));
                             window.push_notification((NotificationType::Success, notification), cx);
-                            reload_themes_and_update(&settings, cx);
                         })
                         .ok()?;
                 }
