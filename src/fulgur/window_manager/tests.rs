@@ -1636,3 +1636,171 @@ fn test_move_tab_to_new_window_drops_source_tab_only_once_the_window_opened(
         "the source drops the tab once the new window holds it"
     );
 }
+
+#[gpui_kit::test]
+fn test_moving_the_only_tab_away_unregisters_the_emptied_window_and_keeps_the_session(
+    cx: &mut TestAppContext,
+) {
+    setup_test_globals(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    let state_path = dir.path().join("state.db");
+    install_file_backed_writer(cx, &state_path);
+    cx.update(Fulgur::register_app_quit_state_save);
+    let (source_window_id, source) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, source_window_id, &source);
+    dirty_every_tab(cx, source_window_id, &source, "moved notes");
+    let moved_tab_id = cx.update(|cx| source.read(cx).tabs[0].read(cx).id());
+
+    cx.update(|cx| source.update(cx, |this, cx| this.move_tab_to_new_window(moved_tab_id, cx)));
+    cx.run_until_parked();
+    if let Some(source_handle) = find_window_handle(cx, source_window_id) {
+        cx.update(|cx| {
+            source_handle
+                .update(cx, |_, window, cx| window.draw(cx).clear(cx))
+                .expect("failed to draw the source window");
+        });
+    }
+    cx.run_until_parked();
+
+    let (new_window_id, new_window) = cx.update(|cx| {
+        let manager = cx.global::<WindowManager>();
+        assert!(
+            manager.get_window(source_window_id).is_none(),
+            "the emptied source window must be unregistered"
+        );
+        assert_eq!(
+            manager.window_count(),
+            1,
+            "only the window holding the moved tab is left"
+        );
+        let new_window_id = manager.get_all_window_ids()[0];
+        let new_window = manager
+            .get_window(new_window_id)
+            .and_then(|weak| weak.upgrade())
+            .expect("the new window's Fulgur");
+        assert_eq!(
+            manager.get_window_name(new_window_id),
+            None,
+            "a lone window carries no name suffix"
+        );
+        (new_window_id, new_window)
+    });
+    assert!(
+        find_window_handle(cx, source_window_id).is_none(),
+        "the emptied source window must be closed"
+    );
+    cx.update(|cx| {
+        new_window.update(cx, |this, _| {
+            this.settings.app_settings.confirm_exit = false;
+        });
+    });
+
+    let new_handle = find_window_handle(cx, new_window_id).expect("the new window");
+    let mut visual_cx = VisualTestContext::from_window(new_handle, cx);
+    assert!(
+        visual_cx.simulate_close(),
+        "closing the remaining window must be allowed"
+    );
+    cx.quit();
+
+    let persisted = StateDb::open(&state_path)
+        .expect("reopen the state database")
+        .load()
+        .expect("load the persisted session");
+    let contents: Vec<String> = persisted
+        .windows
+        .iter()
+        .flat_map(|window| &window.tabs)
+        .filter_map(|tab| Some(tab.content.as_ref()?.to_text().into_owned()))
+        .collect();
+    assert_eq!(
+        persisted.windows.len(),
+        1,
+        "closing the last real window must keep it in the session"
+    );
+    assert_eq!(
+        contents,
+        vec!["moved notes"],
+        "the moved tab must survive into the next launch"
+    );
+}
+
+#[gpui_kit::test]
+fn test_window_removed_outside_the_close_lifecycle_is_unregistered(cx: &mut TestAppContext) {
+    use super::system_menus::WindowMenuTab;
+
+    setup_test_globals(cx);
+    cx.update(WindowManager::register_window_closed_cleanup);
+    let (removed_window_id, removed) = open_window_with_fulgur(cx);
+    let (remaining_window_id, remaining) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, removed_window_id, &removed);
+    register_window_in_global_manager(cx, remaining_window_id, &remaining);
+    cx.update(|cx| {
+        cx.update_global::<WindowManager, _>(|manager, _| {
+            manager.publish_window_menu_tabs(
+                removed_window_id,
+                vec![WindowMenuTab {
+                    path: None,
+                    title: "phantom.md".into(),
+                }],
+            );
+        });
+    });
+
+    let handle = find_window_handle(cx, removed_window_id).expect("the window to remove");
+    cx.update(|cx| {
+        handle
+            .update(cx, |_, window, _| window.remove_window())
+            .expect("failed to remove the test window");
+    });
+
+    cx.update(|cx| {
+        let manager = cx.global::<WindowManager>();
+        assert!(
+            manager.get_window(removed_window_id).is_none(),
+            "a window removed without the close lifecycle must still be unregistered"
+        );
+        assert_eq!(manager.window_count(), 1);
+        assert!(
+            manager.get_window_menu_tabs(removed_window_id).is_none(),
+            "the OS menus must stop listing the removed window's tabs"
+        );
+        assert_eq!(
+            manager.get_window_name(remaining_window_id),
+            None,
+            "the remaining window must drop its name suffix"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn test_window_count_ignores_windows_whose_fulgur_was_released(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let (released_window_id, released) = open_window_with_fulgur(cx);
+    let (remaining_window_id, remaining) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, released_window_id, &released);
+    register_window_in_global_manager(cx, remaining_window_id, &remaining);
+    drop(released);
+
+    let handle = find_window_handle(cx, released_window_id).expect("the window to remove");
+    cx.update(|cx| {
+        handle
+            .update(cx, |_, window, _| window.remove_window())
+            .expect("failed to remove the test window");
+    });
+    cx.run_until_parked();
+
+    cx.update(|cx| {
+        let manager = cx.global::<WindowManager>();
+        assert!(
+            manager.get_window(released_window_id).is_some(),
+            "without the close observer the stale entry stays registered"
+        );
+        assert_eq!(
+            manager.window_count(),
+            1,
+            "a stale entry whose Fulgur was released must not count as an open window"
+        );
+        assert_eq!(manager.get_window_name(remaining_window_id), None);
+    });
+}

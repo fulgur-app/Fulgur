@@ -302,6 +302,7 @@ fn main() {
             );
         }
         cx.set_global(fulgur::window_manager::WindowManager::new());
+        fulgur::window_manager::WindowManager::register_window_closed_cleanup(cx);
         // On Windows and Linux, start the IPC listener now that SharedAppState is registered.
         // We grab the two arcs from the global so there's a single source of truth,
         // and store the Drop-owned worker back on it so the listener has an owner.

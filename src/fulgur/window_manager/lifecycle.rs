@@ -101,15 +101,7 @@ impl Fulgur {
         if !self.can_close_after_state_save(CloseScope::Window, window, cx) {
             return false;
         }
-        cx.update_global::<WindowManager, _>(|manager, _| {
-            manager.unregister(self.window_id);
-        });
-        // Notify remaining windows so they update their titles (remove or reassign suffix)
-        for weak in cx.global::<WindowManager>().get_all_windows() {
-            if let Some(entity) = weak.upgrade() {
-                entity.update(cx, |_, cx| cx.notify());
-            }
-        }
+        WindowManager::unregister_and_notify_remaining(self.window_id, cx);
         true
     }
 
