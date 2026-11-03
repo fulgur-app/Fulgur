@@ -4,7 +4,9 @@ mod render;
 pub mod system_menus;
 
 use crate::fulgur::Fulgur;
-use gpui_kit::{AnyWindowHandle, App, Entity, Global, WeakEntity, WindowId};
+use gpui_kit::{
+    AnyWindowHandle, App, BorrowAppContext, Entity, EntityId, Global, WeakEntity, WindowId,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use system_menus::WindowMenuTab;
@@ -125,7 +127,46 @@ impl WindowManager {
     /// - `usize`: The number of open windows
     #[must_use]
     pub fn window_count(&self) -> usize {
-        self.windows.len()
+        self.windows
+            .values()
+            .filter(|weak| weak.upgrade().is_some())
+            .count()
+    }
+
+    /// Register the app-scope observer that unregisters every window as it closes.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    pub fn register_window_closed_cleanup(cx: &mut App) {
+        cx.on_window_closed(|cx, window_id| {
+            Self::unregister_and_notify_remaining(window_id, cx);
+        })
+        .detach();
+    }
+
+    /// Unregister a window and re-render the windows left open so their titles drop or reassign the name suffix.
+    ///
+    /// ### Arguments
+    /// - `window_id`: The ID of the window to unregister
+    /// - `cx`: The application context
+    pub(crate) fn unregister_and_notify_remaining(window_id: WindowId, cx: &mut App) {
+        let is_registered = cx
+            .try_global::<Self>()
+            .is_some_and(|manager| manager.windows.contains_key(&window_id));
+        if !is_registered {
+            return;
+        }
+        cx.update_global::<Self, _>(|manager, _| manager.unregister(window_id));
+        let remaining: Vec<EntityId> = cx
+            .global::<Self>()
+            .get_all_windows()
+            .iter()
+            .filter_map(WeakEntity::upgrade)
+            .map(|entity| entity.entity_id())
+            .collect();
+        for entity_id in remaining {
+            cx.notify(entity_id);
+        }
     }
 
     /// Return the display name for a window, but only when multiple windows are open.
@@ -137,7 +178,7 @@ impl WindowManager {
     /// - `Some(&str)`: The name (e.g. "A", "B", "AA") when more than one window is open
     /// - `None`: When only one window is open or the ID is unknown
     pub fn get_window_name(&self, window_id: WindowId) -> Option<&str> {
-        if self.windows.len() <= 1 {
+        if self.window_count() <= 1 {
             return None;
         }
         self.window_names

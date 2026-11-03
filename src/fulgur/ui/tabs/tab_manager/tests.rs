@@ -1,19 +1,26 @@
 use crate::fulgur::{
     Fulgur,
     languages::supported_languages::{SupportedLanguage, language_registry_name},
+    shared_state::SharedAppState,
+    state::{StateDb, StateWriter},
     tab::{Tab, TabId},
     ui::tabs::{
         editor_tab::{TabLocation, TabTransferData},
         tab_bar::CloseAllOtherTabs,
     },
+    window_manager::WindowManager,
 };
 use gpui_kit::component::input::{InputEvent, Position, Undo};
-use gpui_kit::{App, Context, Entity, SharedString, TestAppContext, Window, point, px};
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use gpui_kit::{
+    App, BorrowAppContext, Context, Entity, SharedString, TestAppContext, Window, point, px,
+};
+use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
 
 use crate::test_support::setup_fulgur;
 
-use crate::test_support::{dispatch_dialog_action, has_active_dialog, setup_fulgur_with_root};
+use crate::test_support::{
+    dispatch_dialog_action, has_active_dialog, open_fulgur_with_root, setup_fulgur_with_root,
+};
 use gpui_kit::base::actions::Confirm;
 
 /// Open additional editor tabs on top of the one the test window starts with
@@ -1659,7 +1666,17 @@ fn test_handle_pending_tab_removal_consumes_pending_field(cx: &mut TestAppContex
 
 #[gpui_kit::test]
 fn test_handle_pending_tab_removal_closes_window_when_last_tab(cx: &mut TestAppContext) {
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let (fulgur, handle, mut visual_cx) = open_fulgur_with_root(cx);
+    let window_id = handle.window_id();
+    let state_db = StateDb::open_in_memory().expect("failed to open in-memory state database");
+    cx.update(|cx| {
+        cx.update_global::<SharedAppState, _>(|shared, _| {
+            shared.state_writer = Arc::new(StateWriter::new(Some(state_db)));
+        });
+        cx.update_global::<WindowManager, _>(|manager, _| {
+            manager.register(window_id, fulgur.downgrade());
+        });
+    });
     visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             // Exactly one tab exists by default; mark it for removal
@@ -1677,6 +1694,18 @@ fn test_handle_pending_tab_removal_closes_window_when_last_tab(cx: &mut TestAppC
                 "pending field must be consumed"
             );
         });
+    });
+    cx.update(|cx| {
+        assert!(
+            cx.windows()
+                .iter()
+                .all(|open| open.window_id() != window_id),
+            "the emptied window must close"
+        );
+        assert!(
+            cx.global::<WindowManager>().get_window(window_id).is_none(),
+            "the emptied window must be unregistered"
+        );
     });
 }
 

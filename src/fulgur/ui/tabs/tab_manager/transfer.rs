@@ -106,7 +106,9 @@ impl Fulgur {
     /// Called from the render loop when `pending_tab_removal` is set. Uses
     /// `remove_tab_by_id` so focus management, file-unwatching, and linked
     /// markdown-preview cleanup all happen correctly. If the removed tab was
-    /// the last one in this window, the window itself is closed.
+    /// the last one in this window, the window itself is closed through the
+    /// window-close lifecycle, which drops it from the session and the
+    /// `WindowManager`.
     ///
     /// ### Arguments
     /// - `window`: The source window context
@@ -115,7 +117,7 @@ impl Fulgur {
         if let Some(tab_id) = self.pending_tab_removal.take() {
             self.remove_tab_by_id(tab_id, window, cx);
             if self.tabs.is_empty() {
-                window.remove_window();
+                self.finish_window_close(window, cx);
                 return;
             }
             self.save_state_async(cx, window);
