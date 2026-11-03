@@ -3,10 +3,12 @@ use crate::fulgur::ui::copy_button::CopyButton;
 use crate::fulgur::ui::dialogs::external_link::show_external_link_dialog;
 use crate::fulgur::ui::tabs::markdown_preview_source::MarkdownPreviewSource;
 use crate::fulgur::ui::tabs::tab::TabId;
+use crate::fulgur::utils::markdown_images::preview_image_source;
 use crate::fulgur::utils::markdown_links::{MarkdownLinkTarget, resolve_markdown_link};
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
 };
+use gpui_kit::base::text::TextView;
 use gpui_kit::component::{
     ActiveTheme, WindowExt, h_flex,
     input::{Editor, EditorState},
@@ -15,7 +17,7 @@ use gpui_kit::component::{
     resizable::{h_resizable, resizable_panel},
     scroll::ScrollableElement,
     table::{DataTable, TableState},
-    text::{FrontmatterPlugin, MarkdownExtensions, TableData, TextView, TextViewState},
+    text::{FrontmatterPlugin, MarkdownExtensions, TableData, TextViewState},
     v_flex,
 };
 use gpui_kit::prelude::FluentBuilder;
@@ -349,7 +351,7 @@ impl Fulgur {
         }
     }
 
-    /// Lay out a markdown preview inside its container, honouring the width limit setting.
+    /// Apply the image-loading policy and lay out a Markdown preview.
     ///
     /// ### Arguments
     /// - `preview`: The preview text view to lay out
@@ -358,15 +360,15 @@ impl Fulgur {
     /// - `Div`: A full-size container holding the preview, capped at
     ///   `MARKDOWN_PREVIEW_MAX_WIDTH` and centered when the limit is enabled.
     fn layout_markdown_preview(&self, preview: TextView) -> Div {
-        let limited = self
-            .settings
-            .editor_settings
-            .markdown_settings
-            .limit_preview_width;
-        h_flex()
-            .size_full()
-            .justify_center()
-            .child(preview.when(limited, |view| view.max_w(px(MARKDOWN_PREVIEW_MAX_WIDTH))))
+        let settings = &self.settings.editor_settings.markdown_settings;
+        let load_remote_images = settings.load_remote_images;
+        let preview =
+            preview.image_source(move |uri| preview_image_source(uri, load_remote_images));
+        h_flex().size_full().justify_center().child(
+            preview.when(settings.limit_preview_width, |view| {
+                view.max_w(px(MARKDOWN_PREVIEW_MAX_WIDTH))
+            }),
+        )
     }
 
     /// Wrap a markdown preview element with its context-menu affordances.
@@ -756,8 +758,129 @@ mod tests {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod markdown_preview_tests {
     use super::*;
+    use crate::fulgur::editor_tab::replace_editor_text;
+    use crate::fulgur::settings::MarkdownPreviewMode;
+    use crate::fulgur::shared_state::SharedAppState;
+    use crate::test_support::{open_rendered_window, setup_test_globals_with};
     use core::prelude::v1::test;
-    use gpui_kit::{AppContext, Render, TestAppContext, VisualTestContext, WindowOptions};
+    use gpui_kit::http_client::{AsyncBody, FakeHttpClient, Response};
+    use gpui_kit::{
+        AppContext, BorrowAppContext, Render, TestAppContext, VisualTestContext, WindowOptions,
+    };
+    use std::sync::{Arc, Mutex};
+
+    /// Verify the real preview renderer blocks network requests until opted in.
+    ///
+    /// ### Arguments
+    /// - `mode`: The preview presentation to exercise.
+    /// - `cx`: The test application context.
+    fn check_remote_image_permission(mode: &MarkdownPreviewMode, cx: &mut TestAppContext) {
+        let urls = [
+            "https://example.com/pixel.png",
+            "http://127.0.0.1/local.png",
+            "http://192.168.1.1/lan.png",
+        ];
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = requests.clone();
+        cx.update(|cx| {
+            cx.set_http_client(FakeHttpClient::create(move |req| {
+                captured.lock().unwrap().push(req.uri().to_string());
+                async {
+                    Ok(Response::builder()
+                        .status(404)
+                        .body(AsyncBody::default())
+                        .unwrap())
+                }
+            }));
+        });
+        setup_test_globals_with(cx, |settings| {
+            settings.editor_settings.markdown_settings.preview_mode = mode.clone();
+        });
+        let (fulgur, _, mut visual_cx) = open_rendered_window(cx);
+        let source = format!(
+            "![tracking]({0})\n\n![local]({1})\n\n![reference][ref]\n\n[ref]: {1}\n\n<img src=\"{2}\">",
+            urls[0], urls[1], urls[2]
+        );
+        let content = visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.update_active_editor_tab(cx, |editor, cx| {
+                    editor.language = SupportedLanguage::Markdown;
+                    editor.show_markdown_preview = true;
+                    editor.content.update(cx, |content, cx| {
+                        replace_editor_text(content, &source, window, cx);
+                    });
+                });
+                let content = this
+                    .get_active_editor_tab(cx)
+                    .expect("source editor")
+                    .content
+                    .clone();
+                if *mode == MarkdownPreviewMode::DedicatedTab {
+                    this.open_markdown_preview_tab(window, cx);
+                }
+                cx.notify();
+                content
+            })
+        });
+        visual_cx.run_until_parked();
+        assert!(
+            requests.lock().unwrap().is_empty(),
+            "preview fetched a blocked image"
+        );
+
+        // Exercise the same global settings observer used by every window,
+        // without persisting test settings to the user's configuration.
+        visual_cx.update(|_window, cx| {
+            cx.update_global::<SharedAppState, _>(|shared, _| {
+                shared
+                    .settings
+                    .editor_settings
+                    .markdown_settings
+                    .load_remote_images = true;
+            });
+        });
+        visual_cx.run_until_parked();
+        {
+            let fetched = requests.lock().unwrap();
+            for url in urls {
+                assert!(
+                    fetched.iter().any(|request| request == url),
+                    "missing opted-in request for {url}: {fetched:?}"
+                );
+            }
+        }
+        requests.lock().unwrap().clear();
+        visual_cx.update(|_window, cx| {
+            cx.update_global::<SharedAppState, _>(|shared, _| {
+                shared
+                    .settings
+                    .editor_settings
+                    .markdown_settings
+                    .load_remote_images = false;
+            });
+        });
+        visual_cx.run_until_parked();
+        visual_cx.update(|window, cx| {
+            content.update(cx, |content, cx| {
+                replace_editor_text(content, &source.replace(".png", "-new.png"), window, cx);
+            });
+        });
+        visual_cx.run_until_parked();
+        assert!(
+            requests.lock().unwrap().is_empty(),
+            "preview fetched an image after permission was revoked"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn preview_tab_requires_remote_image_permission(cx: &mut TestAppContext) {
+        check_remote_image_permission(&MarkdownPreviewMode::DedicatedTab, cx);
+    }
+
+    #[gpui_kit::test]
+    fn preview_panel_requires_remote_image_permission(cx: &mut TestAppContext) {
+        check_remote_image_permission(&MarkdownPreviewMode::Panel, cx);
+    }
 
     /// A window root holding nothing but the preview under test.
     struct PreviewView {

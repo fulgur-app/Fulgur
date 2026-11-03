@@ -30,6 +30,10 @@ fn create_custom_settings() -> Settings {
         .editor_settings
         .markdown_settings
         .show_markdown_toolbar = true;
+    settings
+        .editor_settings
+        .markdown_settings
+        .load_remote_images = true;
     settings.app_settings.confirm_exit = false;
     settings.app_settings.theme = "Tokyo Night".into();
     settings.app_settings.scrollbar_show = Some(gpui_kit::component::scroll::ScrollbarMode::Always);
@@ -141,6 +145,14 @@ fn assert_settings_equal(original: &Settings, loaded: &Settings, context: &str) 
         "{context}: show_markdown_toolbar mismatch"
     );
     assert_eq!(
+        original
+            .editor_settings
+            .markdown_settings
+            .load_remote_images,
+        loaded.editor_settings.markdown_settings.load_remote_images,
+        "{context}: load_remote_images mismatch"
+    );
+    assert_eq!(
         original.app_settings.confirm_exit, loaded.app_settings.confirm_exit,
         "{context}: confirm_exit mismatch"
     );
@@ -215,6 +227,12 @@ fn test_settings_roundtrip_with_default_values() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let settings_path = temp_settings_path(&temp_dir);
     let original = Settings::new();
+    assert!(
+        !original
+            .editor_settings
+            .markdown_settings
+            .load_remote_images
+    );
     original
         .save_to_path(&settings_path)
         .expect("Failed to save settings");
@@ -411,6 +429,10 @@ fn test_settings_backward_compatibility_with_missing_fields() {
     }"#;
     std::fs::write(&settings_path, minimal_json).expect("Failed to write minimal JSON");
     let loaded = Settings::load_from_path(&settings_path).expect("Failed to load settings");
+    assert!(
+        !loaded.editor_settings.markdown_settings.load_remote_images,
+        "remote images should remain blocked for existing settings files"
+    );
     assert!(
         loaded.editor_settings.watch_files,
         "watch_files should default to true"

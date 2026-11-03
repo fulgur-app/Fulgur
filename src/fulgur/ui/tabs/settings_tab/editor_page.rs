@@ -135,6 +135,7 @@ fn make_number_field(
 ///
 /// ### Arguments
 /// - `entity`: The Fulgur entity
+/// - `font_family_select`: The persistent font-family selector for this settings tab
 ///
 /// ### Returns
 /// - `SettingPage`: The Editor settings page
@@ -463,6 +464,28 @@ pub fn create_editor_page(
                 ),
             )
             .description("Show preview when opening Markdown files."),
+            SettingItem::new(
+                "Load Remote Images",
+                SettingField::switch(
+                    {
+                        let entity = entity.clone();
+                        move |cx: &App| {
+                            entity.read(cx).settings.editor_settings.markdown_settings.load_remote_images
+                        }
+                    },
+                    {
+                        let entity = entity.clone();
+                        move |val: bool, cx: &mut App| {
+                            entity.update(cx, |this, cx| {
+                                this.settings.editor_settings.markdown_settings.load_remote_images = val;
+                                let _ = this.update_and_propagate_settings(cx);
+                            });
+                        }
+                    },
+                )
+                .default_value(default_editor_settings.markdown_settings.load_remote_images),
+            )
+            .description("Allow previews to load images from the internet and local network. This can reveal your IP address and when you open a document."),
             SettingItem::new(
                 "Show Toolbar by default",
                 SettingField::switch(
