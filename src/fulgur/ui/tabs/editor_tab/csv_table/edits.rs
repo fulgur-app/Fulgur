@@ -43,7 +43,7 @@ impl CsvTableDelegate {
         }
     }
 
-    /// Open the modal edit dialog for a header or cell.
+    /// Open the modal edit dialog for a header or cell, unless the buffer is read-only.
     ///
     /// ### Arguments
     /// - `target`: The header or cell being edited (data indices)
@@ -55,6 +55,9 @@ impl CsvTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
+        if !self.content.read(cx).is_editable() {
+            return;
+        }
         let current = self.value_at(target);
         let input = self.dialog_input.clone();
         input.update(cx, |state, cx| {

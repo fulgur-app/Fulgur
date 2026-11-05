@@ -51,6 +51,7 @@ Fulgur doesn't try to replace VS Code, Zed, or Vim. It's the fast, dependable ed
 - **Multi-window** support, with tab transfer between windows
 - **Themes as a core feature**: 8 bundled, JSON-based, hot-reloaded on save, and easy to write your own
 - **State restoration**: windows, tabs, and even unsaved content survive restarts
+- **Read-only mode**: start with `fulgur --read-only [files...]` to open the given and restored files without being able to change them
 - Platform niceties: macOS Dock menu, Windows taskbar jump list, signed and notarized macOS builds
 
 ### Multiple cursors

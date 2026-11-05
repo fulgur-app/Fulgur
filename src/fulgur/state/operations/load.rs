@@ -49,7 +49,12 @@ impl Fulgur {
             for (saved_index, tab_state) in window_state.tabs.into_iter().enumerate() {
                 let tab_id = TabId(tab_state.tab_id);
                 let tab = self.restore_tab_from_state(tab_state, tab_id, window, cx);
-                if let Some((editor_tab, changed_on_disk)) = tab {
+                if let Some((mut editor_tab, changed_on_disk)) = tab {
+                    if Fulgur::shared_state(cx).read_only_session
+                        && !editor_tab.is_blank_scratch(cx)
+                    {
+                        editor_tab.make_read_only(cx);
+                    }
                     if active_tab_index == Some(saved_index) {
                         saved_active_editor_id = Some(editor_tab.id);
                     }

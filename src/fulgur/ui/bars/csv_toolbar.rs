@@ -82,10 +82,12 @@ impl Fulgur {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `bool`: True if the active tab is a CSV tab in table view
+    /// - `bool`: True if the active tab is an editable CSV tab in table view
     pub(crate) fn csv_toolbar_visible(&self, cx: &gpui_kit::App) -> bool {
         self.get_active_editor_tab(cx).is_some_and(|editor| {
-            editor.language == SupportedLanguage::Csv && editor.csv_view_mode == CsvViewMode::Table
+            editor.language == SupportedLanguage::Csv
+                && editor.csv_view_mode == CsvViewMode::Table
+                && !editor.read_only
         })
     }
 

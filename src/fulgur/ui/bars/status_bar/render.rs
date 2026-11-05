@@ -126,6 +126,7 @@ impl Render for StatusBar {
         );
         let log_path = active_editor_tab.and_then(|tab| tab.file_path().cloned());
         let log_toggle_visible = log_path.as_deref().is_some_and(log_toggle_available);
+        let is_read_only = active_editor_tab.is_some_and(|tab| tab.read_only);
         let log_view_active = active_editor_tab.is_some_and(|tab| tab.log_view);
         let log_follow_active = active_editor_tab.is_some_and(|tab| tab.log_follow);
         let log_button = status_bar_toggle_button_factory(
@@ -252,7 +253,9 @@ impl Render for StatusBar {
                     .when(is_markdown && !is_large_file, |this| {
                         this.child(preview_button)
                     })
-                    .when(is_markdown, |this| this.child(toolbar_button))
+                    .when(is_markdown && !is_read_only, |this| {
+                        this.child(toolbar_button)
+                    })
                     .when(is_csv && !is_large_file, |this| this.child(csv_view_button))
                     .when(log_toggle_visible, |this| this.child(log_button))
                     .when(log_view_active, |this| this.child(log_follow_button)),
@@ -261,6 +264,12 @@ impl Render for StatusBar {
                 div()
                     .flex()
                     .justify_end()
+                    .when(is_read_only, |this| {
+                        this.child(status_bar_right_item_factory(
+                            "Read-only".to_string(),
+                            cx.theme().border,
+                        ))
+                    })
                     .child(color_button)
                     .child(jump_to_line_button)
                     .child(status_bar_right_item_factory(

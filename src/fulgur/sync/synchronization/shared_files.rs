@@ -39,7 +39,7 @@ impl Fulgur {
         // that needs `window`/`cx` and mutable tab state, and it is cheap (no crypto).
         for decrypted in decrypted_files {
             let tab_id = self.allocate_tab_id();
-            let new_tab = Tab::Editor(editor_tab::EditorTab::from_share(
+            let mut new_tab = editor_tab::EditorTab::from_share(
                 tab_id,
                 &decrypted.content,
                 decrypted.file_name.clone(),
@@ -47,8 +47,11 @@ impl Fulgur {
                 window,
                 cx,
                 &self.settings.editor_settings,
-            ));
-            self.tabs.push(new_tab.into_entity(cx));
+            );
+            if Self::shared_state(cx).read_only_session {
+                new_tab.make_read_only(cx);
+            }
+            self.tabs.push(Tab::Editor(new_tab).into_entity(cx));
             self.active_tab_id = Some(tab_id);
             self.request_tab_scroll(tab_id, cx);
             log::info!("Opened shared file: {}", decrypted.file_name);

@@ -67,6 +67,7 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
+            read_only: false,
             highlight_colors: settings.highlight_colors,
             content_subscription: None,
         }
@@ -164,6 +165,7 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
+            read_only: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -236,6 +238,7 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
+            read_only: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -297,6 +300,7 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
+            read_only: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -362,6 +366,7 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
+            read_only: false,
             highlight_colors: settings.highlight_colors,
             content_subscription: None,
         }
@@ -430,6 +435,7 @@ impl EditorTab {
             color_tag: None,
             log_view: false,
             log_follow: true,
+            read_only: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -458,6 +464,7 @@ impl EditorTab {
         settings: &EditorSettings,
     ) -> Self {
         let cursor_position = data.cursor_position;
+        let read_only = data.read_only;
         let large_file = super::is_large_file(data.content.len());
         let content = cx.new(|cx| {
             super::make_input_state(
@@ -472,7 +479,7 @@ impl EditorTab {
         content.update(cx, |state, cx| {
             state.set_cursor_position(cursor_position, window, cx);
         });
-        Self {
+        let mut tab = Self {
             id,
             title: data.title,
             content,
@@ -495,8 +502,13 @@ impl EditorTab {
             color_tag: data.color_tag,
             log_view: data.log_view,
             log_follow: true,
+            read_only: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
+        };
+        if read_only {
+            tab.make_read_only(cx);
         }
+        tab
     }
 }

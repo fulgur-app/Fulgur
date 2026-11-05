@@ -255,7 +255,6 @@ mod tests {
     use parking_lot::Mutex;
     use std::{
         cell::RefCell,
-        path::PathBuf,
         sync::Arc,
         time::{Duration, Instant},
     };
@@ -294,7 +293,7 @@ mod tests {
                 .synchronization_settings
                 .profiles
                 .push(profile);
-            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            let pending_files = Arc::new(Mutex::new(Vec::new()));
             cx.set_global(SharedAppState::new(settings, pending_files, None, None));
             cx.set_global(WindowManager::new());
         });
@@ -497,7 +496,7 @@ mod tests {
                 .synchronization_settings
                 .profiles
                 .push(profile_b);
-            let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+            let pending_files = Arc::new(Mutex::new(Vec::new()));
             cx.set_global(SharedAppState::new(settings, pending_files, None, None));
             cx.set_global(WindowManager::new());
         });

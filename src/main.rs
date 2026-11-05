@@ -1,6 +1,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use fulgur::fulgur;
+use fulgur::shared_state::ExternalOpenFile;
 use gpui_kit::component::notification::NotificationType;
 use gpui_kit::{AppContext, AssetSource, BorrowAppContext, SharedString};
 use parking_lot::Mutex;
@@ -112,6 +113,33 @@ fn url_to_path(input: &str) -> Option<PathBuf> {
     }
 }
 
+/// Command-line flag opening every file of the session in read-only mode.
+const READ_ONLY_FLAG: &str = "--read-only";
+
+/// Whether a command-line argument is a Fulgur flag rather than a file path.
+///
+/// ### Arguments
+/// - `arg`: The command-line argument to classify
+///
+/// ### Returns
+/// - `true`: The argument is a flag and must not be opened as a file
+/// - `false`: The argument should be treated as a file path
+fn is_launcher_flag(arg: &str) -> bool {
+    matches!(arg, "--new-tab" | "--new-window" | READ_ONLY_FLAG)
+}
+
+/// Whether the command line asks for a read-only session.
+///
+/// ### Arguments
+/// - `args`: The full command line, including the program name at index 0
+///
+/// ### Returns
+/// - `true`: The read-only flag is present after the program name
+/// - `false`: The read-only flag is absent
+fn is_read_only_requested(args: &[String]) -> bool {
+    args.iter().skip(1).any(|arg| arg == READ_ONLY_FLAG)
+}
+
 fn main() {
     // On Windows, set the Application User Model ID before any window is created
     // so that the taskbar button and the jump list share the same AUMID.
@@ -171,12 +199,12 @@ fn main() {
         }
     }
 
+    let read_only = is_read_only_requested(&args);
     let cli_file_paths: Vec<PathBuf> = args
         .iter()
         .skip(1)
         .filter_map(|arg| {
-            // Skip our own jump-list flags so they aren't treated as file paths.
-            if arg == "--new-tab" || arg == "--new-window" {
+            if is_launcher_flag(arg) {
                 return None;
             }
             let path = PathBuf::from(arg);
@@ -195,7 +223,10 @@ fn main() {
     // forward the paths to it and exit, that instance will open/focus the files.
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     if !cli_file_paths.is_empty()
-        && fulgur::utils::single_instance::try_forward_to_existing_instance(&cli_file_paths)
+        && fulgur::utils::single_instance::try_forward_to_existing_instance(
+            &cli_file_paths,
+            read_only,
+        )
     {
         return;
     }
@@ -216,7 +247,12 @@ fn main() {
         .with_quit_mode(gpui_kit::QuitMode::LastWindowClosed);
     // Files to open from outside the app (open events, command-line arguments, other
     // instances) are queued here and the wake channel asks the app to deliver them.
-    let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(cli_file_paths));
+    let pending_files: Arc<Mutex<Vec<ExternalOpenFile>>> = Arc::new(Mutex::new(
+        cli_file_paths
+            .into_iter()
+            .map(|path| ExternalOpenFile { path, read_only })
+            .collect(),
+    ));
     let pending_files_clone = pending_files.clone();
     let (open_request_tx, mut open_request_rx) = futures::channel::mpsc::unbounded::<()>();
     let open_url_wake = open_request_tx.clone();
@@ -234,7 +270,11 @@ fn main() {
         );
         {
             let mut pending = pending_files_clone.lock();
-            pending.extend(file_paths);
+            // A read-only session locks these through `read_only_session` when they open.
+            pending.extend(file_paths.into_iter().map(|path| ExternalOpenFile {
+                path,
+                read_only: false,
+            }));
             log::debug!(
                 "Added files to pending queue, total pending: {}",
                 pending.len()
@@ -289,12 +329,13 @@ fn main() {
             .as_ref()
             .map(|ws| ws.windows.iter().map(|w| w.window_bounds.clone()).collect())
             .unwrap_or_default();
-        let shared_state = fulgur::shared_state::SharedAppState::new(
+        let mut shared_state = fulgur::shared_state::SharedAppState::new(
             settings,
             pending_files.clone(),
             windows_state,
             state_db,
         );
+        shared_state.read_only_session = read_only;
         cx.set_global(shared_state);
         if let Some(problem) = settings_load_problem {
             cx.global::<fulgur::shared_state::SharedAppState>().notify(
@@ -457,8 +498,47 @@ fn create_window(
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::{has_url_scheme, url_to_path};
+    use super::{has_url_scheme, is_launcher_flag, is_read_only_requested, url_to_path};
     use tempfile::TempDir;
+
+    /// Build a command line from string slices.
+    ///
+    /// ### Arguments
+    /// - `args`: The arguments, starting with the program name
+    ///
+    /// ### Returns
+    /// - `Vec<String>`: The owned command line
+    fn command_line(args: &[&str]) -> Vec<String> {
+        args.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn test_read_only_flag_is_detected_anywhere_after_the_program_name() {
+        assert!(is_read_only_requested(&command_line(&[
+            "fulgur",
+            "--read-only",
+            "a.txt"
+        ])));
+        assert!(is_read_only_requested(&command_line(&[
+            "fulgur",
+            "a.txt",
+            "--read-only"
+        ])));
+    }
+
+    #[test]
+    fn test_read_only_flag_is_not_detected_when_absent_or_as_the_program_name() {
+        assert!(!is_read_only_requested(&command_line(&["fulgur", "a.txt"])));
+        assert!(!is_read_only_requested(&command_line(&["--read-only"])));
+    }
+
+    #[test]
+    fn test_launcher_flags_are_not_file_paths() {
+        assert!(is_launcher_flag("--read-only"));
+        assert!(is_launcher_flag("--new-tab"));
+        assert!(is_launcher_flag("--new-window"));
+        assert!(!is_launcher_flag("a.txt"));
+    }
 
     #[test]
     fn test_url_to_path_returns_file_for_existing_file_url() {

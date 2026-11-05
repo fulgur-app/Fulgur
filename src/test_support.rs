@@ -90,7 +90,7 @@ pub fn setup_test_globals_with(cx: &mut TestAppContext, customize: impl FnOnce(&
         init_test_app(cx);
         let mut settings = test_settings();
         customize(&mut settings);
-        let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+        let pending_files = Arc::new(Mutex::new(Vec::new()));
         cx.set_global(SharedAppState::new(settings, pending_files, None, None));
         cx.set_global(WindowManager::new());
     });

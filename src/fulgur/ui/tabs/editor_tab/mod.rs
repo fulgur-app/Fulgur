@@ -6,6 +6,8 @@ mod navigation;
 mod operations;
 
 #[cfg(all(test, feature = "gpui-test-support"))]
+mod read_only_tests;
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;
 
 pub use csv_table::CsvTableDelegate;
@@ -93,6 +95,10 @@ pub struct EditorTab {
     pub log_view: bool,
     /// Whether the log view auto-scrolls to follow newly appended lines.
     pub log_follow: bool,
+    /// Whether this tab is locked against edits for its whole lifetime by the
+    /// `--read-only` command-line flag. Set through `make_read_only`, and absent
+    /// from `TabState` so that it is never persisted.
+    pub read_only: bool,
     /// Subscription to the content entity keeping `modified` current. Owned by
     /// the tab entity, attached by `Tab::attach_content_subscription`, and
     /// replaced whenever the content entity is swapped.
@@ -126,6 +132,7 @@ pub struct TabTransferData {
     pub csv_delimiter: u8,
     pub color_tag: Option<ColorTag>,
     pub log_view: bool,
+    pub read_only: bool,
 }
 
 /// Parameters for creating an editor tab as a duplicate of another
@@ -170,6 +177,47 @@ impl EditorTab {
     pub(crate) fn content_revision(&self, cx: &App) -> ContentRevision {
         let (hash, len) = content_fingerprint_from_rope(self.content.read(cx).text());
         ContentRevision { hash, len }
+    }
+
+    /// Lock this tab against edits for the rest of its lifetime.
+    ///
+    /// The buffer is locked here and not only by the rendered `Editor`, because a
+    /// tab that is not active is not rendered.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    pub fn make_read_only(&mut self, cx: &mut App) {
+        self.read_only = true;
+        self.content.update(cx, |state, cx| {
+            state.set_readonly(true, cx);
+        });
+    }
+
+    /// Whether the user is currently prevented from editing this tab's buffer.
+    ///
+    /// ### Returns
+    /// - `true`: The tab is read-only or in log view
+    /// - `false`: The buffer can be edited
+    pub fn blocks_user_edits(&self) -> bool {
+        self.read_only || self.log_view
+    }
+
+    /// Whether this tab is an untitled tab holding nothing but whitespace.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: The tab has no location and no meaningful content
+    /// - `false`: The tab holds a file or meaningful content
+    pub fn is_blank_scratch(&self, cx: &App) -> bool {
+        self.location.is_untitled()
+            && self
+                .content
+                .read(cx)
+                .text()
+                .chunks()
+                .all(|chunk| chunk.chars().all(char::is_whitespace))
     }
 
     /// Return the local filesystem path, if this tab holds a local file.
@@ -219,8 +267,10 @@ impl EditorTab {
         let content = self.content.clone();
         let dialog_input = cx.new(|cx| InputState::new(window, cx));
         let delegate = CsvTableDelegate::new(outcome.data, outcome.dialect, content, dialog_input);
+        let columns_movable = !self.read_only;
         let table = cx.new(|cx| {
             TableState::new(delegate, window, cx)
+                .col_movable(columns_movable)
                 .cell_selectable(true)
                 .row_selectable(true)
                 .row_header(false)

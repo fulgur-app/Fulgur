@@ -69,6 +69,7 @@ impl Fulgur {
     /// - `view`: The view entity (`WeakEntity`)
     /// - `window`: The async window context
     /// - `path`: The path to the file to open
+    /// - `read_only`: Whether the new tab must be read-only even if the session is not
     ///
     /// ### Returns
     /// - `None`: If the file could not be opened
@@ -77,6 +78,7 @@ impl Fulgur {
         view: &WeakEntity<Self>,
         window: &mut AsyncWindowContext,
         path: &Path,
+        read_only: bool,
     ) -> Option<()> {
         log::debug!("Attempting to open file: {}", path.display());
         let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
@@ -164,6 +166,9 @@ impl Fulgur {
                         &this.settings.editor_settings,
                     );
                     editor_tab.lossy_decode = decoded.lossy;
+                    if read_only || Fulgur::shared_state(cx).read_only_session {
+                        editor_tab.make_read_only(cx);
+                    }
                     let editor_tab_index =
                         this.place_editor_tab_reusing_scratch(Tab::Editor(editor_tab), window, cx);
                     this.maybe_open_markdown_preview_for_editor(editor_tab_index, cx);

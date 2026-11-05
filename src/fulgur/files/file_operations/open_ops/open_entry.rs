@@ -37,6 +37,26 @@ impl Fulgur {
     /// - `cx`: The application context
     /// - `path`: The path to the file to open
     pub fn do_open_file(&mut self, window: &mut Window, cx: &mut Context<Self>, path: PathBuf) {
+        self.open_local_file(window, cx, path, false);
+    }
+
+    /// Open a local file, focusing its tab when it is already open.
+    ///
+    /// An already open tab keeps its current mode: locking it could strand edits the
+    /// user is making, so the user is told it stays editable instead.
+    ///
+    /// ### Arguments
+    /// - `window`: The window to open the file in
+    /// - `cx`: The application context
+    /// - `path`: The path to the file to open
+    /// - `read_only`: Whether the new tab must be read-only even if the session is not
+    pub(crate) fn open_local_file(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        path: PathBuf,
+        read_only: bool,
+    ) {
         let path = std::fs::canonicalize(&path).unwrap_or(path);
         if let Some(tab_index) = self.find_tab_by_path(&path, cx) {
             log::debug!(
@@ -44,6 +64,21 @@ impl Fulgur {
                 path.display()
             );
             self.focus_existing_local_tab_for_open(&path, tab_index, window, cx);
+            let stays_editable = read_only
+                && self
+                    .tabs
+                    .get(tab_index)
+                    .and_then(|tab| tab.read(cx).as_editor())
+                    .is_some_and(|editor_tab| !editor_tab.read_only);
+            if stays_editable {
+                window.push_notification(
+                    (
+                        NotificationType::Info,
+                        SharedString::from("This file is already open and stays editable"),
+                    ),
+                    cx,
+                );
+            }
             return;
         }
         let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
@@ -63,7 +98,7 @@ impl Fulgur {
             return;
         }
         cx.spawn_in(window, async move |view, window| {
-            Self::open_file_from_path(&view, window, &path).await
+            Self::open_file_from_path(&view, window, &path, read_only).await
         })
         .detach();
     }
