@@ -431,7 +431,7 @@ impl Fulgur {
                 content: Entity<EditorState>,
                 csv_view_mode: editor_tab::CsvViewMode,
                 csv_table: Option<Entity<TableState<editor_tab::CsvTableDelegate>>>,
-                log_view: bool,
+                blocks_user_edits: bool,
             },
             Settings,
             MarkdownPreview {
@@ -475,7 +475,7 @@ impl Fulgur {
                     content: editor_tab.content.clone(),
                     csv_view_mode: editor_tab.csv_view_mode,
                     csv_table: editor_tab.csv_table.clone(),
-                    log_view: editor_tab.log_view,
+                    blocks_user_edits: editor_tab.blocks_user_edits(),
                 },
                 Tab::Settings(_) => ActiveTabRenderData::Settings,
                 Tab::MarkdownPreview(preview_tab) => ActiveTabRenderData::MarkdownPreview {
@@ -495,7 +495,7 @@ impl Fulgur {
                     content,
                     csv_view_mode,
                     csv_table,
-                    log_view,
+                    blocks_user_edits,
                 } => {
                     if language == SupportedLanguage::Csv
                         && csv_view_mode == editor_tab::CsvViewMode::Table
@@ -510,7 +510,7 @@ impl Fulgur {
 
                     let editor_input = Editor::new(&content)
                         .aria_label("Editor")
-                        .readonly(log_view)
+                        .readonly(blocks_user_edits)
                         .bordered(false)
                         .p_0()
                         .h_full()

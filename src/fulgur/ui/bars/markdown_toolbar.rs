@@ -65,6 +65,9 @@ impl MarkdownToolbar {
 
     /// Surround the active editor's selection with a prefix and suffix, or insert them at the cursor
     ///
+    /// Read-only buffers are left untouched: the programmatic replace would bypass
+    /// the guard the user relies on.
+    ///
     /// ### Arguments
     /// - `prefix`: The prefix to insert or surround with
     /// - `suffix`: The suffix to insert or surround with
@@ -77,7 +80,9 @@ impl MarkdownToolbar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(content) = self.active_editor_content(cx) {
+        if let Some(content) = self.active_editor_content(cx)
+            && content.read(cx).is_editable()
+        {
             content.update(cx, |input_state, cx| {
                 let selected_text = input_state.selected_value();
                 let surrounded_text = format!("{prefix}{selected_text}{suffix}");
@@ -95,12 +100,12 @@ impl Fulgur {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `bool`: True if the active tab is markdown and its toolbar is enabled
+    /// - `bool`: True if the active tab is editable markdown with its toolbar enabled
     pub(crate) fn markdown_toolbar_visible(&self, cx: &gpui_kit::App) -> bool {
         self.is_markdown(cx)
             && self
                 .get_active_editor_tab(cx)
-                .is_some_and(|editor_tab| editor_tab.show_markdown_toolbar)
+                .is_some_and(|editor_tab| editor_tab.show_markdown_toolbar && !editor_tab.read_only)
     }
 }
 

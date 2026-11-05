@@ -29,7 +29,7 @@ use std::{
 fn setup_test_globals(cx: &mut TestAppContext) {
     cx.update(|cx| {
         crate::test_support::init_test_app(cx);
-        let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+        let pending_files = Arc::new(Mutex::new(Vec::new()));
         let state_db = StateDb::open_in_memory().expect("failed to open in-memory state database");
         cx.set_global(SharedAppState::new(
             crate::test_support::test_settings(),

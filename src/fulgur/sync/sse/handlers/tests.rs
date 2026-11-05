@@ -10,7 +10,6 @@ use crate::fulgur::{
 use gpui_kit::TestAppContext;
 use parking_lot::Mutex;
 use std::{
-    path::PathBuf,
     sync::Arc,
     thread,
     time::{Duration, Instant},
@@ -26,7 +25,7 @@ fn setup_globals(cx: &mut TestAppContext) {
     cx.update(|cx| {
         let mut settings = Settings::new();
         settings.editor_settings.watch_files = false;
-        let pending_files: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+        let pending_files = Arc::new(Mutex::new(Vec::new()));
         cx.set_global(SharedAppState::new(settings, pending_files, None, None));
         cx.set_global(WindowManager::new());
     });

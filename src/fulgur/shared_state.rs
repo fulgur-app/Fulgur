@@ -190,6 +190,15 @@ impl SyncState {
     }
 }
 
+/// A file queued to open from outside the app.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalOpenFile {
+    pub path: PathBuf,
+    /// Whether this file must open read-only even if the session is not, as when
+    /// `--read-only` forwards it to an instance that is already running.
+    pub read_only: bool,
+}
+
 /// State that is shared across all windows. This includes settings, themes, and sync-related state.
 pub struct SharedAppState {
     /// Settings (shared across all windows). Mutate via `cx.update_global` only.
@@ -210,7 +219,10 @@ pub struct SharedAppState {
     pub available_update: Option<UpdateInfo>,
     /// Files to open from outside the app: macOS open events, command-line arguments
     /// and files forwarded by another instance.
-    pub pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
+    pub pending_files_from_macos: Arc<Mutex<Vec<ExternalOpenFile>>>,
+    /// Whether this process was started with `--read-only`: every file it opens or
+    /// restores is read-only. Set once at startup and never persisted.
+    pub read_only_session: bool,
     /// Pending IPC commands forwarded by another instance (Windows jump list) ("new-tab", "new-window")
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     pub pending_ipc_commands: Arc<Mutex<Vec<String>>>,
@@ -275,7 +287,7 @@ impl SharedAppState {
     /// - `Self`: The new shared app state
     pub fn new(
         mut settings: Settings,
-        pending_files_from_macos: Arc<Mutex<Vec<PathBuf>>>,
+        pending_files_from_macos: Arc<Mutex<Vec<ExternalOpenFile>>>,
         restore_state: Option<WindowsState>,
         state_db: Option<StateDb>,
     ) -> Self {
@@ -301,6 +313,7 @@ impl SharedAppState {
             startup_key_failures: key_check.failed_profiles,
             available_update: None,
             pending_files_from_macos,
+            read_only_session: false,
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             pending_ipc_commands: Arc::new(Mutex::new(Vec::new())),
             #[cfg(any(target_os = "windows", target_os = "linux"))]

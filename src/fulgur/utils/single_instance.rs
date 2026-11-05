@@ -12,11 +12,14 @@
 //! focuses the file in the last focused window - the same queue and channel
 //! used by the macOS "Open With" handler.
 //!
+//! Files forwarded by a `--read-only` launch are prefixed with `RO:` so that
+//! only those files open read-only in the running instance.
+//!
 //! Jump list Tasks ("New Tab", "New Window") send a `CMD:new-tab` /
 //! `CMD:new-window` line instead of a file path. The listener pushes these into
 //! `pending_ipc_commands`, and the same wake delivers them in-process.
 
-use crate::fulgur::utils::worker::Worker;
+use crate::fulgur::{shared_state::ExternalOpenFile, utils::worker::Worker};
 use futures::channel::mpsc::UnboundedSender;
 use parking_lot::Mutex;
 #[cfg(target_os = "windows")]
@@ -25,7 +28,7 @@ use std::net::{TcpListener as IpcListener, TcpStream as IpcStream};
 use std::os::unix::net::{UnixListener as IpcListener, UnixStream as IpcStream};
 use std::{
     io::{self, BufRead, BufReader, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
@@ -44,6 +47,42 @@ const IPC_WORKER_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Prefix used to distinguish command messages from file-path messages.
 const CMD_PREFIX: &str = "CMD:";
+
+/// Prefix marking a forwarded file path as read-only.
+const READ_ONLY_PREFIX: &str = "RO:";
+
+/// Build the IPC line forwarding a file to the running instance.
+///
+/// ### Arguments
+/// - `path`: The absolute path of the file
+/// - `read_only`: Whether the file must open read-only
+///
+/// ### Returns
+/// - `String`: The line to write, without its line terminator
+fn file_line(path: &Path, read_only: bool) -> String {
+    let prefix = if read_only { READ_ONLY_PREFIX } else { "" };
+    format!("{prefix}{}", path.display())
+}
+
+/// Parse an IPC line forwarding a file from another instance.
+///
+/// ### Arguments
+/// - `line`: The received line, which is not a `CMD:` command
+///
+/// ### Returns
+/// - `ExternalOpenFile`: The forwarded path and its read-only marker
+fn parse_file_line(line: &str) -> ExternalOpenFile {
+    match line.strip_prefix(READ_ONLY_PREFIX) {
+        Some(path) => ExternalOpenFile {
+            path: PathBuf::from(path),
+            read_only: true,
+        },
+        None => ExternalOpenFile {
+            path: PathBuf::from(line),
+            read_only: false,
+        },
+    }
+}
 
 /// Resolve the path of the Unix domain socket used for IPC.
 ///
@@ -106,17 +145,18 @@ fn bind() -> io::Result<IpcListener> {
 ///
 /// ### Arguments
 /// - `paths`: The file paths to forward to the running instance
+/// - `read_only`: Whether the running instance must open these files read-only
 ///
 /// ### Returns
 /// - `true`: Another instance was found and the paths were forwarded - caller should exit
 /// - `false`: No existing instance is running - caller should continue
 #[must_use]
-pub fn try_forward_to_existing_instance(paths: &[PathBuf]) -> bool {
+pub fn try_forward_to_existing_instance(paths: &[PathBuf], read_only: bool) -> bool {
     match connect() {
         Ok(mut stream) => {
             for path in paths {
                 let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
-                let _ = writeln!(stream, "{}", path.display());
+                let _ = writeln!(stream, "{}", file_line(&path, read_only));
             }
             log::info!(
                 "Single-instance: forwarded {} path(s) to running instance",
@@ -172,7 +212,7 @@ pub fn try_send_command_to_existing_instance(cmd: &str) -> bool {
 /// - `None`: The listener could not be bound.
 #[must_use]
 pub fn start_ipc_listener(
-    pending_files: Arc<Mutex<Vec<PathBuf>>>,
+    pending_files: Arc<Mutex<Vec<ExternalOpenFile>>>,
     pending_ipc_commands: Arc<Mutex<Vec<String>>>,
     wake: UnboundedSender<()>,
 ) -> Option<Worker> {
@@ -204,13 +244,13 @@ pub fn start_ipc_listener(
                                 log::info!("IPC: received command '{cmd}'");
                                 pending_ipc_commands.lock().push(cmd.to_string());
                             } else {
-                                let path = PathBuf::from(&line);
-                                if path.exists() {
+                                let file = parse_file_line(&line);
+                                if file.path.exists() {
                                     log::info!(
                                         "IPC: queuing file from another instance: {}",
-                                        path.display()
+                                        file.path.display()
                                     );
-                                    pending_files.lock().push(path);
+                                    pending_files.lock().push(file);
                                 }
                             }
                         }
@@ -228,4 +268,24 @@ pub fn start_ipc_listener(
         let _ = connect();
     });
     Some(worker)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{file_line, parse_file_line};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn test_file_line_round_trips_a_read_only_file() {
+        let file = parse_file_line(&file_line(Path::new("/tmp/a.txt"), true));
+        assert_eq!(file.path, PathBuf::from("/tmp/a.txt"));
+        assert!(file.read_only);
+    }
+
+    #[test]
+    fn test_file_line_round_trips_an_editable_file() {
+        let file = parse_file_line(&file_line(Path::new("/tmp/a.txt"), false));
+        assert_eq!(file.path, PathBuf::from("/tmp/a.txt"));
+        assert!(!file.read_only);
+    }
 }

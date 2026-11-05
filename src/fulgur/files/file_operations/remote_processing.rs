@@ -76,13 +76,16 @@ impl Fulgur {
                             remote_file.spec.path
                         );
                         let new_tab_id = self.allocate_tab_id();
-                        let editor_tab = editor_tab::EditorTab::from_remote_loaded(
+                        let mut editor_tab = editor_tab::EditorTab::from_remote_loaded(
                             new_tab_id,
                             remote_file,
                             window,
                             cx,
                             &self.settings.editor_settings,
                         );
+                        if Self::shared_state(cx).read_only_session {
+                            editor_tab.make_read_only(cx);
+                        }
                         self.place_editor_tab_reusing_scratch(Tab::Editor(editor_tab), window, cx);
                         self.focus_active_tab(window, cx);
                         self.record_recent_file(PathBuf::from(recent_remote_url), cx);

@@ -7,7 +7,8 @@ use crate::fulgur::{
     tab::Tab,
     utils::atomic_write::atomic_write_file,
 };
-use gpui_kit::{Context, Window};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{Context, SharedString, Window};
 use std::path::PathBuf;
 
 impl Fulgur {
@@ -24,18 +25,30 @@ impl Fulgur {
             return;
         };
         let active_tab = self.tabs[active_tab_index].read(cx);
-        let (tab_id, location, content_entity, encoding, lossy_decode) = match active_tab {
+        let (tab_id, location, content_entity, encoding, lossy_decode, read_only) = match active_tab
+        {
             Tab::Editor(editor_tab) => (
                 editor_tab.id,
                 editor_tab.location.clone(),
                 editor_tab.content.clone(),
                 editor_tab.encoding.clone(),
                 editor_tab.lossy_decode,
+                editor_tab.read_only,
             ),
             Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
         };
         if !location.has_backing_file() {
             self.save_file_as(window, cx);
+            return;
+        }
+        if read_only {
+            window.push_notification(
+                (
+                    NotificationType::Info,
+                    SharedString::from("This file is read-only. Use Save As to write a copy."),
+                ),
+                cx,
+            );
             return;
         }
         let contents = content_entity.read(cx).text().to_string();

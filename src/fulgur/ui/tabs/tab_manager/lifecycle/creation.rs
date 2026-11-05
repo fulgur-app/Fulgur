@@ -47,13 +47,7 @@ impl Fulgur {
         let Tab::Editor(editor) = self.tabs.last()?.read(cx) else {
             return None;
         };
-        let is_blank = editor
-            .content
-            .read(cx)
-            .text()
-            .chunks()
-            .all(|chunk| chunk.chars().all(char::is_whitespace));
-        if editor.location.is_untitled() && is_blank {
+        if editor.is_blank_scratch(cx) {
             Some(editor.id)
         } else {
             None
@@ -141,9 +135,10 @@ impl Fulgur {
         let title = editor_tab.title.clone();
         let encoding = editor_tab.encoding.clone();
         let lossy_decode = editor_tab.lossy_decode;
+        let read_only = editor_tab.read_only;
         let settings = self.settings.editor_settings.clone();
         let id = self.allocate_tab_id();
-        let new_tab = Tab::Editor(EditorTab::from_duplicate(
+        let mut new_tab = EditorTab::from_duplicate(
             FromDuplicateParams {
                 id,
                 title,
@@ -155,9 +150,13 @@ impl Fulgur {
             window,
             cx,
             &settings,
-        ));
+        );
+        if read_only {
+            new_tab.make_read_only(cx);
+        }
         let insert_pos = index + 1;
-        self.tabs.insert(insert_pos, new_tab.into_entity(cx));
+        self.tabs
+            .insert(insert_pos, Tab::Editor(new_tab).into_entity(cx));
         self.active_tab_id = Some(id);
         self.request_tab_scroll(id, cx);
         self.focus_active_tab(window, cx);

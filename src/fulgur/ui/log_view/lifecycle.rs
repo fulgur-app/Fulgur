@@ -125,8 +125,9 @@ impl Fulgur {
         let highlight_colors = self.settings.editor_settings.highlight_colors;
         self.update_editor_tab(tab_id, cx, |editor, cx| {
             editor.log_view = false;
+            let stays_locked = editor.blocks_user_edits();
             editor.content.update(cx, |state, cx| {
-                state.set_readonly(false, cx);
+                state.set_readonly(stays_locked, cx);
             });
             editor.set_highlight_colors(cx, highlight_colors);
             editor.mark_as_saved(cx);

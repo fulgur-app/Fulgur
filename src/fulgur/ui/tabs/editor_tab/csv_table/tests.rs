@@ -373,3 +373,38 @@ fn test_edits_round_trip_through_serialize_csv() {
         Ok("a,b\n1,2\n5,\n3,4\n".to_string())
     );
 }
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_edit_dialog_does_not_open_on_a_read_only_buffer(cx: &mut gpui_kit::TestAppContext) {
+    use crate::fulgur::languages::supported_languages::SupportedLanguage;
+    use crate::test_support::{has_active_dialog, setup_fulgur_with_root};
+
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+    let table = visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_active_editor_tab(cx, |editor, cx| {
+                editor.language = SupportedLanguage::Csv;
+                editor.csv_delimiter = b',';
+                editor.content.update(cx, |state, cx| {
+                    state.set_value("a,b\n1,2", window, cx);
+                });
+                editor.make_read_only(cx);
+                editor.ensure_csv_table(window, cx);
+                editor.csv_table.clone().expect("expected a CSV table")
+            })
+            .expect("expected an active editor tab")
+        })
+    });
+
+    visual_cx.update(|window, cx| {
+        table.update(cx, |state, cx| {
+            state
+                .delegate_mut()
+                .open_edit_dialog(EditTarget::Cell(0, 0), window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    assert!(!has_active_dialog(&mut visual_cx));
+}

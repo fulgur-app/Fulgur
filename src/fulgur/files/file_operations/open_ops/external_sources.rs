@@ -1,7 +1,11 @@
-use crate::fulgur::{Fulgur, shared_state::SharedAppState, window_manager};
+use crate::fulgur::{
+    Fulgur,
+    shared_state::{ExternalOpenFile, SharedAppState},
+    window_manager,
+};
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use gpui_kit::{App, Context, ExternalPaths, SharedString, Window};
-use std::{collections::HashSet, path::PathBuf};
+use std::collections::HashSet;
 
 impl Fulgur {
     /// Handle opening a file from the command line (double-click or "Open with")
@@ -14,15 +18,15 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window to open the file in
     /// - `cx`: The application context
-    /// - `path`: The path to the file to open
+    /// - `file`: The file to open and whether it must be read-only
     pub fn handle_open_file_from_cli(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
-        path: PathBuf,
+        file: ExternalOpenFile,
     ) {
-        log::debug!("Handling file open from CLI: {}", path.display());
-        self.do_open_file(window, cx, path);
+        log::debug!("Handling file open from CLI: {}", file.path.display());
+        self.open_local_file(window, cx, file.path, file.read_only);
     }
 
     /// Handle dropping external file system paths into this window.
@@ -93,7 +97,7 @@ impl Fulgur {
     /// - `window`: The window to open files in
     /// - `cx`: The application context
     pub fn process_pending_external_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let files_to_open: Vec<PathBuf> = Fulgur::shared_state(cx)
+        let files_to_open: Vec<ExternalOpenFile> = Fulgur::shared_state(cx)
             .pending_files_from_macos
             .lock()
             .drain(..)
@@ -106,8 +110,8 @@ impl Fulgur {
             files_to_open.len(),
             self.window_id
         );
-        for file_path in files_to_open {
-            self.handle_open_file_from_cli(window, cx, file_path);
+        for file in files_to_open {
+            self.handle_open_file_from_cli(window, cx, file);
         }
     }
 
@@ -169,7 +173,7 @@ mod tests {
     use crate::fulgur::{
         Fulgur, WindowInit,
         files::file_operations::test_helpers::{open_window_with_fulgur, setup_test_globals},
-        shared_state::SharedAppState,
+        shared_state::{ExternalOpenFile, SharedAppState},
         ui::tabs::editor_tab::TabLocation,
         window_manager::WindowManager,
     };
@@ -191,7 +195,10 @@ mod tests {
             cx.global::<SharedAppState>()
                 .pending_files_from_macos
                 .lock()
-                .push(path.to_path_buf());
+                .push(ExternalOpenFile {
+                    path: path.to_path_buf(),
+                    read_only: false,
+                });
         });
     }
 
