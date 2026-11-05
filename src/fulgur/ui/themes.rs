@@ -1,12 +1,21 @@
 use crate::fulgur::settings::{Settings, Themes};
 use crate::fulgur::shared_state::SharedAppState;
 
+use gpui_kit::base::input::CursorBlink;
 use gpui_kit::component::{Theme, ThemeConfig, ThemeMode, ThemeRegistry};
 use gpui_kit::{Action, App, BorrowAppContext, SharedString};
 use rust_embed::RustEmbed;
 use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::Duration;
+
+/// Duration of each visible or hidden phase of a blinking caret
+const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Inactivity after which the caret stops blinking and stays visible, so an idle editor stops
+/// re-rendering its window on every blink
+pub(crate) const CURSOR_BLINK_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 // Embed bundled themes into the binary
 #[derive(RustEmbed)]
@@ -26,6 +35,50 @@ pub fn apply_theme_config(config: &Rc<ThemeConfig>, cx: &mut App) {
     Theme::change(config.mode, None, cx);
 }
 
+/// Build the caret blink policy matching the cursor blink setting
+///
+/// ### Arguments
+/// - `cursor_blink`: Whether the caret should blink
+///
+/// ### Returns
+/// - `CursorBlink`: A caret blinking every `CURSOR_BLINK_INTERVAL` that turns steady after
+///   `CURSOR_BLINK_IDLE_TIMEOUT` without activity, or a steady caret when blinking is off
+fn cursor_blink_policy(cursor_blink: bool) -> CursorBlink {
+    if cursor_blink {
+        CursorBlink::blinking(CURSOR_BLINK_INTERVAL).with_idle_timeout(CURSOR_BLINK_IDLE_TIMEOUT)
+    } else {
+        CursorBlink::steady()
+    }
+}
+
+/// Apply the cursor blink setting to every caret, leaving the theme untouched when it already matches
+///
+/// ### Arguments
+/// - `cursor_blink`: Whether the caret should blink
+/// - `cx`: The application context
+fn apply_cursor_blink(cursor_blink: bool, cx: &mut App) {
+    let policy = cursor_blink_policy(cursor_blink);
+    if Theme::global(cx).cursor_blink != policy {
+        Theme::update(cx, |theme| theme.cursor_blink = policy);
+    }
+}
+
+/// Reapply the cursor blink setting whenever the shared settings change
+///
+/// ### Arguments
+/// - `cx`: The application context
+fn observe_cursor_blink_setting(cx: &mut App) {
+    cx.observe_global::<SharedAppState>(|cx| {
+        let cursor_blink = cx
+            .global::<SharedAppState>()
+            .settings
+            .editor_settings
+            .cursor_blink;
+        apply_cursor_blink(cursor_blink, cx);
+    })
+    .detach();
+}
+
 /// Initialize theme extraction, directory watching, and action listeners once at startup
 ///
 /// ### Arguments
@@ -33,6 +86,8 @@ pub fn apply_theme_config(config: &Rc<ThemeConfig>, cx: &mut App) {
 /// - `cx`: The application context
 /// - `on_themes_loaded`: The callback to call when the themes are loaded
 pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut App) + 'static) {
+    apply_cursor_blink(settings.editor_settings.cursor_blink, cx);
+    observe_cursor_blink_setting(cx);
     let theme_name = settings.app_settings.theme.clone();
     let scrollbar_show = settings.app_settings.scrollbar_show;
     let themes_directory = match themes_directory_path() {
@@ -139,12 +194,29 @@ pub(crate) struct SwitchThemeMode(pub(crate) ThemeMode);
 
 #[cfg(test)]
 mod tests {
-    use super::{BundledThemes, extract_bundled_themes};
+    use super::{
+        BundledThemes, CURSOR_BLINK_IDLE_TIMEOUT, CURSOR_BLINK_INTERVAL, cursor_blink_policy,
+        extract_bundled_themes,
+    };
     use std::{
         fs,
         path::PathBuf,
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    #[test]
+    fn cursor_blink_policy_blinks_until_the_editor_goes_idle() {
+        let policy = cursor_blink_policy(true);
+        assert_eq!(policy.interval(), Some(CURSOR_BLINK_INTERVAL));
+        assert_eq!(policy.idle_timeout(), Some(CURSOR_BLINK_IDLE_TIMEOUT));
+    }
+
+    #[test]
+    fn cursor_blink_policy_is_steady_when_blinking_is_off() {
+        let policy = cursor_blink_policy(false);
+        assert!(policy.is_steady());
+        assert_eq!(policy.idle_timeout(), None);
+    }
 
     /// Build a unique temporary directory path for theme-related tests.
     ///
@@ -205,13 +277,17 @@ mod tests {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod gpui_tests {
     use super::{
-        BundledThemes, apply_selected_theme, extract_bundled_themes, reload_theme_catalog,
+        BundledThemes, CURSOR_BLINK_IDLE_TIMEOUT, apply_cursor_blink, apply_selected_theme,
+        extract_bundled_themes, observe_cursor_blink_setting, reload_theme_catalog,
         themes_directory_path,
     };
     use crate::fulgur::shared_state::SharedAppState;
     use crate::test_support::setup_test_globals;
-    use gpui_kit::component::{ActiveTheme, ThemeRegistry};
-    use gpui_kit::{BorrowAppContext, SharedString, TestAppContext};
+    use gpui_kit::base::input::CursorBlink;
+    use gpui_kit::component::{ActiveTheme, Theme, ThemeRegistry};
+    use gpui_kit::{App, BorrowAppContext, SharedString, TestAppContext};
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     const SELECTED_THEME: &str = "Catppuccin Latte";
 
@@ -291,5 +367,106 @@ mod gpui_tests {
             reload_theme_catalog(cx);
             assert_eq!(cx.theme().theme_name().as_ref(), "Catppuccin Mocha");
         });
+    }
+
+    /// Store the cursor blink setting in the shared settings, as the settings page does.
+    ///
+    /// ### Arguments
+    /// - `cursor_blink`: The new value of the setting
+    /// - `cx`: The application context holding `SharedAppState`
+    fn set_cursor_blink_setting(cursor_blink: bool, cx: &mut App) {
+        cx.update_global::<SharedAppState, _>(|shared, _| {
+            shared.settings.editor_settings.cursor_blink = cursor_blink;
+        });
+    }
+
+    /// Read the caret blink policy from the base theme, which every input reads it from.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `CursorBlink`: The policy carets currently follow
+    fn caret_blink_policy(cx: &App) -> CursorBlink {
+        gpui_kit::base::Theme::global(cx).cursor_blink
+    }
+
+    /// Install the cursor blink policy and its settings observer as `init` does.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test context
+    fn start_cursor_blink_observer(cx: &mut TestAppContext) {
+        setup_test_globals(cx);
+        cx.update(|cx| {
+            apply_cursor_blink(true, cx);
+            observe_cursor_blink_setting(cx);
+        });
+    }
+
+    /// Verify toggling the setting switches every caret between blinking and steady.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test context
+    #[gpui_kit::test]
+    fn test_cursor_blink_follows_the_shared_editor_setting(cx: &mut TestAppContext) {
+        start_cursor_blink_observer(cx);
+        cx.update(|cx| {
+            assert_eq!(
+                caret_blink_policy(cx).idle_timeout(),
+                Some(CURSOR_BLINK_IDLE_TIMEOUT),
+                "a blinking caret should stop blinking once the editor is idle"
+            );
+        });
+
+        cx.update(|cx| set_cursor_blink_setting(false, cx));
+        cx.update(|cx| {
+            assert!(
+                caret_blink_policy(cx).is_steady(),
+                "turning the setting off should make the caret steady"
+            );
+        });
+
+        cx.update(|cx| set_cursor_blink_setting(true, cx));
+        cx.update(|cx| {
+            assert_eq!(
+                caret_blink_policy(cx).idle_timeout(),
+                Some(CURSOR_BLINK_IDLE_TIMEOUT),
+                "turning the setting back on should restore the blinking caret"
+            );
+        });
+    }
+
+    /// Verify a settings change that keeps the blink policy does not update the theme,
+    /// which would refresh every window.
+    ///
+    /// ### Arguments
+    /// - `cx`: The GPUI test context
+    #[gpui_kit::test]
+    fn test_unrelated_settings_changes_leave_the_theme_untouched(cx: &mut TestAppContext) {
+        start_cursor_blink_observer(cx);
+        let theme_updates = Rc::new(Cell::new(0_usize));
+        cx.update(|cx| {
+            let theme_updates = theme_updates.clone();
+            cx.observe_global::<Theme>(move |_| theme_updates.set(theme_updates.get() + 1))
+                .detach();
+        });
+
+        cx.update(|cx| {
+            cx.update_global::<SharedAppState, _>(|shared, _| {
+                shared.settings.editor_settings.soft_wrap =
+                    !shared.settings.editor_settings.soft_wrap;
+            });
+        });
+        assert_eq!(
+            theme_updates.get(),
+            0,
+            "an unrelated settings change should not touch the theme"
+        );
+
+        cx.update(|cx| set_cursor_blink_setting(false, cx));
+        assert!(
+            theme_updates.get() > 0,
+            "changing the blink setting should update the theme"
+        );
     }
 }

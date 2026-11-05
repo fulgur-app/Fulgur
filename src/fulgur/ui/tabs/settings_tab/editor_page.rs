@@ -1,6 +1,7 @@
 use crate::fulgur::{
     Fulgur,
     settings::{EditorSettings, MarkdownPreviewMode},
+    ui::themes::CURSOR_BLINK_IDLE_TIMEOUT,
 };
 use gpui_kit::component::{
     AxisExt, Sizable,
@@ -391,6 +392,29 @@ pub fn create_editor_page(
             .description(
                 "Show colored backgrounds for hex color codes (#RGB and #RRGGBB) in the editor.",
             ),
+            SettingItem::new(
+                "Blinking Cursor",
+                SettingField::switch(
+                    {
+                        let entity = entity.clone();
+                        move |cx: &App| entity.read(cx).settings.editor_settings.cursor_blink
+                    },
+                    {
+                        let entity = entity.clone();
+                        move |val: bool, cx: &mut App| {
+                            entity.update(cx, |this, cx| {
+                                this.settings.editor_settings.cursor_blink = val;
+                                let _ = this.update_and_propagate_settings(cx);
+                            });
+                        }
+                    },
+                )
+                .default_value(default_editor_settings.cursor_blink),
+            )
+            .description(format!(
+                "Blink the text cursor. It stops blinking and stays visible after {} seconds without typing or moving it.",
+                CURSOR_BLINK_IDLE_TIMEOUT.as_secs()
+            )),
         ]),
         SettingGroup::new().title("Markdown").items(vec![
             SettingItem::new(

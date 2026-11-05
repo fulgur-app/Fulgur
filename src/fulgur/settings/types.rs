@@ -257,6 +257,9 @@ pub struct EditorSettings {
     pub auto_close_pairs: bool,
     #[serde(default = "default_smart_indent")]
     pub smart_indent: bool,
+    /// Whether the caret blinks until the editor goes idle, instead of staying steady.
+    #[serde(default = "default_cursor_blink")]
+    pub cursor_blink: bool,
 }
 
 /// How a tab's color tag is shown in the tab bar.
@@ -382,6 +385,14 @@ fn default_smart_indent() -> bool {
     true
 }
 
+/// Default value for `cursor_blink` setting
+///
+/// ### Returns
+/// - `true`: blink the caret until the editor goes idle by default
+fn default_cursor_blink() -> bool {
+    true
+}
+
 /// Default value for `persist_unsaved_buffers` setting
 ///
 /// ### Returns
@@ -425,6 +436,7 @@ impl EditorSettings {
             highlight_colors: default_highlight_colors(),
             auto_close_pairs: default_auto_close_pairs(),
             smart_indent: default_smart_indent(),
+            cursor_blink: default_cursor_blink(),
         }
     }
 }
