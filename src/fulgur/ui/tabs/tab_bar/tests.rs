@@ -10,7 +10,7 @@ use crate::fulgur::ui::tabs::color_tag::ColorTag;
 use crate::fulgur::ui::tabs::editor_tab::TabLocation;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::window_manager::WindowManager;
-use gpui_kit::{BorrowAppContext, Entity, TestAppContext, VisualTestContext};
+use gpui_kit::{BorrowAppContext, Entity, TestAppContext, VisualTestContext, WindowId};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use time::macros::datetime;
@@ -269,6 +269,104 @@ fn test_tab_tooltip_is_none_for_an_untitled_tab(cx: &mut TestAppContext) {
         tooltip_for_location(&fulgur, &mut visual_cx, TabLocation::Untitled),
         None
     );
+}
+
+#[gpui_kit::test]
+fn test_has_tab_tooltip_agrees_with_tooltip_content_for_every_location(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let locations = [
+        TabLocation::Untitled,
+        TabLocation::Local(PathBuf::from("/tmp/local.txt")),
+        TabLocation::Remote(RemoteSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: Some("alice".to_string()),
+            path: "/tmp/test.txt".to_string(),
+            password_in_url: None,
+        }),
+        TabLocation::Shared(ShareOrigin {
+            source_device_name: None,
+            shared_at: None,
+            size_bytes: 1,
+        }),
+    ];
+
+    for location in locations {
+        let label = format!("{location:?}");
+        let content = tooltip_for_location(&fulgur, &mut visual_cx, location);
+        let has_tooltip = visual_cx.update(|_window, cx| {
+            let tab = fulgur
+                .read(cx)
+                .tabs
+                .first()
+                .expect("expected a tab")
+                .clone();
+            TabBar::has_tab_tooltip(tab.read(cx))
+        });
+        assert_eq!(
+            has_tooltip,
+            content.is_some(),
+            "the per-frame tooltip check disagrees with the tooltip builder for {label}"
+        );
+    }
+}
+
+#[gpui_kit::test]
+fn test_resolve_tab_tooltip_content_looks_the_tab_up_by_id(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let expected = tooltip_for_location(
+        &fulgur,
+        &mut visual_cx,
+        TabLocation::Local(PathBuf::from("/tmp/hovered.md")),
+    );
+    assert!(expected.is_some(), "a local file tab must have a tooltip");
+
+    visual_cx.update(|_window, cx| {
+        let owner = fulgur.downgrade();
+        let tab_id = fulgur.read(cx).tabs[0].read(cx).id();
+        assert_eq!(
+            TabBar::resolve_tab_tooltip_content(&owner, tab_id, cx),
+            expected
+        );
+        assert_eq!(
+            TabBar::resolve_tab_tooltip_content(&owner, TabId(u64::MAX), cx),
+            None,
+            "an unknown tab id must not resolve to a tooltip"
+        );
+    });
+}
+
+// ========== send to window tests ==========
+
+#[gpui_kit::test]
+fn test_other_windows_lists_every_window_but_the_current_one(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let current = WindowId::from(9_001);
+    let other = WindowId::from(9_002);
+
+    visual_cx.update(|_window, cx| {
+        cx.update_global::<WindowManager, _>(|manager, _| {
+            manager.register(current, fulgur.downgrade());
+            manager.register(other, fulgur.downgrade());
+        });
+        let manager = cx.global::<WindowManager>();
+        let current_name = manager
+            .get_window_name(current)
+            .expect("current window name")
+            .to_string();
+        let other_name = manager
+            .get_window_name(other)
+            .expect("other window name")
+            .to_string();
+
+        let names: Vec<String> = TabBar::other_windows(current, cx)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+
+        assert!(names.contains(&other_name), "got {names:?}");
+        assert!(!names.contains(&current_name), "got {names:?}");
+    });
 }
 
 // ========== event routing tests ==========

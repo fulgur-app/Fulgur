@@ -1,11 +1,14 @@
 use crate::fulgur::{
     Fulgur,
+    editor_tab::EditorTab,
+    sync::share::ShareOrigin,
     tab::{Tab, TabId},
     ui::components_utils::{format_file_size, format_local_datetime, format_system_time},
     ui::tabs::editor_tab::TabLocation,
     ui::tabs::tab_drag::DraggedTab,
+    window_manager::WindowManager,
 };
-use gpui_kit::{Context, Entity, EventEmitter, ScrollHandle, WeakEntity, Window};
+use gpui_kit::{App, Context, Entity, EventEmitter, ScrollHandle, WeakEntity, Window, WindowId};
 use std::collections::HashMap;
 
 /// The tab bar at the top of the window, rendered as its own entity
@@ -20,12 +23,20 @@ pub(crate) struct TabBar {
 }
 
 /// Text of a tab's hover tooltip
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct TabTooltipContent {
     /// First line, shown in bold next to the file icon
     pub header: String,
     /// Secondary facts, shown on one muted line below the header
     pub details: Vec<String>,
+}
+
+/// What a tab's hover tooltip describes
+enum TooltipSubject<'a> {
+    /// A received share not saved yet
+    Share(&'a ShareOrigin),
+    /// A local file, by its UTF-8 path
+    LocalFile(&'a str),
 }
 
 /// Typed events emitted by the tab bar toward the owning `Fulgur` window
@@ -176,6 +187,38 @@ impl TabBar {
         }
     }
 
+    /// Classify what an editor tab's hover tooltip describes, without formatting anything.
+    ///
+    /// Shared by [`Self::has_tab_tooltip`] and [`Self::tab_tooltip_content`] so the cheap
+    /// per-frame check and the hover-time builder can never disagree.
+    ///
+    /// ### Arguments
+    /// - `editor_tab`: The editor tab to classify.
+    ///
+    /// ### Returns
+    /// - `Some(TooltipSubject)`: The received share or the local UTF-8 path to describe.
+    /// - `None`: For untitled and remote tabs, and local paths that are not valid UTF-8.
+    fn tooltip_subject(editor_tab: &EditorTab) -> Option<TooltipSubject<'_>> {
+        if let Some(origin) = editor_tab.location.share_origin() {
+            return Some(TooltipSubject::Share(origin));
+        }
+        editor_tab
+            .file_path()?
+            .to_str()
+            .map(TooltipSubject::LocalFile)
+    }
+
+    /// Tell whether a tab has a hover tooltip, without building its text.
+    ///
+    /// ### Arguments
+    /// - `tab`: The tab to inspect.
+    ///
+    /// ### Returns
+    /// - `bool`: `true` exactly when [`Self::tab_tooltip_content`] returns `Some`.
+    pub(crate) fn has_tab_tooltip(tab: &Tab) -> bool {
+        tab.as_editor().and_then(Self::tooltip_subject).is_some()
+    }
+
     /// Build the hover tooltip text of a tab.
     ///
     /// ### Arguments
@@ -188,38 +231,86 @@ impl TabBar {
     /// - `None`: For untitled, remote, settings, and markdown preview tabs.
     pub(crate) fn tab_tooltip_content(tab: &Tab) -> Option<TabTooltipContent> {
         let editor_tab = tab.as_editor()?;
-        if let Some(origin) = editor_tab.location.share_origin() {
-            let sender = origin
-                .source_device_name
-                .as_deref()
-                .unwrap_or("Unknown device");
-            let details = [
-                Some(format!("Size: {}", format_file_size(origin.size_bytes))),
-                Some(format!("Shared by: {sender}")),
-                origin
-                    .shared_at
-                    .and_then(format_local_datetime)
-                    .map(|shared_at| format!("Shared on: {shared_at}")),
-            ];
-            return Some(TabTooltipContent {
-                header: editor_tab.title.to_string(),
-                details: details.into_iter().flatten().collect(),
-            });
+        match Self::tooltip_subject(editor_tab)? {
+            TooltipSubject::Share(origin) => {
+                let sender = origin
+                    .source_device_name
+                    .as_deref()
+                    .unwrap_or("Unknown device");
+                let details = [
+                    Some(format!("Size: {}", format_file_size(origin.size_bytes))),
+                    Some(format!("Shared by: {sender}")),
+                    origin
+                        .shared_at
+                        .and_then(format_local_datetime)
+                        .map(|shared_at| format!("Shared on: {shared_at}")),
+                ];
+                Some(TabTooltipContent {
+                    header: editor_tab.title.to_string(),
+                    details: details.into_iter().flatten().collect(),
+                })
+            }
+            TooltipSubject::LocalFile(path) => {
+                let details = [
+                    editor_tab
+                        .file_size_bytes
+                        .map(|size| format!("Size: {}", format_file_size(size))),
+                    editor_tab
+                        .file_last_modified
+                        .and_then(format_system_time)
+                        .map(|last_modified| format!("Last Modified: {last_modified}")),
+                ];
+                Some(TabTooltipContent {
+                    header: path.to_string(),
+                    details: details.into_iter().flatten().collect(),
+                })
+            }
         }
-        let path = editor_tab.file_path()?.to_str()?.to_string();
-        let details = [
-            editor_tab
-                .file_size_bytes
-                .map(|size| format!("Size: {}", format_file_size(size))),
-            editor_tab
-                .file_last_modified
-                .and_then(format_system_time)
-                .map(|last_modified| format!("Last Modified: {last_modified}")),
-        ];
-        Some(TabTooltipContent {
-            header: path,
-            details: details.into_iter().flatten().collect(),
-        })
+    }
+
+    /// Build the hover tooltip text of a tab looked up by id when the tooltip opens.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The window owning the tab.
+    /// - `tab_id`: The tab to describe.
+    /// - `cx`: The application context.
+    ///
+    /// ### Returns
+    /// - `Some(TabTooltipContent)`: The tab's tooltip text, as [`Self::tab_tooltip_content`].
+    /// - `None`: The window or the tab is gone, or the tab has no tooltip.
+    pub(super) fn resolve_tab_tooltip_content(
+        fulgur: &WeakEntity<Fulgur>,
+        tab_id: TabId,
+        cx: &App,
+    ) -> Option<TabTooltipContent> {
+        let tab = fulgur.upgrade()?.read(cx).tab_entity_of(tab_id, cx)?;
+        Self::tab_tooltip_content(tab.read(cx))
+    }
+
+    /// List the other open windows a tab can be sent to.
+    ///
+    /// ### Arguments
+    /// - `current_window_id`: The window the tab currently lives in, left out of the list.
+    /// - `cx`: The application context.
+    ///
+    /// ### Returns
+    /// - `Vec<(String, WeakEntity<Fulgur>)>`: The display name and handle of every other window.
+    pub(super) fn other_windows(
+        current_window_id: WindowId,
+        cx: &App,
+    ) -> Vec<(String, WeakEntity<Fulgur>)> {
+        let manager = cx.global::<WindowManager>();
+        manager
+            .get_all_window_ids()
+            .into_iter()
+            .filter(|id| *id != current_window_id)
+            .filter_map(|id| {
+                manager
+                    .get_window_name(id)
+                    .map(std::string::ToString::to_string)
+                    .zip(manager.get_window(id))
+            })
+            .collect()
     }
 }
 
