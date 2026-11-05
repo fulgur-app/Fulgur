@@ -11,7 +11,6 @@ use crate::fulgur::{
     ui::tabs::color_tag::ColorTag,
     ui::tabs::tab_drag::DraggedTab,
     ui::{icons::CustomIcon, window_drag::window_drag_region},
-    window_manager::WindowManager,
 };
 use gpui_kit::base::TestSupportExt;
 use gpui_kit::component::{
@@ -25,7 +24,7 @@ use gpui_kit::component::{
 use gpui_kit::{
     AnyElement, AppContext, ClickEvent, Context, DragMoveEvent, Entity, InteractiveElement,
     IntoElement, MouseButton, ParentElement, Render, Role, StatefulInteractiveElement, Styled,
-    WeakEntity, Window, div, px,
+    Window, div, px,
 };
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -339,23 +338,8 @@ impl TabBar {
         let is_renameable = tab
             .as_editor()
             .is_some_and(crate::fulgur::editor_tab::EditorTab::is_renameable);
-        let other_windows: Vec<(String, WeakEntity<Fulgur>)> = {
-            let manager = cx.global::<WindowManager>();
-            let current_window_id = fulgur.window_id;
-            manager
-                .get_all_window_ids()
-                .into_iter()
-                .filter(|id| *id != current_window_id)
-                .filter_map(|id| {
-                    manager
-                        .get_window_name(id)
-                        .map(std::string::ToString::to_string)
-                        .zip(manager.get_window(id))
-                })
-                .collect()
-        };
+        let current_window_id = fulgur.window_id;
         let source_entity = self.fulgur.clone();
-        let tooltip_content = Self::tab_tooltip_content(tab);
         // A markdown preview tab inherits the color tag of its source editor tab.
         let color_tag = if let Some(editor_tab) = tab.as_editor() {
             editor_tab.color_tag
@@ -404,11 +388,13 @@ impl TabBar {
                 .hover(|this| this.bg(cx.theme().muted))
                 .cursor_pointer();
         }
-        if let Some(content) = tooltip_content {
-            let content = Rc::new(content);
+        if Self::has_tab_tooltip(tab) {
+            let owner = self.fulgur.clone();
             tab_div =
                 tab_div.tooltip(move |window, cx| {
-                    let content = Rc::clone(&content);
+                    let content = Rc::new(
+                        Self::resolve_tab_tooltip_content(&owner, tab_id, cx).unwrap_or_default(),
+                    );
                     Tooltip::element(move |_, cx| {
                         let details = h_flex().gap_4().justify_between().children(
                             content.details.iter().map(|detail| {
@@ -556,7 +542,6 @@ impl TabBar {
                 }));
         }
         let tab_with_content = tab_with_content.context_menu(move |this, window, cx| {
-            let other_windows_clone = other_windows.clone();
             let source_entity_clone = source_entity.clone();
             let this = this
                 .menu_with_disabled(
@@ -572,9 +557,10 @@ impl TabBar {
                 )
                 .menu_with_disabled("Rename Tab...", Box::new(RenameTab(tab_id)), !is_renameable);
             let this = if is_editor_tab {
-                this.submenu("Send to...", window, cx, move |sub, _window, _cx| {
+                this.submenu("Send to...", window, cx, move |sub, _window, cx| {
+                    let other_windows = Self::other_windows(current_window_id, cx);
                     let mut sub = sub;
-                    for (name, weak_tgt) in &other_windows_clone {
+                    for (name, weak_tgt) in &other_windows {
                         let label = format!("Window {name}");
                         let src = source_entity_clone.clone();
                         let tgt = weak_tgt.clone();
@@ -599,7 +585,7 @@ impl TabBar {
                             });
                         }));
                     }
-                    if !other_windows_clone.is_empty() {
+                    if !other_windows.is_empty() {
                         sub = sub.separator();
                     }
                     let src = source_entity_clone.clone();
