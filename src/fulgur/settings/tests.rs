@@ -1,4 +1,6 @@
-use crate::fulgur::settings::{AppSettings, RecentFiles, ServerProfile, Settings, TitleBarStyle};
+use crate::fulgur::settings::{
+    AppSettings, EditorSettings, RecentFiles, ServerProfile, Settings, TitleBarStyle,
+};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -348,6 +350,24 @@ fn settings_saved_before_pairing_controls_default_to_enabled() {
     let settings: Settings = serde_json::from_str(json).unwrap();
     assert!(settings.editor_settings.auto_close_pairs);
     assert!(settings.editor_settings.smart_indent);
+}
+
+#[test]
+fn editor_settings_saved_before_cursor_blink_keep_the_caret_blinking() {
+    let json = r#"{ "show_line_numbers": true, "soft_wrap": false, "smart_indent": true }"#;
+    let editor_settings: EditorSettings = serde_json::from_str(json).unwrap();
+    assert!(editor_settings.cursor_blink);
+}
+
+#[test]
+fn editor_settings_round_trip_a_disabled_cursor_blink() {
+    let editor_settings = EditorSettings {
+        cursor_blink: false,
+        ..EditorSettings::new()
+    };
+    let json = serde_json::to_string(&editor_settings).unwrap();
+    let restored: EditorSettings = serde_json::from_str(&json).unwrap();
+    assert!(!restored.cursor_blink);
 }
 
 #[test]
