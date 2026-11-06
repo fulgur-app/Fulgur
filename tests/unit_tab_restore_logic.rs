@@ -173,7 +173,8 @@ fn test_restore_modified_file_has_saved_time_but_no_file_time() {
 
 #[test]
 fn test_restore_modified_file_has_file_time_but_no_saved_time() {
-    // Has file time but no saved time - use saved content
+    // Persisted while the file was missing, so the file has reappeared since:
+    // keep the saved content and let the user choose between the two versions.
     let decision = determine_tab_restore_strategy(
         Some(test_path()),
         Some(test_content()),
@@ -187,7 +188,7 @@ fn test_restore_modified_file_has_file_time_but_no_saved_time() {
         TabRestoreDecision::UseSavedContentWithPath {
             path: test_path(),
             content: test_content(),
-            changed_on_disk: false,
+            changed_on_disk: true,
         }
     );
 }

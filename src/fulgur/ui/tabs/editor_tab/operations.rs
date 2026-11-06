@@ -164,7 +164,8 @@ impl EditorTab {
         self.saved_baseline_known = true;
     }
 
-    /// Mark the saved-content baseline as unknown after recovering unsaved text.
+    /// Mark the saved-content baseline as unknown after recovering unsaved text
+    /// or losing the file the baseline described.
     pub fn mark_saved_baseline_unknown(&mut self) {
         self.saved_baseline_known = false;
         self.modified = true;

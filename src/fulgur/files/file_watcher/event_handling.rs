@@ -43,7 +43,7 @@ impl Fulgur {
         }
     }
 
-    /// Mark the tab backing an externally deleted file as modified.
+    /// Mark the tab backing an externally deleted file as modified, for good.
     ///
     /// ### Arguments
     /// - `path`: The path of the file that was deleted externally
@@ -56,7 +56,7 @@ impl Fulgur {
         {
             tab_entity.update(cx, |tab, cx| {
                 if let Some(editor_tab) = tab.as_editor_mut() {
-                    editor_tab.modified = true;
+                    editor_tab.mark_saved_baseline_unknown();
                     cx.notify();
                 }
             });
@@ -438,6 +438,53 @@ mod tests {
                 current_modified,
                 "a genuine external deletion should mark the tab modified so closing prompts to save"
             );
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_deleted_file_stays_modified_after_returning_to_its_original_text(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let path = temp_test_path("fulgur_deleted_undo.txt");
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.tabs
+                    .first()
+                    .expect("expected at least one tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        if let Some(editor_tab) = tab.as_editor_mut() {
+                            editor_tab.location = TabLocation::Local(path.clone());
+                            editor_tab.content.update(cx, |input_state, cx| {
+                                input_state.set_value("original", window, cx);
+                            });
+                            editor_tab.set_original_content_from_str("original");
+                            editor_tab.modified = false;
+                        }
+                    });
+            });
+        });
+        deliver(
+            &fulgur,
+            &mut visual_cx,
+            FileWatchEvent::Deleted(path.clone()),
+        );
+        settle_file_checks(&mut visual_cx);
+        visual_cx.update(|_window, cx| {
+            let tab = fulgur
+                .read(cx)
+                .tabs
+                .first()
+                .expect("expected at least one tab")
+                .clone();
+            tab.update(cx, |tab, cx| {
+                let editor_tab = tab.as_editor_mut().expect("expected an editor tab");
+                assert!(
+                    editor_tab.check_modified(cx),
+                    "the buffer is the only copy of a deleted file, whatever its text"
+                );
+            });
         });
     }
 
