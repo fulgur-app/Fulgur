@@ -75,6 +75,27 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     fn save_state_on_app_quit(cx: &mut App) {
+        let Some(windows_state) = Self::build_session_snapshot(cx) else {
+            log::debug!("No window registered at quit, keeping the persisted session");
+            return;
+        };
+        let window_count = windows_state.windows.len();
+        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
+        match shared.state_writer.save_blocking(windows_state) {
+            Ok(()) => log::info!("Application state saved on quit ({window_count} windows)"),
+            Err(e) => log::error!("Failed to save app state on quit: {e}"),
+        }
+    }
+
+    /// Snapshot every registered window without needing one of them in scope.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some(WindowsState)`: The snapshot of the registered windows
+    /// - `None`: No window is registered, so the persisted session must be kept
+    pub(super) fn build_session_snapshot(cx: &mut App) -> Option<WindowsState> {
         let window_manager = cx.global::<crate::fulgur::window_manager::WindowManager>();
         let entities: Vec<_> = window_manager
             .get_all_window_ids()
@@ -85,8 +106,7 @@ impl Fulgur {
             })
             .collect();
         if entities.is_empty() {
-            log::debug!("No window registered at quit, keeping the persisted session");
-            return;
+            return None;
         }
         let handles = cx.windows();
         let mut windows_state = WindowsState { windows: vec![] };
@@ -105,12 +125,7 @@ impl Fulgur {
                 .unwrap_or_else(|| entity.read(cx).build_window_state_without_bounds(cx));
             windows_state.windows.push(snapshot);
         }
-        let window_count = windows_state.windows.len();
-        let shared = cx.global::<crate::fulgur::shared_state::SharedAppState>();
-        match shared.state_writer.save_blocking(windows_state) {
-            Ok(()) => log::info!("Application state saved on quit ({window_count} windows)"),
-            Err(e) => log::error!("Failed to save app state on quit: {e}"),
-        }
+        Some(windows_state)
     }
 
     /// Save the current app state to disk without blocking the UI thread.
@@ -185,7 +200,7 @@ impl Fulgur {
                         // A missing file leaves the buffer as the only copy, even
                         // when no watch event reported the deletion.
                         if persist_unsaved
-                            && (editor_tab.content_differs_from_original(cx) || !path.exists())
+                            && (editor_tab.has_unsaved_changes_for_snapshot(cx) || !path.exists())
                             && !editor_tab.content_too_large_to_persist(cx)
                         {
                             let current_content = editor_tab.content.read(cx).text().clone();
@@ -220,7 +235,7 @@ impl Fulgur {
                     }
                     TabLocation::Remote(remote_spec) => {
                         let content = if persist_unsaved
-                            && editor_tab.content_differs_from_original(cx)
+                            && editor_tab.has_unsaved_changes_for_snapshot(cx)
                             && !editor_tab.content_too_large_to_persist(cx)
                         {
                             Some(TabContent::Rope(editor_tab.content.read(cx).text().clone()))
@@ -356,7 +371,7 @@ mod tests {
 
     use crate::fulgur::{
         Fulgur,
-        editor_tab::{EditorTab, TabLocation},
+        editor_tab::{EditorTab, TabLocation, replace_editor_text},
         files::file_watcher::{FileWatchEvent, test_helpers::settle_file_checks},
         languages::supported_languages::SupportedLanguage,
         shared_state::SharedAppState,
@@ -532,6 +547,69 @@ mod tests {
         assert!(
             tabs[0].content.is_some(),
             "unsaved content must be persisted when the setting is enabled"
+        );
+    }
+
+    /// Give the first tab a saved local file baseline, then replace its text.
+    ///
+    /// ### Arguments
+    /// - `fulgur`: The application entity whose first tab is configured
+    /// - `cx`: The visual test context containing the application window
+    /// - `emit_change`: Whether the replacement emits a change event, as user edits do
+    ///
+    /// ### Returns
+    /// - `Vec<TabState>`: The persisted tabs of the window snapshot
+    fn same_length_edit_tab_states(
+        fulgur: &Entity<Fulgur>,
+        cx: &mut VisualTestContext,
+        emit_change: bool,
+    ) -> Vec<TabState> {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let path = temp_dir.path().join("notes.txt");
+        fs::write(&path, "saved text").expect("write saved file");
+        cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.settings.app_settings.persist_unsaved_buffers = true;
+                this.update_active_editor_tab(cx, |editor_tab, _| {
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.set_original_content_from_str("saved text");
+                    editor_tab.modified = false;
+                });
+                let content = this
+                    .active_tab(cx)
+                    .and_then(Tab::as_editor)
+                    .expect("expected an editor tab")
+                    .content
+                    .clone();
+                content.update(cx, |content, cx| {
+                    if emit_change {
+                        replace_editor_text(content, "SAVED TEXT", window, cx);
+                    } else {
+                        content.set_value("SAVED TEXT", window, cx);
+                    }
+                });
+            });
+        });
+        cx.run_until_parked();
+        fulgur.read_with(cx, |this, cx| {
+            this.build_window_state_without_bounds(cx).tabs
+        })
+    }
+
+    #[gpui_kit::test]
+    fn same_length_edit_is_persisted_through_the_modified_flag(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = same_length_edit_tab_states(&fulgur, &mut visual_cx, true);
+        assert_recovery_content(&tabs[0], "SAVED TEXT");
+    }
+
+    #[gpui_kit::test]
+    fn snapshot_does_not_fingerprint_a_clean_tab_of_matching_length(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let tabs = same_length_edit_tab_states(&fulgur, &mut visual_cx, false);
+        assert!(
+            tabs[0].content.is_none(),
+            "only a fingerprint could spot this silent replacement, and snapshots must not hash"
         );
     }
 
