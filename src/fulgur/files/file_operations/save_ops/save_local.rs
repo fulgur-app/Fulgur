@@ -166,6 +166,7 @@ impl Fulgur {
                     cx.notify();
                 });
                 cx.notify();
+                crate::fulgur::state::schedule_session_autosave(cx);
                 self.resume_after_local_save(completion.tab_id, window, cx);
             }
             Err(e) => {

@@ -219,6 +219,19 @@ impl EditorTab {
         current_hash != self.original_content_hash
     }
 
+    /// Whether a session snapshot must carry this tab's buffer.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the buffer holds changes that are not saved
+    pub fn has_unsaved_changes_for_snapshot(&self, cx: &App) -> bool {
+        self.modified
+            || !self.saved_baseline_known
+            || self.content.read(cx).text().len() != self.original_content_len
+    }
+
     /// Get suggested filename for "Save as..." dialog
     ///
     /// ### Returns

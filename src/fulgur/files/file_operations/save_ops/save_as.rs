@@ -193,6 +193,7 @@ impl Fulgur {
                     });
                     cx.notify();
                     self.watch_file(path);
+                    crate::fulgur::state::schedule_session_autosave(cx);
                 } else {
                     log::warn!("Save As completed, but tab {tab_id} no longer exists");
                 }

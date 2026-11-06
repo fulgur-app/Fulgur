@@ -1,6 +1,7 @@
 use crate::fulgur::{
     Fulgur,
     settings::EditorSettings,
+    state::schedule_session_autosave,
     ui::tabs::{
         editor_tab::EditorTab, markdown_preview_tab::MarkdownPreviewTab, settings_tab::SettingsTab,
     },
@@ -158,6 +159,9 @@ impl Tab {
                 editor_tab.check_modified(cx);
                 if editor_tab.modified != old_modified {
                     cx.notify();
+                }
+                if !editor_tab.content_too_large_to_persist(cx) {
+                    schedule_session_autosave(cx);
                 }
             }
         });

@@ -207,6 +207,7 @@ impl Fulgur {
                     self.pending_remote_restore.remove(&tab_id);
                     self.inflight_remote_restore.remove(&tab_id);
                     cx.notify();
+                    crate::fulgur::state::schedule_session_autosave(cx);
                 }
             }
             Err(msg) => {
