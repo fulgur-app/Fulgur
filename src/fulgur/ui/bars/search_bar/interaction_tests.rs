@@ -631,12 +631,129 @@ fn test_editing_the_buffer_rescans_the_matches_without_moving_the_caret(cx: &mut
     );
 }
 
+/// Build a buffer large enough to be rescanned through the debounce, with `foo` at its end.
+///
+/// ### Returns
+/// - `String`: The buffer content
+fn large_buffer_ending_in_foo() -> String {
+    let filler = "x\n".repeat(super::actions::MAX_IMMEDIATE_RESCAN_BYTES / 2 + 1);
+    format!("bar\n{filler}foo")
+}
+
+/// Let the debounce period pass so a waiting rescan runs.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context driving the window
+fn run_pending_rescan(visual_cx: &mut VisualTestContext) {
+    visual_cx
+        .background_executor
+        .advance_clock(super::actions::RESCAN_DEBOUNCE);
+    visual_cx.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn test_large_buffer_query_changes_rescan_after_the_debounce(cx: &mut TestAppContext) {
+    let content = large_buffer_ending_in_foo();
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, &content);
+    let caret_before = editor_cursor(&editor, &mut visual_cx);
+
+    type_query(&mut visual_cx, "foo");
+    assert_eq!(
+        match_count(&search_bar, &mut visual_cx),
+        0,
+        "a large buffer must not be scanned on every query keystroke"
+    );
+    assert_eq!(editor_cursor(&editor, &mut visual_cx), caret_before);
+
+    run_pending_rescan(&mut visual_cx);
+    assert_eq!(match_count(&search_bar, &mut visual_cx), 1);
+    assert_eq!(
+        editor_cursor(&editor, &mut visual_cx),
+        content.len() - "foo".len(),
+        "a settled query must bring the caret to its match, like an immediate search"
+    );
+}
+
+#[gpui_kit::test]
+fn test_each_query_keystroke_restarts_the_large_buffer_debounce(cx: &mut TestAppContext) {
+    let (search_bar, _editor, mut visual_cx) =
+        setup_visible_search(cx, &large_buffer_ending_in_foo());
+    let most_of_the_debounce = super::actions::RESCAN_DEBOUNCE * 2 / 3;
+
+    type_query(&mut visual_cx, "fo");
+    visual_cx
+        .background_executor
+        .advance_clock(most_of_the_debounce);
+    type_into_focused(&mut visual_cx, "o");
+    visual_cx
+        .background_executor
+        .advance_clock(most_of_the_debounce);
+    visual_cx.run_until_parked();
+    assert_eq!(
+        match_count(&search_bar, &mut visual_cx),
+        0,
+        "a keystroke inside the quiet period must push the scan back"
+    );
+
+    run_pending_rescan(&mut visual_cx);
+    assert_eq!(match_count(&search_bar, &mut visual_cx), 1);
+}
+
+#[gpui_kit::test]
+fn test_clearing_the_query_on_a_large_buffer_takes_effect_immediately(cx: &mut TestAppContext) {
+    let (search_bar, editor, mut visual_cx) =
+        setup_visible_search(cx, &large_buffer_ending_in_foo());
+    type_query(&mut visual_cx, "foo");
+    run_pending_rescan(&mut visual_cx);
+    assert_eq!(match_count(&search_bar, &mut visual_cx), 1);
+
+    visual_cx.update(|window, cx| {
+        search_bar.update(cx, |bar, cx| {
+            bar.search_input
+                .update(cx, |input, cx| input.set_value("", window, cx));
+            bar.on_query_changed(cx);
+        });
+    });
+
+    assert_eq!(
+        match_count(&search_bar, &mut visual_cx),
+        0,
+        "an empty query scans nothing, so it has no reason to wait"
+    );
+    let painted = visual_cx.update(|_window, cx| {
+        let bar = search_bar.read(cx);
+        let decorations = &bar.match_decorations[&editor.entity_id()];
+        decorations.all.get_ranges(cx).len() + decorations.current.get_ranges(cx).len()
+    });
+    assert_eq!(painted, 0, "the stale highlights must go with the query");
+}
+
+#[gpui_kit::test]
+fn test_stepping_flushes_a_pending_large_buffer_query_rescan(cx: &mut TestAppContext) {
+    let content = large_buffer_ending_in_foo();
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, &content);
+
+    type_query(&mut visual_cx, "foo");
+    assert_eq!(match_count(&search_bar, &mut visual_cx), 0);
+
+    click_next(&mut visual_cx);
+    assert_eq!(
+        match_count(&search_bar, &mut visual_cx),
+        1,
+        "stepping right after typing must search the new query, not wait for the debounce"
+    );
+    assert_eq!(
+        editor_cursor(&editor, &mut visual_cx),
+        content.len() - "foo".len()
+    );
+}
+
 #[gpui_kit::test]
 fn test_large_buffer_edits_rescan_after_the_debounce(cx: &mut TestAppContext) {
-    let filler = "x\n".repeat(super::actions::MAX_IMMEDIATE_RESCAN_BYTES / 2 + 1);
-    let content = format!("bar\n{filler}foo");
-    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, &content);
+    let (search_bar, editor, mut visual_cx) =
+        setup_visible_search(cx, &large_buffer_ending_in_foo());
     type_query(&mut visual_cx, "foo");
+    run_pending_rescan(&mut visual_cx);
     assert_eq!(match_count(&search_bar, &mut visual_cx), 1);
 
     type_into_editor_at(&editor, 0, "foo", &mut visual_cx);
@@ -646,10 +763,7 @@ fn test_large_buffer_edits_rescan_after_the_debounce(cx: &mut TestAppContext) {
         "a large buffer must not be rescanned on every keystroke"
     );
 
-    visual_cx
-        .background_executor
-        .advance_clock(super::actions::EDIT_RESCAN_DEBOUNCE);
-    visual_cx.run_until_parked();
+    run_pending_rescan(&mut visual_cx);
     assert_eq!(
         match_count(&search_bar, &mut visual_cx),
         2,
@@ -659,10 +773,10 @@ fn test_large_buffer_edits_rescan_after_the_debounce(cx: &mut TestAppContext) {
 
 #[gpui_kit::test]
 fn test_stepping_flushes_a_pending_large_buffer_rescan(cx: &mut TestAppContext) {
-    let filler = "x\n".repeat(super::actions::MAX_IMMEDIATE_RESCAN_BYTES / 2 + 1);
-    let content = format!("bar\n{filler}foo");
-    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, &content);
+    let (search_bar, editor, mut visual_cx) =
+        setup_visible_search(cx, &large_buffer_ending_in_foo());
     type_query(&mut visual_cx, "foo");
+    run_pending_rescan(&mut visual_cx);
 
     type_into_editor_at(&editor, 0, "foo", &mut visual_cx);
     click_next(&mut visual_cx);

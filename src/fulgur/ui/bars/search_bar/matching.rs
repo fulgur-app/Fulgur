@@ -2,30 +2,71 @@ use std::borrow::Cow;
 
 use super::SearchMatch;
 
-/// Rebuild the lowercased search text together with a byte-offset map back to the original text.
+/// A character whose lowercase form has a different byte length than the original
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LengthChange {
+    lowered_start: usize,
+    lowered_end: usize,
+    original_start: usize,
+    original_end: usize,
+}
+
+/// Rebuild the lowercased search text together with the characters that changed byte length.
 ///
 /// ### Arguments
 /// - `text`: The original source text
 /// - `lowercase_text_scratch`: Reusable buffer filled with the lowercased text
-/// - `lowercase_offsets_scratch`: Reusable buffer filled with the lowercased-to-original offset map
-fn rebuild_lowercase_text(
+/// - `length_changes_scratch`: Reusable buffer filled with the length-changing characters,
+///   sorted by offset and left empty when no offset moves
+pub(super) fn rebuild_lowercase_text(
     text: &str,
     lowercase_text_scratch: &mut String,
-    lowercase_offsets_scratch: &mut Vec<usize>,
+    length_changes_scratch: &mut Vec<LengthChange>,
 ) {
     lowercase_text_scratch.clear();
-    lowercase_offsets_scratch.clear();
-    for (orig_offset, ch) in text.char_indices() {
-        let before = lowercase_text_scratch.len();
-        for lowered in ch.to_lowercase() {
-            lowercase_text_scratch.push(lowered);
-        }
-        let added = lowercase_text_scratch.len() - before;
-        for _ in 0..added {
-            lowercase_offsets_scratch.push(orig_offset);
+    length_changes_scratch.clear();
+    if text.is_ascii() {
+        lowercase_text_scratch.push_str(text);
+        lowercase_text_scratch.make_ascii_lowercase();
+        return;
+    }
+    for (original_start, ch) in text.char_indices() {
+        let lowered_start = lowercase_text_scratch.len();
+        lowercase_text_scratch.extend(ch.to_lowercase());
+        let lowered_end = lowercase_text_scratch.len();
+        if lowered_end - lowered_start != ch.len_utf8() {
+            length_changes_scratch.push(LengthChange {
+                lowered_start,
+                lowered_end,
+                original_start,
+                original_end: original_start + ch.len_utf8(),
+            });
         }
     }
-    lowercase_offsets_scratch.push(text.len());
+}
+
+/// Map a char-boundary offset in the lowercased text back to the original text.
+///
+/// ### Arguments
+/// - `lowered_offset`: A char-boundary byte offset in the lowercased text
+/// - `length_changes`: The length-changing characters, sorted by offset
+///
+/// ### Returns
+/// - `usize`: The matching byte offset in the original text
+pub(super) fn lowered_to_original(lowered_offset: usize, length_changes: &[LengthChange]) -> usize {
+    let changes_started =
+        length_changes.partition_point(|change| change.lowered_start <= lowered_offset);
+    let Some(change) = changes_started
+        .checked_sub(1)
+        .map(|index| &length_changes[index])
+    else {
+        return lowered_offset;
+    };
+    if lowered_offset < change.lowered_end {
+        change.original_start
+    } else {
+        change.original_end + (lowered_offset - change.lowered_end)
+    }
 }
 
 /// Find all matches in the text
@@ -46,14 +87,14 @@ pub(super) fn find_matches(
     match_whole_word: bool,
 ) -> Vec<SearchMatch> {
     let mut lowercase_text_scratch = String::new();
-    let mut lowercase_offsets_scratch = Vec::new();
+    let mut length_changes_scratch = Vec::new();
     find_matches_with_scratch(
         text,
         query,
         match_case,
         match_whole_word,
         &mut lowercase_text_scratch,
-        &mut lowercase_offsets_scratch,
+        &mut length_changes_scratch,
     )
 }
 
@@ -65,7 +106,7 @@ pub(super) fn find_matches(
 /// - `match_case`: Whether to match case
 /// - `match_whole_word`: Whether to match whole words only
 /// - `lowercase_text_scratch`: Reusable lowercase-text buffer
-/// - `lowercase_offsets_scratch`: Reusable lowercased-to-original byte-offset map
+/// - `length_changes_scratch`: Reusable list of the characters whose lowercase byte length differs
 ///
 /// ### Returns
 /// - `Vec<SearchMatch>`: A vector of search matches with offsets into the original `text`
@@ -75,7 +116,7 @@ pub(super) fn find_matches_with_scratch(
     match_case: bool,
     match_whole_word: bool,
     lowercase_text_scratch: &mut String,
-    lowercase_offsets_scratch: &mut Vec<usize>,
+    length_changes_scratch: &mut Vec<LengthChange>,
 ) -> Vec<SearchMatch> {
     let mut matches = Vec::new();
     if query.is_empty() {
@@ -85,7 +126,7 @@ pub(super) fn find_matches_with_scratch(
     let search_text = if match_case {
         text
     } else {
-        rebuild_lowercase_text(text, lowercase_text_scratch, lowercase_offsets_scratch);
+        rebuild_lowercase_text(text, lowercase_text_scratch, length_changes_scratch);
         lowercase_text_scratch.as_str()
     };
     let search_query: Cow<str> = if match_case {
@@ -104,8 +145,8 @@ pub(super) fn find_matches_with_scratch(
             (search_start, search_end)
         } else {
             (
-                lowercase_offsets_scratch[search_start],
-                lowercase_offsets_scratch[search_end],
+                lowered_to_original(search_start, length_changes_scratch),
+                lowered_to_original(search_end, length_changes_scratch),
             )
         };
         if match_whole_word {

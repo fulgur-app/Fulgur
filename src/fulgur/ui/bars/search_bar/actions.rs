@@ -6,17 +6,24 @@ use std::time::Duration;
 use super::matching::find_matches_with_scratch;
 use super::{SearchBar, SearchBarEvent};
 
-/// Largest buffer, in bytes, rescanned synchronously after each edit
+/// Largest buffer, in bytes, rescanned synchronously after each edit or query change
 pub(super) const MAX_IMMEDIATE_RESCAN_BYTES: usize = 256 * 1024;
 
-/// Quiet period after the last edit before a larger buffer is rescanned
-pub(super) const EDIT_RESCAN_DEBOUNCE: Duration = Duration::from_millis(150);
+/// Quiet period after the last edit or query change before a larger buffer is rescanned
+pub(super) const RESCAN_DEBOUNCE: Duration = Duration::from_millis(150);
 
 /// Direction of one step through the search matches
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum MatchStep {
     Next,
     Previous,
+}
+
+/// What a debounced rescan does with the editor caret once the matches are known
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CaretAfterRescan {
+    Keep,
+    MoveToCurrentMatch,
 }
 
 impl SearchBar {
@@ -77,7 +84,7 @@ impl SearchBar {
         cx.notify();
     }
 
-    /// Close the search bar, clear highlighting, and notify the owning window
+    /// Close the search bar, clear highlighting, free the scan buffers, and notify the owning window
     ///
     /// ### Arguments
     /// - `cx`: The search bar context
@@ -85,19 +92,34 @@ impl SearchBar {
         self.show_search = false;
         self.watch_editor(None, cx);
         self.clear_match_decorations(cx);
-        self.search_matches.clear();
+        self.search_matches = Vec::new();
         self.current_match_index = None;
+        self.search_text_scratch = String::new();
+        self.search_lowercase_text_scratch = String::new();
+        self.search_length_changes_scratch = Vec::new();
         cx.emit(SearchBarEvent::Closed);
         cx.notify();
     }
 
     /// Re-run the search after the query text changed
     ///
+    /// A large buffer waits for the typing to settle. Clearing the query never
+    /// waits, since an empty query scans nothing.
+    ///
     /// ### Arguments
     /// - `cx`: The search bar context
     pub(super) fn on_query_changed(&mut self, cx: &mut Context<Self>) {
         let content = self.active_editor_content(cx);
-        self.perform_search(content, cx);
+        let query_is_empty = self.search_input.read(cx).value().is_empty();
+        match content {
+            Some(content)
+                if !query_is_empty
+                    && content.read(cx).text().len() > MAX_IMMEDIATE_RESCAN_BYTES =>
+            {
+                self.schedule_rescan(&content, CaretAfterRescan::MoveToCurrentMatch, cx);
+            }
+            content => self.perform_search(content, cx),
+        }
     }
 
     /// Follow a newly active editor and search its content afresh
@@ -157,7 +179,7 @@ impl SearchBar {
                     self.match_case,
                     self.match_whole_word,
                     &mut self.search_lowercase_text_scratch,
-                    &mut self.search_lowercase_offsets_scratch,
+                    &mut self.search_length_changes_scratch,
                 );
                 self.search_text_scratch = search_text_scratch;
                 if !self.search_matches.is_empty() {
@@ -205,15 +227,33 @@ impl SearchBar {
             self.rescan_matches(Some(content), cx);
             return;
         }
+        self.schedule_rescan(content, CaretAfterRescan::Keep, cx);
+    }
+
+    /// Rescan the given editor once the debounce period passes without a newer request
+    ///
+    /// ### Arguments
+    /// - `content`: The editor to rescan
+    /// - `caret`: What to do with the editor caret after the rescan
+    /// - `cx`: The search bar context
+    fn schedule_rescan(
+        &mut self,
+        content: &Entity<EditorState>,
+        caret: CaretAfterRescan,
+        cx: &mut Context<Self>,
+    ) {
         let content = content.downgrade();
         // Replacing the task drops, and so cancels, a rescan still waiting.
         self.pending_rescan = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(EDIT_RESCAN_DEBOUNCE).await;
+            cx.background_executor().timer(RESCAN_DEBOUNCE).await;
             let Some(content) = content.upgrade() else {
                 return;
             };
-            this.update(cx, |this, cx| this.rescan_matches(Some(&content), cx))
-                .ok();
+            this.update(cx, |this, cx| match caret {
+                CaretAfterRescan::Keep => this.rescan_matches(Some(&content), cx),
+                CaretAfterRescan::MoveToCurrentMatch => this.perform_search(Some(content), cx),
+            })
+            .ok();
         }));
     }
 
@@ -237,7 +277,7 @@ impl SearchBar {
         }
         if let Some(content) = content {
             self.scroll_to_current_match(&content, cx);
-            self.apply_match_decorations(&content, cx);
+            self.apply_current_match_decoration(&content, cx);
         }
         cx.notify();
     }
@@ -266,7 +306,7 @@ impl SearchBar {
         }
         if let Some(content) = content {
             self.scroll_to_current_match(&content, cx);
-            self.apply_match_decorations(&content, cx);
+            self.apply_current_match_decoration(&content, cx);
         }
         cx.notify();
     }

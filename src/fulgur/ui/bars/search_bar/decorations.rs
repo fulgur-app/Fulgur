@@ -34,34 +34,44 @@ impl SearchBar {
             }
             return;
         }
-        let (all, current) = self.decorations_for(content, cx);
-        let selection = cx.theme().selection;
+        let (all, _) = self.decorations_for(content, cx);
         let all_style = HighlightStyle {
-            background_color: Some(selection.alpha(ALL_MATCHES_ALPHA)),
+            background_color: Some(cx.theme().selection.alpha(ALL_MATCHES_ALPHA)),
             ..Default::default()
         };
-        let current_style = HighlightStyle {
-            background_color: Some(selection.alpha(CURRENT_MATCH_ALPHA)),
-            ..Default::default()
-        };
-        let current_range = self
-            .current_match_index
-            .and_then(|index| self.search_matches.get(index))
-            .map(|search_match| search_match.start..search_match.end);
-        let other_matches = self
+        let every_match = self
             .search_matches
             .iter()
-            .map(|search_match| search_match.start..search_match.end)
-            .filter(|range| Some(range) != current_range.as_ref())
-            .map(|range| TextDecoration::new(range, all_style))
+            .map(|search_match| {
+                TextDecoration::new(search_match.start..search_match.end, all_style)
+            })
             .collect();
-        all.set(other_matches, cx);
-        current.set(
-            current_range
-                .map(|range| vec![TextDecoration::new(range, current_style)])
-                .unwrap_or_default(),
-            cx,
-        );
+        all.set(every_match, cx);
+        self.apply_current_match_decoration(content, cx);
+    }
+
+    /// Move the accent onto the current match, leaving the other highlights untouched
+    ///
+    /// ### Arguments
+    /// - `content`: The editor content the matches were found in
+    /// - `cx`: The application context
+    pub(super) fn apply_current_match_decoration(
+        &mut self,
+        content: &Entity<EditorState>,
+        cx: &mut App,
+    ) {
+        let (_, current) = self.decorations_for(content, cx);
+        let current_style = HighlightStyle {
+            background_color: Some(cx.theme().selection.alpha(CURRENT_MATCH_ALPHA)),
+            ..Default::default()
+        };
+        let current_match = self
+            .current_match_index
+            .and_then(|index| self.search_matches.get(index))
+            .map(|search_match| {
+                TextDecoration::new(search_match.start..search_match.end, current_style)
+            });
+        current.set(current_match.into_iter().collect(), cx);
     }
 
     /// Repaint the search highlights of the active editor with the current theme
@@ -108,11 +118,10 @@ impl SearchBar {
         }
         self.match_decorations
             .retain(|_, decorations| decorations.editor.upgrade().is_some());
-        let (all, current) = content.update(cx, |content, cx| {
-            (
-                content.create_decorations_collection(Vec::new(), cx),
-                content.create_decorations_collection(Vec::new(), cx),
-            )
+        let (current, all) = content.update(cx, |content, cx| {
+            let current = content.create_decorations_collection(Vec::new(), cx);
+            let all = content.create_decorations_collection(Vec::new(), cx);
+            (current, all)
         });
         self.match_decorations.insert(
             editor_id,
