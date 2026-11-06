@@ -12,8 +12,9 @@ pub enum TabRestoreDecision {
     /// Load content from file on disk
     LoadFromFile { path: PathBuf },
     /// Use saved content with file path. `changed_on_disk` is set when the file
-    /// was modified after the content was persisted, so the user must choose
-    /// between the recovered edits and the disk version.
+    /// was modified after the content was persisted, or reappeared after being
+    /// persisted as missing, so the user must choose between the recovered edits
+    /// and the disk version.
     UseSavedContentWithPath {
         path: PathBuf,
         content: String,
@@ -59,10 +60,13 @@ pub fn determine_tab_restore_strategy(
         // are never dropped: a newer file on disk raises a conflict instead.
         (Some(path), Some(content)) => {
             if file_exists {
-                let file_is_newer = matches!(
-                    (last_saved, file_modified_time),
-                    (Some(saved_time), Some(file_time)) if is_file_newer(&file_time, &saved_time)
-                );
+                let file_is_newer = match (last_saved, file_modified_time) {
+                    (Some(saved_time), Some(file_time)) => is_file_newer(&file_time, &saved_time),
+                    // No timestamp was recorded because the file was missing at
+                    // the snapshot, so this file has appeared since.
+                    (None, Some(_)) => true,
+                    (_, None) => false,
+                };
                 TabRestoreDecision::UseSavedContentWithPath {
                     path,
                     content,
