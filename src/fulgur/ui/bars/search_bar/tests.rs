@@ -1,5 +1,8 @@
 use super::SearchMatch;
-use super::matching::{apply_replacements, find_matches, find_matches_with_scratch};
+use super::matching::{
+    apply_replacements, find_matches, find_matches_with_scratch, lowered_to_original,
+    rebuild_lowercase_text,
+};
 use core::prelude::v1::test;
 
 #[cfg(feature = "gpui-test-support")]
@@ -401,17 +404,18 @@ fn test_find_matches_with_scratch_matches_baseline() {
 
 #[test]
 fn test_find_matches_with_scratch_rebuilds_offsets_between_calls() {
-    let mut lowercase_text_scratch = "stale".repeat(64);
-    let mut lowercase_offsets_scratch = vec![42, 43, 44];
+    let mut lowercase_text_scratch = String::new();
+    let mut length_changes_scratch = Vec::new();
     let first = find_matches_with_scratch(
-        "line1\nline2\nline3",
+        "\u{1E9E}\u{1E9E} line1\nline2\nline3",
         "line",
         false,
         false,
         &mut lowercase_text_scratch,
-        &mut lowercase_offsets_scratch,
+        &mut length_changes_scratch,
     );
     assert_eq!(first.len(), 3);
+    assert_eq!(first[0].start, 7);
 
     let second = find_matches_with_scratch(
         "short",
@@ -419,11 +423,84 @@ fn test_find_matches_with_scratch_rebuilds_offsets_between_calls() {
         false,
         false,
         &mut lowercase_text_scratch,
-        &mut lowercase_offsets_scratch,
+        &mut length_changes_scratch,
     );
     assert_eq!(second.len(), 1);
     assert_eq!(second[0].start, 0);
     assert_eq!(second[0].end, 2);
+}
+
+#[test]
+fn test_lowercase_rebuild_records_nothing_when_no_offset_moves() {
+    let mut lowercase_text = String::new();
+    let mut length_changes = Vec::new();
+
+    rebuild_lowercase_text("Hello WORLD", &mut lowercase_text, &mut length_changes);
+    assert_eq!(lowercase_text, "hello world");
+    assert!(length_changes.is_empty(), "ASCII text must not need a map");
+
+    rebuild_lowercase_text("\u{C9}T\u{C9}", &mut lowercase_text, &mut length_changes);
+    assert_eq!(lowercase_text, "\u{E9}t\u{E9}");
+    assert!(
+        length_changes.is_empty(),
+        "non-ASCII characters keeping their byte length must not be recorded"
+    );
+}
+
+#[test]
+fn test_lowercase_rebuild_records_only_the_length_changing_characters() {
+    let mut lowercase_text = String::new();
+    let mut length_changes = Vec::new();
+
+    let text = format!(
+        "{}\u{1E9E}{}\u{130}",
+        "a".repeat(1000),
+        "\u{C9}".repeat(1000)
+    );
+    rebuild_lowercase_text(&text, &mut lowercase_text, &mut length_changes);
+
+    assert_eq!(length_changes.len(), 2);
+}
+
+/// Build the per-byte lowercased-to-original map the sparse one has to agree with.
+///
+/// ### Arguments
+/// - `text`: The original source text
+///
+/// ### Returns
+/// - `Vec<usize>`: The original byte offset of every lowercased byte, plus the text end
+fn dense_lowered_to_original_map(text: &str) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    for (original_offset, ch) in text.char_indices() {
+        let lowered_len: usize = ch.to_lowercase().map(char::len_utf8).sum();
+        offsets.extend(std::iter::repeat_n(original_offset, lowered_len));
+    }
+    offsets.push(text.len());
+    offsets
+}
+
+#[test]
+fn test_lowered_to_original_agrees_with_a_dense_map_across_unicode() {
+    let text: String = ('\0'..=char::MAX)
+        .filter(|ch| !ch.to_lowercase().eq(std::iter::once(*ch)))
+        .flat_map(|ch| [ch, 'x'])
+        .collect();
+    let dense = dense_lowered_to_original_map(&text);
+    let mut lowercase_text = String::new();
+    let mut length_changes = Vec::new();
+
+    rebuild_lowercase_text(&text, &mut lowercase_text, &mut length_changes);
+
+    assert_eq!(dense.len(), lowercase_text.len() + 1);
+    for (lowered_offset, expected) in dense.iter().enumerate() {
+        if lowercase_text.is_char_boundary(lowered_offset) {
+            assert_eq!(
+                lowered_to_original(lowered_offset, &length_changes),
+                *expected,
+                "lowered offset {lowered_offset} must map like the dense map"
+            );
+        }
+    }
 }
 
 #[test]
@@ -999,7 +1076,7 @@ fn test_search_paints_every_match_and_accents_the_current_one(cx: &mut TestAppCo
             assert_eq!(bar.current_match_index, Some(0));
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(current, vec![0..3]);
-            assert_eq!(all, vec![4..7, 8..11]);
+            assert_eq!(all, vec![0..3, 4..7, 8..11]);
         });
     });
 }
@@ -1023,12 +1100,120 @@ fn test_navigation_moves_the_accented_match(cx: &mut TestAppContext) {
             bar.search_next(Some(content.clone()), cx);
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(current, vec![4..7]);
-            assert_eq!(all, vec![0..3, 8..11]);
+            assert_eq!(all, vec![0..3, 4..7, 8..11]);
 
             bar.search_previous(Some(content.clone()), cx);
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(current, vec![0..3]);
-            assert_eq!(all, vec![4..7, 8..11]);
+            assert_eq!(all, vec![0..3, 4..7, 8..11]);
+        });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_navigation_rewrites_only_the_current_match_decoration(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo foo foo", window, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.show_search = true;
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.perform_search(Some(content.clone()), cx);
+            bar.match_decorations[&content.entity_id()].all.clear(cx);
+
+            bar.search_next(Some(content.clone()), cx);
+            bar.search_previous(Some(content.clone()), cx);
+
+            let (all, current) = painted_ranges(bar, &content, cx);
+            assert_eq!(
+                all,
+                [] as [std::ops::Range<usize>; 0],
+                "stepping must not rebuild the list of every match"
+            );
+            assert_eq!(current, vec![0..3]);
+        });
+    });
+}
+
+/// Read a decoration collection's creation rank from its debug form.
+///
+/// ### Arguments
+/// - `collection`: The collection to inspect
+///
+/// ### Returns
+/// - `usize`: The collection's creation rank within its editor
+#[cfg(feature = "gpui-test-support")]
+fn decoration_collection_rank(
+    collection: &gpui_kit::component::input::TextDecorationCollection,
+) -> usize {
+    let debug = format!("{collection:?}");
+    let (_, after_id) = debug
+        .rsplit_once("DecorationCollectionId(")
+        .expect("expected the collection id in the debug form");
+    let (rank, _) = after_id
+        .split_once(')')
+        .expect("expected the collection id to close");
+    rank.parse().expect("expected a numeric collection id")
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_current_match_collection_outranks_the_all_matches_collection(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo", window, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.show_search = true;
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.perform_search(Some(content.clone()), cx);
+
+            let decorations = &bar.match_decorations[&content.entity_id()];
+            assert!(
+                decoration_collection_rank(&decorations.current)
+                    < decoration_collection_rank(&decorations.all),
+                "the first collection wins an overlap, so the accent must be created first"
+            );
+        });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_close_frees_the_scan_buffers(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("\u{1E9E} FOO foo", window, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.show_search = true;
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.perform_search(Some(content.clone()), cx);
+            assert!(bar.search_text_scratch.capacity() > 0);
+            assert!(bar.search_lowercase_text_scratch.capacity() > 0);
+            assert!(bar.search_length_changes_scratch.capacity() > 0);
+            assert!(bar.search_matches.capacity() > 0);
+
+            bar.close(cx);
+
+            assert_eq!(bar.search_text_scratch.capacity(), 0);
+            assert_eq!(bar.search_lowercase_text_scratch.capacity(), 0);
+            assert_eq!(bar.search_length_changes_scratch.capacity(), 0);
+            assert_eq!(bar.search_matches.capacity(), 0);
         });
     });
 }
@@ -1111,7 +1296,7 @@ fn test_decoration_collections_are_reused_across_searches(cx: &mut TestAppContex
             // so the final "foo" search resumes from the second occurrence.
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(current, vec![8..11]);
-            assert_eq!(all, vec![0..3]);
+            assert_eq!(all, vec![0..3, 8..11]);
         });
     });
 }

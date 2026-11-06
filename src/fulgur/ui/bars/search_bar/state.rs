@@ -1,5 +1,6 @@
 use super::SearchMatch;
 use super::actions::MatchStep;
+use super::matching::LengthChange;
 use crate::fulgur::Fulgur;
 use gpui_kit::component::input::{EditorState, InputEvent, InputState, TextDecorationCollection};
 use gpui_kit::{
@@ -10,8 +11,9 @@ use std::collections::HashMap;
 
 /// The pair of decoration collections painting the search matches of one editor
 ///
-/// `all` carries every match except the current one, `current` carries the
-/// current one alone, so the two never overlap and their styles never compete.
+/// `all` carries every match and `current` overlays the current one, so stepping
+/// through the matches only rewrites `current`. `current` must be created first:
+/// the first collection wins when overlapping decorations set the same property.
 /// The weak handle lets dead editors be pruned from the cache.
 pub(super) struct MatchDecorations {
     pub(super) editor: WeakEntity<EditorState>,
@@ -32,7 +34,7 @@ pub(crate) struct SearchBar {
     pub(super) current_match_index: Option<usize>,
     pub(super) search_text_scratch: String,
     pub(super) search_lowercase_text_scratch: String,
-    pub(super) search_lowercase_offsets_scratch: Vec<usize>,
+    pub(super) search_length_changes_scratch: Vec<LengthChange>,
     pub(super) match_decorations: HashMap<EntityId, MatchDecorations>,
     pub(super) editor_subscription: Option<Subscription>,
     pub(super) pending_rescan: Option<Task<()>>,
@@ -98,7 +100,7 @@ impl SearchBar {
             current_match_index: None,
             search_text_scratch: String::new(),
             search_lowercase_text_scratch: String::new(),
-            search_lowercase_offsets_scratch: Vec::new(),
+            search_length_changes_scratch: Vec::new(),
             match_decorations: HashMap::new(),
             editor_subscription: None,
             pending_rescan: None,
