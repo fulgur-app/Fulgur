@@ -1,7 +1,7 @@
 use super::SearchMatch;
 use super::matching::{
     apply_replacements, find_matches, find_matches_with_scratch, lowered_to_original,
-    rebuild_lowercase_text,
+    offset_after_replacements, rebuild_lowercase_text,
 };
 use core::prelude::v1::test;
 
@@ -10,9 +10,11 @@ use super::SearchBar;
 #[cfg(feature = "gpui-test-support")]
 use crate::fulgur::Fulgur;
 #[cfg(feature = "gpui-test-support")]
-use gpui_kit::component::input::{EditorState, Undo};
+use gpui_kit::component::input::{EditorState, InputEditsEvent, Undo};
 #[cfg(feature = "gpui-test-support")]
-use gpui_kit::{Entity, Focusable, TestAppContext, VisualTestContext};
+use gpui_kit::{Entity, Focusable, Pixels, Point, TestAppContext, VisualTestContext, point, px};
+#[cfg(feature = "gpui-test-support")]
+use std::{cell::RefCell, rc::Rc};
 
 // ========== Test helpers ==========
 
@@ -147,6 +149,75 @@ fn test_apply_replacements_non_sequential_matches() {
     ];
     let result = apply_replacements(&matches, text, "hi");
     assert_eq!(result, "hi world hi");
+}
+
+// ========== offset_after_replacements ==========
+
+#[test]
+fn test_offset_after_replacements_stays_on_the_same_text() {
+    let text = "foo a foo b foo";
+    let matches = find_matches(text, "foo", true, false);
+    let replaced = apply_replacements(&matches, text, "quux");
+    assert_eq!(replaced, "quux a quux b quux");
+
+    let cases = [
+        (text.find("foo").unwrap(), replaced.find("quux").unwrap()),
+        (text.find('a').unwrap(), replaced.find('a').unwrap()),
+        (text.find('b').unwrap(), replaced.find('b').unwrap()),
+    ];
+    for (offset, expected) in cases {
+        assert_eq!(offset_after_replacements(&matches, offset, 4), expected);
+    }
+}
+
+#[test]
+fn test_offset_after_replacements_handles_a_shorter_replacement() {
+    let text = "foo a foo b";
+    let matches = find_matches(text, "foo", true, false);
+    let replaced = apply_replacements(&matches, text, "x");
+
+    assert_eq!(
+        offset_after_replacements(&matches, text.find('b').unwrap(), 1),
+        replaced.find('b').unwrap()
+    );
+}
+
+#[test]
+fn test_offset_after_replacements_maps_the_end_of_the_text() {
+    let text = "foo a foo";
+    let matches = find_matches(text, "foo", true, false);
+    let replaced = apply_replacements(&matches, text, "quux");
+
+    assert_eq!(
+        offset_after_replacements(&matches, text.len(), 4),
+        replaced.len()
+    );
+}
+
+#[test]
+fn test_offset_after_replacements_moves_an_offset_inside_a_match_to_its_start() {
+    let matches = vec![create_match(0, 3), create_match(6, 9)];
+
+    assert_eq!(offset_after_replacements(&matches, 7, 4), 7);
+}
+
+#[test]
+fn test_offset_after_replacements_skips_overlapping_matches_like_the_replacement_does() {
+    let text = "aaaa z";
+    let matches = find_matches(text, "aa", true, false);
+    assert_eq!(matches.len(), 3, "the matches must overlap");
+    let replaced = apply_replacements(&matches, text, "b");
+    assert_eq!(replaced, "bb z");
+
+    assert_eq!(
+        offset_after_replacements(&matches, text.find('z').unwrap(), 1),
+        replaced.find('z').unwrap()
+    );
+}
+
+#[test]
+fn test_offset_after_replacements_without_matches_keeps_the_offset() {
+    assert_eq!(offset_after_replacements(&[], 5, 4), 5);
 }
 
 // ========== find_matches ==========
@@ -1027,6 +1098,230 @@ fn test_gpui_replace_all_case_sensitive_non_whole_word(cx: &mut TestAppContext) 
             assert!(bar.search_matches.is_empty());
             assert_eq!(bar.current_match_index, None);
         });
+    });
+}
+
+/// Type a long document, open the search bar on it and park the caret
+///
+/// The query is `foo` and the replacement `quux`. The buffer is typed rather than
+/// seeded with `set_value`, so it overflows the viewport and ends up scrolled.
+///
+/// ### Arguments
+/// - `search_bar`: The search bar under test
+/// - `content`: The active editor's content
+/// - `visual_cx`: The visual context driving the window
+/// - `document`: The text to type into the editor
+/// - `caret`: The byte offset to park the caret on
+///
+/// ### Returns
+/// - `Point<Pixels>`: The non-zero scroll offset the editor settled on
+#[cfg(feature = "gpui-test-support")]
+fn open_bar_on_scrolled_document(
+    search_bar: &Entity<SearchBar>,
+    content: &Entity<EditorState>,
+    visual_cx: &mut VisualTestContext,
+    document: &str,
+    caret: usize,
+) -> Point<Pixels> {
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.focus(window, cx);
+            content.insert(document.to_string(), window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|window, cx| {
+        search_bar.update(cx, |bar, cx| {
+            bar.toggle(Some(content.clone()), window, cx);
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.replace_input.update(cx, |input, cx| {
+                input.set_value("quux", window, cx);
+            });
+        });
+        content.update(cx, |content, cx| {
+            content.set_selected_range(caret..caret, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    let scroll = visual_cx.update(|_window, cx| content.read(cx).scroll_offset());
+    assert_ne!(
+        scroll,
+        point(px(0.), px(0.)),
+        "the test needs a non-zero scroll offset to be meaningful"
+    );
+    scroll
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_replace_current_edits_only_the_match(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo bar foo", window, cx);
+            content.set_selected_range(8..8, cx);
+        });
+    });
+
+    let recorded_edits = Rc::new(RefCell::new(Vec::new()));
+    let _edits_subscription = visual_cx.update(|_window, cx| {
+        let recorded_edits = recorded_edits.clone();
+        cx.subscribe(&content, move |_, event: &InputEditsEvent, _| {
+            recorded_edits.borrow_mut().extend(
+                event
+                    .edits()
+                    .iter()
+                    .map(|(edit, _)| (edit.start_byte, edit.old_end_byte, edit.new_end_byte)),
+            );
+        })
+    });
+
+    visual_cx.update(|window, cx| {
+        search_bar.update(cx, |bar, cx| {
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.replace_input.update(cx, |input, cx| {
+                input.set_value("quux", window, cx);
+            });
+            bar.replace_current(Some(content.clone()), window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        assert_eq!(content.read(cx).text().to_string(), "foo bar quux");
+    });
+    assert_eq!(
+        *recorded_edits.borrow(),
+        vec![(8, 11, 12)],
+        "a single replace must edit the match, not rewrite the document"
+    );
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_replace_current_keeps_the_view_when_the_next_match_is_visible(cx: &mut TestAppContext) {
+    let (search_bar, content, mut visual_cx) = setup_search_with_root(cx);
+    let filler = "filler line\n".repeat(200);
+    let document = format!("{filler}foo one\nfoo two\nkeep\nkeep\nkeep\n");
+    let scroll_before = open_bar_on_scrolled_document(
+        &search_bar,
+        &content,
+        &mut visual_cx,
+        &document,
+        filler.len(),
+    );
+
+    visual_cx.update(|window, cx| {
+        search_bar.update(cx, |bar, cx| {
+            bar.replace_current(Some(content.clone()), window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        let content = content.read(cx);
+        assert!(
+            content
+                .text()
+                .to_string()
+                .ends_with("quux one\nfoo two\nkeep\nkeep\nkeep\n")
+        );
+        assert_eq!(
+            content.cursor(),
+            filler.len() + "quux one\n".len(),
+            "the caret must land on the next match"
+        );
+        assert_eq!(
+            content.scroll_offset(),
+            scroll_before,
+            "a visible next match must not move the view"
+        );
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_replace_current_is_one_undoable_edit(cx: &mut TestAppContext) {
+    let (search_bar, content, mut visual_cx) = setup_search_with_root(cx);
+
+    // Typed so the pre-replace text is itself on the undo stack: `set_value` would
+    // clear it, and a failed undo would then look like a no-op.
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.focus(window, cx);
+            content.insert("alpha beta alpha", window, cx);
+            content.set_selected_range(0..0, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|window, cx| {
+        search_bar.update(cx, |bar, cx| {
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("alpha", window, cx);
+            });
+            bar.replace_input.update(cx, |input, cx| {
+                input.set_value("gamma", window, cx);
+            });
+            bar.replace_current(Some(content.clone()), window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        assert_eq!(content.read(cx).text().to_string(), "gamma beta alpha");
+    });
+
+    visual_cx.dispatch_action(Undo);
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        assert_eq!(content.read(cx).text().to_string(), "alpha beta alpha");
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_replace_all_keeps_the_scroll_offset_and_the_caret(cx: &mut TestAppContext) {
+    let (search_bar, content, mut visual_cx) = setup_search_with_root(cx);
+    let above = "foo above\n".repeat(200);
+    let document = format!("{above}caret line\nfoo below\nkeep\nkeep\nkeep\n");
+    let scroll_before = open_bar_on_scrolled_document(
+        &search_bar,
+        &content,
+        &mut visual_cx,
+        &document,
+        above.len(),
+    );
+
+    visual_cx.update(|window, cx| {
+        search_bar.update(cx, |bar, cx| {
+            bar.replace_all(Some(content.clone()), window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        let content = content.read(cx);
+        let text = content.text().to_string();
+        assert!(!text.contains("foo"), "every match must be replaced");
+        assert_eq!(
+            Some(content.cursor()),
+            text.find("caret line"),
+            "the caret must stay on the same text despite the length changes above it"
+        );
+        assert_eq!(
+            content.scroll_offset(),
+            scroll_before,
+            "Replace All must not move the view"
+        );
     });
 }
 

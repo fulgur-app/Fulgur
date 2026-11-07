@@ -2,7 +2,7 @@ use gpui_kit::component::input::EditorState;
 use gpui_kit::{App, Context, Entity, Window};
 
 use super::SearchBar;
-use super::matching::apply_replacements;
+use super::matching::{apply_replacements, offset_after_replacements};
 
 impl SearchBar {
     /// Return whether a buffer accepts edits from the search bar.
@@ -40,23 +40,9 @@ impl SearchBar {
             && let Some(content_entity) = content
         {
             let replace_text = self.replace_input.read(cx).text().to_string();
-            let text = content_entity.read(cx).text().to_string();
-            // Defensive guard against stale offsets: bail out instead of slicing
-            // out of bounds or on a non-char-boundary if the buffer changed.
-            if search_match.end > text.len()
-                || search_match.start > search_match.end
-                || !text.is_char_boundary(search_match.start)
-                || !text.is_char_boundary(search_match.end)
-            {
-                cx.notify();
-                return;
-            }
-            let mut new_text = String::new();
-            new_text.push_str(&text[..search_match.start]);
-            new_text.push_str(&replace_text);
-            new_text.push_str(&text[search_match.end..]);
             content_entity.update(cx, |content, cx| {
-                content.replace_all(&new_text, window, cx);
+                content.set_selected_range(search_match.start..search_match.end, cx);
+                content.replace(replace_text, window, cx);
             });
             self.perform_search(Some(content_entity.clone()), cx);
             if !self.search_matches.is_empty() {
@@ -72,7 +58,7 @@ impl SearchBar {
         cx.notify();
     }
 
-    /// Replace all search matches
+    /// Replace all search matches, keeping the caret on its text and the view where it is
     ///
     /// ### Arguments
     /// - `content`: The active editor tab's content, if any
@@ -87,7 +73,7 @@ impl SearchBar {
         if !Self::content_is_editable(content.as_ref(), cx) {
             return;
         }
-        self.perform_search(content.clone(), cx);
+        self.rescan_matches(content.as_ref(), cx);
         if self.search_matches.is_empty() {
             return;
         }
@@ -102,8 +88,15 @@ impl SearchBar {
             } else {
                 apply_replacements(&self.search_matches, &text, &replace_text)
             };
+            let search_matches = &self.search_matches;
             content_entity.update(cx, |content, cx| {
+                let caret =
+                    offset_after_replacements(search_matches, content.cursor(), replace_text.len());
+                let scroll_offset = content.scroll_offset();
                 content.replace_all(&new_text, window, cx);
+                content.set_selected_range(caret..caret, cx);
+                // Last: moving the caret also requests a scroll, and the last request wins.
+                content.set_scroll_offset(scroll_offset, cx);
             });
             self.search_matches.clear();
             self.current_match_index = None;
