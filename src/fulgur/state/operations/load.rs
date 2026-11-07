@@ -37,7 +37,6 @@ impl Fulgur {
                 window_state.tabs.len()
             );
             self.tabs.clear();
-            self.pending_remote_restore.clear();
             self.inflight_remote_restore.clear();
             // Restored tabs keep the identity they were persisted under, so the
             // first save of the session updates their rows in place rather than
@@ -195,9 +194,10 @@ impl Fulgur {
                 );
                 if is_modified {
                     tab.mark_saved_baseline_unknown();
+                } else {
+                    tab.mark_awaiting_remote_content(cx);
                 }
                 tab.color_tag = color_tag;
-                self.pending_remote_restore.insert(tab_id);
                 return Some((tab, false));
             }
             TabRestoreDecision::LoadFromFile { path } => {

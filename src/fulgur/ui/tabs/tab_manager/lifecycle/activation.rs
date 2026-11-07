@@ -1,4 +1,4 @@
-use crate::fulgur::{Fulgur, tab::Tab, ui::tabs::editor_tab::TabLocation};
+use crate::fulgur::{Fulgur, tab::Tab};
 use gpui_kit::{App, Context, Focusable, Window};
 
 impl Fulgur {
@@ -44,25 +44,7 @@ impl Fulgur {
                 self.file_watch_state.pending_conflicts.remove(&path);
                 self.show_file_conflict_dialog(&path, tab_id, window, cx);
             }
-            let pending_remote_reload = if let Some(Tab::Editor(editor_tab)) =
-                self.tabs.get(index).map(|tab| tab.read(cx))
-            {
-                match &editor_tab.location {
-                    TabLocation::Remote(spec)
-                        if self.pending_remote_restore.contains(&editor_tab.id)
-                            && !self.inflight_remote_restore.contains(&editor_tab.id)
-                            && !editor_tab.modified =>
-                    {
-                        Some((editor_tab.id, spec.clone()))
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            };
-            if let Some((tab_id, spec)) = pending_remote_reload {
-                self.ensure_remote_tab_loaded(window, cx, tab_id, spec);
-            }
+            self.load_active_tab_remote_content(window, cx);
             self.focus_active_tab(window, cx);
             if let Some(new_id) = new_tab_id
                 && self

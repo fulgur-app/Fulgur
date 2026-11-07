@@ -44,6 +44,7 @@ impl Fulgur {
             color_tag: editor.color_tag,
             log_view: editor.log_view,
             read_only: editor.read_only,
+            awaiting_remote_content: editor.awaiting_remote_content,
         })
     }
 
@@ -74,6 +75,7 @@ impl Fulgur {
             if is_log_view {
                 self.activate_log_view(id, window, cx);
             }
+            self.load_active_tab_remote_content(window, cx);
             self.focus_active_tab(window, cx);
             self.save_state_async(cx, window);
             cx.notify();
