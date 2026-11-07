@@ -220,3 +220,35 @@ pub(super) fn apply_replacements(
     result.push_str(&text[last_pos..]);
     result
 }
+
+/// Map a byte offset through the edits `apply_replacements` makes, so it stays on the same text
+///
+/// Overlapping matches are skipped the way `apply_replacements` skips them. An offset
+/// strictly inside a replaced match moves to the start of its replacement.
+///
+/// ### Arguments
+/// - `search_matches`: The match positions being replaced, sorted by offset
+/// - `offset`: The byte offset in the original text
+/// - `replace_len`: The byte length of the replacement text
+///
+/// ### Returns
+/// - `usize`: The matching byte offset in the replaced text
+pub(super) fn offset_after_replacements(
+    search_matches: &[SearchMatch],
+    offset: usize,
+    replace_len: usize,
+) -> usize {
+    let mut original_pos = 0;
+    let mut replaced_pos = 0;
+    for search_match in search_matches {
+        if search_match.start < original_pos {
+            continue;
+        }
+        if search_match.end > offset {
+            return replaced_pos + offset.min(search_match.start) - original_pos;
+        }
+        replaced_pos += search_match.start - original_pos + replace_len;
+        original_pos = search_match.end;
+    }
+    replaced_pos + offset - original_pos
+}

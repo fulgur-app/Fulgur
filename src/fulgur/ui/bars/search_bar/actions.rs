@@ -157,7 +157,11 @@ impl SearchBar {
     /// ### Arguments
     /// - `content`: The active editor tab's content, if any
     /// - `cx`: The search bar context
-    fn rescan_matches(&mut self, content: Option<&Entity<EditorState>>, cx: &mut Context<Self>) {
+    pub(super) fn rescan_matches(
+        &mut self,
+        content: Option<&Entity<EditorState>>,
+        cx: &mut Context<Self>,
+    ) {
         self.pending_rescan = None;
         self.search_matches.clear();
         self.current_match_index = None;
