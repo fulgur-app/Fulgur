@@ -264,6 +264,9 @@ impl Render for StatusBar {
                 div()
                     .flex()
                     .justify_end()
+                    .when_some(labels.remote_not_loaded_label, |this, label| {
+                        this.child(status_bar_right_item_factory(label, cx.theme().border))
+                    })
                     .when(is_read_only, |this| {
                         this.child(status_bar_right_item_factory(
                             "Read-only".to_string(),
