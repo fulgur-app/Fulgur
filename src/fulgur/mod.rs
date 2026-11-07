@@ -94,7 +94,6 @@ pub struct Fulgur {
     latest_remote_open_request_by_tab: HashMap<TabId, u64>, // Latest remote-open request id expected per tab id
     latest_remote_save_request_by_tab: HashMap<TabId, u64>, // Latest remote-save request id expected per tab id
     last_failed_remote_open_url: Option<String>, // Last attempted remote URL kept for retry prefill after connection/open failures
-    pending_remote_restore: HashSet<TabId>, // Restored remote tab ids that should lazily reconnect on first activation/save
     inflight_remote_restore: HashSet<TabId>, // Restored remote tabs currently running a reconnect task
     inflight_saves: HashMap<TabId, PathBuf>, // Destination path of each background local-file write in flight, keyed by tab id; guards against overlapping saves and suppresses self-save watcher events
     pending_save_tab_closes: HashSet<TabId>, // Tabs whose close request is waiting for a local background save to finish

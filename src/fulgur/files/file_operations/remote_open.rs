@@ -15,6 +15,7 @@ use crate::fulgur::{
     },
     ui::notifications::progress::CancelCallback,
 };
+use gpui_kit::component::{WindowExt, notification::NotificationType};
 use parking_lot::Mutex;
 use std::sync::{
     Arc,
@@ -68,6 +69,7 @@ impl Fulgur {
     ) {
         if let Some(tab_index) = self.find_tab_by_remote_spec(&spec, cx) {
             self.active_tab_id = self.tabs.get(tab_index).map(|t| t.read(cx).id());
+            self.load_active_tab_remote_content(window, cx);
             self.focus_active_tab(window, cx);
             if record_in_history {
                 Self::record_remote_history_url(format_remote_history_url(&spec), cx);
@@ -148,6 +150,72 @@ impl Fulgur {
         spec: RemoteSpec,
     ) {
         self.open_remote_file_with_target(window, cx, spec, Some(tab_id), false);
+    }
+
+    /// Start reading the remote file of the active tab if it is still a placeholder.
+    ///
+    /// Does nothing for any other tab, or when that read is already running. A
+    /// modified buffer is left alone, because the read would replace its text.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub(crate) fn load_active_tab_remote_content(
+        &mut self,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
+    ) {
+        let Some(editor_tab) = self.get_active_editor_tab(cx) else {
+            return;
+        };
+        if !editor_tab.awaiting_remote_content
+            || editor_tab.modified
+            || self.inflight_remote_restore.contains(&editor_tab.id)
+        {
+            return;
+        }
+        let TabLocation::Remote(spec) = &editor_tab.location else {
+            return;
+        };
+        let (tab_id, spec) = (editor_tab.id, spec.clone());
+        self.ensure_remote_tab_loaded(window, cx, tab_id, spec);
+    }
+
+    /// Refuse to write the active tab while it is a placeholder for a remote file.
+    ///
+    /// Its buffer is not the file's content, so a Save would replace the remote
+    /// file with it and a Save As would write an empty copy. The read is started
+    /// instead, so that the user can save again once the content has arrived.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: The active tab is a placeholder and must not be written
+    /// - `false`: The active tab can be saved
+    pub(crate) fn refuse_save_of_unloaded_remote_tab(
+        &mut self,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
+    ) -> bool {
+        let is_placeholder = self
+            .get_active_editor_tab(cx)
+            .is_some_and(|editor_tab| editor_tab.awaiting_remote_content);
+        if !is_placeholder {
+            return false;
+        }
+        self.load_active_tab_remote_content(window, cx);
+        window.push_notification(
+            (
+                NotificationType::Warning,
+                gpui_kit::SharedString::from(
+                    "This remote file has not loaded yet, so it was not saved. Loading it now.",
+                ),
+            ),
+            cx,
+        );
+        true
     }
 
     /// Decode the bytes of a remote file into an open result, refusing binary content.

@@ -68,6 +68,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
+            awaiting_remote_content: false,
             highlight_colors: settings.highlight_colors,
             content_subscription: None,
         }
@@ -166,6 +167,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
+            awaiting_remote_content: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -239,6 +241,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
+            awaiting_remote_content: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -301,6 +304,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
+            awaiting_remote_content: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -367,6 +371,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
+            awaiting_remote_content: false,
             highlight_colors: settings.highlight_colors,
             content_subscription: None,
         }
@@ -436,6 +441,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
+            awaiting_remote_content: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -465,6 +471,7 @@ impl EditorTab {
     ) -> Self {
         let cursor_position = data.cursor_position;
         let read_only = data.read_only;
+        let awaiting_remote_content = data.awaiting_remote_content;
         let large_file = super::is_large_file(data.content.len());
         let content = cx.new(|cx| {
             super::make_input_state(
@@ -503,11 +510,15 @@ impl EditorTab {
             log_view: data.log_view,
             log_follow: true,
             read_only: false,
+            awaiting_remote_content: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         };
         if read_only {
             tab.make_read_only(cx);
+        }
+        if awaiting_remote_content {
+            tab.mark_awaiting_remote_content(cx);
         }
         tab
     }

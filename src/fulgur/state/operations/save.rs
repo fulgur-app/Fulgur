@@ -1028,6 +1028,44 @@ mod tests {
     }
 
     #[gpui_kit::test]
+    fn only_a_restored_remote_tab_without_edits_awaits_its_content(cx: &mut TestAppContext) {
+        let remote_tab = |tab_id, content: Option<&str>| TabState {
+            tab_id,
+            title: "remote.txt".to_string(),
+            file_path: None,
+            content: content.map(TabContent::from),
+            last_saved: None,
+            remote: Some(SerializedRemoteSpec {
+                host: "example.com".to_string(),
+                port: 22,
+                user: "alice".to_string(),
+                path: "/srv/remote.txt".to_string(),
+            }),
+            log_view: false,
+            color_tag: None,
+            share: None,
+            encoding: None,
+            lossy_decode: false,
+        };
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let mut state = startup_snapshot(remote_tab(7, None));
+        state.windows[0].tabs.push(remote_tab(8, Some("recovered")));
+
+        restore_and_snapshot(&fulgur, &mut visual_cx, state);
+
+        visual_cx.update(|_window, cx| {
+            let tabs = &fulgur.read(cx).tabs;
+            let (placeholder, recovered) = (&tabs[0], &tabs[1]);
+            let placeholder = placeholder.read(cx).as_editor().expect("editor tab");
+            let recovered = recovered.read(cx).as_editor().expect("editor tab");
+            assert!(placeholder.awaiting_remote_content);
+            assert!(!placeholder.content.read(cx).is_editable());
+            assert!(!recovered.awaiting_remote_content);
+            assert!(recovered.content.read(cx).is_editable());
+        });
+    }
+
+    #[gpui_kit::test]
     fn restored_remote_recovery_survives_repeated_snapshots(cx: &mut TestAppContext) {
         let restored = TabState {
             tab_id: 8,
