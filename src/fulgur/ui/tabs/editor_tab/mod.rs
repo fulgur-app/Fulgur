@@ -76,6 +76,9 @@ pub struct EditorTab {
     pub show_markdown_toolbar: bool,
     pub show_markdown_preview: bool,
     pub file_size_bytes: Option<u64>,
+    /// For a local file, the disk modification time of the version the buffer
+    /// is based on (set on open, reload, save and conflict resolution, never by
+    /// a later `stat`).
     pub file_last_modified: Option<SystemTime>,
     pub large_file: bool,
     /// Whether the document color provider currently reports colors.
@@ -381,6 +384,8 @@ pub struct FromFileParams {
     pub contents: String,
     pub encoding: String,
     pub is_modified: bool,
+    /// Disk modification time of the version `contents` is based on.
+    pub file_last_modified: Option<SystemTime>,
 }
 
 /// Create a new editor state with syntax highlighting

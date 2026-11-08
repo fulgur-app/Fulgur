@@ -31,13 +31,14 @@ pub fn replace_editor_text(
 }
 
 impl EditorTab {
-    /// Update cached metadata used by tab tooltip rendering.
+    /// Record the size and modification time of the file version the buffer now matches.
     ///
     /// ### Arguments
     /// - `content_len`: File size in bytes
-    pub fn update_file_tooltip_cache(&mut self, content_len: usize) {
+    /// - `last_modified`: The file's modification time for that version (see `file_last_modified`)
+    pub fn record_file_metadata(&mut self, content_len: usize, last_modified: Option<SystemTime>) {
         self.file_size_bytes = Some(content_len as u64);
-        self.file_last_modified = Some(SystemTime::now());
+        self.file_last_modified = last_modified;
     }
 
     /// Update the editor's display settings. Tab size cannot be changed after `EditorState` creation.

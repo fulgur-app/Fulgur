@@ -13,6 +13,7 @@ use gpui_kit::{
     WindowOptions, div,
 };
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
 
 struct EmptyView;
 
@@ -149,12 +150,14 @@ fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
     let settings = EditorSettings::new();
     let path = temp_test_path("test_file.md");
     let contents = "# title\nbody".to_string();
+    let disk_modified = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let params = FromFileParams {
         id: TabId(13),
         path: path.clone(),
         contents: contents.clone(),
         encoding: "UTF-8".to_string(),
         is_modified: true,
+        file_last_modified: Some(disk_modified),
     };
 
     cx.update(|cx| {
@@ -172,7 +175,7 @@ fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
             assert_eq!(tab.encoding, "UTF-8");
             assert_eq!(tab.language, SupportedLanguage::Markdown);
             assert_eq!(tab.file_size_bytes, Some(12));
-            assert!(tab.file_last_modified.is_some());
+            assert_eq!(tab.file_last_modified, Some(disk_modified));
             assert_eq!(tab.content.read(cx).text().to_string(), "# title\nbody");
             cx.new(|_| EmptyView)
         })
@@ -226,6 +229,7 @@ fn test_editor_tab_check_modified_and_mark_as_saved(cx: &mut TestAppContext) {
         contents: "original".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {
@@ -270,6 +274,7 @@ fn test_recovered_file_stays_modified_after_edit_and_undo(cx: &mut TestAppContex
         contents: "recovered content".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: true,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {
@@ -307,6 +312,7 @@ fn test_editor_tab_check_modified_detects_same_length_content_change(cx: &mut Te
         contents: "abcd".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
+        file_last_modified: None,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -332,6 +338,7 @@ fn test_editor_tab_check_modified_handles_multibyte_utf8_content(cx: &mut TestAp
         contents: "\u{00E9}\u{1F642}\u{6F22}".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
+        file_last_modified: None,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -364,6 +371,7 @@ fn test_editor_tab_from_file_title_is_file_name_clean_and_dirty(cx: &mut TestApp
         contents: "clean".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
+        file_last_modified: None,
     };
     let dirty = FromFileParams {
         id: TabId(42),
@@ -371,6 +379,7 @@ fn test_editor_tab_from_file_title_is_file_name_clean_and_dirty(cx: &mut TestApp
         contents: "dirty".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: true,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {
@@ -398,6 +407,7 @@ fn test_editor_tab_get_suggested_filename_of_modified_file(cx: &mut TestAppConte
         contents: "content".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: true,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {
@@ -425,6 +435,7 @@ fn test_share_file_name_uses_local_file_name(cx: &mut TestAppContext) {
         contents: "content".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: true,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {
@@ -680,6 +691,7 @@ fn test_editor_tab_from_file_csv_defaults_to_table(cx: &mut TestAppContext) {
         contents: "name,age\nAlice,30\n".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {
@@ -723,6 +735,7 @@ fn test_editor_tab_from_file_csv_detects_semicolon(cx: &mut TestAppContext) {
         contents: "name;age\nAlice;30\n".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {
@@ -745,6 +758,7 @@ fn test_csv_table_insert_row_commits_to_buffer(cx: &mut TestAppContext) {
         contents: "a,b\n1,2\n".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {
@@ -772,6 +786,7 @@ fn test_csv_table_move_column_reorders_data(cx: &mut TestAppContext) {
         contents: "a,b,c\n1,2,3\n".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {
@@ -807,6 +822,7 @@ fn fitted_csv_column_widths(cx: &mut TestAppContext, contents: &str) -> Vec<Pixe
         contents: contents.to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {
@@ -876,6 +892,7 @@ fn test_csv_fit_leaves_the_row_number_column_alone(cx: &mut TestAppContext) {
         contents: "x\n1\n".to_string(),
         encoding: "UTF-8".to_string(),
         is_modified: false,
+        file_last_modified: None,
     };
 
     cx.update(|cx| {

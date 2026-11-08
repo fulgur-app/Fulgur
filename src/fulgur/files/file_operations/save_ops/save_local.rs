@@ -4,6 +4,7 @@ use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur,
     editor_tab::{TabLocation, content_fingerprint_from_str},
+    state::file_modified_system_time,
     tab::Tab,
     utils::atomic_write::atomic_write_file,
 };
@@ -156,13 +157,14 @@ impl Fulgur {
                 }
                 self.record_local_file_save(&completion.path);
                 let byte_len = completion.byte_len;
+                let saved_modified = file_modified_system_time(&completion.path);
                 self.update_editor_tab(completion.tab_id, cx, |editor_tab, cx| {
                     editor_tab.mark_snapshot_as_saved(
                         completion.saved_content_hash,
                         completion.saved_content_len,
                         cx,
                     );
-                    editor_tab.update_file_tooltip_cache(byte_len);
+                    editor_tab.record_file_metadata(byte_len, saved_modified);
                     cx.notify();
                 });
                 cx.notify();

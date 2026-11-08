@@ -2,15 +2,21 @@ use super::super::{DecodedContents, binary_file_notice, decode_text_file};
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams},
+    state::file_modified_system_time,
     tab::Tab,
 };
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use gpui_kit::{AsyncWindowContext, Context, SharedString, WeakEntity, Window};
 use std::path::Path;
+use std::time::SystemTime;
 
 /// Result of reading and classifying a file on the background executor.
 enum FileReadOutcome {
-    Decoded(DecodedContents),
+    /// A text file, with its modification time read just before its contents.
+    Decoded {
+        decoded: DecodedContents,
+        disk_modified: Option<SystemTime>,
+    },
     Binary,
     Failed,
 }
@@ -107,6 +113,8 @@ impl Fulgur {
         let outcome = window
             .background_executor()
             .spawn(async move {
+                // Taken before the read so a write racing it reads as a later change.
+                let disk_modified = file_modified_system_time(&read_path);
                 match std::fs::read(&read_path) {
                     Ok(bytes) => {
                         log::debug!(
@@ -114,8 +122,12 @@ impl Fulgur {
                             read_path.display(),
                             bytes.len()
                         );
-                        decode_text_file(bytes)
-                            .map_or(FileReadOutcome::Binary, FileReadOutcome::Decoded)
+                        decode_text_file(bytes).map_or(FileReadOutcome::Binary, |decoded| {
+                            FileReadOutcome::Decoded {
+                                decoded,
+                                disk_modified,
+                            }
+                        })
                     }
                     Err(e) => {
                         log::error!("Failed to read file {}: {e}", read_path.display());
@@ -125,8 +137,11 @@ impl Fulgur {
             })
             .await;
         let path = canonical_path.as_path();
-        let decoded = match outcome {
-            FileReadOutcome::Decoded(decoded) => decoded,
+        let (decoded, disk_modified) = match outcome {
+            FileReadOutcome::Decoded {
+                decoded,
+                disk_modified,
+            } => (decoded, disk_modified),
             FileReadOutcome::Failed => return None,
             FileReadOutcome::Binary => {
                 log::warn!("Refusing to open binary file: {}", path.display());
@@ -160,6 +175,7 @@ impl Fulgur {
                             contents: decoded.content,
                             encoding: decoded.encoding,
                             is_modified: false,
+                            file_last_modified: disk_modified,
                         },
                         window,
                         cx,

@@ -220,7 +220,8 @@ impl Fulgur {
             editor_tab.set_original_content_from_str(&remote_file.content);
             editor_tab.modified = false;
             editor_tab.finish_awaiting_remote_content(cx);
-            editor_tab.update_file_tooltip_cache(remote_file.file_size);
+            editor_tab
+                .record_file_metadata(remote_file.file_size, Some(std::time::SystemTime::now()));
             let filename = remote_file
                 .spec
                 .path
