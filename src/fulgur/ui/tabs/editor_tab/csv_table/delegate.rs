@@ -1,11 +1,13 @@
 //! The `TableDelegate` implementation that renders the CSV grid.
 
+use std::ops::Range;
+
 use gpui_kit::component::{
     ActiveTheme,
     table::{Column, TableDelegate, TableState},
 };
 use gpui_kit::{
-    App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
+    App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, Pixels, SharedString,
     StatefulInteractiveElement, Styled, TestSupportExt, Window, div, prelude::FluentBuilder,
 };
 
@@ -104,6 +106,24 @@ impl TableDelegate for CsvTableDelegate {
         if Self::move_column_in(&mut self.headers, &mut self.rows, col_ix, to_ix) {
             self.commit_and_refresh(window, cx);
         }
+    }
+
+    fn fit_column(
+        &mut self,
+        col_ix: usize,
+        window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Option<Pixels> {
+        self.measure_column_content(col_ix, window, cx)
+    }
+
+    fn visible_rows_changed(
+        &mut self,
+        visible_range: Range<usize>,
+        _: &mut Window,
+        _: &mut Context<TableState<Self>>,
+    ) {
+        self.visible_rows = visible_range;
     }
 
     fn cell_text(&self, row_ix: usize, col_ix: usize, _: &App) -> String {

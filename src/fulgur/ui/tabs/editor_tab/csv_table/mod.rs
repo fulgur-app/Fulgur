@@ -3,9 +3,12 @@
 mod columns;
 mod delegate;
 mod edits;
+mod fit;
 mod rows;
 #[cfg(test)]
 mod tests;
+
+use std::ops::Range;
 
 use gpui_kit::component::{
     input::{EditorState, InputState},
@@ -57,6 +60,8 @@ pub struct CsvTableDelegate {
     dialog_input: Entity<InputState>,
     /// The most recent selection event received via `attach_selection_tracking`.
     last_selection: Option<CsvSelection>,
+    /// The row range the table last reported as visible.
+    visible_rows: Range<usize>,
     /// Number of this delegate's buffer commits whose `InputEvent::Change` has
     /// not reached the tab's content subscription yet, so the subscription can
     /// tell the table's own commits from external edits.
@@ -89,6 +94,7 @@ impl CsvTableDelegate {
             content,
             dialog_input,
             last_selection: None,
+            visible_rows: 0..0,
             pending_own_commits: 0,
         }
     }

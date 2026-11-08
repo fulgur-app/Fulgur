@@ -9,8 +9,8 @@ use crate::fulgur::ui::tabs::tab::TabId;
 use gpui_kit::component::input::Position;
 use gpui_kit::component::table::TableDelegate;
 use gpui_kit::{
-    AppContext, Context, IntoElement, Render, SharedString, TestAppContext, Window, WindowOptions,
-    div,
+    AppContext, Context, IntoElement, Pixels, Render, SharedString, TestAppContext, Window,
+    WindowOptions, div,
 };
 use std::path::PathBuf;
 
@@ -784,6 +784,110 @@ fn test_csv_table_move_column_reorders_data(cx: &mut TestAppContext) {
                 state.delegate_mut().move_column(1, 3, window, cx);
             });
             assert_eq!(tab.content.read(cx).text().to_string(), "b,c,a\n2,3,1\n");
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
+/// Open a CSV document in a test window and fit each of its data columns.
+///
+/// ### Arguments
+/// - `cx`: The test application context
+/// - `contents`: The CSV document
+///
+/// ### Returns
+/// - `Vec<Pixels>`: The width of each data column after its fit
+fn fitted_csv_column_widths(cx: &mut TestAppContext, contents: &str) -> Vec<Pixels> {
+    cx.update(gpui_kit::init);
+    let settings = EditorSettings::new();
+    let params = FromFileParams {
+        id: TabId(74),
+        path: temp_test_path("fit.csv"),
+        contents: contents.to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: false,
+    };
+
+    cx.update(|cx| {
+        let mut widths = Vec::new();
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let mut tab = EditorTab::from_file(params, window, cx, &settings);
+            tab.ensure_csv_table(window, cx);
+            let table = tab.csv_table.clone().expect("table should be built");
+            widths = table.update(cx, |state, cx| {
+                let grid_columns = 1..state.delegate().columns_count(cx);
+                grid_columns
+                    .map(|col_ix| {
+                        assert!(state.fit_col(col_ix, window, cx));
+                        state.col_width(col_ix).expect("column should exist")
+                    })
+                    .collect()
+            });
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+        widths
+    })
+}
+
+#[gpui_kit::test]
+fn test_csv_fit_gives_wide_glyphs_more_room_than_narrow_ones(cx: &mut TestAppContext) {
+    let wide = "\u{1F600}".repeat(10);
+    let widths = fitted_csv_column_widths(cx, &format!("x,y\n{wide},iiiiiiiiii\n"));
+    assert!(widths[0] > widths[1], "{widths:?}");
+}
+
+#[gpui_kit::test]
+fn test_csv_fit_uses_the_widest_line_of_a_multiline_cell(cx: &mut TestAppContext) {
+    let widths = fitted_csv_column_widths(cx, "x,y\n\"aaaaaaaaaa\n\nbb\",aaaaaaaaaa\n");
+    assert_eq!(widths[0], widths[1]);
+}
+
+#[gpui_kit::test]
+fn test_csv_fit_counts_the_header(cx: &mut TestAppContext) {
+    let widths = fitted_csv_column_widths(cx, "a long header,y\n1,a long header\n");
+    assert_eq!(widths[0], widths[1]);
+}
+
+#[gpui_kit::test]
+fn test_csv_fit_reaches_a_long_cell_outside_the_measured_sample(cx: &mut TestAppContext) {
+    let mut contents = String::from("x,y\n");
+    for row_ix in 0..5000 {
+        let first = if row_ix == 1237 {
+            "a long outlier value"
+        } else {
+            "1"
+        };
+        contents.push_str(first);
+        contents.push_str(",a long outlier value\n");
+    }
+    let widths = fitted_csv_column_widths(cx, &contents);
+    assert_eq!(widths[0], widths[1]);
+}
+
+#[gpui_kit::test]
+fn test_csv_fit_leaves_the_row_number_column_alone(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let settings = EditorSettings::new();
+    let params = FromFileParams {
+        id: TabId(75),
+        path: temp_test_path("fit_row_numbers.csv"),
+        contents: "x\n1\n".to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: false,
+    };
+
+    cx.update(|cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let mut tab = EditorTab::from_file(params, window, cx, &settings);
+            tab.ensure_csv_table(window, cx);
+            let table = tab.csv_table.clone().expect("table should be built");
+            table.update(cx, |state, cx| {
+                assert!(state.delegate_mut().fit_column(0, window, cx).is_none());
+                assert!(state.delegate_mut().fit_column(9, window, cx).is_none());
+                assert!(!state.fit_col(0, window, cx));
+            });
             cx.new(|_| EmptyView)
         })
         .expect("failed to open test window");
