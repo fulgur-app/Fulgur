@@ -197,7 +197,6 @@ impl Fulgur {
                 latest_remote_open_request_by_tab: HashMap::new(),
                 latest_remote_save_request_by_tab: HashMap::new(),
                 last_failed_remote_open_url: None,
-                pending_remote_restore: HashSet::new(),
                 inflight_remote_restore: HashSet::new(),
                 inflight_saves: HashMap::new(),
                 pending_save_tab_closes: HashSet::new(),

@@ -1466,6 +1466,7 @@ fn make_transfer_data() -> TabTransferData {
         color_tag: None,
         log_view: false,
         read_only: false,
+        awaiting_remote_content: false,
     }
 }
 
