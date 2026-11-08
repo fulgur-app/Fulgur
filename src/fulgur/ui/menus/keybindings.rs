@@ -248,13 +248,22 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
         #[cfg(not(target_os = "macos"))]
         KeybindingDispatchSpec::new("shift-f3", KeybindingDispatchAction::SearchPrevious),
         #[cfg(target_os = "macos")]
-        KeybindingDispatchSpec::new("cmd-shift-right", KeybindingDispatchAction::NextTab),
-        #[cfg(not(target_os = "macos"))]
-        KeybindingDispatchSpec::new("ctrl-shift-right", KeybindingDispatchAction::NextTab),
+        KeybindingDispatchSpec::new("cmd-alt-right", KeybindingDispatchAction::NextTab),
+        // gpui reports cmd-shift-] as cmd-}, so the shifted bracket is the bound key
         #[cfg(target_os = "macos")]
-        KeybindingDispatchSpec::new("cmd-shift-left", KeybindingDispatchAction::PreviousTab),
+        KeybindingDispatchSpec::new("cmd-}", KeybindingDispatchAction::NextTab),
         #[cfg(not(target_os = "macos"))]
-        KeybindingDispatchSpec::new("ctrl-shift-left", KeybindingDispatchAction::PreviousTab),
+        KeybindingDispatchSpec::new("ctrl-pagedown", KeybindingDispatchAction::NextTab),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-tab", KeybindingDispatchAction::NextTab),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-alt-left", KeybindingDispatchAction::PreviousTab),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-{", KeybindingDispatchAction::PreviousTab),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-pageup", KeybindingDispatchAction::PreviousTab),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-shift-tab", KeybindingDispatchAction::PreviousTab),
         KeybindingDispatchSpec::new("ctrl-g", KeybindingDispatchAction::JumpToLine),
         #[cfg(target_os = "macos")]
         KeybindingDispatchSpec::new("cmd-p", KeybindingDispatchAction::PrintFile),
@@ -602,6 +611,111 @@ mod tests {
                 "{action:?} should be scoped to the application content"
             );
         }
+    }
+
+    #[test]
+    fn test_tab_switching_uses_the_conventional_shortcuts() {
+        let specs = default_keybinding_dispatch_specs();
+
+        #[cfg(target_os = "macos")]
+        let (next_tab, previous_tab) = (["cmd-alt-right", "cmd-}"], ["cmd-alt-left", "cmd-{"]);
+        #[cfg(not(target_os = "macos"))]
+        let (next_tab, previous_tab) = (
+            ["ctrl-pagedown", "ctrl-tab"],
+            ["ctrl-pageup", "ctrl-shift-tab"],
+        );
+
+        for keystroke in next_tab {
+            assert!(has_binding(
+                &specs,
+                keystroke,
+                KeybindingDispatchAction::NextTab
+            ));
+        }
+        for keystroke in previous_tab {
+            assert!(has_binding(
+                &specs,
+                keystroke,
+                KeybindingDispatchAction::PreviousTab
+            ));
+        }
+    }
+
+    /// Check whether two bindings share a keystroke sequence or one is a prefix of the other.
+    ///
+    /// ### Arguments
+    /// - `first`: One of the bindings to compare
+    /// - `second`: The other binding to compare
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when typing one binding's keystrokes would also trigger or start the other
+    #[cfg(feature = "gpui-test-support")]
+    fn keystrokes_overlap(first: &gpui_kit::KeyBinding, second: &gpui_kit::KeyBinding) -> bool {
+        first
+            .keystrokes()
+            .iter()
+            .zip(second.keystrokes())
+            .all(|(left, right)| {
+                left.inner().modifiers == right.inner().modifiers
+                    && left.inner().key == right.inner().key
+            })
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_scoped_shortcuts_only_override_the_editor_bindings_they_claim(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        #[cfg(target_os = "macos")]
+        let claimed_from_editor = ["cmd-f", "cmd-shift-f"];
+        #[cfg(not(target_os = "macos"))]
+        let claimed_from_editor = ["ctrl-f", "ctrl-h"];
+
+        let editor_stack = [
+            gpui_kit::KeyContext::parse(super::KEY_CONTEXT_FULGUR).unwrap(),
+            gpui_kit::KeyContext::parse(super::KEY_CONTEXT_INPUT).unwrap(),
+        ];
+
+        let collisions: Vec<String> = cx.update(|cx| {
+            crate::test_support::init_test_app(cx);
+            let keymap = cx.key_bindings();
+            let keymap = keymap.borrow();
+            let upstream_editor_bindings: Vec<&gpui_kit::KeyBinding> = keymap
+                .bindings()
+                .filter(|binding| {
+                    binding
+                        .predicate()
+                        .is_some_and(|predicate| predicate.depth_of(&editor_stack).is_some())
+                })
+                .collect();
+
+            default_keybinding_dispatch_specs()
+                .into_iter()
+                .filter(|spec| spec.action.key_context() == Some(super::SCOPED_BINDING_PREDICATE))
+                .filter(|spec| !claimed_from_editor.contains(&spec.keystroke))
+                .flat_map(|spec| {
+                    let fulgur_binding = spec.into_key_binding();
+                    upstream_editor_bindings
+                        .iter()
+                        .filter(|upstream| keystrokes_overlap(&fulgur_binding, upstream))
+                        .map(|upstream| {
+                            format!(
+                                "{} ({:?}) shadows the editor's {}",
+                                spec.keystroke,
+                                spec.action,
+                                upstream.action().name()
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        });
+
+        assert!(
+            collisions.is_empty(),
+            "scoped Fulgur shortcuts win ties with the editor's Input bindings, \
+             so these would silently replace editor behaviour: {collisions:#?}"
+        );
     }
 
     #[test]
