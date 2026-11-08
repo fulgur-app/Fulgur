@@ -14,6 +14,9 @@ use std::time::{Duration, Instant};
 /// Delay before showing the connecting spinner (to avoid flickering on fast connections)
 const CONNECTING_SPINNER_DELAY: Duration = Duration::from_millis(500);
 
+/// Status bar text of a tab still waiting for its remote file's content
+const REMOTE_NOT_LOADED_LABEL: &str = "Not loaded";
+
 /// The status bar at the bottom of the window, rendered as its own entity
 pub(crate) struct StatusBar {
     pub(super) fulgur: WeakEntity<Fulgur>,
@@ -40,6 +43,8 @@ pub(super) struct StatusBarLabels {
     pub(super) line_col: String,
     pub(super) language_label: SharedString,
     pub(super) encoding_label: String,
+    /// Explains why the buffer refuses edits and saves until its remote file loads.
+    pub(super) remote_not_loaded_label: Option<String>,
 }
 
 impl StatusBar {
@@ -61,7 +66,7 @@ impl StatusBar {
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `StatusBarLabels`: The line/column, language, and encoding labels
+    /// - `StatusBarLabels`: The line/column, language, encoding, and remote loading labels
     pub(super) fn compute_labels(active_tab: Option<&Tab>, cx: &App) -> StatusBarLabels {
         let (cursor_pos, language, encoding) = match active_tab {
             Some(tab) => {
@@ -88,6 +93,10 @@ impl StatusBar {
             Some(_) => encoding,
             None => UTF_8.to_string(),
         };
+        let remote_not_loaded_label = active_tab
+            .and_then(Tab::as_editor)
+            .filter(|editor_tab| editor_tab.awaiting_remote_content)
+            .map(|_| REMOTE_NOT_LOADED_LABEL.to_string());
 
         StatusBarLabels {
             line_col: format!(
@@ -97,6 +106,7 @@ impl StatusBar {
             ),
             language_label,
             encoding_label,
+            remote_not_loaded_label,
         }
     }
 
@@ -363,6 +373,38 @@ mod tests {
                 assert!(labels.language_label.is_empty());
                 assert_eq!(labels.encoding_label, UTF_8);
                 assert_eq!(labels.line_col, "Ln 1, Col 1");
+                assert!(labels.remote_not_loaded_label.is_none());
+            });
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_status_bar_shows_not_loaded_only_while_awaiting_remote_content(
+        cx: &mut TestAppContext,
+    ) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let label_of_active_tab = |this: &Fulgur, cx: &Context<Fulgur>| {
+                    StatusBar::compute_labels(this.active_tab(cx), cx).remote_not_loaded_label
+                };
+                assert_eq!(label_of_active_tab(this, cx), None);
+
+                this.update_active_editor_tab(cx, |editor_tab, cx| {
+                    editor_tab.mark_awaiting_remote_content(cx);
+                })
+                .expect("expected active editor tab");
+                assert_eq!(
+                    label_of_active_tab(this, cx).as_deref(),
+                    Some(super::REMOTE_NOT_LOADED_LABEL)
+                );
+
+                this.update_active_editor_tab(cx, |editor_tab, cx| {
+                    editor_tab.finish_awaiting_remote_content(cx);
+                })
+                .expect("expected active editor tab");
+                assert_eq!(label_of_active_tab(this, cx), None);
             });
         });
     }
