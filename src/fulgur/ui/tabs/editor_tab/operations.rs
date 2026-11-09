@@ -183,18 +183,48 @@ impl EditorTab {
         self.large_file || super::is_large_file(self.content.read(cx).text().len())
     }
 
-    /// Whether closing would silently drop this tab's unsaved changes, so the
-    /// close flows must offer to save it first.
+    /// Whether a session snapshot would embed this tab's buffer if its size allowed it.
     ///
     /// ### Arguments
+    /// - `persist_unsaved`: The value of the `persist_unsaved_buffers` setting
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `bool`: `true` when the tab is a modified local file too large to persist
-    pub fn needs_large_file_close_warning(&self, cx: &App) -> bool {
-        matches!(self.location, TabLocation::Local(_))
-            && self.content_too_large_to_persist(cx)
-            && self.content_differs_from_original(cx)
+    /// - `bool`: `true` when the buffer is the only copy of content worth restoring
+    fn snapshot_wants_buffer(&self, persist_unsaved: bool, cx: &App) -> bool {
+        if !persist_unsaved {
+            return false;
+        }
+        match &self.location {
+            TabLocation::Local(path) => self.has_unsaved_changes_for_snapshot(cx) || !path.exists(),
+            TabLocation::Remote(_) => self.has_unsaved_changes_for_snapshot(cx),
+            TabLocation::Untitled | TabLocation::Shared(_) => true,
+        }
+    }
+
+    /// Whether a session snapshot embeds this tab's buffer.
+    ///
+    /// ### Arguments
+    /// - `persist_unsaved`: The value of the `persist_unsaved_buffers` setting
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the snapshot must carry the buffer text
+    pub fn snapshot_keeps_buffer(&self, persist_unsaved: bool, cx: &App) -> bool {
+        self.snapshot_wants_buffer(persist_unsaved, cx) && !self.content_too_large_to_persist(cx)
+    }
+
+    /// Whether closing would silently drop this tab's buffer because it is too
+    /// large to persist, so the close flows must offer to save it first.
+    ///
+    /// ### Arguments
+    /// - `persist_unsaved`: The value of the `persist_unsaved_buffers` setting
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the snapshot would keep the buffer but for its size
+    pub fn needs_large_file_close_warning(&self, persist_unsaved: bool, cx: &App) -> bool {
+        self.snapshot_wants_buffer(persist_unsaved, cx) && self.content_too_large_to_persist(cx)
     }
 
     /// Check whether current buffer content differs from the saved baseline.

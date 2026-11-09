@@ -801,7 +801,7 @@ fn test_quit_warns_for_large_dirty_file_in_other_window_and_cancel_aborts(cx: &m
         assert!(
             !dirty_window
                 .read(cx)
-                .large_modified_local_tabs(cx)
+                .large_unpersistable_tabs(cx)
                 .is_empty(),
             "cancelling must preserve the dirty large buffer"
         );
@@ -926,8 +926,24 @@ fn dirty_first_tab_as_large_local_file(
     fulgur: &Entity<Fulgur>,
     file_name: &str,
 ) {
+    let location = TabLocation::Local(temp_test_path(file_name));
+    dirty_first_tab_as_large(cx, window_id, fulgur, location);
+}
+
+/// Turn a window's first tab into a large buffer with unsaved changes at a location.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context
+/// - `window_id`: The window owning the tab
+/// - `fulgur`: The `Fulgur` entity of that window
+/// - `location`: The location assigned to the tab
+fn dirty_first_tab_as_large(
+    cx: &mut TestAppContext,
+    window_id: WindowId,
+    fulgur: &Entity<Fulgur>,
+    location: TabLocation,
+) {
     let handle = find_window_handle(cx, window_id).expect("test window should be open");
-    let path = temp_test_path(file_name);
     cx.update(|cx| {
         handle
             .update(cx, |_, window, cx| {
@@ -940,7 +956,7 @@ fn dirty_first_tab_as_large_local_file(
                     let content = tab.update(cx, |tab, _| {
                         let editor = tab.as_editor_mut().expect("expected editor tab");
                         editor.large_file = true;
-                        editor.location = TabLocation::Local(path);
+                        editor.location = location;
                         editor.content.clone()
                     });
                     content.update(cx, |content, cx| {
@@ -1110,6 +1126,44 @@ fn test_closing_non_last_window_with_persistence_off_skips_the_prompt(cx: &mut T
     assert!(
         invoke_window_close_requested(cx, window_id_two, &fulgur_two),
         "with persistence off, closing drops unsaved buffers without a prompt by design"
+    );
+}
+
+#[gpui_kit::test]
+fn test_closing_window_with_large_untitled_tab_saves_it_as_then_closes(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let dir = tempfile::tempdir().expect("create temp directory");
+    let destination = dir.path().join("pasted.txt");
+    let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
+    let (window_id_two, fulgur_two) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, window_id_one, &fulgur_one);
+    register_window_in_global_manager(cx, window_id_two, &fulgur_two);
+    dirty_first_tab_as_large(cx, window_id_two, &fulgur_two, TabLocation::Untitled);
+
+    assert!(!invoke_window_close_requested(
+        cx,
+        window_id_two,
+        &fulgur_two
+    ));
+    cx.run_until_parked();
+    assert!(
+        window_has_dialog(cx, window_id_two),
+        "a large untitled buffer cannot be persisted, so closing must warn about it"
+    );
+
+    click_debug_selector(cx, window_id_two, "large-file-close-save");
+    let handle = find_window_handle(cx, window_id_two).expect("test window should be open");
+    VisualTestContext::from_window(handle, cx)
+        .simulate_new_path_selection(|_| Some(destination.clone()));
+    cx.run_until_parked();
+
+    assert_eq!(
+        std::fs::read_to_string(&destination).expect("the buffer should be written"),
+        "unsaved oversized content"
+    );
+    assert!(
+        find_window_handle(cx, window_id_two).is_none(),
+        "the close must resume once the buffer is saved"
     );
 }
 

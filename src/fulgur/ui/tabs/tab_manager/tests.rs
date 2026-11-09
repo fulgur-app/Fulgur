@@ -1741,7 +1741,7 @@ fn test_handle_pending_transfer_scroll_consumes_position(cx: &mut TestAppContext
 }
 
 #[gpui_kit::test]
-fn test_large_modified_local_tabs_detects_modified_large_local_file(cx: &mut TestAppContext) {
+fn test_large_unpersistable_tabs_detects_modified_large_local_file(cx: &mut TestAppContext) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
     let (tab_id, content) = visual_cx.update(|_window, cx| {
         fulgur.update(cx, |this, cx| {
@@ -1768,7 +1768,7 @@ fn test_large_modified_local_tabs_detects_modified_large_local_file(cx: &mut Tes
     visual_cx.update(|_window, cx| {
         fulgur.update(cx, |this, cx| {
             assert_eq!(
-                this.large_modified_local_tabs(cx),
+                this.large_unpersistable_tabs(cx),
                 vec![tab_id],
                 "a modified large local tab must be flagged for a close warning"
             );
@@ -1776,53 +1776,126 @@ fn test_large_modified_local_tabs_detects_modified_large_local_file(cx: &mut Tes
     });
 }
 
-#[gpui_kit::test]
-fn test_large_modified_local_tabs_excludes_untitled_and_unmodified(cx: &mut TestAppContext) {
+/// Give the first tab a location, flag it as a large file, then type into it.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context
+/// - `location`: The location assigned to the first tab
+/// - `persist_unsaved_buffers`: The value of the unsaved buffer persistence setting
+///
+/// ### Returns
+/// - `(Entity<Fulgur>, VisualTestContext, Vec<TabId>, TabId)`: The window, its context, the
+///   tabs flagged for a large-file close warning, and the first tab's id
+fn flagged_large_dirty_tab(
+    cx: &mut TestAppContext,
+    location: TabLocation,
+    persist_unsaved_buffers: bool,
+) -> (
+    Entity<Fulgur>,
+    gpui_kit::VisualTestContext,
+    Vec<TabId>,
+    TabId,
+) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    let content = visual_cx.update(|_window, cx| {
+    let (tab_id, content) = visual_cx.update(|_window, cx| {
         fulgur.update(cx, |this, cx| {
+            this.settings.app_settings.persist_unsaved_buffers = persist_unsaved_buffers;
             this.update_active_editor_tab(cx, |editor, _| {
                 editor.large_file = true;
+                editor.location = location;
             });
-            this.tabs[0]
+            let editor = this.tabs[0]
                 .read(cx)
                 .as_editor()
-                .expect("expected editor tab")
-                .content
-                .clone()
+                .expect("expected editor tab");
+            (editor.id, editor.content.clone())
         })
     });
-
-    // An untitled large modified tab has no on-disk destination, so it is not
-    // offered a save-before-close warning.
     visual_cx.update(|window, cx| {
         content.update(cx, |input_state, cx| {
-            input_state.set_value("edited untitled large content", window, cx);
+            input_state.set_value("edited large content", window, cx);
             cx.emit(InputEvent::Change);
         });
     });
     visual_cx.run_until_parked();
+    let flagged = fulgur.read_with(&visual_cx, Fulgur::large_unpersistable_tabs);
+    (fulgur, visual_cx, flagged, tab_id)
+}
 
-    visual_cx.update(|_window, cx| {
-        fulgur.update(cx, |this, cx| {
-            assert!(
-                this.large_modified_local_tabs(cx).is_empty(),
-                "untitled large tabs must not be flagged for a close warning"
-            );
-        });
-    });
+#[gpui_kit::test]
+fn test_large_unpersistable_tabs_flags_untitled_tabs(cx: &mut TestAppContext) {
+    let (_, _, flagged, tab_id) = flagged_large_dirty_tab(cx, TabLocation::Untitled, true);
+    assert_eq!(
+        flagged,
+        vec![tab_id],
+        "a large untitled buffer has no other copy, so it must be offered a save"
+    );
+}
 
-    // Give it a local path but mark it saved: an unmodified tab is not flagged.
+#[gpui_kit::test]
+fn test_large_unpersistable_tabs_flags_shared_tabs(cx: &mut TestAppContext) {
+    let origin = crate::fulgur::sync::share::ShareOrigin {
+        source_device_name: Some("Work laptop".to_string()),
+        shared_at: None,
+        size_bytes: 13,
+    };
+    let (_, _, flagged, tab_id) = flagged_large_dirty_tab(cx, TabLocation::Shared(origin), true);
+    assert_eq!(flagged, vec![tab_id]);
+}
+
+#[gpui_kit::test]
+fn test_large_unpersistable_tabs_flags_dirty_remote_tabs(cx: &mut TestAppContext) {
+    let spec = crate::fulgur::sync::ssh::url::RemoteSpec {
+        host: "example.com".to_string(),
+        port: 22,
+        user: Some("alice".to_string()),
+        path: "/srv/huge.log".to_string(),
+        password_in_url: None,
+    };
+    let (_, _, flagged, tab_id) = flagged_large_dirty_tab(cx, TabLocation::Remote(spec), true);
+    assert_eq!(flagged, vec![tab_id]);
+}
+
+#[gpui_kit::test]
+fn test_large_unpersistable_tabs_is_empty_with_persistence_off(cx: &mut TestAppContext) {
+    let (_, _, flagged, _) = flagged_large_dirty_tab(
+        cx,
+        TabLocation::Local(PathBuf::from("/tmp/huge.log")),
+        false,
+    );
+    assert!(
+        flagged.is_empty(),
+        "with persistence off every unsaved buffer is dropped by design, whatever its size"
+    );
+}
+
+#[gpui_kit::test]
+fn test_large_unpersistable_tabs_excludes_unmodified_local_tab(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().expect("failed to create temp dir");
+    let path = dir.path().join("huge.log");
+    std::fs::write(&path, "edited large content").expect("failed to write test file");
+    let (fulgur, mut visual_cx, _, _) = flagged_large_dirty_tab(cx, TabLocation::Untitled, true);
+
+    // Give it an existing local file and mark it saved: the file holds the content.
     visual_cx.update(|_window, cx| {
         fulgur.update(cx, |this, cx| {
             this.update_active_editor_tab(cx, |editor, cx| {
-                editor.location = TabLocation::Local(PathBuf::from("/tmp/huge.log"));
+                editor.location = TabLocation::Local(path.clone());
                 editor.mark_as_saved(cx);
             });
             assert!(
-                this.large_modified_local_tabs(cx).is_empty(),
+                this.large_unpersistable_tabs(cx).is_empty(),
                 "an unmodified large local tab must not be flagged for a close warning"
             );
         });
     });
+
+    // Deleting the file leaves the buffer as the only copy of the content.
+    std::fs::remove_file(&path).expect("failed to delete test file");
+    let flagged = fulgur.read_with(&visual_cx, Fulgur::large_unpersistable_tabs);
+    assert_eq!(
+        flagged.len(),
+        1,
+        "a large buffer whose file disappeared must be offered a save"
+    );
 }

@@ -27,7 +27,7 @@ impl Fulgur {
     /// - If this is the last window: treat as quit, through the application
     ///   close plan when an exit confirmation or a large-file warning is due,
     ///   otherwise save state and let the window close, which quits the app
-    /// - If multiple windows exist: confirm unsaved and large modified tabs,
+    /// - If multiple windows exist: confirm unsaved tabs and tabs too large to persist,
     ///   then save state without this window and close it
     ///
     /// ### Arguments
@@ -48,7 +48,7 @@ impl Fulgur {
         let window_count = cx.global::<WindowManager>().window_count();
         if window_count == 1 {
             if self.settings.app_settings.confirm_exit
-                || !self.large_modified_local_tabs(cx).is_empty()
+                || !self.large_unpersistable_tabs(cx).is_empty()
             {
                 self.quit(window, cx);
                 return false;
@@ -64,8 +64,8 @@ impl Fulgur {
                 return false;
             }
         }
-        // Large, modified local files cannot be persisted, so warn about each before closing.
-        if !self.large_modified_local_tabs(cx).is_empty() {
+        // Buffers too large to persist would be lost, so warn about each before closing.
+        if !self.large_unpersistable_tabs(cx).is_empty() {
             self.start_close_plan(CloseScope::Window, cx);
             return false;
         }
@@ -118,7 +118,10 @@ impl Fulgur {
             .and_then(|tab| {
                 let tab = tab.read(cx);
                 let editor_tab = tab.as_editor()?;
-                Some(editor_tab.modified && !editor_tab.needs_large_file_close_warning(cx))
+                Some(
+                    editor_tab.modified
+                        && !self.editor_needs_large_file_close_warning(editor_tab, cx),
+                )
             })
             .unwrap_or(false)
     }

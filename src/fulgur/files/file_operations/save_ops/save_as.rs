@@ -9,7 +9,7 @@ use crate::fulgur::{
     ui::components_utils::UNTITLED,
     utils::atomic_write::atomic_write_file,
 };
-use gpui_kit::{Context, Window};
+use gpui_kit::{App, Context, Window};
 use std::path::{Path, PathBuf};
 
 impl Fulgur {
@@ -22,27 +22,15 @@ impl Fulgur {
         if self.tabs.is_empty() || self.refuse_save_of_unloaded_remote_tab(window, cx) {
             return;
         }
-        let Some(active_tab_index) = self.active_tab_index(cx) else {
+        let Some(editor_tab) = self.active_tab(cx).and_then(Tab::as_editor) else {
             return;
         };
-        let (tab_id, encoding, directory, suggested_filename) =
-            match self.tabs[active_tab_index].read(cx) {
-                Tab::Editor(editor_tab) => {
-                    let dir = if let Some(path) = editor_tab.file_path() {
-                        path.parent()
-                            .unwrap_or(std::path::Path::new("."))
-                            .to_path_buf()
-                    } else {
-                        std::env::current_dir().unwrap_or_default()
-                    };
-                    let suggested = editor_tab.get_suggested_filename();
-                    (editor_tab.id, editor_tab.encoding.clone(), dir, suggested)
-                }
-                Tab::Settings(_) | Tab::MarkdownPreview(_) => return,
-            };
-        let path_future = cx.prompt_for_new_path(&directory, suggested_filename.as_deref());
+        let (tab_id, encoding) = (editor_tab.id, editor_tab.encoding.clone());
+        let Some(path_future) = self.prompt_for_save_as_path(tab_id, cx) else {
+            return;
+        };
         cx.spawn_in(window, async move |view, window| {
-            let path = path_future.await.ok()?.ok()??;
+            let path = path_future.await?;
             let contents = window
                 .update(|_, cx| {
                     view.update(cx, |this, cx| {
@@ -81,6 +69,66 @@ impl Fulgur {
             Some(())
         })
         .detach();
+    }
+
+    /// Ask the user where to save an editor tab, starting next to its current file.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: Stable identifier of the editor tab to save
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some(Future)`: Resolves to the chosen path, or `None` when the user cancels
+    /// - `None`: The tab is missing or is not an editor tab
+    pub(crate) fn prompt_for_save_as_path(
+        &self,
+        tab_id: TabId,
+        cx: &App,
+    ) -> Option<impl Future<Output = Option<PathBuf>> + use<>> {
+        let tab = self.tab_entity_of(tab_id, cx)?;
+        let editor_tab = tab.read(cx).as_editor()?;
+        let directory = match editor_tab.file_path() {
+            Some(path) => path.parent().unwrap_or(Path::new(".")).to_path_buf(),
+            None => std::env::current_dir().unwrap_or_default(),
+        };
+        let suggested_filename = editor_tab.get_suggested_filename();
+        let receiver = cx.prompt_for_new_path(&directory, suggested_filename.as_deref());
+        Some(async move { receiver.await.ok()?.ok()? })
+    }
+
+    /// Point a tab at the local file it was just saved to, and watch that file
+    /// instead of its previous one.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: Stable identifier of the saved editor tab
+    /// - `path`: The canonical path the tab was written to
+    /// - `cx`: The application context
+    pub(crate) fn retarget_tab_to_saved_file(
+        &mut self,
+        tab_id: TabId,
+        path: &Path,
+        cx: &mut Context<Self>,
+    ) {
+        let old_path = self
+            .tab_entity_of(tab_id, cx)
+            .and_then(|tab| tab.read(cx).as_editor()?.file_path().cloned());
+        if let Some(old_path) = old_path {
+            self.unwatch_file(&old_path);
+        }
+        self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
+            editor_tab.location = TabLocation::Local(path.to_path_buf());
+            editor_tab.title = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(UNTITLED)
+                .to_string()
+                .into();
+            editor_tab.update_language(cx);
+            cx.notify();
+        });
+        cx.notify();
+        self.watch_file(path);
+        crate::fulgur::state::schedule_session_autosave(cx);
     }
 
     /// Write a "Save as" result to disk and update the originating tab on success.
@@ -162,27 +210,10 @@ impl Fulgur {
             Ok(canonical_path) => {
                 let path = canonical_path.as_path();
                 log::debug!("File saved successfully as: {}", path.display());
-                if let Some(tab_entity) = self.tab_entity_of(tab_id, cx) {
-                    let old_path = tab_entity
-                        .read(cx)
-                        .as_editor()
-                        .and_then(|editor_tab| editor_tab.file_path().cloned());
-                    if let Some(old_path) = old_path {
-                        self.unwatch_file(&old_path);
-                    }
+                if self.tab_entity_of(tab_id, cx).is_some() {
                     self.record_local_file_save(path);
                     let saved_modified = file_modified_system_time(path);
-                    tab_entity.update(cx, |tab, cx| {
-                        let Some(editor_tab) = tab.as_editor_mut() else {
-                            return;
-                        };
-                        editor_tab.location = TabLocation::Local(path.to_path_buf());
-                        editor_tab.title = path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or(UNTITLED)
-                            .to_string()
-                            .into();
+                    self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
                         editor_tab.encoding = encoding;
                         editor_tab.mark_snapshot_as_saved(
                             completion.saved_content_hash,
@@ -190,12 +221,8 @@ impl Fulgur {
                             cx,
                         );
                         editor_tab.record_file_metadata(byte_len, saved_modified);
-                        tab.update_language(cx);
-                        cx.notify();
                     });
-                    cx.notify();
-                    self.watch_file(path);
-                    crate::fulgur::state::schedule_session_autosave(cx);
+                    self.retarget_tab_to_saved_file(tab_id, path, cx);
                 } else {
                     log::warn!("Save As completed, but tab {tab_id} no longer exists");
                 }

@@ -7,7 +7,10 @@ use gpui_kit::{
     px,
 };
 
+use std::rc::Rc;
+
 use crate::fulgur::Fulgur;
+use crate::fulgur::files::file_operations::RemoteSaveContinuation;
 use crate::fulgur::ui::tabs::editor_tab::ContentRevision;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::window_manager::WindowManager;
@@ -62,7 +65,7 @@ impl ClosePlan {
 /// The user's decision for one large-file close warning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LargeFileCloseChoice {
-    /// Write the file to disk before continuing.
+    /// Save the tab (to disk, through Save As, or to its remote host) before continuing.
     Save,
     /// Continue without saving, dropping the unsaved changes.
     Discard,
@@ -94,8 +97,7 @@ impl Fulgur {
         let tab = self.tab_entity_of(tab_id, cx)?;
         let tab = tab.read(cx);
         let editor_tab = tab.as_editor()?;
-        editor_tab
-            .needs_large_file_close_warning(cx)
+        self.editor_needs_large_file_close_warning(editor_tab, cx)
             .then(|| LargeFileCloseTarget {
                 window_id: self.window_id,
                 tab_id,
@@ -103,7 +105,7 @@ impl Fulgur {
             })
     }
 
-    /// Collect every large modified local tab in this window.
+    /// Collect every tab in this window whose buffer is too large to persist.
     ///
     /// ### Arguments
     /// - `cx`: The application context
@@ -345,18 +347,12 @@ impl Fulgur {
                 }
             }
             LargeFileCloseChoice::Save => {
-                if let Err(e) = self.save_local_tab_blocking(target.tab_id, cx) {
-                    let filename = self.tab_filename(target.tab_id, cx);
-                    log::error!("Failed to save large file '{filename}' on close: {e}");
-                    window.push_notification(
-                        (
-                            NotificationType::Error,
-                            SharedString::from(format!("Failed to save '{filename}': {e}")),
-                        ),
-                        cx,
-                    );
-                    return;
-                }
+                let resume: RemoteSaveContinuation = Rc::new(move |_, _, cx| {
+                    let plan = plan.clone();
+                    cx.defer(move |cx| Self::drive_close_plan(plan, cx));
+                });
+                self.save_tab_for_close(target.tab_id, resume, window, cx);
+                return;
             }
         }
         cx.defer(move |cx| Self::drive_close_plan(plan, cx));
