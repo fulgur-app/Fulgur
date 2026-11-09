@@ -1,4 +1,6 @@
-use super::super::persistence::{TabContent, TabState, get_file_modified_time};
+use super::super::persistence::{
+    TabContent, TabState, get_file_modified_time, parse_modified_time,
+};
 use super::decision::{TabRestoreDecision, determine_tab_restore_strategy};
 use crate::fulgur::{
     Fulgur,
@@ -158,13 +160,17 @@ impl Fulgur {
         let file_exists = tab_state.file_path.as_ref().is_some_and(|p| p.exists());
         let file_modified_time = tab_state
             .file_path
-            .as_ref()
+            .as_deref()
             .and_then(get_file_modified_time);
         let mut readable_file = tab_state
             .file_path
             .as_ref()
             .and_then(|path| fs::File::open(path).ok());
         let can_read_file = readable_file.is_some();
+        let persisted_baseline = tab_state
+            .last_saved
+            .as_deref()
+            .and_then(parse_modified_time);
         let decision = determine_tab_restore_strategy(
             tab_state.file_path.clone(),
             tab_state.remote.clone(),
@@ -175,63 +181,69 @@ impl Fulgur {
             can_read_file,
         );
         let mut changed_on_disk = false;
-        let (content, path, encoding, is_modified, lossy_decode) = match decision {
-            TabRestoreDecision::RestoreRemote { remote, content } => {
-                let is_modified = content.is_some();
-                let restored_content = content.unwrap_or_default();
-                let mut tab = EditorTab::from_remote_loaded(
-                    tab_id,
-                    RemoteFileResult {
-                        spec: remote.to_remote_spec(),
-                        file_size: restored_content.len(),
-                        content: restored_content,
-                        encoding: saved_encoding,
-                        lossy: saved_lossy_decode,
-                    },
-                    window,
-                    cx,
-                    &self.settings.editor_settings,
-                );
-                if is_modified {
-                    tab.mark_saved_baseline_unknown();
-                } else {
-                    tab.mark_awaiting_remote_content(cx);
+        let (content, path, encoding, is_modified, lossy_decode, file_last_modified) =
+            match decision {
+                TabRestoreDecision::RestoreRemote { remote, content } => {
+                    let is_modified = content.is_some();
+                    let restored_content = content.unwrap_or_default();
+                    let mut tab = EditorTab::from_remote_loaded(
+                        tab_id,
+                        RemoteFileResult {
+                            spec: remote.to_remote_spec(),
+                            file_size: restored_content.len(),
+                            content: restored_content,
+                            encoding: saved_encoding,
+                            lossy: saved_lossy_decode,
+                        },
+                        window,
+                        cx,
+                        &self.settings.editor_settings,
+                    );
+                    if is_modified {
+                        tab.mark_saved_baseline_unknown();
+                    } else {
+                        tab.mark_awaiting_remote_content(cx);
+                    }
+                    tab.color_tag = color_tag;
+                    return Some((tab, false));
                 }
-                tab.color_tag = color_tag;
-                return Some((tab, false));
-            }
-            TabRestoreDecision::LoadFromFile { path } => {
-                let mut bytes = Vec::new();
-                let mut file = readable_file.take()?;
-                file.read_to_end(&mut bytes).ok()?;
-                let decoded = detect_encoding_and_decode(bytes);
-                (
-                    decoded.content,
-                    Some(path),
-                    decoded.encoding,
-                    false,
-                    decoded.lossy,
-                )
-            }
-            TabRestoreDecision::UseSavedContentWithPath {
-                path,
-                content,
-                changed_on_disk: file_changed,
-            } => {
-                changed_on_disk = file_changed;
-                (
+                TabRestoreDecision::LoadFromFile { path } => {
+                    let mut bytes = Vec::new();
+                    let mut file = readable_file.take()?;
+                    let disk_modified = file.metadata().and_then(|meta| meta.modified()).ok();
+                    file.read_to_end(&mut bytes).ok()?;
+                    let decoded = detect_encoding_and_decode(bytes);
+                    (
+                        decoded.content,
+                        Some(path),
+                        decoded.encoding,
+                        false,
+                        decoded.lossy,
+                        disk_modified,
+                    )
+                }
+                TabRestoreDecision::UseSavedContentWithPath {
+                    path,
                     content,
-                    Some(path),
-                    saved_encoding,
-                    true,
-                    saved_lossy_decode,
-                )
-            }
-            TabRestoreDecision::UseSavedContentNoPath { content } => {
-                (content, None, UTF_8.to_string(), true, false)
-            }
-            TabRestoreDecision::Skip => return None,
-        };
+                    changed_on_disk: file_changed,
+                } => {
+                    changed_on_disk = file_changed;
+                    // The edits are still based on the version persisted with them,
+                    // so an unresolved disk change keeps raising its conflict.
+                    (
+                        content,
+                        Some(path),
+                        saved_encoding,
+                        true,
+                        saved_lossy_decode,
+                        persisted_baseline,
+                    )
+                }
+                TabRestoreDecision::UseSavedContentNoPath { content } => {
+                    (content, None, UTF_8.to_string(), true, false, None)
+                }
+                TabRestoreDecision::Skip => return None,
+            };
         let mut tab = if let Some(file_path) = path {
             let mut tab = EditorTab::from_file(
                 FromFileParams {
@@ -240,6 +252,7 @@ impl Fulgur {
                     contents: content,
                     encoding,
                     is_modified,
+                    file_last_modified,
                 },
                 window,
                 cx,

@@ -4,6 +4,7 @@ use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur,
     editor_tab::{TabLocation, content_fingerprint_from_str},
+    state::file_modified_system_time,
     tab::Tab,
     ui::components_utils::UNTITLED,
     utils::atomic_write::atomic_write_file,
@@ -170,6 +171,7 @@ impl Fulgur {
                         self.unwatch_file(&old_path);
                     }
                     self.record_local_file_save(path);
+                    let saved_modified = file_modified_system_time(path);
                     tab_entity.update(cx, |tab, cx| {
                         let Some(editor_tab) = tab.as_editor_mut() else {
                             return;
@@ -187,7 +189,7 @@ impl Fulgur {
                             completion.saved_content_len,
                             cx,
                         );
-                        editor_tab.update_file_tooltip_cache(byte_len);
+                        editor_tab.record_file_metadata(byte_len, saved_modified);
                         tab.update_language(cx);
                         cx.notify();
                     });

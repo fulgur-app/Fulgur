@@ -1,3 +1,4 @@
+use crate::fulgur::state::file_modified_system_time;
 use crate::fulgur::ui::tabs::tab::TabId;
 use std::path::Path;
 
@@ -35,6 +36,27 @@ impl Fulgur {
         }
     }
 
+    /// Accept the current disk version as the baseline of a tab whose local edits
+    /// the user chose to keep, so a restart does not raise the same conflict again.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: The stable id of the tab keeping its local changes
+    /// - `path`: The path the tab is expected to still point at
+    /// - `cx`: The application context
+    pub(crate) fn keep_local_changes_over_disk(
+        &mut self,
+        tab_id: TabId,
+        path: &Path,
+        cx: &mut Context<Self>,
+    ) {
+        let disk_modified = file_modified_system_time(path);
+        self.update_editor_tab(tab_id, cx, |editor_tab, _| {
+            if editor_tab.file_path().is_some_and(|p| p == path) {
+                editor_tab.file_last_modified = disk_modified;
+            }
+        });
+    }
+
     /// Show dialog when file is modified externally and has local changes
     ///
     /// ### Arguments
@@ -67,8 +89,10 @@ impl Fulgur {
 
         window.open_alert_dialog(cx, move |modal, _, _| {
             let path = path.clone();
+            let path_for_cancel = path.clone();
             let path_for_close = path.clone();
             let entity_for_ok = entity.clone();
+            let entity_for_cancel = entity.clone();
             let entity_for_close = entity.clone();
             modal
                 .title(div().text_size(px(16.)).child("File Modified Externally"))
@@ -97,7 +121,12 @@ impl Fulgur {
                     });
                     true
                 })
-                .on_cancel(|_, _, _| true)
+                .on_cancel(move |_, _, cx| {
+                    entity_for_cancel.update(cx, |this, cx| {
+                        this.keep_local_changes_over_disk(tab_id, &path_for_cancel, cx);
+                    });
+                    true
+                })
                 .on_close(move |_, _, cx| {
                     let path = path_for_close.clone();
                     entity_for_close.update(cx, |this, _| {

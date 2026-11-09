@@ -3,6 +3,7 @@ use gpui_kit::Context;
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::files::file_operations::{EncodedContents, encode_for_save};
+use crate::fulgur::state::file_modified_system_time;
 use crate::fulgur::ui::tabs::editor_tab::TabLocation;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::utils::atomic_write::atomic_write_file;
@@ -81,9 +82,10 @@ impl Fulgur {
         let byte_len = bytes.len();
         atomic_write_file(&path, &bytes)?;
         self.record_local_file_save(&path);
+        let saved_modified = file_modified_system_time(&path);
         self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
             editor_tab.mark_as_saved(cx);
-            editor_tab.update_file_tooltip_cache(byte_len);
+            editor_tab.record_file_metadata(byte_len, saved_modified);
             cx.notify();
         });
         Ok(())

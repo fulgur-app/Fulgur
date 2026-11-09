@@ -1,5 +1,6 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
+use std::time::SystemTime;
 
 /// Get the last modified time of a file as ISO 8601 string
 ///
@@ -10,13 +11,51 @@ use std::path::PathBuf;
 /// - `Some(String)`: The last modified time of the file
 /// - `None`: If the file could not be found or the last modified time could not be determined
 #[must_use]
-pub fn get_file_modified_time(path: &PathBuf) -> Option<String> {
-    let metadata = fs::metadata(path).ok()?;
-    let modified = metadata.modified().ok()?;
-    let datetime = time::OffsetDateTime::from(modified);
-    datetime
+pub fn get_file_modified_time(path: &Path) -> Option<String> {
+    file_modified_system_time(path).and_then(format_modified_time)
+}
+
+/// Read the last modified time of a file from the file system.
+///
+/// ### Arguments
+/// - `path`: The path to the file
+///
+/// ### Returns
+/// - `Some(SystemTime)`: The last modified time of the file
+/// - `None`: If the file could not be found or the platform reports no modification time
+#[must_use]
+pub fn file_modified_system_time(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).ok()?.modified().ok()
+}
+
+/// Format a file modification time as the ISO 8601 string persisted in the session state.
+///
+/// ### Arguments
+/// - `modified`: The modification time to format
+///
+/// ### Returns
+/// - `Some(String)`: The RFC 3339 representation, with full sub-second precision
+/// - `None`: If the time cannot be represented in RFC 3339
+#[must_use]
+pub fn format_modified_time(modified: SystemTime) -> Option<String> {
+    time::OffsetDateTime::from(modified)
         .format(&time::format_description::well_known::Rfc3339)
         .ok()
+}
+
+/// Parse a persisted ISO 8601 file modification time back into a `SystemTime`.
+///
+/// ### Arguments
+/// - `timestamp`: The RFC 3339 string produced by `format_modified_time`
+///
+/// ### Returns
+/// - `Some(SystemTime)`: The parsed modification time
+/// - `None`: If the string is not a valid RFC 3339 timestamp
+#[must_use]
+pub fn parse_modified_time(timestamp: &str) -> Option<SystemTime> {
+    time::OffsetDateTime::parse(timestamp, &time::format_description::well_known::Rfc3339)
+        .ok()
+        .map(SystemTime::from)
 }
 
 /// Compare two ISO 8601 timestamps

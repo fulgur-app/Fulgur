@@ -232,7 +232,7 @@ impl EditorTab {
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: Some(content_len as u64),
-            file_last_modified: Some(SystemTime::now()),
+            file_last_modified: params.file_last_modified,
             large_file,
             csv_view_mode,
             csv_delimiter,

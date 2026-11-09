@@ -199,7 +199,10 @@ impl Fulgur {
                         editor_tab.set_original_content_from_str(saved_content);
                         editor_tab.modified = false;
                         editor_tab.modified = editor_tab.content_differs_from_original(cx);
-                        editor_tab.update_file_tooltip_cache(saved_content.len());
+                        editor_tab.record_file_metadata(
+                            saved_content.len(),
+                            Some(std::time::SystemTime::now()),
+                        );
                         cx.notify();
                     })
                     .is_some();

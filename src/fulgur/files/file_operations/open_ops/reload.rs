@@ -2,11 +2,13 @@ use super::super::{DecodedContents, detect_encoding_and_decode};
 use crate::fulgur::{
     Fulgur,
     editor_tab::{ContentRevision, replace_editor_text},
+    state::file_modified_system_time,
     tab::Tab,
     ui::tabs::tab::TabId,
 };
 use gpui_kit::{Context, Window};
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 /// Editor state that must remain unchanged while a local reload is in flight.
 struct LocalReloadGuard {
@@ -50,14 +52,25 @@ impl Fulgur {
             let read_path = guard.path.clone();
             let read_result = window
                 .background_executor()
-                .spawn(async move { std::fs::read(&read_path).map(detect_encoding_and_decode) })
+                .spawn(async move {
+                    // Taken before the read so a write racing it reads as a later change.
+                    let disk_modified = file_modified_system_time(&read_path);
+                    std::fs::read(&read_path)
+                        .map(|bytes| (detect_encoding_and_decode(bytes), disk_modified))
+                })
                 .await;
             match read_result {
-                Ok(decoded) => {
+                Ok((decoded, disk_modified)) => {
                     window
                         .update(|window, cx| {
                             _ = view.update(cx, |this, cx| {
-                                this.apply_reloaded_contents(guard, decoded, window, cx);
+                                this.apply_reloaded_contents(
+                                    guard,
+                                    decoded,
+                                    disk_modified,
+                                    window,
+                                    cx,
+                                );
                             });
                         })
                         .ok();
@@ -75,12 +88,14 @@ impl Fulgur {
     /// ### Arguments
     /// - `guard`: Stable tab, path, and content revision captured before the read
     /// - `decoded`: The decoded file contents produced off the UI thread
+    /// - `disk_modified`: The file's modification time, read just before its contents
     /// - `window`: The window context
     /// - `cx`: The application context
     fn apply_reloaded_contents(
         &mut self,
         guard: LocalReloadGuard,
         decoded: DecodedContents,
+        disk_modified: Option<SystemTime>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -138,7 +153,7 @@ impl Fulgur {
             editor_tab.encoding = decoded.encoding;
             editor_tab.lossy_decode = decoded.lossy;
             editor_tab.modified = false;
-            editor_tab.update_file_tooltip_cache(decoded.byte_len);
+            editor_tab.record_file_metadata(decoded.byte_len, disk_modified);
             tab.update_language(cx);
             if let Some(editor_tab) = tab.as_editor_mut() {
                 editor_tab.content.update(cx, |input_state, cx| {
