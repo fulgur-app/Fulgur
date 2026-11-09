@@ -1,4 +1,5 @@
 use super::super::{DecodedContents, binary_file_notice, decode_text_file};
+use super::{notice_file_name, read_failure_notice};
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams},
@@ -18,7 +19,7 @@ enum FileReadOutcome {
         disk_modified: Option<SystemTime>,
     },
     Binary,
-    Failed,
+    Failed(std::io::Error),
 }
 
 impl Fulgur {
@@ -90,11 +91,7 @@ impl Fulgur {
         let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         let file_size = std::fs::metadata(&canonical_path).map_or(0, |metadata| metadata.len());
         if file_size > crate::fulgur::ui::tabs::editor_tab::LARGE_FILE_THRESHOLD_BYTES {
-            let file_name = canonical_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("file")
-                .to_string();
+            let file_name = notice_file_name(&canonical_path);
             window
                 .update(|window, cx| {
                     window.push_notification(
@@ -129,10 +126,7 @@ impl Fulgur {
                             }
                         })
                     }
-                    Err(e) => {
-                        log::error!("Failed to read file {}: {e}", read_path.display());
-                        FileReadOutcome::Failed
-                    }
+                    Err(e) => FileReadOutcome::Failed(e),
                 }
             })
             .await;
@@ -142,21 +136,26 @@ impl Fulgur {
                 decoded,
                 disk_modified,
             } => (decoded, disk_modified),
-            FileReadOutcome::Failed => return None,
-            FileReadOutcome::Binary => {
-                log::warn!("Refusing to open binary file: {}", path.display());
-                let file_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("file")
-                    .to_string();
+            FileReadOutcome::Failed(error) => {
+                log::error!("Failed to read file {}: {error}", path.display());
+                let notice = read_failure_notice("open", path, &error);
                 window
                     .update(|window, cx| {
                         window.push_notification(
-                            (
-                                NotificationType::Warning,
-                                SharedString::from(binary_file_notice(&file_name)),
-                            ),
+                            (NotificationType::Error, SharedString::from(notice)),
+                            cx,
+                        );
+                    })
+                    .ok();
+                return None;
+            }
+            FileReadOutcome::Binary => {
+                log::warn!("Refusing to open binary file: {}", path.display());
+                let notice = binary_file_notice(&notice_file_name(path));
+                window
+                    .update(|window, cx| {
+                        window.push_notification(
+                            (NotificationType::Warning, SharedString::from(notice)),
                             cx,
                         );
                     })

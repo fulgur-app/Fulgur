@@ -212,6 +212,18 @@ pub fn setup_fulgur(cx: &mut TestAppContext) -> (Entity<Fulgur>, VisualTestConte
     open_inert_window(cx)
 }
 
+/// Count the notifications currently shown in the window.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context of a window mounted in a `Root`
+///
+/// ### Returns
+/// - `usize`: The number of displayed notifications
+#[cfg(feature = "gpui-test-support")]
+pub fn notification_count(visual_cx: &mut VisualTestContext) -> usize {
+    visual_cx.update(|window, cx| window.notifications(cx).len())
+}
+
 /// Install the test globals and open a window rendering `Fulgur` inside a `Root`.
 ///
 /// ### Arguments
