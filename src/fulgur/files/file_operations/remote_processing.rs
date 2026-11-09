@@ -632,7 +632,7 @@ mod tests {
     fn test_closing_the_active_tab_loads_the_placeholder_beside_it(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
 
-        let tab_id = visual_cx.update(|window, cx| {
+        let (tab_id, first_request_id) = visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 let (tab_entity, tab_id, _guard) = restored_remote_tab(this, cx);
                 point_at_unreachable_host(&tab_entity, cx);
@@ -640,15 +640,24 @@ mod tests {
                 let new_tab_id = this
                     .active_tab_id
                     .expect("expected the new tab to be active");
+                let first_request_id = this.next_remote_request_id;
                 this.close_tab(new_tab_id, window, cx);
-                tab_id
+                (tab_id, first_request_id)
             })
         });
 
+        // The read starts in a deferred effect, so the window draws before the next
+        // check, and a draw drains whatever outcome the worker thread already
+        // published. `inflight_remote_restore` is cleared by that drain; the request
+        // counter is not, so it is the only witness that holds whatever the timing.
         visual_cx.update(|_window, cx| {
             let this = fulgur.read(cx);
             assert_eq!(this.active_tab_id, Some(tab_id));
-            assert!(this.inflight_remote_restore.contains(&tab_id));
+            assert_eq!(
+                this.next_remote_request_id,
+                first_request_id + 1,
+                "exactly one remote read must start, for the placeholder that became active"
+            );
         });
     }
 
