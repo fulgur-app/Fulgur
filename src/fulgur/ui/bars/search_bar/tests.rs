@@ -1,7 +1,7 @@
 use super::SearchMatch;
 use super::matching::{
-    apply_replacements, find_matches, find_matches_with_scratch, lowered_to_original,
-    offset_after_replacements, rebuild_lowercase_text,
+    apply_replacements, find_matches, find_matches_with_scratch, first_match_from,
+    lowered_to_original, offset_after_replacements, rebuild_lowercase_text,
 };
 use core::prelude::v1::test;
 
@@ -218,6 +218,31 @@ fn test_offset_after_replacements_skips_overlapping_matches_like_the_replacement
 #[test]
 fn test_offset_after_replacements_without_matches_keeps_the_offset() {
     assert_eq!(offset_after_replacements(&[], 5, 4), 5);
+}
+
+// ========== first_match_from ==========
+
+#[test]
+fn test_first_match_from_without_matches_is_none() {
+    assert_eq!(first_match_from(&[], 3), None);
+}
+
+#[test]
+fn test_first_match_from_includes_a_match_starting_at_the_offset() {
+    let matches = vec![create_match(0, 3), create_match(4, 7), create_match(8, 11)];
+    assert_eq!(first_match_from(&matches, 4), Some(1));
+}
+
+#[test]
+fn test_first_match_from_skips_a_match_containing_the_offset() {
+    let matches = vec![create_match(0, 3), create_match(4, 7), create_match(8, 11)];
+    assert_eq!(first_match_from(&matches, 5), Some(2));
+}
+
+#[test]
+fn test_first_match_from_wraps_past_the_last_match() {
+    let matches = vec![create_match(0, 3), create_match(4, 7)];
+    assert_eq!(first_match_from(&matches, 7), Some(0));
 }
 
 // ========== find_matches ==========
@@ -906,6 +931,99 @@ fn test_gpui_replace_current_updates_text_and_matches(cx: &mut TestAppContext) {
             assert_eq!(cursor.line, 0);
             assert_eq!(cursor.character, 8);
         });
+    });
+}
+
+/// Run "Replace" twice on a document and return the text after each click
+///
+/// ### Arguments
+/// - `cx`: The test application context
+/// - `document`: The initial editor text, searched from its start
+/// - `query`: The search query, matched case-insensitively
+/// - `replacement`: The replacement text
+///
+/// ### Returns
+/// - `(String, String)`: The editor text after the first and after the second replace
+#[cfg(feature = "gpui-test-support")]
+fn replace_current_twice(
+    cx: &mut TestAppContext,
+    document: &str,
+    query: &str,
+    replacement: &str,
+) -> (String, String) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value(document, window, cx);
+            content.set_selected_range(0..0, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.match_case = false;
+            bar.match_whole_word = false;
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value(query, window, cx);
+            });
+            bar.replace_input.update(cx, |input, cx| {
+                input.set_value(replacement, window, cx);
+            });
+            bar.replace_current(Some(content.clone()), window, cx);
+        });
+        let after_first = content.read(cx).text().to_string();
+        search_bar.update(cx, |bar, cx| {
+            bar.replace_current(Some(content.clone()), window, cx);
+        });
+        let after_second = content.read(cx).text().to_string();
+        (after_first, after_second)
+    })
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_replace_current_moves_past_a_case_fix_that_still_matches(cx: &mut TestAppContext) {
+    let (after_first, after_second) =
+        replace_current_twice(cx, "colour and colour", "colour", "Colour");
+
+    assert_eq!(after_first, "Colour and colour");
+    assert_eq!(
+        after_second, "Colour and Colour",
+        "the second replace must move on to the next match, not rewrite the first one"
+    );
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_replace_current_moves_past_a_replacement_containing_the_query(cx: &mut TestAppContext) {
+    let (after_first, after_second) = replace_current_twice(cx, "foo foo", "foo", "foobar");
+
+    assert_eq!(after_first, "foobar foo");
+    assert_eq!(
+        after_second, "foobar foobar",
+        "the second replace must not grow the text it just inserted"
+    );
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_replace_current_puts_the_caret_after_the_replacement(cx: &mut TestAppContext) {
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo foo", window, cx);
+            content.set_selected_range(0..0, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.replace_input.update(cx, |input, cx| {
+                input.set_value("foobar", window, cx);
+            });
+            bar.replace_current(Some(content.clone()), window, cx);
+
+            assert_eq!(bar.search_matches.len(), 2);
+            assert_eq!(bar.current_match_index, Some(1));
+        });
+        assert_eq!(content.read(cx).cursor(), "foobar ".len());
     });
 }
 

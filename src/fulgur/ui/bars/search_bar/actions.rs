@@ -3,7 +3,7 @@ use gpui_kit::component::input::{EditorState, InputEvent};
 use gpui_kit::{App, Context, Entity, Focusable, Window};
 use std::time::Duration;
 
-use super::matching::find_matches_with_scratch;
+use super::matching::{find_matches_with_scratch, first_match_from};
 use super::{SearchBar, SearchBarEvent};
 
 /// Largest buffer, in bytes, rescanned synchronously after each edit or query change
@@ -186,13 +186,7 @@ impl SearchBar {
                     &mut self.search_length_changes_scratch,
                 );
                 self.search_text_scratch = search_text_scratch;
-                if !self.search_matches.is_empty() {
-                    let first_after_cursor = self
-                        .search_matches
-                        .iter()
-                        .position(|search_match| search_match.start >= cursor_pos);
-                    self.current_match_index = Some(first_after_cursor.unwrap_or(0));
-                }
+                self.current_match_index = first_match_from(&self.search_matches, cursor_pos);
             }
             self.apply_match_decorations(content_entity, cx);
         }

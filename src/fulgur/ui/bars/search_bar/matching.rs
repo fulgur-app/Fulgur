@@ -188,6 +188,26 @@ fn advance_past_char(text: &str, pos: usize) -> usize {
     pos + char_len
 }
 
+/// Find the first match starting at or after an offset, wrapping to the first match
+///
+/// ### Arguments
+/// - `search_matches`: The match positions, sorted by offset
+/// - `offset`: The byte offset to search from
+///
+/// ### Returns
+/// - `Some(usize)`: The index of the first match starting at or after `offset`, or
+///   `0` when every match starts before it
+/// - `None`: There are no matches
+pub(super) fn first_match_from(search_matches: &[SearchMatch], offset: usize) -> Option<usize> {
+    if search_matches.is_empty() {
+        return None;
+    }
+    let first_after_offset = search_matches
+        .iter()
+        .position(|search_match| search_match.start >= offset);
+    Some(first_after_offset.unwrap_or(0))
+}
+
 /// Replace text at all match positions with the replacement string
 ///
 /// ### Arguments

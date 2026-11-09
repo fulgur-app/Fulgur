@@ -2,7 +2,7 @@ use gpui_kit::component::input::EditorState;
 use gpui_kit::{App, Context, Entity, Window};
 
 use super::SearchBar;
-use super::matching::{apply_replacements, offset_after_replacements};
+use super::matching::{apply_replacements, first_match_from, offset_after_replacements};
 
 impl SearchBar {
     /// Return whether a buffer accepts edits from the search bar.
@@ -17,7 +17,11 @@ impl SearchBar {
         content.is_some_and(|content| content.read(cx).is_editable())
     }
 
-    /// Replace the current search match
+    /// Replace the current search match and move to the next one
+    ///
+    /// The next match is searched from the end of the inserted text, so a
+    /// replacement that still matches the query (a case fix, or a longer word
+    /// containing it) is never selected again.
     ///
     /// ### Arguments
     /// - `content`: The active editor tab's content, if any
@@ -40,20 +44,15 @@ impl SearchBar {
             && let Some(content_entity) = content
         {
             let replace_text = self.replace_input.read(cx).text().to_string();
+            let end_of_replacement = search_match.start + replace_text.len();
             content_entity.update(cx, |content, cx| {
                 content.set_selected_range(search_match.start..search_match.end, cx);
                 content.replace(replace_text, window, cx);
             });
-            self.perform_search(Some(content_entity.clone()), cx);
-            if !self.search_matches.is_empty() {
-                if match_index < self.search_matches.len() {
-                    self.current_match_index = Some(match_index);
-                } else {
-                    self.current_match_index = Some(0);
-                }
-                self.scroll_to_current_match(&content_entity, cx);
-            }
-            self.apply_match_decorations(&content_entity, cx);
+            self.rescan_matches(Some(&content_entity), cx);
+            self.current_match_index = first_match_from(&self.search_matches, end_of_replacement);
+            self.scroll_to_current_match(&content_entity, cx);
+            self.apply_current_match_decoration(&content_entity, cx);
         }
         cx.notify();
     }
