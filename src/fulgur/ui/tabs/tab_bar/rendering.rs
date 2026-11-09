@@ -192,7 +192,6 @@ impl TabBar {
     ) -> AnyElement {
         use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
 
-        let modified_indicator = if dragged.is_modified { " •" } else { "" };
         div()
             .id(("ghost-tab", slot))
             .flex()
@@ -210,7 +209,7 @@ impl TabBar {
                     .pl_1()
                     .text_sm()
                     .text_color(cx.theme().tab_active_foreground)
-                    .child(format!("{}{}", dragged.title, modified_indicator)),
+                    .child(dragged.ghost_label()),
             )
             .on_drop(cx.listener(|this, dragged: &DraggedTab, _window, cx| {
                 if let Some((slot, _)) = this.drag_ghost.take() {

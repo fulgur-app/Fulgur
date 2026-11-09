@@ -14,10 +14,21 @@ pub struct DraggedTab {
     pub is_modified: bool,
 }
 
+impl DraggedTab {
+    /// Build the label shown on the ghost tab while dragging
+    ///
+    /// ### Returns
+    /// - `String`: The tab title, followed by " •" when the tab has unsaved changes
+    #[must_use]
+    pub fn ghost_label(&self) -> String {
+        let modified_indicator = if self.is_modified { " •" } else { "" };
+        format!("{}{}", self.title, modified_indicator)
+    }
+}
+
 impl Render for DraggedTab {
     /// Renders the floating ghost tab shown under the cursor while dragging
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let modified_indicator = if self.is_modified { " •" } else { "" };
         div()
             .px_3()
             .py_1()
@@ -28,7 +39,7 @@ impl Render for DraggedTab {
             .bg(cx.theme().tab_active)
             .text_color(cx.theme().tab_active_foreground)
             .text_sm()
-            .child(format!("{}{}", self.title, modified_indicator))
+            .child(self.ghost_label())
     }
 }
 
@@ -58,16 +69,14 @@ mod tests {
     // ========== ghost tab title formatting tests ==========
 
     #[test]
-    fn test_ghost_title_unmodified_has_no_bullet() {
+    fn test_ghost_label_unmodified_has_no_bullet() {
         let tab = make_tab(TabId(0), "readme.md", false);
-        let indicator = if tab.is_modified { " •" } else { "" };
-        assert_eq!(format!("{}{}", tab.title, indicator), "readme.md");
+        assert_eq!(tab.ghost_label(), "readme.md");
     }
 
     #[test]
-    fn test_ghost_title_modified_appends_bullet() {
+    fn test_ghost_label_modified_appends_bullet() {
         let tab = make_tab(TabId(0), "readme.md", true);
-        let indicator = if tab.is_modified { " •" } else { "" };
-        assert_eq!(format!("{}{}", tab.title, indicator), "readme.md •");
+        assert_eq!(tab.ghost_label(), "readme.md •");
     }
 }
