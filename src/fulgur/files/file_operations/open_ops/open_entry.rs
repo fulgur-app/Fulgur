@@ -152,7 +152,7 @@ mod tests {
     use crate::fulgur::Fulgur;
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::files::file_operations::test_helpers::{
-        setup_fulgur, setup_fulgur_with_root, temp_test_path,
+        notification_count, setup_fulgur, setup_fulgur_with_root, temp_test_path,
     };
     #[cfg(feature = "gpui-test-support")]
     use gpui_kit::component::input::InputEvent;
@@ -197,19 +197,6 @@ mod tests {
             });
             (this.tabs.len(), all_untitled)
         })
-    }
-
-    /// Count the notifications currently shown in the window.
-    ///
-    /// ### Arguments
-    /// - `visual_cx`: The visual test context of a window mounted in a `Root`
-    ///
-    /// ### Returns
-    /// - `usize`: The number of displayed notifications
-    #[cfg(feature = "gpui-test-support")]
-    fn notification_count(visual_cx: &mut VisualTestContext) -> usize {
-        use gpui_kit::component::WindowExt;
-        visual_cx.update(|window, cx| window.notifications(cx).len())
     }
 
     // ========== do_open_file tests ==========
@@ -530,17 +517,23 @@ mod tests {
     #[cfg(feature = "gpui-test-support")]
     #[gpui_kit::test]
     fn test_do_open_file_creates_no_tab_when_read_fails(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
         let path = dir.path().join("does_not_exist.txt");
 
         let tabs_before = tab_snapshot(&fulgur, &visual_cx);
+        let notifications_before = notification_count(&mut visual_cx);
         open_and_settle(&fulgur, &mut visual_cx, &path);
 
         assert_eq!(
             tab_snapshot(&fulgur, &visual_cx),
             tabs_before,
             "an unreadable path must neither add a tab nor replace the scratch tab"
+        );
+        assert_eq!(
+            notification_count(&mut visual_cx),
+            notifications_before + 1,
+            "a failed read must tell the user why nothing opened"
         );
     }
 
