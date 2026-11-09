@@ -1,4 +1,5 @@
 use super::super::{DecodedContents, detect_encoding_and_decode};
+use super::read_failure_notice;
 use crate::fulgur::{
     Fulgur,
     editor_tab::{ContentRevision, replace_editor_text},
@@ -6,7 +7,8 @@ use crate::fulgur::{
     tab::Tab,
     ui::tabs::tab::TabId,
 };
-use gpui_kit::{Context, Window};
+use gpui_kit::component::{WindowExt, notification::NotificationType};
+use gpui_kit::{Context, SharedString, Window};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -75,8 +77,17 @@ impl Fulgur {
                         })
                         .ok();
                 }
-                Err(e) => {
-                    log::error!("Failed to reload file {}: {e}", guard.path.display());
+                Err(error) => {
+                    log::error!("Failed to reload file {}: {error}", guard.path.display());
+                    let notice = read_failure_notice("reload", &guard.path, &error);
+                    window
+                        .update(|window, cx| {
+                            window.push_notification(
+                                (NotificationType::Error, SharedString::from(notice)),
+                                cx,
+                            );
+                        })
+                        .ok();
                 }
             }
         })
@@ -179,7 +190,7 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::files::file_operations::test_helpers::{
-        setup_fulgur, setup_fulgur_with_root,
+        notification_count, setup_fulgur, setup_fulgur_with_root,
     };
     #[cfg(feature = "gpui-test-support")]
     use gpui_kit::TestAppContext;
@@ -334,6 +345,56 @@ mod tests {
                     .unwrap_or_default();
                 assert_eq!(content_after, initial_content);
             });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_reload_tab_from_disk_notifies_when_read_fails(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("deleted_before_reload.txt");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.tabs
+                    .first()
+                    .expect("expected an editor tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        let editor = tab.as_editor_mut().expect("expected an editor tab");
+                        editor.location = TabLocation::Local(path.clone());
+                        editor.content.update(cx, |state, cx| {
+                            state.set_value("content kept in memory", window, cx);
+                        });
+                        editor.set_original_content_from_str("content kept in memory");
+                    });
+            });
+        });
+        let notifications_before = notification_count(&mut visual_cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| this.reload_tab_from_disk(0, window, cx));
+        });
+        visual_cx.run_until_parked();
+
+        assert_eq!(
+            notification_count(&mut visual_cx),
+            notifications_before + 1,
+            "a failed reload must tell the user the buffer no longer matches the disk"
+        );
+        visual_cx.update(|_window, cx| {
+            let editor = fulgur
+                .read(cx)
+                .tabs
+                .first()
+                .and_then(|tab| tab.read(cx).as_editor())
+                .expect("expected an editor tab");
+            assert_eq!(
+                editor.content.read(cx).text().to_string(),
+                "content kept in memory",
+                "a failed reload must leave the buffer untouched"
+            );
         });
     }
 
