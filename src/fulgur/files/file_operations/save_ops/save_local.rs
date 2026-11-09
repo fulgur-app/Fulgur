@@ -1,4 +1,4 @@
-use super::super::{EncodedContents, encode_for_save};
+use super::super::{EncodedContents, RemoteSaveRequest, encode_for_save};
 use super::completion::SaveCompletion;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
@@ -72,7 +72,14 @@ impl Fulgur {
                 self.spawn_local_save(tab_id, path, &contents, bytes, window, cx);
             }
             TabLocation::Remote(spec) => {
-                self.save_remote_file(window, cx, tab_id, spec, contents, bytes);
+                let request = RemoteSaveRequest {
+                    tab_id,
+                    spec,
+                    contents,
+                    bytes,
+                    on_saved: None,
+                };
+                self.save_remote_file(window, cx, request);
             }
             TabLocation::Untitled | TabLocation::Shared(_) => {}
         }

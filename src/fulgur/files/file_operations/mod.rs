@@ -13,6 +13,7 @@ pub use encoding::{
 };
 pub use remote_types::{
     PendingRemoteOpenOutcome, RemoteBrowseResult, RemoteFileResult, RemoteOpenResult,
+    RemoteSaveContinuation, RemoteSaveRequest,
 };
 
 #[cfg(test)]

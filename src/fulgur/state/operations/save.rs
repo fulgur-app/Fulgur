@@ -195,19 +195,18 @@ impl Fulgur {
         let mut tab_states = Vec::new();
         for tab in &self.tabs {
             if let Some(editor_tab) = tab.read(cx).as_editor() {
+                // Shared with the close-flow warning, so a buffer this snapshot
+                // leaves out for its size is always offered a save first.
+                let keeps_buffer = editor_tab.snapshot_keeps_buffer(persist_unsaved, cx);
                 let tab_state = match &editor_tab.location {
                     TabLocation::Local(path) => {
-                        // A missing file leaves the buffer as the only copy, even
-                        // when no watch event reported the deletion.
-                        let file_exists = path.exists();
-                        if persist_unsaved
-                            && (editor_tab.has_unsaved_changes_for_snapshot(cx) || !file_exists)
-                            && !editor_tab.content_too_large_to_persist(cx)
-                        {
+                        if keeps_buffer {
                             let current_content = editor_tab.content.read(cx).text().clone();
+                            // A missing file leaves the buffer as the only copy, even
+                            // when no watch event reported the deletion.
                             let last_saved = editor_tab
                                 .file_last_modified
-                                .filter(|_| file_exists)
+                                .filter(|_| path.exists())
                                 .and_then(format_modified_time);
                             TabState {
                                 tab_id: editor_tab.id.0,
@@ -239,14 +238,8 @@ impl Fulgur {
                         }
                     }
                     TabLocation::Remote(remote_spec) => {
-                        let content = if persist_unsaved
-                            && editor_tab.has_unsaved_changes_for_snapshot(cx)
-                            && !editor_tab.content_too_large_to_persist(cx)
-                        {
-                            Some(TabContent::Rope(editor_tab.content.read(cx).text().clone()))
-                        } else {
-                            None
-                        };
+                        let content = keeps_buffer
+                            .then(|| TabContent::Rope(editor_tab.content.read(cx).text().clone()));
                         TabState {
                             tab_id: editor_tab.id.0,
                             title: editor_tab.title.to_string(),
@@ -262,16 +255,9 @@ impl Fulgur {
                         }
                     }
                     TabLocation::Untitled | TabLocation::Shared(_) => {
-                        if !persist_unsaved {
+                        if !keeps_buffer {
                             log::debug!(
-                                "Not persisting untitled tab '{}': unsaved buffer persistence is disabled",
-                                editor_tab.title
-                            );
-                            continue;
-                        }
-                        if editor_tab.content_too_large_to_persist(cx) {
-                            log::warn!(
-                                "Not persisting untitled tab '{}': content exceeds the large-file threshold",
+                                "Not persisting untitled tab '{}': unsaved buffer persistence is disabled or the content exceeds the large-file threshold",
                                 editor_tab.title
                             );
                             continue;

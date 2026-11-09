@@ -1,13 +1,10 @@
 use super::{
     remote_ssh_task::{SshTaskContext, spawn_ssh_task},
-    remote_types::{RemoteSaveTaskParams, SSH_SAVE_TIMEOUT_LABEL},
+    remote_types::{RemoteSaveRequest, RemoteSaveTaskParams, SSH_SAVE_TIMEOUT_LABEL},
 };
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
-    Fulgur,
-    editor_tab::TabLocation,
-    sync::ssh::{self, url::RemoteSpec},
-    ui::notifications::progress::CancelCallback,
+    Fulgur, editor_tab::TabLocation, sync::ssh, ui::notifications::progress::CancelCallback,
 };
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use parking_lot::Mutex;
@@ -22,19 +19,20 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window used to spawn dialog and monitoring tasks
     /// - `cx`: The application context
-    /// - `tab_id`: Stable editor-tab id used to apply completion updates
-    /// - `spec`: Remote file specification for the tab
-    /// - `contents`: Snapshot of editor text, used to reset the modified baseline
-    /// - `bytes`: The encoded file contents to write to the remote host
-    pub(super) fn save_remote_file(
+    /// - `request`: The tab, remote location, content snapshot and optional continuation
+    pub(crate) fn save_remote_file(
         &mut self,
         window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
-        tab_id: TabId,
-        spec: RemoteSpec,
-        contents: String,
-        bytes: Vec<u8>,
+        request: RemoteSaveRequest,
     ) {
+        let RemoteSaveRequest {
+            tab_id,
+            spec,
+            contents,
+            bytes,
+            on_saved,
+        } = request;
         let remote_save_queue = Arc::clone(&Fulgur::shared_state(cx).remote_save_queue);
         let saved_content = Arc::new(contents);
         let saved_bytes = Arc::new(bytes);
@@ -66,6 +64,7 @@ impl Fulgur {
                     saved_content: Arc::clone(&saved_content),
                     saved_bytes: Arc::clone(&saved_bytes),
                     remote_save_permit,
+                    on_saved: on_saved.clone(),
                 },
             );
         });
@@ -89,6 +88,7 @@ impl Fulgur {
             saved_content,
             saved_bytes,
             remote_save_permit,
+            on_saved,
         } = params;
         let pending_save_result: Arc<Mutex<Option<Result<(), String>>>> =
             Arc::new(Mutex::new(None));
@@ -133,7 +133,7 @@ impl Fulgur {
             },
             move |_save_finished| pending_save_result.lock().take(),
             move |fulgur, result, window, cx| {
-                fulgur.handle_remote_save_result(
+                let saved = fulgur.handle_remote_save_result(
                     tab_id,
                     request_id,
                     saved_content.as_str(),
@@ -141,6 +141,9 @@ impl Fulgur {
                     window,
                     cx,
                 );
+                if saved && let Some(on_saved) = &on_saved {
+                    on_saved(fulgur, window, cx);
+                }
             },
         );
     }
@@ -175,7 +178,11 @@ impl Fulgur {
     /// - `request_id`: Monotonic save request token used to ignore stale completions
     /// - `saved_content`: Snapshot that was successfully sent to the remote host
     /// - `result`: Save outcome from the worker task
+    /// - `window`: The window used to report a failure
     /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `bool`: `true` when the save succeeded and the tab's baseline was updated
     pub(super) fn handle_remote_save_result(
         &mut self,
         tab_id: TabId,
@@ -184,9 +191,9 @@ impl Fulgur {
         result: Result<(), String>,
         window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
-    ) {
+    ) -> bool {
         if self.latest_remote_save_request_by_tab.get(&tab_id).copied() != Some(request_id) {
-            return;
+            return false;
         }
         self.latest_remote_save_request_by_tab.remove(&tab_id);
 
@@ -211,6 +218,7 @@ impl Fulgur {
                     cx.notify();
                     crate::fulgur::state::schedule_session_autosave(cx);
                 }
+                updated
             }
             Err(msg) => {
                 window.push_notification(
@@ -220,6 +228,7 @@ impl Fulgur {
                     ),
                     cx,
                 );
+                false
             }
         }
     }

@@ -1,3 +1,4 @@
+use crate::fulgur::Fulgur;
 use crate::fulgur::sync::ssh::{
     save_queue::RemoteSavePermit,
     session::HostKeyDecision,
@@ -7,6 +8,7 @@ use crate::fulgur::sync::ssh::{
 use crate::fulgur::ui::tabs::editor_tab::ContentRevision;
 use crate::fulgur::ui::tabs::tab::TabId;
 use std::{
+    rc::Rc,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -149,6 +151,24 @@ pub fn format_remote_endpoint_label(prefix: &str, host: &str, port: u16, user: &
     }
 }
 
+/// Work run on the UI thread once a remote save has succeeded.
+pub type RemoteSaveContinuation =
+    Rc<dyn Fn(&mut Fulgur, &mut gpui_kit::Window, &mut gpui_kit::Context<Fulgur>)>;
+
+/// A remote save requested from the UI thread.
+pub struct RemoteSaveRequest {
+    /// Stable editor-tab id used to apply completion updates
+    pub tab_id: TabId,
+    /// Remote file specification for the tab
+    pub spec: RemoteSpec,
+    /// Snapshot of editor text, used to reset the modified baseline
+    pub contents: String,
+    /// The encoded file contents to write to the remote host
+    pub bytes: Vec<u8>,
+    /// Runs after a successful save; dropped unrun when the save fails or is superseded
+    pub on_saved: Option<RemoteSaveContinuation>,
+}
+
 /// Inputs required to execute a remote save in the SSH worker thread.
 pub struct RemoteSaveTaskParams {
     pub tab_id: TabId,
@@ -157,6 +177,8 @@ pub struct RemoteSaveTaskParams {
     pub saved_content: Arc<String>,
     pub saved_bytes: Arc<Vec<u8>>,
     pub remote_save_permit: RemoteSavePermit,
+    /// Runs after a successful save; dropped unrun when the save fails or is superseded
+    pub on_saved: Option<RemoteSaveContinuation>,
 }
 
 #[cfg(test)]
