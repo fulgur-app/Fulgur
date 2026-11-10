@@ -20,8 +20,6 @@ mod tests;
 
 pub use tail::{LogFileIdentity, LogFilePosition, log_toggle_available, opens_as_log_by_default};
 
-use crate::fulgur::Fulgur;
-use crate::fulgur::ui::tabs::tab::TabId;
 use encoding_rs::Encoding;
 use std::path::Path;
 use tail::{LogTailChunk, read_new_log_bytes, read_whole_log};
