@@ -20,8 +20,6 @@ mod tests;
 
 pub use tail::{LogFileIdentity, LogFilePosition, log_toggle_available, opens_as_log_by_default};
 
-use crate::fulgur::Fulgur;
-use crate::fulgur::ui::tabs::tab::TabId;
 use std::path::Path;
 use tail::{LogTailChunk, read_new_log_bytes, read_whole_log};
 
@@ -102,28 +100,5 @@ impl LogTailState {
         self.byte_offset = position.byte_offset;
         self.identity = position.identity;
         self.reseed_pending = false;
-    }
-}
-
-impl Fulgur {
-    /// Borrow an editor tab by id.
-    ///
-    /// ### Arguments
-    /// - `tab_id`: The tab id to look up
-    /// - `cx`: The application context
-    ///
-    /// ### Returns
-    /// - `Some(&EditorTab)`: The matching editor tab
-    /// - `None`: If no editor tab has that id
-    fn editor_tab<'a>(
-        &self,
-        tab_id: TabId,
-        cx: &'a gpui_kit::App,
-    ) -> Option<&'a crate::fulgur::editor_tab::EditorTab> {
-        self.tabs.iter().find_map(|tab| {
-            tab.read(cx)
-                .as_editor()
-                .filter(|editor| editor.id == tab_id)
-        })
     }
 }

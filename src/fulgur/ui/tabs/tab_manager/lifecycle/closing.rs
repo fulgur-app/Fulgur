@@ -58,15 +58,9 @@ impl Fulgur {
             self.active_tab_id = None;
         } else if self.active_tab_index(cx).is_none() {
             let fallback = pos.min(self.tabs.len() - 1);
-            let fallback_id = self.tabs.get(fallback).map(|t| t.read(cx).id());
-            self.active_tab_id = fallback_id;
-            // Deferred so that a bulk close only connects for the tab it ends on,
-            // not for every tab that is briefly active on the way there.
-            cx.defer_in(window, move |this, window, cx| {
-                if this.active_tab_id == fallback_id {
-                    this.load_active_tab_remote_content(window, cx);
-                }
-            });
+            if let Some(fallback_id) = self.tabs.get(fallback).map(|t| t.read(cx).id()) {
+                self.activate_fallback_tab(fallback_id, window, cx);
+            }
         }
 
         self.focus_active_tab(window, cx);

@@ -68,13 +68,10 @@ impl Fulgur {
         record_in_history: bool,
     ) {
         if let Some(tab_index) = self.find_tab_by_remote_spec(&spec, cx) {
-            self.active_tab_id = self.tabs.get(tab_index).map(|t| t.read(cx).id());
-            self.load_active_tab_remote_content(window, cx);
-            self.focus_active_tab(window, cx);
+            self.set_active_tab(tab_index, window, cx);
             if record_in_history {
                 Self::record_remote_history_url(format_remote_history_url(&spec), cx);
             }
-            cx.notify();
             return;
         }
         self.last_failed_remote_open_url = Some(format_remote_url(&spec));
