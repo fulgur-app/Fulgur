@@ -194,7 +194,6 @@ impl Fulgur {
     /// ### Arguments
     /// - `window`: The window receiving the commands
     /// - `cx`: The application context
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
     pub fn process_pending_ipc_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let commands: Vec<String> = Fulgur::shared_state(cx)
             .pending_ipc_commands

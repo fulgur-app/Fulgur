@@ -19,16 +19,24 @@
 //! `CMD:new-window` line instead of a file path. The listener pushes these into
 //! `pending_ipc_commands`, and the same wake delivers them in-process.
 
-use crate::fulgur::{shared_state::ExternalOpenFile, utils::worker::Worker};
+use crate::fulgur::{
+    shared_state::ExternalOpenFile,
+    utils::{
+        ipc_protocol::{command_line, file_line, read_ipc_connection},
+        worker::Worker,
+    },
+};
 use futures::channel::mpsc::UnboundedSender;
 use parking_lot::Mutex;
 #[cfg(target_os = "windows")]
 use std::net::{TcpListener as IpcListener, TcpStream as IpcStream};
 #[cfg(target_os = "linux")]
 use std::os::unix::net::{UnixListener as IpcListener, UnixStream as IpcStream};
+#[cfg(target_os = "linux")]
+use std::path::Path;
 use std::{
-    io::{self, BufRead, BufReader, Write},
-    path::{Path, PathBuf},
+    io::{self, BufReader, Write},
+    path::PathBuf,
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
@@ -44,45 +52,6 @@ const IPC_SOCKET_NAME: &str = "fulgur.sock";
 /// Maximum time a dropped IPC listener worker is joined before being detached.
 /// The wakeup self-connect unblocks `accept` immediately, so this is short.
 const IPC_WORKER_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// Prefix used to distinguish command messages from file-path messages.
-const CMD_PREFIX: &str = "CMD:";
-
-/// Prefix marking a forwarded file path as read-only.
-const READ_ONLY_PREFIX: &str = "RO:";
-
-/// Build the IPC line forwarding a file to the running instance.
-///
-/// ### Arguments
-/// - `path`: The absolute path of the file
-/// - `read_only`: Whether the file must open read-only
-///
-/// ### Returns
-/// - `String`: The line to write, without its line terminator
-fn file_line(path: &Path, read_only: bool) -> String {
-    let prefix = if read_only { READ_ONLY_PREFIX } else { "" };
-    format!("{prefix}{}", path.display())
-}
-
-/// Parse an IPC line forwarding a file from another instance.
-///
-/// ### Arguments
-/// - `line`: The received line, which is not a `CMD:` command
-///
-/// ### Returns
-/// - `ExternalOpenFile`: The forwarded path and its read-only marker
-fn parse_file_line(line: &str) -> ExternalOpenFile {
-    match line.strip_prefix(READ_ONLY_PREFIX) {
-        Some(path) => ExternalOpenFile {
-            path: PathBuf::from(path),
-            read_only: true,
-        },
-        None => ExternalOpenFile {
-            path: PathBuf::from(line),
-            read_only: false,
-        },
-    }
-}
 
 /// Resolve the path of the Unix domain socket used for IPC.
 ///
@@ -110,9 +79,6 @@ fn connect() -> io::Result<IpcStream> {
 
 /// Bind the IPC listener of this instance.
 ///
-/// On Linux a socket file left behind by a crashed instance is removed and the
-/// bind retried, while a socket that still accepts connections is left alone.
-///
 /// ### Returns
 /// - `Ok(IpcListener)`: The bound listener
 /// - `Err(io::Error)`: The listener could not be bound
@@ -120,28 +86,48 @@ fn bind() -> io::Result<IpcListener> {
     #[cfg(target_os = "windows")]
     return IpcListener::bind(("127.0.0.1", IPC_PORT));
     #[cfg(target_os = "linux")]
-    {
-        let path = socket_path()?;
-        match IpcListener::bind(&path) {
-            Err(e)
-                if e.kind() == io::ErrorKind::AddrInUse && IpcStream::connect(&path).is_err() =>
-            {
-                log::info!("Removing stale single-instance socket: {}", path.display());
-                std::fs::remove_file(&path)?;
-                IpcListener::bind(&path)
-            }
-            result => result,
+    return bind_socket(&socket_path()?);
+}
+
+/// Bind a Unix domain socket listener, recovering from a crashed instance.
+///
+/// ### Arguments
+/// - `path`: The socket path to bind
+///
+/// ### Returns
+/// - `Ok(IpcListener)`: The bound listener
+/// - `Err(io::Error)`: The listener could not be bound, or another instance is listening
+#[cfg(target_os = "linux")]
+fn bind_socket(path: &Path) -> io::Result<IpcListener> {
+    match IpcListener::bind(path) {
+        Err(e) if e.kind() == io::ErrorKind::AddrInUse && IpcStream::connect(path).is_err() => {
+            log::info!("Removing stale single-instance socket: {}", path.display());
+            std::fs::remove_file(path)?;
+            IpcListener::bind(path)
         }
+        result => result,
+    }
+}
+
+/// Write one file line per path to a connection to the running instance.
+///
+/// ### Arguments
+/// - `stream`: The connection to the running instance
+/// - `paths`: The file paths to forward
+/// - `read_only`: Whether the running instance must open these files read-only
+fn forward_files(mut stream: impl Write, paths: &[PathBuf], read_only: bool) {
+    for path in paths {
+        let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+        let _ = writeln!(stream, "{}", file_line(&path, read_only));
     }
 }
 
 /// Try to forward `paths` to an already-running Fulgur instance.
 ///
-/// Connects to the listener started by the primary instance. Paths are made
-/// absolute first, since the running instance has its own working directory.
-/// If the connection succeeds the paths are written one per line and the
-/// caller should exit immediately. If the connection is refused this is
-/// the first instance and the caller should continue normally.
+/// Connects to the listener started by the primary instance. If the
+/// connection succeeds the paths are written one per line and the caller
+/// should exit immediately. If the connection is refused this is the first
+/// instance and the caller should continue normally.
 ///
 /// ### Arguments
 /// - `paths`: The file paths to forward to the running instance
@@ -153,11 +139,8 @@ fn bind() -> io::Result<IpcListener> {
 #[must_use]
 pub fn try_forward_to_existing_instance(paths: &[PathBuf], read_only: bool) -> bool {
     match connect() {
-        Ok(mut stream) => {
-            for path in paths {
-                let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
-                let _ = writeln!(stream, "{}", file_line(&path, read_only));
-            }
+        Ok(stream) => {
+            forward_files(stream, paths, read_only);
             log::info!(
                 "Single-instance: forwarded {} path(s) to running instance",
                 paths.len()
@@ -185,7 +168,7 @@ pub fn try_forward_to_existing_instance(paths: &[PathBuf], read_only: bool) -> b
 pub fn try_send_command_to_existing_instance(cmd: &str) -> bool {
     match connect() {
         Ok(mut stream) => {
-            let _ = writeln!(stream, "{CMD_PREFIX}{cmd}");
+            let _ = writeln!(stream, "{}", command_line(cmd));
             log::info!("Single-instance: forwarded command '{cmd}' to running instance");
             true
         }
@@ -193,7 +176,7 @@ pub fn try_send_command_to_existing_instance(cmd: &str) -> bool {
     }
 }
 
-/// Spawn a background thread that listens for messages from new Fulgur processes.
+/// Start listening for messages from new Fulgur processes.
 ///
 /// File-path lines are appended to `pending_files`, mirroring the macOS
 /// "Open With" path. Lines prefixed with `CMD:` are appended to
@@ -223,8 +206,37 @@ pub fn start_ipc_listener(
             return None;
         }
     };
+    let unblock_accept = || {
+        let _ = connect();
+    };
+    Some(spawn_ipc_listener(
+        listener,
+        unblock_accept,
+        pending_files,
+        pending_ipc_commands,
+        wake,
+    ))
+}
 
-    let worker = Worker::spawn(
+/// Spawn the worker thread accepting connections on a bound listener.
+///
+/// ### Arguments
+/// - `listener`: The bound listener, moved into the worker
+/// - `unblock_accept`: Connects to `listener` so a pending `accept` returns on shutdown
+/// - `pending_files`: Shared queue to receive file paths forwarded by other instances
+/// - `pending_ipc_commands`: Shared queue to receive command strings forwarded by other instances
+/// - `wake`: Channel signalled after each connection has been read
+///
+/// ### Returns
+/// - `Worker`: The Drop-owned listener worker
+fn spawn_ipc_listener(
+    listener: IpcListener,
+    unblock_accept: impl Fn() + Send + Sync + 'static,
+    pending_files: Arc<Mutex<Vec<ExternalOpenFile>>>,
+    pending_ipc_commands: Arc<Mutex<Vec<String>>>,
+    wake: UnboundedSender<()>,
+) -> Worker {
+    Worker::spawn(
         "fulgur-ipc-listener",
         IPC_WORKER_JOIN_TIMEOUT,
         move |shutdown| {
@@ -235,25 +247,11 @@ pub fn start_ipc_listener(
                 }
                 match stream {
                     Ok(stream) => {
-                        let reader = BufReader::new(stream);
-                        for line in reader.lines().map_while(Result::ok) {
-                            if line.is_empty() {
-                                continue;
-                            }
-                            if let Some(cmd) = line.strip_prefix(CMD_PREFIX) {
-                                log::info!("IPC: received command '{cmd}'");
-                                pending_ipc_commands.lock().push(cmd.to_string());
-                            } else {
-                                let file = parse_file_line(&line);
-                                if file.path.exists() {
-                                    log::info!(
-                                        "IPC: queuing file from another instance: {}",
-                                        file.path.display()
-                                    );
-                                    pending_files.lock().push(file);
-                                }
-                            }
-                        }
+                        read_ipc_connection(
+                            BufReader::new(stream),
+                            &pending_files,
+                            &pending_ipc_commands,
+                        );
                         let _ = wake.unbounded_send(());
                     }
                     Err(e) => {
@@ -263,29 +261,158 @@ pub fn start_ipc_listener(
             }
         },
     )
-    .with_wakeup(|| {
-        // Unblock the pending accept so the loop observes the shutdown flag.
-        let _ = connect();
-    });
-    Some(worker)
+    .with_wakeup(unblock_accept)
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use super::{file_line, parse_file_line};
-    use std::path::{Path, PathBuf};
+    use super::{IPC_WORKER_JOIN_TIMEOUT, bind_socket, forward_files, spawn_ipc_listener};
+    use crate::fulgur::{
+        shared_state::ExternalOpenFile,
+        utils::{ipc_protocol::command_line, worker::Worker},
+    };
+    use futures::channel::mpsc::{UnboundedReceiver, unbounded};
+    use parking_lot::Mutex;
+    use std::{
+        io::{ErrorKind, Write},
+        os::unix::net::{UnixListener, UnixStream},
+        path::Path,
+        sync::Arc,
+        thread,
+        time::{Duration, Instant},
+    };
 
-    #[test]
-    fn test_file_line_round_trips_a_read_only_file() {
-        let file = parse_file_line(&file_line(Path::new("/tmp/a.txt"), true));
-        assert_eq!(file.path, PathBuf::from("/tmp/a.txt"));
-        assert!(file.read_only);
+    /// Queues and wake receiver of a listener started on a test socket.
+    struct TestListener {
+        worker: Worker,
+        pending_files: Arc<Mutex<Vec<ExternalOpenFile>>>,
+        pending_ipc_commands: Arc<Mutex<Vec<String>>>,
+        wake_rx: UnboundedReceiver<()>,
+    }
+
+    /// Bind `socket` and start a listener on it, as `start_ipc_listener` does on the real socket.
+    ///
+    /// ### Arguments
+    /// - `socket`: The socket path to listen on
+    ///
+    /// ### Returns
+    /// - `TestListener`: The running worker with its queues and wake receiver
+    fn start_test_listener(socket: &Path) -> TestListener {
+        let listener = bind_socket(socket).expect("failed to bind test socket");
+        let pending_files = Arc::new(Mutex::new(Vec::new()));
+        let pending_ipc_commands = Arc::new(Mutex::new(Vec::new()));
+        let (wake_tx, wake_rx) = unbounded();
+        let unblock_socket = socket.to_path_buf();
+        let worker = spawn_ipc_listener(
+            listener,
+            move || {
+                let _ = UnixStream::connect(&unblock_socket);
+            },
+            Arc::clone(&pending_files),
+            Arc::clone(&pending_ipc_commands),
+            wake_tx,
+        );
+        TestListener {
+            worker,
+            pending_files,
+            pending_ipc_commands,
+            wake_rx,
+        }
+    }
+
+    /// Wait until the listener signals that it has read a connection.
+    ///
+    /// ### Arguments
+    /// - `wake_rx`: The listener's wake receiver
+    ///
+    /// ### Returns
+    /// - `true`: A wake arrived within five seconds
+    /// - `false`: No wake arrived
+    fn wait_for_wake(wake_rx: &mut UnboundedReceiver<()>) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if wake_rx.try_recv().is_ok() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        false
     }
 
     #[test]
-    fn test_file_line_round_trips_an_editable_file() {
-        let file = parse_file_line(&file_line(Path::new("/tmp/a.txt"), false));
-        assert_eq!(file.path, PathBuf::from("/tmp/a.txt"));
-        assert!(!file.read_only);
+    fn test_listener_queues_forwarded_files_and_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("fulgur.sock");
+        let existing = dir.path().join("existing.txt");
+        std::fs::write(&existing, "content").unwrap();
+        let missing = dir.path().join("missing.txt");
+        let mut listener = start_test_listener(&socket);
+
+        forward_files(
+            UnixStream::connect(&socket).unwrap(),
+            &[existing.clone(), missing],
+            false,
+        );
+        assert!(wait_for_wake(&mut listener.wake_rx), "files were not read");
+        let mut stream = UnixStream::connect(&socket).unwrap();
+        writeln!(stream, "{}", command_line("new-tab")).unwrap();
+        drop(stream);
+        assert!(wait_for_wake(&mut listener.wake_rx), "command was not read");
+
+        assert_eq!(
+            *listener.pending_files.lock(),
+            vec![ExternalOpenFile {
+                path: std::fs::canonicalize(&existing).unwrap(),
+                read_only: false,
+            }]
+        );
+        assert_eq!(
+            *listener.pending_ipc_commands.lock(),
+            vec!["new-tab".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_bind_socket_replaces_a_stale_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("fulgur.sock");
+        drop(UnixListener::bind(&socket).unwrap());
+        assert!(socket.exists(), "a dropped listener leaves its socket file");
+
+        let listener = bind_socket(&socket).expect("a stale socket must be replaced");
+
+        assert!(UnixStream::connect(&socket).is_ok());
+        drop(listener);
+    }
+
+    #[test]
+    fn test_bind_socket_keeps_a_live_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("fulgur.sock");
+        let _live = UnixListener::bind(&socket).unwrap();
+
+        let error = bind_socket(&socket).expect_err("a live socket must not be taken over");
+
+        assert_eq!(error.kind(), ErrorKind::AddrInUse);
+        assert!(UnixStream::connect(&socket).is_ok());
+    }
+
+    #[test]
+    fn test_dropping_the_listener_worker_joins_and_closes_the_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("fulgur.sock");
+        let listener = start_test_listener(&socket);
+
+        let started = Instant::now();
+        drop(listener.worker);
+
+        assert!(
+            started.elapsed() < IPC_WORKER_JOIN_TIMEOUT,
+            "the wakeup must unblock accept so the worker joins instead of timing out"
+        );
+        assert!(
+            UnixStream::connect(&socket).is_err(),
+            "the listener socket must be closed once the worker has exited"
+        );
     }
 }
