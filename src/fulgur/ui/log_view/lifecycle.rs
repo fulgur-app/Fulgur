@@ -6,7 +6,7 @@ use gpui_kit::{Context, SharedString, Window};
 
 use super::LogTailState;
 use super::polling::snap_to_last_line;
-use super::tail::{log_file_position, log_toggle_available};
+use super::tail::{log_file_position, log_toggle_available, tail_encoding};
 use crate::fulgur::Fulgur;
 
 impl Fulgur {
@@ -28,6 +28,9 @@ impl Fulgur {
         let tab_id = editor.id;
         if editor.log_view {
             self.deactivate_log_view(tab_id, cx);
+        } else if tail_encoding(&editor.encoding).is_none() {
+            let notice = format!("Log view is not available for {} files.", editor.encoding);
+            window.push_notification((NotificationType::Warning, SharedString::from(notice)), cx);
         } else if editor.modified {
             window.push_notification(
                 (
@@ -73,8 +76,13 @@ impl Fulgur {
     /// The buffer normally already mirrors the file as loaded by the editor, so
     /// only the consumed position is seeded from the file. When the two byte
     /// lengths disagree (the file grew while the tab was inactive, or it is not
-    /// plain UTF-8) the poll task first rereads the whole file in the
-    /// background and replaces the buffer, so the buffer and the offset agree.
+    /// UTF-8) the poll task first rereads the whole file in the background,
+    /// decoded with the tab's encoding, and replaces the buffer, so the buffer
+    /// and the offset agree.
+    ///
+    /// A tab whose encoding cannot be tailed (see `tail_encoding`) stays in
+    /// the editor: its `log_view` flag, set by a restore or a transfer, is
+    /// cleared instead.
     ///
     /// ### Arguments
     /// - `tab_id`: The tab to activate log view on
@@ -86,16 +94,33 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((path, content)) = self
-            .editor_tab(tab_id, cx)
-            .and_then(|editor| Some((editor.file_path().cloned()?, editor.content.clone())))
+        let Some((path, content, encoding_label)) =
+            self.editor_tab(tab_id, cx).and_then(|editor| {
+                Some((
+                    editor.file_path().cloned()?,
+                    editor.content.clone(),
+                    editor.encoding.clone(),
+                ))
+            })
         else {
+            return;
+        };
+        let Some(encoding) = tail_encoding(&encoding_label) else {
+            log::info!(
+                "Log view unavailable for {} ({encoding_label}), keeping the editor",
+                path.display()
+            );
+            self.update_editor_tab(tab_id, cx, |editor, _| {
+                editor.log_view = false;
+            });
             return;
         };
         let buffer_len = content.read(cx).text().len() as u64;
         let tail_state = match log_file_position(&path) {
-            Some(position) if position.byte_offset == buffer_len => LogTailState::new(position),
-            _ => LogTailState::awaiting_reseed(),
+            Some(position) if position.byte_offset == buffer_len => {
+                LogTailState::new(position, encoding)
+            }
+            _ => LogTailState::awaiting_reseed(encoding),
         };
         let highlight_colors = self.settings.editor_settings.highlight_colors;
         self.update_editor_tab(tab_id, cx, |editor, cx| {

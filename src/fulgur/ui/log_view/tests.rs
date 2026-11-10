@@ -6,9 +6,12 @@ use crate::fulgur::files::file_watcher::FileWatchEvent;
 use crate::fulgur::files::file_watcher::test_helpers::setup_fulgur;
 use crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str;
 use crate::fulgur::ui::tabs::tab::TabId;
+use crate::test_support::{notification_count, setup_fulgur_with_root};
 use gpui_kit::component::input::RopeExt;
 use gpui_kit::{Entity, EntityInputHandler, Pixels, TestAppContext, VisualTestContext, point, px};
 use std::fmt::Write as _;
+use std::path::Path;
+use std::time::Duration;
 use tempfile::TempDir;
 
 /// Point the first tab at a log file on disk, seed its buffer with the file
@@ -379,6 +382,161 @@ fn test_log_view_suspends_color_highlighting(cx: &mut TestAppContext) {
             );
         });
     });
+}
+
+/// Encode text as UTF-16LE code units, independently of the code under test.
+///
+/// ### Arguments
+/// - `text`: The text to encode
+///
+/// ### Returns
+/// - `Vec<u8>`: The UTF-16LE code units, without a byte order mark
+fn utf16le_bytes(text: &str) -> Vec<u8> {
+    text.encode_utf16().flat_map(u16::to_le_bytes).collect()
+}
+
+#[gpui_kit::test]
+fn test_utf16_log_is_tailed_decoded_and_saves_back_unchanged(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let dir = TempDir::new().expect("temp dir");
+    let path = dir.path().join("utf16.log");
+    let mut on_disk = vec![0xFF, 0xFE];
+    on_disk.extend(utf16le_bytes("caf\u{e9}\n"));
+    std::fs::write(&path, &on_disk).expect("write UTF-16 log");
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| this.do_open_file(window, cx, path.clone()));
+    });
+    visual_cx.run_until_parked();
+
+    let tab_id = fulgur.read_with(&visual_cx, |this, cx| {
+        let editor = this.get_active_editor_tab(cx).expect("editor tab");
+        assert!(editor.log_view, "a .log file opens in log view");
+        assert_eq!(editor.encoding, "UTF-16LE");
+        assert_eq!(
+            editor.content.read(cx).text().to_string(),
+            "caf\u{e9}\n",
+            "the activation reread must decode UTF-16, not UTF-8"
+        );
+        editor.id
+    });
+
+    let appended = utf16le_bytes("line2 \u{1f600}\n");
+    on_disk.extend(&appended);
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .expect("open log for append");
+    std::io::Write::write_all(&mut file, &appended).expect("append to log");
+    drop(file);
+    visual_cx
+        .background_executor
+        .advance_clock(Duration::from_secs(1));
+    visual_cx.run_until_parked();
+
+    let (text, modified) = read_tab(&fulgur, &mut visual_cx, tab_id);
+    assert_eq!(text, "caf\u{e9}\nline2 \u{1f600}\n");
+    assert!(!modified);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.deactivate_log_view(tab_id, cx);
+            this.save_file(window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+    let saved = std::fs::read(&path).expect("read saved log");
+    assert_eq!(saved, on_disk, "saving must write back the original bytes");
+}
+
+/// Point the first tab at a file with the given encoding label and make it active.
+///
+/// ### Arguments
+/// - `fulgur`: The window entity under test
+/// - `visual_cx`: The visual test context
+/// - `path`: The file path the tab points at
+/// - `encoding`: The encoding label the tab reports
+/// - `log_view`: The initial log-view flag, as a restore or a transfer would set it
+///
+/// ### Returns
+/// - `TabId`: The id of the prepared tab
+fn prepare_encoded_tab(
+    fulgur: &Entity<Fulgur>,
+    visual_cx: &mut VisualTestContext,
+    path: &Path,
+    encoding: &str,
+    log_view: bool,
+) -> TabId {
+    visual_cx.update(|_, cx| {
+        fulgur.update(cx, |this, cx| {
+            let tab = this.tabs.first().expect("expected one tab").clone();
+            let tab_id = tab.update(cx, |tab, _| {
+                let editor_tab = tab.as_editor_mut().expect("editor tab");
+                editor_tab.location = TabLocation::Local(path.to_path_buf());
+                editor_tab.encoding = encoding.to_string();
+                editor_tab.log_view = log_view;
+                editor_tab.id
+            });
+            this.active_tab_id = Some(tab_id);
+            tab_id
+        })
+    })
+}
+
+#[gpui_kit::test]
+fn test_toggle_log_view_refuses_a_multibyte_legacy_encoding_with_a_notice(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+    let dir = TempDir::new().expect("temp dir");
+    let path = dir.path().join("sjis.log");
+    std::fs::write(&path, b"line1\n").expect("write log file");
+    let tab_id = prepare_encoded_tab(&fulgur, &mut visual_cx, &path, "Shift_JIS", false);
+
+    let notifications_before = notification_count(&mut visual_cx);
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| this.toggle_log_view(window, cx));
+    });
+
+    fulgur.read_with(&visual_cx, |this, cx| {
+        let editor = this.editor_tab(tab_id, cx).expect("editor tab");
+        assert!(!editor.log_view, "a Shift_JIS tab must stay in the editor");
+        assert!(!this.log_tail_state.contains_key(&tab_id));
+    });
+    assert_eq!(
+        notification_count(&mut visual_cx),
+        notifications_before + 1,
+        "the refusal must tell the user why"
+    );
+}
+
+#[gpui_kit::test]
+fn test_activate_log_view_clears_a_restored_flag_for_a_multibyte_legacy_encoding(
+    cx: &mut TestAppContext,
+) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+    let dir = TempDir::new().expect("temp dir");
+    let path = dir.path().join("big5.log");
+    std::fs::write(&path, b"line1\n").expect("write log file");
+    let tab_id = prepare_encoded_tab(&fulgur, &mut visual_cx, &path, "Big5", true);
+
+    let notifications_before = notification_count(&mut visual_cx);
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| this.activate_log_view(tab_id, window, cx));
+    });
+
+    fulgur.read_with(&visual_cx, |this, cx| {
+        let editor = this.editor_tab(tab_id, cx).expect("editor tab");
+        assert!(
+            !editor.log_view,
+            "an untailable tab falls back to the editor"
+        );
+        assert!(!this.log_tail_state.contains_key(&tab_id));
+        assert!(!this.log_tail_cancel.contains_key(&tab_id), "no poll task");
+    });
+    assert_eq!(
+        notification_count(&mut visual_cx),
+        notifications_before,
+        "automatic activation (open, restore, transfer) must stay silent"
+    );
 }
 
 /// Build a buffer of `count` newline-terminated numbered lines.

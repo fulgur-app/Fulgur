@@ -22,6 +22,7 @@ pub use tail::{LogFileIdentity, LogFilePosition, log_toggle_available, opens_as_
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::ui::tabs::tab::TabId;
+use encoding_rs::Encoding;
 use std::path::Path;
 use tail::{LogTailChunk, read_new_log_bytes, read_whole_log};
 
@@ -36,6 +37,9 @@ pub struct LogTailState {
     /// Whether the buffer lags the file and must be replaced by a full reread
     /// before tailing can resume from `byte_offset`.
     pub reseed_pending: bool,
+    /// The tab's encoding, used to decode every read so the buffer matches
+    /// what the editor loaded and what a save writes back.
+    pub encoding: &'static Encoding,
 }
 
 impl LogTailState {
@@ -43,26 +47,32 @@ impl LogTailState {
     ///
     /// ### Arguments
     /// - `position`: The file length and identity already consumed by the seed
+    /// - `encoding`: The encoding to decode appended bytes with
     ///
     /// ### Returns
     /// - `LogTailState`: The initialized state
-    fn new(position: LogFilePosition) -> Self {
+    fn new(position: LogFilePosition, encoding: &'static Encoding) -> Self {
         Self {
             byte_offset: position.byte_offset,
             identity: position.identity,
             reseed_pending: false,
+            encoding,
         }
     }
 
     /// Create a tail state whose first read replaces the whole buffer.
     ///
+    /// ### Arguments
+    /// - `encoding`: The encoding to decode the file with
+    ///
     /// ### Returns
     /// - `LogTailState`: The state awaiting a full reread
-    fn awaiting_reseed() -> Self {
+    fn awaiting_reseed(encoding: &'static Encoding) -> Self {
         Self {
             byte_offset: 0,
             identity: None,
             reseed_pending: true,
+            encoding,
         }
     }
 
@@ -77,9 +87,9 @@ impl LogTailState {
     /// - `None`: If the file could not be opened, stat-ed, or read
     fn read_next_chunk(&self, path: &Path) -> Option<LogTailChunk> {
         if self.reseed_pending {
-            read_whole_log(path)
+            read_whole_log(path, self.encoding)
         } else {
-            read_new_log_bytes(path, self.position())
+            read_new_log_bytes(path, self.position(), self.encoding)
         }
     }
 
