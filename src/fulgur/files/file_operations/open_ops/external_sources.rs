@@ -138,7 +138,6 @@ impl Fulgur {
             window.activate_window();
             fulgur.update(cx, |this, cx| {
                 this.process_pending_external_files(window, cx);
-                #[cfg(any(target_os = "windows", target_os = "linux"))]
                 this.process_pending_ipc_commands(window, cx);
             });
         }) {
@@ -160,10 +159,7 @@ impl Fulgur {
     fn has_pending_external_open_requests(cx: &App) -> bool {
         let shared = cx.global::<SharedAppState>();
         let has_files = !shared.pending_files_from_macos.lock().is_empty();
-        #[cfg(any(target_os = "windows", target_os = "linux"))]
         let has_commands = !shared.pending_ipc_commands.lock().is_empty();
-        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-        let has_commands = false;
         has_files || has_commands
     }
 }
@@ -392,6 +388,88 @@ mod tests {
         assert_eq!(
             text, "content on disk",
             "confirming the prompt must reload the file from disk"
+        );
+    }
+
+    /// Queue commands as if another instance had forwarded them.
+    ///
+    /// ### Arguments
+    /// - `cx`: The test application context
+    /// - `commands`: The command identifiers to queue
+    fn queue_ipc_commands(cx: &mut TestAppContext, commands: &[&str]) {
+        cx.update(|cx| {
+            cx.global::<SharedAppState>()
+                .pending_ipc_commands
+                .lock()
+                .extend(commands.iter().map(ToString::to_string));
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_deliver_external_open_requests_runs_ipc_commands_in_last_focused_window(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let (window_id_one, fulgur_one) = open_window_with_fulgur(cx);
+        let (window_id_two, fulgur_two) = open_window_with_fulgur(cx);
+        cx.update(|cx| {
+            cx.update_global::<WindowManager, _>(|manager, _| {
+                manager.register(window_id_one, fulgur_one.downgrade());
+                manager.register(window_id_two, fulgur_two.downgrade());
+                manager.set_focused(window_id_two);
+            });
+        });
+        let tab_count = |fulgur: &Entity<Fulgur>, cx: &mut TestAppContext| {
+            cx.update(|cx| fulgur.read(cx).tabs.len())
+        };
+        let (tabs_one, tabs_two) = (tab_count(&fulgur_one, cx), tab_count(&fulgur_two, cx));
+        queue_ipc_commands(cx, &["new-tab", "focus", "unknown-command"]);
+
+        cx.update(Fulgur::deliver_external_open_requests);
+        cx.run_until_parked();
+
+        cx.update(|cx| {
+            assert!(
+                cx.global::<SharedAppState>()
+                    .pending_ipc_commands
+                    .lock()
+                    .is_empty(),
+                "delivering must drain the command queue, unknown commands included"
+            );
+        });
+        assert_eq!(
+            tab_count(&fulgur_two, cx),
+            tabs_two + 1,
+            "new-tab must open exactly one tab in the last focused window"
+        );
+        assert_eq!(
+            tab_count(&fulgur_one, cx),
+            tabs_one,
+            "other windows must not receive the commands"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn test_deliver_external_open_requests_new_window_command_opens_a_window(
+        cx: &mut TestAppContext,
+    ) {
+        setup_test_globals(cx);
+        let (window_id, fulgur) = open_window_with_fulgur(cx);
+        cx.update(|cx| {
+            cx.update_global::<WindowManager, _>(|manager, _| {
+                manager.register(window_id, fulgur.downgrade());
+                manager.set_focused(window_id);
+            });
+        });
+        queue_ipc_commands(cx, &["new-window"]);
+
+        cx.update(Fulgur::deliver_external_open_requests);
+        cx.run_until_parked();
+
+        let window_count = cx.update(|cx| cx.global::<WindowManager>().window_count());
+        assert_eq!(
+            window_count, 2,
+            "new-window must open and register a window"
         );
     }
 }

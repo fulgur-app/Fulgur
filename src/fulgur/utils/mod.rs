@@ -1,6 +1,8 @@
 pub mod atomic_write;
 pub mod crypto_helper;
 pub mod http;
+#[cfg(any(target_os = "windows", target_os = "linux", test))]
+pub mod ipc_protocol;
 #[cfg(target_os = "windows")]
 pub mod jump_list;
 pub mod logger;

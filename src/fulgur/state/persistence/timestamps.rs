@@ -81,15 +81,36 @@ pub fn is_file_newer(file_time: &str, saved_time: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{get_file_modified_time, is_file_newer};
+    use super::{get_file_modified_time, is_file_newer, parse_modified_time};
     use std::fs;
     use std::io::Write;
-    use std::time::Duration;
+    use std::path::Path;
+    use std::time::{Duration, SystemTime};
+
+    const FIXED_MODIFIED_TIME: &str = "2024-01-01T12:00:00Z";
+
+    /// Parse `FIXED_MODIFIED_TIME` into the instant the timestamp tests stamp on files
+    ///
+    /// ### Returns
+    /// - `SystemTime`: 2024-01-01 at noon UTC
+    fn fixed_modified_time() -> SystemTime {
+        parse_modified_time(FIXED_MODIFIED_TIME).unwrap()
+    }
+
+    /// Create a file whose modification time is set explicitly
+    ///
+    /// ### Arguments
+    /// - `path`: The file to create
+    /// - `modified`: The modification time to stamp on the file
+    fn create_file_modified_at(path: &Path, modified: SystemTime) {
+        let file = fs::File::create(path).unwrap();
+        file.set_modified(modified).unwrap();
+    }
 
     #[test]
     fn test_get_file_modified_time_existing_file() {
-        let temp_dir = std::env::temp_dir();
-        let file_path = temp_dir.join("test_file_modified_time.txt");
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test_file_modified_time.txt");
         let mut file = fs::File::create(&file_path).unwrap();
         file.write_all(b"test content").unwrap();
         drop(file);
@@ -100,28 +121,23 @@ mod tests {
             time::OffsetDateTime::parse(&timestamp, &time::format_description::well_known::Rfc3339)
                 .is_ok()
         );
-        fs::remove_file(&file_path).ok();
     }
 
     #[test]
     fn test_get_file_modified_time_nonexistent_file() {
-        let file_path = std::env::temp_dir().join("fulgur_nonexistent_modified_time_test.txt");
-        fs::remove_file(&file_path).ok();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("nonexistent.txt");
         let result = get_file_modified_time(&file_path);
         assert!(result.is_none());
     }
 
     #[test]
     fn test_get_file_modified_time_valid_rfc3339_format() {
-        let temp_dir = std::env::temp_dir();
-        let file_path = temp_dir.join("test_rfc3339_format.txt");
-        fs::File::create(&file_path).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test_rfc3339_format.txt");
+        create_file_modified_at(&file_path, fixed_modified_time());
         let result = get_file_modified_time(&file_path);
-        assert!(result.is_some());
-        let timestamp = result.unwrap();
-        assert!(timestamp.contains('T'));
-        assert!(timestamp.contains('Z') || timestamp.contains('+') || timestamp.contains('-'));
-        fs::remove_file(&file_path).ok();
+        assert_eq!(result.as_deref(), Some(FIXED_MODIFIED_TIME));
     }
 
     #[test]
@@ -199,17 +215,15 @@ mod tests {
 
     #[test]
     fn test_is_file_newer_with_actual_file_times() {
-        let temp_dir = std::env::temp_dir();
-        let file1_path = temp_dir.join("test_file1.txt");
-        let file2_path = temp_dir.join("test_file2.txt");
-        fs::File::create(&file1_path).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file1_path = temp_dir.path().join("test_file1.txt");
+        let file2_path = temp_dir.path().join("test_file2.txt");
+        let older = fixed_modified_time();
+        create_file_modified_at(&file1_path, older);
+        create_file_modified_at(&file2_path, older + Duration::from_secs(1));
         let time1 = get_file_modified_time(&file1_path).unwrap();
-        std::thread::sleep(Duration::from_millis(10));
-        fs::File::create(&file2_path).unwrap();
         let time2 = get_file_modified_time(&file2_path).unwrap();
         assert!(is_file_newer(&time2, &time1));
         assert!(!is_file_newer(&time1, &time2));
-        fs::remove_file(&file1_path).ok();
-        fs::remove_file(&file2_path).ok();
     }
 }

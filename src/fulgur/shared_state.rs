@@ -223,8 +223,8 @@ pub struct SharedAppState {
     /// Whether this process was started with `--read-only`: every file it opens or
     /// restores is read-only. Set once at startup and never persisted.
     pub read_only_session: bool,
-    /// Pending IPC commands forwarded by another instance (Windows jump list) ("new-tab", "new-window")
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    /// Pending IPC commands forwarded by another instance ("new-tab", "new-window", "focus").
+    /// Only the Windows and Linux single-instance listener fills it; it stays empty on macOS.
     pub pending_ipc_commands: Arc<Mutex<Vec<String>>>,
     /// Drop-owned handle to the single-instance IPC listener thread, set once
     /// at startup by `main.rs`.
@@ -314,7 +314,6 @@ impl SharedAppState {
             available_update: None,
             pending_files_from_macos,
             read_only_session: false,
-            #[cfg(any(target_os = "windows", target_os = "linux"))]
             pending_ipc_commands: Arc::new(Mutex::new(Vec::new())),
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             ipc_listener: None,
