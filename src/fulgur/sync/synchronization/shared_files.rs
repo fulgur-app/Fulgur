@@ -52,8 +52,7 @@ impl Fulgur {
                 new_tab.make_read_only(cx);
             }
             self.tabs.push(Tab::Editor(new_tab).into_entity(cx));
-            self.active_tab_id = Some(tab_id);
-            self.request_tab_scroll(tab_id, cx);
+            self.activate_tab(tab_id, window, cx);
             log::info!("Opened shared file: {}", decrypted.file_name);
         }
     }

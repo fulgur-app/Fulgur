@@ -245,6 +245,150 @@ fn test_set_active_tab_is_noop_out_of_bounds(cx: &mut TestAppContext) {
     });
 }
 
+// ========== activation side effects tests ==========
+
+/// Give an editor tab a dirty local file whose external change awaits its activation
+///
+/// ### Arguments
+/// - `fulgur`: The window state owning the tab
+/// - `tab_id`: The id of the editor tab
+/// - `path`: The local file the tab shows
+/// - `cx`: The application context
+fn queue_deferred_conflict(
+    fulgur: &mut Fulgur,
+    tab_id: TabId,
+    path: &std::path::Path,
+    cx: &mut App,
+) {
+    fulgur
+        .update_editor_tab(tab_id, cx, |editor, _| {
+            editor.location = TabLocation::Local(path.to_path_buf());
+            editor.modified = true;
+        })
+        .expect("expected an editor tab to give a conflict");
+    fulgur
+        .file_watch_state
+        .pending_conflicts
+        .insert(path.to_path_buf(), 0);
+}
+
+/// Turn an editor tab into a log view tailing a file on disk
+///
+/// ### Arguments
+/// - `fulgur`: The window state owning the tab
+/// - `tab_id`: The id of the editor tab
+/// - `path`: The existing log file to tail
+/// - `window`: The window context
+/// - `cx`: The application context
+fn make_log_view(
+    fulgur: &mut Fulgur,
+    tab_id: TabId,
+    path: &std::path::Path,
+    window: &mut Window,
+    cx: &mut Context<Fulgur>,
+) {
+    fulgur
+        .update_editor_tab(tab_id, cx, |editor, _| {
+            editor.location = TabLocation::Local(path.to_path_buf());
+        })
+        .expect("expected an editor tab to tail");
+    fulgur.activate_log_view(tab_id, window, cx);
+}
+
+#[gpui_kit::test]
+fn test_closing_the_active_tab_shows_the_neighbours_deferred_conflict(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+    let dir = tempfile::tempdir().expect("failed to create temp dir");
+    let path = dir.path().join("changed_on_disk.txt");
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 1, window, cx);
+            queue_deferred_conflict(this, ids[0], &path, cx);
+            this.close_tab(ids[1], window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        let watch_state = &fulgur.read(cx).file_watch_state;
+        assert!(
+            !watch_state.pending_conflicts.contains_key(&path),
+            "the neighbour taking over must consume its deferred conflict"
+        );
+        assert!(watch_state.open_conflict_dialogs.contains(&path));
+    });
+    assert!(has_active_dialog(&mut visual_cx));
+}
+
+#[gpui_kit::test]
+fn test_close_fallback_skips_entry_effects_once_another_tab_took_over(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+    let dir = tempfile::tempdir().expect("failed to create temp dir");
+    let path = dir.path().join("changed_on_disk.txt");
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let ids = open_extra_tabs(this, 1, window, cx);
+            queue_deferred_conflict(this, ids[0], &path, cx);
+            this.close_tab(ids[1], window, cx);
+            this.new_tab(window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        assert!(
+            fulgur
+                .read(cx)
+                .file_watch_state
+                .pending_conflicts
+                .contains_key(&path),
+            "a tab only briefly active during a close must keep its conflict for later"
+        );
+    });
+    assert!(!has_active_dialog(&mut visual_cx));
+}
+
+#[gpui_kit::test]
+fn test_new_tab_stops_and_closing_it_resumes_the_neighbouring_log_view(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let dir = tempfile::tempdir().expect("failed to create temp dir");
+    let path = dir.path().join("tail.log");
+    std::fs::write(&path, "first line\n").expect("failed to write log file");
+
+    let (log_tab_id, new_tab_id) = visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let log_tab_id = tab_ids(this, cx)[0];
+            make_log_view(this, log_tab_id, &path, window, cx);
+            assert!(this.log_tail_cancel.contains_key(&log_tab_id));
+
+            this.new_tab(window, cx);
+            assert!(
+                !this.log_tail_cancel.contains_key(&log_tab_id),
+                "leaving a log view through a new tab must stop its polling"
+            );
+            (log_tab_id, tab_ids(this, cx)[1])
+        })
+    });
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| this.close_tab(new_tab_id, window, cx));
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        fulgur.update(cx, |this, _cx| {
+            assert_eq!(this.active_tab_id, Some(log_tab_id));
+            assert!(
+                this.log_tail_cancel.contains_key(&log_tab_id),
+                "a log view taking over after a close must resume tailing"
+            );
+            this.stop_log_poll_task(log_tab_id);
+        });
+    });
+}
+
 // ========== close_other_tabs tests ==========
 
 #[gpui_kit::test]

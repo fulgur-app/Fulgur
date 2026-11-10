@@ -51,8 +51,8 @@ impl Fulgur {
     /// Create a tab in this window from a deferred transfer payload.
     ///
     /// Called from the render loop when `pending_tab_transfer` is set. Creates
-    /// the `EditorTab`, starts file-watching if applicable, scrolls to and
-    /// focuses the new tab, then persists state.
+    /// the `EditorTab`, starts file-watching if applicable, activates the new
+    /// tab through `activate_tab`, then persists state.
     ///
     /// ### Arguments
     /// - `window`: The target window context
@@ -64,21 +64,14 @@ impl Fulgur {
             let cursor_position = data.cursor_position;
             let tab =
                 EditorTab::from_transfer(id, data, window, cx, &self.settings.editor_settings);
-            let is_log_view = tab.log_view;
             self.tabs.push(Tab::Editor(tab).into_entity(cx));
-            self.active_tab_id = Some(id);
-            self.request_tab_scroll(id, cx);
             self.pending_transfer_scroll = Some(cursor_position);
             if let Some(path) = local_path {
                 self.watch_file(&path);
             }
-            if is_log_view {
-                self.activate_log_view(id, window, cx);
-            }
-            self.load_active_tab_remote_content(window, cx);
-            self.focus_active_tab(window, cx);
+            // Also turns tailing on for a log view tab, through `resume_log_view`.
+            self.activate_tab(id, window, cx);
             self.save_state_async(cx, window);
-            cx.notify();
         }
     }
 

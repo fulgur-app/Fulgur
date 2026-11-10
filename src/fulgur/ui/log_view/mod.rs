@@ -114,26 +114,3 @@ impl LogTailState {
         self.reseed_pending = false;
     }
 }
-
-impl Fulgur {
-    /// Borrow an editor tab by id.
-    ///
-    /// ### Arguments
-    /// - `tab_id`: The tab id to look up
-    /// - `cx`: The application context
-    ///
-    /// ### Returns
-    /// - `Some(&EditorTab)`: The matching editor tab
-    /// - `None`: If no editor tab has that id
-    fn editor_tab<'a>(
-        &self,
-        tab_id: TabId,
-        cx: &'a gpui_kit::App,
-    ) -> Option<&'a crate::fulgur::editor_tab::EditorTab> {
-        self.tabs.iter().find_map(|tab| {
-            tab.read(cx)
-                .as_editor()
-                .filter(|editor| editor.id == tab_id)
-        })
-    }
-}

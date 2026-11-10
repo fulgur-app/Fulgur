@@ -336,6 +336,24 @@ impl Fulgur {
         self.active_tab(cx).and_then(Tab::as_editor)
     }
 
+    /// Borrow an editor tab by its stable identifier
+    ///
+    /// ### Arguments
+    /// - `tab_id`: The identifier of the tab to look up
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some(&EditorTab)`: The matching editor tab
+    /// - `None`: If no editor tab has that identifier
+    #[must_use]
+    pub(crate) fn editor_tab<'a>(&self, tab_id: TabId, cx: &'a App) -> Option<&'a EditorTab> {
+        self.tabs.iter().find_map(|tab| {
+            tab.read(cx)
+                .as_editor()
+                .filter(|editor| editor.id == tab_id)
+        })
+    }
+
     /// Update an editor tab by its stable identifier
     ///
     /// ### Arguments
