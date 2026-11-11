@@ -92,6 +92,7 @@ impl Fulgur {
         register_action!(app_content, cx, ui::menus::SearchPrevious => find_previous(cx_only));
         register_action!(app_content, cx, ui::menus::ToggleColorPicker => toggle_color_picker);
         register_action!(app_content, cx, ui::menus::ToggleCommandPalette => toggle_command_palette);
+        register_action!(app_content, cx, ui::menus::ViewLog => open_application_log);
         register_action!(app_content, cx, ui::menus::NextTab => on_next_tab);
         register_action!(app_content, cx, ui::menus::PreviousTab => on_previous_tab);
         register_action!(app_content, cx, ui::menus::JumpToLine => show_jump_to_line_dialog);

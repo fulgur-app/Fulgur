@@ -2,7 +2,7 @@ use super::actions::{
     About, CheckForUpdates, ClearRecentFiles, CloseAllFiles, CloseFile, CloseWindow, FindInFile,
     GetTheme, JumpToLine, NewFile, NewWindow, NextTab, NoneAction, OpenFile, OpenPath,
     OpenRecentFile, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs, SelectTheme,
-    SettingsTab, ToggleColorPicker, ToggleCommandPalette,
+    SettingsTab, ToggleColorPicker, ToggleCommandPalette, ViewLog,
 };
 use crate::fulgur::Fulgur;
 use crate::fulgur::shared_state::SharedAppState;
@@ -98,8 +98,11 @@ pub fn build_menus(recent_files: &[PathBuf], update_available: bool) -> Vec<Menu
             disabled: false,
             items: vec![
                 MenuItem::action("Command palette", ToggleCommandPalette),
-                MenuItem::separator(),
                 MenuItem::action("Color picker", ToggleColorPicker),
+                MenuItem::separator(),
+                MenuItem::action("View log", ViewLog),
+                // macOS appends "Enter Full Screen" to the View menu, other platforms add nothing
+                #[cfg(target_os = "macos")]
                 MenuItem::separator(),
             ],
         },
@@ -190,7 +193,7 @@ fn rebuild_app_menus(inputs: &AppMenuInputs, cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::build_menus;
-    use crate::fulgur::ui::menus::CloseWindow;
+    use crate::fulgur::ui::menus::{CloseWindow, ViewLog};
     use core::prelude::v1::test;
     use gpui_kit::base::input::{AddCursorAbove, AddCursorBelow};
     use gpui_kit::{Action, MenuItem};
@@ -210,6 +213,22 @@ mod tests {
     fn test_edit_menu_exposes_multi_cursor_actions() {
         assert!(menu_exposes("Edit", &AddCursorAbove));
         assert!(menu_exposes("Edit", &AddCursorBelow));
+    }
+
+    #[test]
+    fn test_view_menu_exposes_view_log() {
+        assert!(menu_exposes("View", &ViewLog));
+    }
+
+    #[test]
+    fn test_view_menu_ends_with_a_separator_only_on_macos() {
+        let menus = build_menus(&[], false);
+        let view_menu = menus
+            .iter()
+            .find(|menu| menu.name == "View")
+            .expect("View menu should exist");
+        let ends_with_separator = matches!(view_menu.items.last(), Some(MenuItem::Separator));
+        assert_eq!(ends_with_separator, cfg!(target_os = "macos"));
     }
 
     #[test]
