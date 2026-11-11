@@ -1,0 +1,93 @@
+name: Release Tools
+
+# Reports when a packaging tool pinned in release.yml (`<CRATE>_VERSION` keys of its
+# `env`) has a newer release on crates.io. The pin is bumped by hand after reading
+# the changelog, so a bad release never reaches the signed installers unreviewed.
+# An outdated pin is a notice, not a failure: the job only fails when the check breaks.
+on:
+  schedule:
+    - cron: '0 8 * * 5' # Every Friday at 8:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  versions:
+    name: Pinned Release Tool Versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Compare pinned versions with crates.io
+        id: compare
+        run: |
+          set -euo pipefail
+          RELEASE_WORKFLOW=.github/workflows/release.yml
+          CHECKED=0
+          OUTDATED=""
+
+          for KEY in $(yq '.env | keys | .[]' "$RELEASE_WORKFLOW"); do
+            case "$KEY" in
+              *_VERSION) ;;
+              *) continue ;;
+            esac
+            CRATE=$(echo "${KEY%_VERSION}" | tr 'A-Z_' 'a-z-')
+            PINNED=$(yq ".env.$KEY" "$RELEASE_WORKFLOW")
+            LATEST=$(curl -fsS --retry 3 -A "release-tools-version-check" \
+              "https://crates.io/api/v1/crates/$CRATE" | jq -r '.crate.max_stable_version // empty')
+            if [ -z "$LATEST" ]; then
+              echo "::error::crates.io returned no stable version for $CRATE"
+              exit 1
+            fi
+
+            echo "$CRATE: pinned $PINNED, latest $LATEST"
+            CHECKED=$((CHECKED + 1))
+            if [ "$PINNED" != "$LATEST" ]; then
+              OUTDATED="${OUTDATED}${CRATE}: ${PINNED} -> ${LATEST}"$'\n'
+            fi
+          done
+
+          if [ "$CHECKED" -eq 0 ]; then
+            echo "::error::no <CRATE>_VERSION key found in the env of $RELEASE_WORKFLOW"
+            exit 1
+          fi
+
+          {
+            echo "outdated<<EOF"
+            printf '%s' "$OUTDATED"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Telegram notification
+        if: failure() || steps.compare.outputs.outdated != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS: ${{ job.status }}
+          OUTDATED: ${{ steps.compare.outputs.outdated }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            MESSAGE="*Fulgur Release Tools - Update available*
+
+          ${OUTDATED}
+          Read the changelogs, then bump the versions in release.yml.
+
+          [View Run](${RUN_URL})"
+          else
+            MESSAGE="*Fulgur Release Tools - Check failed*
+
+          Could not compare the pinned release tools with crates.io.
+
+          [View Run](${RUN_URL})"
+          fi
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-

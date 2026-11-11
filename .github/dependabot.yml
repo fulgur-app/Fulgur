@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # Bumps the SHA-pinned actions in release.yml to each new release, and the
+  # major-tag references in the other workflows to each new major version.
+  # Release tool versions are covered in release-tools.yml.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ['*']
+    commit-message:
+      prefix: 'chore(ci)'

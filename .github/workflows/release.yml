@@ -4,13 +4,20 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: read
+
+# Actions are pinned by commit SHA and bumped by Dependabot (.github/dependabot.yml).
 env:
   CARGO_TERM_COLOR: always
-  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   ACTOR: ${{ github.actor }}
+  COMMIT_SHA: ${{ github.sha }}
   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
   REPOSITORY: ${{ github.repository }}
+  # Packaging tools, built from their crates.io sources. Every `<CRATE>_VERSION` key
+  # is compared with crates.io weekly by release-tools.yml, which reports newer releases.
+  CARGO_PACKAGER_VERSION: '0.11.8'
+  CARGO_ABOUT_VERSION: '0.9.3'
 
 jobs:
   validate:
@@ -20,7 +27,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Extract and validate version
         id: version
@@ -66,10 +73,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
+      # Commit of the action's `stable` branch. The action has no release tags, so
+      # Dependabot cannot bump it; the toolchain itself still tracks stable Rust.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy, rustfmt
 
@@ -96,7 +105,7 @@ jobs:
       # MSYS2 perl resolves first on PATH and is missing modules like Locale::Maketext::Simple.
       - name: Install NASM (Windows)
         if: runner.os == 'Windows'
-        uses: ilammy/setup-nasm@v1
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1.5.2
 
       - name: Pin OpenSSL build to Strawberry Perl (Windows)
         if: runner.os == 'Windows'
@@ -104,7 +113,7 @@ jobs:
         run: echo "OPENSSL_SRC_PERL=C:\Strawberry\perl\bin\perl.exe" >> $env:GITHUB_ENV
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: release-${{ matrix.runner }}
 
@@ -117,17 +126,16 @@ jobs:
 
       # -- Package phase --
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
-
+      # Built from crates.io sources rather than downloaded binaries: cargo-packager
+      # publishes no prebuilt binary, and crates.io sources cannot be replaced once published.
       - name: Install cargo-packager
-        run: cargo binstall cargo-packager --locked --no-confirm --force
+        shell: bash
+        run: cargo install cargo-packager --version "$CARGO_PACKAGER_VERSION" --locked
 
-      # cargo-about's binary is gated behind the non-default `cli` feature, so
-      # cargo-binstall's source fallback builds a crate without the binary.
-      # Only accept a prebuilt binary, and compile with `cli` ourselves otherwise.
+      # cargo-about's binary is gated behind the non-default `cli` feature.
       - name: Install cargo-about
-        run: cargo binstall cargo-about --locked --no-confirm --force --disable-strategies quick-install,compile || cargo install cargo-about --locked --features cli --force
+        shell: bash
+        run: cargo install cargo-about --version "$CARGO_ABOUT_VERSION" --locked --features cli
 
       - name: Generate third-party licenses
         run: cargo about generate licenses/about.hbs -c licenses/about.toml --workspace -o THIRD-PARTY-LICENSES
@@ -360,7 +368,7 @@ jobs:
           Get-ChildItem artifacts/
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-${{ matrix.platform }}-${{ matrix.arch }}
           path: artifacts/*
@@ -377,10 +385,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: release-artifacts
           merge-multiple: true
@@ -408,6 +416,9 @@ jobs:
 
       - name: Telegram notification - Success
         if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           ARTIFACT_COUNT=$(ls release-artifacts/ | wc -l)
           COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
@@ -431,6 +442,9 @@ jobs:
 
       - name: Telegram notification - Failure
         if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
 
