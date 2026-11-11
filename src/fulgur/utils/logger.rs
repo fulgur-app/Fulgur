@@ -1,6 +1,8 @@
 use crate::fulgur::utils::paths;
 use anyhow::anyhow;
-use flexi_logger::{Age, Cleanup, Criterion, FileSpec, Logger, LoggerHandle, Naming};
+use flexi_logger::{
+    Age, Cleanup, Criterion, FileSpec, LogfileSelector, Logger, LoggerHandle, Naming,
+};
 use log::LevelFilter;
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -87,6 +89,31 @@ fn log_directory() -> anyhow::Result<PathBuf> {
     paths::config_dir()
 }
 
+/// Configure the daily-rotated file logger, without starting it.
+///
+/// ### Arguments
+/// - `log_dir`: The directory the log files are written to
+///
+/// ### Returns
+/// - `Logger`: The logger configuration shared by `init` and the tests
+fn file_logger(log_dir: PathBuf) -> Logger {
+    Logger::with(LevelFilter::Debug)
+        .log_to_file(
+            FileSpec::default()
+                .directory(log_dir)
+                .basename("Fulgur")
+                .suffix("log")
+                .suppress_timestamp(),
+        )
+        .format_for_files(file_log_format)
+        .append()
+        .rotate(
+            Criterion::Age(Age::Day),
+            Naming::Timestamps,
+            Cleanup::KeepLogFiles(10),
+        )
+}
+
 /// Initialize the file logger
 ///
 /// The logger is always initialized with `Debug` level capacity so that the effective
@@ -102,22 +129,7 @@ fn log_directory() -> anyhow::Result<PathBuf> {
 /// - `Err(anyhow::Error)`: If the logger could not be initialized
 pub fn init() -> anyhow::Result<()> {
     let log_dir = log_directory()?;
-    let logger_handle = Logger::with(LevelFilter::Debug)
-        .log_to_file(
-            FileSpec::default()
-                .directory(log_dir.clone())
-                .basename("Fulgur")
-                .suffix("log")
-                .suppress_timestamp(),
-        )
-        .format_for_files(file_log_format)
-        .append()
-        .rotate(
-            Criterion::Age(Age::Day),
-            Naming::Timestamps,
-            Cleanup::KeepLogFiles(10),
-        )
-        .start()?;
+    let logger_handle = file_logger(log_dir.clone()).start()?;
     LOGGER_HANDLE
         .set(logger_handle)
         .map_err(|_| anyhow!("logger already initialized"))?;
@@ -125,6 +137,33 @@ pub fn init() -> anyhow::Result<()> {
     log::set_max_level(LevelFilter::Info);
     log::info!("Logger initialized in: {}", log_dir.display());
     Ok(())
+}
+
+/// Get the path of the log file the logger is currently writing to.
+///
+/// ### Returns
+/// - `Some(PathBuf)`: The current log file
+/// - `None`: The logger is not initialized, or the current file could not be listed
+pub fn current_log_file() -> Option<PathBuf> {
+    current_log_file_of(LOGGER_HANDLE.get()?)
+}
+
+/// Get the path of the log file a given logger is currently writing to.
+///
+/// ### Arguments
+/// - `handle`: The handle of a logger configured by `file_logger`
+///
+/// ### Returns
+/// - `Some(PathBuf)`: The current log file
+/// - `None`: The current file does not exist yet, or could not be listed
+fn current_log_file_of(handle: &LoggerHandle) -> Option<PathBuf> {
+    match handle.existing_log_files(&LogfileSelector::none().with_r_current()) {
+        Ok(files) => files.into_iter().next(),
+        Err(e) => {
+            log::warn!("Failed to list the current log file: {e}");
+            None
+        }
+    }
 }
 
 /// Update the effective log level based on the `debug_mode` setting.
@@ -146,7 +185,10 @@ pub fn set_debug_mode(debug_mode: bool) {
 
 #[cfg(test)]
 mod tests {
-    use crate::fulgur::utils::logger::{file_log_format, set_debug_mode, with_current_thread_id};
+    use crate::fulgur::utils::logger::{
+        current_log_file, current_log_file_of, file_log_format, file_logger, set_debug_mode,
+        with_current_thread_id,
+    };
     use flexi_logger::DeferredNow;
     use log::{Level, LevelFilter, Record};
     use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -226,5 +268,38 @@ mod tests {
             OffsetDateTime::parse(timestamp, &Rfc3339).is_ok(),
             "Timestamp should be RFC3339"
         );
+    }
+
+    // Built from the same configuration as `init`, so changing the rotation
+    // naming in a way the `rCURRENT` lookup no longer matches fails here.
+    #[test]
+    fn current_log_file_is_the_file_the_logger_writes_to() {
+        let log_dir = tempfile::tempdir().expect("Temp dir should be created");
+        let (logger, handle) = file_logger(log_dir.path().to_path_buf())
+            .build()
+            .expect("Logger should build without being installed globally");
+        let args = format_args!("view log marker");
+        logger.log(
+            &Record::builder()
+                .args(args)
+                .level(Level::Info)
+                .target("test::target")
+                .build(),
+        );
+        logger.flush();
+
+        let current = current_log_file_of(&handle).expect("Current log file should be found");
+        let content = std::fs::read_to_string(&current).expect("Current log file should be read");
+        assert!(
+            content.contains("view log marker"),
+            "{} is not the file the logger writes to",
+            current.display()
+        );
+    }
+
+    // Only `main` initializes the global logger, so it stays unset in the test binary.
+    #[test]
+    fn current_log_file_is_none_while_the_logger_is_not_initialized() {
+        assert!(current_log_file().is_none());
     }
 }

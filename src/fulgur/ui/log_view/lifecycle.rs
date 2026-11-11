@@ -8,8 +8,27 @@ use super::LogTailState;
 use super::polling::snap_to_last_line;
 use super::tail::{log_file_position, log_toggle_available, tail_encoding};
 use crate::fulgur::Fulgur;
+use crate::fulgur::utils::logger;
 
 impl Fulgur {
+    /// Open Fulgur's own current log file, which opens in log view as any `.log` file.
+    ///
+    /// ### Arguments
+    /// - `window`: The active window
+    /// - `cx`: The application context
+    pub fn open_application_log(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match logger::current_log_file() {
+            Some(path) => self.do_open_file(window, cx, path),
+            None => window.push_notification(
+                (
+                    NotificationType::Error,
+                    SharedString::from("The application log file could not be found."),
+                ),
+                cx,
+            ),
+        }
+    }
+
     /// Toggle the active tab between the editor and the log view.
     ///
     /// ### Arguments

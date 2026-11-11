@@ -160,6 +160,7 @@ mod tests {
             PaletteCommand::Quit,
             PaletteCommand::SelectTheme,
             PaletteCommand::GetMoreThemes,
+            PaletteCommand::ViewLog,
             PaletteCommand::OpenSettings,
             PaletteCommand::CheckForUpdates,
             PaletteCommand::About,

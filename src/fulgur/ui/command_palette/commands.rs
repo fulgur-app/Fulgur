@@ -7,7 +7,7 @@ use crate::fulgur::ui::{
         About, CheckForUpdates, ClearRecentFiles, CloseAllFiles, CloseFile, CloseWindow,
         FindAndReplace, FindInFile, GetTheme, JumpToLine, KEY_CONTEXT_FULGUR, KEY_CONTEXT_INPUT,
         NewFile, NewWindow, NextTab, OpenFile, OpenPath, OpenRemote, PreviousTab, PrintFile, Quit,
-        SaveFile, SaveFileAs, SelectTheme, SettingsTab, ToggleColorPicker,
+        SaveFile, SaveFileAs, SelectTheme, SettingsTab, ToggleColorPicker, ViewLog,
     },
 };
 use gpui_kit::Action;
@@ -118,6 +118,7 @@ pub enum PaletteCommand {
     ToggleCsvView,
     ToggleLogView,
     ToggleColorPicker,
+    ViewLog,
     SelectTheme,
     GetMoreThemes,
     NextTab,
@@ -139,7 +140,7 @@ impl PaletteCommand {
     ///
     /// Grouping is derived from [`Self::group`], so a command added here lands in its
     /// group automatically and cannot go missing from the palette.
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 41] = [
         Self::NewFile,
         Self::NewWindow,
         Self::OpenFile,
@@ -166,6 +167,7 @@ impl PaletteCommand {
         Self::ToggleCsvView,
         Self::ToggleLogView,
         Self::ToggleColorPicker,
+        Self::ViewLog,
         Self::SelectTheme,
         Self::GetMoreThemes,
         Self::NextTab,
@@ -211,6 +213,7 @@ impl PaletteCommand {
             | Self::ToggleCsvView
             | Self::ToggleLogView
             | Self::ToggleColorPicker
+            | Self::ViewLog
             | Self::SelectTheme
             | Self::GetMoreThemes => PaletteGroup::View,
             Self::NextTab
@@ -258,6 +261,7 @@ impl PaletteCommand {
             Self::ToggleCsvView => "Toggle CSV table view",
             Self::ToggleLogView => "Toggle log view",
             Self::ToggleColorPicker => "Toggle color picker",
+            Self::ViewLog => "View log",
             Self::SelectTheme => "Select theme...",
             Self::GetMoreThemes => "Get more themes...",
             Self::NextTab => "Next tab",
@@ -307,6 +311,7 @@ impl PaletteCommand {
             Self::ToggleCsvView => &["spreadsheet", "table", "columns", "grid"],
             Self::ToggleLogView => &["tail", "follow", "trace"],
             Self::ToggleColorPicker => &["colour", "hex", "rgb", "swatch"],
+            Self::ViewLog => &["logs", "logger", "debug", "diagnostics", "troubleshoot"],
             Self::SelectTheme => &["colour scheme", "appearance", "dark", "light"],
             Self::GetMoreThemes => &["download", "repository", "install"],
             Self::NextTab => &["forward", "right", "cycle"],
@@ -348,7 +353,7 @@ impl PaletteCommand {
             Self::CloseWindow | Self::Quit => CustomIcon::WindowClose,
             Self::FindInFile => CustomIcon::Search,
             Self::FindAndReplace => CustomIcon::Replace,
-            Self::JumpToLine | Self::ToggleLogView => CustomIcon::List,
+            Self::JumpToLine | Self::ToggleLogView | Self::ViewLog => CustomIcon::List,
             Self::SelectLanguage => CustomIcon::Code,
             Self::ToggleMarkdownPreview => CustomIcon::FileCode,
             Self::ToggleMarkdownToolbar | Self::OpenSettings => CustomIcon::Menu,
@@ -388,6 +393,7 @@ impl PaletteCommand {
             Self::FindAndReplace => Some(KeybindingHint::fulgur(FindAndReplace)),
             Self::JumpToLine => Some(KeybindingHint::fulgur(JumpToLine)),
             Self::ToggleColorPicker => Some(KeybindingHint::fulgur(ToggleColorPicker)),
+            Self::ViewLog => Some(KeybindingHint::fulgur(ViewLog)),
             Self::SelectTheme => Some(KeybindingHint::fulgur(SelectTheme)),
             Self::GetMoreThemes => Some(KeybindingHint::fulgur(GetTheme)),
             Self::NextTab => Some(KeybindingHint::fulgur(NextTab)),
@@ -435,6 +441,7 @@ impl PaletteCommand {
             | Self::Quit
             | Self::SelectTheme
             | Self::GetMoreThemes
+            | Self::ViewLog
             | Self::OpenSettings
             | Self::CheckForUpdates
             | Self::About => true,
