@@ -13,6 +13,11 @@ homepage = "https://fulgur.app"
 default = []
 gpui-test-support = ["gpui-kit/test-support"]
 
+[lints.rust]
+# First-party unsafe code is opt-in per site through a scoped
+# `#[allow(unsafe_code, reason = "...")]`, so clippy flags any new use on every OS.
+unsafe_code = "deny"
+
 [lints.clippy]
 # Pedantic mode is always on. Rules below are allowed because they are not yet addressed.
 # To burn down the list: remove one allow entry, fix all its violations, repeat.

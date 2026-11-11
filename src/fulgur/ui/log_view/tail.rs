@@ -83,6 +83,7 @@ impl LogFileIdentity {
     /// - `Some(LogFileIdentity)`: The identity of the file object
     /// - `None`: If the platform could not report it
     #[cfg(windows)]
+    #[allow(unsafe_code, reason = "GetFileInformationByHandle is a Win32 FFI call")]
     fn from_file(file: &File) -> Option<Self> {
         use std::os::windows::io::AsRawHandle;
         use windows::Win32::Foundation::HANDLE;

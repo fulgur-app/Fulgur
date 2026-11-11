@@ -13,4 +13,4 @@ jobs:
       - name: Trigger deployment
         env:
           DEPLOY_HOOK_URL: ${{ secrets.CLOUDFLARE_WEBSITE_DEPLOY_HOOK_URL }}
-        run: curl -X POST "$DEPLOY_HOOK_URL"
+        run: curl -fsS --retry 3 -X POST "$DEPLOY_HOOK_URL"

@@ -1,5 +1,6 @@
 //! Windows taskbar Jump List implementation.
 #![allow(unsafe_op_in_unsafe_fn)]
+#![allow(unsafe_code, reason = "Win32 COM calls build the taskbar Jump List")]
 //!
 //! Mirrors the macOS dock menu: shows a "Recent Files" category, an "Open Tabs"
 //! category for file-backed tabs across all open windows, and a Tasks section

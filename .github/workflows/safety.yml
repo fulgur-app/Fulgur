@@ -11,10 +11,15 @@ env:
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
+# First-party unsafe code is guarded by the `unsafe_code` lint in Cargo.toml,
+# which clippy enforces on every OS. Fulgur's own unsafe code is Windows-only,
+# so this Linux job reports unsafe usage across the dependency tree instead.
+# The counts are informational: the job fails only when the audit itself breaks.
 jobs:
   geiger:
     name: Unsafe Code Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -22,10 +27,14 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # `.cargo/config.toml` links with mold on x86_64 Linux.
       - name: Install Linux dependencies
         run: |
+          # Free pre-installed tool directories that the build does not use.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo apt-get update
           sudo apt-get install -y \
+            mold \
             libdbus-1-dev \
             pkg-config \
             libssl-dev \
@@ -49,21 +58,45 @@ jobs:
       - name: Run cargo-geiger
         id: geiger
         run: |
-          OUTPUT=$(cargo geiger --output-format GitHubMarkdown || true)
-          echo "$OUTPUT"
+          set -euo pipefail
+          cargo geiger --output-format Json > geiger.out
 
-          # Extract unsafe statistics from first-party code (fulgur crate)
-          UNSAFE_COUNT=$(echo "$OUTPUT" | grep "^| fulgur " | awk -F'|' '{print $6}' | tr -d ' ' || echo "0")
-          echo "unsafe_count=$UNSAFE_COUNT" >> $GITHUB_OUTPUT
+          # The report is a single JSON line; keep it apart from any other stdout output.
+          grep '^{"packages"' geiger.out | tail -n 1 > geiger.json || {
+            echo "::error::cargo geiger did not produce a JSON report"
+            exit 1
+          }
+
+          DEPENDENCIES='[.packages[] | select(.package.id.name != "Fulgur")]'
+          SCANNED_CRATES=$(jq "$DEPENDENCIES | length" geiger.json)
+          if [ "$SCANNED_CRATES" -eq 0 ]; then
+            echo "::error::cargo geiger scanned no dependency"
+            exit 1
+          fi
+          UNSAFE_EXPRS=$(jq "$DEPENDENCIES | map(.unsafety.used.exprs.unsafe_) | add" geiger.json)
+          UNSAFE_CRATES=$(jq "$DEPENDENCIES | map(select(.unsafety.used.exprs.unsafe_ > 0)) | length" geiger.json)
+
+          echo "Unsafe expressions used, per crate:"
+          jq -r "$DEPENDENCIES | map(select(.unsafety.used.exprs.unsafe_ > 0))[]
+            | \"\(.unsafety.used.exprs.unsafe_)\t\(.package.id.name) \(.package.id.version)\"" geiger.json |
+            sort -rn
+
+          {
+            echo "unsafe_exprs=$UNSAFE_EXPRS"
+            echo "unsafe_crates=$UNSAFE_CRATES"
+            echo "scanned_crates=$SCANNED_CRATES"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Telegram notification
         if: always()
         env:
           JOB_STATUS: ${{ job.status }}
-          UNSAFE_COUNT: ${{ steps.geiger.outputs.unsafe_count }}
+          UNSAFE_EXPRS: ${{ steps.geiger.outputs.unsafe_exprs }}
+          UNSAFE_CRATES: ${{ steps.geiger.outputs.unsafe_crates }}
+          SCANNED_CRATES: ${{ steps.geiger.outputs.scanned_crates }}
         run: |
-          if [ -n "$UNSAFE_COUNT" ]; then
-            SAFETY_LINE="Unsafe expressions in first-party code: *${UNSAFE_COUNT}*"
+          if [ -n "$UNSAFE_EXPRS" ]; then
+            SAFETY_LINE="Unsafe expressions in dependencies: *${UNSAFE_EXPRS}* (${UNSAFE_CRATES} of ${SCANNED_CRATES} crates)"
           else
             SAFETY_LINE="Unsafe code audit failed"
           fi
