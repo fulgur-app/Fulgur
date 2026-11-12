@@ -51,16 +51,10 @@ ignore = [
     # These are outside of Fulgur's control
     "RUSTSEC-2024-0384",  # instant - unmaintained (from gpui-component and gpui-base)
     "RUSTSEC-2024-0436",  # paste - unmaintained (from gpui-component)
-    "RUSTSEC-2026-0173",  # proc-macro-error2 - unmaintained (from age via i18n-embed-fl)
     "RUSTSEC-2026-0374",  # basic-toml - unmaintained; no safe upgrade available (from age via i18n-config, compile-time only)
     "RUSTSEC-2026-0192",  # ttf-parser - unmaintained; no safe upgrade available (from gpui via fontdb/cosmic-text/usvg/rustybuzz)
     "RUSTSEC-2026-0206",  # rustybuzz - unmaintained; no safe upgrade available (from gpui-pre via usvg/resvg)
     "RUSTSEC-2025-0134",  # rustls-pemfile - unmaintained; no safe upgrade available (from gpui-pre's Reqwest transport)
-    # quick-xml DoS advisories - Linux-only, build/protocol XML parsing of trusted local data, not the untrusted remote XML in the advisory threat model.
-    # Cannot upgrade: the fix is quick-xml >= 0.41 and wayland-scanner 0.31 pins ^0.39.
-    # quick-xml 0.30 (via xcb <- zed-scap) also sits in Cargo.lock but is never built; the same IDs cover it in cargo-audit.
-    "RUSTSEC-2026-0194",  # quick-xml - quadratic runtime on duplicate attribute names (from gpui-pre-linux via wayland-scanner)
-    "RUSTSEC-2026-0195",  # quick-xml - unbounded namespace-declaration allocation in NsReader (from gpui-pre-linux via wayland-scanner)
     # zbus 5 split crates - unmaintained since their merge into zbus 6. Linux-only, pulled by
     # zbus 5 through gpui-pre-linux (accesskit_unix, ashpd, notify-rust, oo7) and gpui-base (ashpd).
     # Cleared only when those upstreams move to zbus 6.
