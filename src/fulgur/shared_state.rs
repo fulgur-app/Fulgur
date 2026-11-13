@@ -335,9 +335,7 @@ impl SharedAppState {
             state_writer: Arc::new(StateWriter::new(state_db)),
             remote_history,
             restore_state: Arc::new(Mutex::new(
-                restore_state
-                    .map(|state| state.windows.into_iter().map(Some).collect())
-                    .unwrap_or_default(),
+                restore_state.map_or_default(|state| state.windows.into_iter().map(Some).collect()),
             )),
             notification_tx,
             notification_rx: Mutex::new(Some(notification_rx)),
@@ -528,8 +526,7 @@ impl SharedAppState {
             .synchronization_settings
             .profiles
             .first()
-            .map(|p| p.id.clone())
-            .unwrap_or_default();
+            .map_or_default(|p| p.id.clone());
         self.sync_state_for(&primary_id)
     }
 
