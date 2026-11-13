@@ -241,8 +241,7 @@ mod tests {
                     .tabs
                     .first()
                     .and_then(|t| t.read(cx).as_editor())
-                    .map(|e| e.content.read(cx).text().to_string())
-                    .unwrap_or_default();
+                    .map_or_default(|e| e.content.read(cx).text().to_string());
                 assert_eq!(content, "updated content");
                 let modified = this
                     .tabs
@@ -334,15 +333,13 @@ mod tests {
                     .tabs
                     .first()
                     .and_then(|t| t.read(cx).as_editor())
-                    .map(|e| e.content.read(cx).text().to_string())
-                    .unwrap_or_default();
+                    .map_or_default(|e| e.content.read(cx).text().to_string());
                 this.reload_tab_from_disk(0, window, cx);
                 let content_after = this
                     .tabs
                     .first()
                     .and_then(|t| t.read(cx).as_editor())
-                    .map(|e| e.content.read(cx).text().to_string())
-                    .unwrap_or_default();
+                    .map_or_default(|e| e.content.read(cx).text().to_string());
                 assert_eq!(content_after, initial_content);
             });
         });

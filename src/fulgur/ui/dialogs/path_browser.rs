@@ -99,8 +99,7 @@ fn parse_input_path(raw: &str) -> Option<(PathBuf, String)> {
     }
     let filter = path
         .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_default();
+        .map_or_default(|f| f.to_string_lossy().to_string());
     Some((parent.to_path_buf(), filter))
 }
 
@@ -197,13 +196,11 @@ impl PathBrowser {
     /// # Returns
     /// - `PathBrowser`: a new instance
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let default_path = home_dir()
-            .map(|p| {
-                let mut s = p.to_string_lossy().into_owned();
-                s.push(std::path::MAIN_SEPARATOR);
-                s
-            })
-            .unwrap_or_default();
+        let default_path = home_dir().map_or_default(|p| {
+            let mut s = p.to_string_lossy().into_owned();
+            s.push(std::path::MAIN_SEPARATOR);
+            s
+        });
 
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter a file path..."));
         input.update(cx, |state, cx| {

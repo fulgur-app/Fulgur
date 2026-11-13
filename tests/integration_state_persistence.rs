@@ -745,14 +745,14 @@ fn test_state_preserves_window_order() {
         .expect("Failed to save state");
     let loaded = WindowsState::load_from_path(&state_path).expect("Failed to load state");
     assert_eq!(loaded.windows.len(), 5);
-    for i in 0..5 {
+    for (i, window) in loaded.windows.iter().enumerate() {
         assert_eq!(
-            loaded.windows[i].tabs[0].title,
+            window.tabs[0].title,
             format!("Window {i} Marker"),
             "Window order should be preserved"
         );
         assert!(
-            (loaded.windows[i].window_bounds.x - (i as f32) * 100.0).abs() < f32::EPSILON,
+            (window.window_bounds.x - (i as f32) * 100.0).abs() < f32::EPSILON,
             "Window position should match index"
         );
     }
