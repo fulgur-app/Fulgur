@@ -68,6 +68,30 @@ pub fn resolve_markdown_link(
     }
 }
 
+/// Describe where a Markdown preview link leads, for its hover tooltip.
+///
+/// ### Arguments
+/// - `reference`: The raw link destination taken from the rendered document.
+/// - `base_dir`: The directory of the previewed file, used to resolve relative
+///   references.
+///
+/// ### Returns
+/// - `String`: The URL for web and other-scheme links, the resolved absolute
+///   path for a local file, the path with a "not opened" hint for a network
+///   share, and the reference as written for an anchor or an unresolvable
+///   reference.
+#[must_use]
+pub fn describe_markdown_link(reference: &str, base_dir: Option<&Path>) -> String {
+    match resolve_markdown_link(reference, base_dir) {
+        Some(MarkdownLinkTarget::Web(url) | MarkdownLinkTarget::OtherScheme(url)) => url,
+        Some(MarkdownLinkTarget::LocalFile(path)) => path.display().to_string(),
+        Some(MarkdownLinkTarget::NetworkFile(path)) => {
+            format!("{} (network share, not opened)", path.display())
+        }
+        Some(MarkdownLinkTarget::Anchor) | None => reference.trim().to_string(),
+    }
+}
+
 /// Classify a resolved filesystem path as local or on a network share.
 ///
 /// ### Arguments
@@ -297,6 +321,48 @@ mod tests {
                 "{reference}"
             );
         }
+    }
+
+    #[test]
+    fn describes_web_links_by_their_url() {
+        assert_eq!(
+            describe_markdown_link("//example.com/a", None),
+            "https://example.com/a"
+        );
+    }
+
+    #[test]
+    fn describes_other_scheme_links_by_their_url() {
+        assert_eq!(
+            describe_markdown_link("vscode://file/tmp/x", Some(&base())),
+            "vscode://file/tmp/x"
+        );
+    }
+
+    #[test]
+    fn describes_local_links_by_their_resolved_path() {
+        assert_eq!(
+            describe_markdown_link("notes/other.md", Some(&base())),
+            base().join("notes/other.md").display().to_string()
+        );
+    }
+
+    #[test]
+    fn describes_anchors_and_unresolvable_links_as_written() {
+        assert_eq!(
+            describe_markdown_link(" #heading ", Some(&base())),
+            "#heading"
+        );
+        assert_eq!(describe_markdown_link("other.md", None), "other.md");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn describes_network_links_as_not_opened() {
+        assert_eq!(
+            describe_markdown_link(r"\\host\share\x.md", Some(&base())),
+            r"\\host\share\x.md (network share, not opened)"
+        );
     }
 
     #[test]

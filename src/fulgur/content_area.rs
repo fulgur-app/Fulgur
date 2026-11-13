@@ -4,7 +4,9 @@ use crate::fulgur::ui::dialogs::external_link::show_external_link_dialog;
 use crate::fulgur::ui::tabs::markdown_preview_source::MarkdownPreviewSource;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::utils::markdown_images::preview_image_source;
-use crate::fulgur::utils::markdown_links::{MarkdownLinkTarget, resolve_markdown_link};
+use crate::fulgur::utils::markdown_links::{
+    MarkdownLinkTarget, describe_markdown_link, resolve_markdown_link,
+};
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
 };
@@ -18,12 +20,14 @@ use gpui_kit::component::{
     scroll::ScrollableElement,
     table::{DataTable, TableState},
     text::{FrontmatterPlugin, MarkdownExtensions, TableData, TextViewState},
+    tooltip::Tooltip,
     v_flex,
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    AnyElement, App, ClickEvent, Context, DismissEvent, Div, Entity, Focusable, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, Window, div, px,
+    AnyElement, AnyView, App, ClickEvent, Context, DismissEvent, Div, Entity, Focusable,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, SharedString,
+    Styled, Window, div, px,
 };
 use std::path::PathBuf;
 
@@ -282,6 +286,23 @@ impl Fulgur {
                 // unresolvable reference has nowhere to go.
                 Some(MarkdownLinkTarget::Anchor) | None => {}
             }
+        }
+    }
+
+    /// Build the hover tooltip of a markdown preview's links.
+    ///
+    /// ### Arguments
+    /// - `base_dir`: The directory of the previewed file, used to resolve
+    ///   relative links. `None` for a buffer that has never been saved.
+    ///
+    /// ### Returns
+    /// - `impl Fn(...)`: A builder showing where a link leads, resolved the
+    ///   same way `markdown_link_handler` resolves a click.
+    fn markdown_link_tooltip(
+        base_dir: Option<PathBuf>,
+    ) -> impl Fn(&SharedString, &mut Window, &mut App) -> AnyView + Send + Sync + 'static {
+        move |target, window, cx| {
+            Tooltip::new(describe_markdown_link(target, base_dir.as_deref())).build(window, cx)
         }
     }
 
@@ -566,6 +587,7 @@ impl Fulgur {
                                     .map(std::path::Path::to_path_buf),
                             )
                         };
+                        let link_tooltip = Self::markdown_link_tooltip(base_dir.clone());
                         let link_handler = Self::markdown_link_handler(base_dir, cx);
                         let text_view = TextView::new(&preview_state)
                             .markdown_extensions(self.markdown_preview_extensions())
@@ -575,6 +597,7 @@ impl Fulgur {
                             .scrollable(true)
                             .selectable(true)
                             .on_link_click(link_handler)
+                            .link_tooltip(link_tooltip)
                             .code_block_actions(|code_block, _window, _cx| {
                                 Self::markdown_code_block_copy(code_block.code())
                             })
@@ -632,6 +655,7 @@ impl Fulgur {
                             preview.base_dir().map(std::path::Path::to_path_buf),
                         )
                     };
+                    let link_tooltip = Self::markdown_link_tooltip(base_dir.clone());
                     let link_handler = Self::markdown_link_handler(base_dir, cx);
                     let text_view = TextView::new(&view_state)
                         .markdown_extensions(self.markdown_preview_extensions())
@@ -640,6 +664,7 @@ impl Fulgur {
                         .scrollable(true)
                         .selectable(true)
                         .on_link_click(link_handler)
+                        .link_tooltip(link_tooltip)
                         .code_block_actions(|code_block, _window, _cx| {
                             Self::markdown_code_block_copy(code_block.code())
                         })
