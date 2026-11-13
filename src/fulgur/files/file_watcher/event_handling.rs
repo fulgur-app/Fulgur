@@ -249,8 +249,7 @@ mod tests {
                 .tabs
                 .first()
                 .and_then(|t| t.read(cx).as_editor())
-                .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
-                .unwrap_or_default()
+                .map_or_default(|editor_tab| editor_tab.content.read(cx).text().to_string())
         })
     }
 

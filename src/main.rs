@@ -327,8 +327,7 @@ fn main() {
         // so window creation can position each window without the snapshot.
         let restore_bounds: Vec<fulgur::state::SerializedWindowBounds> = windows_state
             .as_ref()
-            .map(|ws| ws.windows.iter().map(|w| w.window_bounds.clone()).collect())
-            .unwrap_or_default();
+            .map_or_default(|ws| ws.windows.iter().map(|w| w.window_bounds.clone()).collect());
         let mut shared_state = fulgur::shared_state::SharedAppState::new(
             settings,
             pending_files.clone(),

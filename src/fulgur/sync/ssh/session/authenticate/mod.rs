@@ -78,9 +78,8 @@ pub(super) fn authenticate<S: AuthSession>(
     }
 
     if methods.publickey {
-        let identity_files = home
-            .map(|home| identity_files_for_host(host_config, alias, user, home))
-            .unwrap_or_default();
+        let identity_files =
+            home.map_or_default(|home| identity_files_for_host(host_config, alias, user, home));
         let agent_filter = host_config.identities_only.then(|| {
             identity_files
                 .iter()

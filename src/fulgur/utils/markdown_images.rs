@@ -113,8 +113,7 @@ fn collect_image_replacements(
                 let title = image
                     .title
                     .as_ref()
-                    .map(|title| format!(" \"{title}\""))
-                    .unwrap_or_default();
+                    .map_or_default(|title| format!(" \"{title}\""));
                 let rebuilt = format!("![{}]({}{})", image.alt, new_url, title);
                 replacements.push((position.start.offset, position.end.offset, rebuilt));
             }

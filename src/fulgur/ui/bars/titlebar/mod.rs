@@ -89,7 +89,7 @@ impl CustomTitleBar {
         if self.title_matches(title.as_deref(), window_name) {
             return;
         }
-        let suffix = window_name.map(|n| format!(" ({n})")).unwrap_or_default();
+        let suffix = window_name.map_or_default(|n| format!(" ({n})"));
         self.title = match &title {
             Some(t) => format!("{t} - Fulgur{suffix}").into(),
             None => format!("{DEFAULT_TITLE}{suffix}").into(),
