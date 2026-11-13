@@ -8,7 +8,7 @@ use crate::fulgur::utils::markdown_links::{MarkdownLinkTarget, resolve_markdown_
 use crate::fulgur::{
     Fulgur, editor_tab, languages::supported_languages::SupportedLanguage, tab::Tab, ui,
 };
-use gpui_kit::base::text::TextView;
+use gpui_kit::base::text::{TaskToggleEvent, TextView};
 use gpui_kit::component::{
     ActiveTheme, WindowExt, h_flex,
     input::{Editor, EditorState},
@@ -285,6 +285,32 @@ impl Fulgur {
         }
     }
 
+    /// Make a markdown preview's task checkboxes edit their source buffer.
+    ///
+    /// ### Arguments
+    /// - `text_view`: The preview text view
+    /// - `preview`: The preview source the text view renders
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `TextView`: The text view, with clickable task checkboxes when the
+    ///   source buffer accepts edits, and static ones otherwise
+    fn with_markdown_task_toggles(
+        text_view: TextView,
+        preview: &Entity<MarkdownPreviewSource>,
+        cx: &App,
+    ) -> TextView {
+        if !preview.read(cx).accepts_task_toggles(cx) {
+            return text_view;
+        }
+        let preview = preview.downgrade();
+        text_view.on_task_toggle(move |event: &TaskToggleEvent, window, cx| {
+            preview
+                .update(cx, |preview, cx| preview.toggle_task(event, window, cx))
+                .ok();
+        })
+    }
+
     /// Build the copy affordance shown on a markdown preview code block.
     ///
     /// ### Arguments
@@ -541,21 +567,24 @@ impl Fulgur {
                             )
                         };
                         let link_handler = Self::markdown_link_handler(base_dir, cx);
+                        let text_view = TextView::new(&preview_state)
+                            .markdown_extensions(self.markdown_preview_extensions())
+                            .flex_none()
+                            .py_0()
+                            .px_2()
+                            .scrollable(true)
+                            .selectable(true)
+                            .on_link_click(link_handler)
+                            .code_block_actions(|code_block, _window, _cx| {
+                                Self::markdown_code_block_copy(code_block.code())
+                            })
+                            .table_actions(Self::markdown_table_actions);
                         let preview = self
-                            .layout_markdown_preview(
-                                TextView::new(&preview_state)
-                                    .markdown_extensions(self.markdown_preview_extensions())
-                                    .flex_none()
-                                    .py_0()
-                                    .px_2()
-                                    .scrollable(true)
-                                    .selectable(true)
-                                    .on_link_click(link_handler)
-                                    .code_block_actions(|code_block, _window, _cx| {
-                                        Self::markdown_code_block_copy(code_block.code())
-                                    })
-                                    .table_actions(Self::markdown_table_actions),
-                            )
+                            .layout_markdown_preview(Self::with_markdown_task_toggles(
+                                text_view,
+                                &markdown_preview,
+                                cx,
+                            ))
                             .bg(cx.theme().muted)
                             .into_any_element();
                         return v_flex()
@@ -604,20 +633,21 @@ impl Fulgur {
                         )
                     };
                     let link_handler = Self::markdown_link_handler(base_dir, cx);
+                    let text_view = TextView::new(&view_state)
+                        .markdown_extensions(self.markdown_preview_extensions())
+                        .py_2()
+                        .px_4()
+                        .scrollable(true)
+                        .selectable(true)
+                        .on_link_click(link_handler)
+                        .code_block_actions(|code_block, _window, _cx| {
+                            Self::markdown_code_block_copy(code_block.code())
+                        })
+                        .table_actions(Self::markdown_table_actions);
                     let preview = self
-                        .layout_markdown_preview(
-                            TextView::new(&view_state)
-                                .markdown_extensions(self.markdown_preview_extensions())
-                                .py_2()
-                                .px_4()
-                                .scrollable(true)
-                                .selectable(true)
-                                .on_link_click(link_handler)
-                                .code_block_actions(|code_block, _window, _cx| {
-                                    Self::markdown_code_block_copy(code_block.code())
-                                })
-                                .table_actions(Self::markdown_table_actions),
-                        )
+                        .layout_markdown_preview(Self::with_markdown_task_toggles(
+                            text_view, &preview, cx,
+                        ))
                         .into_any_element();
                     return v_flex()
                         .w_full()

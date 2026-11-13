@@ -6,6 +6,7 @@ use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::ui::components_utils::UNTITLED;
 use gpui_kit::component::input::{DocumentColorProvider, EditorState, InputEvent, Position};
 use gpui_kit::{App, Context, Window};
+use std::ops::Range;
 use std::rc::Rc;
 use std::time::SystemTime;
 
@@ -58,9 +59,31 @@ pub fn replace_editor_text_undoable(
     let Some((range, replacement)) = changed_span(&current, text) else {
         return false;
     };
+    replace_editor_range(state, range, replacement, window, cx);
+    true
+}
+
+/// Replace a byte range of an editor buffer as a single undoable edit.
+///
+/// The edit lands in undo history and emits one `InputEvent::Change`, and the
+/// caret ends after the replacement. The buffer lock is not checked: callers
+/// acting for the user must check `EditorState::is_editable()` first.
+///
+/// ### Arguments
+/// - `state`: The editor buffer to edit
+/// - `range`: The byte range to replace, on character boundaries
+/// - `replacement`: The text to put in its place
+/// - `window`: The window context
+/// - `cx`: The editor buffer context
+pub fn replace_editor_range(
+    state: &mut EditorState,
+    range: Range<usize>,
+    replacement: &str,
+    window: &mut Window,
+    cx: &mut Context<EditorState>,
+) {
     state.set_selected_range(range, cx);
     state.replace(replacement.to_string(), window, cx);
-    true
 }
 
 /// Locate the smallest byte span of `old` that must be replaced to obtain `new`.
@@ -73,7 +96,7 @@ pub fn replace_editor_text_undoable(
 /// - `Some((Range<usize>, &str))`: The span of `old` to replace, on character
 ///   boundaries, and the slice of `new` to put there
 /// - `None`: Both texts are identical
-fn changed_span<'a>(old: &str, new: &'a str) -> Option<(std::ops::Range<usize>, &'a str)> {
+fn changed_span<'a>(old: &str, new: &'a str) -> Option<(Range<usize>, &'a str)> {
     if old == new {
         return None;
     }
