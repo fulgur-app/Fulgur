@@ -13,7 +13,9 @@ use std::time::SystemTime;
 ///
 /// `set_value` alone emits no `InputEvent::Change`, which would leave content
 /// subscribers (modified tracking, Markdown previews) on the old text, so every
-/// programmatic full replacement of an editor buffer goes through here.
+/// programmatic full replacement of an editor buffer that must not be undoable
+/// (loading or reloading a file) goes through here. Replacements the user should
+/// be able to undo go through [`replace_editor_text_undoable`].
 ///
 /// ### Arguments
 /// - `state`: The editor buffer to replace
@@ -28,6 +30,75 @@ pub fn replace_editor_text(
 ) {
     state.set_value(text, window, cx);
     cx.emit(InputEvent::Change);
+}
+
+/// Bring an editor buffer to `text` as a single undoable edit, keeping the earlier
+/// undo history.
+///
+/// Only the span between the common prefix and the common suffix is replaced, so
+/// the undo entry holds the changed span instead of two copies of the whole buffer.
+/// The edit emits one `InputEvent::Change`; an unchanged buffer emits none.
+///
+/// ### Arguments
+/// - `state`: The editor buffer to update
+/// - `text`: The new buffer text
+/// - `window`: The window context
+/// - `cx`: The editor buffer context
+///
+/// ### Returns
+/// - `true`: The buffer changed and an `InputEvent::Change` was emitted
+/// - `false`: The buffer already held `text`, nothing was recorded or emitted
+pub fn replace_editor_text_undoable(
+    state: &mut EditorState,
+    text: &str,
+    window: &mut Window,
+    cx: &mut Context<EditorState>,
+) -> bool {
+    let current = state.text().to_string();
+    let Some((range, replacement)) = changed_span(&current, text) else {
+        return false;
+    };
+    state.set_selected_range(range, cx);
+    state.replace(replacement.to_string(), window, cx);
+    true
+}
+
+/// Locate the smallest byte span of `old` that must be replaced to obtain `new`.
+///
+/// ### Arguments
+/// - `old`: The current text
+/// - `new`: The target text
+///
+/// ### Returns
+/// - `Some((Range<usize>, &str))`: The span of `old` to replace, on character
+///   boundaries, and the slice of `new` to put there
+/// - `None`: Both texts are identical
+fn changed_span<'a>(old: &str, new: &'a str) -> Option<(std::ops::Range<usize>, &'a str)> {
+    if old == new {
+        return None;
+    }
+    let (old_bytes, new_bytes) = (old.as_bytes(), new.as_bytes());
+    let mut prefix = old_bytes
+        .iter()
+        .zip(new_bytes)
+        .take_while(|(a, b)| a == b)
+        .count();
+    // Identical bytes up to `prefix`, so a boundary in `old` is one in `new` too.
+    while !old.is_char_boundary(prefix) {
+        prefix -= 1;
+    }
+    let max_suffix = old.len().min(new.len()) - prefix;
+    let mut suffix = old_bytes
+        .iter()
+        .rev()
+        .zip(new_bytes.iter().rev())
+        .take(max_suffix)
+        .take_while(|(a, b)| a == b)
+        .count();
+    while !old.is_char_boundary(old.len() - suffix) {
+        suffix -= 1;
+    }
+    Some((prefix..old.len() - suffix, &new[prefix..new.len() - suffix]))
 }
 
 impl EditorTab {
@@ -351,5 +422,38 @@ impl EditorTab {
             input_state.focus(window, cx);
             cx.notify();
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::changed_span;
+
+    #[test]
+    fn test_changed_span_is_none_for_identical_texts() {
+        assert_eq!(changed_span("a,b\n1,2", "a,b\n1,2"), None);
+    }
+
+    #[test]
+    fn test_changed_span_keeps_only_the_differing_middle() {
+        assert_eq!(
+            changed_span("a,b\n1,2\n3,4", "a,b\n1,9\n3,4"),
+            Some((6..7, "9"))
+        );
+    }
+
+    #[test]
+    fn test_changed_span_handles_pure_insertion_and_deletion() {
+        assert_eq!(changed_span("aaa", "aaaa"), Some((3..3, "a")));
+        assert_eq!(changed_span("abc", "ac"), Some((1..2, "")));
+        assert_eq!(changed_span("", "x"), Some((0..0, "x")));
+        assert_eq!(changed_span("x", ""), Some((0..1, "")));
+    }
+
+    #[test]
+    fn test_changed_span_widens_to_character_boundaries() {
+        // `é` and `è` share their lead byte, `é` and `ũ` their continuation byte.
+        assert_eq!(changed_span("aé", "aè"), Some((1..3, "è")));
+        assert_eq!(changed_span("é", "ũ"), Some((0..2, "ũ")));
     }
 }

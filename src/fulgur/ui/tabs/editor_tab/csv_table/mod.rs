@@ -16,7 +16,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::{App, Context, Entity, SharedString, Window, px};
 
-use super::replace_editor_text;
+use super::replace_editor_text_undoable;
 use crate::fulgur::files::csv_support::{CsvData, CsvDialect, serialize_csv};
 
 /// Fixed width of the synthetic row-number column.
@@ -235,7 +235,8 @@ impl CsvTableDelegate {
         true
     }
 
-    /// Serialize the current model back into the canonical text buffer.
+    /// Serialize the current model back into the canonical text buffer as one
+    /// undoable edit, keeping the buffer's earlier undo history.
     ///
     /// ### Arguments
     /// - `window`: The active window
@@ -248,10 +249,14 @@ impl CsvTableDelegate {
                 return;
             }
         };
+        // Counted before the edit so the marker is in place whenever its Change lands.
         self.pending_own_commits += 1;
-        self.content.update(cx, |state, cx| {
-            replace_editor_text(state, &text, window, cx);
+        let changed = self.content.update(cx, |state, cx| {
+            replace_editor_text_undoable(state, &text, window, cx)
         });
+        if !changed {
+            self.pending_own_commits -= 1;
+        }
     }
 
     /// Refresh delegate columns, write the model back to the buffer, and

@@ -408,3 +408,82 @@ fn test_edit_dialog_does_not_open_on_a_read_only_buffer(cx: &mut gpui_kit::TestA
 
     assert!(!has_active_dialog(&mut visual_cx));
 }
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_table_edits_are_undone_one_at_a_time(cx: &mut gpui_kit::TestAppContext) {
+    use crate::fulgur::languages::supported_languages::SupportedLanguage;
+    use crate::test_support::setup_fulgur_with_root;
+    use gpui_kit::component::input::Undo;
+
+    let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+    let (content, table) = visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_active_editor_tab(cx, |editor, cx| {
+                editor.language = SupportedLanguage::Csv;
+                editor.csv_delimiter = b',';
+                editor.content.update(cx, |state, cx| {
+                    state.set_value("a,b\n1,2", window, cx);
+                });
+                editor.ensure_csv_table(window, cx);
+                let table = editor.csv_table.clone().expect("expected a CSV table");
+                (editor.content.clone(), table)
+            })
+            .expect("expected an active editor tab")
+        })
+    });
+    let buffer_text = |visual_cx: &mut gpui_kit::VisualTestContext| {
+        visual_cx.update(|_, cx| content.read(cx).text().to_string())
+    };
+    let table_is_kept = |visual_cx: &mut gpui_kit::VisualTestContext| {
+        visual_cx.update(|_, cx| {
+            fulgur
+                .read(cx)
+                .get_active_editor_tab(cx)
+                .is_some_and(|editor| editor.csv_table.is_some())
+        })
+    };
+
+    let original = buffer_text(&mut visual_cx);
+    visual_cx.update(|window, cx| {
+        table.update(cx, |state, cx| {
+            state.delegate_mut().insert_row_below(window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+    let after_insert = buffer_text(&mut visual_cx);
+    visual_cx.update(|window, cx| {
+        table.update(cx, |state, cx| {
+            state.delegate_mut().insert_column_after(window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+    let after_column = buffer_text(&mut visual_cx);
+    assert_ne!(original, after_insert);
+    assert_ne!(after_insert, after_column);
+    assert!(
+        table_is_kept(&mut visual_cx),
+        "the table's own commits must not be mistaken for external edits"
+    );
+
+    visual_cx.update(|window, cx| content.update(cx, |state, cx| state.focus(window, cx)));
+    visual_cx.dispatch_action(Undo);
+    visual_cx.run_until_parked();
+    assert_eq!(
+        buffer_text(&mut visual_cx),
+        after_insert,
+        "one undo must revert only the last table edit"
+    );
+    assert!(
+        !table_is_kept(&mut visual_cx),
+        "an undo is an external change, so the table must be rebuilt"
+    );
+
+    visual_cx.dispatch_action(Undo);
+    visual_cx.run_until_parked();
+    assert_eq!(
+        buffer_text(&mut visual_cx),
+        original,
+        "the earlier table edit must still be in the undo history"
+    );
+}
