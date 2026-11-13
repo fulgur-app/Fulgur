@@ -5,6 +5,7 @@ use data_url::DataUrl;
 use gpui_kit::http_client::Url;
 use gpui_kit::{Image, ImageFormat, ImageSource, SharedUri};
 use std::borrow::Cow;
+use std::ops::Range;
 use std::path::Path;
 use std::sync::{Arc, LazyLock};
 
@@ -55,25 +56,91 @@ pub fn preview_image_source(uri: &SharedUri, load_remote_images: bool) -> ImageS
 ///   be resolved) while absolute paths are still converted.
 ///
 /// ### Returns
-/// - `Cow<str>`: The Markdown with local image references rewritten; the
-///   source borrowed unchanged when it holds no rewritable image (or fails to
-///   parse).
+/// - `RewrittenMarkdown`: The Markdown with local image references rewritten,
+///   borrowing the source unchanged when it holds no rewritable image (or
+///   fails to parse), with the offsets mapping it back to `source`.
 #[must_use]
-pub fn rewrite_markdown_image_paths<'a>(source: &'a str, base_dir: Option<&Path>) -> Cow<'a, str> {
+pub fn rewrite_markdown_image_paths<'a>(
+    source: &'a str,
+    base_dir: Option<&Path>,
+) -> RewrittenMarkdown<'a> {
+    let unchanged = RewrittenMarkdown {
+        text: Cow::Borrowed(source),
+        offsets: RewriteOffsets::default(),
+    };
     if !may_reference_image(source) {
-        return Cow::Borrowed(source);
+        return unchanged;
     }
     let Ok(ast) = markdown::to_mdast(source, &markdown::ParseOptions::gfm()) else {
-        return Cow::Borrowed(source);
+        return unchanged;
     };
 
     let mut replacements: Vec<(usize, usize, String)> = Vec::new();
     collect_image_replacements(&ast, base_dir, &mut replacements);
     if replacements.is_empty() {
-        return Cow::Borrowed(source);
+        return unchanged;
     }
 
-    Cow::Owned(apply_replacements(source, &mut replacements))
+    let (text, offsets) = apply_replacements(source, &mut replacements);
+    RewrittenMarkdown {
+        text: Cow::Owned(text),
+        offsets,
+    }
+}
+
+/// Markdown whose local image references were rewritten for the preview.
+pub struct RewrittenMarkdown<'a> {
+    /// The rewritten Markdown, borrowed when nothing was rewritten.
+    pub text: Cow<'a, str>,
+    /// Maps byte ranges of `text` back to the source it was rewritten from.
+    pub offsets: RewriteOffsets,
+}
+
+/// A source span the rewrite replaced, and the length of its replacement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RewrittenSpan {
+    source: Range<usize>,
+    rewritten_len: usize,
+}
+
+/// Translates byte ranges of rewritten Markdown back to its source.
+///
+/// The rewrite only replaces image references, so any text outside them sits
+/// at the same position in the source, shifted by the length the replacements
+/// before it added or removed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RewriteOffsets {
+    /// Replaced spans in ascending, non-overlapping source order.
+    spans: Vec<RewrittenSpan>,
+}
+
+impl RewriteOffsets {
+    /// Map a byte range of the rewritten text to the same text in the source.
+    ///
+    /// ### Arguments
+    /// - `range`: A byte range of the rewritten text
+    ///
+    /// ### Returns
+    /// - `Some(Range<usize>)`: The range in the source holding the same bytes
+    /// - `None`: The range overlaps a rewritten image reference, which has no
+    ///   byte-for-byte counterpart in the source
+    #[must_use]
+    pub fn to_source(&self, range: Range<usize>) -> Option<Range<usize>> {
+        // Bytes the replacements before `range` added to the rewritten text,
+        // negative when they shortened it.
+        let mut shift: isize = 0;
+        for span in &self.spans {
+            let rewritten_start = span.source.start.checked_add_signed(shift)?;
+            if range.end <= rewritten_start {
+                break;
+            }
+            if range.start < rewritten_start + span.rewritten_len {
+                return None;
+            }
+            shift += span.rewritten_len.cast_signed() - span.source.len().cast_signed();
+        }
+        Some(range.start.checked_add_signed(-shift)?..range.end.checked_add_signed(-shift)?)
+    }
 }
 
 /// Cheaply tell whether `source` can contain an image worth parsing for.
@@ -285,11 +352,16 @@ fn is_non_local_reference(reference: &str) -> bool {
 /// - `replacements`: Byte-range edits; reordered in place by ascending start.
 ///
 /// ### Returns
-/// - `String`: The edited text.
-fn apply_replacements(source: &str, replacements: &mut [(usize, usize, String)]) -> String {
+/// - `(String, RewriteOffsets)`: The edited text, and the offsets mapping it
+///   back to `source` through the edits actually applied.
+fn apply_replacements(
+    source: &str,
+    replacements: &mut [(usize, usize, String)],
+) -> (String, RewriteOffsets) {
     replacements.sort_unstable_by_key(|&(start, _, _)| start);
 
     let mut output = String::with_capacity(source.len());
+    let mut offsets = RewriteOffsets::default();
     let mut cursor = 0;
     for (start, end, replacement) in replacements.iter() {
         // Skip any edit that would overlap an already-applied one.
@@ -298,10 +370,14 @@ fn apply_replacements(source: &str, replacements: &mut [(usize, usize, String)])
         }
         output.push_str(&source[cursor..*start]);
         output.push_str(replacement);
+        offsets.spans.push(RewrittenSpan {
+            source: *start..*end,
+            rewritten_len: replacement.len(),
+        });
         cursor = *end;
     }
     output.push_str(&source[cursor..]);
-    output
+    (output, offsets)
 }
 
 #[cfg(test)]
@@ -372,6 +448,10 @@ mod tests {
         }
     }
 
+    fn rewritten<'a>(source: &'a str, base_dir: Option<&Path>) -> Cow<'a, str> {
+        rewrite_markdown_image_paths(source, base_dir).text
+    }
+
     fn base() -> PathBuf {
         if cfg!(windows) {
             PathBuf::from(r"C:\docs")
@@ -388,13 +468,13 @@ mod tests {
 
     #[test]
     fn rewrites_relative_markdown_image() {
-        let out = rewrite_markdown_image_paths("![alt](img/logo.png)", Some(&base()));
+        let out = rewritten("![alt](img/logo.png)", Some(&base()));
         assert_eq!(out, format!("![alt]({})", expected_url("img/logo.png")));
     }
 
     #[test]
     fn preserves_markdown_title() {
-        let out = rewrite_markdown_image_paths("![a](logo.png \"Title\")", Some(&base()));
+        let out = rewritten("![a](logo.png \"Title\")", Some(&base()));
         assert_eq!(out, format!("![a]({} \"Title\")", expected_url("logo.png")));
     }
 
@@ -402,25 +482,25 @@ mod tests {
     fn rewrites_absolute_markdown_image_without_base() {
         let absolute = base().join("logo.png");
         let source = format!("![a]({})", absolute.display());
-        let out = rewrite_markdown_image_paths(&source, None);
+        let out = rewritten(&source, None);
         assert_eq!(out, format!("![a]({})", expected_url("logo.png")));
     }
 
     #[test]
     fn leaves_remote_images_untouched() {
         let source = "![a](https://example.com/logo.png)";
-        assert_eq!(rewrite_markdown_image_paths(source, Some(&base())), source);
+        assert_eq!(rewritten(source, Some(&base())), source);
     }
 
     #[test]
     fn leaves_data_uri_untouched() {
         let source = "![a](data:image/png;base64,AAAA)";
-        assert_eq!(rewrite_markdown_image_paths(source, Some(&base())), source);
+        assert_eq!(rewritten(source, Some(&base())), source);
     }
 
     #[test]
     fn rewrites_html_img_src() {
-        let out = rewrite_markdown_image_paths(
+        let out = rewritten(
             r#"<img src="assets/logo.webp" width="128" />"#,
             Some(&base()),
         );
@@ -435,7 +515,7 @@ mod tests {
 
     #[test]
     fn rewrites_single_quoted_html_img_src() {
-        let out = rewrite_markdown_image_paths(r"<img src='logo.png' alt='x'>", Some(&base()));
+        let out = rewritten(r"<img src='logo.png' alt='x'>", Some(&base()));
         assert_eq!(
             out,
             format!(r"<img src='{}' alt='x'>", expected_url("logo.png"))
@@ -445,34 +525,68 @@ mod tests {
     #[test]
     fn leaves_remote_html_img_untouched() {
         let source = r#"<img src="https://example.com/a.png" />"#;
-        assert_eq!(rewrite_markdown_image_paths(source, Some(&base())), source);
+        assert_eq!(rewritten(source, Some(&base())), source);
     }
 
     #[test]
     fn relative_path_without_base_is_unchanged() {
         let source = "![a](logo.png)";
-        assert_eq!(rewrite_markdown_image_paths(source, None), source);
+        assert_eq!(rewritten(source, None), source);
     }
 
     #[test]
     fn leaves_plain_text_untouched() {
         let source = "# Heading\n\nSome text with no images.";
-        assert_eq!(rewrite_markdown_image_paths(source, Some(&base())), source);
+        assert_eq!(rewritten(source, Some(&base())), source);
     }
 
     #[test]
     fn borrows_source_without_image_markers() {
         let source = "[a link](docs/readme.md) and `src/main.rs`";
-        assert!(matches!(
-            rewrite_markdown_image_paths(source, Some(&base())),
-            Cow::Borrowed(_)
-        ));
+        assert!(matches!(rewritten(source, Some(&base())), Cow::Borrowed(_)));
     }
 
     #[test]
     fn rewrites_uppercase_html_img_src() {
-        let out = rewrite_markdown_image_paths(r#"<IMG SRC="logo.png">"#, Some(&base()));
+        let out = rewritten(r#"<IMG SRC="logo.png">"#, Some(&base()));
         assert_eq!(out, format!(r#"<IMG SRC="{}">"#, expected_url("logo.png")));
+    }
+
+    #[test]
+    fn offsets_map_text_after_rewritten_images_back_to_the_source() {
+        let source = "![a](a.png)\n\n<img src=\"b.png\">\n\n- [ ] Task\n";
+        let rewrite = rewrite_markdown_image_paths(source, Some(&base()));
+        assert_ne!(rewrite.text, source, "both images are rewritten");
+
+        let rewritten_marker = rewrite.text.find("[ ]").unwrap();
+        let source_marker = source.find("[ ]").unwrap();
+        assert_eq!(
+            rewrite
+                .offsets
+                .to_source(rewritten_marker..rewritten_marker + 3),
+            Some(source_marker..source_marker + 3)
+        );
+    }
+
+    #[test]
+    fn offsets_keep_text_before_any_rewrite_in_place() {
+        let source = "- [x] Done\n\n![a](a.png)\n";
+        let rewrite = rewrite_markdown_image_paths(source, Some(&base()));
+        assert_eq!(rewrite.offsets.to_source(2..5), Some(2..5));
+    }
+
+    #[test]
+    fn offsets_refuse_ranges_inside_a_rewritten_image() {
+        let source = "![a](a.png) after";
+        let rewrite = rewrite_markdown_image_paths(source, Some(&base()));
+        let url_start = rewrite.text.find("file:").unwrap();
+        assert_eq!(rewrite.offsets.to_source(url_start..url_start + 3), None);
+    }
+
+    #[test]
+    fn offsets_are_the_identity_without_a_rewrite() {
+        let rewrite = rewrite_markdown_image_paths("- [ ] Task", Some(&base()));
+        assert_eq!(rewrite.offsets.to_source(2..5), Some(2..5));
     }
 
     #[test]
@@ -487,13 +601,13 @@ mod tests {
     fn leaves_unc_markdown_image_untouched() {
         // CommonMark unescapes `\\`, so the parsed URL is `\\attacker\share\x.png`.
         let source = r"![a](\\\\attacker\\share\\x.png)";
-        assert_eq!(rewrite_markdown_image_paths(source, Some(&base())), source);
+        assert_eq!(rewritten(source, Some(&base())), source);
     }
 
     #[cfg(windows)]
     #[test]
     fn leaves_unc_html_img_untouched() {
         let source = r#"<img src="\\attacker\share\x.png" />"#;
-        assert_eq!(rewrite_markdown_image_paths(source, Some(&base())), source);
+        assert_eq!(rewritten(source, Some(&base())), source);
     }
 }
