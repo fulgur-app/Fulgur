@@ -3,12 +3,9 @@ use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{
     Fulgur,
     settings::{ProfileId, ServerProfile},
-    sync::{
-        share::{
-            Device, ProfileShareOutcome, ShareFileRequest, format_multi_profile_summary,
-            get_devices, share_file,
-        },
-        synchronization::SynchronizationStatus,
+    sync::share::{
+        Device, ProfileShareOutcome, ShareFileRequest, format_multi_profile_summary, get_devices,
+        share_file,
     },
     ui::{components_utils::UNTITLED, notifications::progress::start_progress},
 };
@@ -274,75 +271,20 @@ pub(super) fn spawn_profile_device_fetch(
     sync_state: Arc<crate::fulgur::shared_state::SyncState>,
     http_agent: Arc<ureq::Agent>,
 ) {
-    let needs_reconnect = !sync_state.connection_status.lock().is_connected();
-    crate::fulgur::sync::synchronization::set_sync_server_connection_status(
-        &sync_state.connection_status,
-        SynchronizationStatus::Connecting,
-    );
-    *sync_state.connecting_since.lock() = Some(std::time::Instant::now());
     std::thread::spawn(move || {
         if !state.active.load(std::sync::atomic::Ordering::Acquire) {
             return;
         }
-        if needs_reconnect {
-            match crate::fulgur::sync::synchronization::initial_synchronization(
-                &profile,
-                &sync_state.token_state,
-                &http_agent,
-                &sync_state.pending_ack_share_ids,
-            ) {
-                Ok(outcome) => {
-                    let _ = crate::fulgur::sync::synchronization::apply_initial_sync_outcome(
-                        &sync_state,
-                        &profile.name,
-                        outcome,
-                    );
-                    crate::fulgur::sync::synchronization::set_sync_server_connection_status(
-                        &sync_state.connection_status,
-                        SynchronizationStatus::Connected,
-                    );
-                }
-                Err(e) => {
-                    let status = SynchronizationStatus::from_error(&e);
-                    crate::fulgur::sync::synchronization::set_sync_server_connection_status(
-                        &sync_state.connection_status,
-                        status,
-                    );
-                    *sync_state.connecting_since.lock() = None;
-                    state.per_profile.write().insert(
-                        profile.id.clone(),
-                        ProfileFetchState::Failed(format!("{e}")),
-                    );
-                    return;
-                }
-            }
-        }
-        let result = get_devices(&profile, &sync_state.token_state, &http_agent);
-        *sync_state.connecting_since.lock() = None;
-        match result {
+        let fetch_state = match get_devices(&profile, &sync_state.token_state, &http_agent) {
             Ok((devices, server_max_size)) => {
                 crate::fulgur::sync::synchronization::store_server_max_file_size(
                     &sync_state.max_file_size_bytes,
                     server_max_size,
                 );
-                crate::fulgur::sync::synchronization::set_sync_server_connection_status(
-                    &sync_state.connection_status,
-                    SynchronizationStatus::Connected,
-                );
-                state.per_profile.write().insert(
-                    profile.id.clone(),
-                    ProfileFetchState::Loaded(Arc::new(devices)),
-                );
-                if needs_reconnect {
-                    state.pending_sse_restarts.lock().push(profile.id.clone());
-                }
+                ProfileFetchState::Loaded(Arc::new(devices))
             }
-            Err(e) => {
-                state.per_profile.write().insert(
-                    profile.id.clone(),
-                    ProfileFetchState::Failed(format!("{e}")),
-                );
-            }
-        }
+            Err(e) => ProfileFetchState::Failed(format!("{e}")),
+        };
+        state.per_profile.write().insert(profile.id, fetch_state);
     });
 }

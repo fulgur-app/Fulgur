@@ -37,7 +37,6 @@ impl Render for Fulgur {
         self.process_window_state_updates(window, cx);
         self.process_shared_files_from_sync(window, cx);
         self.process_pending_remote_files(window, cx);
-        self.process_pending_share_sheet(window, cx);
         if self.tabs.is_empty() {
             self.active_tab_id = None;
         }
