@@ -26,9 +26,6 @@ pub struct ShareSheetState {
     pub per_profile: Arc<RwLock<HashMap<ProfileId, ProfileFetchState>>>,
     /// User selection across all profiles, keyed by `(profile_id, device_id)`.
     pub selected: Arc<Mutex<Vec<(ProfileId, String)>>>,
-    /// Profile ids whose SSE worker should be restarted because we had to
-    /// reconnect during the device fetch. Drained by the render loop.
-    pub pending_sse_restarts: Arc<Mutex<Vec<ProfileId>>>,
     /// Cleared to `false` while the sheet is open; flipped on Cancel/Share so
     /// background tasks can stop polling.
     pub active: Arc<AtomicBool>,
@@ -51,7 +48,6 @@ impl ShareSheetState {
             profiles,
             per_profile: Arc::new(RwLock::new(map)),
             selected: Arc::new(Mutex::new(Vec::new())),
-            pending_sse_restarts: Arc::new(Mutex::new(Vec::new())),
             active: Arc::new(AtomicBool::new(true)),
         }
     }
