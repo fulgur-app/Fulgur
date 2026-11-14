@@ -1,11 +1,12 @@
-//! Applying an in-memory snapshot to the database as per-row changes.
+//! Reconciling tab rows, including their buffer text.
 
-use super::paths::path_to_bytes;
-use super::{ApplyStats, StateDb};
-use crate::fulgur::state::persistence::{TabState, WindowState, WindowsState};
+use super::super::ApplyStats;
+use super::super::paths::path_to_bytes;
+use crate::fulgur::state::TabContent;
+use crate::fulgur::state::persistence::{TabState, WindowState};
 use anyhow::anyhow;
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
-use std::collections::{HashMap, HashSet};
+use rusqlite::{Connection, params};
+use std::collections::HashMap;
 use time::format_description::well_known::Rfc3339;
 
 /// The persisted identity of a buffer, used to decide whether to rewrite it.
@@ -35,173 +36,6 @@ struct StoredTab {
     lossy_decode: bool,
 }
 
-/// The comparable part of a persisted window row.
-#[derive(PartialEq)]
-struct StoredWindow {
-    position: i64,
-    active_tab_id: Option<i64>,
-    bounds_state: String,
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-    display_id: Option<u32>,
-}
-
-impl StateDb {
-    /// Persist a snapshot, writing only the rows that differ from the database.
-    ///
-    /// ### Arguments
-    /// - `snapshot`: The snapshot to persist
-    ///
-    /// ### Errors
-    /// - Returns an error if the transaction cannot be opened, if a statement
-    ///   fails, or if the commit fails.
-    ///
-    /// ### Returns
-    /// - `Ok(ApplyStats)`: Counts of the rows actually written
-    /// - `Err(anyhow::Error)`: The snapshot could not be persisted
-    pub fn apply(&mut self, snapshot: &WindowsState) -> anyhow::Result<ApplyStats> {
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|e| anyhow!("Failed to begin the state transaction: {e}"))?;
-        let mut stats = ApplyStats::default();
-        let mut present: HashSet<i64> = HashSet::with_capacity(snapshot.windows.len());
-        for (position, window) in snapshot.windows.iter().enumerate() {
-            present.insert(window.window_id);
-            let position = i64::try_from(position)
-                .map_err(|e| anyhow!("Window position does not fit an integer: {e}"))?;
-            apply_window(&tx, window, position, &mut stats)?;
-            apply_tabs(&tx, window, &mut stats)?;
-        }
-        for closed in self.owned_windows.difference(&present) {
-            let deleted = tx
-                .execute("DELETE FROM windows WHERE id = ?1", [closed])
-                .map_err(|e| anyhow!("Failed to delete window {closed}: {e}"))?;
-            stats.windows_deleted += deleted;
-        }
-        tx.commit()
-            .map_err(|e| anyhow!("Failed to commit the state transaction: {e}"))?;
-        self.owned_windows = present;
-        Ok(stats)
-    }
-
-    /// Claim every window already persisted as owned by this handle.
-    ///
-    /// ### Errors
-    /// - Returns an error if the window ids cannot be read.
-    ///
-    /// ### Returns
-    /// - `Ok(())`: The persisted windows are now owned by this handle
-    /// - `Err(anyhow::Error)`: The window ids could not be read
-    pub fn claim_persisted_windows(&mut self) -> anyhow::Result<()> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id FROM windows")
-            .map_err(|e| anyhow!("Failed to prepare the window id query: {e}"))?;
-        let ids = stmt
-            .query_map([], |row| row.get::<_, i64>(0))
-            .map_err(|e| anyhow!("Failed to query window ids: {e}"))?
-            .collect::<Result<HashSet<_>, _>>()
-            .map_err(|e| anyhow!("Failed to decode a window id: {e}"))?;
-        self.owned_windows = ids;
-        Ok(())
-    }
-}
-
-/// Insert or update one window row, skipping the write when nothing differs.
-///
-/// ### Arguments
-/// - `conn`: The open transaction
-/// - `window`: The window to persist
-/// - `position`: Restore order of the window within the snapshot
-/// - `stats`: Counters updated when a row is written
-///
-/// ### Errors
-/// - Returns an error if the row cannot be read or written.
-///
-/// ### Returns
-/// - `Ok(())`: The row matches the snapshot
-/// - `Err(anyhow::Error)`: The row could not be read or written
-fn apply_window(
-    conn: &Connection,
-    window: &WindowState,
-    position: i64,
-    stats: &mut ApplyStats,
-) -> anyhow::Result<()> {
-    let bounds = &window.window_bounds;
-    let active_tab_id = window
-        .active_tab_index
-        .and_then(|index| window.tabs.get(index))
-        .map(|tab| tab.tab_id)
-        .map(i64::try_from)
-        .transpose()
-        .map_err(|e| anyhow!("Active tab id does not fit an integer: {e}"))?;
-    let desired = StoredWindow {
-        position,
-        active_tab_id,
-        bounds_state: bounds.state.clone(),
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.width,
-        height: bounds.height,
-        display_id: bounds.display_id,
-    };
-    let stored = conn
-        .query_row(
-            "SELECT position, active_tab_id, bounds_state, bounds_x, bounds_y, bounds_width,
-                    bounds_height, display_id
-             FROM windows WHERE id = ?1",
-            [window.window_id],
-            |row| {
-                Ok(StoredWindow {
-                    position: row.get(0)?,
-                    active_tab_id: row.get(1)?,
-                    bounds_state: row.get(2)?,
-                    x: row.get(3)?,
-                    y: row.get(4)?,
-                    width: row.get(5)?,
-                    height: row.get(6)?,
-                    display_id: row.get(7)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(|e| anyhow!("Failed to read window {}: {e}", window.window_id))?;
-    if stored.as_ref() == Some(&desired) {
-        return Ok(());
-    }
-    conn.execute(
-        "INSERT INTO windows (id, position, active_tab_id, bounds_state, bounds_x, bounds_y,
-                              bounds_width, bounds_height, display_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-         ON CONFLICT(id) DO UPDATE SET
-             position = excluded.position,
-             active_tab_id = excluded.active_tab_id,
-             bounds_state = excluded.bounds_state,
-             bounds_x = excluded.bounds_x,
-             bounds_y = excluded.bounds_y,
-             bounds_width = excluded.bounds_width,
-             bounds_height = excluded.bounds_height,
-             display_id = excluded.display_id",
-        params![
-            window.window_id,
-            desired.position,
-            desired.active_tab_id,
-            desired.bounds_state,
-            desired.x,
-            desired.y,
-            desired.width,
-            desired.height,
-            desired.display_id,
-        ],
-    )
-    .map_err(|e| anyhow!("Failed to write window {}: {e}", window.window_id))?;
-    stats.windows_written += 1;
-    Ok(())
-}
-
 /// Reconcile the tab rows of one window with the snapshot.
 ///
 /// ### Arguments
@@ -215,7 +49,7 @@ fn apply_window(
 /// ### Returns
 /// - `Ok(())`: The tab rows match the snapshot
 /// - `Err(anyhow::Error)`: The rows could not be reconciled
-fn apply_tabs(
+pub(super) fn apply_tabs(
     conn: &Connection,
     window: &WindowState,
     stats: &mut ApplyStats,
@@ -451,7 +285,7 @@ fn insert_tab(
             desired.position,
             desired.title,
             desired.file_path,
-            tab.content.as_ref().map(super::super::TabContent::to_text),
+            tab.content.as_ref().map(TabContent::to_text),
             hash,
             len,
             desired.last_saved,
@@ -510,7 +344,7 @@ fn update_tab(
             desired.position,
             desired.title,
             desired.file_path,
-            tab.content.as_ref().map(super::super::TabContent::to_text),
+            tab.content.as_ref().map(TabContent::to_text),
             hash,
             len,
             desired.last_saved,
