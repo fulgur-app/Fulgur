@@ -522,6 +522,54 @@ fn test_restart_bail_out_leaves_the_live_connection_untouched(cx: &mut TestAppCo
     });
 }
 
+/// Upper bound for a background restart to publish its final status.
+const RESTART_OUTCOME_DEADLINE: Duration = Duration::from_secs(5);
+
+#[gpui_kit::test]
+fn test_failed_restart_publishes_the_error_status(cx: &mut TestAppContext) {
+    // A restart whose initial synchronization fails must not leave the profile
+    // in `Connecting` (or any state that hides the failure), or the share
+    // sheet's reconnect path would never be offered again.
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    visual_cx.update(|_window, cx| {
+        let mut profile = ServerProfile::new("Unreachable");
+        profile.is_active = true;
+        let profile_id = profile.id.clone();
+        fulgur.update(cx, |this, _cx| {
+            let settings = &mut this.settings.app_settings.synchronization_settings;
+            settings.is_synchronization_activated = true;
+            settings.profiles.push(profile);
+        });
+        let sync_state = Fulgur::shared_state(cx).sync_state_for(&profile_id);
+        *sync_state.connection_status.lock() = SynchronizationStatus::Disconnected;
+
+        fulgur.update(cx, |this, cx| {
+            this.restart_sse_connection_for(&profile_id, cx);
+        });
+        assert!(
+            sync_state.connection_status.lock().is_connecting(),
+            "a started restart must report Connecting"
+        );
+        assert!(sync_state.connecting_since.lock().is_some());
+
+        let started = Instant::now();
+        while sync_state.connection_status.lock().is_connecting()
+            && started.elapsed() < RESTART_OUTCOME_DEADLINE
+        {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(
+            *sync_state.connection_status.lock(),
+            SynchronizationStatus::Other,
+            "a profile without a server URL must end on the error status"
+        );
+        assert!(
+            sync_state.connecting_since.lock().is_none(),
+            "connecting_since must be cleared once the restart failed"
+        );
+    });
+}
+
 #[gpui_kit::test]
 fn test_sse_consumer_with_closed_channel_is_a_no_op(cx: &mut TestAppContext) {
     let (_fulgur, mut visual_cx) = setup_fulgur(cx);

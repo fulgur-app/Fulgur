@@ -4,10 +4,7 @@ mod view;
 
 pub use state::ShareSheetState;
 
-use crate::fulgur::{
-    Fulgur,
-    settings::{ProfileId, ServerProfile},
-};
+use crate::fulgur::{Fulgur, settings::ServerProfile};
 use actions::spawn_profile_device_fetch;
 use gpui_kit::component::{
     WindowExt, notification::NotificationType, scroll::ScrollableElement, v_flex,
@@ -67,10 +64,12 @@ impl Fulgur {
         }
         let state = Arc::new(ShareSheetState::new(active_profiles.clone()));
         self.share_sheet_state = Some(Arc::clone(&state));
-        let shared = Fulgur::shared_state(cx);
-        let http_agent = Arc::clone(&shared.http_agent);
+        let http_agent = Arc::clone(&Fulgur::shared_state(cx).http_agent);
         for profile in active_profiles {
-            let sync_state = shared.sync_state_for(&profile.id);
+            let sync_state = Fulgur::shared_state(cx).sync_state_for(&profile.id);
+            if !sync_state.connection_status.lock().is_connected() {
+                self.restart_sse_connection_for(&profile.id, cx);
+            }
             spawn_profile_device_fetch(
                 profile,
                 Arc::clone(&state),
@@ -129,21 +128,6 @@ impl Fulgur {
             .is_some_and(|current| Arc::ptr_eq(current, state))
         {
             self.share_sheet_state = None;
-        }
-    }
-
-    /// Drain pending SSE restart requests posted by share-sheet device fetches.
-    ///
-    /// ### Arguments
-    /// - `_window`: The window context.
-    /// - `cx`: The application context.
-    pub fn process_pending_share_sheet(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        let Some(state) = self.share_sheet_state.as_ref().map(Arc::clone) else {
-            return;
-        };
-        let to_restart: Vec<ProfileId> = std::mem::take(&mut *state.pending_sse_restarts.lock());
-        for profile_id in to_restart {
-            self.restart_sse_connection_for(&profile_id, cx);
         }
     }
 
@@ -253,41 +237,6 @@ mod tests {
             .write()
             .insert(id_a, ProfileFetchState::Loaded(Arc::new(vec![])));
         assert!(!state.all_settled());
-    }
-
-    #[gpui_kit::test]
-    fn test_process_pending_share_sheet_drains_sse_restart_queue(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                let profile = ServerProfile::new("queued");
-                let id = profile.id.clone();
-                this.settings
-                    .app_settings
-                    .synchronization_settings
-                    .profiles
-                    .push(profile.clone());
-                let state = Arc::new(ShareSheetState::new(vec![profile]));
-                state.pending_sse_restarts.lock().push(id.clone());
-                this.share_sheet_state = Some(Arc::clone(&state));
-                this.process_pending_share_sheet(window, cx);
-                assert!(
-                    state.pending_sse_restarts.lock().is_empty(),
-                    "queue must be drained on each render"
-                );
-            });
-        });
-    }
-
-    #[gpui_kit::test]
-    fn test_process_pending_share_sheet_no_state_is_a_noop(cx: &mut TestAppContext) {
-        let (fulgur, mut visual_cx) = setup_fulgur(cx);
-        visual_cx.update(|window, cx| {
-            fulgur.update(cx, |this, cx| {
-                this.share_sheet_state = None;
-                this.process_pending_share_sheet(window, cx);
-            });
-        });
     }
 
     #[gpui_kit::test]

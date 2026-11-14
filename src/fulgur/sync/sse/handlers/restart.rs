@@ -57,7 +57,7 @@ enum SseRestartOutcome {
 }
 
 impl SseRestartJob {
-    /// Retire the previous worker, re-run the initial synchronization, and opena new SSE connection.
+    /// Retire the previous worker, re-run the initial synchronization, and open a new SSE connection.
     ///
     /// ### Arguments
     /// - `cancel_flag`: Cancel flag of the progress indicator, when the caller
@@ -84,7 +84,11 @@ impl SseRestartJob {
                     "Profile '{}': initial sync succeeded, starting new SSE",
                     self.profile.name
                 );
-                self.start_sse();
+                let profile_name = self.profile.name.clone();
+                if let Err(e) = self.start_sse() {
+                    log::error!("Profile '{profile_name}': failed to start SSE: {e}");
+                    return SseRestartOutcome::Failed(e);
+                }
                 SseRestartOutcome::Completed {
                     device_name,
                     notifications,
@@ -101,7 +105,14 @@ impl SseRestartJob {
     }
 
     /// Hand the profile's shared state to a freshly spawned SSE worker.
-    fn start_sse(self) {
+    ///
+    /// ### Errors
+    /// - Returns a `SynchronizationError` when the SSE worker thread could not be started.
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The SSE worker is running and will publish `Connected` once its stream opens
+    /// - `Err(SynchronizationError)`: No SSE worker was started
+    fn start_sse(self) -> Result<(), SynchronizationError> {
         let agents = SseAgents {
             rest: Arc::clone(&self.http_agent),
             stream: Arc::clone(&self.sse_http_agent),
@@ -113,7 +124,7 @@ impl SseRestartJob {
             server_version: Arc::clone(&self.sync_state.server_version),
             notification_tx: self.sync_state.notification_tx.clone(),
         };
-        if let Err(e) = connect_sse(
+        connect_sse(
             &self.profile,
             self.sse_tx,
             &self.new_worker_hooks,
@@ -121,9 +132,33 @@ impl SseRestartJob {
             &self.sync_state.token_state,
             &agents,
             &share_state,
-        ) {
-            log::error!("Profile '{}': failed to start SSE: {e}", self.profile.name);
-        }
+        )
+    }
+}
+
+/// Flag a profile as connecting, which starts the status bar's spinner delay.
+///
+/// ### Arguments
+/// - `sync_state`: The profile's shared sync state.
+fn mark_connecting(sync_state: &SyncState) {
+    set_sync_server_connection_status(
+        &sync_state.connection_status,
+        SynchronizationStatus::Connecting,
+    );
+    *sync_state.connecting_since.lock() = Some(Instant::now());
+}
+
+/// Publish the status a finished restart left the profile in and wake the profile's SSE event consumer so every window redraws it.
+///
+/// ### Arguments
+/// - `sync_state`: The profile's shared sync state.
+/// - `status`: The status to publish.
+fn publish_restart_status(sync_state: &SyncState, status: SynchronizationStatus) {
+    set_sync_server_connection_status(&sync_state.connection_status, status);
+    *sync_state.connecting_since.lock() = None;
+    let status_tx = sync_state.sse.lock().sse_event_tx.clone();
+    if let Some(tx) = status_tx {
+        let _ = tx.unbounded_send(SseEvent::ConnectionStatusChanged);
     }
 }
 
@@ -230,8 +265,13 @@ impl Fulgur {
         let Some(job) = self.prepare_sse_restart(profile_id, cx) else {
             return;
         };
+        let sync_state = Arc::clone(&job.sync_state);
+        mark_connecting(&sync_state);
+        cx.notify();
         thread::spawn(move || {
-            job.run(None);
+            if let SseRestartOutcome::Failed(e) = job.run(None) {
+                publish_restart_status(&sync_state, SynchronizationStatus::from_error(&e));
+            }
         });
     }
 
@@ -256,11 +296,7 @@ impl Fulgur {
         let notification_tx = sync_state.notification_tx.clone();
         let profile_name = job.profile.name.clone();
 
-        set_sync_server_connection_status(
-            &sync_state.connection_status,
-            SynchronizationStatus::Connecting,
-        );
-        *sync_state.connecting_since.lock() = Some(Instant::now());
+        mark_connecting(&sync_state);
 
         let cancel_state = Arc::clone(&sync_state);
         let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, _cx| {
@@ -299,12 +335,7 @@ impl Fulgur {
                         SynchronizationStatus::from_error(&e),
                     ),
                 };
-                set_sync_server_connection_status(&sync_state.connection_status, status);
-                *sync_state.connecting_since.lock() = None;
-                let status_tx = sync_state.sse.lock().sse_event_tx.clone();
-                if let Some(tx) = status_tx {
-                    let _ = tx.unbounded_send(SseEvent::ConnectionStatusChanged);
-                }
+                publish_restart_status(&sync_state, status);
                 let _ = notification_tx.unbounded_send(notification);
             },
         );
