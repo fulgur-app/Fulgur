@@ -1,16 +1,11 @@
-use super::{
+use crate::fulgur::ui::tabs::tab_bar::{
     CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
     CopyPath, DuplicateTab, RenameTab, SendTabToWindowNoOp, SetTabColor, ShowInFileManager, TabBar,
-    TabBarEvent, tab_bar_button_factory,
+    TabBarEvent,
 };
 use crate::fulgur::{
-    Fulgur,
-    settings::TabColorStyle,
-    tab::Tab,
-    ui::motion,
-    ui::tabs::color_tag::ColorTag,
-    ui::tabs::tab_drag::DraggedTab,
-    ui::{icons::CustomIcon, window_drag::window_drag_region},
+    Fulgur, settings::TabColorStyle, tab::Tab, ui::icons::CustomIcon,
+    ui::tabs::color_tag::ColorTag, ui::tabs::tab_drag::DraggedTab,
 };
 use gpui_kit::base::TestSupportExt;
 use gpui_kit::component::{
@@ -22,286 +17,13 @@ use gpui_kit::component::{
     v_flex,
 };
 use gpui_kit::{
-    AnyElement, AppContext, ClickEvent, Context, DragMoveEvent, Entity, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, Render, Role, StatefulInteractiveElement, Styled,
-    Window, div, px,
+    AnyElement, AppContext, Context, DragMoveEvent, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Role, StatefulInteractiveElement, Styled, div,
 };
 use std::collections::HashMap;
 use std::rc::Rc;
 
-impl Render for TabBar {
-    /// Render the tab bar from the owning window's current tab list
-    ///
-    /// ### Arguments
-    /// - `window`: The window to render the tab bar in
-    /// - `cx`: The tab bar context
-    ///
-    /// ### Returns
-    /// - `impl IntoElement`: The rendered tab bar element
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
-
-        let Some(fulgur_entity) = self.fulgur.upgrade() else {
-            return div().into_any_element();
-        };
-        self.process_pending_scroll(&fulgur_entity, cx);
-        let ghost = self.resolve_drag_ghost(&fulgur_entity, cx);
-        let ghost_opacity = Self::sample_ghost_opacity(ghost.is_some(), window, cx);
-        let fulgur = fulgur_entity.read(cx);
-        let in_title_bar = fulgur.settings.app_settings.uses_unified_title_bar();
-        let mut bar = div()
-            .flex()
-            .items_center()
-            .h(TAB_BAR_HEIGHT)
-            .bg(cx.theme().tab_bar);
-        if in_title_bar {
-            bar = bar.flex_1().min_w(px(0.));
-        }
-        bar.child(
-            tab_bar_button_factory("new-tab", "New Tab", CustomIcon::Plus, cx.theme().border)
-                .on_click(cx.listener(|_, _, _window, cx| {
-                    cx.emit(TabBarEvent::NewTab);
-                })),
-        )
-        .child(
-            tab_bar_button_factory(
-                "open-file",
-                "Open File (+Shift - Open Path)",
-                CustomIcon::FolderOpen,
-                cx.theme().border,
-            )
-            .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
-                if event.modifiers().shift {
-                    cx.emit(TabBarEvent::OpenPath);
-                } else {
-                    cx.emit(TabBarEvent::OpenFile);
-                }
-            })),
-        )
-        .child(
-            tab_bar_button_factory(
-                "save-file",
-                "Save File (+Shift - Save As)",
-                CustomIcon::Save,
-                cx.theme().border,
-            )
-            .border_r_1()
-            .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
-                if event.modifiers().shift {
-                    cx.emit(TabBarEvent::SaveFileAs);
-                } else {
-                    cx.emit(TabBarEvent::SaveFile);
-                }
-            })),
-        )
-        .child(
-            div()
-                .id("tab-scroll-container")
-                .role(Role::TabList)
-                .overflow_x_scroll()
-                .track_scroll(&self.scroll_handle)
-                .flex()
-                .flex_1()
-                .items_center()
-                .children(self.render_tabs_with_slots(fulgur, ghost.as_ref(), ghost_opacity, cx))
-                .child(Self::render_trailing_strip(in_title_bar, cx)),
-        )
-        .into_any_element()
-    }
-}
-
 impl TabBar {
-    /// Render the empty strip right of the last tab.
-    ///
-    /// ### Arguments
-    /// - `in_title_bar`: Whether the tab bar is embedded in the unified title bar
-    /// - `cx`: The tab bar context
-    ///
-    /// ### Returns
-    /// - `AnyElement`: The rendered trailing strip
-    fn render_trailing_strip(in_title_bar: bool, cx: &Context<Self>) -> AnyElement {
-        use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
-
-        let strip = div()
-            .id("tab-bar-trailing")
-            .flex_1()
-            .min_w(px(0.))
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .h(TAB_BAR_HEIGHT)
-            .on_drag_move::<DraggedTab>(cx.listener(
-                |this, event: &DragMoveEvent<DraggedTab>, _window, cx| {
-                    let cursor = event.event.position;
-                    let bounds = event.bounds;
-                    if cursor.x < bounds.origin.x
-                        || cursor.x > bounds.origin.x + bounds.size.width
-                        || cursor.y < bounds.origin.y
-                        || cursor.y > bounds.origin.y + bounds.size.height
-                    {
-                        return;
-                    }
-                    let Some(fulgur) = this.fulgur.upgrade() else {
-                        return;
-                    };
-                    let slot = fulgur.read(cx).tabs.len();
-                    let dragged = event.drag(cx).clone();
-                    this.drag_ghost = Some((slot, dragged));
-                    cx.notify();
-                },
-            ))
-            .on_drop(cx.listener(|this, dragged: &DraggedTab, _window, cx| {
-                if let Some((slot, _)) = this.drag_ghost.take() {
-                    cx.emit(TabBarEvent::Drop {
-                        dragged: dragged.clone(),
-                        slot,
-                    });
-                }
-            }));
-        if in_title_bar {
-            return window_drag_region(strip, cx).into_any_element();
-        }
-        strip
-            .on_click(cx.listener(|_, event: &ClickEvent, _window, cx| {
-                if event.click_count() == 2 {
-                    cx.emit(TabBarEvent::NewTab);
-                }
-            }))
-            .into_any_element()
-    }
-}
-
-impl TabBar {
-    /// Render a ghost tab shown at the insertion point during a drag operation.
-    ///
-    /// The ghost tab previews where the dragged tab will land when dropped. It uses
-    /// a muted, semi-transparent style to distinguish it from real tabs.
-    ///
-    /// ### Arguments
-    /// - `slot`: The insertion slot index
-    /// - `dragged`: The dragged tab data (used for title and modified state)
-    /// - `opacity`: The ghost opacity for this frame, from [`Self::sample_ghost_opacity`]
-    /// - `cx`: The tab bar context
-    ///
-    /// ### Returns
-    /// - `AnyElement`: The rendered ghost tab element
-    fn render_ghost_tab(
-        slot: usize,
-        dragged: &DraggedTab,
-        opacity: f32,
-        cx: &Context<Self>,
-    ) -> AnyElement {
-        use crate::fulgur::ui::components_utils::TAB_BAR_HEIGHT;
-
-        div()
-            .id(("ghost-tab", slot))
-            .flex()
-            .items_center()
-            .h(TAB_BAR_HEIGHT)
-            .px_2()
-            .gap_2()
-            .border_r_1()
-            .border_b_0()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().tab_active)
-            .opacity(opacity)
-            .child(
-                div()
-                    .pl_1()
-                    .text_sm()
-                    .text_color(cx.theme().tab_active_foreground)
-                    .child(dragged.ghost_label()),
-            )
-            .on_drop(cx.listener(|this, dragged: &DraggedTab, _window, cx| {
-                if let Some((slot, _)) = this.drag_ghost.take() {
-                    cx.emit(TabBarEvent::Drop {
-                        dragged: dragged.clone(),
-                        slot,
-                    });
-                }
-            }))
-            .into_any_element()
-    }
-
-    /// Resolve the ghost tab to show for the current drag, if any.
-    ///
-    /// ### Arguments
-    /// - `fulgur_entity`: The owning window, read to locate the dragged tab
-    /// - `cx`: The tab bar context
-    ///
-    /// ### Returns
-    /// - `Some((usize, DraggedTab))`: The insertion slot and the tab being dragged
-    /// - `None`: No ghost should be shown this frame
-    fn resolve_drag_ghost(
-        &self,
-        fulgur_entity: &Entity<Fulgur>,
-        cx: &Context<Self>,
-    ) -> Option<(usize, DraggedTab)> {
-        if !cx.has_active_drag() {
-            return None;
-        }
-        let fulgur = fulgur_entity.read(cx);
-        let (slot, dragged) = self.drag_ghost.as_ref()?;
-        let is_noop = fulgur
-            .tab_index_of(dragged.tab_id, cx)
-            .is_some_and(|from| *slot == from || *slot == from + 1);
-        if is_noop {
-            None
-        } else {
-            Some((*slot, dragged.clone()))
-        }
-    }
-
-    /// Sample the ghost tab's opacity for the current frame.
-    ///
-    /// ### Arguments
-    /// - `present`: Whether a ghost is shown this frame
-    /// - `window`: The window being rendered
-    /// - `cx`: The tab bar context
-    ///
-    /// ### Returns
-    /// - `f32`: The opacity to paint the ghost with
-    fn sample_ghost_opacity(present: bool, window: &mut Window, cx: &mut Context<Self>) -> f32 {
-        /// Opacity of a fully faded in ghost tab, keeping it muted against real tabs.
-        const GHOST_OPACITY: f32 = 0.45;
-
-        let sample = motion::presence("tab-drag-ghost", present, motion::affordance(), window, cx);
-        sample.progress * GHOST_OPACITY
-    }
-
-    /// Render all tabs, inserting a ghost tab at the current drag insertion point.
-    ///
-    /// ### Arguments
-    /// - `fulgur`: The owning window to read the tab list from
-    /// - `ghost`: The resolved ghost slot and dragged tab, from [`Self::resolve_drag_ghost`]
-    /// - `ghost_opacity`: The ghost opacity for this frame
-    /// - `cx`: The tab bar context
-    ///
-    /// ### Returns
-    /// - `Vec<AnyElement>`: Tab elements, with a ghost tab inserted at the drag target
-    fn render_tabs_with_slots(
-        &self,
-        fulgur: &Fulgur,
-        ghost: Option<&(usize, DraggedTab)>,
-        ghost_opacity: f32,
-        cx: &Context<Self>,
-    ) -> Vec<AnyElement> {
-        let filename_counts = Self::build_tab_filename_counts(&fulgur.tabs, cx);
-        let capacity = fulgur.tabs.len() + usize::from(ghost.is_some());
-        let mut elements: Vec<AnyElement> = Vec::with_capacity(capacity);
-        if let Some((0, dragged)) = ghost {
-            elements.push(Self::render_ghost_tab(0, dragged, ghost_opacity, cx));
-        }
-        for (index, tab) in fulgur.tabs.iter().enumerate() {
-            elements.push(self.render_tab(fulgur, index, tab.read(cx), &filename_counts, cx));
-            if let Some((slot, dragged)) = ghost
-                && *slot == index + 1
-            {
-                elements.push(Self::render_ghost_tab(*slot, dragged, ghost_opacity, cx));
-            }
-        }
-        elements
-    }
-
     /// Render a single tab in the tab bar
     ///
     /// ### Arguments
@@ -314,7 +36,7 @@ impl TabBar {
     ///
     /// ### Returns
     /// - `AnyElement`: The fully composed tab element ready to be inserted into the tab bar
-    fn render_tab(
+    pub(super) fn render_tab(
         &self,
         fulgur: &Fulgur,
         index: usize,
