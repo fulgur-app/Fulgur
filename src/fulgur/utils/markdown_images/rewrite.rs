@@ -1,51 +1,9 @@
-//! Resolve Markdown preview images and require permission for remote content.
-
+use super::html_img::rewrite_html_img_src;
 use crate::fulgur::utils::http::is_network_or_verbatim_path;
-use data_url::DataUrl;
 use gpui_kit::http_client::Url;
-use gpui_kit::{Image, ImageFormat, ImageSource, SharedUri};
 use std::borrow::Cow;
 use std::ops::Range;
 use std::path::Path;
-use std::sync::{Arc, LazyLock};
-
-/// An embedded placeholder that cannot trigger filesystem or network access.
-static BLOCKED_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
-    Arc::new(Image::from_bytes(
-        ImageFormat::Svg,
-        br##"<svg xmlns="http://www.w3.org/2000/svg" width="180" height="24"><rect width="180" height="24" rx="4" fill="#eee"/><text x="8" y="16" font-size="12" fill="#555">Remote image blocked</text></svg>"##.to_vec(),
-    ))
-});
-
-/// Resolve a preview image without fetching remote content unless opted in.
-///
-/// ### Arguments
-/// - `uri`: The image URI supplied by the document.
-/// - `load_remote_images`: Whether the user has enabled HTTP and HTTPS images.
-///
-/// ### Returns
-/// - `ImageSource`: A local or permitted remote URI, decoded embedded image,
-///   or an embedded placeholder for blocked or unsupported URIs.
-#[must_use]
-pub fn preview_image_source(uri: &SharedUri, load_remote_images: bool) -> ImageSource {
-    if let Ok(data) = DataUrl::process(uri)
-        && let Some(format) = ImageFormat::from_mime_type(&format!(
-            "{}/{}",
-            data.mime_type().type_,
-            data.mime_type().subtype
-        ))
-        && let Ok((bytes, _fragment)) = data.decode_to_vec()
-    {
-        return ImageSource::Image(Arc::new(Image::from_bytes(format, bytes)));
-    }
-    if let Ok(url) = Url::parse(uri)
-        && (url.scheme() == "file"
-            || (load_remote_images && matches!(url.scheme(), "http" | "https")))
-    {
-        return uri.clone().into();
-    }
-    ImageSource::Image(Arc::clone(&BLOCKED_IMAGE))
-}
 
 /// Rewrite local image references in `source` to absolute `file://` URLs.
 ///
@@ -202,100 +160,6 @@ fn collect_image_replacements(
     }
 }
 
-/// Rewrite `src` attributes of `<img>` tags inside a raw HTML fragment.
-///
-/// ### Arguments
-/// - `value`: The raw HTML fragment (an `Html` node's text).
-/// - `base_dir`: The directory used to resolve relative paths.
-///
-/// ### Returns
-/// - `Some(String)`: The fragment with at least one local `src` rewritten.
-/// - `None`: No `<img>` tag carried a rewritable local `src`.
-fn rewrite_html_img_src(value: &str, base_dir: Option<&Path>) -> Option<String> {
-    let mut output = String::with_capacity(value.len());
-    let mut changed = false;
-    let mut rest = value;
-
-    while let Some(src_start) = find_img_src(rest) {
-        let attr_value_start = src_start.attr_value_start;
-        output.push_str(&rest[..attr_value_start]);
-
-        let quote = match rest[attr_value_start..].chars().next() {
-            Some(quote @ ('"' | '\'')) => quote,
-            // Unquoted or empty src value: not handled, advance one char so the
-            // scan makes progress instead of looping on the same `src=`.
-            other => {
-                if let Some(other) = other {
-                    output.push(other);
-                    rest = &rest[attr_value_start + other.len_utf8()..];
-                } else {
-                    rest = &rest[attr_value_start..];
-                }
-                continue;
-            }
-        };
-
-        let value_body_start = attr_value_start + 1;
-        let Some(value_len) = rest[value_body_start..].find(quote) else {
-            // Unterminated quote; emit the remainder untouched.
-            output.push_str(&rest[attr_value_start..]);
-            return changed.then_some(output);
-        };
-        let url = &rest[value_body_start..value_body_start + value_len];
-
-        output.push(quote);
-        if let Some(new_url) = local_path_to_file_url(url, base_dir) {
-            output.push_str(&new_url);
-            changed = true;
-        } else {
-            output.push_str(url);
-        }
-        output.push(quote);
-        rest = &rest[value_body_start + value_len + 1..];
-    }
-
-    output.push_str(rest);
-    changed.then_some(output)
-}
-
-/// Location of an `src=` attribute value within an HTML fragment.
-struct SrcMatch {
-    attr_value_start: usize,
-}
-
-/// Find the next `<img>` `src=` attribute in an HTML fragment.
-///
-/// ### Arguments
-/// - `haystack`: The HTML fragment to scan.
-///
-/// ### Returns
-/// - `Some(SrcMatch)`: The position just after the next `src=`.
-/// - `None`: No `src=` attribute is present.
-fn find_img_src(haystack: &str) -> Option<SrcMatch> {
-    let lower = haystack.to_ascii_lowercase();
-    let mut search_from = 0;
-    while let Some(rel) = lower[search_from..].find("src") {
-        let src_pos = search_from + rel;
-        let after = src_pos + 3;
-        // Allow whitespace between `src` and `=`.
-        let mut cursor = after;
-        while lower.as_bytes().get(cursor) == Some(&b' ') {
-            cursor += 1;
-        }
-        if lower.as_bytes().get(cursor) == Some(&b'=') {
-            cursor += 1;
-            while lower.as_bytes().get(cursor) == Some(&b' ') {
-                cursor += 1;
-            }
-            return Some(SrcMatch {
-                attr_value_start: cursor,
-            });
-        }
-        search_from = after;
-    }
-    None
-}
-
 /// Convert a local image path to an absolute `file://` URL.
 ///
 /// ### Arguments
@@ -306,7 +170,7 @@ fn find_img_src(haystack: &str) -> Option<SrcMatch> {
 /// - `Some(String)`: A `file://` URL for a resolvable local path.
 /// - `None`: The URL is remote, already a URL, a network or verbatim path, or a
 ///   relative path that cannot be resolved without a base directory.
-fn local_path_to_file_url(url: &str, base_dir: Option<&Path>) -> Option<String> {
+pub(super) fn local_path_to_file_url(url: &str, base_dir: Option<&Path>) -> Option<String> {
     let trimmed = url.trim();
     if trimmed.is_empty() || is_non_local_reference(trimmed) {
         return None;
@@ -382,89 +246,9 @@ fn apply_replacements(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use gpui_kit::Resource;
-    use std::path::PathBuf;
-
-    #[test]
-    fn preview_blocks_remote_and_unsupported_image_sources_by_default() {
-        for uri in [
-            "https://example.com/pixel.png",
-            "http://localhost/admin",
-            "http://127.0.0.1/pixel.png",
-            "http://192.168.1.1/pixel.png",
-            "http://10.0.0.1/pixel.png",
-            "http://172.16.0.1/pixel.png",
-            "http://169.254.169.254/latest/meta-data/",
-            "http://[::1]/pixel.png",
-            "HTTP://LOCALHOST/pixel.png",
-            "//example.com/pixel.png",
-            "ftp://example.com/pixel.png",
-        ] {
-            let ImageSource::Image(image) = preview_image_source(&uri.into(), false) else {
-                panic!("expected a non-network placeholder for {uri}");
-            };
-            assert!(Arc::ptr_eq(&image, &BLOCKED_IMAGE), "{uri}");
-        }
-    }
-
-    #[test]
-    fn preview_remote_images_require_explicit_opt_in() {
-        for uri in ["http://localhost/a.png", "https://example.com/a.png"] {
-            assert!(matches!(
-                preview_image_source(&uri.into(), true),
-                ImageSource::Resource(Resource::Uri(url)) if url.as_ref() == uri
-            ));
-        }
-    }
-
-    #[test]
-    fn preview_keeps_local_images_uri_backed() {
-        let uri = expected_url("image.png");
-        for enabled in [false, true] {
-            assert!(matches!(
-                preview_image_source(&uri.clone().into(), enabled),
-                ImageSource::Resource(Resource::Uri(url)) if url.as_ref() == uri
-            ));
-        }
-    }
-
-    #[test]
-    fn preview_decodes_embedded_images_without_remote_permission() {
-        for (uri, expected) in [
-            (
-                "data:image/png;base64,iVBORw0KGgo=",
-                b"\x89PNG\r\n\x1a\n".as_slice(),
-            ),
-            (
-                "data:image/svg+xml,%3Csvg%3E%3C/svg%3E",
-                b"<svg></svg>".as_slice(),
-            ),
-        ] {
-            let ImageSource::Image(image) = preview_image_source(&uri.into(), false) else {
-                panic!("expected an embedded image for {uri}");
-            };
-            assert_eq!(image.bytes(), expected);
-        }
-    }
-
-    fn rewritten<'a>(source: &'a str, base_dir: Option<&Path>) -> Cow<'a, str> {
-        rewrite_markdown_image_paths(source, base_dir).text
-    }
-
-    fn base() -> PathBuf {
-        if cfg!(windows) {
-            PathBuf::from(r"C:\docs")
-        } else {
-            PathBuf::from("/docs")
-        }
-    }
-
-    fn expected_url(relative: &str) -> String {
-        Url::from_file_path(base().join(relative))
-            .unwrap()
-            .to_string()
-    }
+    use super::super::test_helpers::{base, expected_url, rewritten};
+    use super::{may_reference_image, rewrite_markdown_image_paths};
+    use std::borrow::Cow;
 
     #[test]
     fn rewrites_relative_markdown_image() {
@@ -499,36 +283,6 @@ mod tests {
     }
 
     #[test]
-    fn rewrites_html_img_src() {
-        let out = rewritten(
-            r#"<img src="assets/logo.webp" width="128" />"#,
-            Some(&base()),
-        );
-        assert_eq!(
-            out,
-            format!(
-                r#"<img src="{}" width="128" />"#,
-                expected_url("assets/logo.webp")
-            )
-        );
-    }
-
-    #[test]
-    fn rewrites_single_quoted_html_img_src() {
-        let out = rewritten(r"<img src='logo.png' alt='x'>", Some(&base()));
-        assert_eq!(
-            out,
-            format!(r"<img src='{}' alt='x'>", expected_url("logo.png"))
-        );
-    }
-
-    #[test]
-    fn leaves_remote_html_img_untouched() {
-        let source = r#"<img src="https://example.com/a.png" />"#;
-        assert_eq!(rewritten(source, Some(&base())), source);
-    }
-
-    #[test]
     fn relative_path_without_base_is_unchanged() {
         let source = "![a](logo.png)";
         assert_eq!(rewritten(source, None), source);
@@ -544,12 +298,6 @@ mod tests {
     fn borrows_source_without_image_markers() {
         let source = "[a link](docs/readme.md) and `src/main.rs`";
         assert!(matches!(rewritten(source, Some(&base())), Cow::Borrowed(_)));
-    }
-
-    #[test]
-    fn rewrites_uppercase_html_img_src() {
-        let out = rewritten(r#"<IMG SRC="logo.png">"#, Some(&base()));
-        assert_eq!(out, format!(r#"<IMG SRC="{}">"#, expected_url("logo.png")));
     }
 
     #[test]
@@ -601,13 +349,6 @@ mod tests {
     fn leaves_unc_markdown_image_untouched() {
         // CommonMark unescapes `\\`, so the parsed URL is `\\attacker\share\x.png`.
         let source = r"![a](\\\\attacker\\share\\x.png)";
-        assert_eq!(rewritten(source, Some(&base())), source);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn leaves_unc_html_img_untouched() {
-        let source = r#"<img src="\\attacker\share\x.png" />"#;
         assert_eq!(rewritten(source, Some(&base())), source);
     }
 }
