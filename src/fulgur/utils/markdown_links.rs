@@ -343,7 +343,7 @@ mod tests {
     fn describes_local_links_by_their_resolved_path() {
         assert_eq!(
             describe_markdown_link("notes/other.md", Some(&base())),
-            base().join("notes/other.md").display().to_string()
+            base().join("notes").join("other.md").display().to_string()
         );
     }
 
