@@ -14,7 +14,9 @@ use crate::fulgur::{
         url::{RemoteSpec, format_remote_history_url, format_remote_url},
     },
     ui::notifications::progress::CancelCallback,
+    window_manager::WindowManager,
 };
+use gpui_kit::SharedString;
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use parking_lot::Mutex;
 use std::sync::{
@@ -67,15 +69,47 @@ impl Fulgur {
         spec: RemoteSpec,
         record_in_history: bool,
     ) {
-        if let Some(tab_index) = self.find_tab_by_remote_spec(&spec, cx) {
-            self.set_active_tab(tab_index, window, cx);
-            if record_in_history {
-                Self::record_remote_history_url(format_remote_history_url(&spec), cx);
-            }
-            return;
-        }
-        self.last_failed_remote_open_url = Some(format_remote_url(&spec));
         self.open_remote_file_with_target(window, cx, spec, None, record_in_history);
+    }
+
+    /// Bring forward a remote file that is already open instead of opening it twice.
+    ///
+    /// A tab of this window is focused. A tab of another window is reported with a
+    /// notification, like an already open local file.
+    ///
+    /// ### Arguments
+    /// - `spec`: The remote location, with its user resolved
+    /// - `window`: The window the open was requested in
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: The file is already open, in this window or another one
+    /// - `false`: No window has the file open
+    pub(super) fn reveal_open_remote_file(
+        &mut self,
+        spec: &RemoteSpec,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
+    ) -> bool {
+        if let Some(tab_index) = self.find_tab_by_remote_spec(spec, cx) {
+            self.set_active_tab(tab_index, window, cx);
+            return true;
+        }
+        let Some(existing_window_id) =
+            cx.global::<WindowManager>()
+                .find_window_with_remote_spec(spec, self.window_id, cx)
+        else {
+            return false;
+        };
+        let file_name = spec.path.rsplit('/').next().unwrap_or(&spec.path);
+        let message = format!("File '{file_name}' is already open in another window");
+        window.push_notification((NotificationType::Info, SharedString::from(message)), cx);
+        log::debug!(
+            "Remote file {}:{} is already open in window {existing_window_id:?}",
+            spec.host,
+            spec.path
+        );
+        true
     }
 
     /// Start loading a remote file and apply the result either to a new tab or an existing tab.
@@ -118,6 +152,15 @@ impl Fulgur {
 
         self.with_resolved_remote_user(window, cx, spec, move |fulgur, spec, window, cx| {
             let history_url = record_in_history.then(|| format_remote_history_url(&spec));
+            if target_tab_id.is_none() {
+                if fulgur.reveal_open_remote_file(&spec, window, cx) {
+                    if let Some(history_url) = history_url {
+                        Self::record_remote_history_url(history_url, cx);
+                    }
+                    return;
+                }
+                fulgur.last_failed_remote_open_url = Some(format_remote_url(&spec));
+            }
             fulgur.spawn_ssh_open_task(
                 window,
                 cx,

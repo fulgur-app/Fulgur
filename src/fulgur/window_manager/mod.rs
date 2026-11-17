@@ -3,7 +3,7 @@ mod lifecycle;
 mod render;
 pub mod system_menus;
 
-use crate::fulgur::Fulgur;
+use crate::fulgur::{Fulgur, sync::ssh::url::RemoteSpec};
 use gpui_kit::{
     AnyWindowHandle, App, BorrowAppContext, Entity, EntityId, Global, WeakEntity, WindowId,
 };
@@ -326,6 +326,33 @@ impl WindowManager {
             }
         }
         None
+    }
+
+    /// Find another window that has a remote file open
+    ///
+    /// ### Arguments
+    /// - `spec`: The remote location to search for, with its user resolved
+    /// - `current_window_id`: The current window ID to skip (can't read while already borrowed)
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some(WindowId)`: The ID of a window that has the remote file open
+    /// - `None`: No other window has it open
+    pub fn find_window_with_remote_spec(
+        &self,
+        spec: &RemoteSpec,
+        current_window_id: WindowId,
+        cx: &App,
+    ) -> Option<WindowId> {
+        self.windows
+            .iter()
+            .filter(|(window_id, _)| **window_id != current_window_id)
+            .find(|(_, weak_entity)| {
+                weak_entity.upgrade().is_some_and(|entity| {
+                    entity.read(cx).find_tab_by_remote_spec(spec, cx).is_some()
+                })
+            })
+            .map(|(window_id, _)| *window_id)
     }
 }
 
