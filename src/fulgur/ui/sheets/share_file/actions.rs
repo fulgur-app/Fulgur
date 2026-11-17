@@ -3,9 +3,10 @@ use crate::fulgur::shared_state::AppNotification;
 use crate::fulgur::{
     Fulgur,
     settings::{ProfileId, ServerProfile},
+    state::{DeviceKeyPins, DeviceKeyStatus},
     sync::share::{
         Device, ProfileShareOutcome, ShareFileRequest, format_multi_profile_summary, get_devices,
-        share_file,
+        published_keys, share_file,
     },
     ui::{components_utils::UNTITLED, notifications::progress::start_progress},
 };
@@ -56,6 +57,62 @@ fn capture_share_context(entity: &Entity<Fulgur>, cx: &mut App) -> ShareContext 
     })
 }
 
+/// Pin the keys of every device seen for the first time in the loaded profiles.
+///
+/// ### Arguments
+/// - `state`: Shared sheet state holding per-profile loaded devices.
+/// - `cx`: The application context.
+pub(super) fn pin_loaded_device_keys(state: &ShareSheetState, cx: &mut App) {
+    let loaded: Vec<(ProfileId, Arc<Vec<Device>>)> = state
+        .per_profile
+        .read()
+        .iter()
+        .filter_map(|(profile_id, fetch_state)| match fetch_state {
+            ProfileFetchState::Loaded(devices) => Some((profile_id.clone(), Arc::clone(devices))),
+            _ => None,
+        })
+        .collect();
+    for (profile_id, devices) in loaded {
+        Fulgur::pin_first_seen_device_keys(&profile_id, published_keys(&devices), cx);
+    }
+}
+
+/// Split selected device ids into those whose reported key is the pinned one and the rest.
+///
+/// ### Arguments
+/// - `profile_id`: The profile the devices belong to.
+/// - `device_ids`: The selected device ids.
+/// - `devices`: The devices the profile's server reported.
+/// - `pins`: The pinned device keys.
+///
+/// ### Returns
+/// - `(Vec<String>, Vec<String>)`: The ids of the trusted devices, then the
+///   names of the devices left out because their key is not the pinned one.
+fn split_trusted_devices(
+    profile_id: &str,
+    device_ids: Vec<String>,
+    devices: &[Device],
+    pins: &DeviceKeyPins,
+) -> (Vec<String>, Vec<String>) {
+    let mut trusted = Vec::new();
+    let mut untrusted_names = Vec::new();
+    for device_id in device_ids {
+        let device = devices.iter().find(|device| device.id == device_id);
+        let status = device.and_then(|device| {
+            device
+                .public_key
+                .as_deref()
+                .map(|key| pins.status(profile_id, &device.id, key))
+        });
+        match (status, device) {
+            (Some(DeviceKeyStatus::Trusted), _) => trusted.push(device_id),
+            (_, Some(device)) => untrusted_names.push(device.name.clone()),
+            (_, None) => untrusted_names.push(device_id),
+        }
+    }
+    (trusted, untrusted_names)
+}
+
 /// Group selected `(profile_id, device_id)` pairs into per-profile resource bundles.
 ///
 /// ### Arguments
@@ -65,14 +122,19 @@ fn capture_share_context(entity: &Entity<Fulgur>, cx: &mut App) -> ShareContext 
 /// - `cx`: The application context.
 ///
 /// ### Returns
-/// - `Vec<ProfileShareResources>`: One bundle per profile with at least one selected device.
+/// - `(Vec<ProfileShareResources>, Vec<String>)`: One bundle per profile with
+///   at least one trusted selected device, then the names of the selected
+///   devices left out because their key changed since it was trusted.
 fn build_profile_share_resources(
     selected_keys: &[(ProfileId, String)],
     state: &Arc<ShareSheetState>,
     entity: &Entity<Fulgur>,
     cx: &mut App,
-) -> Vec<ProfileShareResources> {
+) -> (Vec<ProfileShareResources>, Vec<String>) {
+    pin_loaded_device_keys(state, cx);
+    let pins = Fulgur::shared_state(cx).device_key_pins.clone();
     let mut bundles: Vec<ProfileShareResources> = Vec::new();
+    let mut untrusted_names: Vec<String> = Vec::new();
     let map = state.per_profile.read();
     for profile in &state.profiles {
         let device_ids: Vec<String> = selected_keys
@@ -92,6 +154,12 @@ fn build_profile_share_resources(
             );
             continue;
         };
+        let (device_ids, mut untrusted) =
+            split_trusted_devices(&profile.id, device_ids, &devices, &pins);
+        untrusted_names.append(&mut untrusted);
+        if device_ids.is_empty() {
+            continue;
+        }
         let (token_state, max_file_size_bytes) = entity.update(cx, |_, cx| {
             let sync_state = Fulgur::shared_state(cx).sync_state_for(&profile.id);
             (
@@ -109,7 +177,7 @@ fn build_profile_share_resources(
             max_file_size_bytes,
         });
     }
-    bundles
+    (bundles, untrusted_names)
 }
 
 /// Run a single profile's share request and translate the result into a
@@ -190,7 +258,26 @@ pub(super) fn handle_share_file(
         );
         return;
     }
-    let bundles = build_profile_share_resources(&keys, state, entity, cx);
+    let (bundles, untrusted_names) = build_profile_share_resources(&keys, state, entity, cx);
+    if !untrusted_names.is_empty() {
+        log::warn!(
+            "Share skipped {} device(s) whose key changed since it was trusted",
+            untrusted_names.len()
+        );
+        window.push_notification(
+            (
+                NotificationType::Warning,
+                SharedString::from(format!(
+                    "Not shared with {}: the key changed since you trusted it. Verify and trust the new key first.",
+                    untrusted_names.join(", ")
+                )),
+            ),
+            cx,
+        );
+        if bundles.is_empty() {
+            return;
+        }
+    }
     if bundles.is_empty() {
         log::warn!("Share aborted: no loaded profiles in selection");
         window.push_notification(
@@ -287,4 +374,43 @@ pub(super) fn spawn_profile_device_fetch(
         };
         state.per_profile.write().insert(profile.id, fetch_state);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_trusted_devices;
+    use crate::fulgur::{state::DeviceKeyPins, sync::share::Device};
+
+    fn device(id: &str, public_key: &str) -> Device {
+        Device {
+            id: id.to_string(),
+            name: format!("{id}-name"),
+            device_type: "desktop".to_string(),
+            public_key: Some(public_key.to_string()),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            expires_at: "2025-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn only_devices_reporting_their_pinned_key_are_shared_with() {
+        let mut pins = DeviceKeyPins::default();
+        pins.pin_first_seen("p", [("kept", "age1kept"), ("swapped", "age1original")]);
+        let devices = [
+            device("kept", "age1kept"),
+            device("swapped", "age1attacker"),
+        ];
+        let (trusted, untrusted) = split_trusted_devices(
+            "p",
+            vec![
+                "kept".to_string(),
+                "swapped".to_string(),
+                "gone".to_string(),
+            ],
+            &devices,
+            &pins,
+        );
+        assert_eq!(trusted, ["kept"]);
+        assert_eq!(untrusted, ["swapped-name", "gone"]);
+    }
 }

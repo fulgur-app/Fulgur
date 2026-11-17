@@ -31,6 +31,23 @@ pub fn get_icon(device: &Device) -> Icon {
     }
 }
 
+/// List the public keys the server published for a set of devices.
+///
+/// ### Arguments
+/// - `devices`: The devices returned by `get_devices`
+///
+/// ### Returns
+/// - `impl Iterator<Item = (&str, &str)>`: The `(device_id, public_key)` pairs
+///   of the devices that have a key
+pub fn published_keys(devices: &[Device]) -> impl Iterator<Item = (&str, &str)> {
+    devices.iter().filter_map(|device| {
+        device
+            .public_key
+            .as_deref()
+            .map(|key| (device.id.as_str(), key))
+    })
+}
+
 /// Get the devices from the server
 ///
 /// ### Arguments

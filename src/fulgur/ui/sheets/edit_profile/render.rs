@@ -52,6 +52,18 @@ pub(super) fn render_form_body(state: &Arc<ProfileFormState>, cx: &App) -> impl 
                     ),
             )
         })
+        .when_some(state.own_key_fingerprint.clone(), |el, fingerprint| {
+            el.child(field_label("Encryption key fingerprint", cx))
+                .child(div().text_sm().font_family("monospace").child(fingerprint))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(
+                            "Other devices show this fingerprint for this device when sharing. If theirs differs, do not trust the new key.",
+                        ),
+                )
+        })
         .child(
             h_flex()
                 .w_full()

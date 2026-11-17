@@ -126,6 +126,23 @@ impl WriterState {
         }
     }
 
+    /// Write the device key pins waiting in the mailbox, if any.
+    pub(super) fn flush_device_key_pins(&mut self) {
+        let Some(pins) = self.mailbox.take_device_key_pins() else {
+            return;
+        };
+        let Some(db) = self.db.as_mut() else {
+            log::error!(
+                "State writer failed to save the device key pins: no state database is available"
+            );
+            return;
+        };
+        match db.apply_device_key_pins(&pins) {
+            Ok(rows) => log::debug!("Device key pins written ({rows} rows changed)"),
+            Err(e) => log::error!("State writer failed to save the device key pins: {e}"),
+        }
+    }
+
     /// Write the snapshot waiting in the mailbox, ignoring the throttle.
     pub(super) fn flush_mailbox(&mut self) {
         if let Some(state) = self.mailbox.take()
@@ -158,6 +175,7 @@ impl WriterState {
     /// Flush anything outstanding and leave the database ready for next launch.
     pub(super) fn shut_down(&mut self) {
         self.flush_remote_history();
+        self.flush_device_key_pins();
         self.flush_mailbox();
         if let Some(db) = self.db.as_ref() {
             db.checkpoint();

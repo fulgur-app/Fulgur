@@ -26,6 +26,7 @@ pub(super) struct ProfileFormState {
     pub(super) is_active: Arc<Mutex<bool>>, //Per-profile activation flag held in a shared mutex
     pub(super) is_deduplication: Arc<Mutex<bool>>,
     pub(super) device_key_rollback: Arc<Mutex<KeyRollback>>, //Snapshot of the pre-test device key so Cancel can restore the keychain
+    pub(super) own_key_fingerprint: Option<String>, //Fingerprint of this device's encryption public key, shown so other devices can verify it
 }
 
 /// Build a profile draft from the current form values.
@@ -258,6 +259,7 @@ pub(super) mod gpui_tests {
             is_active: Arc::new(Mutex::new(is_active)),
             is_deduplication: Arc::new(Mutex::new(is_deduplication)),
             device_key_rollback: Arc::new(Mutex::new(KeyRollback::NoWrite)),
+            own_key_fingerprint: None,
         }
     }
 

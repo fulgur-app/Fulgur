@@ -2,7 +2,7 @@ mod mailbox;
 mod writer_state;
 
 use super::db::StateDb;
-use super::persistence::{RemoteHistory, WindowsState};
+use super::persistence::{DeviceKeyPins, RemoteHistory, WindowsState};
 use crate::fulgur::utils::worker::Worker;
 use mailbox::SnapshotMailbox;
 use std::sync::{Arc, mpsc};
@@ -33,8 +33,8 @@ enum WriterMessage {
         state: WindowsState,
         reply: mpsc::Sender<anyhow::Result<()>>,
     },
-    /// Signals that the mailbox now holds a snapshot or a remote history
-    /// waiting to be written.
+    /// Signals that the mailbox now holds a snapshot, a remote history or
+    /// device key pins waiting to be written.
     MailboxFilled,
 }
 
@@ -133,6 +133,7 @@ impl StateWriter {
                 None => writer_state.flush_mailbox(),
             }
             writer_state.flush_remote_history();
+            writer_state.flush_device_key_pins();
         }
         writer_state.shut_down();
         log::debug!("State writer thread exiting (no more senders)");
@@ -195,6 +196,18 @@ impl StateWriter {
         if !self.wake_writer() {
             self.mailbox.take_remote_history();
             log::error!("State writer thread has exited; dropped remote history save request");
+        }
+    }
+
+    /// Hand the pinned device public keys to the writer without waiting for the write.
+    ///
+    /// ### Arguments
+    /// - `pins`: The complete set of pins to persist.
+    pub fn save_device_key_pins(&self, pins: DeviceKeyPins) {
+        self.mailbox.put_device_key_pins(pins);
+        if !self.wake_writer() {
+            self.mailbox.take_device_key_pins();
+            log::error!("State writer thread has exited; dropped device key pins save request");
         }
     }
 

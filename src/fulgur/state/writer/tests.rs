@@ -1,6 +1,6 @@
 use super::*;
 use crate::fulgur::state::persistence::{
-    SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
+    DeviceKeyPins, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -246,6 +246,25 @@ fn writer_blocking_save_does_not_drop_a_pending_remote_history() {
     drop(writer);
     assert_eq!(persisted_title(&path), "blocking");
     assert_eq!(persisted_remote_history(&path), history);
+}
+
+#[test]
+fn writer_persists_device_key_pins_alongside_the_remote_history() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("state.db");
+    let writer = writer_at(&path, NEVER_ELAPSES);
+    let history = remote_history(&["ssh://host/"]);
+    let pins = DeviceKeyPins::from_entries([(
+        "home".to_string(),
+        "laptop".to_string(),
+        "age1laptop".to_string(),
+    )]);
+    writer.save_remote_history(history.clone());
+    writer.save_device_key_pins(pins.clone());
+    drop(writer);
+    let db = StateDb::open(&path).expect("reopen state database");
+    assert_eq!(db.load_device_key_pins().expect("load pins"), pins);
+    assert_eq!(db.load_remote_history().expect("load history"), history);
 }
 
 #[test]

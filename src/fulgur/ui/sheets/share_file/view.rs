@@ -3,8 +3,10 @@ use super::state::{ProfileFetchState, ShareSheetState};
 use crate::fulgur::{
     Fulgur,
     settings::{ProfileId, ServerProfile},
+    state::DeviceKeyStatus,
     sync::share::{Device, get_icon},
     ui::icons::CustomIcon,
+    utils::crypto_helper::public_key_fingerprint,
 };
 use gpui_kit::component::{
     ActiveTheme, Icon, Sizable, WindowExt,
@@ -21,11 +23,45 @@ use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+/// Describe a device's key under its name in the share sheet.
+///
+/// ### Arguments
+/// - `device`: The device to describe.
+/// - `key_status`: How its key compares with the pinned one, `None` when the
+///   server reported no key.
+/// - `cx`: The application context.
+///
+/// ### Returns
+/// - `Div`: The key description line.
+fn make_key_line(device: &Device, key_status: Option<&DeviceKeyStatus>, cx: &App) -> Div {
+    let line = div().text_xs();
+    match (key_status, device.public_key.as_deref()) {
+        (Some(DeviceKeyStatus::Changed { pinned_key }), Some(reported_key)) => line
+            .text_color(cx.theme().danger)
+            .child(format!(
+                "Key changed: trusted {}, server now reports {}. Compare with the fingerprint shown on that device before trusting it.",
+                public_key_fingerprint(pinned_key),
+                public_key_fingerprint(reported_key)
+            )),
+        (Some(_), Some(reported_key)) => line
+            .text_color(cx.theme().muted_foreground)
+            .child(format!(
+                "Key fingerprint: {}",
+                public_key_fingerprint(reported_key)
+            )),
+        _ => line
+            .text_color(cx.theme().muted_foreground)
+            .child("No public key for this device"),
+    }
+}
+
 /// Create a single device row in the share sheet.
 ///
 /// ### Arguments
 /// - `profile_id`: The id of the profile that owns this device.
 /// - `device`: The device to display.
+/// - `key_status`: How the device key compares with the pinned one, `None`
+///   when the server reported no key.
 /// - `is_selected`: Whether the device is currently selected.
 /// - `selected_keys`: Shared mutable selection state, keyed by `(profile_id, device_id)`.
 /// - `idx`: Stable index used to disambiguate the GPUI element id.
@@ -36,17 +72,24 @@ use std::sync::Arc;
 fn make_device_item(
     profile_id: &ProfileId,
     device: &Device,
+    key_status: Option<&DeviceKeyStatus>,
     is_selected: bool,
     selected_keys: Arc<Mutex<Vec<(ProfileId, String)>>>,
     idx: usize,
     cx: &App,
 ) -> impl Element {
+    let has_public_key = device.public_key.is_some();
+    let is_selectable = matches!(
+        key_status,
+        Some(DeviceKeyStatus::Unpinned | DeviceKeyStatus::Trusted)
+    );
+    let changed_key = match key_status {
+        Some(DeviceKeyStatus::Changed { .. }) => device.public_key.clone(),
+        _ => None,
+    };
+    let key_line = make_key_line(device, key_status, cx);
     let profile_id = profile_id.clone();
     let device_id = device.id.clone();
-    let device_name = device.name.clone();
-    let device_expires = device.expires_at.clone();
-    let device_for_icon = device;
-    let has_public_key = device.public_key.is_some();
     h_flex()
         .id(("share-device-sheet", idx))
         .items_center()
@@ -54,43 +97,60 @@ fn make_device_item(
         .w_full()
         .p_2()
         .my_2()
+        .gap_2()
         .rounded_sm()
         .border_color(cx.theme().border)
         .border_1()
-        .when(has_public_key, gpui_kit::Styled::cursor_pointer)
+        .when(is_selectable, gpui_kit::Styled::cursor_pointer)
         .when(!has_public_key, |this| this.opacity(0.5))
-        .when(has_public_key, |this| {
+        .when(changed_key.is_some(), |this| {
+            this.border_color(cx.theme().danger)
+        })
+        .when(is_selectable, |this| {
             this.hover(|hover| hover.bg(cx.theme().muted))
         })
-        .when(is_selected && has_public_key, |this| {
+        .when(is_selected && is_selectable, |this| {
             this.bg(cx.theme().accent)
                 .text_color(cx.theme().accent_foreground)
         })
         .child(
             v_flex()
                 .gap_1()
+                .flex_1()
                 .child(
                     h_flex()
                         .items_center()
                         .justify_start()
                         .gap_2()
-                        .child(get_icon(device_for_icon))
-                        .child(div().child(device_name))
-                        .child(div().text_xs().child(format!("Expires: {device_expires}"))),
+                        .child(get_icon(device))
+                        .child(div().child(device.name.clone()))
+                        .child(
+                            div()
+                                .text_xs()
+                                .child(format!("Expires: {}", device.expires_at)),
+                        ),
                 )
-                .when(!has_public_key, |this| {
-                    this.child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child("No public key for this device"),
-                    )
-                }),
+                .child(key_line),
         )
-        .when(is_selected && has_public_key, |this| {
+        .when(is_selected && is_selectable, |this| {
             this.child(Icon::new(CustomIcon::Zap))
         })
-        .when(has_public_key, |this| {
+        .when_some(changed_key, |this, reported_key| {
+            let profile_id = profile_id.clone();
+            let device_id = device_id.clone();
+            this.child(
+                Button::new(("trust-device-key", idx))
+                    .child("Trust new key")
+                    .small()
+                    .warning()
+                    .cursor_pointer()
+                    .on_click(move |_, window, cx| {
+                        Fulgur::trust_device_key(&profile_id, &device_id, &reported_key, cx);
+                        window.refresh();
+                    }),
+            )
+        })
+        .when(is_selectable, |this| {
             this.on_click(move |_event, _window, _cx| {
                 let mut keys = selected_keys.lock();
                 let key = (profile_id.clone(), device_id.clone());
@@ -201,6 +261,7 @@ fn make_empty_section(cx: &App) -> Div {
 pub(super) fn make_device_list(state: &Arc<ShareSheetState>, cx: &App) -> Div {
     let mut container = v_flex().gap_6();
     let mut row_idx: usize = 0;
+    let pins = &Fulgur::shared_state(cx).device_key_pins;
     let map = state.per_profile.read();
     let selected_guard = state.selected.lock();
     let selected_keys: HashSet<(&str, &str)> = selected_guard
@@ -223,9 +284,14 @@ pub(super) fn make_device_list(state: &Arc<ShareSheetState>, cx: &App) -> Div {
                     for device in devices.iter() {
                         let is_selected =
                             selected_keys.contains(&(profile.id.as_str(), device.id.as_str()));
+                        let key_status = device
+                            .public_key
+                            .as_deref()
+                            .map(|key| pins.status(&profile.id, &device.id, key));
                         group = group.child(make_device_item(
                             &profile.id,
                             device,
+                            key_status.as_ref(),
                             is_selected,
                             state.selected.clone(),
                             row_idx,

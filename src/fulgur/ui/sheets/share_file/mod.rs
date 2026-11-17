@@ -5,7 +5,7 @@ mod view;
 pub use state::ShareSheetState;
 
 use crate::fulgur::{Fulgur, settings::ServerProfile};
-use actions::spawn_profile_device_fetch;
+use actions::{pin_loaded_device_keys, spawn_profile_device_fetch};
 use gpui_kit::component::{
     WindowExt, notification::NotificationType, scroll::ScrollableElement, v_flex,
 };
@@ -81,7 +81,8 @@ impl Fulgur {
         Self::show_share_sheet(state, window, cx);
     }
 
-    /// Drive periodic re-renders while the share sheet is open and at least one profile is still loading.
+    /// Drive periodic re-renders while the share sheet is open and at least one profile is still loading,
+    /// pinning the keys of devices seen for the first time as their profile loads.
     ///
     /// ### Arguments
     /// - `state`: Shared sheet state.
@@ -103,10 +104,14 @@ impl Fulgur {
                     if !state.active.load(std::sync::atomic::Ordering::Acquire) {
                         return;
                     }
+                    // Read before pinning, so a fetch landing in between is
+                    // pinned on the next tick instead of being missed.
+                    let settled = state.all_settled();
                     let _ = async_cx.update(|_, cx| {
+                        pin_loaded_device_keys(&state, cx);
                         entity.update(cx, |_, cx| cx.notify());
                     });
-                    if state.all_settled() {
+                    if settled {
                         return;
                     }
                 }

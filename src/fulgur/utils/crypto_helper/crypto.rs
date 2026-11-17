@@ -3,6 +3,7 @@ use age::{
     x25519::{Identity, Recipient},
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 use super::keychain::{load_private_key_from_keychain, save_private_key_to_keychain};
@@ -185,6 +186,27 @@ pub fn is_valid_public_key(key: &str) -> bool {
     key.parse::<Recipient>().is_ok()
 }
 
+/// Number of SHA-256 bytes kept in a public key fingerprint.
+const FINGERPRINT_BYTES: usize = 8;
+
+/// Short, human-comparable fingerprint of a public key.
+///
+/// ### Arguments
+/// - `public_key`: The age recipient (`age1...`)
+///
+/// ### Returns
+/// - `String`: The grouped fingerprint
+#[must_use]
+pub fn public_key_fingerprint(public_key: &str) -> String {
+    let digest = Sha256::digest(public_key.trim().as_bytes());
+    let hex = hex::encode_upper(&digest[..FINGERPRINT_BYTES]);
+    hex.as_bytes()
+        .chunks(4)
+        .map(|group| String::from_utf8_lossy(group).into_owned())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Encrypt bytes (e.g., compressed data) for file sharing using age encryption
 ///
 /// ### Arguments
@@ -259,7 +281,7 @@ mod tests {
     };
     use super::{
         check_private_public_keys_with, decrypt_bytes, encrypt_bytes, ensure_profile_keypair,
-        generate_key_pair, is_valid_public_key, serialize,
+        generate_key_pair, is_valid_public_key, public_key_fingerprint, serialize,
     };
     use crate::fulgur::settings::{ServerProfile, Settings};
     use std::cell::Cell;
@@ -497,6 +519,27 @@ mod tests {
     fn test_is_valid_public_key_accepts_generated_key() {
         let (_, public_key) = generate_key_pair();
         assert!(is_valid_public_key(&public_key.to_string()));
+    }
+
+    #[test]
+    fn test_public_key_fingerprint_is_stable_grouped_and_key_specific() {
+        let (_, first) = generate_key_pair();
+        let (_, second) = generate_key_pair();
+        let first = first.to_string();
+        let fingerprint = public_key_fingerprint(&first);
+        assert_eq!(fingerprint, public_key_fingerprint(&first));
+        assert_eq!(
+            fingerprint.len(),
+            19,
+            "four groups of four plus three spaces"
+        );
+        assert!(fingerprint.split(' ').all(|group| {
+            group.len() == 4
+                && group
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase())
+        }));
+        assert_ne!(fingerprint, public_key_fingerprint(&second.to_string()));
     }
 
     #[test]

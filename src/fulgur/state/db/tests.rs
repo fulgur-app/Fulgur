@@ -2,8 +2,8 @@
 
 use super::StateDb;
 use crate::fulgur::state::persistence::{
-    RemoteHistory, SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState,
-    WindowsState,
+    DeviceKeyPins, RemoteHistory, SerializedRemoteSpec, SerializedWindowBounds, TabContent,
+    TabState, WindowState, WindowsState,
 };
 use crate::fulgur::sync::share::ShareOrigin;
 use time::macros::datetime;
@@ -753,4 +753,67 @@ fn remote_history_survives_reopening_the_database() {
         reopened.load_remote_history().expect("load history"),
         history
     );
+}
+
+/// Build device key pins from `(profile_id, device_id, public_key)` triples.
+fn device_key_pins(entries: &[(&str, &str, &str)]) -> DeviceKeyPins {
+    DeviceKeyPins::from_entries(
+        entries.iter().map(|(profile, device, key)| {
+            (profile.to_string(), device.to_string(), key.to_string())
+        }),
+    )
+}
+
+#[test]
+fn device_key_pins_roundtrip_and_reapplying_them_writes_nothing() {
+    let mut db = memory_db();
+    let pins = device_key_pins(&[("home", "d1", "age1a"), ("work", "d1", "age1b")]);
+    assert_eq!(db.apply_device_key_pins(&pins).expect("apply pins"), 2);
+    assert_eq!(db.load_device_key_pins().expect("load pins"), pins);
+    assert_eq!(db.apply_device_key_pins(&pins).expect("reapply pins"), 0);
+}
+
+#[test]
+fn trusting_a_new_key_rewrites_only_that_device() {
+    let mut db = memory_db();
+    db.apply_device_key_pins(&device_key_pins(&[
+        ("home", "d1", "age1a"),
+        ("home", "d2", "age1b"),
+    ]))
+    .expect("apply pins");
+    let retrusted = device_key_pins(&[("home", "d1", "age1new"), ("home", "d2", "age1b")]);
+    assert_eq!(
+        db.apply_device_key_pins(&retrusted).expect("apply new key"),
+        1
+    );
+    assert_eq!(db.load_device_key_pins().expect("load pins"), retrusted);
+}
+
+#[test]
+fn forgetting_a_profile_deletes_its_pins() {
+    let mut db = memory_db();
+    db.apply_device_key_pins(&device_key_pins(&[
+        ("home", "d1", "age1a"),
+        ("work", "d1", "age1b"),
+    ]))
+    .expect("apply pins");
+    let remaining = device_key_pins(&[("work", "d1", "age1b")]);
+    assert_eq!(
+        db.apply_device_key_pins(&remaining)
+            .expect("apply forgotten profile"),
+        1
+    );
+    assert_eq!(db.load_device_key_pins().expect("load pins"), remaining);
+}
+
+#[test]
+fn window_snapshots_and_remote_history_leave_the_device_key_pins_alone() {
+    let mut db = memory_db();
+    let pins = device_key_pins(&[("home", "d1", "age1a")]);
+    db.apply_device_key_pins(&pins).expect("apply pins");
+    db.apply(&WindowsState { windows: vec![] })
+        .expect("apply empty snapshot");
+    db.apply_remote_history(&RemoteHistory::default())
+        .expect("apply empty history");
+    assert_eq!(db.load_device_key_pins().expect("load pins"), pins);
 }
