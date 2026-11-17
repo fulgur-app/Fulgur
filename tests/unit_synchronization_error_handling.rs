@@ -81,6 +81,25 @@ fn test_handle_ureq_error_io_connection_aborted() {
 }
 
 #[test]
+fn test_handle_ureq_error_io_network_down_is_a_connection_failure() {
+    // An offline launch (Wi-Fi not up yet) surfaces as one of these kinds; they
+    // must map to a transient error so the initial synchronization is retried.
+    for kind in [
+        io::ErrorKind::NetworkUnreachable,
+        io::ErrorKind::NetworkDown,
+        io::ErrorKind::HostUnreachable,
+        io::ErrorKind::NotConnected,
+    ] {
+        let result = handle_ureq_error(mock_io_error(kind), "Test context");
+        assert!(
+            matches!(result, SynchronizationError::ConnectionFailed),
+            "{kind:?} should map to ConnectionFailed, got {result:?}"
+        );
+        assert!(result.is_transient());
+    }
+}
+
+#[test]
 fn test_handle_ureq_error_io_addr_not_available() {
     let error = mock_io_error(io::ErrorKind::AddrNotAvailable);
     let result = handle_ureq_error(error, "Test context");

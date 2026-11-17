@@ -1,10 +1,11 @@
 mod fetch;
+mod initial_sync;
 mod reader;
 mod status;
 
 use crate::fulgur::{
     settings::ServerProfile,
-    shared_state::AppNotification,
+    shared_state::{AppNotification, SyncState},
     sync::{
         access_token::{TokenStateManager, get_valid_token},
         synchronization::{
@@ -31,6 +32,7 @@ use std::{
 
 use super::types::SseEvent;
 use fetch::{fetch_pending_shares_into, fetch_single_share_into};
+pub use initial_sync::{InitialSyncReport, InitialSyncStage};
 use reader::{MAX_SSE_EVENT_DATA_BYTES, ReadError, read_line_with_timeout};
 use status::{
     SSE_SLOT_BUSY_RETRY_DELAY, is_handoff_retry, publish_connection_status, retry_status,
@@ -45,6 +47,7 @@ pub struct SseAgents {
 }
 
 /// Per-profile shared state the SSE worker needs to drain pending shares.
+#[derive(Clone)]
 pub struct SseShareState {
     /// Queue the UI tick drains incoming shares from.
     pub pending_shared_files: Arc<Mutex<Vec<SharedFileResponse>>>,
@@ -59,6 +62,36 @@ pub struct SseShareState {
     /// Sender for user-facing notifications, used to report shares rejected
     /// for a permanent download failure (see `SyncState::notification_tx`).
     pub notification_tx: UnboundedSender<AppNotification>,
+}
+
+impl SseShareState {
+    /// Share the queues and server facts of a profile's sync state.
+    ///
+    /// ### Arguments
+    /// - `sync_state`: The profile's shared sync state.
+    ///
+    /// ### Returns
+    /// - `Self`: Handles to the same queues and values as `sync_state`.
+    #[must_use]
+    pub fn from_sync_state(sync_state: &SyncState) -> Self {
+        Self {
+            pending_shared_files: Arc::clone(&sync_state.pending_shared_files),
+            pending_ack_share_ids: Arc::clone(&sync_state.pending_ack_share_ids),
+            max_file_size_bytes: Arc::clone(&sync_state.max_file_size_bytes),
+            server_version: Arc::clone(&sync_state.server_version),
+            notification_tx: sync_state.notification_tx.clone(),
+        }
+    }
+}
+
+/// Per-profile state an SSE worker authenticates with and publishes to.
+struct SseWorkerState {
+    /// The profile's connection status, updated on connection and disconnection.
+    connection_status: Arc<Mutex<SynchronizationStatus>>,
+    /// The profile's token state manager, used to authenticate the stream.
+    token_state: Arc<TokenStateManager>,
+    /// The profile's share queues and server-advertised facts.
+    share_state: SseShareState,
 }
 
 /// Connect to SSE (Server-Sent Events) endpoint on the sync server for real-time notifications
@@ -95,26 +128,96 @@ pub fn connect_sse(
     agents: &SseAgents,
     share_state: &SseShareState,
 ) -> Result<(), SynchronizationError> {
+    let state = SseWorkerState {
+        connection_status: sync_server_connection_status,
+        token_state: Arc::clone(token_state),
+        share_state: share_state.clone(),
+    };
+    spawn_sse_worker(profile, event_tx, hooks, agents, state, None)
+}
+
+/// Start a profile's SSE worker, which synchronizes with the server before
+/// opening its stream.
+///
+/// ### Arguments
+/// - `profile`: The server profile (URL, email, id) to connect to
+/// - `event_tx`: Channel sender for sending SSE events to the main thread
+/// - `hooks`: Shutdown flag polled by the thread and slot receiving its `JoinHandle`
+/// - `agents`: HTTP agents for the SSE stream and its REST calls
+/// - `initial_sync`: The synchronization to complete first; its sync state also
+///   supplies the connection status, token state and share queues
+///
+/// ### Errors
+/// - Returns a `SynchronizationError` if the profile has no server URL or the OS
+///   refuses to spawn the thread.
+///
+/// ### Returns
+/// - `Ok(())`: The worker thread was spawned and attached to the hooks
+/// - `Err(SynchronizationError)`: The server URL is missing or the spawn failed
+pub fn connect_sse_after_initial_sync(
+    profile: &ServerProfile,
+    event_tx: UnboundedSender<SseEvent>,
+    hooks: &WorkerHooks,
+    agents: &SseAgents,
+    initial_sync: InitialSyncStage,
+) -> Result<(), SynchronizationError> {
+    let sync_state = &initial_sync.sync_state;
+    let state = SseWorkerState {
+        connection_status: Arc::clone(&sync_state.connection_status),
+        token_state: Arc::clone(&sync_state.token_state),
+        share_state: SseShareState::from_sync_state(sync_state),
+    };
+    spawn_sse_worker(profile, event_tx, hooks, agents, state, Some(initial_sync))
+}
+
+/// Spawn the SSE worker thread and attach it to its `Worker` hooks.
+///
+/// ### Arguments
+/// - `profile`: The server profile to connect to
+/// - `event_tx`: Channel sender for sending SSE events to the main thread
+/// - `hooks`: Shutdown flag polled by the thread and slot receiving its `JoinHandle`
+/// - `agents`: HTTP agents for the SSE stream and its REST calls
+/// - `state`: Per-profile state the worker authenticates with and publishes to
+/// - `initial_sync`: Synchronization to complete before opening the stream, if any
+///
+/// ### Errors
+/// - Returns a `SynchronizationError` if the profile has no server URL or the OS
+///   refuses to spawn the thread.
+///
+/// ### Returns
+/// - `Ok(())`: The worker thread was spawned and attached to the hooks
+/// - `Err(SynchronizationError)`: The server URL is missing or the spawn failed
+fn spawn_sse_worker(
+    profile: &ServerProfile,
+    event_tx: UnboundedSender<SseEvent>,
+    hooks: &WorkerHooks,
+    agents: &SseAgents,
+    state: SseWorkerState,
+    initial_sync: Option<InitialSyncStage>,
+) -> Result<(), SynchronizationError> {
     let server_url = profile
         .server_url
         .clone()
         .ok_or(SynchronizationError::ServerUrlMissing)?;
     let sse_url = format!("{server_url}/api/sse");
     let profile_clone = profile.clone();
-    let token_state_clone = Arc::clone(token_state);
     let http_agent_clone = Arc::clone(&agents.rest);
     let sse_http_agent_clone = Arc::clone(&agents.stream);
-    let share_state_clone = SseShareState {
-        pending_shared_files: Arc::clone(&share_state.pending_shared_files),
-        pending_ack_share_ids: Arc::clone(&share_state.pending_ack_share_ids),
-        max_file_size_bytes: Arc::clone(&share_state.max_file_size_bytes),
-        server_version: Arc::clone(&share_state.server_version),
-        notification_tx: share_state.notification_tx.clone(),
-    };
+    let SseWorkerState {
+        connection_status: sync_server_connection_status,
+        token_state: token_state_clone,
+        share_state: share_state_clone,
+    } = state;
     let shutdown_flag = Arc::clone(&hooks.shutdown_flag);
     let handle = thread::Builder::new()
         .name(format!("fulgur-sse-{}", profile.name))
         .spawn(move || {
+        if let Some(stage) = initial_sync
+            && !stage.run(&profile_clone, &http_agent_clone, &shutdown_flag, &event_tx)
+        {
+            log::info!("SSE worker for profile '{}' stopping before its stream", profile_clone.name);
+            return;
+        }
         let mut backoff = BackoffCalculator::default_settings();
         let mut consecutive_failures: u32 = 0;
         let mut handoff_attempts: u32 = 0;
