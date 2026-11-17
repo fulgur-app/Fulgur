@@ -37,9 +37,7 @@ jobs:
         run: |
           gh release download "$TAG" --repo "$REPO" --pattern "SHA256SUMS.txt" --dir .
           DMG="Fulgur-v${VERSION}-macos-aarch64.dmg"
-          # SHA256SUMS.txt mixes path-prefixed (Unix) and bare (Windows) names,
-          # so match on the basename being a substring of the filename field.
-          SHA=$(awk -v f="$DMG" 'index($2, f) { print $1 }' SHA256SUMS.txt | head -1)
+          SHA=$(awk -v f="$DMG" '$2 == f { print $1 }' SHA256SUMS.txt | head -1)
           if [ -z "$SHA" ]; then
             echo "::error::Could not find a SHA256 for $DMG in SHA256SUMS.txt"
             cat SHA256SUMS.txt
