@@ -1,4 +1,4 @@
-use super::begin::{InitialSyncOutcome, initial_synchronization, queue_pending_shares};
+use super::begin::{InitialSyncOutcome, queue_pending_shares};
 use super::error::SynchronizationStatus;
 use super::limits::store_server_max_file_size;
 use super::version::{
@@ -8,7 +8,9 @@ use super::version::{
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::{AppNotification, SyncState};
 use crate::fulgur::sync::share::rejected_share_notification;
-use crate::fulgur::sync::sse::{SSE_WORKER_JOIN_TIMEOUT, SseAgents, SseShareState, connect_sse};
+use crate::fulgur::sync::sse::{
+    InitialSyncStage, SSE_WORKER_JOIN_TIMEOUT, SseAgents, connect_sse_after_initial_sync,
+};
 use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use crate::fulgur::utils::worker::{Worker, WorkerHooks};
 use gpui_kit::component::notification::NotificationType;
@@ -142,66 +144,35 @@ fn run_profile_bootstrap(
         );
         return;
     }
-    match initial_synchronization(
-        profile,
-        &sync_state.token_state,
-        http_agent,
-        &sync_state.pending_ack_share_ids,
-    ) {
-        Ok(outcome) => {
-            log::info!("Profile '{}': connected to sync server", profile.name);
-            set_sync_server_connection_status(
-                &sync_state.connection_status,
-                SynchronizationStatus::Connected,
-            );
-            let (_, notifications) = apply_initial_sync_outcome(sync_state, &profile.name, outcome);
-            for notification in notifications {
-                sync_state.notify(notification);
-            }
-            if let (Some(tx), Some(hooks)) = (sse_tx, sse_worker_hooks) {
-                log::info!(
-                    "Profile '{}': starting SSE connection for real-time updates",
-                    profile.name
-                );
-                let agents = SseAgents {
-                    rest: Arc::clone(http_agent),
-                    stream: Arc::clone(sse_http_agent),
-                };
-                let share_state = SseShareState {
-                    pending_shared_files: Arc::clone(&sync_state.pending_shared_files),
-                    pending_ack_share_ids: Arc::clone(&sync_state.pending_ack_share_ids),
-                    max_file_size_bytes: Arc::clone(&sync_state.max_file_size_bytes),
-                    server_version: Arc::clone(&sync_state.server_version),
-                    notification_tx: sync_state.notification_tx.clone(),
-                };
-                if let Err(e) = connect_sse(
-                    profile,
-                    tx,
-                    &hooks,
-                    sync_state.connection_status.clone(),
-                    &sync_state.token_state,
-                    &agents,
-                    &share_state,
-                ) {
-                    log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
-                }
-            } else {
-                log::warn!(
-                    "Profile '{}': SSE channels not available, skipping SSE start",
-                    profile.name
-                );
-            }
-        }
-        Err(e) => {
-            log::error!(
-                "Profile '{}': initial synchronization failed: {e}",
-                profile.name
-            );
-            set_sync_server_connection_status(
-                &sync_state.connection_status,
-                SynchronizationStatus::Disconnected,
-            );
-        }
+    let (Some(tx), Some(hooks)) = (sse_tx, sse_worker_hooks) else {
+        log::warn!(
+            "Profile '{}': SSE channels not available, not connecting",
+            profile.name
+        );
+        set_sync_server_connection_status(
+            &sync_state.connection_status,
+            SynchronizationStatus::Disconnected,
+        );
+        return;
+    };
+    log::info!(
+        "Profile '{}': starting the sync worker for real-time updates",
+        profile.name
+    );
+    let agents = SseAgents {
+        rest: Arc::clone(http_agent),
+        stream: Arc::clone(sse_http_agent),
+    };
+    let initial_sync = InitialSyncStage {
+        sync_state: Arc::clone(sync_state),
+        first_attempt_tx: None,
+    };
+    if let Err(e) = connect_sse_after_initial_sync(profile, tx, &hooks, &agents, initial_sync) {
+        log::error!("Profile '{}': failed to start SSE: {e}", profile.name);
+        set_sync_server_connection_status(
+            &sync_state.connection_status,
+            SynchronizationStatus::from_error(&e),
+        );
     }
 }
 

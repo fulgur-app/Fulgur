@@ -29,11 +29,14 @@ pub fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationEr
         ureq::Error::Io(io_error) => {
             log::error!("{context} (IO): {io_error}");
             match io_error.kind() {
-                std::io::ErrorKind::ConnectionRefused => SynchronizationError::ConnectionFailed,
                 std::io::ErrorKind::TimedOut => SynchronizationError::Timeout(io_error.to_string()),
-                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => {
-                    SynchronizationError::ConnectionFailed
-                }
+                std::io::ErrorKind::ConnectionRefused
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::NetworkUnreachable
+                | std::io::ErrorKind::NetworkDown
+                | std::io::ErrorKind::HostUnreachable
+                | std::io::ErrorKind::NotConnected => SynchronizationError::ConnectionFailed,
                 std::io::ErrorKind::AddrNotAvailable => SynchronizationError::HostNotFound,
                 _ => SynchronizationError::Other(io_error.to_string()),
             }
@@ -57,7 +60,7 @@ pub fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationEr
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SynchronizationError {
     AuthenticationFailed,
     BadRequest,
@@ -134,6 +137,24 @@ impl fmt::Display for SynchronizationError {
                 limit_bytes / 1024
             ),
             SynchronizationError::Timeout(timeout) => write!(f, "Timeout: {timeout}"),
+        }
+    }
+}
+
+impl SynchronizationError {
+    /// Tell whether the same request is worth retrying later unchanged.
+    ///
+    /// ### Returns
+    /// - `true`: The failure is transient; retry with backoff.
+    /// - `false`: The failure is permanent until the user changes something.
+    #[must_use]
+    pub fn is_transient(&self) -> bool {
+        match self {
+            SynchronizationError::ConnectionFailed
+            | SynchronizationError::HostNotFound
+            | SynchronizationError::Timeout(_) => true,
+            SynchronizationError::ServerError(code) => *code >= 500 || *code == 408 || *code == 429,
+            _ => false,
         }
     }
 }
