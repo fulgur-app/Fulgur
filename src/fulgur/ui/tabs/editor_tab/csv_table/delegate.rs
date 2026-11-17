@@ -103,7 +103,13 @@ impl TableDelegate for CsvTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        if Self::move_column_in(&mut self.headers, &mut self.rows, col_ix, to_ix) {
+        if Self::move_column_in(
+            &mut self.headers,
+            &mut self.header_len,
+            &mut self.rows,
+            col_ix,
+            to_ix,
+        ) {
             self.commit_and_refresh(window, cx);
         }
     }

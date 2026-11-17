@@ -17,7 +17,7 @@ use gpui_kit::component::{
 use gpui_kit::{App, Context, Entity, SharedString, Window, px};
 
 use super::replace_editor_text_undoable;
-use crate::fulgur::files::csv_support::{CsvData, CsvDialect, serialize_csv};
+use crate::fulgur::files::csv_support::{CsvData, CsvDialect, header_record, serialize_csv};
 
 /// Fixed width of the synthetic row-number column.
 const ROW_NUMBER_COLUMN_WIDTH: f32 = 52.0;
@@ -52,7 +52,11 @@ enum CsvSelection {
 
 /// A [`TableDelegate`] that renders and edits CSV data over a canonical buffer.
 pub struct CsvTableDelegate {
+    /// The column headers, padded to the widest row.
     headers: Vec<String>,
+    /// The header record's field count in the document, kept in step with
+    /// column edits so the padding in `headers` is never written back.
+    header_len: usize,
     rows: Vec<Vec<String>>,
     columns: Vec<Column>,
     dialect: CsvDialect,
@@ -88,6 +92,7 @@ impl CsvTableDelegate {
         let columns = Self::compute_columns(&data.headers, &data.rows);
         Self {
             headers: data.headers,
+            header_len: data.header_len,
             rows: data.rows,
             columns,
             dialect,
@@ -242,7 +247,8 @@ impl CsvTableDelegate {
     /// - `window`: The active window
     /// - `cx`: The table state context
     fn commit_to_buffer(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {
-        let text = match serialize_csv(&self.headers, &self.rows, &self.dialect) {
+        let headers = header_record(&self.headers, self.header_len);
+        let text = match serialize_csv(headers, &self.rows, &self.dialect) {
             Ok(text) => text,
             Err(error) => {
                 log::error!("Refusing to commit CSV edit, serialization failed: {error}");
