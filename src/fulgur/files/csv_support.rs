@@ -10,9 +10,14 @@ const CANDIDATE_DELIMITERS: [u8; 3] = *b",;\t";
 const UTF8_BOM: &str = "\u{feff}";
 
 /// A rectangular view of a CSV file: a header row plus data rows.
+///
+/// `headers` is padded with empty cells to the widest row so every column has
+/// a header; `header_len` keeps the field count of the header record as found
+/// in the document, so the padding is not written back (see [`header_record`]).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CsvData {
     pub headers: Vec<String>,
+    pub header_len: usize,
     pub rows: Vec<Vec<String>>,
 }
 
@@ -159,10 +164,12 @@ pub fn parse_csv(text: &str, delimiter: u8) -> CsvParseOutcome {
 
     let width = records.iter().map(Vec::len).max().unwrap_or(0);
     let mut headers = records.remove(0);
+    let header_len = headers.len();
     headers.resize(width, String::new());
     CsvParseOutcome {
         data: CsvData {
             headers,
+            header_len,
             rows: records,
         },
         dialect,
@@ -170,10 +177,30 @@ pub fn parse_csv(text: &str, delimiter: u8) -> CsvParseOutcome {
     }
 }
 
+/// The header fields to write back to the document: the first `header_len`
+/// cells, extended to the last non-empty cell so a header typed into a padded
+/// column is never dropped.
+///
+/// ### Arguments
+/// - `headers`: The padded column headers
+/// - `header_len`: The header record's field count in the source document
+///
+/// ### Returns
+/// - `&[String]`: The leading slice of `headers` that forms the header record
+#[must_use]
+pub fn header_record(headers: &[String], header_len: usize) -> &[String] {
+    let last_value_end = headers
+        .iter()
+        .rposition(|header| !header.is_empty())
+        .map_or(0, |index| index + 1);
+    &headers[..header_len.min(headers.len()).max(last_value_end)]
+}
+
 /// Serialize a [`CsvData`] model back to CSV text.
 ///
 /// ### Arguments
-/// - `headers`: The column headers, written as the first record
+/// - `headers`: The column headers, written as the first record; pass a padded
+///   header row through [`header_record`] first
 /// - `rows`: The data rows
 /// - `dialect`: The delimiter, BOM, line terminator, and final newline to write
 ///
@@ -228,7 +255,9 @@ pub fn serialize_csv(
 
 #[cfg(test)]
 mod tests {
-    use super::{CsvDialect, CsvParseOutcome, detect_delimiter, parse_csv, serialize_csv};
+    use super::{
+        CsvDialect, CsvParseOutcome, detect_delimiter, header_record, parse_csv, serialize_csv,
+    };
 
     #[test]
     fn test_detect_delimiter_comma() {
@@ -282,7 +311,18 @@ mod tests {
     fn test_parse_extends_width_for_long_rows() {
         let outcome = parse_csv("a,b\n1,2,3\n", b',');
         assert_eq!(outcome.data.headers, vec!["a", "b", ""]);
+        assert_eq!(outcome.data.header_len, 2);
         assert_eq!(outcome.data.rows, vec![vec!["1", "2", "3"]]);
+    }
+
+    #[test]
+    fn test_header_record_drops_padding_but_keeps_values() {
+        let headers = vec!["a".to_string(), String::new(), String::new()];
+        assert_eq!(header_record(&headers, 1), &headers[..1]);
+        assert_eq!(header_record(&headers, 3), &headers[..]);
+
+        let headers = vec!["a".to_string(), String::new(), "c".to_string()];
+        assert_eq!(header_record(&headers, 1), &headers[..]);
     }
 
     #[test]
@@ -349,7 +389,8 @@ mod tests {
     /// Parse `text`, then serialize the unchanged model with the detected dialect.
     fn roundtrip(text: &str) -> Result<String, String> {
         let outcome = parse_csv(text, detect_delimiter(text));
-        serialize_csv(&outcome.data.headers, &outcome.data.rows, &outcome.dialect)
+        let headers = header_record(&outcome.data.headers, outcome.data.header_len);
+        serialize_csv(headers, &outcome.data.rows, &outcome.dialect)
     }
 
     #[test]
@@ -386,6 +427,18 @@ mod tests {
     #[test]
     fn test_roundtrip_short_rows_are_not_padded() {
         let text = "a,b\n1\n2,\n";
+        assert_eq!(roundtrip(text), Ok(text.to_string()));
+    }
+
+    #[test]
+    fn test_roundtrip_short_header_is_not_padded() {
+        let text = "a,b\n1,2,3\n";
+        assert_eq!(roundtrip(text), Ok(text.to_string()));
+    }
+
+    #[test]
+    fn test_roundtrip_keeps_empty_trailing_header_field() {
+        let text = "a,b,\n1,2,3\n";
         assert_eq!(roundtrip(text), Ok(text.to_string()));
     }
 

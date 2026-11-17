@@ -1,5 +1,5 @@
 use super::{CsvSelection, CsvTableDelegate, EditTarget};
-use crate::fulgur::files::csv_support::{CsvDialect, serialize_csv};
+use crate::fulgur::files::csv_support::{CsvDialect, header_record, serialize_csv};
 
 /// Build a `Vec<String>` from string literals for terser test fixtures.
 fn row(values: &[&str]) -> Vec<String> {
@@ -187,8 +187,9 @@ fn test_delete_row_in_selected_last_and_empty() {
 #[test]
 fn test_insert_column_at_in_leaves_short_rows_short() {
     let mut headers = row(&["a", "b", "c"]);
+    let mut header_len = headers.len();
     let mut rows = vec![row(&["1", "2", "3"]), row(&["4", "5"]), row(&["6"])];
-    CsvTableDelegate::insert_column_at_in(&mut headers, &mut rows, 1);
+    CsvTableDelegate::insert_column_at_in(&mut headers, &mut header_len, &mut rows, 1);
     assert_eq!(headers, row(&["a", "", "b", "c"]));
     assert_eq!(rows[0], row(&["1", "", "2", "3"]));
     assert_eq!(rows[1], row(&["4", "", "5"]));
@@ -196,7 +197,7 @@ fn test_insert_column_at_in_leaves_short_rows_short() {
     assert_eq!(rows[2], row(&["6"]));
 
     // Appending a column grows full rows only.
-    CsvTableDelegate::insert_column_at_in(&mut headers, &mut rows, 4);
+    CsvTableDelegate::insert_column_at_in(&mut headers, &mut header_len, &mut rows, 4);
     assert_eq!(rows[0], row(&["1", "", "2", "3", ""]));
     assert_eq!(rows[1], row(&["4", "", "5"]));
 }
@@ -204,20 +205,25 @@ fn test_insert_column_at_in_leaves_short_rows_short() {
 #[test]
 fn test_insert_column_before_and_after_resolve_selection() {
     let mut headers = row(&["a", "b"]);
+    let mut header_len = headers.len();
     let mut rows = vec![row(&["1", "2"])];
-    CsvTableDelegate::insert_column_before_in(&mut headers, &mut rows, Some(1));
+    CsvTableDelegate::insert_column_before_in(&mut headers, &mut header_len, &mut rows, Some(1));
     assert_eq!(headers, row(&["a", "", "b"]));
     assert_eq!(rows[0], row(&["1", "", "2"]));
 
     let mut headers = row(&["a", "b"]);
+
+    let mut header_len = headers.len();
     let mut rows = vec![row(&["1", "2"])];
-    CsvTableDelegate::insert_column_after_in(&mut headers, &mut rows, Some(0));
+    CsvTableDelegate::insert_column_after_in(&mut headers, &mut header_len, &mut rows, Some(0));
     assert_eq!(headers, row(&["a", "", "b"]));
     assert_eq!(rows[0], row(&["1", "", "2"]));
 
     let mut headers = row(&["a", "b"]);
+
+    let mut header_len = headers.len();
     let mut rows = vec![row(&["1", "2"])];
-    CsvTableDelegate::insert_column_before_in(&mut headers, &mut rows, None);
+    CsvTableDelegate::insert_column_before_in(&mut headers, &mut header_len, &mut rows, None);
     assert_eq!(headers, row(&["a", "b", ""]));
     assert_eq!(rows[0], row(&["1", "2", ""]));
 }
@@ -225,9 +231,11 @@ fn test_insert_column_before_and_after_resolve_selection() {
 #[test]
 fn test_delete_column_in_selected_last_and_empty() {
     let mut headers = row(&["a", "b", "c"]);
+    let mut header_len = headers.len();
     let mut rows = vec![row(&["1", "2", "3"])];
     assert!(CsvTableDelegate::delete_column_in(
         &mut headers,
+        &mut header_len,
         &mut rows,
         Some(1)
     ));
@@ -236,9 +244,11 @@ fn test_delete_column_in_selected_last_and_empty() {
 
     // None deletes the last column.
     let mut headers = row(&["a", "b", "c"]);
+    let mut header_len = headers.len();
     let mut rows = vec![row(&["1", "2", "3"])];
     assert!(CsvTableDelegate::delete_column_in(
         &mut headers,
+        &mut header_len,
         &mut rows,
         None
     ));
@@ -246,9 +256,12 @@ fn test_delete_column_in_selected_last_and_empty() {
     assert_eq!(rows[0], row(&["1", "2"]));
 
     let mut headers: Vec<String> = Vec::new();
+
+    let mut header_len = headers.len();
     let mut rows: Vec<Vec<String>> = Vec::new();
     assert!(!CsvTableDelegate::delete_column_in(
         &mut headers,
+        &mut header_len,
         &mut rows,
         None
     ));
@@ -257,10 +270,12 @@ fn test_delete_column_in_selected_last_and_empty() {
 #[test]
 fn test_move_column_in_reorders_header_and_cells() {
     let mut headers = row(&["a", "b", "c"]);
+    let mut header_len = headers.len();
     let mut rows = vec![row(&["1", "2", "3"])];
     // Grid index 1 is data column 0; move it after data column 2.
     assert!(CsvTableDelegate::move_column_in(
         &mut headers,
+        &mut header_len,
         &mut rows,
         1,
         3
@@ -272,10 +287,12 @@ fn test_move_column_in_reorders_header_and_cells() {
 #[test]
 fn test_move_column_in_rejects_row_number_column_and_noops() {
     let (mut headers, mut rows) = sample();
+    let mut header_len = headers.len();
 
     // The row-number column (grid index 0) cannot be moved.
     assert!(!CsvTableDelegate::move_column_in(
         &mut headers,
+        &mut header_len,
         &mut rows,
         0,
         2
@@ -283,6 +300,7 @@ fn test_move_column_in_rejects_row_number_column_and_noops() {
     // Out-of-bounds source.
     assert!(!CsvTableDelegate::move_column_in(
         &mut headers,
+        &mut header_len,
         &mut rows,
         9,
         1
@@ -290,6 +308,7 @@ fn test_move_column_in_rejects_row_number_column_and_noops() {
     // Same source and destination.
     assert!(!CsvTableDelegate::move_column_in(
         &mut headers,
+        &mut header_len,
         &mut rows,
         1,
         1
@@ -301,10 +320,12 @@ fn test_move_column_in_rejects_row_number_column_and_noops() {
 #[test]
 fn test_move_column_in_keeps_short_rows_aligned() {
     let mut headers = row(&["a", "b", "c"]);
+    let mut header_len = headers.len();
     let mut rows = vec![row(&["1"]), row(&["2", "3"]), row(&["4", "", "5"])];
     // Move data column 2 to the front.
     assert!(CsvTableDelegate::move_column_in(
         &mut headers,
+        &mut header_len,
         &mut rows,
         3,
         1
@@ -316,9 +337,11 @@ fn test_move_column_in_keeps_short_rows_aligned() {
 
     // Moving a value past a short row's end extends it.
     let mut headers = row(&["a", "b", "c"]);
+    let mut header_len = headers.len();
     let mut rows = vec![row(&["1"])];
     assert!(CsvTableDelegate::move_column_in(
         &mut headers,
+        &mut header_len,
         &mut rows,
         1,
         3
@@ -327,9 +350,11 @@ fn test_move_column_in_keeps_short_rows_aligned() {
 
     // Moving among a short row's missing fields leaves it untouched.
     let mut headers = row(&["a", "b", "c"]);
+    let mut header_len = headers.len();
     let mut rows = vec![row(&["1"])];
     assert!(CsvTableDelegate::move_column_in(
         &mut headers,
+        &mut header_len,
         &mut rows,
         3,
         2
@@ -371,6 +396,119 @@ fn test_edits_round_trip_through_serialize_csv() {
     assert_eq!(
         serialize_csv(&headers, &rows, &CsvDialect::default()),
         Ok("a,b\n1,2\n5,\n3,4\n".to_string())
+    );
+}
+
+/// A model parsed from `a,b\n1,2,3\n`: the header record has two fields and
+/// is padded to the three-field row.
+fn padded_header_sample() -> (Vec<String>, usize, Vec<Vec<String>>) {
+    (row(&["a", "b", ""]), 2, vec![row(&["1", "2", "3"])])
+}
+
+/// Serialize a model, writing only the header record's fields.
+fn serialize_model(headers: &[String], header_len: usize, rows: &[Vec<String>]) -> String {
+    serialize_csv(
+        header_record(headers, header_len),
+        rows,
+        &CsvDialect::default(),
+    )
+    .expect("serialization succeeds")
+}
+
+#[test]
+fn test_cell_edit_does_not_pad_short_header() {
+    let (mut headers, header_len, mut rows) = padded_header_sample();
+    CsvTableDelegate::apply_edit_in(
+        &mut headers,
+        &mut rows,
+        EditTarget::Cell(0, 2),
+        "x".to_string(),
+    );
+    assert_eq!(serialize_model(&headers, header_len, &rows), "a,b\n1,2,x\n");
+}
+
+#[test]
+fn test_header_typed_into_padded_column_is_written() {
+    let (mut headers, header_len, mut rows) = padded_header_sample();
+    CsvTableDelegate::apply_edit_in(
+        &mut headers,
+        &mut rows,
+        EditTarget::Header(2),
+        "c".to_string(),
+    );
+    assert_eq!(
+        serialize_model(&headers, header_len, &rows),
+        "a,b,c\n1,2,3\n"
+    );
+}
+
+#[test]
+fn test_column_insert_and_delete_keep_short_header_in_step() {
+    let (mut headers, mut header_len, mut rows) = padded_header_sample();
+    CsvTableDelegate::insert_column_at_in(&mut headers, &mut header_len, &mut rows, 0);
+    assert_eq!(header_len, 3);
+    assert_eq!(
+        serialize_model(&headers, header_len, &rows),
+        ",a,b\n,1,2,3\n"
+    );
+
+    // Appending past the header record leaves it short.
+    let (mut headers, mut header_len, mut rows) = padded_header_sample();
+    CsvTableDelegate::insert_column_at_in(&mut headers, &mut header_len, &mut rows, 3);
+    assert_eq!(
+        serialize_model(&headers, header_len, &rows),
+        "a,b\n1,2,3,\n"
+    );
+
+    // Deleting the padded column leaves the header record untouched.
+    let (mut headers, mut header_len, mut rows) = padded_header_sample();
+    assert!(CsvTableDelegate::delete_column_in(
+        &mut headers,
+        &mut header_len,
+        &mut rows,
+        Some(2)
+    ));
+    assert_eq!(serialize_model(&headers, header_len, &rows), "a,b\n1,2\n");
+
+    // Deleting a real header field shortens the header record.
+    let (mut headers, mut header_len, mut rows) = padded_header_sample();
+    assert!(CsvTableDelegate::delete_column_in(
+        &mut headers,
+        &mut header_len,
+        &mut rows,
+        Some(0)
+    ));
+    assert_eq!(serialize_model(&headers, header_len, &rows), "b\n2,3\n");
+}
+
+#[test]
+fn test_column_move_keeps_short_header_in_step() {
+    // Moving the padded column to the front brings it inside the header record.
+    let (mut headers, mut header_len, mut rows) = padded_header_sample();
+    assert!(CsvTableDelegate::move_column_in(
+        &mut headers,
+        &mut header_len,
+        &mut rows,
+        3,
+        1
+    ));
+    assert_eq!(
+        serialize_model(&headers, header_len, &rows),
+        ",a,b\n3,1,2\n"
+    );
+
+    // Moving a named header past the padding keeps it, and the gap before it.
+    let (mut headers, mut header_len, mut rows) = padded_header_sample();
+    assert!(CsvTableDelegate::move_column_in(
+        &mut headers,
+        &mut header_len,
+        &mut rows,
+        1,
+        3
+    ));
+    assert_eq!(
+        serialize_model(&headers, header_len, &rows),
+        "b,,a\n2,3,1\n"
     );
 }
 
