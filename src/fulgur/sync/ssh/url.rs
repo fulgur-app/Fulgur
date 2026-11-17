@@ -16,6 +16,24 @@ pub struct RemoteSpec {
     pub password_in_url: Option<Zeroizing<String>>,
 }
 
+impl RemoteSpec {
+    /// Check whether two specs point at the same remote file for the same login.
+    ///
+    /// ### Arguments
+    /// - `other`: The spec to compare with
+    ///
+    /// ### Returns
+    /// - `true`: Host, port, user and path are all equal
+    /// - `false`: The specs differ in at least one of them
+    #[must_use]
+    pub fn same_location(&self, other: &RemoteSpec) -> bool {
+        self.host == other.host
+            && self.port == other.port
+            && self.user == other.user
+            && self.path == other.path
+    }
+}
+
 /// Build a stable `ssh://` URL from a `RemoteSpec` for persistence and recents.
 ///
 /// ### Description

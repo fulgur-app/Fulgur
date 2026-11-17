@@ -8,6 +8,7 @@ use crate::fulgur::{
     editor_tab::TabLocation,
     shared_state::SharedAppState,
     state::{StateDb, StateWriter},
+    sync::ssh::url::RemoteSpec,
 };
 use gpui_kit::base::actions::{Cancel, Confirm};
 use gpui_kit::component::{WindowExt, input::InputEvent, notification::NotificationType};
@@ -1857,4 +1858,118 @@ fn test_window_count_ignores_windows_whose_fulgur_was_released(cx: &mut TestAppC
         );
         assert_eq!(manager.get_window_name(remaining_window_id), None);
     });
+}
+
+/// Build the remote location used by the cross-window remote lookup tests.
+///
+/// ### Returns
+/// - `RemoteSpec`: A remote file with its user resolved
+fn shared_remote_spec() -> RemoteSpec {
+    RemoteSpec {
+        host: "nas".to_string(),
+        port: 22,
+        user: Some("alice".to_string()),
+        path: "/etc/app.conf".to_string(),
+        password_in_url: None,
+    }
+}
+
+/// Point the first tab of a window at a remote location.
+///
+/// ### Arguments
+/// - `cx`: The GPUI test application context
+/// - `fulgur`: The window whose first tab is updated
+/// - `spec`: The remote location to assign
+fn set_first_tab_remote(cx: &mut TestAppContext, fulgur: &Entity<Fulgur>, spec: &RemoteSpec) {
+    cx.update(|cx| {
+        fulgur.update(cx, |fulgur, cx| {
+            let tab = fulgur
+                .tabs
+                .first()
+                .expect("expected initial editor tab")
+                .clone();
+            tab.update(cx, |tab, _| {
+                if let Some(editor) = tab.as_editor_mut() {
+                    editor.location = TabLocation::Remote(spec.clone());
+                }
+            });
+        });
+    });
+}
+
+#[gpui_kit::test]
+fn test_find_window_with_remote_spec_matches_other_windows_only(cx: &mut TestAppContext) {
+    setup_test_globals(cx);
+    let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
+    let (other_window_id, other_fulgur) = open_window_with_fulgur(cx);
+    let spec = shared_remote_spec();
+    set_first_tab_remote(cx, &other_fulgur, &spec);
+    cx.update(|cx| {
+        let mut manager = WindowManager::new();
+        manager.register(current_window_id, current_fulgur.downgrade());
+        manager.register(other_window_id, other_fulgur.downgrade());
+        assert_eq!(
+            manager.find_window_with_remote_spec(&spec, current_window_id, cx),
+            Some(other_window_id)
+        );
+        assert_eq!(
+            manager.find_window_with_remote_spec(&spec, other_window_id, cx),
+            None,
+            "the current window must be ignored during cross-window lookup"
+        );
+        let other_user = RemoteSpec {
+            user: Some("bob".to_string()),
+            ..shared_remote_spec()
+        };
+        assert_eq!(
+            manager.find_window_with_remote_spec(&other_user, current_window_id, cx),
+            None,
+            "the same path under another login is a different file"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn test_do_open_remote_file_does_not_open_duplicate_when_open_in_another_window(
+    cx: &mut TestAppContext,
+) {
+    setup_test_globals(cx);
+    let (current_window_id, current_fulgur) = open_window_with_fulgur(cx);
+    let (other_window_id, other_fulgur) = open_window_with_fulgur(cx);
+    register_window_in_global_manager(cx, current_window_id, &current_fulgur);
+    register_window_in_global_manager(cx, other_window_id, &other_fulgur);
+    let spec = shared_remote_spec();
+    set_first_tab_remote(cx, &other_fulgur, &spec);
+    let tab_count_before = cx.update(|cx| current_fulgur.read(cx).tabs.len());
+
+    let displayed = cx.update(|cx| {
+        let handle = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() == current_window_id)
+            .expect("failed to locate target test window by id");
+        handle
+            .update(cx, |_, window, cx| {
+                current_fulgur.update(cx, |this, cx| {
+                    this.do_open_remote_file(window, cx, spec.clone());
+                });
+                window.notifications(cx).len()
+            })
+            .expect("failed to run do_open_remote_file on test window")
+    });
+    cx.run_until_parked();
+
+    let (tab_count_after, connection_started) = cx.update(|cx| {
+        let fulgur = current_fulgur.read(cx);
+        (
+            fulgur.tabs.len(),
+            fulgur.last_failed_remote_open_url.is_some(),
+        )
+    });
+    assert_eq!(tab_count_after, tab_count_before);
+    assert!(
+        !connection_started,
+        "a remote file open in another window must not be loaded again"
+    );
+    assert_eq!(displayed, 1, "the user must be told where the file is open");
 }
