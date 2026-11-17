@@ -1,5 +1,6 @@
 //! `SQLite`-backed store for the window/tab session state.
 
+mod device_key_pins;
 mod legacy;
 mod paths;
 mod read;

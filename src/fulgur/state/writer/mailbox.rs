@@ -1,16 +1,18 @@
-use crate::fulgur::state::persistence::{RemoteHistory, WindowsState};
+use crate::fulgur::state::persistence::{DeviceKeyPins, RemoteHistory, WindowsState};
 use parking_lot::Mutex;
 
-/// Coalescing hand-off for asynchronous snapshots and remote histories.
+/// Coalescing hand-off for asynchronous snapshots, remote histories and device key pins.
 ///
 /// Only the newest snapshot matters, since each one describes the whole session,
 /// so a burst collapses into a single write instead of queueing one snapshot per
 /// request. The remote history follows the same rule in its own slot, so a
-/// window snapshot never overwrites a history waiting to be written.
+/// window snapshot never overwrites a history waiting to be written. Device
+/// key pins get a third slot under the same rule.
 #[derive(Default)]
 pub(super) struct SnapshotMailbox {
     pending: Mutex<Option<WindowsState>>,
     remote_history: Mutex<Option<RemoteHistory>>,
+    device_key_pins: Mutex<Option<DeviceKeyPins>>,
 }
 
 impl SnapshotMailbox {
@@ -54,5 +56,22 @@ impl SnapshotMailbox {
     /// - `None`: No history was waiting
     pub(super) fn take_remote_history(&self) -> Option<RemoteHistory> {
         self.remote_history.lock().take()
+    }
+
+    /// Store device key pins, replacing any pins already waiting.
+    ///
+    /// ### Arguments
+    /// - `pins`: The pins to hand to the writer thread.
+    pub(super) fn put_device_key_pins(&self, pins: DeviceKeyPins) {
+        *self.device_key_pins.lock() = Some(pins);
+    }
+
+    /// Take the waiting device key pins, leaving their slot empty.
+    ///
+    /// ### Returns
+    /// - `Some(DeviceKeyPins)`: The pins that were waiting
+    /// - `None`: No pins were waiting
+    pub(super) fn take_device_key_pins(&self) -> Option<DeviceKeyPins> {
+        self.device_key_pins.lock().take()
     }
 }
