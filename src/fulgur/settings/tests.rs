@@ -1,6 +1,7 @@
 use crate::fulgur::settings::{
     AppSettings, EditorSettings, RecentFiles, ServerProfile, Settings, TitleBarStyle,
 };
+use crate::fulgur::utils::portable::PortableLayout;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -1174,4 +1175,44 @@ fn title_bar_style_survives_a_serde_round_trip() {
         restored.app_settings.title_bar_style,
         TitleBarStyle::Unified
     );
+}
+
+#[test]
+fn portable_recent_files_are_stored_relative_and_follow_a_moved_drive() {
+    let base = std::env::temp_dir();
+    let stick = PortableLayout::new(base.join("STICK").join("Fulgur"), base.join("STICK"));
+    let moved = PortableLayout::new(base.join("MOVED").join("Fulgur"), base.join("MOVED"));
+    let on_stick = base.join("STICK").join("Docs").join("notes.md");
+    let elsewhere = base.join("HOME").join("hosts");
+    let mut settings = Settings::new();
+    settings.add_recent_file(elsewhere.clone());
+    settings.add_recent_file(on_stick);
+
+    let json = settings.to_settings_json(Some(&stick)).unwrap();
+    let raw: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let restored = Settings::from_settings_json(&json, Some(&moved)).unwrap();
+
+    assert_eq!(
+        raw["recent_files"]["files"][1],
+        serde_json::json!(PathBuf::from("..").join("Docs").join("notes.md"))
+    );
+    assert_eq!(
+        restored.get_recent_files(),
+        [base.join("MOVED").join("Docs").join("notes.md"), elsewhere]
+    );
+    assert_eq!(
+        settings.get_recent_files()[0],
+        base.join("STICK").join("Docs").join("notes.md"),
+        "persisting must not change the in-memory paths"
+    );
+}
+
+#[test]
+fn settings_json_is_unchanged_outside_portable_mode() {
+    let mut settings = Settings::new();
+    settings.add_recent_file(PathBuf::from("relative-looking.md"));
+
+    let json = settings.to_settings_json(None).unwrap();
+
+    assert_eq!(json, serde_json::to_string_pretty(&settings).unwrap());
 }

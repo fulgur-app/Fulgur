@@ -4,10 +4,12 @@
 //! directory paths. The configuration directory is:
 //! - Windows: `%APPDATA%\Fulgur`
 //! - macOS/Linux: `~/.fulgur`
+//! - Portable build: `<folder of the executable>/data`
 
+use super::portable::{self, PortableLayout};
 use anyhow::Result;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(debug_assertions)]
 use std::sync::OnceLock;
 
@@ -23,12 +25,12 @@ pub fn set_config_dir_override(path: PathBuf) {
     let _ = CONFIG_DIR_OVERRIDE.set(path);
 }
 
-/// Get the Fulgur configuration directory path with platform-specific configuration directory and ensures
-/// it exists by creating it if necessary.
+/// Get the Fulgur configuration directory path and ensure it exists by creating it if necessary.
 ///
 /// ### Platform-specific paths
 /// - **Windows**: `%APPDATA%\Fulgur` (e.g., `C:\Users\Username\AppData\Roaming\Fulgur`)
 /// - **macOS/Linux**: `~/.fulgur` (e.g., `/home/username/.fulgur`)
+/// - **Portable**: `<folder of the executable>/data`
 ///
 /// ### Returns
 /// - `Ok(PathBuf)`: The path to the configuration directory
@@ -39,32 +41,72 @@ pub fn set_config_dir_override(path: PathBuf) {
 /// - On Unix: Returns error if `HOME` environment variable is not set
 /// - Returns error if directory creation fails (permissions, disk full, etc.)
 pub fn config_dir() -> Result<PathBuf> {
-    #[cfg(debug_assertions)]
-    if let Some(override_path) = CONFIG_DIR_OVERRIDE.get() {
-        fs::create_dir_all(override_path)?;
-        return Ok(override_path.clone());
-    }
+    let path = resolve_config_dir(
+        config_dir_override(),
+        portable::layout(),
+        platform_config_dir,
+    )?;
+    fs::create_dir_all(&path)?;
+    Ok(path)
+}
 
+/// Pick the configuration directory among the candidate locations.
+///
+/// ### Arguments
+/// - `override_dir`: The development override, which always wins
+/// - `portable`: The portable layout, used when the process runs in portable mode
+/// - `platform_default`: Resolves the platform default, only called as a last resort
+///
+/// ### Errors
+/// - Returns the error of `platform_default` when it is the chosen candidate.
+///
+/// ### Returns
+/// - `Ok(PathBuf)`: The configuration directory, not created yet
+/// - `Err(anyhow::Error)`: The platform default could not be resolved
+fn resolve_config_dir(
+    override_dir: Option<&Path>,
+    portable: Option<&PortableLayout>,
+    platform_default: impl FnOnce() -> Result<PathBuf>,
+) -> Result<PathBuf> {
+    if let Some(dir) = override_dir {
+        return Ok(dir.to_path_buf());
+    }
+    if let Some(layout) = portable {
+        return Ok(layout.data_dir());
+    }
+    platform_default()
+}
+
+/// The development override of the configuration directory.
+///
+/// ### Returns
+/// - `Some(&Path)`: The directory passed with `-d` in a debug build
+/// - `None`: No override is set, or this is a release build
+fn config_dir_override() -> Option<&'static Path> {
+    #[cfg(debug_assertions)]
+    return CONFIG_DIR_OVERRIDE.get().map(PathBuf::as_path);
+    #[cfg(not(debug_assertions))]
+    return None;
+}
+
+/// The platform default configuration directory, inside the user profile.
+///
+/// ### Errors
+/// - Returns an error if `APPDATA` (Windows) or `HOME` (Unix) is not set.
+///
+/// ### Returns
+/// - `Ok(PathBuf)`: The platform default directory, not created yet
+/// - `Err(anyhow::Error)`: The user profile could not be located
+fn platform_config_dir() -> Result<PathBuf> {
     #[cfg(target_os = "windows")]
-    let path = {
-        let app_data = std::env::var("APPDATA")?;
-        let mut p = PathBuf::from(app_data);
-        p.push("Fulgur");
-        p
-    };
+    let path = PathBuf::from(std::env::var("APPDATA")?).join("Fulgur");
 
     #[cfg(not(target_os = "windows"))]
-    let path = {
-        let home = std::env::var("HOME")?;
-        let mut p = PathBuf::from(home);
-        p.push(".fulgur");
-        p
-    };
+    let path = PathBuf::from(std::env::var("HOME")?).join(".fulgur");
 
     #[cfg(test)]
     let path = path.join("test");
 
-    fs::create_dir_all(&path)?;
     Ok(path)
 }
 
@@ -107,7 +149,9 @@ pub fn config_file(filename: &str) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{config_dir, config_file, config_subdir};
+    use super::{config_dir, config_file, config_subdir, resolve_config_dir};
+    use crate::fulgur::utils::portable::PortableLayout;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn test_config_dir_exists() {
@@ -168,5 +212,37 @@ mod tests {
             log_path.file_name().and_then(|n| n.to_str()),
             Some("fulgur.log")
         );
+    }
+
+    #[test]
+    fn test_resolve_config_dir_prefers_the_override_over_portable_and_default() {
+        let portable = PortableLayout::new(PathBuf::from("stick"), PathBuf::from("stick"));
+
+        let resolved = resolve_config_dir(Some(Path::new("dev")), Some(&portable), || {
+            panic!("the platform default must not be resolved")
+        })
+        .unwrap();
+
+        assert_eq!(resolved, PathBuf::from("dev"));
+    }
+
+    #[test]
+    fn test_resolve_config_dir_prefers_portable_over_default() {
+        let root = PathBuf::from("stick").join("Fulgur");
+        let portable = PortableLayout::new(root.clone(), PathBuf::from("stick"));
+
+        let resolved = resolve_config_dir(None, Some(&portable), || {
+            panic!("the platform default must not be resolved")
+        })
+        .unwrap();
+
+        assert_eq!(resolved, root.join("data"));
+    }
+
+    #[test]
+    fn test_resolve_config_dir_falls_back_to_the_platform_default() {
+        let resolved = resolve_config_dir(None, None, || Ok(PathBuf::from("profile"))).unwrap();
+
+        assert_eq!(resolved, PathBuf::from("profile"));
     }
 }

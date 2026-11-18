@@ -1,6 +1,7 @@
 mod backend;
 mod crypto;
 mod keychain;
+mod secrets_file;
 
 pub use backend::init_keychain_backend;
 pub use crypto::{
@@ -12,6 +13,7 @@ pub use keychain::{
     load_device_api_key_from_keychain, load_private_key_from_keychain,
     save_device_api_key_to_keychain, save_private_key_to_keychain,
 };
+pub use secrets_file::SECRETS_FILE_NAME;
 // Prefixes used to namespace per-profile entries inside the keychain.
 const PRIVATE_KEY_PREFIX: &str = "private_key";
 const DEVICE_API_KEY_PREFIX: &str = "device_api_key";

@@ -36,6 +36,16 @@ fn resolve_target(path: &Path) -> PathBuf {
     }
 }
 
+/// Permissions given to the file written by an atomic write.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FilePermissions {
+    /// Keep the permissions of the file being replaced, defaults for a new file.
+    KeepExisting,
+    /// Readable and writable by the owner only (`0600` on Unix), even if the
+    /// replaced file was more permissive.
+    OwnerOnly,
+}
+
 /// Write file contents atomically by writing to a sibling temporary file,
 /// syncing it, then renaming it over the destination path.
 ///
@@ -52,6 +62,47 @@ fn resolve_target(path: &Path) -> PathBuf {
 /// - `Ok(())`: the write is successful
 /// - `Err()`: error while writing the file
 pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
+    write_atomically(path, contents, FilePermissions::KeepExisting)
+}
+
+/// Write a file holding secrets atomically, readable by its owner only.
+///
+/// ### Arguments
+/// - `path`: the path to the file to write
+/// - `contents`: the content to write in the file
+///
+/// ### Errors
+/// - Returns an error if the destination has no parent directory or filename, if
+///   the temporary file cannot be created or written, or if the rename over the
+///   destination path fails.
+///
+/// ### Returns
+/// - `Ok(())`: the write is successful
+/// - `Err(anyhow::Error)`: error while writing the file
+pub fn atomic_write_private_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
+    write_atomically(path, contents, FilePermissions::OwnerOnly)
+}
+
+/// Shared implementation of the atomic writes.
+///
+/// ### Arguments
+/// - `path`: the path to the file to write
+/// - `contents`: the content to write in the file
+/// - `permissions`: the permissions the written file gets
+///
+/// ### Errors
+/// - Returns an error if the destination has no parent directory or filename, if
+///   the temporary file cannot be created or written, or if the rename over the
+///   destination path fails.
+///
+/// ### Returns
+/// - `Ok(())`: the write is successful
+/// - `Err(anyhow::Error)`: error while writing the file
+fn write_atomically(
+    path: &Path,
+    contents: &[u8],
+    permissions: FilePermissions,
+) -> anyhow::Result<()> {
     let target = resolve_target(path);
     let parent = target.parent().ok_or_else(|| {
         anyhow::anyhow!(
@@ -66,7 +117,10 @@ pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
         )
     })?;
 
-    let existing_permissions = fs::metadata(&target).ok().map(|meta| meta.permissions());
+    let existing_permissions = match permissions {
+        FilePermissions::KeepExisting => fs::metadata(&target).ok().map(|meta| meta.permissions()),
+        FilePermissions::OwnerOnly => None,
+    };
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos());
@@ -84,9 +138,13 @@ pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
         open_options.create_new(true).write(true);
 
         #[cfg(unix)]
-        if let Some(permissions) = &existing_permissions {
+        {
             use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-            open_options.mode(permissions.mode());
+            if let Some(existing) = &existing_permissions {
+                open_options.mode(existing.mode());
+            } else if permissions == FilePermissions::OwnerOnly {
+                open_options.mode(0o600);
+            }
         }
         let mut tmp_file = open_options.open(&tmp_path).map_err(|e| {
             anyhow::anyhow!(
@@ -272,6 +330,32 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o600, "0600 permissions should survive the save");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_private_file_is_owner_only_when_new_or_replaced() {
+        use super::atomic_write_private_file;
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = TempDir::new().expect("failed to create temp dir");
+        let new_file = temp_dir.path().join("new-secrets.json");
+        let replaced_file = temp_dir.path().join("old-secrets.json");
+        fs::write(&replaced_file, "{}").expect("failed to write initial file");
+        fs::set_permissions(&replaced_file, fs::Permissions::from_mode(0o644))
+            .expect("failed to set initial permissions");
+
+        atomic_write_private_file(&new_file, b"{}").expect("atomic write should succeed");
+        atomic_write_private_file(&replaced_file, b"{}").expect("atomic write should succeed");
+
+        for path in [&new_file, &replaced_file] {
+            let mode = fs::metadata(path)
+                .expect("file should exist")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600, "{} must be owner-only", path.display());
+        }
     }
 
     #[cfg(unix)]

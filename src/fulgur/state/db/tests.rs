@@ -6,6 +6,7 @@ use crate::fulgur::state::persistence::{
     TabState, WindowState, WindowsState,
 };
 use crate::fulgur::sync::share::ShareOrigin;
+use crate::fulgur::utils::portable::PortableLayout;
 use time::macros::datetime;
 
 /// Build a tab state with a given identity and title.
@@ -816,4 +817,48 @@ fn window_snapshots_and_remote_history_leave_the_device_key_pins_alone() {
     db.apply_remote_history(&RemoteHistory::default())
         .expect("apply empty history");
     assert_eq!(db.load_device_key_pins().expect("load pins"), pins);
+}
+
+#[test]
+fn portable_tab_paths_are_stored_relative_and_follow_a_moved_drive() {
+    let base = std::env::temp_dir();
+    let mut db = memory_db();
+    db.set_path_layout(PortableLayout::new(
+        base.join("STICK").join("Fulgur"),
+        base.join("STICK"),
+    ));
+    let mut on_stick = tab(0, "notes.md", None);
+    on_stick.file_path = Some(base.join("STICK").join("Docs").join("notes.md"));
+    let mut elsewhere = tab(1, "hosts", None);
+    elsewhere.file_path = Some(base.join("HOME").join("hosts"));
+    let state = state_with(1, vec![on_stick, elsewhere]);
+
+    db.apply(&state).expect("apply snapshot");
+    let stored: Vec<u8> = db
+        .conn
+        .query_row("SELECT file_path FROM tabs WHERE id = 0", [], |row| {
+            row.get(0)
+        })
+        .expect("read stored path");
+    let reapplied = db.apply(&state).expect("reapply snapshot");
+    db.set_path_layout(PortableLayout::new(
+        base.join("MOVED").join("Fulgur"),
+        base.join("MOVED"),
+    ));
+    let loaded = db.load().expect("load snapshot");
+
+    assert_eq!(
+        super::paths::path_from_bytes(&stored),
+        std::path::Path::new("..").join("Docs").join("notes.md")
+    );
+    assert!(
+        reapplied.is_empty(),
+        "relative paths must not rewrite rows on every snapshot: {reapplied:?}"
+    );
+    let tabs = &loaded.windows[0].tabs;
+    assert_eq!(
+        tabs[0].file_path,
+        Some(base.join("MOVED").join("Docs").join("notes.md"))
+    );
+    assert_eq!(tabs[1].file_path, Some(base.join("HOME").join("hosts")));
 }

@@ -12,6 +12,7 @@ mod write;
 
 pub use legacy::{LEGACY_STATE_FILE_NAME, import_legacy_json};
 
+use crate::fulgur::utils::portable::{self, PortableLayout};
 use anyhow::anyhow;
 use rusqlite::Connection;
 use std::collections::HashSet;
@@ -63,6 +64,9 @@ pub struct StateDb {
     /// Window ids this handle has written, used to scope deletions so a second
     /// process cannot erase windows it does not own.
     owned_windows: HashSet<i64>,
+    /// Portable layout tab file paths are persisted relative to, `None` outside
+    /// portable mode. Captured at open time so tests can inject their own.
+    path_layout: Option<PortableLayout>,
 }
 
 impl StateDb {
@@ -92,6 +96,7 @@ impl StateDb {
             path: Some(path.to_path_buf()),
             fallback_error: None,
             owned_windows: HashSet::new(),
+            path_layout: portable::layout().cloned(),
         })
     }
 
@@ -114,6 +119,7 @@ impl StateDb {
             path: None,
             fallback_error: None,
             owned_windows: HashSet::new(),
+            path_layout: portable::layout().cloned(),
         })
     }
 
@@ -176,6 +182,15 @@ impl StateDb {
     #[cfg(test)]
     fn forget_owned_windows(&mut self) {
         self.owned_windows.clear();
+    }
+
+    /// Persist tab file paths relative to a portable layout, as a portable process does.
+    ///
+    /// ### Arguments
+    /// - `layout`: The portable layout to use
+    #[cfg(test)]
+    fn set_path_layout(&mut self, layout: PortableLayout) {
+        self.path_layout = Some(layout);
     }
 
     /// Flush the write-ahead log into the database file.

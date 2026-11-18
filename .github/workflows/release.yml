@@ -373,6 +373,72 @@ jobs:
           Write-Host "Artifacts:"
           Get-ChildItem artifacts/
 
+      # Portable builds (Windows and Linux) are built after the installed packages have
+      # been moved to artifacts/, since they overwrite the same release binary. The data
+      # folder is not shipped: the portable binary creates it next to itself on first launch.
+      - name: Build and package portable (Windows)
+        if: runner.os == 'Windows'
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        shell: pwsh
+        run: |
+          cargo build --release --features portable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $stage = "portable/Fulgur"
+          New-Item -ItemType Directory -Force -Path $stage
+          Copy-Item target/release/Fulgur.exe, LICENCE, THIRD-PARTY-LICENSES -Destination $stage
+
+          $dest = "artifacts/Fulgur-v${env:VERSION}-windows-x86_64-portable.zip"
+          Compress-Archive -Path $stage -DestinationPath $dest
+          $hash = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLower()
+          $relativeName = Split-Path $dest -Leaf
+          "$hash  $relativeName" | Out-File -Encoding utf8NoBOM "${dest}.sha256"
+
+      # cargo-packager rebuilds through `before-packaging-command`, so the portable feature
+      # is added there, on this CI checkout only. The desktop entry's StartupWMClass must
+      # match the portable window app id (`PORTABLE_WINDOW_APP_ID` in utils/portable), so a
+      # desktop-integrated portable AppImage gets its own icon and dock launcher.
+      - name: Build and package portable AppImage (Linux)
+        if: matrix.platform == 'linux'
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          sed -i 's/^before-packaging-command = "cargo build --release"$/before-packaging-command = "cargo build --release --features portable"/' Cargo.toml
+          if ! grep -q '^before-packaging-command = "cargo build --release --features portable"$' Cargo.toml; then
+            echo "::error::Could not enable the portable feature in before-packaging-command"
+            exit 1
+          fi
+          DESKTOP_TEMPLATE=resources/linux/Fulgur.desktop.hbs
+          sed -i 's/^StartupWMClass=Fulgur$/StartupWMClass=FulgurPortable/' "$DESKTOP_TEMPLATE"
+          if ! grep -q '^StartupWMClass=FulgurPortable$' "$DESKTOP_TEMPLATE"; then
+            echo "::error::Could not set the portable StartupWMClass in the desktop entry"
+            exit 1
+          fi
+          cargo packager --release --formats appimage
+          git checkout -- Cargo.toml "$DESKTOP_TEMPLATE"
+
+          APPIMAGE=$(find . -maxdepth 3 -name "*.AppImage" -not -path "./artifacts/*" | head -1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::No portable AppImage found"
+            exit 1
+          fi
+
+          # A tar.gz keeps the executable bit, which zip extraction often loses.
+          STAGE=portable/Fulgur
+          mkdir -p "$STAGE"
+          mv "$APPIMAGE" "$STAGE/Fulgur.AppImage"
+          chmod +x "$STAGE/Fulgur.AppImage"
+          cp LICENCE THIRD-PARTY-LICENSES "$STAGE/"
+
+          NAME="Fulgur-v${VERSION}-linux-${ARCH}-portable.tar.gz"
+          tar -czf "artifacts/$NAME" -C portable Fulgur
+          (cd artifacts && sha256sum "$NAME") > "artifacts/$NAME.sha256"
+
+          echo "Artifacts:"
+          ls -la artifacts/
+
       - name: Upload artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -417,10 +483,13 @@ jobs:
           EXPECTED=$(printf '%s\n' \
             "Fulgur-v${VERSION}-macos-aarch64.dmg" \
             "Fulgur-v${VERSION}-windows-x86_64-setup.exe" \
+            "Fulgur-v${VERSION}-windows-x86_64-portable.zip" \
             "Fulgur-v${VERSION}-linux-x86_64.deb" \
             "Fulgur-v${VERSION}-linux-x86_64.AppImage" \
+            "Fulgur-v${VERSION}-linux-x86_64-portable.tar.gz" \
             "Fulgur-v${VERSION}-linux-aarch64.deb" \
-            "Fulgur-v${VERSION}-linux-aarch64.AppImage" | sort)
+            "Fulgur-v${VERSION}-linux-aarch64.AppImage" \
+            "Fulgur-v${VERSION}-linux-aarch64-portable.tar.gz" | sort)
           PUBLISHED=$(find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort)
           LISTED=$(awk '{ print $2 }' SHA256SUMS.txt | sort)
           if [ "$PUBLISHED" != "$EXPECTED" ] || [ "$LISTED" != "$EXPECTED" ]; then

@@ -5,7 +5,9 @@ use super::backend::{
     init_keychain_backend, load_from_in_memory_keychain, save_or_remove_to_in_memory_keychain,
     should_use_in_memory_keychain,
 };
+use super::secrets_file::{load_from_secrets_file, save_or_remove_to_secrets_file};
 use super::{DEVICE_API_KEY_PREFIX, PRIVATE_KEY_PREFIX, SERVICE_NAME};
+use crate::fulgur::utils::portable;
 
 /// Build the keychain user string for a profile's private key entry.
 ///
@@ -86,6 +88,9 @@ pub(super) fn save_or_remove_to_keychain(user: &str, value: Option<&str>) -> any
         save_or_remove_to_in_memory_keychain(user, value);
         return Ok(());
     }
+    if portable::is_portable() {
+        return save_or_remove_to_secrets_file(user, value);
+    }
     init_keychain_backend()?;
     let entry = Entry::new(SERVICE_NAME, user)?;
     if let Some(value) = value
@@ -152,6 +157,9 @@ pub fn load_device_api_key_from_keychain(profile_id: &str) -> anyhow::Result<Opt
 pub(super) fn load_from_keychain(user: &str) -> anyhow::Result<Option<String>> {
     if should_use_in_memory_keychain() {
         return Ok(load_from_in_memory_keychain(user));
+    }
+    if portable::is_portable() {
+        return load_from_secrets_file(user);
     }
     init_keychain_backend()?;
     let entry = Entry::new(SERVICE_NAME, user)?;

@@ -4,8 +4,10 @@
 //! jump list on Windows, double-click / "Open with" on Linux), this module
 //! detects the already-running instance, forwards the path to it, and lets the
 //! caller exit early. Windows uses a loopback TCP connection; Linux uses a
-//! Unix domain socket in the configuration directory, so the channel is private
-//! to the user and a dev instance started with `-d` stays isolated.
+//! Unix domain socket in `$XDG_RUNTIME_DIR`, private to the user. The port and
+//! the socket name derive from the configuration directory (`instance_key`), so
+//! an installed Fulgur, a portable Fulgur and a dev instance started with `-d`
+//! never forward files to each other.
 //!
 //! The listening instance receives the path, appends it to the shared
 //! `pending_files` queue and signals the `wake` channel so the app opens /
@@ -22,7 +24,9 @@
 use crate::fulgur::{
     shared_state::ExternalOpenFile,
     utils::{
+        instance_key,
         ipc_protocol::{command_line, file_line, read_ipc_connection},
+        paths,
         worker::Worker,
     },
 };
@@ -41,28 +45,43 @@ use std::{
     time::Duration,
 };
 
-/// Loopback port used for Fulgur IPC. Chosen to be unlikely to conflict.
-#[cfg(target_os = "windows")]
-const IPC_PORT: u16 = 29764;
-
-/// File name of the Unix domain socket, created in the configuration directory.
-#[cfg(target_os = "linux")]
-const IPC_SOCKET_NAME: &str = "fulgur.sock";
-
 /// Maximum time a dropped IPC listener worker is joined before being detached.
 /// The wakeup self-connect unblocks `accept` immediately, so this is short.
 const IPC_WORKER_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Resolve the loopback port of this installation's IPC listener.
+///
+/// ### Returns
+/// - `Ok(u16)`: The port derived from the configuration directory
+/// - `Err(io::Error)`: The configuration directory could not be resolved
+#[cfg(target_os = "windows")]
+fn ipc_port() -> io::Result<u16> {
+    paths::config_dir()
+        .map(|dir| instance_key::ipc_port(&dir))
+        .map_err(io::Error::other)
+}
+
 /// Resolve the path of the Unix domain socket used for IPC.
 ///
 /// ### Returns
-/// - `Ok(PathBuf)`: The socket path inside the configuration directory
+/// - `Ok(PathBuf)`: The socket path derived from the configuration directory
 /// - `Err(io::Error)`: The configuration directory could not be resolved
 #[cfg(target_os = "linux")]
 fn socket_path() -> io::Result<PathBuf> {
-    crate::fulgur::utils::paths::config_dir()
-        .map(|dir| dir.join(IPC_SOCKET_NAME))
-        .map_err(io::Error::other)
+    let config_dir = paths::config_dir().map_err(io::Error::other)?;
+    let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute());
+    let fallback_dir = if crate::fulgur::utils::portable::is_portable() {
+        std::env::temp_dir()
+    } else {
+        config_dir.clone()
+    };
+    Ok(instance_key::socket_path(
+        &config_dir,
+        runtime_dir.as_deref(),
+        &fallback_dir,
+    ))
 }
 
 /// Connect to the IPC listener of the running instance.
@@ -72,7 +91,7 @@ fn socket_path() -> io::Result<PathBuf> {
 /// - `Err(io::Error)`: No instance is listening
 fn connect() -> io::Result<IpcStream> {
     #[cfg(target_os = "windows")]
-    return IpcStream::connect(("127.0.0.1", IPC_PORT));
+    return IpcStream::connect(("127.0.0.1", ipc_port()?));
     #[cfg(target_os = "linux")]
     return IpcStream::connect(socket_path()?);
 }
@@ -84,7 +103,7 @@ fn connect() -> io::Result<IpcStream> {
 /// - `Err(io::Error)`: The listener could not be bound
 fn bind() -> io::Result<IpcListener> {
     #[cfg(target_os = "windows")]
-    return IpcListener::bind(("127.0.0.1", IPC_PORT));
+    return IpcListener::bind(("127.0.0.1", ipc_port()?));
     #[cfg(target_os = "linux")]
     return bind_socket(&socket_path()?);
 }
