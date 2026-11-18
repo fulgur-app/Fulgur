@@ -1,5 +1,7 @@
 mod context_menu;
 mod markdown_links;
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod markdown_panel_interaction_tests;
 mod markdown_preview;
 /// Rendering regressions for the Markdown preview.
 #[cfg(all(test, feature = "gpui-test-support"))]
@@ -22,7 +24,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::{
     AnyElement, Context, Entity, InteractiveElement, IntoElement, MouseDownEvent, ParentElement,
-    SharedString, Styled, Window, div, px,
+    SharedString, Styled, TestSupportExt, Window, div, px,
 };
 
 impl Fulgur {
@@ -192,6 +194,7 @@ impl Fulgur {
                                         resizable_panel().child(
                                             div()
                                                 .id("markdown-editor")
+                                                .test_support()
                                                 .size_full()
                                                 .capture_any_mouse_down(capture_right_click)
                                                 .child(editor_input),

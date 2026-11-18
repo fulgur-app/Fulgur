@@ -10,6 +10,7 @@ use crate::fulgur::{
     state::{StateDb, StateWriter},
     sync::ssh::url::RemoteSpec,
 };
+use crate::test_support::register_window_in_global_manager;
 use gpui_kit::base::actions::{Cancel, Confirm};
 use gpui_kit::component::{WindowExt, input::InputEvent, notification::NotificationType};
 use gpui_kit::{
@@ -102,24 +103,6 @@ fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Fulgur>
 /// - `PathBuf`: A path rooted under `std::env::temp_dir()`.
 fn temp_test_path(file_name: &str) -> PathBuf {
     std::env::temp_dir().join(file_name)
-}
-
-/// Register a window entity inside the global `WindowManager`.
-///
-/// ### Arguments
-/// - `cx`: The GPUI test application context.
-/// - `window_id`: The ID of the window to register.
-/// - `fulgur`: The `Fulgur` entity associated with the window.
-fn register_window_in_global_manager(
-    cx: &mut TestAppContext,
-    window_id: WindowId,
-    fulgur: &Entity<Fulgur>,
-) {
-    cx.update(|cx| {
-        cx.update_global::<WindowManager, _>(|manager, _| {
-            manager.register(window_id, fulgur.downgrade());
-        });
-    });
 }
 
 /// Invoke `on_window_close_requested` against a specific window in tests.
