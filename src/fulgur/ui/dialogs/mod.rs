@@ -3,6 +3,8 @@ pub(crate) mod application_close;
 pub mod external_link;
 pub mod file_browser;
 pub mod file_watcher;
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod interaction_tests;
 pub mod jump_line;
 pub mod large_file_close;
 pub mod lossy_save;

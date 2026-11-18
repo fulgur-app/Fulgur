@@ -11,9 +11,9 @@ use crate::fulgur::{
 use gpui_kit::component::WindowExt;
 #[cfg(feature = "gpui-test-support")]
 use gpui_kit::{
-    Action, AnyWindowHandle, AppContext, Bounds, Context, Entity, IntoElement, Render,
-    TestAppContext, VisualTestContext, Window, WindowBounds, WindowId, WindowOptions, div, point,
-    px, size,
+    Action, AnyWindowHandle, AppContext, BorrowAppContext, Bounds, Context, Entity, IntoElement,
+    Render, TestAppContext, VisualTestContext, Window, WindowBounds, WindowId, WindowOptions, div,
+    point, px, size,
 };
 #[cfg(feature = "gpui-test-support")]
 use parking_lot::Mutex;
@@ -281,6 +281,25 @@ pub fn open_window_with_fulgur(cx: &mut TestAppContext) -> (WindowId, Entity<Ful
             .into_inner()
             .expect("failed to capture test Fulgur entity"),
     )
+}
+
+/// Register a window in the global `WindowManager`, as the real window opener does.
+///
+/// ### Arguments
+/// - `cx`: The test application context
+/// - `window_id`: The id of the window to register
+/// - `fulgur`: The `Fulgur` entity hosted by that window
+#[cfg(feature = "gpui-test-support")]
+pub fn register_window_in_global_manager(
+    cx: &mut TestAppContext,
+    window_id: WindowId,
+    fulgur: &Entity<Fulgur>,
+) {
+    cx.update(|cx| {
+        cx.update_global::<WindowManager, _>(|manager, _| {
+            manager.register(window_id, fulgur.downgrade());
+        });
+    });
 }
 
 /// Dispatch a dialog action, as a dialog's OK or Cancel button does, and let the result settle.

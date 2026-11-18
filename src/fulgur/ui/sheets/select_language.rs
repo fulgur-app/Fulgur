@@ -4,7 +4,7 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     App, Context, Div, Element, Entity, InteractiveElement, ParentElement,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    StatefulInteractiveElement, Styled, TestSupportExt, Window, div, px,
 };
 
 use crate::fulgur::{
@@ -33,6 +33,7 @@ fn make_select_language_item(
     let pretty_name = pretty_name(&language);
     h_flex()
         .id(("select-language", index))
+        .test_support()
         .justify_between()
         .my_2()
         .cursor_pointer()

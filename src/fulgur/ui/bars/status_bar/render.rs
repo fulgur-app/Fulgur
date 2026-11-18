@@ -14,7 +14,7 @@ use crate::fulgur::{
 use gpui_kit::component::{ActiveTheme, Icon, StyledExt, h_flex, tooltip::Tooltip, v_flex};
 use gpui_kit::{
     Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Render,
-    Role, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder,
+    Role, StatefulInteractiveElement, Styled, TestSupportExt, Window, div, prelude::FluentBuilder,
 };
 
 impl Render for StatusBar {
@@ -62,7 +62,10 @@ impl Render for StatusBar {
             }),
         );
         let (preview_button, toolbar_button) = match active_editor_tab {
-            None => (div().id("status-preview"), div().id("status-toolbar")),
+            None => (
+                div().id("status-preview").test_support(),
+                div().id("status-toolbar").test_support(),
+            ),
             Some(active_editor_tab) => {
                 let editor_id = active_editor_tab.id;
                 let preview_active = match fulgur
@@ -230,6 +233,8 @@ impl Render for StatusBar {
             }),
         );
         h_flex()
+            // Keep focus where it was: without this, the focusable window root claims every click
+            .on_any_mouse_down(|_event, window, _cx| window.prevent_default())
             .justify_between()
             .bg(cx.theme().tab_bar)
             .py_0()

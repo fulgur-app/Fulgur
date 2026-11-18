@@ -2,8 +2,11 @@
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::ui::tabs::tab::TabId;
-use crate::test_support::open_fulgur_with_root;
-use gpui_kit::test::TestWindowExt;
+use crate::fulgur::window_manager::WindowManager;
+use crate::test_support::{
+    open_fulgur_with_root, open_rendered_window, register_window_in_global_manager,
+};
+use gpui_kit::test::{ScopedWindow, TestWindowExt};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 /// Open `count` extra tabs and return every tab id in bar order.
@@ -177,5 +180,105 @@ fn test_activating_a_tab_overrides_an_older_pending_scroll(cx: &mut TestAppConte
     assert!(
         offset_x < gpui_kit::px(0.),
         "the tab bar must scroll to the activated last tab, not the older pending one"
+    );
+}
+
+/// Find the index of the menu item carrying `label` inside a scope.
+///
+/// ### Arguments
+/// - `scope`: The scoped window holding exactly one open menu
+/// - `label`: The accessibility label of the wanted item
+///
+/// ### Returns
+/// - `usize`: The item's element id
+fn menu_item_index(scope: &ScopedWindow<'_>, label: &str) -> usize {
+    (0..MAX_MENU_ITEMS)
+        .find(|index| {
+            scope
+                .try_find(*index)
+                .is_some_and(|item| item.label() == Some(label))
+        })
+        .unwrap_or_else(|| panic!("no menu item labelled {label:?}"))
+}
+
+/// Upper bound on the items a context menu holds, used when scanning it by label.
+const MAX_MENU_ITEMS: usize = 32;
+
+#[gpui_kit::test]
+fn test_send_to_moves_the_tab_into_the_other_window(cx: &mut TestAppContext) {
+    let (source, source_handle, mut source_cx) = open_fulgur_with_root(cx);
+    register_window_in_global_manager(cx, source_handle.window_id(), &source);
+    let (target, target_handle, mut target_cx) = open_rendered_window(cx);
+    register_window_in_global_manager(cx, target_handle.window_id(), &target);
+    let target_name = cx.update(|cx| {
+        cx.global::<WindowManager>()
+            .get_window_name(target_handle.window_id())
+            .expect("the target window must be named")
+            .to_string()
+    });
+
+    let tab_ids = open_tabs(&source, &mut source_cx, 1);
+    let sent = tab_ids[1];
+    source_cx.update(|window, cx| {
+        let content = source
+            .read(cx)
+            .get_active_editor_tab(cx)
+            .expect("expected an active editor tab")
+            .content
+            .clone();
+        content.update(cx, |content, cx| content.set_value("sent text", window, cx));
+    });
+    source_cx.run_until_parked();
+
+    source_cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.right_click(("tab", sent.0), cx);
+    });
+    source_cx.run_until_parked();
+    source_cx.update(|window, cx| {
+        window.render_frame(cx);
+        let mut menu = window.within(("tab", sent.0));
+        let send_to = menu_item_index(&menu, "Send to...");
+        menu.hover(send_to, cx);
+    });
+    source_cx.run_until_parked();
+    source_cx.update(|window, cx| {
+        window.render_frame(cx);
+        let mut submenu = window.within("submenu");
+        let destination = menu_item_index(&submenu, &format!("Window {target_name}"));
+        submenu.click(destination, cx);
+    });
+    source_cx.run_until_parked();
+    target_cx.update(TestWindowExt::render_frame);
+    source_cx.update(TestWindowExt::render_frame);
+    target_cx.run_until_parked();
+    source_cx.run_until_parked();
+
+    let source_ids: Vec<TabId> = source_cx.update(|_window, cx| {
+        source
+            .read(cx)
+            .tabs
+            .iter()
+            .map(|tab| tab.read(cx).id())
+            .collect()
+    });
+    assert_eq!(
+        source_ids,
+        vec![tab_ids[0]],
+        "the sent tab must leave the source window"
+    );
+    let received = target_cx.update(|_window, cx| {
+        let target = target.read(cx);
+        (
+            target.tabs.len(),
+            target
+                .get_active_editor_tab(cx)
+                .map(|tab| tab.content.read(cx).value().to_string()),
+        )
+    });
+    assert_eq!(
+        received,
+        (2, Some("sent text".to_string())),
+        "the target window must gain the tab, with its buffer, as its active tab"
     );
 }

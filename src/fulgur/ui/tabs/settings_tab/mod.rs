@@ -17,6 +17,8 @@ use crate::fulgur::{
 
 mod application_page;
 mod editor_page;
+#[cfg(all(test, feature = "gpui-test-support"))]
+mod interaction_tests;
 mod themes_page;
 
 #[derive(Clone)]
