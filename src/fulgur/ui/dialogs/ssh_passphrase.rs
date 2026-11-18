@@ -1,8 +1,7 @@
-use std::cell::Cell;
 use std::path::Path;
-use std::rc::Rc;
 use std::sync::mpsc::Sender;
 
+use crate::fulgur::ui::dialogs::initial_focus::OpenAlertDialogWithFocus;
 use gpui_kit::component::{
     ActiveTheme, WindowExt,
     button::ButtonVariant,
@@ -51,15 +50,9 @@ impl Fulgur {
                 .placeholder("Passphrase")
                 .masked(true)
         });
-        let has_initialized_focus = Rc::new(Cell::new(false));
+        let initial_focus = passphrase_input.read(cx).focus_handle(cx);
 
-        window.open_alert_dialog(cx, move |modal, window, cx| {
-            if !has_initialized_focus.get() {
-                let focus_handle = passphrase_input.read(cx).focus_handle(cx);
-                window.focus(&focus_handle, cx);
-                has_initialized_focus.set(true);
-            }
-
+        window.open_alert_dialog_with_focus(initial_focus, cx, move |modal, _window, cx| {
             let passphrase_input_ok = passphrase_input.clone();
             let answer_ok = answer_tx.clone();
             let answer_skip = answer_tx.clone();
