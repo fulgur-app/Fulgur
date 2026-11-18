@@ -1,6 +1,5 @@
-use gpui_kit::component::{
-    WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input,
-};
+use crate::fulgur::ui::dialogs::initial_focus::OpenAlertDialogWithFocus;
+use gpui_kit::component::{button::ButtonVariant, dialog::DialogButtonProps, input::Input};
 use gpui_kit::{Context, Focusable, ParentElement, Styled, Window, div, px};
 
 use crate::fulgur::{
@@ -39,9 +38,8 @@ impl Fulgur {
         });
         let rename_tab_input = self.rename_tab_input.clone();
         let entity = cx.entity().clone();
-        window.open_alert_dialog(cx, move |modal, window, cx| {
-            let focus_handle = rename_tab_input.read(cx).focus_handle(cx);
-            window.focus(&focus_handle, cx);
+        let initial_focus = rename_tab_input.read(cx).focus_handle(cx);
+        window.open_alert_dialog_with_focus(initial_focus, cx, move |modal, _window, _cx| {
             let rename_tab_input_clone = rename_tab_input.clone();
             let entity_for_ok = entity.clone();
             modal

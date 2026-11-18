@@ -1,8 +1,7 @@
-use std::cell::Cell;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::mpsc::Sender;
 
+use crate::fulgur::ui::dialogs::initial_focus::OpenAlertDialogWithFocus;
 use gpui_kit::component::{
     ActiveTheme, WindowExt,
     button::{Button, ButtonVariant, ButtonVariants},
@@ -110,20 +109,14 @@ impl Fulgur {
         });
         let key_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Private key file (optional)"));
-        let has_initialized_focus = Rc::new(Cell::new(false));
+        let initial_input = if password_allowed {
+            &password_input
+        } else {
+            &key_input
+        };
+        let initial_focus = initial_input.read(cx).focus_handle(cx);
 
-        window.open_alert_dialog(cx, move |modal, window, cx| {
-            if !has_initialized_focus.get() {
-                let initial_input = if password_allowed {
-                    &password_input
-                } else {
-                    &key_input
-                };
-                let focus_handle = initial_input.read(cx).focus_handle(cx);
-                window.focus(&focus_handle, cx);
-                has_initialized_focus.set(true);
-            }
-
+        window.open_alert_dialog_with_focus(initial_focus, cx, move |modal, _window, cx| {
             let password_input_ok = password_input.clone();
             let key_input_ok = key_input.clone();
             let key_input_browse = key_input.clone();

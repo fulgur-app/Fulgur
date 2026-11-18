@@ -1,7 +1,6 @@
-use std::cell::Cell;
-use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::fulgur::ui::dialogs::initial_focus::OpenAlertDialogWithFocus;
 use gpui_kit::component::{
     WindowExt,
     button::ButtonVariant,
@@ -39,15 +38,9 @@ impl Fulgur {
         };
         let user_input = cx.new(|cx| InputState::new(window, cx).placeholder("Username"));
         let on_confirm = Arc::new(on_confirm);
-        let has_initialized_focus = Rc::new(Cell::new(false));
+        let initial_focus = user_input.read(cx).focus_handle(cx);
 
-        window.open_alert_dialog(cx, move |modal, window, cx| {
-            if !has_initialized_focus.get() {
-                let focus_handle = user_input.read(cx).focus_handle(cx);
-                window.focus(&focus_handle, cx);
-                has_initialized_focus.set(true);
-            }
-
+        window.open_alert_dialog_with_focus(initial_focus, cx, move |modal, _window, _cx| {
             let user_input_ok = user_input.clone();
             let on_confirm_ok = Arc::clone(&on_confirm);
 
