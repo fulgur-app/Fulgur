@@ -3,6 +3,7 @@ pub(crate) mod application_close;
 pub mod external_link;
 pub mod file_browser;
 pub mod file_watcher;
+pub mod initial_focus;
 pub mod jump_line;
 pub mod large_file_close;
 pub mod lossy_save;

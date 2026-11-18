@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::fulgur::ui::dialogs::initial_focus::OpenAlertDialogWithFocus;
 use gpui_kit::component::{
     WindowExt, button::ButtonVariant, dialog::DialogButtonProps, notification::NotificationType,
 };
@@ -41,9 +42,8 @@ impl Fulgur {
         let path_browser = cx.new(|cx| PathBrowser::new(window, cx));
         let input = path_browser.read(cx).input().clone();
         let input_clone = input.clone();
-        window.open_alert_dialog(cx, move |modal, window, cx| {
-            let focus_handle = input.read(cx).focus_handle(cx);
-            window.focus(&focus_handle, cx);
+        let initial_focus = input.read(cx).focus_handle(cx);
+        window.open_alert_dialog_with_focus(initial_focus, cx, move |modal, _window, _cx| {
             let entity_ok = entity.clone();
             let input_ok = input_clone.clone();
             let path_browser = path_browser.clone();

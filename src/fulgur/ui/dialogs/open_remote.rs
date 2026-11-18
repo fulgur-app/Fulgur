@@ -1,5 +1,4 @@
-use std::{cell::Cell, rc::Rc};
-
+use crate::fulgur::ui::dialogs::initial_focus::OpenAlertDialogWithFocus;
 use gpui_kit::component::{
     WindowExt, button::ButtonVariant, dialog::DialogButtonProps, notification::NotificationType,
 };
@@ -47,16 +46,9 @@ impl Fulgur {
         let remembered_url = self.last_failed_remote_open_url.clone().unwrap_or_default();
         let combo = cx.new(|cx| RemoteUrlCombo::new(&remembered_url, window, cx));
         let combo_for_dialog = combo.clone();
-        // The builder runs on every render, and refocusing the input each time
-        // would pull the focus back from the history menu as soon as it opens.
-        let has_initialized_focus = Rc::new(Cell::new(false));
-        window.open_alert_dialog(cx, move |modal, window, cx| {
+        let initial_focus = combo.read(cx).input().read(cx).focus_handle(cx);
+        window.open_alert_dialog_with_focus(initial_focus, cx, move |modal, _window, cx| {
             let input = combo_for_dialog.read(cx).input().clone();
-            if !has_initialized_focus.get() {
-                let focus_handle = input.read(cx).focus_handle(cx);
-                window.focus(&focus_handle, cx);
-                has_initialized_focus.set(true);
-            }
             let entity_ok = entity.clone();
             modal
                 .title(div().text_size(px(16.)).child("Open remote file..."))
@@ -150,10 +142,8 @@ impl Fulgur {
         let entity = cx.entity().clone();
         let spec_for_ok = spec.clone();
 
-        window.open_alert_dialog(cx, move |modal, window, cx| {
-            let focus_handle = browser_input.read(cx).focus_handle(cx);
-            window.focus(&focus_handle, cx);
-
+        let initial_focus = browser_input.read(cx).focus_handle(cx);
+        window.open_alert_dialog_with_focus(initial_focus, cx, move |modal, _window, _cx| {
             let browser_for_ok = browser.clone();
             let spec_for_ok = spec_for_ok.clone();
             let entity_for_ok = entity.clone();
