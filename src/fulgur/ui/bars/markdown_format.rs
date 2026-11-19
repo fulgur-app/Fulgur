@@ -2,6 +2,8 @@ use std::ops::Range;
 
 const CODE_FENCE: &str = "```";
 const THEMATIC_BREAK: &str = "---";
+const TABLE_HEADER_TAIL: &str = "|||";
+const TABLE_TEMPLATE_ROWS: [&str; 3] = ["|---|---|---|", "||||", "||||"];
 
 /// A formatting action offered by the markdown toolbar
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,6 +19,8 @@ pub(crate) enum MarkdownFormat {
     CodeBlock,
     /// Insert a thematic break on its own line, after a blank line
     Separator,
+    /// Insert a three-column table on its own lines, holding the selection in its first header cell
+    Table,
 }
 
 /// A single replacement planned against a buffer
@@ -51,6 +55,7 @@ pub(crate) fn plan_markdown_edit(
         MarkdownFormat::LinePrefix(prefix) => plan_line_prefix(text, selection, prefix),
         MarkdownFormat::CodeBlock => plan_code_block(text, selection),
         MarkdownFormat::Separator => plan_separator(text, selection),
+        MarkdownFormat::Table => plan_table(text, selection),
     }
 }
 
@@ -159,10 +164,7 @@ fn plan_separator(text: &str, selection: Range<usize>) -> MarkdownEdit {
     let line = line_bounds(text, last_selected_offset(text, &selection));
 
     let (range, leading_newlines) = if text[line.clone()].trim().is_empty() {
-        let follows_text = line.start > 0
-            && !text[line_start(text, line.start - 1)..line.start]
-                .trim()
-                .is_empty();
+        let follows_text = previous_line_has_text(text, line.start);
         (line, usize::from(follows_text))
     } else {
         (line.end..line.end, 2)
@@ -178,6 +180,62 @@ fn plan_separator(text: &str, selection: Range<usize>) -> MarkdownEdit {
         replacement,
         selection: caret..caret,
     }
+}
+
+/// Plan replacing the selection with a three-column table whose first header cell holds it
+///
+/// ### Arguments
+/// - `text`: The whole buffer
+/// - `selection`: The selected UTF-8 byte range
+///
+/// ### Returns
+/// - `MarkdownEdit`: The planned replacement, selecting the first header cell's content
+fn plan_table(text: &str, selection: Range<usize>) -> MarkdownEdit {
+    let newline = newline_of(text);
+    let selected = &text[selection.clone()];
+    let first_line_start = line_start(text, selection.start);
+    let leading_newlines = if first_line_start == selection.start {
+        usize::from(previous_line_has_text(text, first_line_start))
+    } else {
+        2
+    };
+    let trailing_newlines = if line_bounds(text, selection.end).end == selection.end {
+        1
+    } else {
+        2
+    };
+
+    let mut replacement = newline.repeat(leading_newlines);
+    replacement.push('|');
+    let cell_start = selection.start + replacement.len();
+    replacement.push_str(selected);
+    replacement.push_str(TABLE_HEADER_TAIL);
+    for row in TABLE_TEMPLATE_ROWS {
+        replacement.push_str(newline);
+        replacement.push_str(row);
+    }
+    replacement.push_str(&newline.repeat(trailing_newlines));
+
+    MarkdownEdit {
+        range: selection,
+        replacement,
+        selection: cell_start..cell_start + selected.len(),
+    }
+}
+
+/// Whether the line before the one starting at `line_start` holds non-blank text
+///
+/// ### Arguments
+/// - `text`: The whole buffer
+/// - `line_start_offset`: The byte offset where a line starts
+///
+/// ### Returns
+/// - `bool`: True if a previous line exists and is not blank
+fn previous_line_has_text(text: &str, line_start_offset: usize) -> bool {
+    line_start_offset > 0
+        && !text[line_start(text, line_start_offset - 1)..line_start_offset]
+            .trim()
+            .is_empty()
 }
 
 /// Byte offset of the start of the line containing `offset`
@@ -412,6 +470,56 @@ mod tests {
         assert_eq!(
             apply_with_cursor("", 0..0, MarkdownFormat::Separator),
             ("---\n".to_string(), 4)
+        );
+    }
+
+    const TABLE: &str = "||||\n|---|---|---|\n||||\n||||";
+
+    #[test]
+    fn test_table_in_empty_buffer_puts_cursor_in_first_header_cell() {
+        assert_eq!(
+            apply_with_cursor("", 0..0, MarkdownFormat::Table),
+            (format!("{TABLE}\n"), 1)
+        );
+    }
+
+    #[test]
+    fn test_table_at_mid_line_cursor_opens_blank_lines_around_it() {
+        assert_eq!(
+            apply_with_cursor("abcdef", 3..3, MarkdownFormat::Table),
+            (format!("abc\n\n{TABLE}\n\ndef"), 6)
+        );
+    }
+
+    #[test]
+    fn test_table_under_paragraph_keeps_following_text_out_of_its_rows() {
+        let (text, _) = apply_with_cursor("para\n\nnext", 5..5, MarkdownFormat::Table);
+        assert_eq!(text, format!("para\n\n{TABLE}\n\nnext"));
+    }
+
+    #[test]
+    fn test_table_after_blank_line_adds_no_extra_blank_line() {
+        let (text, _) = apply_with_cursor("para\n\n", 6..6, MarkdownFormat::Table);
+        assert_eq!(text, format!("para\n\n{TABLE}\n"));
+    }
+
+    #[test]
+    fn test_table_puts_selection_in_first_header_cell() {
+        assert_eq!(
+            apply("Name", 0..4, MarkdownFormat::Table),
+            (
+                "|Name|||\n|---|---|---|\n||||\n||||\n".to_string(),
+                "Name".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_table_matches_crlf_line_endings() {
+        let (text, _) = apply_with_cursor("a\r\nb", 3..3, MarkdownFormat::Table);
+        assert_eq!(
+            text,
+            "a\r\n\r\n||||\r\n|---|---|---|\r\n||||\r\n||||\r\n\r\nb"
         );
     }
 

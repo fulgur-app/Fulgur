@@ -286,7 +286,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.apply_format(MarkdownFormat::LinePrefix("* [ ] "), window, cx);
+                            this.apply_format(MarkdownFormat::LinePrefix("- [ ] "), window, cx);
                         })),
                     ),
             )
@@ -362,12 +362,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround(
-                                "|",
-                                "|||\n|---|---|---|\n||||\n||||\n",
-                                window,
-                                cx,
-                            );
+                            this.apply_format(MarkdownFormat::Table, window, cx);
                         })),
                     ),
             )
