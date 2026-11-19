@@ -55,6 +55,11 @@ ignore = [
     "RUSTSEC-2026-0192",  # ttf-parser - unmaintained; no safe upgrade available (from gpui via fontdb/cosmic-text/usvg/rustybuzz)
     "RUSTSEC-2026-0206",  # rustybuzz - unmaintained; no safe upgrade available (from gpui-pre via usvg/resvg)
     "RUSTSEC-2025-0134",  # rustls-pemfile - unmaintained; no safe upgrade available (from gpui-pre's Reqwest transport)
+    # chrono - unmaintained. Fulgur has no direct use and flexi_logger 0.32 moved to jiff, but
+    # the gpui stack still requires it unconditionally. gpui-base and gpui-component drop it in the
+    # release after gpui-kit 0.10.0 (longbridge/gpui-kit#4015), but gpui-pre and gpui-pre-scheduler
+    # (the Zed gpui snapshot) keep it. Cleared once `cargo tree -i chrono` comes back empty.
+    "RUSTSEC-2026-0543",  # chrono - unmaintained (from gpui-pre and gpui-pre-scheduler)
     # zbus 5 split crates - unmaintained since their merge into zbus 6. Linux-only, pulled by
     # zbus 5 through gpui-pre-linux (accesskit_unix, ashpd, notify-rust, oo7) and gpui-base (ashpd).
     # Cleared only when those upstreams move to zbus 6.
