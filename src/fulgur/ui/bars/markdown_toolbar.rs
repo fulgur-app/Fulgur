@@ -1,5 +1,6 @@
 use crate::fulgur::{
     Fulgur,
+    ui::bars::markdown_format::{MarkdownFormat, plan_markdown_edit},
     ui::components_utils::{MARKDOWN_BAR_BUTTON_SIZE, MARKDOWN_BAR_HEIGHT, button_factory},
     ui::icons::CustomIcon,
 };
@@ -65,9 +66,6 @@ impl MarkdownToolbar {
 
     /// Surround the active editor's selection with a prefix and suffix, or insert them at the cursor
     ///
-    /// Read-only buffers are left untouched: the programmatic replace would bypass
-    /// the guard the user relies on.
-    ///
     /// ### Arguments
     /// - `prefix`: The prefix to insert or surround with
     /// - `suffix`: The suffix to insert or surround with
@@ -75,8 +73,23 @@ impl MarkdownToolbar {
     /// - `cx`: The application context
     pub(crate) fn insert_or_surround(
         &mut self,
-        prefix: &str,
-        suffix: &str,
+        prefix: &'static str,
+        suffix: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.apply_format(MarkdownFormat::Surround { prefix, suffix }, window, cx);
+    }
+
+    /// Apply a formatting action to the active editor's selection as a single undoable edit
+    ///
+    /// ### Arguments
+    /// - `format`: The formatting action to apply
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub(crate) fn apply_format(
+        &mut self,
+        format: MarkdownFormat,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -84,9 +97,11 @@ impl MarkdownToolbar {
             && content.read(cx).is_editable()
         {
             content.update(cx, |input_state, cx| {
-                let selected_text = input_state.selected_value();
-                let surrounded_text = format!("{prefix}{selected_text}{suffix}");
-                input_state.replace(surrounded_text, window, cx);
+                let text = input_state.text().to_string();
+                let edit = plan_markdown_edit(&text, input_state.selected_range(), format);
+                input_state.set_selected_range(edit.range, cx);
+                input_state.replace(edit.replacement, window, cx);
+                input_state.set_selected_range(edit.selection, cx);
                 cx.notify();
             });
         }
@@ -189,7 +204,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("# ", "", window, cx);
+                            this.apply_format(MarkdownFormat::LinePrefix("# "), window, cx);
                         })),
                     )
                     .child(
@@ -200,7 +215,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("## ", "", window, cx);
+                            this.apply_format(MarkdownFormat::LinePrefix("## "), window, cx);
                         })),
                     )
                     .child(
@@ -211,7 +226,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("### ", "", window, cx);
+                            this.apply_format(MarkdownFormat::LinePrefix("### "), window, cx);
                         })),
                     )
                     .child(
@@ -222,7 +237,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("#### ", "", window, cx);
+                            this.apply_format(MarkdownFormat::LinePrefix("#### "), window, cx);
                         })),
                     )
                     .child(
@@ -233,7 +248,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("##### ", "", window, cx);
+                            this.apply_format(MarkdownFormat::LinePrefix("##### "), window, cx);
                         })),
                     ),
             )
@@ -249,7 +264,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("- ", "", window, cx);
+                            this.apply_format(MarkdownFormat::LinePrefix("- "), window, cx);
                         })),
                     )
                     .child(
@@ -260,7 +275,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("1. ", "", window, cx);
+                            this.apply_format(MarkdownFormat::LinePrefix("1. "), window, cx);
                         })),
                     )
                     .child(
@@ -271,7 +286,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("* [ ] ", "", window, cx);
+                            this.apply_format(MarkdownFormat::LinePrefix("* [ ] "), window, cx);
                         })),
                     ),
             )
@@ -287,7 +302,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("> ", "", window, cx);
+                            this.apply_format(MarkdownFormat::LinePrefix("> "), window, cx);
                         })),
                     )
                     .child(
@@ -298,7 +313,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("---", "", window, cx);
+                            this.apply_format(MarkdownFormat::Separator, window, cx);
                         })),
                     )
                     .child(
@@ -320,7 +335,7 @@ impl Render for MarkdownToolbar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.insert_or_surround("```", "```", window, cx);
+                            this.apply_format(MarkdownFormat::CodeBlock, window, cx);
                         })),
                     ),
             )
@@ -362,7 +377,7 @@ impl Render for MarkdownToolbar {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     #[cfg(feature = "gpui-test-support")]
-    use super::MarkdownToolbar;
+    use super::{MarkdownFormat, MarkdownToolbar};
 
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::Fulgur;
@@ -540,6 +555,37 @@ mod tests {
                 .text()
                 .to_string();
             assert_eq!(text, "hello[](https://)");
+        });
+    }
+
+    /// The list button must prefix every selected line, not only the first, and keep the
+    /// same text selected so a second action applies to the same lines
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_apply_format_prefixes_every_selected_line(cx: &mut TestAppContext) {
+        let (fulgur, toolbar, mut visual_cx) = setup_toolbar(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur
+                .update(cx, |this, cx| {
+                    this.update_active_editor_tab(cx, |editor, cx| {
+                        editor.content.update(cx, |content, cx| {
+                            content.set_value("intro\none\ntwo", window, cx);
+                            content.set_selected_range(8..11, cx);
+                        });
+                    })
+                })
+                .expect("expected active editor tab");
+
+            toolbar.update(cx, |bar, cx| {
+                bar.apply_format(MarkdownFormat::LinePrefix("- "), window, cx);
+            });
+
+            let text = active_content_text(&fulgur, cx, |content| content.text().to_string());
+            let selected =
+                active_content_text(&fulgur, cx, |content| content.selected_value().to_string());
+            assert_eq!(text, "intro\n- one\n- two");
+            assert_eq!(selected, "e\n- t");
         });
     }
 }
