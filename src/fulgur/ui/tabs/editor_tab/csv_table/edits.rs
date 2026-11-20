@@ -1,7 +1,8 @@
 //! Single header/cell editing and the modal edit dialog.
 
+use crate::fulgur::ui::dialogs::initial_focus::OpenAlertDialogWithFocus;
 use gpui_kit::component::{
-    WindowExt, button::ButtonVariant, dialog::DialogButtonProps, input::Input, table::TableState,
+    button::ButtonVariant, dialog::DialogButtonProps, input::Input, table::TableState,
 };
 use gpui_kit::{Context, Focusable, ParentElement, Styled, Window, div, px};
 
@@ -71,9 +72,8 @@ impl CsvTableDelegate {
             EditTarget::Cell(_, _) => "Edit cell",
         };
 
-        window.open_alert_dialog(cx, move |dialog, window, cx| {
-            let focus_handle = input.read(cx).focus_handle(cx);
-            window.focus(&focus_handle, cx);
+        let initial_focus = input.read(cx).focus_handle(cx);
+        window.open_alert_dialog_with_focus(initial_focus, cx, move |dialog, _window, _cx| {
             let input_for_ok = input.clone();
             let table_for_ok = table.clone();
             dialog

@@ -142,6 +142,7 @@ impl Fulgur {
             log::warn!("Failed to remove device API key for profile '{profile_id}': {e}");
         }
         let _ = Fulgur::shared_state(cx).remove_sync_state(profile_id);
+        Fulgur::forget_profile_device_keys(profile_id, cx);
         self.settings
             .app_settings
             .synchronization_settings

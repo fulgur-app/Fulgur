@@ -929,13 +929,13 @@ fn load_for_startup_reports_an_unreadable_file_instead_of_a_first_run() {
 #[cfg(feature = "gpui-test-support")]
 mod gpui_settings_propagation_tests {
     use crate::fulgur::WindowInit;
-    use crate::fulgur::{Fulgur, shared_state::SharedAppState, window_manager::WindowManager};
+    use crate::fulgur::{Fulgur, shared_state::SharedAppState};
     use gpui_kit::{AppContext, BorrowAppContext, Entity, TestAppContext, WindowId, WindowOptions};
 
     use std::cell::RefCell;
     use std::path::PathBuf;
 
-    use crate::test_support::setup_test_globals;
+    use crate::test_support::{register_window_in_global_manager, setup_test_globals};
 
     /// Open a test window with a mounted `Fulgur` root view.
     ///
@@ -965,24 +965,6 @@ mod gpui_settings_propagation_tests {
                 .into_inner()
                 .expect("failed to capture test Fulgur entity"),
         )
-    }
-
-    /// Register a test window in the shared `WindowManager` global.
-    ///
-    /// ### Arguments
-    /// - `cx`: The GPUI test app context.
-    /// - `window_id`: The window ID to register.
-    /// - `fulgur`: The `Fulgur` entity associated with the window.
-    fn register_window_in_global_manager(
-        cx: &mut TestAppContext,
-        window_id: WindowId,
-        fulgur: &Entity<Fulgur>,
-    ) {
-        cx.update(|cx| {
-            cx.update_global::<WindowManager, _>(|manager, _| {
-                manager.register(window_id, fulgur.downgrade());
-            });
-        });
     }
 
     #[gpui_kit::test]

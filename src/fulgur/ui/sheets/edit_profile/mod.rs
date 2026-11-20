@@ -6,6 +6,7 @@ mod validation;
 use crate::fulgur::{
     Fulgur,
     settings::{MAX_PROFILES, new_profile_id},
+    utils::crypto_helper::public_key_fingerprint,
 };
 use form_state::{DEVICE_KEY_PLACEHOLDER, KeyRollback, ProfileFormState};
 use gpui_kit::component::{
@@ -66,6 +67,7 @@ impl Fulgur {
             initial_url,
             initial_email,
             initial_dedup,
+            own_key_fingerprint,
         ) = match profile_id.and_then(|id| {
             self.settings
                 .app_settings
@@ -81,6 +83,7 @@ impl Fulgur {
                 profile.server_url.unwrap_or_default(),
                 profile.email.unwrap_or_default(),
                 profile.is_deduplication,
+                profile.public_key.as_deref().map(public_key_fingerprint),
             ),
             None => (
                 new_profile_id(),
@@ -90,6 +93,7 @@ impl Fulgur {
                 String::new(),
                 String::new(),
                 true,
+                None,
             ),
         };
 
@@ -127,6 +131,7 @@ impl Fulgur {
             is_active: Arc::new(Mutex::new(initial_active)),
             is_deduplication: Arc::new(Mutex::new(initial_dedup)),
             device_key_rollback: Arc::new(Mutex::new(KeyRollback::NoWrite)),
+            own_key_fingerprint,
         });
 
         let entity = cx.entity();

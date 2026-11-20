@@ -5,7 +5,7 @@ use rusqlite::{Connection, TransactionBehavior};
 
 /// Schema version this build expects. Bumping it requires appending a step to
 /// `MIGRATIONS`; the existing steps must never be edited.
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 /// Ordered schema migrations. Index `n` upgrades `user_version` from `n` to
 /// `n + 1`, so a fresh database runs every step in order.
@@ -14,6 +14,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/002_share_origin.sql"),
     include_str!("migrations/003_tab_encoding.sql"),
     include_str!("migrations/004_remote_history.sql"),
+    include_str!("migrations/005_device_key_pins.sql"),
 ];
 
 /// How long a connection waits for a lock held by another connection.
@@ -157,7 +158,7 @@ mod tests {
     #[test]
     fn expected_tables_exist_after_migration() {
         let conn = migrated_connection();
-        for table in ["windows", "tabs", "remote_history"] {
+        for table in ["windows", "tabs", "remote_history", "device_key_pins"] {
             let count: i64 = conn
                 .query_row(
                     "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -290,6 +291,34 @@ mod tests {
             .query_row("SELECT count(*) FROM remote_history", [], |row| row.get(0))
             .expect("count remote history rows");
         assert_eq!(urls, 0, "the remote history must start empty");
+    }
+
+    #[test]
+    fn upgrading_from_version_four_keeps_the_remote_history_and_starts_with_no_pins() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory database");
+        apply_pragmas(&conn).expect("apply pragmas");
+        for migration in &super::MIGRATIONS[..4] {
+            conn.execute_batch(migration)
+                .expect("apply the first four migrations");
+        }
+        conn.pragma_update(None, "user_version", 4)
+            .expect("record version four");
+        conn.execute(
+            "INSERT INTO remote_history (url, position) VALUES ('ssh://host/', 0)",
+            [],
+        )
+        .expect("seed a version four history entry");
+
+        assert!(migrate(&mut conn).expect("migrate to the current version"));
+
+        let urls: i64 = conn
+            .query_row("SELECT count(*) FROM remote_history", [], |row| row.get(0))
+            .expect("count remote history rows");
+        assert_eq!(urls, 1, "the remote history must survive the migration");
+        let pins: i64 = conn
+            .query_row("SELECT count(*) FROM device_key_pins", [], |row| row.get(0))
+            .expect("count device key pins");
+        assert_eq!(pins, 0, "no device key is trusted before the first sight");
     }
 
     #[test]

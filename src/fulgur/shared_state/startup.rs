@@ -1,6 +1,6 @@
 use super::{AppNotification, SharedAppState, SyncState};
 use crate::fulgur::settings::ProfileId;
-use crate::fulgur::state::{RemoteHistory, StateDb};
+use crate::fulgur::state::{DeviceKeyPins, RemoteHistory, StateDb};
 use crate::fulgur::utils::crypto_helper::ProfileKeyFailure;
 use crate::fulgur::{
     settings::Settings, settings::Themes, sync::synchronization::SynchronizationStatus,
@@ -34,6 +34,24 @@ impl SharedAppState {
         state_db.load_remote_history().unwrap_or_else(|e| {
             log::error!("Failed to load the remote URL history: {e}");
             RemoteHistory::default()
+        })
+    }
+
+    /// Read the share recipient public keys pinned in the session-state database.
+    ///
+    /// ### Arguments
+    /// - `state_db`: The session-state database, `None` when none could be opened
+    ///
+    /// ### Returns
+    /// - `DeviceKeyPins`: The persisted pins, empty when there is no database or
+    ///   when they cannot be read, so every device is pinned again on next sight
+    pub(super) fn load_device_key_pins(state_db: Option<&StateDb>) -> DeviceKeyPins {
+        let Some(state_db) = state_db else {
+            return DeviceKeyPins::default();
+        };
+        state_db.load_device_key_pins().unwrap_or_else(|e| {
+            log::error!("Failed to load the pinned device keys: {e}");
+            DeviceKeyPins::default()
         })
     }
 

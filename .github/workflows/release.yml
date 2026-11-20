@@ -304,29 +304,35 @@ jobs:
         run: |
           mkdir -p artifacts
 
-          # Use sha256sum on Linux, shasum on macOS
-          checksum_cmd() { if command -v sha256sum &>/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi; }
+          # Hash from inside artifacts/ so each line names the bare file, exactly as
+          # users download it next to SHA256SUMS.txt. sha256sum on Linux, shasum on macOS.
+          checksum_file() {
+            (
+              cd artifacts
+              if command -v sha256sum &>/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi
+            ) > "artifacts/$1.sha256"
+          }
 
           if [ "$PLATFORM" = "macos" ]; then
             DMG=$(find . -maxdepth 3 -name "*.dmg" -not -path "./artifacts/*" | head -1)
             if [ -n "$DMG" ]; then
-              DEST="artifacts/Fulgur-v${VERSION}-macos-${ARCH}.dmg"
-              mv "$DMG" "$DEST"
-              checksum_cmd "$DEST" > "${DEST}.sha256"
+              NAME="Fulgur-v${VERSION}-macos-${ARCH}.dmg"
+              mv "$DMG" "artifacts/$NAME"
+              checksum_file "$NAME"
             fi
           elif [ "$PLATFORM" = "linux" ]; then
             DEB=$(find . -maxdepth 3 -name "*.deb" -not -path "./artifacts/*" | head -1)
             if [ -n "$DEB" ]; then
-              DEST="artifacts/Fulgur-v${VERSION}-linux-${ARCH}.deb"
-              mv "$DEB" "$DEST"
-              checksum_cmd "$DEST" > "${DEST}.sha256"
+              NAME="Fulgur-v${VERSION}-linux-${ARCH}.deb"
+              mv "$DEB" "artifacts/$NAME"
+              checksum_file "$NAME"
             fi
 
             APPIMAGE=$(find . -maxdepth 3 -name "*.AppImage" -not -path "./artifacts/*" | head -1)
             if [ -n "$APPIMAGE" ]; then
-              DEST="artifacts/Fulgur-v${VERSION}-linux-${ARCH}.AppImage"
-              mv "$APPIMAGE" "$DEST"
-              checksum_cmd "$DEST" > "${DEST}.sha256"
+              NAME="Fulgur-v${VERSION}-linux-${ARCH}.AppImage"
+              mv "$APPIMAGE" "artifacts/$NAME"
+              checksum_file "$NAME"
             fi
           fi
 
@@ -393,14 +399,38 @@ jobs:
           path: release-artifacts
           merge-multiple: true
 
-      - name: Generate SHA256SUMS.txt
+      - name: Generate and verify SHA256SUMS.txt
         working-directory: release-artifacts
         run: |
-          cat *.sha256 | sort > SHA256SUMS.txt
+          # PowerShell's Out-File ends the Windows line with CRLF; keep the manifest LF-only.
+          cat *.sha256 | tr -d '\r' | sort -k2 > SHA256SUMS.txt
           rm -f *.sha256
           echo "SHA256SUMS.txt contents:"
           cat SHA256SUMS.txt
           echo ""
+
+          # Verify the manifest the way a user would, from beside the downloaded packages.
+          sha256sum --check --strict SHA256SUMS.txt
+
+          # Every package the build matrix produces must be published and listed, and
+          # nothing else. Keep this list in sync with the build matrix above.
+          EXPECTED=$(printf '%s\n' \
+            "Fulgur-v${VERSION}-macos-aarch64.dmg" \
+            "Fulgur-v${VERSION}-windows-x86_64-setup.exe" \
+            "Fulgur-v${VERSION}-linux-x86_64.deb" \
+            "Fulgur-v${VERSION}-linux-x86_64.AppImage" \
+            "Fulgur-v${VERSION}-linux-aarch64.deb" \
+            "Fulgur-v${VERSION}-linux-aarch64.AppImage" | sort)
+          PUBLISHED=$(find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort)
+          LISTED=$(awk '{ print $2 }' SHA256SUMS.txt | sort)
+          if [ "$PUBLISHED" != "$EXPECTED" ] || [ "$LISTED" != "$EXPECTED" ]; then
+            echo "::error::Release packages or SHA256SUMS.txt entries do not match the expected set"
+            echo "Expected vs published:"
+            diff <(echo "$EXPECTED") <(echo "$PUBLISHED") || true
+            echo "Expected vs listed in SHA256SUMS.txt:"
+            diff <(echo "$EXPECTED") <(echo "$LISTED") || true
+            exit 1
+          fi
           echo "All release artifacts:"
           ls -la
 

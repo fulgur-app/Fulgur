@@ -1,8 +1,9 @@
 use crate::fulgur::ui::icons::CustomIcon;
+use gpui_kit::base::ObservedElement;
 use gpui_kit::component::Icon;
 use gpui_kit::{
     Animation, AnimationExt, Div, Hsla, InteractiveElement, IntoElement, ParentElement, Role,
-    Stateful, StatefulInteractiveElement, Styled, accesskit::Toggled, div,
+    Stateful, StatefulInteractiveElement, Styled, TestSupportExt, accesskit::Toggled, div,
 };
 use std::f32::consts::PI;
 use std::time::Duration;
@@ -33,16 +34,17 @@ pub fn status_bar_item_factory(content: impl IntoElement, border_color: Hsla) ->
 /// - `accent_color`: The color of the accent
 ///
 /// ### Returns
-/// - `Stateful<Div>`: A status bar button
+/// - `ObservedElement<Stateful<Div>>`: A status bar button, addressable by `id` in UI tests
 pub fn status_bar_button_factory(
     id: &'static str,
     content: impl IntoElement,
     border_color: Hsla,
     accent_color: Hsla,
-) -> Stateful<Div> {
+) -> ObservedElement<Stateful<Div>> {
     status_bar_item_factory(content, border_color)
         .id(id)
         .role(Role::Button)
+        .test_support()
         .hover(|this| this.bg(accent_color))
         .cursor_pointer()
 }
@@ -69,14 +71,14 @@ pub fn status_bar_right_item_factory(content: String, border_color: Hsla) -> imp
 /// - `checked`: Whether the toggle is checked
 ///
 /// ### Returns
-/// - `Stateful<Div>`: A status bar toggle button
+/// - `ObservedElement<Stateful<Div>>`: A status bar toggle button, addressable by `id` in UI tests
 pub fn status_bar_toggle_button_factory(
     id: &'static str,
     content: impl IntoElement,
     border_color: Hsla,
     accent_color: Hsla,
     checked: bool,
-) -> Stateful<Div> {
+) -> ObservedElement<Stateful<Div>> {
     let mut button = status_bar_button_factory(id, content, border_color, accent_color)
         .aria_toggled(Toggled::from(checked));
     if checked {

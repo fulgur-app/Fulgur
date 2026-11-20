@@ -37,10 +37,7 @@ impl Fulgur {
             if let Tab::Editor(editor_tab) = tab.read(cx)
                 && let TabLocation::Remote(existing_spec) = &editor_tab.location
             {
-                existing_spec.host == spec.host
-                    && existing_spec.port == spec.port
-                    && existing_spec.user == spec.user
-                    && existing_spec.path == spec.path
+                existing_spec.same_location(spec)
             } else {
                 false
             }

@@ -6,7 +6,9 @@ pub use notifications::{AppNotification, NotificationOrigin, spawn_notification_
 pub use sync_state::{PendingDevicesResult, SyncState};
 
 use crate::fulgur::settings::ProfileId;
-use crate::fulgur::state::{RemoteHistory, StateDb, StateWriter, WindowState, WindowsState};
+use crate::fulgur::state::{
+    DeviceKeyPins, RemoteHistory, StateDb, StateWriter, WindowState, WindowsState,
+};
 use crate::fulgur::sync::ssh::credentials::SshCredentialCache;
 use crate::fulgur::sync::ssh::pool::SshSessionPool;
 use crate::fulgur::sync::ssh::save_queue::RemoteSaveQueue;
@@ -82,6 +84,8 @@ pub struct SharedAppState {
     /// URLs recently opened through the Open Remote File dialog. Mutate via
     /// `cx.update_global` only, then hand the result to `state_writer`.
     pub remote_history: RemoteHistory,
+    /// Share recipient public keys trusted on first use, per profile and device.
+    pub device_key_pins: DeviceKeyPins,
     /// Per-window restore payloads taken once at startup, indexed by window
     /// position, used to restore every window without re-reading the state
     /// database per window.
@@ -112,7 +116,7 @@ impl SharedAppState {
     /// - `pending_files_from_macos`: Queue of files to open from outside the app, seeded with the command-line files
     /// - `restore_state`: Startup snapshot of `WindowsState`, split into one restore payload per window
     /// - `state_db`: The open session-state database, read for the remote URL
-    ///   history, then handed to the writer thread which owns it for the lifetime
+    ///   history and the pinned device keys, then handed to the writer thread which owns it for the lifetime
     ///   of the process. `None` when none could be opened, in which case session
     ///   state is not persisted.
     ///
@@ -135,6 +139,7 @@ impl SharedAppState {
             &notification_tx,
         );
         let remote_history = Self::load_remote_history(state_db.as_ref());
+        let device_key_pins = Self::load_device_key_pins(state_db.as_ref());
 
         Self {
             settings,
@@ -167,6 +172,7 @@ impl SharedAppState {
             remote_save_queue: Arc::new(RemoteSaveQueue::new()),
             state_writer: Arc::new(StateWriter::new(state_db)),
             remote_history,
+            device_key_pins,
             restore_state: Arc::new(Mutex::new(
                 restore_state.map_or_default(|state| state.windows.into_iter().map(Some).collect()),
             )),

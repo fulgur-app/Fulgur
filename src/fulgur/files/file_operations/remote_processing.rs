@@ -66,6 +66,10 @@ impl Fulgur {
                             &remote_file.spec,
                             cx,
                         );
+                        // Another open of the same file may have completed first.
+                        if self.reveal_open_remote_file(&remote_file.spec, window, cx) {
+                            continue;
+                        }
                         let recent_remote_url =
                             crate::fulgur::sync::ssh::url::format_remote_url(&remote_file.spec);
                         log::debug!(
@@ -475,6 +479,47 @@ mod tests {
                     editor.awaiting_remote_content,
                     "a refused binary reload must leave the tab pending a retry"
                 );
+            });
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_completed_open_of_an_already_open_file_focuses_its_tab(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let tab_entity = this.tabs.first().expect("expected an editor tab").clone();
+                let tab_id = tab_entity.update(cx, |tab, _cx| {
+                    let editor = tab.as_editor_mut().expect("expected an editor tab");
+                    editor.location = TabLocation::Remote(remote_spec());
+                    editor.id
+                });
+                this.new_tab(window, cx);
+                let tab_count_before = this.tabs.len();
+                this.pending_remote_open
+                    .lock()
+                    .push(PendingRemoteOpenOutcome {
+                        target_tab_id: None,
+                        target_request_id: None,
+                        target_reload_guard: None,
+                        history_url: None,
+                        result: Ok(RemoteOpenResult::File(RemoteFileResult {
+                            spec: remote_spec(),
+                            content: "server text".to_string(),
+                            encoding: UTF_8.to_string(),
+                            lossy: false,
+                            file_size: 11,
+                        })),
+                    });
+                this.process_pending_remote_files(window, cx);
+
+                assert_eq!(
+                    this.tabs.len(),
+                    tab_count_before,
+                    "a second open of the same file must not create a duplicate tab"
+                );
+                assert_eq!(this.active_tab_id, Some(tab_id));
             });
         });
     }

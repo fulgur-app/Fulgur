@@ -6,8 +6,7 @@ use crate::fulgur::{
     Fulgur,
     settings::ServerProfile,
     sync::synchronization::{
-        SynchronizationError, SynchronizationStatus, apply_initial_sync_outcome,
-        initial_synchronization, set_sync_server_connection_status,
+        SynchronizationError, SynchronizationStatus, set_sync_server_connection_status,
     },
 };
 use futures::channel::mpsc::UnboundedSender;
@@ -17,13 +16,14 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
+        mpsc,
     },
     thread,
     time::{Duration, Instant},
 };
 
 use super::super::{
-    connection::{SseAgents, SseShareState, connect_sse},
+    connection::{InitialSyncReport, InitialSyncStage, SseAgents, connect_sse_after_initial_sync},
     types::{SSE_WORKER_JOIN_TIMEOUT, SseEvent},
 };
 
@@ -45,60 +45,42 @@ struct SseRestartJob {
 
 /// Result of running an [`SseRestartJob`].
 enum SseRestartOutcome {
-    /// Initial synchronization succeeded and a new SSE connection was started.
-    Completed {
-        device_name: String,
-        notifications: Vec<AppNotification>,
-    },
-    /// Initial synchronization failed, so no SSE connection was started.
+    /// A new SSE worker is running; it synchronizes, retrying transient
+    /// failures, then opens its stream and publishes each outcome itself.
+    Started,
+    /// No SSE worker could be started.
     Failed(SynchronizationError),
-    /// The user cancelled before the outcome could be published.
+    /// The user cancelled before the new worker was started.
     Cancelled,
 }
 
 impl SseRestartJob {
-    /// Retire the previous worker, re-run the initial synchronization, and open a new SSE connection.
+    /// Retire the previous worker and start a new one that re-runs the initial
+    /// synchronization before opening its SSE connection.
     ///
     /// ### Arguments
     /// - `cancel_flag`: Cancel flag of the progress indicator, when the caller
     ///   shows one. Checked once before any work with a visible effect starts.
+    /// - `first_attempt_tx`: Receives the outcome of the new worker's first
+    ///   synchronization attempt, when the caller reports it to the user.
     ///
     /// ### Returns
-    /// - `SseRestartOutcome`: What the caller should report to the user.
-    fn run(mut self, cancel_flag: Option<&AtomicBool>) -> SseRestartOutcome {
+    /// - `SseRestartOutcome`: Whether the new worker is running.
+    fn run(
+        mut self,
+        cancel_flag: Option<&AtomicBool>,
+        first_attempt_tx: Option<mpsc::Sender<InitialSyncReport>>,
+    ) -> SseRestartOutcome {
         drop(self.old_worker.take());
         thread::sleep(SSE_RECONNECT_DELAY);
         if cancel_flag.is_some_and(|flag| flag.load(Ordering::Acquire)) {
             return SseRestartOutcome::Cancelled;
         }
-        match initial_synchronization(
-            &self.profile,
-            &self.sync_state.token_state,
-            &self.http_agent,
-            &self.sync_state.pending_ack_share_ids,
-        ) {
-            Ok(outcome) => {
-                let (device_name, notifications) =
-                    apply_initial_sync_outcome(&self.sync_state, &self.profile.name, outcome);
-                log::info!(
-                    "Profile '{}': initial sync succeeded, starting new SSE",
-                    self.profile.name
-                );
-                let profile_name = self.profile.name.clone();
-                if let Err(e) = self.start_sse() {
-                    log::error!("Profile '{profile_name}': failed to start SSE: {e}");
-                    return SseRestartOutcome::Failed(e);
-                }
-                SseRestartOutcome::Completed {
-                    device_name,
-                    notifications,
-                }
-            }
+        let profile_name = self.profile.name.clone();
+        match self.start_sse(first_attempt_tx) {
+            Ok(()) => SseRestartOutcome::Started,
             Err(e) => {
-                log::error!(
-                    "Profile '{}': initial sync failed, not starting SSE: {e}",
-                    self.profile.name
-                );
+                log::error!("Profile '{profile_name}': failed to start SSE: {e}");
                 SseRestartOutcome::Failed(e)
             }
         }
@@ -106,33 +88,98 @@ impl SseRestartJob {
 
     /// Hand the profile's shared state to a freshly spawned SSE worker.
     ///
+    /// ### Arguments
+    /// - `first_attempt_tx`: Receives the outcome of the worker's first
+    ///   synchronization attempt.
+    ///
     /// ### Errors
-    /// - Returns a `SynchronizationError` when the SSE worker thread could not be started.
+    /// - Returns a `SynchronizationError` when the profile has no server URL
+    ///   or the SSE worker thread could not be started.
     ///
     /// ### Returns
-    /// - `Ok(())`: The SSE worker is running and will publish `Connected` once its stream opens
+    /// - `Ok(())`: The SSE worker is running and publishes each synchronization outcome
     /// - `Err(SynchronizationError)`: No SSE worker was started
-    fn start_sse(self) -> Result<(), SynchronizationError> {
+    fn start_sse(
+        self,
+        first_attempt_tx: Option<mpsc::Sender<InitialSyncReport>>,
+    ) -> Result<(), SynchronizationError> {
         let agents = SseAgents {
             rest: Arc::clone(&self.http_agent),
             stream: Arc::clone(&self.sse_http_agent),
         };
-        let share_state = SseShareState {
-            pending_shared_files: Arc::clone(&self.sync_state.pending_shared_files),
-            pending_ack_share_ids: Arc::clone(&self.sync_state.pending_ack_share_ids),
-            max_file_size_bytes: Arc::clone(&self.sync_state.max_file_size_bytes),
-            server_version: Arc::clone(&self.sync_state.server_version),
-            notification_tx: self.sync_state.notification_tx.clone(),
+        let initial_sync = InitialSyncStage {
+            sync_state: Arc::clone(&self.sync_state),
+            first_attempt_tx,
         };
-        connect_sse(
+        connect_sse_after_initial_sync(
             &self.profile,
             self.sse_tx,
             &self.new_worker_hooks,
-            self.sync_state.connection_status.clone(),
-            &self.sync_state.token_state,
             &agents,
-            &share_state,
+            initial_sync,
         )
+    }
+}
+
+/// Polling interval of the progress indicator waiting for the first attempt.
+const FIRST_ATTEMPT_POLL: Duration = Duration::from_millis(100);
+
+/// Wait for a new worker's first synchronization attempt to finish.
+///
+/// ### Arguments
+/// - `report_rx`: Receiver the worker sends its first attempt's outcome to.
+/// - `cancel_flag`: Cancel flag of the progress indicator.
+///
+/// ### Returns
+/// - `Some(InitialSyncReport)`: The first attempt's outcome.
+/// - `None`: The user cancelled, or the worker stopped before reporting.
+fn wait_for_first_attempt(
+    report_rx: &mpsc::Receiver<InitialSyncReport>,
+    cancel_flag: &AtomicBool,
+) -> Option<InitialSyncReport> {
+    loop {
+        if cancel_flag.load(Ordering::Acquire) {
+            return None;
+        }
+        match report_rx.recv_timeout(FIRST_ATTEMPT_POLL) {
+            Ok(report) => return Some(report),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return None,
+        }
+    }
+}
+
+/// Build the notification reporting a first synchronization attempt.
+///
+/// ### Arguments
+/// - `profile_name`: Profile name used in the notification text.
+/// - `report`: The first attempt's outcome.
+///
+/// ### Returns
+/// - `AppNotification`: A version warning when the server warrants one, the
+///   success message otherwise, or the failure with its retry state.
+fn first_attempt_notification(profile_name: &str, report: InitialSyncReport) -> AppNotification {
+    match report {
+        InitialSyncReport::Synced {
+            device_name,
+            notifications,
+        } => notifications.into_iter().next().unwrap_or_else(|| {
+            AppNotification::background(
+                NotificationType::Success,
+                format!("{profile_name}: Connection successful as {device_name}"),
+            )
+        }),
+        InitialSyncReport::Failed { error, retrying } => {
+            let retry_note = if retrying {
+                " Retrying in the background."
+            } else {
+                ""
+            };
+            AppNotification::background(
+                NotificationType::Error,
+                format!("{profile_name}: Connection failed: {error}.{retry_note}"),
+            )
+        }
     }
 }
 
@@ -269,7 +316,7 @@ impl Fulgur {
         mark_connecting(&sync_state);
         cx.notify();
         thread::spawn(move || {
-            if let SseRestartOutcome::Failed(e) = job.run(None) {
+            if let SseRestartOutcome::Failed(e) = job.run(None, None) {
                 publish_restart_status(&sync_state, SynchronizationStatus::from_error(&e));
             }
         });
@@ -298,8 +345,12 @@ impl Fulgur {
 
         mark_connecting(&sync_state);
 
+        // Cancelling stops the new worker too, so it does not keep retrying
+        // and connect behind the user's back.
         let cancel_state = Arc::clone(&sync_state);
+        let new_worker_shutdown = Arc::clone(&job.new_worker_hooks.shutdown_flag);
         let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, _cx| {
+            new_worker_shutdown.store(true, Ordering::Relaxed);
             set_sync_server_connection_status(
                 &cancel_state.connection_status,
                 SynchronizationStatus::Disconnected,
@@ -313,29 +364,23 @@ impl Fulgur {
             format!("Connecting to {profile_name}...").into(),
             cancel_callback,
             move |cancel_flag| {
-                let (notification, status) = match job.run(Some(cancel_flag)) {
+                let (report_tx, report_rx) = mpsc::channel();
+                let notification = match job.run(Some(cancel_flag), Some(report_tx)) {
                     SseRestartOutcome::Cancelled => return,
-                    SseRestartOutcome::Completed {
-                        device_name,
-                        notifications,
-                    } => {
-                        let notification = notifications.into_iter().next().unwrap_or_else(|| {
-                            AppNotification::background(
-                                NotificationType::Success,
-                                format!("{profile_name}: Connection successful as {device_name}"),
-                            )
-                        });
-                        (notification, SynchronizationStatus::Connected)
-                    }
-                    SseRestartOutcome::Failed(e) => (
+                    SseRestartOutcome::Failed(e) => {
+                        publish_restart_status(&sync_state, SynchronizationStatus::from_error(&e));
                         AppNotification::background(
                             NotificationType::Error,
                             format!("{profile_name}: Connection failed: {e}"),
-                        ),
-                        SynchronizationStatus::from_error(&e),
-                    ),
+                        )
+                    }
+                    SseRestartOutcome::Started => {
+                        let Some(report) = wait_for_first_attempt(&report_rx, cancel_flag) else {
+                            return;
+                        };
+                        first_attempt_notification(&profile_name, report)
+                    }
                 };
-                publish_restart_status(&sync_state, status);
                 let _ = notification_tx.unbounded_send(notification);
             },
         );

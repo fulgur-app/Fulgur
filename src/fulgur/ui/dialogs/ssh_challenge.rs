@@ -1,9 +1,8 @@
-use std::cell::Cell;
-use std::rc::Rc;
 use std::sync::mpsc::Sender;
 
+use crate::fulgur::ui::dialogs::initial_focus::OpenAlertDialogWithFocus;
 use gpui_kit::component::{
-    ActiveTheme, WindowExt,
+    ActiveTheme,
     button::ButtonVariant,
     dialog::DialogButtonProps,
     input::{Input, InputState},
@@ -50,15 +49,9 @@ impl Fulgur {
             .map(|text| SharedString::from(text.to_string()));
         let prompt: SharedString = challenge.prompt.trim().to_string().into();
         let response_input = cx.new(|cx| InputState::new(window, cx).masked(!challenge.echo));
-        let has_initialized_focus = Rc::new(Cell::new(false));
+        let initial_focus = response_input.read(cx).focus_handle(cx);
 
-        window.open_alert_dialog(cx, move |modal, window, cx| {
-            if !has_initialized_focus.get() {
-                let focus_handle = response_input.read(cx).focus_handle(cx);
-                window.focus(&focus_handle, cx);
-                has_initialized_focus.set(true);
-            }
-
+        window.open_alert_dialog_with_focus(initial_focus, cx, move |modal, _window, cx| {
             let response_input_ok = response_input.clone();
             let answer_ok = answer_tx.clone();
             let answer_cancel = answer_tx.clone();

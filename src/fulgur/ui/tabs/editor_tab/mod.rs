@@ -6,6 +6,8 @@ mod navigation;
 mod operations;
 
 #[cfg(all(test, feature = "gpui-test-support"))]
+mod multi_cursor_interaction_tests;
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod read_only_tests;
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;
