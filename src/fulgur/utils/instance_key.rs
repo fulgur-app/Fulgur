@@ -9,14 +9,6 @@
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
-/// First loopback port of the range used for Fulgur IPC on Windows.
-#[cfg(any(target_os = "windows", test))]
-const IPC_PORT_BASE: u16 = 29764;
-
-/// Number of ports in the Windows IPC range.
-#[cfg(any(target_os = "windows", test))]
-const IPC_PORT_RANGE: u16 = 1000;
-
 /// Short, stable identifier of a configuration directory.
 ///
 /// ### Arguments
@@ -31,18 +23,16 @@ fn instance_hash(config_dir: &Path) -> [u8; 8] {
     hash
 }
 
-/// Loopback port of the IPC listener for a configuration directory, on Windows.
+/// Hex identifier of a configuration directory, used to name its IPC channel.
 ///
 /// ### Arguments
 /// - `config_dir`: The resolved configuration directory
 ///
 /// ### Returns
-/// - `u16`: A port in `29764..30764`, stable for a given directory
-#[cfg(any(target_os = "windows", test))]
+/// - `String`: 16 lowercase hex characters, stable for a given directory
 #[must_use]
-pub fn ipc_port(config_dir: &Path) -> u16 {
-    let hash = instance_hash(config_dir);
-    IPC_PORT_BASE + u16::from_be_bytes([hash[0], hash[1]]) % IPC_PORT_RANGE
+pub fn instance_id(config_dir: &Path) -> String {
+    hex::encode(instance_hash(config_dir))
 }
 
 /// Path of the IPC socket for a configuration directory, on Linux.
@@ -61,13 +51,13 @@ pub fn socket_path(
     runtime_dir: Option<&Path>,
     fallback_dir: &Path,
 ) -> std::path::PathBuf {
-    let file_name = format!("fulgur-{}.sock", hex::encode(instance_hash(config_dir)));
+    let file_name = format!("fulgur-{}.sock", instance_id(config_dir));
     runtime_dir.unwrap_or(fallback_dir).join(file_name)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{IPC_PORT_BASE, IPC_PORT_RANGE, ipc_port, socket_path};
+    use super::{instance_id, socket_path};
     use std::path::{Path, PathBuf};
 
     /// Configuration directories of an installed and a portable Fulgur.
@@ -83,19 +73,20 @@ mod tests {
     }
 
     #[test]
-    fn test_distinct_config_dirs_get_distinct_ports() {
+    fn test_distinct_config_dirs_get_distinct_ids() {
         let (installed, portable) = installed_and_portable();
 
-        assert_ne!(ipc_port(&installed), ipc_port(&portable));
+        assert_ne!(instance_id(&installed), instance_id(&portable));
     }
 
     #[test]
-    fn test_ipc_port_is_stable_and_in_range() {
+    fn test_instance_id_is_stable_hex() {
         let (installed, _) = installed_and_portable();
-        let port = ipc_port(&installed);
+        let id = instance_id(&installed);
 
-        assert_eq!(port, ipc_port(&installed));
-        assert!((IPC_PORT_BASE..IPC_PORT_BASE + IPC_PORT_RANGE).contains(&port));
+        assert_eq!(id, instance_id(&installed));
+        assert_eq!(id.len(), 16);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]

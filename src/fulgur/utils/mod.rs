@@ -19,4 +19,6 @@ pub mod single_instance;
 pub mod startup_error;
 pub mod updater;
 pub mod utilities;
+#[cfg(target_os = "windows")]
+pub mod windows_pipe;
 pub mod worker;

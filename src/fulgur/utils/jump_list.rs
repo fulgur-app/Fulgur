@@ -106,13 +106,13 @@ unsafe fn try_update_jump_list(
         CoCreateInstance(&EnumerableObjectCollection, None, CLSCTX_INPROC_SERVER)?;
     tasks.AddObject(&make_shell_link(
         &exe_hstr,
-        "--new-tab",
+        &["--new-tab"],
         "Open a new tab",
         "New Tab",
     )?)?;
     tasks.AddObject(&make_shell_link(
         &exe_hstr,
-        "--new-window",
+        &["--new-window"],
         "Open a new window",
         "New Window",
     )?)?;
@@ -129,7 +129,7 @@ unsafe fn try_update_jump_list(
                 .unwrap_or("Untitled");
             col.AddObject(&make_shell_link(
                 &exe_hstr,
-                file.to_string_lossy().as_ref(),
+                &[file.to_string_lossy().as_ref()],
                 name,
                 name,
             )?)?;
@@ -156,7 +156,7 @@ unsafe fn try_update_jump_list(
         for (path, name) in &open_tabs {
             col.AddObject(&make_shell_link(
                 &exe_hstr,
-                path.to_string_lossy().as_ref(),
+                &[path.to_string_lossy().as_ref()],
                 name,
                 name,
             )?)?;
@@ -176,7 +176,9 @@ unsafe fn try_update_jump_list(
 ///
 /// ### Arguments
 /// - `exe_hstr`: Wide-string path to the executable to launch
-/// - `args`: Command-line arguments passed to the executable (empty string for none)
+/// - `args`: Logical arguments passed to the executable (empty slice for none);
+///   each one is quoted with [`join_windows_args`] so paths containing spaces
+///   reach the new process as a single argument
 /// - `description`: Tooltip text shown when hovering over the item
 /// - `title`: Visible label displayed in the jump list
 ///
@@ -185,14 +187,14 @@ unsafe fn try_update_jump_list(
 /// - `Err(e)`: A COM call failed
 unsafe fn make_shell_link(
     exe_hstr: &HSTRING,
-    args: &str,
+    args: &[&str],
     description: &str,
     title: &str,
 ) -> windows::core::Result<IShellLinkW> {
     let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
     link.SetPath(PCWSTR(exe_hstr.as_ptr()))?;
     if !args.is_empty() {
-        let args_hstr = HSTRING::from(args);
+        let args_hstr = HSTRING::from(join_windows_args(args));
         link.SetArguments(PCWSTR(args_hstr.as_ptr()))?;
     }
     if !description.is_empty() {
@@ -206,6 +208,54 @@ unsafe fn make_shell_link(
     PropVariantClear(&mut pv).ok();
     set_result?;
     Ok(link)
+}
+
+/// Join logical arguments into a single Windows command-line string
+///
+/// ### Arguments
+/// - `args`: The logical arguments, in order
+///
+/// ### Returns
+/// - `String`: The space-separated, quoted command-line string
+fn join_windows_args(args: &[&str]) -> String {
+    args.iter()
+        .map(|arg| quote_windows_arg(arg))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Quote a single argument following the Windows command-line parsing rules
+///
+/// ### Arguments
+/// - `arg`: The logical argument to quote
+///
+/// ### Returns
+/// - `String`: The argument encoded for a Windows command line
+fn quote_windows_arg(arg: &str) -> String {
+    if !arg.is_empty() && !arg.contains([' ', '\t', '\n', '\u{0B}', '"']) {
+        return arg.to_string();
+    }
+    let mut quoted = String::with_capacity(arg.len() + 2);
+    quoted.push('"');
+    let mut backslashes = 0usize;
+    for c in arg.chars() {
+        match c {
+            '\\' => backslashes += 1,
+            '"' => {
+                quoted.extend(std::iter::repeat_n('\\', backslashes * 2 + 1));
+                quoted.push('"');
+                backslashes = 0;
+            }
+            _ => {
+                quoted.extend(std::iter::repeat_n('\\', backslashes));
+                quoted.push(c);
+                backslashes = 0;
+            }
+        }
+    }
+    quoted.extend(std::iter::repeat_n('\\', backslashes * 2));
+    quoted.push('"');
+    quoted
 }
 
 /// Allocate a `VT_LPWSTR` `PROPVARIANT` from a Rust `&str`
@@ -237,8 +287,77 @@ unsafe fn propvariant_from_str(s: &str) -> PROPVARIANT {
 
 #[cfg(test)]
 mod tests {
-    use super::update_windows_jump_list;
+    use super::{join_windows_args, quote_windows_arg, update_windows_jump_list};
     use std::path::PathBuf;
+    use windows::{
+        Win32::{
+            Foundation::{HLOCAL, LocalFree},
+            UI::Shell::CommandLineToArgvW,
+        },
+        core::{HSTRING, PCWSTR},
+    };
+
+    /// Split a command line the way the launched process will, via `CommandLineToArgvW`
+    ///
+    /// ### Arguments
+    /// - `args_line`: The argument string passed to `SetArguments`
+    ///
+    /// ### Returns
+    /// - `Vec<String>`: The parsed arguments, excluding the program name
+    fn parse_args(args_line: &str) -> Vec<String> {
+        let full = HSTRING::from(format!("fulgur.exe {args_line}"));
+        let mut count = 0i32;
+        unsafe {
+            let argv = CommandLineToArgvW(PCWSTR(full.as_ptr()), &mut count);
+            assert!(!argv.is_null(), "CommandLineToArgvW failed");
+            let count = usize::try_from(count).expect("non-negative argument count");
+            let parsed = (1..count)
+                .map(|i| (*argv.add(i)).to_string().expect("valid UTF-16 argument"))
+                .collect();
+            let _ = LocalFree(Some(HLOCAL(argv.cast())));
+            parsed
+        }
+    }
+
+    /// Plain arguments without special characters are left unquoted.
+    #[test]
+    fn test_quote_windows_arg_plain_unchanged() {
+        assert_eq!(quote_windows_arg("--new-tab"), "--new-tab");
+        assert_eq!(
+            quote_windows_arg(r"C:\Users\user\main.rs"),
+            r"C:\Users\user\main.rs"
+        );
+    }
+
+    /// A path under a spaced directory is wrapped in quotes.
+    #[test]
+    fn test_quote_windows_arg_spaced_path_is_quoted() {
+        assert_eq!(
+            quote_windows_arg(r"C:\Users\Jane Doe\notes.txt"),
+            r#""C:\Users\Jane Doe\notes.txt""#
+        );
+    }
+
+    /// Arguments with spaces, Unicode, quotes, and backslashes round-trip intact.
+    #[test]
+    fn test_join_windows_args_round_trip() {
+        let cases: &[&[&str]] = &[
+            &[r"C:\Users\Jane Doe\notes.txt"],
+            &[r"C:\Users\Jösé Ñandú\文档\笔记 1.md"],
+            &[r"C:\path with space\"],
+            &[r"C:\trailing\\"],
+            &[r#"C:\odd "quoted" name.txt"#],
+            &[r#"a\"b"#],
+            &["tab\tseparated"],
+            &[""],
+            &["--new-tab", r"C:\Program Files\x.txt"],
+        ];
+        for args in cases {
+            let line = join_windows_args(args);
+            let expected: Vec<String> = args.iter().map(ToString::to_string).collect();
+            assert_eq!(parse_args(&line), expected, "command line: {line}");
+        }
+    }
 
     /// Smoke-test: calling with empty data must not panic.
     #[test]
