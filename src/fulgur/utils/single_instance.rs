@@ -5,10 +5,9 @@
 //! detects the already-running instance, forwards the path to it, and lets the
 //! caller exit early. Windows uses a named pipe scoped to the user and logon
 //! session, with a user-only DACL and peer-user checks on both ends (see
-//! `windows_pipe`); Linux uses a Unix domain socket in `$XDG_RUNTIME_DIR`,
-//! private to the user. The pipe and socket names derive from the configuration
-//! directory (`instance_key`), so an installed Fulgur, a portable Fulgur and a
-//! dev instance started with `-d` never forward files to each other.
+//! `windows_pipe`); Linux uses a Unix domain socket in the configuration
+//! directory, so the channel is private to the user and a dev instance started
+//! with `-d` stays isolated.
 //!
 //! Each accepted connection is read on its own short-lived thread, so a client
 //! that connects and never closes cannot block the listener.
@@ -27,8 +26,6 @@
 
 #[cfg(target_os = "windows")]
 use crate::fulgur::utils::windows_pipe::{self, PipeListener as IpcListener};
-#[cfg(target_os = "linux")]
-use crate::fulgur::utils::{instance_key, paths};
 use crate::fulgur::{
     shared_state::ExternalOpenFile,
     utils::{
@@ -54,6 +51,13 @@ use std::{
 
 /// Read timeout of an accepted Unix socket connection, bounding the lifetime of
 /// its reader thread when a client never closes.
+#[cfg(target_os = "linux")]
+const IPC_READ_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Pause after a failed accept, so a persistent error cannot spin the listener.
+const IPC_ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(100);
+
+/// File name of the Unix domain socket, created in the configuration directory.
 #[cfg(target_os = "linux")]
 const IPC_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
