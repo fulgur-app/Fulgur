@@ -141,6 +141,15 @@ fn is_read_only_requested(args: &[String]) -> bool {
 }
 
 fn main() {
+    // A portable build keeps every file next to the executable. It must switch before
+    // anything resolves the configuration directory (logger, settings, single instance,
+    // AUMID), and it never falls back to the user profile when that folder is unusable.
+    #[cfg(feature = "portable")]
+    if let Err(e) = fulgur::utils::portable::enable() {
+        fulgur::utils::startup_error::report_fatal_startup_error(&e.to_string());
+        std::process::exit(1);
+    }
+
     // On Windows, set the Application User Model ID before any window is created
     // so that the taskbar button and the jump list share the same AUMID.
     #[cfg(target_os = "windows")]
@@ -285,7 +294,7 @@ fn main() {
     app.run(move |cx| {
         // Must be set before any window opens or any system notification is posted: Windows keys
         // the notification center off the AppUserModelID, and drops notifications without it.
-        cx.set_app_identity("app.fulgur.fulgur", "Fulgur");
+        cx.set_app_identity(fulgur::utils::portable::app_user_model_id(), "Fulgur");
 
         // This must be called before using any GPUI Kit features.
         // It also claims the app-wide system-notification response handler, so Fulgur must not
@@ -459,7 +468,7 @@ fn create_window(
         window_bounds,
         display_id,
         #[cfg(target_os = "linux")]
-        app_id: Some("Fulgur".to_string()),
+        app_id: Some(fulgur::utils::portable::window_app_id().to_string()),
         #[cfg(target_os = "linux")]
         window_decorations: Some(gpui_kit::WindowDecorations::Client),
         ..gpui_kit::component::TitleBar::window_options()

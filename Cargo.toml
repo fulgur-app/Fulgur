@@ -12,6 +12,9 @@ homepage = "https://fulgur.app"
 [features]
 default = []
 gpui-test-support = ["gpui-kit/test-support"]
+# Portable build (Windows and Linux): settings, session and sync secrets live in a
+# `data/` folder next to the executable. See `.claude/portable.md`.
+portable = []
 
 [lints.rust]
 # First-party unsafe code is opt-in per site through a scoped
@@ -170,6 +173,7 @@ windows = { version = "0.62.1", features = [
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
     "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 [dev-dependencies]

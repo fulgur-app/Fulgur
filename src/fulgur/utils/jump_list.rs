@@ -6,7 +6,7 @@
 //! category for file-backed tabs across all open windows, and a Tasks section
 //! with "New Tab" and "New Window" entries that launch a fresh Fulgur instance.
 
-use crate::fulgur::ui::menus::DockMenuTab;
+use crate::fulgur::{ui::menus::DockMenuTab, utils::portable};
 use std::path::PathBuf;
 use windows::{
     Win32::{
@@ -42,10 +42,12 @@ const PKEY_TITLE: PROPERTYKEY = PROPERTYKEY {
 /// created, so that the taskbar button and the jump list share the same AUMID.
 /// Without this, `ICustomDestinationList::SetAppID` registers a jump list under
 /// an ID that the taskbar button never queries, making the list invisible.
+/// A portable build must call it after `portable::enable`, which selects the
+/// portable AUMID.
 pub fn set_app_user_model_id() {
     unsafe {
         if let Err(e) = SetCurrentProcessExplicitAppUserModelID(PCWSTR(
-            HSTRING::from("app.fulgur.fulgur").as_ptr(),
+            HSTRING::from(portable::app_user_model_id()).as_ptr(),
         )) {
             log::warn!("Failed to set AppUserModelID: {e}");
         }
@@ -90,7 +92,7 @@ unsafe fn try_update_jump_list(
     let dest_list: ICustomDestinationList =
         CoCreateInstance(&DestinationList, None, CLSCTX_INPROC_SERVER)?;
     // Associate this jump list with the app's taskbar button.
-    let app_id = HSTRING::from("app.fulgur.fulgur");
+    let app_id = HSTRING::from(portable::app_user_model_id());
     dest_list.SetAppID(PCWSTR(app_id.as_ptr()))?;
     let mut max_slots: u32 = 0;
     // BeginList returns items removed since the last commit; we discard them.

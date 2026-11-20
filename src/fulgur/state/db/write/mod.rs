@@ -29,6 +29,7 @@ impl StateDb {
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|e| anyhow!("Failed to begin the state transaction: {e}"))?;
+        let path_layout = self.path_layout.as_ref();
         let mut stats = ApplyStats::default();
         let mut present: HashSet<i64> = HashSet::with_capacity(snapshot.windows.len());
         for (position, window) in snapshot.windows.iter().enumerate() {
@@ -36,7 +37,7 @@ impl StateDb {
             let position = i64::try_from(position)
                 .map_err(|e| anyhow!("Window position does not fit an integer: {e}"))?;
             apply_window(&tx, window, position, &mut stats)?;
-            apply_tabs(&tx, window, &mut stats)?;
+            apply_tabs(&tx, window, path_layout, &mut stats)?;
         }
         for closed in self.owned_windows.difference(&present) {
             let deleted = tx

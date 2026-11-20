@@ -67,21 +67,25 @@ const CONNECT_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 /// Delay between two connection attempts while all pipe instances are busy.
 const CONNECT_BUSY_RETRY: Duration = Duration::from_millis(50);
 
-/// Build the name of the single-instance pipe of the current user and session.
+/// Build the name of the single-instance pipe of the current user, session and installation.
+///
+/// ### Arguments
+/// - `instance_id`: Identifier of the configuration directory, so an installed
+///   Fulgur, a portable Fulgur and a `-d` development instance never share a pipe
 ///
 /// ### Errors
 /// Returns an `io::Error` if the user SID or the session id cannot be queried.
 ///
 /// ### Returns
-/// - `Ok(String)`: The pipe name, e.g. `\\.\pipe\Fulgur-S-1-5-21-...-1`
+/// - `Ok(String)`: The pipe name, e.g. `\\.\pipe\Fulgur-S-1-5-21-...-1-0123456789abcdef`
 /// - `Err(io::Error)`: The user SID or the session id could not be queried
-pub fn pipe_name() -> io::Result<String> {
+pub fn pipe_name(instance_id: &str) -> io::Result<String> {
     let sid = current_user_sid()?;
     let mut session = 0u32;
     // SAFETY: `session` is a valid out-pointer for the duration of the call.
     unsafe { ProcessIdToSessionId(GetCurrentProcessId(), &mut session) }
         .map_err(io::Error::other)?;
-    Ok(format!(r"\\.\pipe\Fulgur-{sid}-{session}"))
+    Ok(format!(r"\\.\pipe\Fulgur-{sid}-{session}-{instance_id}"))
 }
 
 /// Read the user SID of a process, as a string.

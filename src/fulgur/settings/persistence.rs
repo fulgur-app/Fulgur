@@ -1,5 +1,8 @@
 use super::{MAX_PROFILES, Settings};
-use crate::fulgur::utils::atomic_write::{atomic_write_file, backup_path_for};
+use crate::fulgur::utils::{
+    atomic_write::{atomic_write_file, backup_path_for},
+    portable::{self, PortableLayout},
+};
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -75,7 +78,7 @@ impl Settings {
     /// - `Ok(())`: The result of the operation
     /// - `Err(anyhow::Error)`: If there was an error saving the settings
     pub fn save_to_path(&self, path: &Path) -> anyhow::Result<()> {
-        let json = serde_json::to_string_pretty(&self)?;
+        let json = self.to_settings_json(portable::layout())?;
         if path.exists() {
             let backup = backup_path_for(path);
             if let Err(e) = fs::copy(path, &backup) {
@@ -87,6 +90,55 @@ impl Settings {
             }
         }
         atomic_write_file(path, json.as_bytes())
+    }
+
+    /// Serialize the settings as stored in the settings file
+    ///
+    /// ### Arguments
+    /// - `layout`: The portable layout recent files are persisted relative to, if any
+    ///
+    /// ### Errors
+    /// - Returns an error if serialization to JSON fails.
+    ///
+    /// ### Returns
+    /// - `Ok(String)`: The pretty-printed JSON
+    /// - `Err(anyhow::Error)`: The settings could not be serialized
+    pub(in crate::fulgur::settings) fn to_settings_json(
+        &self,
+        layout: Option<&PortableLayout>,
+    ) -> anyhow::Result<String> {
+        let json = match layout {
+            Some(layout) => {
+                let mut persisted = self.clone();
+                persisted.recent_files = self.recent_files.to_persisted(layout);
+                serde_json::to_string_pretty(&persisted)
+            }
+            None => serde_json::to_string_pretty(self),
+        };
+        json.map_err(|e| anyhow::anyhow!("Failed to serialize settings: {e}"))
+    }
+
+    /// Parse the content of a settings file
+    ///
+    /// ### Arguments
+    /// - `json`: The settings file content
+    /// - `layout`: The portable layout relative recent files are resolved against, if any
+    ///
+    /// ### Errors
+    /// - Returns an error if the content is not valid settings JSON.
+    ///
+    /// ### Returns
+    /// - `Ok(Settings)`: The parsed settings, not validated yet
+    /// - `Err(serde_json::Error)`: The content could not be parsed
+    pub(in crate::fulgur::settings) fn from_settings_json(
+        json: &str,
+        layout: Option<&PortableLayout>,
+    ) -> serde_json::Result<Self> {
+        let mut settings = serde_json::from_str::<Settings>(json)?;
+        if let Some(layout) = layout {
+            settings.recent_files.resolve_persisted(layout);
+        }
+        Ok(settings)
     }
 
     /// Load the settings from a specific path
@@ -320,7 +372,7 @@ fn read_settings_file(path: &Path) -> Result<Settings, ReadFailure> {
         io::ErrorKind::NotFound => ReadFailure::Missing,
         _ => ReadFailure::Unusable(anyhow::anyhow!("cannot read '{}': {e}", path.display())),
     })?;
-    let mut settings = serde_json::from_str::<Settings>(&json).map_err(|e| {
+    let mut settings = Settings::from_settings_json(&json, portable::layout()).map_err(|e| {
         ReadFailure::Unusable(anyhow::anyhow!("cannot parse '{}': {e}", path.display()))
     })?;
     settings.validate();

@@ -5,9 +5,10 @@
 //! detects the already-running instance, forwards the path to it, and lets the
 //! caller exit early. Windows uses a named pipe scoped to the user and logon
 //! session, with a user-only DACL and peer-user checks on both ends (see
-//! `windows_pipe`); Linux uses a Unix domain socket in the configuration
-//! directory, so the channel is private to the user and a dev instance started
-//! with `-d` stays isolated.
+//! `windows_pipe`); Linux uses a private Unix domain socket. Both channels are
+//! keyed by a hash of the configuration directory (see `instance_key`), so an
+//! installed Fulgur, a portable Fulgur and a dev instance started with `-d`
+//! stay isolated from each other.
 //!
 //! Each accepted connection is read on its own short-lived thread, so a client
 //! that connects and never closes cannot block the listener.
@@ -26,6 +27,7 @@
 
 #[cfg(target_os = "windows")]
 use crate::fulgur::utils::windows_pipe::{self, PipeListener as IpcListener};
+use crate::fulgur::utils::{instance_key, paths};
 use crate::fulgur::{
     shared_state::ExternalOpenFile,
     utils::{
@@ -57,24 +59,46 @@ const IPC_READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// Pause after a failed accept, so a persistent error cannot spin the listener.
 const IPC_ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(100);
 
-/// File name of the Unix domain socket, created in the configuration directory.
-#[cfg(target_os = "linux")]
-const IPC_SOCKET_NAME: &str = "fulgur.sock";
-
 /// Maximum time a dropped IPC listener worker is joined before being detached.
 /// The wakeup self-connect unblocks `accept` immediately, so this is short.
 const IPC_WORKER_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Resolve the name of this installation's IPC pipe.
+///
+/// ### Errors
+/// Returns an `io::Error` if the configuration directory, the user SID or the
+/// session id cannot be resolved.
+///
+/// ### Returns
+/// - `Ok(String)`: The pipe name, scoped to the user, session and configuration directory
+/// - `Err(io::Error)`: The pipe name could not be built
+#[cfg(target_os = "windows")]
+fn pipe_name() -> io::Result<String> {
+    let config_dir = paths::config_dir().map_err(io::Error::other)?;
+    windows_pipe::pipe_name(&instance_key::instance_id(&config_dir))
+}
+
 /// Resolve the path of the Unix domain socket used for IPC.
 ///
 /// ### Returns
-/// - `Ok(PathBuf)`: The socket path inside the configuration directory
+/// - `Ok(PathBuf)`: The socket path derived from the configuration directory
 /// - `Err(io::Error)`: The configuration directory could not be resolved
 #[cfg(target_os = "linux")]
 fn socket_path() -> io::Result<PathBuf> {
-    crate::fulgur::utils::paths::config_dir()
-        .map(|dir| dir.join(IPC_SOCKET_NAME))
-        .map_err(io::Error::other)
+    let config_dir = paths::config_dir().map_err(io::Error::other)?;
+    let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute());
+    let fallback_dir = if crate::fulgur::utils::portable::is_portable() {
+        std::env::temp_dir()
+    } else {
+        config_dir.clone()
+    };
+    Ok(instance_key::socket_path(
+        &config_dir,
+        runtime_dir.as_deref(),
+        &fallback_dir,
+    ))
 }
 
 /// Connect to the IPC listener of the running instance.
@@ -87,7 +111,7 @@ fn socket_path() -> io::Result<PathBuf> {
 /// - `Err(io::Error)`: No trusted instance is listening
 fn connect() -> io::Result<IpcStream> {
     #[cfg(target_os = "windows")]
-    return windows_pipe::connect_trusted(&windows_pipe::pipe_name()?);
+    return windows_pipe::connect_trusted(&pipe_name()?);
     #[cfg(target_os = "linux")]
     return IpcStream::connect(socket_path()?);
 }
@@ -95,7 +119,7 @@ fn connect() -> io::Result<IpcStream> {
 /// Connect to this instance's own listener so a pending `accept` returns on shutdown.
 fn unblock_own_listener() {
     #[cfg(target_os = "windows")]
-    if let Ok(name) = windows_pipe::pipe_name() {
+    if let Ok(name) = pipe_name() {
         let _ = windows_pipe::connect(&name);
     }
     #[cfg(target_os = "linux")]
@@ -111,7 +135,7 @@ fn unblock_own_listener() {
 /// - `Err(io::Error)`: The listener could not be bound
 fn bind() -> io::Result<IpcListener> {
     #[cfg(target_os = "windows")]
-    return IpcListener::bind(&windows_pipe::pipe_name()?);
+    return IpcListener::bind(&pipe_name()?);
     #[cfg(target_os = "linux")]
     return bind_socket(&socket_path()?);
 }
@@ -629,8 +653,22 @@ mod windows_tests {
 
     #[test]
     fn test_pipe_name_is_scoped_to_user_and_session() {
-        let name = windows_pipe::pipe_name().unwrap();
+        let name = windows_pipe::pipe_name("0123456789abcdef").unwrap();
 
         assert!(name.starts_with(r"\\.\pipe\Fulgur-S-1-"), "got {name}");
+        assert!(name.ends_with("-0123456789abcdef"), "got {name}");
+    }
+
+    #[test]
+    fn test_distinct_installations_get_distinct_pipe_names() {
+        let base = std::env::temp_dir();
+        let installed = super::instance_key::instance_id(&base.join("profile").join("Fulgur"));
+        let portable =
+            super::instance_key::instance_id(&base.join("stick").join("Fulgur").join("data"));
+
+        assert_ne!(
+            windows_pipe::pipe_name(&installed).unwrap(),
+            windows_pipe::pipe_name(&portable).unwrap()
+        );
     }
 }

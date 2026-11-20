@@ -4,6 +4,7 @@ use super::super::ApplyStats;
 use super::super::paths::path_to_bytes;
 use crate::fulgur::state::TabContent;
 use crate::fulgur::state::persistence::{TabState, WindowState};
+use crate::fulgur::utils::portable::{PortableLayout, to_persisted_path};
 use anyhow::anyhow;
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
@@ -41,6 +42,7 @@ struct StoredTab {
 /// ### Arguments
 /// - `conn`: The open transaction
 /// - `window`: The window whose tabs are being persisted
+/// - `path_layout`: Portable layout file paths are persisted relative to, if any
 /// - `stats`: Counters updated for each row written or deleted
 ///
 /// ### Errors
@@ -52,13 +54,14 @@ struct StoredTab {
 pub(super) fn apply_tabs(
     conn: &Connection,
     window: &WindowState,
+    path_layout: Option<&PortableLayout>,
     stats: &mut ApplyStats,
 ) -> anyhow::Result<()> {
     let mut existing = read_stored_tabs(conn, window.window_id)?;
     for (position, tab) in window.tabs.iter().enumerate() {
         let position = i64::try_from(position)
             .map_err(|e| anyhow!("Tab position does not fit an integer: {e}"))?;
-        let desired = stored_tab_from_snapshot(tab, position);
+        let desired = stored_tab_from_snapshot(tab, position, path_layout);
         let fingerprint = tab.content.as_ref().map(|content| {
             let (hash, len) = content.fingerprint();
             ContentFingerprint { hash, len }
@@ -168,14 +171,22 @@ fn read_stored_tabs(
 /// ### Arguments
 /// - `tab`: The snapshot tab
 /// - `position`: Display order of the tab within its window
+/// - `path_layout`: Portable layout the file path is persisted relative to, if any
 ///
 /// ### Returns
 /// - `StoredTab`: The row state the snapshot asks for
-fn stored_tab_from_snapshot(tab: &TabState, position: i64) -> StoredTab {
+fn stored_tab_from_snapshot(
+    tab: &TabState,
+    position: i64,
+    path_layout: Option<&PortableLayout>,
+) -> StoredTab {
     StoredTab {
         position,
         title: tab.title.clone(),
-        file_path: tab.file_path.as_deref().map(path_to_bytes),
+        file_path: tab
+            .file_path
+            .as_deref()
+            .map(|path| path_to_bytes(&to_persisted_path(path, path_layout))),
         last_saved: tab.last_saved.clone(),
         log_view: tab.log_view,
         color_tag: tab.color_tag.clone(),

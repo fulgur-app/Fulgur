@@ -91,8 +91,8 @@ Download the latest release for your platform from the [releases page](https://g
 | Platform | Package |
 |---|---|
 | macOS (Apple Silicon) | `.dmg`, signed and notarized |
-| Windows (x86-64) | `-setup.exe` installer |
-| Linux (x86-64, aarch64) | `.AppImage` or `.deb` |
+| Windows (x86-64) | `-setup.exe` installer, or `-portable.zip` |
+| Linux (x86-64, aarch64) | `.AppImage` or `.deb`, or `-portable.tar.gz` |
 
 On macOS you can also install with Homebrew:
 
@@ -101,6 +101,12 @@ brew install --cask fulgur-app/tap/fulgur
 ```
 
 On Linux, storing sync encryption keys requires a running Secret Service provider (GNOME Keyring, KWallet, or compatible). Everything else works without it.
+
+### Portable
+
+The portable builds for Windows and Linux run from any folder, for example a USB drive, and leave the host computer untouched: settings, session and sync secrets live in a `data` folder that Fulgur creates next to its executable on first launch. Files on the same drive are remembered relative to Fulgur, so tabs and recent files survive a drive letter or mount point change.
+
+Sync secrets are stored unencrypted in `data/secrets.json`. Keep the drive safe, and if it is lost, revoke the device from Fulgurant. The folder must be writable: Fulgur refuses to start from a read-only drive or from `Program Files`.
 
 ## Themes
 
@@ -197,6 +203,7 @@ Note that builds may consume more memory with the default linker, especially on 
 Once all the prerequisites are installed:
 
 - `cargo build --release` builds an optimized version of Fulgur
+- `cargo build --release --features portable` builds the portable version (Windows and Linux)
 - `cargo packager --release` additionally packages it into a distributable with an icon
 
 </details>

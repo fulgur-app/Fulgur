@@ -6,6 +6,7 @@ use crate::fulgur::state::persistence::{
     SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,
 };
 use crate::fulgur::sync::share::ShareOrigin;
+use crate::fulgur::utils::portable::{PortableLayout, from_persisted_path};
 use anyhow::anyhow;
 use rusqlite::Row;
 use time::OffsetDateTime;
@@ -81,7 +82,9 @@ impl StateDb {
             )
             .map_err(|e| anyhow!("Failed to prepare the tab query: {e}"))?;
         let tabs = stmt
-            .query_map([window_id], tab_state_from_row)
+            .query_map([window_id], |row| {
+                tab_state_from_row(row, self.path_layout.as_ref())
+            })
             .map_err(|e| anyhow!("Failed to query persisted tabs: {e}"))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| anyhow!("Failed to decode a persisted tab: {e}"))?;
@@ -115,6 +118,7 @@ fn window_bounds_from_row(row: &Row<'_>) -> rusqlite::Result<SerializedWindowBou
 ///
 /// ### Arguments
 /// - `row`: The tab row
+/// - `path_layout`: Portable layout relative file paths are resolved against, if any
 ///
 /// ### Errors
 /// - Returns a `rusqlite::Error` if a column cannot be read.
@@ -122,7 +126,10 @@ fn window_bounds_from_row(row: &Row<'_>) -> rusqlite::Result<SerializedWindowBou
 /// ### Returns
 /// - `Ok(TabState)`: The decoded tab
 /// - `Err(rusqlite::Error)`: A column could not be read
-fn tab_state_from_row(row: &Row<'_>) -> rusqlite::Result<TabState> {
+fn tab_state_from_row(
+    row: &Row<'_>,
+    path_layout: Option<&PortableLayout>,
+) -> rusqlite::Result<TabState> {
     let stored_id: i64 = row.get(0)?;
     let file_path: Option<Vec<u8>> = row.get(2)?;
     let content: Option<String> = row.get(3)?;
@@ -150,7 +157,9 @@ fn tab_state_from_row(row: &Row<'_>) -> rusqlite::Result<TabState> {
     Ok(TabState {
         tab_id: u64::try_from(stored_id).unwrap_or_default(),
         title: row.get(1)?,
-        file_path: file_path.as_deref().map(path_from_bytes),
+        file_path: file_path
+            .as_deref()
+            .map(|bytes| from_persisted_path(&path_from_bytes(bytes), path_layout)),
         content: content.map(TabContent::Text),
         last_saved: row.get(4)?,
         remote,

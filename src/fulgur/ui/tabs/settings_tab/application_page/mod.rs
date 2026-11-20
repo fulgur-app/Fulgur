@@ -3,12 +3,14 @@ use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, Sett
 use gpui_kit::{App, Entity};
 
 mod general;
+mod portable;
 mod profile_status;
 mod profiles_table;
 mod remote;
 mod sync_controls;
 
 use general::{render_tab_color_style_select, render_title_bar_style_select};
+use portable::portable_mode_item;
 use profiles_table::render_profiles_table;
 use remote::remote_history_item;
 use sync_controls::{render_add_server_button, render_master_switch, render_sync_error_banner};
@@ -23,7 +25,7 @@ use sync_controls::{render_add_server_button, render_master_switch, render_sync_
 pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
     let default_app_settings = AppSettings::new();
 
-    let general_items = vec![
+    let mut general_items = vec![
                 SettingItem::new(
                     "Confirm Exit",
                     SettingField::switch(
@@ -147,6 +149,7 @@ pub fn create_application_page(entity: &Entity<Fulgur>) -> SettingPage {
                     "Keep a separate title bar above the tab bar, or merge the tabs into the title bar.",
                 ),
     ];
+    general_items.extend(portable_mode_item());
 
     SettingPage::new("Application")
         .default_open(true)
