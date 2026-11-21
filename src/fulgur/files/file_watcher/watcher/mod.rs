@@ -14,8 +14,22 @@ use std::time::{Duration, Instant};
 /// Bound for the file watch event channel.
 const FILE_WATCH_EVENT_CHANNEL_CAPACITY: usize = 256;
 
-/// Maximum time a Linux inotify rename `From` event waits for its matching `To` before it is treated as a deletion.
+/// Maximum time a rename `From` event waits for its matching `To` before it is treated as a deletion.
 pub(super) const PENDING_RENAME_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// The first half of a split rename, waiting for its matching `To` event.
+#[derive(Debug, Clone)]
+pub(super) struct PendingRenameFrom {
+    /// The path the `From` event reported.
+    pub(super) path: PathBuf,
+    /// The rename cookie set by inotify; `None` on backends that cannot pair renames (Windows).
+    pub(super) tracker: Option<usize>,
+    /// When the `From` event was stored, for expiry.
+    pub(super) stored_at: Instant,
+}
+
+/// Shared accumulator holding a pending rename `From`.
+pub(super) type PendingRenameSlot = Arc<Mutex<Option<PendingRenameFrom>>>;
 
 #[derive(Debug, Clone)]
 pub enum FileWatchEvent {
@@ -30,9 +44,9 @@ pub struct FileWatcher {
     /// Watched paths with the last disk signature the editor knows about.
     watched_paths: HashMap<PathBuf, Option<DiskSignature>>,
     pub(super) event_tx: Sender<FileWatchEvent>,
-    /// Pending rename source path for Linux inotify, which splits rename events
-    /// into separate From and To notifications rather than a single two-path event.
-    pub(super) pending_rename_from: Arc<Mutex<Option<(PathBuf, Instant)>>>,
+    /// Pending rename source for backends that split rename events into separate
+    /// From and To notifications (Linux inotify, Windows) rather than a single two-path event.
+    pub(super) pending_rename_from: PendingRenameSlot,
 }
 
 impl FileWatcher {

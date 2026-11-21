@@ -1,4 +1,4 @@
-use super::watcher::{FileWatchEvent, FileWatcher, PENDING_RENAME_TIMEOUT};
+use super::watcher::{FileWatchEvent, FileWatcher, PENDING_RENAME_TIMEOUT, PendingRenameSlot};
 use crate::fulgur::Fulgur;
 use crate::fulgur::tab::Tab;
 use futures::StreamExt;
@@ -6,8 +6,7 @@ use futures::channel::mpsc::{Receiver, Sender};
 use futures::future::Either;
 use gpui_kit::{Context, Task};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::Arc;
 
 impl Fulgur {
     /// Start the file watcher, watch all open files, and spawn the event consumer task
@@ -80,7 +79,7 @@ impl Fulgur {
     fn spawn_file_watch_consumer(
         &self,
         mut events: Receiver<FileWatchEvent>,
-        pending_rename_from: Arc<Mutex<Option<(PathBuf, Instant)>>>,
+        pending_rename_from: PendingRenameSlot,
         mut flush_tx: Sender<FileWatchEvent>,
         cx: &mut Context<Self>,
     ) -> Task<()> {
