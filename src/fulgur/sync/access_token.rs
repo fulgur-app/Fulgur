@@ -4,22 +4,34 @@ use crate::fulgur::utils::crypto_helper::load_device_api_key_from_keychain;
 use fulgur_common::api::sync::AccessTokenResponse;
 use parking_lot::{Condvar, Mutex};
 use std::sync::Arc;
-use std::time::Duration;
-use time::OffsetDateTime;
+use std::time::{Duration, Instant};
 
 /// Maximum time a thread waits for another thread's in-flight token refresh to complete before giving up.
 const REFRESH_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Longest margin before expiry at which a token is proactively refreshed.
+const MAX_REFRESH_BUFFER: Duration = Duration::from_mins(5);
 
 /// JWT access token state for thread-safe token management
 ///
 /// ### Fields
 /// - `access_token`: The current JWT access token (None if not yet obtained)
-/// - `token_expires_at`: When the current token expires (None if no token)
+/// - `token_refresh_at`: Local monotonic instant from which the token must be
+///   refreshed, a safety buffer ahead of its expiry (None if no token)
 /// - `is_refreshing_token`: Lock flag to prevent concurrent token refreshes
 pub struct TokenState {
     pub access_token: Option<String>,
-    pub token_expires_at: Option<OffsetDateTime>,
+    pub token_refresh_at: Option<Instant>,
     pub is_refreshing_token: bool,
+}
+
+/// Where `acquire_token` got the token it returns
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TokenSource {
+    /// Served from the cache, possibly revoked server-side since it was minted
+    Cached,
+    /// Minted by this call, so a rejection is not caused by a stale cache
+    Minted,
 }
 
 /// Thread-safe token manager with proper wait/notify synchronization
@@ -55,8 +67,38 @@ impl TokenStateManager {
     pub fn clear_token(&self) {
         let mut state = self.state.lock();
         state.access_token = None;
-        state.token_expires_at = None;
+        state.token_refresh_at = None;
         log::debug!("Cleared cached access token");
+    }
+
+    /// Drop the cached token if it is the one the server just rejected
+    ///
+    /// ### Arguments
+    /// - `rejected_token`: The token the server answered 401 or 403 to
+    pub fn invalidate_token(&self, rejected_token: &str) {
+        let mut state = self.state.lock();
+        if state.access_token.as_deref() == Some(rejected_token) {
+            state.access_token = None;
+            state.token_refresh_at = None;
+            log::debug!("Invalidated access token rejected by the server");
+        }
+    }
+
+    /// Return the cached token if it has not reached its refresh deadline
+    ///
+    /// ### Arguments
+    /// - `state`: The locked token state
+    ///
+    /// ### Returns
+    /// - `Some(String)`: The cached token, still valid
+    /// - `None`: No token is cached, or it is due for a refresh
+    fn cached_token(state: &TokenState) -> Option<String> {
+        match (&state.access_token, state.token_refresh_at) {
+            (Some(token), Some(refresh_at)) if is_token_valid(refresh_at, Instant::now()) => {
+                Some(token.clone())
+            }
+            _ => None,
+        }
     }
 }
 
@@ -82,7 +124,7 @@ impl TokenState {
     pub fn new() -> Self {
         Self {
             access_token: None,
-            token_expires_at: None,
+            token_refresh_at: None,
             is_refreshing_token: false,
         }
     }
@@ -147,18 +189,30 @@ fn request_access_token(
     Ok(token_response)
 }
 
-/// Check if the access token is still valid (with 5-minute buffer for proactive refresh)
+/// Compute when a freshly minted token must be refreshed
 ///
 /// ### Arguments
-/// - `expires_at`: The token expiration time
+/// - `minted_at`: Local instant at which the token response was received
+/// - `lifetime`: Token lifetime reported by the server (`expires_in`)
 ///
 /// ### Returns
-/// - `true` if the token is still valid (has >5 minutes remaining)
-/// - `false` if the token is expired or will expire in <5 minutes
-fn is_token_valid(expires_at: &OffsetDateTime) -> bool {
-    let now = OffsetDateTime::now_utc();
-    let buffer = time::Duration::minutes(5);
-    *expires_at > now + buffer
+/// - `Instant`: The local instant from which the token is considered stale
+fn refresh_deadline(minted_at: Instant, lifetime: Duration) -> Instant {
+    let buffer = (lifetime / 4).min(MAX_REFRESH_BUFFER);
+    minted_at + lifetime.saturating_sub(buffer)
+}
+
+/// Check if the access token has not yet reached its refresh deadline
+///
+/// ### Arguments
+/// - `refresh_at`: The token refresh deadline, from `refresh_deadline`
+/// - `now`: The current local instant
+///
+/// ### Returns
+/// - `true` if the token can still be used
+/// - `false` if the token must be refreshed
+fn is_token_valid(refresh_at: Instant, now: Instant) -> bool {
+    now < refresh_at
 }
 
 /// Get a valid JWT access token, refreshing if necessary
@@ -184,24 +238,64 @@ pub fn get_valid_token(
     token_manager: &Arc<TokenStateManager>,
     http_agent: &ureq::Agent,
 ) -> Result<String, SynchronizationError> {
-    // Fast path: check if current token is valid without acquiring write lock
-    {
-        let state = token_manager.state.lock();
-        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
-            && is_token_valid(exp_time)
-        {
-            return Ok(token_str.clone());
+    acquire_token(profile, token_manager, http_agent).map(|(token, _)| token)
+}
+
+/// Run an authenticated request, retrying once if a cached token is rejected
+///
+/// ### Arguments
+/// - `profile`: The server profile to authenticate against
+/// - `token_manager`: Arc to the token state manager (thread-safe)
+/// - `http_agent`: Shared HTTP agent for connection pooling
+/// - `request`: The request to run, given the bearer token
+///
+/// ### Errors
+/// - Returns a `SynchronizationError` if no token can be obtained, or the error
+///   of the last `request` attempt.
+///
+/// ### Returns
+/// - `Ok(T)`: The result of a successful `request`
+/// - `Err(SynchronizationError)`: The token could not be obtained, or `request` failed
+pub fn with_valid_token<T>(
+    profile: &ServerProfile,
+    token_manager: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+    mut request: impl FnMut(&str) -> Result<T, SynchronizationError>,
+) -> Result<T, SynchronizationError> {
+    let (token, source) = acquire_token(profile, token_manager, http_agent)?;
+    match request(&token) {
+        Err(SynchronizationError::AuthenticationFailed) if source == TokenSource::Cached => {
+            log::warn!("Server rejected the cached access token, retrying with a new one");
+            token_manager.invalidate_token(&token);
+            let (token, _) = acquire_token(profile, token_manager, http_agent)?;
+            request(&token)
         }
+        result => result,
     }
+}
 
-    // Slow path: token needs refresh
+/// Get a valid JWT access token and tell whether it came from the cache
+///
+/// ### Arguments
+/// - `profile`: The server profile to authenticate against
+/// - `token_manager`: Arc to the token state manager (thread-safe)
+/// - `http_agent`: Shared HTTP agent for connection pooling
+///
+/// ### Errors
+/// - Returns a `SynchronizationError` if the token refresh request fails, the
+///   server rejects the credentials, or another thread's refresh times out.
+///
+/// ### Returns
+/// - `Ok((String, TokenSource))`: A valid token and where it came from
+/// - `Err(SynchronizationError)`: If token refresh failed
+fn acquire_token(
+    profile: &ServerProfile,
+    token_manager: &Arc<TokenStateManager>,
+    http_agent: &ureq::Agent,
+) -> Result<(String, TokenSource), SynchronizationError> {
     let mut state = token_manager.state.lock();
-
-    // Double-check after acquiring lock (another thread might have refreshed)
-    if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
-        && is_token_valid(exp_time)
-    {
-        return Ok(token_str.clone());
+    if let Some(token) = TokenStateManager::cached_token(&state) {
+        return Ok((token, TokenSource::Cached));
     }
 
     // If another thread is already refreshing, wait for it to complete
@@ -211,10 +305,8 @@ pub fn get_valid_token(
             .wait_for(&mut state, REFRESH_WAIT_TIMEOUT);
 
         // The refresher may have completed (and notified) before or at the moment we woke up => return the fresh token
-        if let (Some(token_str), Some(exp_time)) = (&state.access_token, &state.token_expires_at)
-            && is_token_valid(exp_time)
-        {
-            return Ok(token_str.clone());
+        if let Some(token) = TokenStateManager::cached_token(&state) {
+            return Ok((token, TokenSource::Minted));
         }
 
         if wait_result.timed_out() && state.is_refreshing_token {
@@ -232,40 +324,23 @@ pub fn get_valid_token(
     drop(state);
 
     log::debug!("Access token expired or missing, requesting new token");
-    let token_response = match request_access_token(profile, http_agent) {
-        Ok(r) => r,
+    let token_response = request_access_token(profile, http_agent);
+    let mut state = token_manager.state.lock();
+    state.is_refreshing_token = false;
+    let token_response = match token_response {
+        Ok(response) => response,
         Err(e) => {
-            let mut state = token_manager.state.lock();
-            state.is_refreshing_token = false;
             token_manager.refresh_notify.notify_all();
             return Err(e);
         }
     };
-    let expires_at = match OffsetDateTime::parse(
-        &token_response.expires_at,
-        &time::format_description::well_known::Rfc3339,
-    ) {
-        Ok(t) => t,
-        Err(e) => {
-            log::error!("Failed to parse token expiration time: {e}");
-            let mut state = token_manager.state.lock();
-            state.is_refreshing_token = false;
-            token_manager.refresh_notify.notify_all();
-            return Err(SynchronizationError::Other(e.to_string()));
-        }
-    };
-
-    // Update state and notify waiting threads
-    let mut state = token_manager.state.lock();
+    let lifetime = Duration::from_secs(u64::try_from(token_response.expires_in).unwrap_or(0));
     state.access_token = Some(token_response.access_token.clone());
-    state.token_expires_at = Some(expires_at);
-    state.is_refreshing_token = false;
-
-    // Notify all threads waiting for token refresh
+    state.token_refresh_at = Some(refresh_deadline(Instant::now(), lifetime));
     token_manager.refresh_notify.notify_all();
 
     log::debug!("Access token refreshed successfully");
-    Ok(token_response.access_token)
+    Ok((token_response.access_token, TokenSource::Minted))
 }
 
 impl TokenStateManager {
@@ -275,138 +350,76 @@ impl TokenStateManager {
     /// and the effect of `clear_token` on the cached state.
     ///
     /// This method is intended for use in tests only.
-    pub fn inject_token_for_test(&self, token: String, expires_at: OffsetDateTime) {
+    ///
+    /// ### Arguments
+    /// - `token`: The token to cache
+    /// - `lifetime`: The lifetime the server would report (`expires_in`),
+    ///   counted from now and subject to the usual refresh buffer
+    pub fn inject_token_for_test(&self, token: String, lifetime: Duration) {
         let mut state = self.state.lock();
         state.access_token = Some(token);
-        state.token_expires_at = Some(expires_at);
+        state.token_refresh_at = Some(refresh_deadline(Instant::now(), lifetime));
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_token_valid;
-    use time::OffsetDateTime;
+    use super::{MAX_REFRESH_BUFFER, is_token_valid, refresh_deadline};
+    use std::time::{Duration, Instant};
+
+    const ONE_HOUR: Duration = Duration::from_hours(1);
 
     #[test]
-    fn test_is_token_valid_with_future_expiration() {
-        // Token expires 10 minutes from now (well beyond the 5-minute buffer)
-        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(10);
+    fn a_long_lived_token_is_refreshed_five_minutes_before_expiry() {
+        let minted_at = Instant::now();
+        let deadline = refresh_deadline(minted_at, ONE_HOUR);
+        assert_eq!(deadline + MAX_REFRESH_BUFFER, minted_at + ONE_HOUR);
+    }
+
+    #[test]
+    fn a_short_lived_token_keeps_three_quarters_of_its_lifetime() {
+        let minted_at = Instant::now();
+        let lifetime = Duration::from_secs(60);
+        let deadline = refresh_deadline(minted_at, lifetime);
+        assert_eq!(deadline, minted_at + Duration::from_secs(45));
+        assert!(is_token_valid(
+            deadline,
+            minted_at + Duration::from_secs(44)
+        ));
+        assert!(!is_token_valid(
+            deadline,
+            minted_at + Duration::from_secs(45)
+        ));
+    }
+
+    #[test]
+    fn a_token_at_the_five_minute_boundary_is_still_reused() {
+        let minted_at = Instant::now();
+        let lifetime = MAX_REFRESH_BUFFER;
+        let deadline = refresh_deadline(minted_at, lifetime);
         assert!(
-            is_token_valid(&expires_at),
-            "Token expiring in 10 minutes should be valid"
+            is_token_valid(deadline, minted_at),
+            "A 5-minute token must not be stale as soon as it is minted"
         );
     }
 
     #[test]
-    fn test_is_token_valid_with_past_expiration() {
-        // Token expired 5 minutes ago
-        let expires_at = OffsetDateTime::now_utc() - time::Duration::minutes(5);
-        assert!(
-            !is_token_valid(&expires_at),
-            "Token expired 5 minutes ago should be invalid"
-        );
+    fn a_token_with_no_lifetime_is_immediately_stale() {
+        let minted_at = Instant::now();
+        let deadline = refresh_deadline(minted_at, Duration::ZERO);
+        assert!(!is_token_valid(deadline, minted_at));
     }
 
     #[test]
-    fn test_is_token_valid_expiring_in_less_than_buffer() {
-        // Token expires in 3 minutes (less than 5-minute buffer)
-        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(3);
-        assert!(
-            !is_token_valid(&expires_at),
-            "Token expiring in 3 minutes should be invalid (within buffer)"
-        );
-    }
-
-    #[test]
-    fn test_is_token_valid_expiring_in_exactly_buffer_time() {
-        // Token expires in exactly 5 minutes
-        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(5);
-        assert!(
-            !is_token_valid(&expires_at),
-            "Token expiring in exactly 5 minutes should be invalid (at buffer boundary)"
-        );
-    }
-
-    #[test]
-    fn test_is_token_valid_with_one_second_past_expiration() {
-        // Token expired 1 second ago
-        let expires_at = OffsetDateTime::now_utc() - time::Duration::seconds(1);
-        assert!(
-            !is_token_valid(&expires_at),
-            "Token expired 1 second ago should be invalid"
-        );
-    }
-
-    #[test]
-    fn test_is_token_valid_with_one_hour_remaining() {
-        // Token expires in 1 hour (well beyond the 5-minute buffer)
-        let expires_at = OffsetDateTime::now_utc() + time::Duration::hours(1);
-        assert!(
-            is_token_valid(&expires_at),
-            "Token expiring in 1 hour should be valid"
-        );
-    }
-
-    #[test]
-    fn test_is_token_valid_expiring_in_six_minutes() {
-        // Token expires in 6 minutes (just beyond the 5-minute buffer)
-        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(6);
-        assert!(
-            is_token_valid(&expires_at),
-            "Token expiring in 6 minutes should be valid (beyond buffer)"
-        );
-    }
-
-    #[test]
-    fn test_is_token_valid_expiring_in_four_minutes_59_seconds() {
-        // Token expires in 4 minutes 59 seconds (just under the 5-minute buffer)
-        let expires_at =
-            OffsetDateTime::now_utc() + time::Duration::minutes(4) + time::Duration::seconds(59);
-        assert!(
-            !is_token_valid(&expires_at),
-            "Token expiring in 4:59 should be invalid (within buffer)"
-        );
-    }
-
-    #[test]
-    fn test_is_token_valid_with_far_future_expiration() {
-        // Token expires in 1 day
-        let expires_at = OffsetDateTime::now_utc() + time::Duration::days(1);
-        assert!(
-            is_token_valid(&expires_at),
-            "Token expiring in 1 day should be valid"
-        );
-    }
-
-    #[test]
-    fn test_is_token_valid_with_far_past_expiration() {
-        // Token expired 1 day ago
-        let expires_at = OffsetDateTime::now_utc() - time::Duration::days(1);
-        assert!(
-            !is_token_valid(&expires_at),
-            "Token expired 1 day ago should be invalid"
-        );
-    }
-
-    #[test]
-    fn test_is_token_valid_boundary_case_five_minutes_one_second() {
-        // Token expires in 5 minutes 1 second (just beyond the buffer)
-        let expires_at =
-            OffsetDateTime::now_utc() + time::Duration::minutes(5) + time::Duration::seconds(1);
-        assert!(
-            is_token_valid(&expires_at),
-            "Token expiring in 5:01 should be valid (just beyond buffer)"
-        );
-    }
-
-    #[test]
-    fn test_is_token_valid_with_current_time() {
-        // Token expires right now (edge case)
-        let expires_at = OffsetDateTime::now_utc();
-
-        assert!(
-            !is_token_valid(&expires_at),
-            "Token expiring right now should be invalid"
-        );
+    fn a_token_is_valid_until_its_deadline_and_stale_from_it() {
+        let minted_at = Instant::now();
+        let deadline = refresh_deadline(minted_at, ONE_HOUR);
+        assert!(is_token_valid(deadline, minted_at));
+        assert!(is_token_valid(
+            deadline,
+            minted_at + Duration::from_secs(55 * 60 - 1)
+        ));
+        assert!(!is_token_valid(deadline, deadline));
+        assert!(!is_token_valid(deadline, deadline + Duration::from_secs(1)));
     }
 }

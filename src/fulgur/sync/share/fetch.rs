@@ -2,7 +2,7 @@ use crate::fulgur::{
     settings::ServerProfile,
     shared_state::AppNotification,
     sync::{
-        access_token::{TokenStateManager, get_valid_token},
+        access_token::{TokenStateManager, with_valid_token},
         synchronization::{
             SynchronizationError, handle_ureq_error, max_http_single_share_response_bytes,
         },
@@ -127,12 +127,13 @@ pub fn fetch_share_by_id(
         return Err(SynchronizationError::ServerUrlMissing);
     };
     let share_url = format!("{server_url}/api/v2/shares/{id}");
-    let token = get_valid_token(profile, token_state, http_agent)?;
-    let mut response = http_agent
-        .get(&share_url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .call()
-        .map_err(|e| handle_ureq_error(e, "Failed to fetch share by id"))?;
+    let mut response = with_valid_token(profile, token_state, http_agent, |token| {
+        http_agent
+            .get(&share_url)
+            .header("Authorization", &format!("Bearer {token}"))
+            .call()
+            .map_err(|e| handle_ureq_error(e, "Failed to fetch share by id"))
+    })?;
     let body = response
         .body_mut()
         .with_config()
@@ -180,25 +181,26 @@ pub fn acknowledge_share_download(
     let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
-    let token = get_valid_token(profile, token_state, http_agent)?;
     let ack_url = format!("{server_url}/api/v2/shares/{id}/successful");
-    match http_agent
-        .post(&ack_url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .send("")
-    {
-        Ok(_) => {
-            log::debug!("Acknowledged successful download of share {id}");
-            Ok(())
+    with_valid_token(profile, token_state, http_agent, |token| {
+        match http_agent
+            .post(&ack_url)
+            .header("Authorization", &format!("Bearer {token}"))
+            .send("")
+        {
+            Ok(_) => {
+                log::debug!("Acknowledged successful download of share {id}");
+                Ok(())
+            }
+            Err(ureq::Error::StatusCode(404)) => {
+                log::debug!(
+                    "Share {id} no longer available to acknowledge (404); treating as already consumed"
+                );
+                Ok(())
+            }
+            Err(e) => Err(handle_ureq_error(e, "Failed to acknowledge share download")),
         }
-        Err(ureq::Error::StatusCode(404)) => {
-            log::debug!(
-                "Share {id} no longer available to acknowledge (404); treating as already consumed"
-            );
-            Ok(())
-        }
-        Err(e) => Err(handle_ureq_error(e, "Failed to acknowledge share download")),
-    }
+    })
 }
 
 #[cfg(test)]

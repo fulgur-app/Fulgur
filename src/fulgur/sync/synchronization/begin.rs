@@ -4,7 +4,7 @@ use super::version::{
     FULGURANT_VERSION_HEADER, MIN_SUPPORTED_FULGURANT_VERSION_DISPLAY, server_meets_minimum_version,
 };
 use crate::fulgur::settings::ServerProfile;
-use crate::fulgur::sync::access_token::{TokenStateManager, get_valid_token};
+use crate::fulgur::sync::access_token::{TokenStateManager, with_valid_token};
 use crate::fulgur::sync::share::{self, ClaimedFetch};
 use fulgur_common::api::shares::SharedFileResponse;
 use fulgur_common::api::sync::{BeginV2Response, InitialSynchronizationPayload};
@@ -70,14 +70,16 @@ fn perform_begin(
     let Some(public_key) = profile.public_key.clone() else {
         return Err(SynchronizationError::MissingEncryptionKey);
     };
-    let token = get_valid_token(profile, token_state, http_agent)?;
     let begin_url = format!("{server_url}/api/v2/begin");
-    let payload = InitialSynchronizationPayload { public_key };
-    let mut response = http_agent
-        .post(begin_url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .send_json(payload)
-        .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization"))?;
+    let mut response = with_valid_token(profile, token_state, http_agent, |token| {
+        http_agent
+            .post(&begin_url)
+            .header("Authorization", &format!("Bearer {token}"))
+            .send_json(InitialSynchronizationPayload {
+                public_key: public_key.clone(),
+            })
+            .map_err(|e| handle_ureq_error(e, "Failed to begin synchronization"))
+    })?;
     let version_header = response
         .headers()
         .get(FULGURANT_VERSION_HEADER)

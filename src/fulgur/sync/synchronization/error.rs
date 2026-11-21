@@ -1,5 +1,18 @@
 use std::fmt;
 
+/// Tell whether an HTTP status means the server refused the credentials
+///
+/// ### Arguments
+/// - `status`: The HTTP status code of the response
+///
+/// ### Returns
+/// - `true`: The status is 401 or 403
+/// - `false`: Any other status
+#[must_use]
+pub fn is_authentication_rejection(status: u16) -> bool {
+    status == 401 || status == 403
+}
+
 /// Handle ureq errors and convert them to `SynchronizationError` with appropriate logging
 ///
 /// ### Arguments
@@ -13,7 +26,7 @@ pub fn handle_ureq_error(error: ureq::Error, context: &str) -> SynchronizationEr
     match error {
         ureq::Error::StatusCode(code) => {
             log::error!("{context}: HTTP status {code}");
-            if code == 401 || code == 403 {
+            if is_authentication_rejection(code) {
                 SynchronizationError::AuthenticationFailed
             } else if code == 400 {
                 SynchronizationError::BadRequest

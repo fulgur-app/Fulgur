@@ -10,7 +10,8 @@ use crate::fulgur::{
         access_token::{TokenStateManager, get_valid_token},
         synchronization::{
             FULGURANT_VERSION_HEADER, MIN_SUPPORTED_FULGURANT_VERSION_DISPLAY,
-            SynchronizationError, SynchronizationStatus, server_meets_minimum_version,
+            SynchronizationError, SynchronizationStatus, is_authentication_rejection,
+            server_meets_minimum_version,
         },
     },
     utils::{
@@ -256,6 +257,13 @@ fn spawn_sse_worker(
             {
                 Ok(resp) => resp,
                 Err(e) => {
+                    // A token revoked before its expiry would otherwise be
+                    // served from the cache again on every retry.
+                    if let ureq::Error::StatusCode(status) = e
+                        && is_authentication_rejection(status)
+                    {
+                        token_state_clone.invalidate_token(&token);
+                    }
                     // A slot handoff is not a failed connection: the profile is
                     // simply waiting for the stream it replaces to be torn down,
                     // so it must neither be reported as an error nor counted
