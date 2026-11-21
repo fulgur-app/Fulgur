@@ -14,7 +14,9 @@ pub use bootstrap::{
     apply_initial_sync_outcome, begin_synchronization, record_fulgurant_version,
     record_server_min_fulgur_version, set_sync_server_connection_status,
 };
-pub use error::{SynchronizationError, SynchronizationStatus, handle_ureq_error};
+pub use error::{
+    SynchronizationError, SynchronizationStatus, handle_ureq_error, is_authentication_rejection,
+};
 pub use limits::{
     MAX_HTTP_DEVICES_RESPONSE_BYTES, MAX_HTTP_SMALL_RESPONSE_BYTES,
     max_http_single_share_response_bytes, resolve_server_max_file_size, store_server_max_file_size,

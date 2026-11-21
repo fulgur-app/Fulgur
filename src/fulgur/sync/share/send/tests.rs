@@ -19,8 +19,10 @@ fn make_profile_with_server_url() -> ServerProfile {
 
 fn make_token_manager_with_valid_token() -> Arc<TokenStateManager> {
     let manager = Arc::new(TokenStateManager::new());
-    let expires_at = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
-    manager.inject_token_for_test("test-jwt-token".to_string(), expires_at);
+    manager.inject_token_for_test(
+        "test-jwt-token".to_string(),
+        std::time::Duration::from_hours(1),
+    );
     manager
 }
 

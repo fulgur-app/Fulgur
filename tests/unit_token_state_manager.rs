@@ -1,15 +1,19 @@
 use fulgur::fulgur::settings::ServerProfile;
-use fulgur::fulgur::sync::access_token::{TokenState, TokenStateManager, get_valid_token};
+use fulgur::fulgur::sync::access_token::{
+    TokenState, TokenStateManager, get_valid_token, with_valid_token,
+};
 use fulgur::fulgur::sync::synchronization::SynchronizationError;
 use std::sync::Arc;
 use std::thread;
-use time::OffsetDateTime;
+use std::time::{Duration, Instant};
+
+const ONE_HOUR: Duration = Duration::from_hours(1);
 
 #[test]
 fn test_token_state_new() {
     let state = TokenState::new();
     assert!(state.access_token.is_none());
-    assert!(state.token_expires_at.is_none());
+    assert!(state.token_refresh_at.is_none());
     assert!(!state.is_refreshing_token);
 }
 
@@ -17,7 +21,7 @@ fn test_token_state_new() {
 fn test_token_state_default() {
     let state = TokenState::default();
     assert!(state.access_token.is_none());
-    assert!(state.token_expires_at.is_none());
+    assert!(state.token_refresh_at.is_none());
     assert!(!state.is_refreshing_token);
 }
 
@@ -157,10 +161,9 @@ fn test_token_state_field_access() {
     state.access_token = Some("test_token".to_string());
     assert_eq!(state.access_token, Some("test_token".to_string()));
 
-    assert!(state.token_expires_at.is_none());
-    let expires = OffsetDateTime::now_utc() + time::Duration::hours(1);
-    state.token_expires_at = Some(expires);
-    assert!(state.token_expires_at.is_some());
+    assert!(state.token_refresh_at.is_none());
+    state.token_refresh_at = Some(Instant::now() + ONE_HOUR);
+    assert!(state.token_refresh_at.is_some());
 
     assert!(!state.is_refreshing_token);
     state.is_refreshing_token = true;
@@ -176,8 +179,7 @@ fn make_http_agent() -> ureq::Agent {
 /// Inject a valid token (expires 1 hour from now) into the manager.
 fn inject_valid_token(manager: &TokenStateManager) -> String {
     let token = "test-jwt-token".to_string();
-    let expires_at = OffsetDateTime::now_utc() + time::Duration::hours(1);
-    manager.inject_token_for_test(token.clone(), expires_at);
+    manager.inject_token_for_test(token.clone(), ONE_HOUR);
     token
 }
 
@@ -317,11 +319,10 @@ fn test_concurrent_get_valid_token_with_cached_token() {
 
 #[test]
 fn test_get_valid_token_with_expired_token_falls_through_to_refresh() {
-    // An expired cached token (beyond the 5-minute buffer) must trigger a refresh,
-    // not be returned as-is. The refresh fails with ServerUrlMissing when unconfigured.
+    // An expired cached token must trigger a refresh, not be returned as-is.
+    // The refresh fails with ServerUrlMissing when unconfigured.
     let manager = Arc::new(TokenStateManager::new());
-    let expired_at = OffsetDateTime::now_utc() - time::Duration::minutes(10);
-    manager.inject_token_for_test("old-expired-token".to_string(), expired_at);
+    manager.inject_token_for_test("old-expired-token".to_string(), Duration::ZERO);
     let profile = ServerProfile::new("Test");
     let result = get_valid_token(&profile, &manager, &make_http_agent());
     assert!(
@@ -331,15 +332,79 @@ fn test_get_valid_token_with_expired_token_falls_through_to_refresh() {
 }
 
 #[test]
-fn test_get_valid_token_with_near_expiry_token_falls_through_to_refresh() {
-    // A token expiring within the 5-minute buffer must also trigger a refresh.
+fn test_get_valid_token_reuses_a_token_shorter_than_the_five_minute_buffer() {
+    // Fulgurant allows lifetimes down to 60 seconds. A fixed 5-minute buffer
+    // made such tokens stale on arrival, so every call minted a new one.
     let manager = Arc::new(TokenStateManager::new());
-    let near_expiry = OffsetDateTime::now_utc() + time::Duration::minutes(3);
-    manager.inject_token_for_test("near-expiry-token".to_string(), near_expiry);
+    manager.inject_token_for_test("short-lived-token".to_string(), Duration::from_secs(120));
+    assert_token_cached(&manager, "short-lived-token");
+}
+
+#[test]
+fn test_invalidate_token_drops_the_rejected_token() {
+    let manager = Arc::new(TokenStateManager::new());
+    let token = inject_valid_token(&manager);
+    manager.invalidate_token(&token);
+    assert_token_cleared(&manager);
+}
+
+#[test]
+fn test_invalidate_token_keeps_a_token_minted_since_the_rejection() {
+    // Another thread already replaced the rejected token: its late 401 must
+    // not discard the fresh one.
+    let manager = Arc::new(TokenStateManager::new());
+    let fresh_token = inject_valid_token(&manager);
+    manager.invalidate_token("stale-token");
+    assert_token_cached(&manager, &fresh_token);
+}
+
+#[test]
+fn test_with_valid_token_refreshes_after_a_cached_token_is_rejected() {
+    // The cached token is refused, so it is invalidated and a new one is
+    // requested. The unconfigured profile makes that refresh fail with
+    // ServerUrlMissing, proving the retry went back to the token endpoint.
+    let manager = Arc::new(TokenStateManager::new());
+    let token = inject_valid_token(&manager);
     let profile = ServerProfile::new("Test");
-    let result = get_valid_token(&profile, &manager, &make_http_agent());
+    let mut seen_tokens = Vec::new();
+    let result: Result<(), _> =
+        with_valid_token(&profile, &manager, &make_http_agent(), |bearer| {
+            seen_tokens.push(bearer.to_string());
+            Err(SynchronizationError::AuthenticationFailed)
+        });
     assert!(
         matches!(result, Err(SynchronizationError::ServerUrlMissing)),
-        "Near-expiry token must trigger refresh, got: {result:?}"
+        "Expected a refresh attempt after the rejection, got: {result:?}"
     );
+    assert_eq!(seen_tokens, vec![token]);
+    assert_token_cleared(&manager);
+}
+
+#[test]
+fn test_with_valid_token_keeps_the_cache_on_other_errors() {
+    let manager = Arc::new(TokenStateManager::new());
+    let token = inject_valid_token(&manager);
+    let profile = ServerProfile::new("Test");
+    let mut attempts = 0;
+    let result: Result<(), _> = with_valid_token(&profile, &manager, &make_http_agent(), |_| {
+        attempts += 1;
+        Err(SynchronizationError::ServerError(500))
+    });
+    assert!(matches!(
+        result,
+        Err(SynchronizationError::ServerError(500))
+    ));
+    assert_eq!(attempts, 1, "Only an authentication failure is retried");
+    assert_token_cached(&manager, &token);
+}
+
+#[test]
+fn test_with_valid_token_returns_the_request_result() {
+    let manager = Arc::new(TokenStateManager::new());
+    let token = inject_valid_token(&manager);
+    let profile = ServerProfile::new("Test");
+    let result = with_valid_token(&profile, &manager, &make_http_agent(), |bearer| {
+        Ok(bearer.len())
+    });
+    assert_eq!(result.ok(), Some(token.len()));
 }

@@ -1,7 +1,7 @@
 use super::error::{SynchronizationError, handle_ureq_error};
 use crate::fulgur::settings::ServerProfile;
 use crate::fulgur::shared_state::AppNotification;
-use crate::fulgur::sync::access_token::get_valid_token;
+use crate::fulgur::sync::access_token::with_valid_token;
 use crate::fulgur::ui::notifications::progress::spawn_with_progress;
 use fulgur_common::api::sync::PingResponse;
 use gpui_kit::component::notification::NotificationType;
@@ -75,13 +75,12 @@ pub fn perform_ping_with_progress(
         format!("Testing connection to {display_name}...").into(),
         None,
         move |_cancel_flag| {
-            let result =
-                get_valid_token(&profile, &token_state, &http_agent).and_then(
-                    |token| match profile.server_url.as_deref() {
-                        Some(url) => ping_server(url, &token, &http_agent),
-                        None => Err(SynchronizationError::ServerUrlMissing),
-                    },
-                );
+            let result = match profile.server_url.as_deref() {
+                Some(url) => with_valid_token(&profile, &token_state, &http_agent, |token| {
+                    ping_server(url, token, &http_agent)
+                }),
+                None => Err(SynchronizationError::ServerUrlMissing),
+            };
             let notification = match result {
                 Ok(()) => AppNotification::background(
                     NotificationType::Success,
