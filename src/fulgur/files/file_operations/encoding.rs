@@ -184,13 +184,14 @@ pub fn decode_text_file(bytes: Vec<u8>) -> Option<DecodedContents> {
 /// Build the user-facing message shown when a file is refused as binary.
 ///
 /// ### Arguments
+/// - `verb`: The refused operation, such as `open` or `reload`
 /// - `file_name`: The display name of the refused file
 ///
 /// ### Returns
 /// - `String`: The notification text
 #[must_use]
-pub fn binary_file_notice(file_name: &str) -> String {
-    format!("Cannot open '{file_name}': appears to be a binary file")
+pub fn binary_file_notice(verb: &str, file_name: &str) -> String {
+    format!("Cannot {verb} '{file_name}': appears to be a binary file")
 }
 
 /// Build the user-facing message shown before a large file is read.

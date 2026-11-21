@@ -5,7 +5,7 @@ use super::decision::{TabRestoreDecision, determine_tab_restore_strategy};
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
-    files::file_operations::{RemoteFileResult, detect_encoding_and_decode},
+    files::file_operations::{RemoteFileResult, decode_text_file},
     tab::{Tab, TabId},
     ui::components_utils::{UNTITLED, UTF_8},
     ui::tabs::color_tag::ColorTag,
@@ -134,6 +134,7 @@ impl Fulgur {
     /// - If the tab has no unsaved content and its file exists, it will be loaded from the file.
     /// - If the tab has unsaved content and its file exists, the saved content is restored as modified. When the file changed on disk after the save, the tab is flagged so a conflict is raised.
     /// - If a file does not exist, the saved content will be used.
+    /// - If a file with no unsaved content now looks binary, the tab will be skipped, as opening it would be refused.
     /// - If no path and no content is provided, the tab will be skipped.
     ///
     /// ### Arguments
@@ -212,7 +213,13 @@ impl Fulgur {
                     let mut file = readable_file.take()?;
                     let disk_modified = file.metadata().and_then(|meta| meta.modified()).ok();
                     file.read_to_end(&mut bytes).ok()?;
-                    let decoded = detect_encoding_and_decode(bytes);
+                    let Some(decoded) = decode_text_file(bytes) else {
+                        log::warn!(
+                            "Skipping restored tab {}: file looks binary",
+                            path.display()
+                        );
+                        return None;
+                    };
                     (
                         decoded.content,
                         Some(path),
