@@ -193,6 +193,18 @@ pub fn binary_file_notice(file_name: &str) -> String {
     format!("Cannot open '{file_name}': appears to be a binary file")
 }
 
+/// Build the user-facing message shown before a large file is read.
+///
+/// ### Arguments
+/// - `file_name`: The display name of the file being opened
+///
+/// ### Returns
+/// - `String`: The notification text
+#[must_use]
+pub fn large_file_notice(file_name: &str) -> String {
+    format!("Opening large file '{file_name}', this may take a moment...")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

@@ -1,4 +1,4 @@
-use super::super::{DecodedContents, binary_file_notice, decode_text_file};
+use super::super::{DecodedContents, binary_file_notice, decode_text_file, large_file_notice};
 use super::{notice_file_name, read_failure_notice};
 use crate::fulgur::{
     Fulgur,
@@ -97,9 +97,7 @@ impl Fulgur {
                     window.push_notification(
                         (
                             NotificationType::Info,
-                            SharedString::from(format!(
-                                "Opening large file '{file_name}', this may take a moment..."
-                            )),
+                            SharedString::from(large_file_notice(&file_name)),
                         ),
                         cx,
                     );

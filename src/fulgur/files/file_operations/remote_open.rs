@@ -1,14 +1,18 @@
 use super::{
-    encoding::decode_text_file,
+    encoding::{decode_text_file, large_file_notice},
     remote_ssh_task::{SshTaskContext, spawn_ssh_task},
     remote_types::{
         PendingRemoteOpenOutcome, RemoteBrowseResult, RemoteFileResult, RemoteOpenResult,
         RemoteOpenTaskParams, RemoteReloadGuard, SSH_CONNECTION_TIMEOUT_LABEL,
     },
 };
-use crate::fulgur::ui::tabs::{editor_tab::TabLocation, tab::TabId};
+use crate::fulgur::ui::tabs::{
+    editor_tab::{LARGE_FILE_THRESHOLD_BYTES, TabLocation},
+    tab::TabId,
+};
 use crate::fulgur::{
     Fulgur,
+    shared_state::AppNotification,
     sync::ssh::{
         self,
         url::{RemoteSpec, format_remote_history_url, format_remote_url},
@@ -16,6 +20,7 @@ use crate::fulgur::{
     ui::notifications::progress::CancelCallback,
     window_manager::WindowManager,
 };
+use futures::channel::mpsc::UnboundedSender;
 use gpui_kit::SharedString;
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use parking_lot::Mutex;
@@ -280,32 +285,74 @@ impl Fulgur {
         }
     }
 
+    /// Read a remote file into an open result, announcing it first when it is large.
+    ///
+    /// ### Arguments
+    /// - `session`: Established SSH session with SFTP subsystem.
+    /// - `spec`: Location of the file.
+    /// - `remote_path`: Path to read, `spec.path` or its resolved form.
+    /// - `notification_tx`: App notification channel used for the large-file notice.
+    ///
+    /// ### Errors
+    /// - Returns an `SshError` when the file is refused or cannot be read.
+    ///
+    /// ### Returns
+    /// - `Ok(RemoteOpenResult::File)`: The decoded text file.
+    /// - `Ok(RemoteOpenResult::Binary)`: The file contents look binary.
+    /// - `Err(SshError)`: The path is not a regular file, is too large, or failed to read.
+    fn read_remote_file_open_result(
+        session: &ssh::session::SshSession,
+        spec: &RemoteSpec,
+        remote_path: &str,
+        notification_tx: &UnboundedSender<AppNotification>,
+    ) -> Result<RemoteOpenResult, ssh::error::SshError> {
+        let bytes = ssh::sftp::read_remote_file(session, remote_path, |reported_size| {
+            if reported_size > LARGE_FILE_THRESHOLD_BYTES {
+                let file_name = remote_path.rsplit('/').next().unwrap_or(remote_path);
+                let notice = AppNotification::foreground(
+                    NotificationType::Info,
+                    large_file_notice(file_name),
+                );
+                if notification_tx.unbounded_send(notice).is_err() {
+                    log::debug!("Notification channel closed, dropping the large-file notice");
+                }
+            }
+        })?;
+        Ok(Self::remote_file_open_result(spec, bytes))
+    }
+
     /// Resolve a remote open request into either file contents or a browse fallback.
     ///
     /// ### Arguments
     /// - `session`: Established SSH session with SFTP subsystem.
     /// - `spec`: Requested remote location.
+    /// - `notification_tx`: App notification channel used for the large-file notice.
+    ///
+    /// ### Errors
+    /// - Returns an `SshError` when classification, listing or reading fails, or when the
+    ///   target is a device, a FIFO or a socket.
     ///
     /// ### Returns
     /// - `Ok(RemoteOpenResult::File)`: Target is a readable file.
     /// - `Ok(RemoteOpenResult::Binary)`: Target is a file whose contents look binary.
     /// - `Ok(RemoteOpenResult::Browse)`: Target is a directory or missing path.
-    /// - `Err(SshError)`: Remote classification or I/O failure.
+    /// - `Err(SshError)`: Remote classification or I/O failure, or a non-regular file.
     fn resolve_remote_open_result(
         session: &ssh::session::SshSession,
         spec: &RemoteSpec,
+        notification_tx: &UnboundedSender<AppNotification>,
     ) -> Result<RemoteOpenResult, ssh::error::SshError> {
         use ssh::sftp::{
             RemotePathKind, classify_remote_path, closest_existing_remote_directory,
-            resolve_home_relative_path,
+            not_regular_file_error, resolve_home_relative_path,
         };
 
         let path = resolve_home_relative_path(session, &spec.path)?;
         match classify_remote_path(session, &path)? {
             RemotePathKind::File => {
-                let bytes = ssh::sftp::read_remote_file(session, &path)?;
-                Ok(Self::remote_file_open_result(spec, bytes))
+                Self::read_remote_file_open_result(session, spec, &path, notification_tx)
             }
+            RemotePathKind::Other => Err(not_regular_file_error(&path)),
             RemotePathKind::Directory => {
                 Self::build_remote_browse_result(session, spec, &path, None)
             }
@@ -386,6 +433,7 @@ impl Fulgur {
             self.inflight_remote_restore.insert(tab_id);
         }
         let pending_remote_open = Arc::clone(&self.pending_remote_open);
+        let notification_tx = Fulgur::shared_state(cx).notification_tx.clone();
 
         let entity_weak = cx.entity().downgrade();
         let cancel_callback: Option<CancelCallback> = Some(Box::new(move |_window, cx| {
@@ -411,10 +459,9 @@ impl Fulgur {
             },
             move |session, spec, _cancelled| {
                 if target_tab_id.is_some() {
-                    ssh::sftp::read_remote_file(session, &spec.path)
-                        .map(|bytes| Self::remote_file_open_result(spec, bytes))
+                    Self::read_remote_file_open_result(session, spec, &spec.path, &notification_tx)
                 } else {
-                    Self::resolve_remote_open_result(session, spec)
+                    Self::resolve_remote_open_result(session, spec, &notification_tx)
                 }
             },
             move |open_finished, outcome| {

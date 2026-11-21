@@ -8,42 +8,144 @@ use ssh2::ErrorCode;
 use std::io::Read;
 use std::path::Path;
 
-/// Read a file from the remote host via SFTP.
+/// Largest remote file, in bytes, that Fulgur reads into an editor buffer.
+pub const MAX_REMOTE_FILE_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// POSIX mask selecting the file type bits of a mode.
+const MODE_TYPE_MASK: u32 = 0o170_000;
+/// POSIX file type bits of a directory.
+const MODE_TYPE_DIRECTORY: u32 = 0o040_000;
+/// POSIX file type bits of a regular file.
+const MODE_TYPE_REGULAR: u32 = 0o100_000;
+
+/// Read a regular file from the remote host via SFTP.
 ///
 /// ### Arguments
 /// - `session`: Established SSH session with SFTP subsystem.
 /// - `remote_path`: Absolute or home-relative (`~/...`) path on the remote host.
+/// - `before_read`: Called with the size reported by the server once the file is
+///   known to be readable, before its contents are transferred.
 ///
 /// ### Errors
 /// - Returns an `SshError::SftpError` when the remote home directory cannot be resolved,
-///   when the remote file cannot be opened (missing, permission denied), or when an I/O
-///   error occurs while reading.
+///   when the path cannot be inspected or opened (missing, permission denied), when it
+///   is not a regular file, when it is larger than `MAX_REMOTE_FILE_BYTES`, or when an
+///   I/O error occurs while reading.
 ///
 /// ### Returns
 /// - `Ok(Vec<u8>)`: Raw file contents.
-/// - `Err(SshError::SftpError)`: File not found, permission denied, or I/O error.
-pub fn read_remote_file(session: &SshSession, remote_path: &str) -> Result<Vec<u8>, SshError> {
+/// - `Err(SshError::SftpError)`: The file was refused or could not be read.
+pub fn read_remote_file(
+    session: &SshSession,
+    remote_path: &str,
+    before_read: impl FnOnce(u64),
+) -> Result<Vec<u8>, SshError> {
     let remote_path = resolve_home_relative_path(session, remote_path)?;
-    let mut file = session
+    let path = Path::new(&remote_path);
+    let stat = session
         .sftp
-        .open(Path::new(&remote_path))
+        .stat(path)
+        .map_err(|e| SshError::SftpError(format!("Cannot inspect {remote_path}: {e}")))?;
+    if let Some(perm) = stat.perm
+        && !matches!(remote_path_kind_from_mode(perm), RemotePathKind::File)
+    {
+        return Err(not_regular_file_error(&remote_path));
+    }
+    let reported_size = stat.size.unwrap_or(0);
+    if reported_size > MAX_REMOTE_FILE_BYTES {
+        return Err(file_too_large_error(&remote_path));
+    }
+    before_read(reported_size);
+
+    let file = session
+        .sftp
+        .open(path)
         .map_err(|e| SshError::SftpError(format!("Cannot open {remote_path}: {e}")))?;
+    read_bounded(file, MAX_REMOTE_FILE_BYTES, &remote_path)
+}
 
+/// Read a stream to its end, refusing it once it exceeds a byte limit.
+///
+/// ### Arguments
+/// - `reader`: The stream to read.
+/// - `limit`: Largest accepted length, in bytes.
+/// - `remote_path`: Path named in the error messages.
+///
+/// ### Errors
+/// - Returns an `SshError::SftpError` when the stream is longer than `limit`, or when
+///   an I/O error occurs while reading.
+///
+/// ### Returns
+/// - `Ok(Vec<u8>)`: The whole stream, at most `limit` bytes long.
+/// - `Err(SshError::SftpError)`: The stream is too long or could not be read.
+fn read_bounded(reader: impl Read, limit: u64, remote_path: &str) -> Result<Vec<u8>, SshError> {
     let mut buf = Vec::new();
-    file.read_to_end(&mut buf)
+    reader
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut buf)
         .map_err(|e| SshError::SftpError(format!("Read error on {remote_path}: {e}")))?;
-
+    if buf.len() as u64 > limit {
+        return Err(file_too_large_error(remote_path));
+    }
     Ok(buf)
 }
 
+/// Build the error returned for a remote path that is not a regular file.
+///
+/// ### Arguments
+/// - `remote_path`: The refused path.
+///
+/// ### Returns
+/// - `SshError::SftpError`: The error naming the path.
+#[must_use]
+pub fn not_regular_file_error(remote_path: &str) -> SshError {
+    SshError::SftpError(format!(
+        "Cannot open {remote_path}: not a regular file (device, FIFO or socket)"
+    ))
+}
+
+/// Build the error returned for a remote file larger than `MAX_REMOTE_FILE_BYTES`.
+///
+/// ### Arguments
+/// - `remote_path`: The refused path.
+///
+/// ### Returns
+/// - `SshError::SftpError`: The error naming the path and the limit.
+fn file_too_large_error(remote_path: &str) -> SshError {
+    SshError::SftpError(format!(
+        "Cannot open {remote_path}: larger than the {} MiB remote file limit",
+        MAX_REMOTE_FILE_BYTES / (1024 * 1024)
+    ))
+}
+
 /// Type classification for a remote SFTP path.
+#[derive(Debug, PartialEq, Eq)]
 pub enum RemotePathKind {
     /// Path points to a regular file.
     File,
     /// Path points to a directory.
     Directory,
+    /// Path points to something else: a character or block device, a FIFO or a socket.
+    Other,
     /// Path does not exist on the remote host.
     Missing,
+}
+
+/// Classify a path from the POSIX mode bits reported by the server.
+///
+/// ### Arguments
+/// - `perm`: The mode bits of the path.
+///
+/// ### Returns
+/// - `RemotePathKind::Directory`: The mode describes a directory.
+/// - `RemotePathKind::File`: The mode describes a regular file.
+/// - `RemotePathKind::Other`: The mode describes any other kind of file.
+fn remote_path_kind_from_mode(perm: u32) -> RemotePathKind {
+    match perm & MODE_TYPE_MASK {
+        MODE_TYPE_DIRECTORY => RemotePathKind::Directory,
+        MODE_TYPE_REGULAR => RemotePathKind::File,
+        _ => RemotePathKind::Other,
+    }
 }
 
 /// A single entry in a remote directory listing.
@@ -66,8 +168,10 @@ pub struct RemoteDirectoryEntry {
 ///   path being missing.
 ///
 /// ### Returns
-/// - `Ok(RemotePathKind::File)`: Path exists and is a file.
+/// - `Ok(RemotePathKind::File)`: Path exists and is a regular file, or the server
+///   omits the mode bits of something that is not a directory.
 /// - `Ok(RemotePathKind::Directory)`: Path exists and is a directory.
+/// - `Ok(RemotePathKind::Other)`: Path exists and is a device, a FIFO or a socket.
 /// - `Ok(RemotePathKind::Missing)`: Path does not exist.
 /// - `Err(SshError::SftpError)`: Metadata lookup failed for another reason.
 pub fn classify_remote_path(
@@ -79,11 +183,7 @@ pub fn classify_remote_path(
     match session.sftp.stat(path) {
         Ok(stat) => {
             if let Some(perm) = stat.perm {
-                // POSIX mode bits where 0o040000 indicates a directory.
-                if perm & 0o170_000 == 0o040_000 {
-                    return Ok(RemotePathKind::Directory);
-                }
-                return Ok(RemotePathKind::File);
+                return Ok(remote_path_kind_from_mode(perm));
             }
 
             // Fallback when the server omits mode bits.
@@ -128,7 +228,7 @@ pub fn closest_existing_remote_directory(
     loop {
         match classify_remote_path(session, &candidate)? {
             RemotePathKind::Directory => return Ok(candidate),
-            RemotePathKind::File | RemotePathKind::Missing => {
+            RemotePathKind::File | RemotePathKind::Other | RemotePathKind::Missing => {
                 if candidate == REMOTE_ROOT_PATH {
                     return Ok(REMOTE_ROOT_PATH.to_string());
                 }
@@ -168,7 +268,9 @@ pub fn list_remote_directory(
             if name == "." || name == ".." {
                 return None;
             }
-            let is_dir = stat.perm.is_some_and(|perm| perm & 0o170_000 == 0o040_000);
+            let is_dir = stat
+                .perm
+                .is_some_and(|perm| remote_path_kind_from_mode(perm) == RemotePathKind::Directory);
             let full_path = join_remote_path(&directory, &name);
             Some(RemoteDirectoryEntry {
                 name,
@@ -185,4 +287,42 @@ pub fn list_remote_directory(
     });
     entries.truncate(500);
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RemotePathKind, read_bounded, remote_path_kind_from_mode};
+    use std::io::{Cursor, Read};
+
+    #[test]
+    fn test_remote_path_kind_from_mode_accepts_only_regular_files_as_files() {
+        assert_eq!(remote_path_kind_from_mode(0o100_644), RemotePathKind::File);
+        assert_eq!(
+            remote_path_kind_from_mode(0o040_755),
+            RemotePathKind::Directory
+        );
+        for special in [0o020_666, 0o060_660, 0o010_644, 0o140_755] {
+            assert_eq!(
+                remote_path_kind_from_mode(special),
+                RemotePathKind::Other,
+                "mode {special:o} must not be read as a file"
+            );
+        }
+    }
+
+    #[test]
+    fn test_read_bounded_returns_a_stream_at_the_limit() {
+        let bytes = read_bounded(Cursor::new(vec![b'a'; 16]), 16, "/tmp/file").unwrap();
+        assert_eq!(bytes.len(), 16);
+    }
+
+    #[test]
+    fn test_read_bounded_refuses_an_endless_stream() {
+        let endless = std::io::repeat(0);
+        let error = read_bounded(endless.take(u64::MAX), 1024, "/dev/zero").unwrap_err();
+        assert!(
+            error.to_string().contains("remote file limit"),
+            "unexpected error: {error}"
+        );
+    }
 }
