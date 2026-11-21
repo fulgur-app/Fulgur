@@ -34,6 +34,7 @@ actions!(
         ToggleColorPicker,
         ToggleCommandPalette,
         ViewLog,
+        OpenConfigFolder,
         ShowRemoteUrlHistory,
         GoToParentFolder,
     ]

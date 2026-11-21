@@ -2,6 +2,7 @@
 
 mod actions;
 mod app_menus;
+mod config_folder;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod dock;
 mod keybindings;

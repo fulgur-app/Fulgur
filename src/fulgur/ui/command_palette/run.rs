@@ -140,6 +140,7 @@ impl Fulgur {
             }
             PaletteCommand::ToggleColorPicker => self.toggle_color_picker(window, cx),
             PaletteCommand::ViewLog => self.open_application_log(window, cx),
+            PaletteCommand::OpenConfigFolder => self.open_config_folder(window, cx),
             PaletteCommand::SelectTheme => self.select_theme_sheet(window, cx),
             PaletteCommand::GetMoreThemes => open_theme_repository(),
             PaletteCommand::NextTab => self.on_next_tab(window, cx),

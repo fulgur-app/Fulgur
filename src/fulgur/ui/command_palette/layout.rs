@@ -161,6 +161,7 @@ mod tests {
             PaletteCommand::SelectTheme,
             PaletteCommand::GetMoreThemes,
             PaletteCommand::ViewLog,
+            PaletteCommand::OpenConfigFolder,
             PaletteCommand::OpenSettings,
             PaletteCommand::CheckForUpdates,
             PaletteCommand::About,
