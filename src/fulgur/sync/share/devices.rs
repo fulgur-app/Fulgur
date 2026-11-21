@@ -1,7 +1,7 @@
 use crate::fulgur::{
     settings::ServerProfile,
     sync::{
-        access_token::{TokenStateManager, get_valid_token},
+        access_token::{TokenStateManager, with_valid_token},
         synchronization::{
             MAX_HTTP_DEVICES_RESPONSE_BYTES, SynchronizationError, handle_ureq_error,
         },
@@ -71,13 +71,14 @@ pub fn get_devices(
     let Some(server_url) = profile.server_url.clone() else {
         return Err(SynchronizationError::ServerUrlMissing);
     };
-    let token = get_valid_token(profile, token_state, http_agent)?;
     let devices_url = format!("{server_url}/api/devices");
-    let mut response = http_agent
-        .get(&devices_url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .call()
-        .map_err(|e| handle_ureq_error(e, "Failed to get devices"))?;
+    let mut response = with_valid_token(profile, token_state, http_agent, |token| {
+        http_agent
+            .get(&devices_url)
+            .header("Authorization", &format!("Bearer {token}"))
+            .call()
+            .map_err(|e| handle_ureq_error(e, "Failed to get devices"))
+    })?;
 
     let body = response
         .body_mut()

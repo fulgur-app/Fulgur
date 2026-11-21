@@ -6,7 +6,7 @@ use super::{
 use crate::fulgur::{
     settings::ServerProfile,
     sync::{
-        access_token::{TokenStateManager, get_valid_token},
+        access_token::{TokenStateManager, get_valid_token, with_valid_token},
         synchronization::{MAX_HTTP_SMALL_RESPONSE_BYTES, SynchronizationError, handle_ureq_error},
     },
     utils::crypto_helper::{self, is_valid_public_key},
@@ -176,7 +176,8 @@ pub fn share_file(
             _ => {}
         }
     }
-    let token = get_valid_token(profile, token_state, http_agent)?;
+    // Fail fast on missing credentials before compressing and encrypting
+    get_valid_token(profile, token_state, http_agent)?;
     let share_url = format!("{server_url}/api/share");
     let deduplication_hash = if profile.is_deduplication {
         request.file_path.as_ref().map(|path| {
@@ -202,7 +203,6 @@ pub fn share_file(
                 .map(|device_id| {
                     let device_id = device_id.clone();
                     let share_url = share_url.clone();
-                    let token = token.clone();
                     let file_name = request.file_name.clone();
                     let deduplication_hash = deduplication_hash.clone();
                     let compressed_content = compressed_content.as_slice();
@@ -233,15 +233,17 @@ pub fn share_file(
                                     return (device_id.clone(), Err(e));
                                 }
                             };
-                        let result = send_share_request(
-                            &share_url,
-                            &token,
-                            encrypted_content,
-                            &file_name,
-                            &device_id,
-                            deduplication_hash.clone(),
-                            http_agent,
-                        );
+                        let result = with_valid_token(profile, token_state, http_agent, |token| {
+                            send_share_request(
+                                &share_url,
+                                token,
+                                encrypted_content.clone(),
+                                &file_name,
+                                &device_id,
+                                deduplication_hash.clone(),
+                                http_agent,
+                            )
+                        });
                         match &result {
                             Ok(_) => {}
                             Err(e) => {
