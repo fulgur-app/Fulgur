@@ -70,7 +70,7 @@ fn file_tab_lock_state(
     visual_cx.update(|_, cx| {
         let this = fulgur.read(cx);
         let index = this
-            .find_tab_by_path(&path.to_path_buf(), cx)
+            .find_tab_by_path(path, cx)
             .expect("expected a file tab");
         let editor = this.tabs[index].read(cx).as_editor().expect("editor tab");
         (editor.read_only, editor.content.read(cx).is_editable())
