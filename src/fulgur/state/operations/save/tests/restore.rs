@@ -313,3 +313,34 @@ fn restored_untitled_tab_installs_color_provider(cx: &mut TestAppContext) {
         "a restored unsaved buffer must get the same color provider as a new tab"
     );
 }
+
+#[gpui_kit::test]
+fn restore_skips_clean_tab_whose_file_now_looks_binary(cx: &mut TestAppContext) {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let path = temp_dir.path().join("became_binary.txt");
+    fs::write(&path, [0x7F, b'E', b'L', b'F', 0x00, 0x01]).expect("write binary file");
+    let clean_tab = TabState {
+        tab_id: 7,
+        title: "became_binary.txt".to_string(),
+        file_path: Some(path.clone()),
+        content: None,
+        last_saved: None,
+        remote: None,
+        log_view: false,
+        color_tag: None,
+        share: None,
+        encoding: None,
+        lossy_decode: false,
+    };
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    let restored = restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(clean_tab));
+
+    assert!(
+        restored
+            .tabs
+            .iter()
+            .all(|tab| tab.file_path.as_deref() != Some(path.as_path())),
+        "a clean tab whose file now looks binary must be skipped, as opening it would be refused"
+    );
+}

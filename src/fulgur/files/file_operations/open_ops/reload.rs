@@ -1,5 +1,5 @@
-use super::super::{DecodedContents, detect_encoding_and_decode};
-use super::read_failure_notice;
+use super::super::{DecodedContents, binary_file_notice, decode_text_file};
+use super::{notice_file_name, read_failure_notice};
 use crate::fulgur::{
     Fulgur,
     editor_tab::{ContentRevision, replace_editor_text},
@@ -57,12 +57,11 @@ impl Fulgur {
                 .spawn(async move {
                     // Taken before the read so a write racing it reads as a later change.
                     let disk_modified = file_modified_system_time(&read_path);
-                    std::fs::read(&read_path)
-                        .map(|bytes| (detect_encoding_and_decode(bytes), disk_modified))
+                    std::fs::read(&read_path).map(|bytes| (decode_text_file(bytes), disk_modified))
                 })
                 .await;
             match read_result {
-                Ok((decoded, disk_modified)) => {
+                Ok((Some(decoded), disk_modified)) => {
                     window
                         .update(|window, cx| {
                             _ = view.update(cx, |this, cx| {
@@ -74,6 +73,21 @@ impl Fulgur {
                                     cx,
                                 );
                             });
+                        })
+                        .ok();
+                }
+                Ok((None, _)) => {
+                    log::warn!(
+                        "Refusing to reload {}: it now looks binary",
+                        guard.path.display()
+                    );
+                    let notice = binary_file_notice("reload", &notice_file_name(&guard.path));
+                    window
+                        .update(|window, cx| {
+                            window.push_notification(
+                                (NotificationType::Warning, SharedString::from(notice)),
+                                cx,
+                            );
                         })
                         .ok();
                 }
@@ -391,6 +405,64 @@ mod tests {
                 editor.content.read(cx).text().to_string(),
                 "content kept in memory",
                 "a failed reload must leave the buffer untouched"
+            );
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_reload_tab_from_disk_refuses_binary_content(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("replaced_by_binary.txt");
+        std::fs::write(&path, "text kept in the editor").expect("failed to write text file");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.tabs
+                    .first()
+                    .expect("expected an editor tab")
+                    .clone()
+                    .update(cx, |tab, cx| {
+                        let editor = tab.as_editor_mut().expect("expected an editor tab");
+                        editor.location = TabLocation::Local(path.clone());
+                        editor.content.update(cx, |state, cx| {
+                            state.set_value("text kept in the editor", window, cx);
+                        });
+                        editor.set_original_content_from_str("text kept in the editor");
+                        editor.modified = false;
+                    });
+            });
+        });
+        std::fs::write(&path, [0x7F, b'E', b'L', b'F', 0x00, 0x01])
+            .expect("failed to overwrite with binary content");
+        let notifications_before = notification_count(&mut visual_cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| this.reload_tab_from_disk(0, window, cx));
+        });
+        visual_cx.run_until_parked();
+
+        assert_eq!(
+            notification_count(&mut visual_cx),
+            notifications_before + 1,
+            "a refused binary reload must warn the user"
+        );
+        visual_cx.update(|_window, cx| {
+            let editor = fulgur
+                .read(cx)
+                .tabs
+                .first()
+                .and_then(|tab| tab.read(cx).as_editor())
+                .expect("expected an editor tab");
+            assert_eq!(
+                editor.content.read(cx).text().to_string(),
+                "text kept in the editor",
+                "binary content must not replace the buffer"
+            );
+            assert!(
+                !editor.lossy_decode,
+                "the refused bytes must not be decoded"
             );
         });
     }

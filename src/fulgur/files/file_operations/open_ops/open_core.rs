@@ -149,7 +149,7 @@ impl Fulgur {
             }
             FileReadOutcome::Binary => {
                 log::warn!("Refusing to open binary file: {}", path.display());
-                let notice = binary_file_notice(&notice_file_name(path));
+                let notice = binary_file_notice("open", &notice_file_name(path));
                 window
                     .update(|window, cx| {
                         window.push_notification(

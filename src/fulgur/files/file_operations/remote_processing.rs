@@ -125,7 +125,7 @@ impl Fulgur {
                     window.push_notification(
                         (
                             NotificationType::Warning,
-                            gpui_kit::SharedString::from(binary_file_notice(file_name)),
+                            gpui_kit::SharedString::from(binary_file_notice("open", file_name)),
                         ),
                         cx,
                     );
