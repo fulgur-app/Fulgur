@@ -1,8 +1,8 @@
 use super::WindowManager;
-use crate::fulgur::Fulgur;
+use crate::fulgur::{Fulgur, tab::Tab};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use gpui_kit::BorrowAppContext;
-use gpui_kit::{Context, Entity, WeakEntity, Window, WindowId};
+use gpui_kit::{App, Context, Entity, Window, WindowId};
 
 impl Fulgur {
     /// Publish this window's menu-relevant tab snapshot to the `WindowManager`.
@@ -53,62 +53,7 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         let path = action.0.clone();
-        if let Some(tab_index) = self.find_tab_by_path(&path, cx) {
-            self.set_active_tab(tab_index, window, cx);
-            self.focus_active_tab(window, cx);
-            cx.notify();
-            return;
-        }
-        let manager = cx.global::<WindowManager>();
-        let other_windows: Vec<WeakEntity<Fulgur>> = manager
-            .get_all_window_ids()
-            .into_iter()
-            .filter(|id| *id != self.window_id)
-            .filter_map(|id| manager.get_window(id))
-            .collect();
-        let mut target: Option<(WindowId, Entity<Fulgur>)> = None;
-        for weak in other_windows {
-            if let Some(entity) = weak.upgrade() {
-                let other = entity.read(cx);
-                if other.find_tab_by_path(&path, cx).is_some() {
-                    target = Some((other.window_id, entity.clone()));
-                    break;
-                }
-            }
-        }
-        if let Some((target_wid, target_entity)) = target {
-            cx.spawn_in(window, {
-                let path = path.clone();
-                async move |_this, async_window| {
-                    async_window
-                        .update(|_window, cx| {
-                            for handle in cx.windows() {
-                                if handle.window_id() == target_wid {
-                                    handle
-                                        .update(cx, |_, target_window, cx| {
-                                            target_entity.update(cx, |fulgur, cx| {
-                                                if let Some(tab_index) =
-                                                    fulgur.find_tab_by_path(&path, cx)
-                                                {
-                                                    fulgur.set_active_tab(
-                                                        tab_index,
-                                                        target_window,
-                                                        cx,
-                                                    );
-                                                }
-                                            });
-                                            target_window.activate_window();
-                                        })
-                                        .ok();
-                                    break;
-                                }
-                            }
-                        })
-                        .ok();
-                }
-            })
-            .detach();
-        }
+        self.activate_tab_matching(move |tab| tab.has_file_path(&path), window, cx);
     }
 
     /// Handle the `DockActivateTabByTitle` action: focus the tab with the given title,
@@ -125,63 +70,79 @@ impl Fulgur {
         cx: &mut Context<Self>,
     ) {
         let title = action.0.clone();
-        if let Some(tab_index) = self.tabs.iter().position(|t| t.read(cx).title() == title) {
+        self.activate_tab_matching(move |tab| tab.title() == title, window, cx);
+    }
+
+    /// Activate the first tab satisfying a predicate, searching this window first
+    ///
+    /// ### Arguments
+    /// - `matches`: The predicate identifying the tab to activate
+    /// - `window`: The current window
+    /// - `cx`: The application context
+    fn activate_tab_matching(
+        &mut self,
+        matches: impl Fn(&Tab) -> bool + 'static,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(tab_index) = self.find_tab_matching(&matches, cx) {
             self.set_active_tab(tab_index, window, cx);
             self.focus_active_tab(window, cx);
             cx.notify();
             return;
         }
+        let Some((target_wid, target_entity)) = self.find_other_window_with_tab(&matches, cx)
+        else {
+            return;
+        };
+        cx.spawn_in(window, async move |_this, async_window| {
+            async_window
+                .update(|_window, cx| {
+                    let Some(handle) = cx
+                        .windows()
+                        .into_iter()
+                        .find(|handle| handle.window_id() == target_wid)
+                    else {
+                        return;
+                    };
+                    handle
+                        .update(cx, |_, target_window, cx| {
+                            target_entity.update(cx, |fulgur, cx| {
+                                if let Some(tab_index) = fulgur.find_tab_matching(&matches, cx) {
+                                    fulgur.set_active_tab(tab_index, target_window, cx);
+                                }
+                            });
+                            target_window.activate_window();
+                        })
+                        .ok();
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// Find another open window holding a tab that satisfies a predicate
+    ///
+    /// ### Arguments
+    /// - `matches`: The predicate identifying the wanted tab
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some((WindowId, Entity<Fulgur>))`: The first other window with a matching tab
+    /// - `None`: If no other live window holds a matching tab
+    fn find_other_window_with_tab(
+        &self,
+        matches: &impl Fn(&Tab) -> bool,
+        cx: &App,
+    ) -> Option<(WindowId, Entity<Fulgur>)> {
         let manager = cx.global::<WindowManager>();
-        let other_windows: Vec<WeakEntity<Fulgur>> = manager
+        manager
             .get_all_window_ids()
             .into_iter()
             .filter(|id| *id != self.window_id)
-            .filter_map(|id| manager.get_window(id))
-            .collect();
-        let mut target: Option<(WindowId, Entity<Fulgur>)> = None;
-        for weak in other_windows {
-            if let Some(entity) = weak.upgrade() {
-                let other = entity.read(cx);
-                if other.tabs.iter().any(|t| t.read(cx).title() == title) {
-                    target = Some((other.window_id, entity.clone()));
-                    break;
-                }
-            }
-        }
-        if let Some((target_wid, target_entity)) = target {
-            cx.spawn_in(window, {
-                async move |_this, async_window| {
-                    async_window
-                        .update(|_window, cx| {
-                            for handle in cx.windows() {
-                                if handle.window_id() == target_wid {
-                                    handle
-                                        .update(cx, |_, target_window, cx| {
-                                            target_entity.update(cx, |fulgur, cx| {
-                                                if let Some(tab_index) = fulgur
-                                                    .tabs
-                                                    .iter()
-                                                    .position(|t| t.read(cx).title() == title)
-                                                {
-                                                    fulgur.set_active_tab(
-                                                        tab_index,
-                                                        target_window,
-                                                        cx,
-                                                    );
-                                                }
-                                            });
-                                            target_window.activate_window();
-                                        })
-                                        .ok();
-                                    break;
-                                }
-                            }
-                        })
-                        .ok();
-                }
-            })
-            .detach();
-        }
+            .filter_map(|id| manager.get_window(id)?.upgrade())
+            .find(|entity| entity.read(cx).find_tab_matching(matches, cx).is_some())
+            .map(|entity| (entity.read(cx).window_id, entity))
     }
 
     /// Process pending IPC commands forwarded by another Fulgur process

@@ -4,7 +4,7 @@ use crate::fulgur::editor_tab::TabLocation;
 use crate::fulgur::tab::Tab;
 use crate::fulgur::ui::components_utils::UNTITLED;
 use gpui_kit::{Context, Window};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 impl Fulgur {
     /// Apply an external-modification event to the tab backing a path.
@@ -15,7 +15,7 @@ impl Fulgur {
     /// - `cx`: The application context
     fn apply_external_modification(
         &mut self,
-        path: &PathBuf,
+        path: &Path,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -34,7 +34,7 @@ impl Fulgur {
                 } else {
                     self.file_watch_state
                         .pending_conflicts
-                        .insert(path.clone(), tab_index);
+                        .insert(path.to_path_buf(), tab_index);
                 }
             } else {
                 self.reload_tab_from_disk(tab_index, window, cx);

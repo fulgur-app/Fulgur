@@ -8,7 +8,7 @@ use gpui_kit::{
     AnyWindowHandle, App, BorrowAppContext, Entity, EntityId, Global, WeakEntity, WindowId,
 };
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 use system_menus::WindowMenuTab;
 
 #[cfg(all(test, feature = "gpui-test-support"))]
@@ -308,7 +308,7 @@ impl WindowManager {
     /// - `Option<WindowId>`: The ID of the window that has the file open, if any
     pub fn find_window_with_file(
         &self,
-        path: &PathBuf,
+        path: &Path,
         current_window_id: WindowId,
         cx: &App,
     ) -> Option<WindowId> {

@@ -8,6 +8,7 @@ use crate::fulgur::{
 };
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::{App, AppContext, Context, Entity, SharedString, Window};
+use std::path::Path;
 
 /// Stable identifier of a tab, unique within a window for the process lifetime
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -85,6 +86,20 @@ impl Tab {
             Tab::Editor(tab) => Some(tab),
             _ => None,
         }
+    }
+
+    /// Check whether this is an editor tab backed by the given file path
+    ///
+    /// ### Arguments
+    /// - `path`: The file path to compare against
+    ///
+    /// ### Returns
+    /// - `true`: If this is an editor tab whose file path equals `path`
+    /// - `false`: Otherwise, including untitled, remote and non-editor tabs
+    pub fn has_file_path(&self, path: &Path) -> bool {
+        self.as_editor()
+            .and_then(EditorTab::file_path)
+            .is_some_and(|tab_path| tab_path == path)
     }
 
     /// Get the Markdown preview tab if this is a preview tab

@@ -1,7 +1,25 @@
 use crate::fulgur::{Fulgur, editor_tab::TabLocation, sync::ssh::url::RemoteSpec, tab::Tab};
-use std::path::PathBuf;
+use std::path::Path;
 
 impl Fulgur {
+    /// Find the index of the first tab satisfying a predicate
+    ///
+    /// ### Arguments
+    /// - `matches`: The predicate a tab must satisfy
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some(usize)`: The index of the first matching tab
+    /// - `None`: If no tab matches
+    #[must_use]
+    pub fn find_tab_matching(
+        &self,
+        matches: impl Fn(&Tab) -> bool,
+        cx: &gpui_kit::App,
+    ) -> Option<usize> {
+        self.tabs.iter().position(|tab| matches(tab.read(cx)))
+    }
+
     /// Find the index of a tab with the given file path
     ///
     /// ### Arguments
@@ -12,14 +30,8 @@ impl Fulgur {
     /// - `Some(usize)`: The index of the tab if found
     /// - `None`: If the tab was not found
     #[must_use]
-    pub fn find_tab_by_path(&self, path: &PathBuf, cx: &gpui_kit::App) -> Option<usize> {
-        self.tabs.iter().position(|tab| {
-            if let Tab::Editor(editor_tab) = tab.read(cx) {
-                editor_tab.file_path().is_some_and(|p| p == path)
-            } else {
-                false
-            }
-        })
+    pub fn find_tab_by_path(&self, path: &Path, cx: &gpui_kit::App) -> Option<usize> {
+        self.find_tab_matching(|tab| tab.has_file_path(path), cx)
     }
 
     /// Find the index of an editor tab opened from the same remote location.
