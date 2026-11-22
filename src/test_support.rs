@@ -10,10 +10,12 @@ use crate::fulgur::{
 #[cfg(feature = "gpui-test-support")]
 use gpui_kit::component::WindowExt;
 #[cfg(feature = "gpui-test-support")]
+use gpui_kit::component::input::{EditorState, FoldRange};
+#[cfg(feature = "gpui-test-support")]
 use gpui_kit::{
     Action, AnyWindowHandle, AppContext, BorrowAppContext, Bounds, Context, Entity, IntoElement,
-    Render, TestAppContext, VisualTestContext, Window, WindowBounds, WindowId, WindowOptions, div,
-    point, px, size,
+    Modifiers, MouseButton, Render, TestAppContext, VisualTestContext, Window, WindowBounds,
+    WindowId, WindowOptions, div, point, px, size,
 };
 #[cfg(feature = "gpui-test-support")]
 use parking_lot::Mutex;
@@ -325,4 +327,45 @@ pub fn dispatch_dialog_action(visual_cx: &mut VisualTestContext, action: impl Ac
 #[cfg(feature = "gpui-test-support")]
 pub fn has_active_dialog(visual_cx: &mut VisualTestContext) -> bool {
     visual_cx.update(WindowExt::has_active_dialog)
+}
+
+/// Fold the editor region spanning lines `0..=end_line` by clicking its gutter chevron.
+///
+/// ### Arguments
+/// - `content`: The editor to fold
+/// - `end_line`: The last line of the fold; lines `1..end_line` become hidden
+/// - `visual_cx`: The visual test context driving the window
+///
+/// ### Panics
+/// - Panics if the click did not fold the region, so a broken setup fails loudly.
+#[cfg(feature = "gpui-test-support")]
+pub fn fold_from_first_line(
+    content: &Entity<EditorState>,
+    end_line: usize,
+    visual_cx: &mut VisualTestContext,
+) {
+    const CHEVRON_CENTER_LEFT_OF_TEXT: f32 = 15.0;
+
+    visual_cx.run_until_parked();
+    let chevron_center = visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_selected_range(0..0, cx);
+            content.apply_highlighter_fold_candidates(vec![FoldRange::new(0, end_line)], cx);
+        });
+        window.draw(cx).clear(cx);
+        let state = content.read(cx);
+        let line_height = state.line_height().expect("the editor must be laid out");
+        let text_origin = state
+            .text_origin_offset()
+            .expect("the editor must be laid out");
+        let bounds = state.input_bounds();
+        point(
+            bounds.origin.x + text_origin - px(CHEVRON_CENTER_LEFT_OF_TEXT),
+            bounds.origin.y + line_height / 2.0,
+        )
+    });
+    visual_cx.simulate_mouse_down(chevron_center, MouseButton::Left, Modifiers::default());
+    visual_cx.run_until_parked();
+    let folded = visual_cx.update(|_window, cx| content.read(cx).display_map().is_folded_at(0));
+    assert!(folded, "the gutter click must fold lines 0..={end_line}");
 }

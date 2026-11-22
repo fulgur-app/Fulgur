@@ -426,22 +426,20 @@ impl EditorTab {
         });
     }
 
-    /// Jump to a specific line
+    /// Jump to a specific line, unfolding any folded region that hides it
     ///
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
     /// - `jump`: The jump to perform
     pub fn jump_to_line(&mut self, window: &mut Window, cx: &mut App, jump: Jump) {
+        let target = Position {
+            line: jump.line,
+            character: jump.character.unwrap_or(0),
+        };
         self.content.update(cx, |input_state, cx| {
-            input_state.set_cursor_position(
-                Position {
-                    line: jump.line,
-                    character: jump.character.unwrap_or(0),
-                },
-                window,
-                cx,
-            );
+            input_state.unfold_at(target, cx);
+            input_state.set_cursor_position(target, window, cx);
             input_state.focus(window, cx);
             cx.notify();
         });

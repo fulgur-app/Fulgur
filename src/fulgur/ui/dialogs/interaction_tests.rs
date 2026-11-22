@@ -2,7 +2,7 @@
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::ui::menus::build_default_key_bindings;
-use crate::test_support::{has_active_dialog, open_fulgur_with_root};
+use crate::test_support::{fold_from_first_line, has_active_dialog, open_fulgur_with_root};
 use gpui_kit::component::input::EditorState;
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{Entity, Focusable, Modifiers, TestAppContext, VisualTestContext, point, px};
@@ -30,6 +30,22 @@ const TOGGLE_COMMAND_PALETTE: &str = "ctrl-shift-p";
 fn open_jump_to_line(
     cx: &mut TestAppContext,
 ) -> (Entity<Fulgur>, Entity<EditorState>, VisualTestContext) {
+    let (fulgur, editor, mut visual_cx) = open_focused_three_line_editor(cx);
+    click_status_bar_jump_to_line(&mut visual_cx);
+    (fulgur, editor, visual_cx)
+}
+
+/// Open a window whose focused editor holds `THREE_LINES` with the caret at its start.
+///
+/// ### Arguments
+/// - `cx`: The test application context
+///
+/// ### Returns
+/// - `(Entity<Fulgur>, Entity<EditorState>, VisualTestContext)`: The Fulgur entity, the active
+///   editor's content and the visual test context
+fn open_focused_three_line_editor(
+    cx: &mut TestAppContext,
+) -> (Entity<Fulgur>, Entity<EditorState>, VisualTestContext) {
     let (fulgur, _handle, mut visual_cx) = open_fulgur_with_root(cx);
     visual_cx.update(|_window, cx| cx.bind_keys(build_default_key_bindings()));
     let editor = visual_cx.update(|window, cx| {
@@ -48,12 +64,19 @@ fn open_jump_to_line(
         editor
     });
     visual_cx.run_until_parked();
+    (fulgur, editor, visual_cx)
+}
+
+/// Open Jump to line from the status bar and let the dialog settle.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context driving the window
+fn click_status_bar_jump_to_line(visual_cx: &mut VisualTestContext) {
     visual_cx.update(|window, cx| {
         window.render_frame(cx);
         window.click("status-jump-to-line", cx);
     });
     visual_cx.run_until_parked();
-    (fulgur, editor, visual_cx)
 }
 
 /// Whether the editor holds keyboard focus.
@@ -180,5 +203,26 @@ fn test_escape_dismisses_without_jumping_and_refocuses_the_editor(cx: &mut TestA
         visual_cx.update(|_window, cx| editor.read(cx).cursor()),
         0,
         "a dismissed jump must leave the caret where it was"
+    );
+}
+
+#[gpui_kit::test]
+fn test_jumping_into_a_folded_region_unfolds_it(cx: &mut TestAppContext) {
+    let (_fulgur, editor, mut visual_cx) = open_focused_three_line_editor(cx);
+    fold_from_first_line(&editor, 2, &mut visual_cx);
+    click_status_bar_jump_to_line(&mut visual_cx);
+
+    type_text(&mut visual_cx, "2");
+    visual_cx.simulate_keystrokes("enter");
+    visual_cx.run_until_parked();
+
+    let (caret, still_folded) = visual_cx.update(|_window, cx| {
+        let editor = editor.read(cx);
+        (editor.cursor(), editor.display_map().is_folded_at(0))
+    });
+    assert!(!still_folded, "the fold hiding the target line must open");
+    assert_eq!(
+        caret, SECOND_LINE_START,
+        "the caret must land on the requested line, not on the fold boundary"
     );
 }
