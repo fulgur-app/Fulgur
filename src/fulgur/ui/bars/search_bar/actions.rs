@@ -1,5 +1,5 @@
 use crate::fulgur::Fulgur;
-use gpui_kit::component::input::{EditorState, InputEvent};
+use gpui_kit::component::input::{EditorState, InputEvent, RopeExt};
 use gpui_kit::{App, Context, Entity, Focusable, Window};
 use std::time::Duration;
 
@@ -332,6 +332,9 @@ impl SearchBar {
 
     /// Move the editor cursor to the current search match, scrolling it into view
     ///
+    /// A folded region hiding the match is unfolded first, otherwise the caret
+    /// would stop at the fold boundary and the match would stay invisible.
+    ///
     /// Keyboard focus is left where it is: `EditorState::set_cursor_position`
     /// would focus the editor, so a search run from the bar would send the
     /// user's next keystrokes into the document.
@@ -344,6 +347,8 @@ impl SearchBar {
             && let Some(search_match) = self.search_matches.get(match_index)
         {
             content.update(cx, |content, cx| {
+                let match_position = content.text().offset_to_position(search_match.start);
+                content.unfold_at(match_position, cx);
                 content.set_selected_range(search_match.start..search_match.start, cx);
             });
         }

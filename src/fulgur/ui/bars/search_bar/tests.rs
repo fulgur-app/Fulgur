@@ -24,7 +24,7 @@ fn create_match(start: usize, end: usize) -> SearchMatch {
 
 #[cfg(feature = "gpui-test-support")]
 #[cfg(feature = "gpui-test-support")]
-use crate::test_support::{setup_fulgur, setup_fulgur_with_root};
+use crate::test_support::{fold_from_first_line, setup_fulgur, setup_fulgur_with_root};
 
 /// Set up a `Fulgur` window and return its search bar plus the active editor's content.
 #[cfg(feature = "gpui-test-support")]
@@ -891,6 +891,37 @@ fn test_gpui_search_next_previous_wrap_and_cursor(cx: &mut TestAppContext) {
             assert_eq!(cursor.line, 2);
             assert_eq!(cursor.character, 0);
         });
+    });
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_search_next_unfolds_a_folded_match(cx: &mut TestAppContext) {
+    let (search_bar, content, mut visual_cx) = setup_search_with_root(cx);
+
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("aaa\nbbb\nccc", window, cx);
+        });
+    });
+    fold_from_first_line(&content, 2, &mut visual_cx);
+
+    visual_cx.update(|_window, cx| {
+        search_bar.update(cx, |bar, cx| {
+            bar.search_matches = vec![create_match(0, 1), create_match(4, 5)];
+            bar.current_match_index = Some(0);
+            bar.search_next(Some(content.clone()), cx);
+        });
+        let content = content.read(cx);
+        assert!(
+            !content.display_map().is_folded_at(0),
+            "the fold hiding the match must open"
+        );
+        assert_eq!(
+            content.cursor(),
+            4,
+            "the caret must land on the match, not on the fold boundary"
+        );
     });
 }
 
