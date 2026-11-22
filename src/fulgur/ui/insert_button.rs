@@ -67,7 +67,7 @@ impl RenderOnce for InsertButton {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         Button::new(self.id.clone())
             .debug_selector(|| self.id.to_string())
-            .icon(CustomIcon::InserHorizontal)
+            .icon(CustomIcon::InsertHorizontal)
             .text()
             .small()
             .tooltip("Insert at cursor")
