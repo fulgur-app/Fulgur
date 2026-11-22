@@ -1,6 +1,7 @@
-//! Retry utilities with exponential backoff for network operations
+//! Backoff utilities for network connection loops
 //!
-//! Provides reusable retry logic to handle transient network failures gracefully.
+//! Provides an exponential backoff calculator and an interruptible sleep so
+//! reconnect loops can wait between attempts while honoring a shutdown flag.
 
 use std::thread;
 use std::time::{Duration, Instant};
@@ -35,119 +36,6 @@ pub fn interruptible_sleep<F: Fn() -> bool>(duration: Duration, should_abort: F)
             return false;
         }
         thread::sleep(remaining.min(INTERRUPTIBLE_SLEEP_SLICE));
-    }
-}
-
-/// Configuration for retry behavior
-#[derive(Debug, Clone, Copy)]
-pub struct RetryConfig {
-    /// Maximum number of retry attempts (0 = no retries, just one attempt)
-    pub max_attempts: u32,
-    /// Initial delay between retries
-    pub initial_delay: Duration,
-    /// Maximum delay between retries (cap for exponential backoff)
-    pub max_delay: Duration,
-    /// Multiplier for exponential backoff (typically 2.0)
-    pub backoff_multiplier: f64,
-}
-
-impl Default for RetryConfig {
-    /// Creates a default `RetryConfig`
-    ///
-    /// ### Returns
-    /// `Self`: a default configuration
-    fn default() -> Self {
-        Self {
-            max_attempts: 3,
-            initial_delay: Duration::from_secs(1),
-            max_delay: Duration::from_secs(30),
-            backoff_multiplier: 2.0,
-        }
-    }
-}
-
-impl RetryConfig {
-    /// Create a config for aggressive retries (useful for critical operations)
-    ///
-    /// ### Returns
-    /// `Self`: an aggressive configuration
-    #[must_use]
-    pub fn aggressive() -> Self {
-        Self {
-            max_attempts: 5,
-            initial_delay: Duration::from_millis(500),
-            max_delay: Duration::from_mins(1),
-            backoff_multiplier: 2.0,
-        }
-    }
-
-    /// Create a config for conservative retries (useful for background operations)
-    ///
-    /// ### Returns
-    /// `Self`: a conservative configuration
-    #[must_use]
-    pub fn conservative() -> Self {
-        Self {
-            max_attempts: 2,
-            initial_delay: Duration::from_secs(2),
-            max_delay: Duration::from_secs(10),
-            backoff_multiplier: 2.0,
-        }
-    }
-}
-
-/// Execute a function with retry logic and exponential backoff
-///
-/// ### Arguments
-/// - `config`: Retry configuration
-/// - `operation`: Function to retry (should be idempotent)
-///
-/// ### Errors
-/// Returns the error reported by the operation's last failed attempt after all
-/// configured retries have been exhausted.
-///
-/// ### Returns
-/// - `Ok(T)`: Result from successful operation
-/// - `Err(E)`: Error from last failed attempt
-pub fn with_retry<T, E, F>(config: RetryConfig, mut operation: F) -> Result<T, E>
-where
-    F: FnMut() -> Result<T, E>,
-{
-    let mut attempt = 0;
-    let mut delay = config.initial_delay;
-
-    loop {
-        attempt += 1;
-
-        match operation() {
-            Ok(result) => {
-                if attempt > 1 {
-                    log::info!("Operation succeeded after {attempt} attempts");
-                }
-                return Ok(result);
-            }
-            Err(error) => {
-                if attempt >= config.max_attempts {
-                    log::error!("Operation failed after {attempt} attempts, giving up");
-                    return Err(error);
-                }
-
-                log::warn!(
-                    "Operation failed (attempt {}/{}), retrying after {:?}",
-                    attempt,
-                    config.max_attempts,
-                    delay
-                );
-
-                thread::sleep(delay);
-
-                // Exponential backoff with cap
-                delay = Duration::from_secs_f64(
-                    (delay.as_secs_f64() * config.backoff_multiplier)
-                        .min(config.max_delay.as_secs_f64()),
-                );
-            }
-        }
     }
 }
 
@@ -233,65 +121,9 @@ impl BackoffCalculator {
 
 #[cfg(test)]
 mod tests {
-    use super::{BackoffCalculator, RetryConfig, interruptible_sleep, with_retry};
+    use super::{BackoffCalculator, interruptible_sleep};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
-
-    #[test]
-    fn test_retry_success_first_attempt() {
-        let config = RetryConfig::default();
-        let mut attempts = 0;
-
-        let result = with_retry(config, || {
-            attempts += 1;
-            Ok::<i32, String>(42)
-        });
-
-        assert_eq!(result, Ok(42));
-        assert_eq!(attempts, 1);
-    }
-
-    #[test]
-    fn test_retry_success_after_failures() {
-        let config = RetryConfig {
-            max_attempts: 3,
-            initial_delay: Duration::from_millis(10),
-            max_delay: Duration::from_millis(100),
-            backoff_multiplier: 2.0,
-        };
-        let mut attempts = 0;
-
-        let result = with_retry(config, || {
-            attempts += 1;
-            if attempts < 3 {
-                Err("temporary failure")
-            } else {
-                Ok::<i32, &str>(42)
-            }
-        });
-
-        assert_eq!(result, Ok(42));
-        assert_eq!(attempts, 3);
-    }
-
-    #[test]
-    fn test_retry_exhausted() {
-        let config = RetryConfig {
-            max_attempts: 2,
-            initial_delay: Duration::from_millis(10),
-            max_delay: Duration::from_millis(100),
-            backoff_multiplier: 2.0,
-        };
-        let mut attempts = 0;
-
-        let result = with_retry(config, || {
-            attempts += 1;
-            Err::<i32, &str>("permanent failure")
-        });
-
-        assert_eq!(result, Err("permanent failure"));
-        assert_eq!(attempts, 2);
-    }
 
     #[test]
     fn test_backoff_calculator_progression() {
@@ -345,29 +177,6 @@ mod tests {
         // Next failure should start from initial delay
         let delay = backoff.record_failure();
         assert_eq!(delay, Duration::from_secs(1));
-    }
-
-    #[test]
-    fn test_retry_config_default() {
-        let config = RetryConfig::default();
-        assert_eq!(config.max_attempts, 3);
-        assert_eq!(config.initial_delay, Duration::from_secs(1));
-        assert_eq!(config.max_delay, Duration::from_secs(30));
-        assert!((config.backoff_multiplier - 2.0_f64).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_retry_config_aggressive() {
-        let config = RetryConfig::aggressive();
-        assert_eq!(config.max_attempts, 5);
-        assert!(config.initial_delay < Duration::from_secs(1));
-    }
-
-    #[test]
-    fn test_retry_config_conservative() {
-        let config = RetryConfig::conservative();
-        assert_eq!(config.max_attempts, 2);
-        assert!(config.initial_delay >= Duration::from_secs(2));
     }
 
     #[test]
