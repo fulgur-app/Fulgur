@@ -83,7 +83,7 @@ fn snapshot_dirty_tab_after_external_change(
 /// - `bool`: `true` when a conflict is pending for `path`
 fn conflict_queued_for(fulgur: &Entity<Fulgur>, cx: &VisualTestContext, path: &Path) -> bool {
     fulgur.read_with(cx, |this, _| {
-        this.file_watch_state.pending_conflicts.contains_key(path)
+        this.file_watch_state.pending_conflicts.contains(path)
     })
 }
 
@@ -111,7 +111,7 @@ fn restored_local_recovery_survives_newer_file_and_queues_conflict(cx: &mut Test
 
     assert_recovery_content(&snapshot.tabs[0], "recovered local edits");
     let conflict_queued = fulgur.read_with(&visual_cx, |this, _| {
-        this.file_watch_state.pending_conflicts.contains_key(&path)
+        this.file_watch_state.pending_conflicts.contains(&path)
     });
     assert!(
         conflict_queued,

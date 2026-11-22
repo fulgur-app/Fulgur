@@ -18,7 +18,8 @@ pub struct FileWatchState {
     /// Consumer task awaiting file watch events; dropping it cancels the consumer.
     pub consumer_task: Option<Task<()>>,
     pub scheduled_checks: HashMap<PathBuf, ScheduledFileCheck>,
-    pub pending_conflicts: HashMap<PathBuf, usize>,
+    /// Paths whose inactive modified tab has an unresolved conflict, shown on activation
+    pub pending_conflicts: HashSet<PathBuf>,
     pub open_conflict_dialogs: HashSet<PathBuf>,
 }
 
@@ -43,7 +44,7 @@ impl FileWatchState {
             file_watcher: None,
             consumer_task: None,
             scheduled_checks: HashMap::new(),
-            pending_conflicts: HashMap::new(),
+            pending_conflicts: HashSet::new(),
             open_conflict_dialogs: HashSet::new(),
         }
     }

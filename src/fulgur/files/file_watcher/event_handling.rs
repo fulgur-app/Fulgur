@@ -34,7 +34,7 @@ impl Fulgur {
                 } else {
                     self.file_watch_state
                         .pending_conflicts
-                        .insert(path.to_path_buf(), tab_index);
+                        .insert(path.to_path_buf());
                 }
             } else {
                 self.reload_tab_from_disk(tab_index, window, cx);
@@ -307,7 +307,7 @@ mod tests {
         visual_cx.update(|_window, cx| {
             let state = &fulgur.read(cx).file_watch_state;
             assert!(
-                !state.pending_conflicts.contains_key(&path),
+                !state.pending_conflicts.contains(&path),
                 "active-tab conflict should prompt immediately, not queue"
             );
             assert!(state.open_conflict_dialogs.contains(&path));
@@ -370,9 +370,10 @@ mod tests {
         settle_file_checks(&mut visual_cx);
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                assert_eq!(
-                    this.file_watch_state.pending_conflicts.get(&deferred_path),
-                    Some(&0),
+                assert!(
+                    this.file_watch_state
+                        .pending_conflicts
+                        .contains(&deferred_path),
                     "inactive modified tab should queue deferred conflict"
                 );
                 this.set_active_tab(0, window, cx);
@@ -380,7 +381,7 @@ mod tests {
                     !this
                         .file_watch_state
                         .pending_conflicts
-                        .contains_key(&deferred_path),
+                        .contains(&deferred_path),
                     "deferred conflict should be consumed when tab is activated"
                 );
             });
@@ -540,9 +541,7 @@ mod tests {
                             editor_tab.title = "fulgur_rename_from.rs".into();
                         }
                     });
-                this.file_watch_state
-                    .pending_conflicts
-                    .insert(from.clone(), 0);
+                this.file_watch_state.pending_conflicts.insert(from.clone());
             });
         });
         // A check still scheduled for the old path must not outlive the rename.
@@ -579,7 +578,7 @@ mod tests {
                 "rename should cancel the old path's scheduled check"
             );
             assert!(
-                !this.file_watch_state.pending_conflicts.contains_key(&from),
+                !this.file_watch_state.pending_conflicts.contains(&from),
                 "rename should prune old-path deferred conflict bookkeeping"
             );
         });

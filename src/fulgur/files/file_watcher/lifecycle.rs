@@ -149,16 +149,14 @@ mod tests {
                         task: Task::ready(()),
                     },
                 );
-                this.file_watch_state
-                    .pending_conflicts
-                    .insert(path.clone(), 0);
+                this.file_watch_state.pending_conflicts.insert(path.clone());
                 this.unwatch_file(&path);
                 assert!(
                     !this.file_watch_state.scheduled_checks.contains_key(&path),
                     "unwatch must cancel the scheduled check"
                 );
                 assert!(
-                    !this.file_watch_state.pending_conflicts.contains_key(&path),
+                    !this.file_watch_state.pending_conflicts.contains(&path),
                     "unwatch must prune deferred conflict bookkeeping"
                 );
             });
@@ -178,9 +176,7 @@ mod tests {
                         task: Task::ready(()),
                     },
                 );
-                this.file_watch_state
-                    .pending_conflicts
-                    .insert(path.clone(), 0);
+                this.file_watch_state.pending_conflicts.insert(path.clone());
                 this.stop_file_watcher();
                 assert!(
                     this.file_watch_state.scheduled_checks.is_empty(),

@@ -116,16 +116,14 @@ impl Fulgur {
     /// - `cx`: The application context
     fn queue_restore_conflicts(&mut self, changed_on_disk_tabs: Vec<(TabId, PathBuf)>, cx: &App) {
         for (tab_id, path) in changed_on_disk_tabs {
-            let Some(tab_index) = self.tab_index_of(tab_id, cx) else {
+            if self.tab_index_of(tab_id, cx).is_none() {
                 continue;
-            };
+            }
             log::warn!(
                 "{} changed on disk after its unsaved edits were persisted, keeping the edits and raising a conflict",
                 path.display()
             );
-            self.file_watch_state
-                .pending_conflicts
-                .insert(path, tab_index);
+            self.file_watch_state.pending_conflicts.insert(path);
         }
     }
 
