@@ -134,7 +134,7 @@ impl Fulgur {
     /// - If the tab has no unsaved content and its file exists, it will be loaded from the file.
     /// - If the tab has unsaved content and its file exists, the saved content is restored as modified. When the file changed on disk after the save, the tab is flagged so a conflict is raised.
     /// - If a file does not exist, the saved content will be used.
-    /// - If a file with no unsaved content now looks binary, the tab will be skipped, as opening it would be refused.
+    /// - If a file with no unsaved content now looks binary, or fails to read after opening, the tab will be skipped with a warning, as there is nothing to restore it from.
     /// - If no path and no content is provided, the tab will be skipped.
     ///
     /// ### Arguments
@@ -212,7 +212,16 @@ impl Fulgur {
                     let mut bytes = Vec::new();
                     let mut file = readable_file.take()?;
                     let disk_modified = file.metadata().and_then(|meta| meta.modified()).ok();
-                    file.read_to_end(&mut bytes).ok()?;
+                    // A clean tab persists no buffer, so a failed read leaves
+                    // nothing to restore it from.
+                    if let Err(e) = file.read_to_end(&mut bytes) {
+                        log::warn!(
+                            "Skipping restored tab {}: cannot read file: {}",
+                            path.display(),
+                            e
+                        );
+                        return None;
+                    }
                     let Some(decoded) = decode_text_file(bytes) else {
                         log::warn!(
                             "Skipping restored tab {}: file looks binary",

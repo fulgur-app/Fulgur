@@ -344,3 +344,37 @@ fn restore_skips_clean_tab_whose_file_now_looks_binary(cx: &mut TestAppContext) 
         "a clean tab whose file now looks binary must be skipped, as opening it would be refused"
     );
 }
+
+/// On Unix a directory opens as a file but fails on read, which reproduces a
+/// read error after a successful open.
+#[cfg(unix)]
+#[gpui_kit::test]
+fn restore_skips_clean_tab_whose_file_fails_to_read(cx: &mut TestAppContext) {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let path = temp_dir.path().join("unreadable.txt");
+    fs::create_dir(&path).expect("create directory standing in for the file");
+    let clean_tab = TabState {
+        tab_id: 7,
+        title: "unreadable.txt".to_string(),
+        file_path: Some(path.clone()),
+        content: None,
+        last_saved: None,
+        remote: None,
+        log_view: false,
+        color_tag: None,
+        share: None,
+        encoding: None,
+        lossy_decode: false,
+    };
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    let restored = restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(clean_tab));
+
+    assert!(
+        restored
+            .tabs
+            .iter()
+            .all(|tab| tab.file_path.as_deref() != Some(path.as_path())),
+        "a clean tab whose file fails to read must be skipped, as no buffer was persisted"
+    );
+}
