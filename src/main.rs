@@ -450,19 +450,12 @@ fn create_window(
     window_index: usize,
     saved_bounds: Option<&fulgur::state::SerializedWindowBounds>,
 ) -> anyhow::Result<()> {
-    let (window_bounds, saved_display_id) = match saved_bounds {
-        Some(b) => (Some(b.to_gpui_bounds()), b.display_id),
+    let (window_bounds, display_id) = match saved_bounds {
+        Some(saved) => {
+            let (bounds, display_id) = cx.update(|cx| saved.restore_placement(cx));
+            (Some(bounds), display_id)
+        }
         None => (None, None),
-    };
-    let display_id = if let Some(saved_id) = saved_display_id {
-        cx.update(|cx| {
-            cx.displays()
-                .into_iter()
-                .find(|display| u64::from(display.id()) == u64::from(saved_id))
-                .map(|display| display.id())
-        })
-    } else {
-        None
     };
     let window_options = gpui_kit::WindowOptions {
         window_bounds,

@@ -1,4 +1,9 @@
+use gpui_kit::{App, Bounds, DisplayId, Pixels, WindowBounds};
 use serde::{Deserialize, Serialize};
+
+/// Smallest overlap, in pixels along each axis, between a restored window and its
+/// display for the saved origin to be kept: enough of the window to grab and drag it.
+const MIN_REACHABLE_EXTENT: f32 = 64.0;
 
 /// Serialized window bounds that can be saved to JSON
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -45,8 +50,7 @@ impl SerializedWindowBounds {
     /// ### Returns
     /// - `SerializedWindowBounds`: The serialized window bounds
     #[must_use]
-    pub fn from_gpui_bounds(bounds: gpui_kit::WindowBounds, display_id: Option<u32>) -> Self {
-        use gpui_kit::WindowBounds;
+    pub fn from_gpui_bounds(bounds: WindowBounds, display_id: Option<u32>) -> Self {
         match bounds {
             WindowBounds::Windowed(rect) => Self {
                 state: "Windowed".to_string(),
@@ -80,18 +84,109 @@ impl SerializedWindowBounds {
     /// ### Returns
     /// - `gpui_kit::WindowBounds`: The GPUI window bounds
     #[must_use]
-    pub fn to_gpui_bounds(&self) -> gpui_kit::WindowBounds {
-        use gpui_kit::{Bounds, WindowBounds, point, px, size};
-        let bounds = Bounds {
+    pub fn to_gpui_bounds(&self) -> WindowBounds {
+        self.with_window_state(self.rect())
+    }
+
+    /// Resolve the bounds and the display a restored window opens on
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context, used to list the connected displays
+    ///
+    /// ### Returns
+    /// - `(WindowBounds, Option<DisplayId>)`: The bounds to open the window with,
+    ///   and the saved display when it is still connected (`None` lets the
+    ///   platform pick the primary display)
+    #[must_use]
+    pub fn restore_placement(&self, cx: &App) -> (WindowBounds, Option<DisplayId>) {
+        let saved_display = self.display_id.and_then(|saved_id| {
+            cx.displays()
+                .into_iter()
+                .find(|display| u64::from(display.id()) == u64::from(saved_id))
+        });
+        let saved_display_lost = self.display_id.is_some() && saved_display.is_none();
+        let display_id = saved_display.as_ref().map(|display| display.id());
+        let window_bounds = match saved_display.or_else(|| cx.primary_display()) {
+            Some(display) => self.fit_to_display(
+                saved_display_lost,
+                display.bounds(),
+                display.visible_bounds(),
+            ),
+            None => self.to_gpui_bounds(),
+        };
+        (window_bounds, display_id)
+    }
+
+    /// Fit the saved rectangle onto the display the window will open on
+    ///
+    /// ### Arguments
+    /// - `saved_display_lost`: Whether the display the window was saved on is gone,
+    ///   which makes the saved origin meaningless on the target display
+    /// - `display_bounds`: Bounds of the target display
+    /// - `visible_bounds`: Usable area of the target display, without dock or taskbar
+    ///
+    /// ### Returns
+    /// - `WindowBounds`: The saved bounds when they are reachable on the display,
+    ///   otherwise the saved size, clamped to the usable area, centered in it
+    fn fit_to_display(
+        &self,
+        saved_display_lost: bool,
+        display_bounds: Bounds<Pixels>,
+        visible_bounds: Bounds<Pixels>,
+    ) -> WindowBounds {
+        let rect = self.rect();
+        if !saved_display_lost && is_reachable_on(&rect, &display_bounds) {
+            return self.with_window_state(rect);
+        }
+        let centered =
+            Bounds::centered_at(visible_bounds.center(), rect.size.min(&visible_bounds.size));
+        self.with_window_state(centered)
+    }
+
+    /// Build the saved window rectangle
+    ///
+    /// ### Returns
+    /// - `Bounds<Pixels>`: The saved origin and size
+    fn rect(&self) -> Bounds<Pixels> {
+        use gpui_kit::{point, px, size};
+        Bounds {
             origin: point(px(self.x), px(self.y)),
             size: size(px(self.width), px(self.height)),
-        };
-        match self.state.as_str() {
-            "Maximized" => WindowBounds::Maximized(bounds),
-            "Fullscreen" => WindowBounds::Fullscreen(bounds),
-            _ => WindowBounds::Windowed(bounds), // Default to Windowed for unknown states
         }
     }
+
+    /// Wrap a rectangle in the saved window state
+    ///
+    /// ### Arguments
+    /// - `rect`: The window rectangle (the restore rectangle when maximized or fullscreen)
+    ///
+    /// ### Returns
+    /// - `WindowBounds`: The rectangle in the saved state, `Windowed` for unknown states
+    fn with_window_state(&self, rect: Bounds<Pixels>) -> WindowBounds {
+        match self.state.as_str() {
+            "Maximized" => WindowBounds::Maximized(rect),
+            "Fullscreen" => WindowBounds::Fullscreen(rect),
+            _ => WindowBounds::Windowed(rect),
+        }
+    }
+}
+
+/// Whether enough of a window overlaps a display to be grabbed and moved
+///
+/// ### Arguments
+/// - `rect`: The window rectangle
+/// - `display_bounds`: Bounds of the display, in the same coordinate space
+///
+/// ### Returns
+/// - `bool`: `true` when the overlap reaches `MIN_REACHABLE_EXTENT` along both axes
+fn is_reachable_on(rect: &Bounds<Pixels>, display_bounds: &Bounds<Pixels>) -> bool {
+    if !rect.intersects(display_bounds) {
+        return false;
+    }
+    let overlap = rect.intersect(display_bounds).size;
+    let min_width = MIN_REACHABLE_EXTENT.min(f32::from(rect.size.width));
+    let min_height = MIN_REACHABLE_EXTENT.min(f32::from(rect.size.height));
+    f32::from(overlap.width) >= min_width && f32::from(overlap.height) >= min_height
 }
 
 #[cfg(test)]
@@ -252,5 +347,143 @@ mod tests {
             serialized.width,
             serialized.height,
         );
+    }
+
+    /// Build windowed bounds saved on a display.
+    ///
+    /// ### Arguments
+    /// - `x`: Saved x origin in pixels.
+    /// - `y`: Saved y origin in pixels.
+    /// - `width`: Saved width in pixels.
+    /// - `height`: Saved height in pixels.
+    /// - `display_id`: The display the window was saved on.
+    ///
+    /// ### Returns
+    /// - `SerializedWindowBounds`: The saved windowed bounds.
+    fn windowed(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        display_id: Option<u32>,
+    ) -> SerializedWindowBounds {
+        SerializedWindowBounds {
+            state: "Windowed".to_string(),
+            x,
+            y,
+            width,
+            height,
+            display_id,
+        }
+    }
+
+    /// Build the bounds of a 1920x1080 display at the given origin.
+    ///
+    /// ### Arguments
+    /// - `x`: The display x origin in pixels.
+    /// - `y`: The display y origin in pixels.
+    ///
+    /// ### Returns
+    /// - `Bounds<Pixels>`: The display bounds.
+    fn full_hd_display_at(x: f32, y: f32) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+        use gpui_kit::{Bounds, point, px, size};
+        Bounds {
+            origin: point(px(x), px(y)),
+            size: size(px(1920.0), px(1080.0)),
+        }
+    }
+
+    #[test]
+    fn fit_to_display_keeps_bounds_that_are_reachable_on_their_display() {
+        let display = full_hd_display_at(0.0, 0.0);
+        let saved = windowed(1800.0, 900.0, 1200.0, 800.0, Some(1));
+        let fitted = saved.fit_to_display(false, display, display);
+        assert_gpui_bounds_geometry(&fitted, 1800.0, 900.0, 1200.0, 800.0);
+    }
+
+    #[test]
+    fn fit_to_display_centers_a_window_that_lies_off_its_display() {
+        let display = full_hd_display_at(0.0, 0.0);
+        let saved = windowed(2600.0, 200.0, 1200.0, 800.0, Some(1));
+        let fitted = saved.fit_to_display(false, display, display);
+        assert_gpui_bounds_geometry(&fitted, 360.0, 140.0, 1200.0, 800.0);
+    }
+
+    #[test]
+    fn fit_to_display_centers_a_window_with_only_a_sliver_on_screen() {
+        let display = full_hd_display_at(0.0, 0.0);
+        let saved = windowed(1900.0, 100.0, 1200.0, 800.0, Some(1));
+        let fitted = saved.fit_to_display(false, display, display);
+        assert_gpui_bounds_geometry(&fitted, 360.0, 140.0, 1200.0, 800.0);
+    }
+
+    #[test]
+    fn fit_to_display_drops_the_origin_of_a_window_whose_display_is_gone() {
+        let display = full_hd_display_at(0.0, 0.0);
+        let saved = windowed(100.0, 100.0, 1200.0, 800.0, Some(2));
+        let fitted = saved.fit_to_display(true, display, display);
+        assert_gpui_bounds_geometry(&fitted, 360.0, 140.0, 1200.0, 800.0);
+    }
+
+    #[test]
+    fn fit_to_display_clamps_a_window_larger_than_the_usable_area() {
+        use gpui_kit::{Bounds, point, px, size};
+        let display = full_hd_display_at(0.0, 0.0);
+        let visible = Bounds {
+            origin: point(px(0.0), px(25.0)),
+            size: size(px(1920.0), px(1000.0)),
+        };
+        let saved = windowed(5000.0, 0.0, 2560.0, 1440.0, Some(1));
+        let fitted = saved.fit_to_display(false, display, visible);
+        assert_gpui_bounds_geometry(&fitted, 0.0, 25.0, 1920.0, 1000.0);
+    }
+
+    #[test]
+    fn fit_to_display_checks_reachability_in_the_display_coordinate_space() {
+        let display = full_hd_display_at(-1920.0, 0.0);
+        let saved = windowed(-1500.0, 200.0, 1200.0, 800.0, Some(3));
+        let fitted = saved.fit_to_display(false, display, display);
+        assert_gpui_bounds_geometry(&fitted, -1500.0, 200.0, 1200.0, 800.0);
+    }
+
+    #[test]
+    fn fit_to_display_keeps_the_maximized_state_when_recentering() {
+        use gpui_kit::WindowBounds;
+        let display = full_hd_display_at(0.0, 0.0);
+        let mut saved = windowed(4000.0, 4000.0, 1200.0, 800.0, Some(1));
+        saved.state = "Maximized".to_string();
+        let fitted = saved.fit_to_display(false, display, display);
+        assert!(matches!(fitted, WindowBounds::Maximized(_)));
+        assert_gpui_bounds_geometry(&fitted, 360.0, 140.0, 1200.0, 800.0);
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn restore_placement_recenters_a_window_saved_on_a_disconnected_display(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        let second_display = gpui_kit::DisplayId::new(2);
+        cx.simulate_display_added(second_display, None);
+        let saved = windowed(100.0, 100.0, 1200.0, 800.0, Some(2));
+
+        let (_, display_id) = cx.update(|cx| saved.restore_placement(cx));
+        assert_eq!(display_id, Some(second_display));
+
+        cx.simulate_display_removed(second_display);
+        let (bounds, display_id) = cx.update(|cx| saved.restore_placement(cx));
+        assert_eq!(
+            display_id, None,
+            "a disconnected display must not be requested"
+        );
+        assert_gpui_bounds_geometry(&bounds, 360.0, 140.0, 1200.0, 800.0);
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn restore_placement_keeps_bounds_on_a_connected_display(cx: &mut gpui_kit::TestAppContext) {
+        let saved = windowed(100.0, 100.0, 1200.0, 800.0, Some(1));
+        let (bounds, display_id) = cx.update(|cx| saved.restore_placement(cx));
+        assert_eq!(display_id.map(u64::from), Some(1));
+        assert_gpui_bounds_geometry(&bounds, 100.0, 100.0, 1200.0, 800.0);
     }
 }
