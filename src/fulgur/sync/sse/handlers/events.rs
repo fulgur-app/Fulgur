@@ -71,7 +71,7 @@ impl Fulgur {
                 if was_disconnected {
                     *sync_state.connection_status.lock() = SynchronizationStatus::Connected;
                     log::info!(
-                        "Profile '{profile_id}': connection restored on heartbeat after timeout"
+                        "Profile '{profile_id}': heartbeat received, status set to connected"
                     );
                     Self::notify_all_windows(cx);
                 }

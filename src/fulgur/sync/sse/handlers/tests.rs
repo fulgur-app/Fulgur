@@ -546,14 +546,15 @@ fn test_failed_restart_publishes_the_error_status(cx: &mut TestAppContext) {
         fulgur.update(cx, |this, cx| {
             this.restart_sse_connection_for(&profile_id, cx);
         });
-        assert!(
-            sync_state.connection_status.lock().is_connecting(),
+        assert_eq!(
+            *sync_state.connection_status.lock(),
+            SynchronizationStatus::Connecting,
             "a started restart must report Connecting"
         );
         assert!(sync_state.connecting_since.lock().is_some());
 
         let started = Instant::now();
-        while sync_state.connection_status.lock().is_connecting()
+        while *sync_state.connection_status.lock() == SynchronizationStatus::Connecting
             && started.elapsed() < RESTART_OUTCOME_DEADLINE
         {
             thread::sleep(Duration::from_millis(20));
