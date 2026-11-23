@@ -253,7 +253,7 @@ fn test_watch_event_on_log_tab_neither_reloads_nor_conflicts(cx: &mut TestAppCon
     visual_cx.update(|_, cx| {
         let this = fulgur.read(cx);
         assert!(this.file_watch_state.open_conflict_dialogs.is_empty());
-        assert!(!this.file_watch_state.pending_conflicts.contains_key(&path));
+        assert!(!this.file_watch_state.pending_conflicts.contains(&path));
     });
 }
 

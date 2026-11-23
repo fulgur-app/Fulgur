@@ -269,7 +269,7 @@ fn queue_deferred_conflict(
     fulgur
         .file_watch_state
         .pending_conflicts
-        .insert(path.to_path_buf(), 0);
+        .insert(path.to_path_buf());
 }
 
 /// Turn an editor tab into a log view tailing a file on disk
@@ -313,7 +313,7 @@ fn test_closing_the_active_tab_shows_the_neighbours_deferred_conflict(cx: &mut T
     visual_cx.update(|_window, cx| {
         let watch_state = &fulgur.read(cx).file_watch_state;
         assert!(
-            !watch_state.pending_conflicts.contains_key(&path),
+            !watch_state.pending_conflicts.contains(&path),
             "the neighbour taking over must consume its deferred conflict"
         );
         assert!(watch_state.open_conflict_dialogs.contains(&path));
@@ -343,7 +343,7 @@ fn test_close_fallback_skips_entry_effects_once_another_tab_took_over(cx: &mut T
                 .read(cx)
                 .file_watch_state
                 .pending_conflicts
-                .contains_key(&path),
+                .contains(&path),
             "a tab only briefly active during a close must keep its conflict for later"
         );
     });

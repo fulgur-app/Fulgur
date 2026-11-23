@@ -157,9 +157,7 @@ impl Fulgur {
             if self.active_tab_index(cx) == Some(tab_index) {
                 self.show_file_conflict_dialog(&guard.path, guard.tab_id, window, cx);
             } else {
-                self.file_watch_state
-                    .pending_conflicts
-                    .insert(guard.path, tab_index);
+                self.file_watch_state.pending_conflicts.insert(guard.path);
             }
             return;
         }

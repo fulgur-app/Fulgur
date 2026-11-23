@@ -73,7 +73,7 @@ impl Fulgur {
             .filter(|path| {
                 self.file_watch_state
                     .pending_conflicts
-                    .contains_key(path.as_path())
+                    .contains(path.as_path())
             })
             .cloned();
         if let Some(path) = pending_conflict_path {
