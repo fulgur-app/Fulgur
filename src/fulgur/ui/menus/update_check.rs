@@ -147,9 +147,7 @@ mod tests {
         UpdateInfo {
             current_version: "0.13.0".to_string(),
             latest_version: "99.0.0".to_string(),
-            is_newer: true,
             download_url: "https://github.com/fulgur-app/Fulgur/releases/tag/v99.0.0".to_string(),
-            release_notes: String::new(),
         }
     }
 

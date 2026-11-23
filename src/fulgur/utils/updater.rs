@@ -6,33 +6,19 @@ const GITHUB_API_URL: &str = "https://api.github.com/repos/fulgur-app/Fulgur/rel
 const RELEASE_PAGE_HOST: &str = "github.com";
 const RELEASE_PAGE_PATH_PREFIX: &str = "/fulgur-app/Fulgur/releases/tag/";
 
+/// Subset of the GitHub "latest release" payload that the update check reads
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct GitHubRelease {
     pub tag_name: String,
-    pub name: String,
-    pub body: Option<String>,
     pub html_url: String,
-    pub published_at: String,
-    pub assets: Vec<ReleaseAsset>,
 }
 
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-pub struct ReleaseAsset {
-    pub name: String,
-    pub browser_download_url: String,
-    pub size: u64,
-}
-
+/// A release newer than the running version, as reported to the UI
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct UpdateInfo {
     pub current_version: String,
     pub latest_version: String,
-    pub is_newer: bool,
     pub download_url: String,
-    pub release_notes: String,
 }
 
 /// Parse a version string into a Version struct
@@ -117,9 +103,7 @@ pub fn check_for_updates(current_version: &str) -> anyhow::Result<Option<UpdateI
         Ok(Some(UpdateInfo {
             current_version: current.to_string(),
             latest_version: latest.to_string(),
-            is_newer: true,
             download_url,
-            release_notes: release.body.unwrap_or_default(),
         }))
     } else {
         log::info!("Already on latest version: {current}");
