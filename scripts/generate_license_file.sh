@@ -1,2 +1,4 @@
-#/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+
 cargo about generate licenses/about.hbs -c licenses/about.toml --workspace -o THIRD-PARTY-LICENSES
