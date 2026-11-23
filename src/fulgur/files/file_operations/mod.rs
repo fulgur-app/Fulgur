@@ -15,6 +15,7 @@ pub use remote_types::{
     PendingRemoteOpenOutcome, RemoteBrowseResult, RemoteFileResult, RemoteOpenResult,
     RemoteSaveContinuation, RemoteSaveRequest,
 };
+pub(crate) use save_ops::disk_changed_since;
 
 #[cfg(test)]
 pub mod test_helpers;

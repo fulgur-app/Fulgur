@@ -89,7 +89,7 @@ impl Settings {
                 );
             }
         }
-        atomic_write_file(path, json.as_bytes())
+        atomic_write_file(path, json.as_bytes()).map(|_| ())
     }
 
     /// Serialize the settings as stored in the settings file

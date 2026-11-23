@@ -54,7 +54,7 @@ impl Fulgur {
     /// - `path`: The path the tab is expected to still point at
     /// - `window`: The window context
     /// - `cx`: The application context
-    fn reload_watched_tab_by_id(
+    pub(super) fn reload_watched_tab_by_id(
         &mut self,
         tab_id: TabId,
         path: &Path,

@@ -1,4 +1,4 @@
-use std::fs::{self, OpenOptions};
+use std::fs::{self, Metadata, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -55,13 +55,15 @@ enum FilePermissions {
 ///
 /// ### Errors
 /// Returns an error if the destination has no parent directory or filename, if
-/// the temporary file cannot be created or written, or if the rename over the
-/// destination path fails.
+/// the temporary file cannot be created, written or inspected, or if the rename
+/// over the destination path fails.
 ///
-/// ### Return
-/// - `Ok(())`: the write is successful
-/// - `Err()`: error while writing the file
-pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
+/// ### Returns
+/// - `Ok(Metadata)`: the metadata of the written file, read from the temporary
+///   file before it replaced the destination, so a write landing on the path
+///   after the rename cannot be mistaken for this one
+/// - `Err(anyhow::Error)`: error while writing the file
+pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<Metadata> {
     write_atomically(path, contents, FilePermissions::KeepExisting)
 }
 
@@ -80,7 +82,7 @@ pub fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
 /// - `Ok(())`: the write is successful
 /// - `Err(anyhow::Error)`: error while writing the file
 pub fn atomic_write_private_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
-    write_atomically(path, contents, FilePermissions::OwnerOnly)
+    write_atomically(path, contents, FilePermissions::OwnerOnly).map(|_| ())
 }
 
 /// Shared implementation of the atomic writes.
@@ -92,17 +94,17 @@ pub fn atomic_write_private_file(path: &Path, contents: &[u8]) -> anyhow::Result
 ///
 /// ### Errors
 /// - Returns an error if the destination has no parent directory or filename, if
-///   the temporary file cannot be created or written, or if the rename over the
-///   destination path fails.
+///   the temporary file cannot be created, written or inspected, or if the rename
+///   over the destination path fails.
 ///
 /// ### Returns
-/// - `Ok(())`: the write is successful
+/// - `Ok(Metadata)`: the metadata of the written file, taken before the rename
 /// - `Err(anyhow::Error)`: error while writing the file
 fn write_atomically(
     path: &Path,
     contents: &[u8],
     permissions: FilePermissions,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Metadata> {
     let target = resolve_target(path);
     let parent = target.parent().ok_or_else(|| {
         anyhow::anyhow!(
@@ -133,7 +135,7 @@ fn write_atomically(
         counter
     );
     let tmp_path = parent.join(tmp_name);
-    let write_result = (|| -> anyhow::Result<()> {
+    let write_result = (|| -> anyhow::Result<Metadata> {
         let mut open_options = OpenOptions::new();
         open_options.create_new(true).write(true);
 
@@ -177,6 +179,15 @@ fn write_atomically(
                 )
             })?;
         }
+        // Closed before the stat: some file systems settle the timestamps on close.
+        drop(tmp_file);
+        let written = fs::metadata(&tmp_path).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to read metadata of temp file '{}': {}",
+                tmp_path.display(),
+                e
+            )
+        })?;
         fs::rename(&tmp_path, &target).map_err(|e| {
             anyhow::anyhow!(
                 "Failed to replace '{}' with '{}' atomically: {}",
@@ -203,7 +214,7 @@ fn write_atomically(
                 )
             })?;
         }
-        Ok(())
+        Ok(written)
     })();
     if write_result.is_err() {
         let _ = fs::remove_file(&tmp_path);
@@ -309,6 +320,24 @@ mod tests {
 
         let written = fs::read_to_string(&file_path).expect("file should exist after replacement");
         assert_eq!(written, "new contents");
+    }
+
+    #[test]
+    fn atomic_write_returns_the_metadata_of_the_written_file() {
+        let temp_dir = TempDir::new().expect("failed to create temp dir");
+        let file_path = temp_dir.path().join("written.txt");
+        fs::write(&file_path, "old").expect("failed to write initial file");
+
+        let written =
+            atomic_write_file(&file_path, b"new contents").expect("atomic write should succeed");
+
+        let on_disk = fs::metadata(&file_path).expect("file should exist after the write");
+        assert_eq!(written.len(), on_disk.len());
+        assert_eq!(
+            written.modified().expect("mtime should be supported"),
+            on_disk.modified().expect("mtime should be supported"),
+            "the rename must not change the modification time captured before it"
+        );
     }
 
     #[cfg(unix)]
