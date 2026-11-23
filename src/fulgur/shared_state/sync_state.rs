@@ -8,13 +8,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 
-/// Result of a background device fetch: either a list of devices or an error message,
-/// paired with a boolean indicating whether SSE reconnection is needed.
-pub type PendingDevicesResult = (
-    Result<Vec<fulgur_common::api::devices::DeviceResponse>, String>,
-    bool,
-);
-
 /// Sync-related state for a single profile, shared across all windows.
 pub struct SyncState {
     /// Sync server connection status for this profile.
@@ -42,14 +35,15 @@ pub struct SyncState {
     /// refresh coordination, scoped to this profile.
     pub token_state: Arc<crate::fulgur::sync::access_token::TokenStateManager>,
     /// Last heartbeat time received from this profile's SSE stream.
+    ///
+    /// Recorded only: nothing reads it for staleness yet, so the SSE agent's 90 s global
+    /// timeout (`SharedAppState::sse_http_agent`) remains the only dead-stream bound.
     pub last_heartbeat: Arc<Mutex<Option<std::time::Instant>>>,
     /// Sender for user-facing notifications produced by background sync operations,
     /// delivered by the app-scope consumer task (see `spawn_notification_consumer`).
     pub notification_tx: UnboundedSender<AppNotification>,
     /// Last emitted receive-error signature for shared-file processing (error deduplication).
     pub last_share_receive_error_signature: Arc<Mutex<Option<String>>>,
-    /// Pending devices list from background fetch (checked in render loop to open share sheet).
-    pub pending_devices: Arc<Mutex<Option<PendingDevicesResult>>>,
     /// Maximum file size for sharing (bytes), as reported by this profile's server.
     pub max_file_size_bytes: Arc<AtomicU64>,
     /// Raw `x-fulgurant-version` value advertised by this profile's server, if any.
@@ -89,7 +83,6 @@ impl SyncState {
             last_heartbeat: Arc::new(Mutex::new(None)),
             notification_tx,
             last_share_receive_error_signature: Arc::new(Mutex::new(None)),
-            pending_devices: Arc::new(Mutex::new(None)),
             max_file_size_bytes: Arc::new(AtomicU64::new(u64::MAX)),
             server_version: Arc::new(Mutex::new(None)),
             server_min_fulgur_version: Arc::new(Mutex::new(None)),

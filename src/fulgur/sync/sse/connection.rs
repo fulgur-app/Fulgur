@@ -34,7 +34,7 @@ use std::{
 use super::types::SseEvent;
 use fetch::{fetch_pending_shares_into, fetch_single_share_into};
 pub use initial_sync::{InitialSyncReport, InitialSyncStage};
-use reader::{MAX_SSE_EVENT_DATA_BYTES, ReadError, read_line_with_timeout};
+use reader::{MAX_SSE_EVENT_DATA_BYTES, ReadError, read_sse_line};
 use status::{
     SSE_SLOT_BUSY_RETRY_DELAY, is_handoff_retry, publish_connection_status, retry_status,
 };
@@ -363,7 +363,7 @@ fn spawn_sse_worker(
                     break;
                 }
 
-                let line_result = read_line_with_timeout(&mut reader, &shutdown_flag);
+                let line_result = read_sse_line(&mut reader, &shutdown_flag);
                 match line_result {
                     Ok(Some(line)) => {
                         if line.starts_with("event:") {
