@@ -23,15 +23,6 @@ impl SshCredKey {
             user: user.into(),
         }
     }
-
-    /// Return a display string in `user@host:port` format.
-    ///
-    /// ### Returns
-    /// - `String`: Human-readable representation, e.g. `"alice@example.com:22"`.
-    #[must_use]
-    pub fn display(&self) -> String {
-        format!("{}@{}:{}", self.user, self.host, self.port)
-    }
 }
 
 /// Session-scoped in-memory cache of the credentials that last authenticated each target.

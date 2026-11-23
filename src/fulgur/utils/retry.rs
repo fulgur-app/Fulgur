@@ -108,15 +108,6 @@ impl BackoffCalculator {
             self.consecutive_failures = 0;
         }
     }
-
-    /// Get the number of consecutive failures
-    ///
-    /// ### Returns
-    /// `u32`: the number of consecutive failures
-    #[must_use]
-    pub fn consecutive_failures(&self) -> u32 {
-        self.consecutive_failures
-    }
 }
 
 #[cfg(test)]
@@ -165,14 +156,10 @@ mod tests {
     fn test_backoff_calculator_reset_on_success() {
         let mut backoff = BackoffCalculator::default_settings();
 
-        // Record some failures
         backoff.record_failure();
-        backoff.record_failure();
-        assert_eq!(backoff.consecutive_failures(), 2);
+        assert_eq!(backoff.record_failure(), Duration::from_secs(2));
 
-        // Record success
         backoff.record_success();
-        assert_eq!(backoff.consecutive_failures(), 0);
 
         // Next failure should start from initial delay
         let delay = backoff.record_failure();

@@ -1,5 +1,4 @@
 use super::auth::{CredentialPrompter, SshAuth};
-use super::credentials::SshCredKey;
 use super::error::SshError;
 use super::session::{HostKeyDecision, SshSession, connect};
 use super::url::{RemoteSpec, format_host_for_url};
@@ -93,53 +92,6 @@ impl SshSessionPool {
             entries: Mutex::new(HashMap::new()),
             idle_ttl,
         }
-    }
-
-    /// Drop every cached session immediately.
-    pub fn clear(&self) {
-        let sessions = std::mem::take(&mut *self.entries.lock());
-        drop(sessions);
-    }
-
-    /// Drop sessions for a `(host, port, user)` triple regardless of stored credential digest.
-    ///
-    /// ### Arguments
-    /// - `cred_key`: Credential identifier whose sessions should be discarded.
-    pub fn invalidate_by_credential(&self, cred_key: &SshCredKey) {
-        let invalidated: Vec<SlotEntry> = self
-            .entries
-            .lock()
-            .extract_if(|key, _| {
-                key.host == cred_key.host && key.port == cred_key.port && key.user == cred_key.user
-            })
-            .map(|(_, slot)| slot)
-            .collect();
-        drop(invalidated);
-    }
-
-    /// Number of idle sessions currently held by the pool (used by tests).
-    ///
-    /// ### Returns
-    /// - `usize`: Count of cached entries after stale eviction.
-    #[cfg(test)]
-    pub fn len(&self) -> usize {
-        let (len, stale) = {
-            let mut entries = self.entries.lock();
-            let stale = Self::evict_stale(&mut entries, self.idle_ttl);
-            (entries.len(), stale)
-        };
-        drop(stale);
-        len
-    }
-
-    /// Whether the pool currently holds no idle sessions (used by tests).
-    ///
-    /// ### Returns
-    /// - `true`: No cached entries remain after stale eviction.
-    /// - `false`: At least one session is cached.
-    #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     /// Try to remove and return a session for the given key, evicting stale entries first.
@@ -444,16 +396,6 @@ mod tests {
         let key_a = SshSessionKey::new("example.com", 22, "alice", &auth);
         let key_b = SshSessionKey::new("example.com", 22, "alice", &auth);
         assert_eq!(key_a, key_b);
-    }
-
-    #[test]
-    fn invalidate_by_credential_drops_matching_entries() {
-        let pool = Arc::new(SshSessionPool::new());
-        let cred = SshCredKey::new("example.com", 22, "alice");
-        // Without an actual session we cannot exercise put/take here; just confirm
-        // the API is callable on an empty pool without panicking.
-        pool.invalidate_by_credential(&cred);
-        assert_eq!(pool.len(), 0);
     }
 
     /// Build a session attempt with the given result.

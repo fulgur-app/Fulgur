@@ -221,15 +221,6 @@ impl SynchronizationStatus {
         }
     }
 
-    /// Check if the synchronization status is connecting
-    ///
-    /// ### Returns
-    /// - `true` if the synchronization status is connecting, `false` otherwise
-    #[must_use]
-    pub fn is_connecting(&self) -> bool {
-        matches!(self, SynchronizationStatus::Connecting)
-    }
-
     /// Return a short human-readable label for display in tooltips and status pills.
     ///
     /// ### Returns
