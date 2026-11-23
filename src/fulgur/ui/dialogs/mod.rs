@@ -15,6 +15,7 @@ pub mod path_browser;
 pub mod remote_path_browser;
 pub mod remote_url_combo;
 pub mod rename_tab;
+pub mod save_conflict;
 pub mod ssh_challenge;
 pub mod ssh_host_fingerprint;
 pub mod ssh_passphrase;

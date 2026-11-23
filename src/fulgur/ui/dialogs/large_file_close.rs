@@ -2,12 +2,12 @@ use anyhow::anyhow;
 use gpui_kit::component::{WindowExt, notification::NotificationType};
 use gpui_kit::{App, Context, SharedString, Window};
 use std::path::Path;
+use std::time::SystemTime;
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::files::file_operations::{
-    EncodedContents, RemoteSaveContinuation, RemoteSaveRequest, encode_for_save,
+    EncodedContents, RemoteSaveContinuation, RemoteSaveRequest, disk_changed_since, encode_for_save,
 };
-use crate::fulgur::state::file_modified_system_time;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::tabs::editor_tab::{EditorTab, TabLocation};
 use crate::fulgur::ui::tabs::tab::TabId;
@@ -70,7 +70,7 @@ impl Fulgur {
             .and_then(|tab| Some(tab.read(cx).as_editor()?.location.clone()));
         let result = match location {
             Some(TabLocation::Local(path)) => self
-                .write_tab_blocking(tab_id, &path, cx)
+                .write_tab_blocking(tab_id, &path, window, cx)
                 .map(|()| resume(self, window, cx)),
             Some(TabLocation::Remote(spec)) => {
                 self.save_remote_tab_for_close(tab_id, spec, resume, window, cx)
@@ -113,7 +113,7 @@ impl Fulgur {
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
-                        match this.write_tab_blocking(tab_id, &path, cx) {
+                        match this.write_tab_blocking(tab_id, &path, window, cx) {
                             Ok(()) => {
                                 let canonical = std::fs::canonicalize(&path).unwrap_or(path);
                                 this.retarget_tab_to_saved_file(tab_id, &canonical, cx);
@@ -206,11 +206,13 @@ impl Fulgur {
     /// ### Arguments
     /// - `tab_id`: The tab to write
     /// - `path`: The destination file
+    /// - `window`: The window owning the tab
     /// - `cx`: The application context
     ///
     /// ### Errors
     /// - Returns an error if the tab is missing, is not an editor tab, its
-    ///   content cannot be encoded losslessly, or the disk write fails.
+    ///   content cannot be encoded losslessly, the tab's own file changed on
+    ///   disk since it was last loaded or saved, or the disk write fails.
     ///
     /// ### Returns
     /// - `Ok(())`: The file was written and the tab marked as saved
@@ -219,19 +221,46 @@ impl Fulgur {
         &mut self,
         tab_id: TabId,
         path: &Path,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<()> {
         let (_, bytes) = self.encode_tab_for_close(tab_id, cx)?;
+        if disk_changed_since(path, self.disk_baseline_of(tab_id, path, cx)) {
+            return Err(anyhow!(
+                "it changed on disk since it was last loaded or saved; save it manually to resolve the conflict"
+            ));
+        }
         let byte_len = bytes.len();
-        atomic_write_file(path, &bytes)?;
-        self.record_local_file_save(path);
-        let saved_modified = file_modified_system_time(path);
+        let written = atomic_write_file(path, &bytes)?;
+        self.record_known_disk_state(path, &written, window, cx);
+        let saved_modified = written.modified().ok();
         self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
             editor_tab.mark_as_saved(cx);
             editor_tab.record_file_metadata(byte_len, saved_modified);
             cx.notify();
         });
         Ok(())
+    }
+
+    /// The modification time of the disk version a tab's buffer is based on, if
+    /// the tab is backed by `path`.
+    ///
+    /// ### Arguments
+    /// - `tab_id`: The tab about to be written
+    /// - `path`: The destination of the write
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some(SystemTime)`: The tab's own file is `path` and its baseline is known
+    /// - `None`: The tab writes elsewhere (a "Save as"), or its baseline is unknown
+    fn disk_baseline_of(&self, tab_id: TabId, path: &Path, cx: &App) -> Option<SystemTime> {
+        let tab = self.tab_entity_of(tab_id, cx)?;
+        let tab = tab.read(cx);
+        let editor_tab = tab.as_editor()?;
+        if editor_tab.file_path()? != path {
+            return None;
+        }
+        editor_tab.file_last_modified
     }
 
     /// Log and notify a failed close-time save.
@@ -293,6 +322,7 @@ mod tests {
     use crate::test_support::setup_fulgur;
     use gpui_kit::{Entity, TestAppContext, VisualTestContext};
     use std::path::Path;
+    use std::time::SystemTime;
     use tempfile::TempDir;
 
     /// "café" as stored in windows-1252, where the accented letter is the single byte 0xE9.
@@ -347,9 +377,9 @@ mod tests {
         tab_id: TabId,
         path: &Path,
     ) {
-        visual_cx.update(|_, cx| {
+        visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
-                assert!(this.write_tab_blocking(tab_id, path, cx).is_err());
+                assert!(this.write_tab_blocking(tab_id, path, window, cx).is_err());
                 let tab = this.tab_entity_of(tab_id, cx).expect("tab should exist");
                 assert!(
                     tab.read(cx).as_editor().expect("editor tab").modified,
@@ -379,6 +409,24 @@ mod tests {
         let dir = TempDir::new().expect("failed to create temp dir");
         let path = dir.path().join("large.txt");
         let tab_id = open_legacy_tab(&fulgur, &mut visual_cx, &path, "café", true);
+
+        assert_blocking_save_refused(&fulgur, &mut visual_cx, tab_id, &path);
+    }
+
+    #[gpui_kit::test]
+    fn test_blocking_save_refuses_file_changed_on_disk(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("large.txt");
+        let tab_id = open_legacy_tab(&fulgur, &mut visual_cx, &path, "café", false);
+        visual_cx.update(|_, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.update_editor_tab(tab_id, cx, |editor_tab, _| {
+                    // The file on disk was written after the version the buffer is based on.
+                    editor_tab.file_last_modified = Some(SystemTime::UNIX_EPOCH);
+                });
+            });
+        });
 
         assert_blocking_save_refused(&fulgur, &mut visual_cx, tab_id, &path);
     }

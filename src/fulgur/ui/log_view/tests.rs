@@ -1,12 +1,17 @@
 use super::LogFilePosition;
 use super::tail::LogTailChunk;
+use super::tail::read_new_log_bytes;
 use crate::fulgur::Fulgur;
 use crate::fulgur::editor_tab::TabLocation;
+use crate::fulgur::editor_tab::replace_editor_text;
 use crate::fulgur::files::file_watcher::FileWatchEvent;
 use crate::fulgur::files::file_watcher::test_helpers::setup_fulgur;
 use crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str;
 use crate::fulgur::ui::tabs::tab::TabId;
-use crate::test_support::{notification_count, setup_fulgur_with_root};
+use crate::test_support::{
+    has_active_dialog, notification_count, setup_fulgur_with_root, write_with_mtime,
+};
+use encoding_rs::UTF_8;
 use gpui_kit::component::input::RopeExt;
 use gpui_kit::{Entity, EntityInputHandler, Pixels, TestAppContext, VisualTestContext, point, px};
 use std::fmt::Write as _;
@@ -93,6 +98,7 @@ fn appended(text: &str, offset_before: u64) -> LogTailChunk {
             identity: None,
         },
         reset: false,
+        modified: None,
     }
 }
 
@@ -196,6 +202,7 @@ fn test_reset_chunk_replaces_buffer(cx: &mut TestAppContext) {
                     identity: None,
                 },
                 reset: true,
+                modified: None,
             };
             this.apply_log_tail_chunk(tab_id, &chunk, window, cx);
         });
@@ -636,5 +643,56 @@ fn test_paused_follow_keeps_the_viewport_in_place(cx: &mut TestAppContext) {
     assert_eq!(
         offset, parked,
         "a paused log must not move under the reader"
+    );
+}
+
+#[gpui_kit::test]
+fn test_save_after_leaving_log_view_does_not_see_tailed_appends_as_a_conflict(
+    cx: &mut TestAppContext,
+) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let (dir, tab_id) = setup_log_tab(&fulgur, &mut visual_cx, "line1\n");
+    let path = dir.path().join("tail.log");
+    let opened_version = write_with_mtime(&path, "line1\n", 1_000);
+    visual_cx.update(|_, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.stop_file_watcher();
+            this.update_editor_tab(tab_id, cx, |editor_tab, _| {
+                editor_tab.file_last_modified = Some(opened_version);
+            });
+        });
+    });
+    write_with_mtime(&path, "line1\nline2\n", 2_000);
+    let chunk = read_new_log_bytes(
+        &path,
+        LogFilePosition {
+            byte_offset: 6,
+            identity: None,
+        },
+        UTF_8,
+    )
+    .expect("the appended bytes should be readable");
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.apply_log_tail_chunk(tab_id, &chunk, window, cx);
+            this.deactivate_log_view(tab_id, cx);
+            let content = this
+                .editor_tab(tab_id, cx)
+                .expect("editor tab")
+                .content
+                .clone();
+            content.update(cx, |state, cx| {
+                replace_editor_text(state, "edited\n", window, cx);
+            });
+            this.save_file(window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    assert!(!has_active_dialog(&mut visual_cx));
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("log file should exist"),
+        "edited\n"
     );
 }

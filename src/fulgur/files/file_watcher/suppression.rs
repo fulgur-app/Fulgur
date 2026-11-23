@@ -1,6 +1,7 @@
 use super::state::ScheduledFileCheck;
 use crate::fulgur::Fulgur;
 use gpui_kit::{Context, Window};
+use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -27,14 +28,34 @@ impl Fulgur {
         self.file_watch_state.pending_conflicts.clear();
     }
 
-    /// Record that the editor just wrote a local file itself, so the watch
-    /// events echoing that write are not mistaken for an external change
+    /// Record the disk state a tab's buffer matches (the file the editor just
+    /// wrote, or the version it read), so the watch events echoing it are not
+    /// mistaken for an external change
     ///
     /// ### Arguments
-    /// - `path`: The file that was written
-    pub(crate) fn record_local_file_save(&mut self, path: &Path) {
-        if let Some(watcher) = &mut self.file_watch_state.file_watcher {
-            watcher.refresh_disk_signature(path);
+    /// - `path`: The watched file
+    /// - `known`: The metadata of the version the buffer matches, taken when it
+    ///   was written or read
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub(crate) fn record_known_disk_state(
+        &mut self,
+        path: &Path,
+        known: &Metadata,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let changed_since = self
+            .file_watch_state
+            .file_watcher
+            .as_mut()
+            .is_some_and(|watcher| watcher.record_known_state(path, known));
+        if changed_since {
+            log::debug!(
+                "{} changed on disk after the editor's own access; re-checking it",
+                path.display()
+            );
+            self.schedule_file_change_check(path.to_path_buf(), window, cx);
         }
     }
 
@@ -105,6 +126,7 @@ mod tests {
         advance_file_watch_clock, settle_file_checks, setup_fulgur,
     };
     use crate::fulgur::files::file_watcher::{FileWatchEvent, FileWatcher};
+    use crate::fulgur::utils::atomic_write::atomic_write_file;
     use gpui_kit::{Context, Entity, TestAppContext, VisualTestContext, Window};
     use std::path::Path;
     use std::time::Duration;
@@ -191,8 +213,9 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 open_watched_unmodified_tab(this, &path, "buffer-text", window, cx);
-                std::fs::write(&path, "written by the editor").expect("failed to save test file");
-                this.record_local_file_save(&path);
+                let written = atomic_write_file(&path, b"written by the editor")
+                    .expect("failed to save test file");
+                this.record_known_disk_state(&path, &written, window, cx);
             });
         });
         // Simulate echoes (e.g. macOS setting xattrs) arriving long after the save.
@@ -220,7 +243,8 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 open_watched_unmodified_tab(this, &path, "buffer-text", window, cx);
-                this.record_local_file_save(&path);
+                let current = std::fs::metadata(&path).expect("failed to stat test file");
+                this.record_known_disk_state(&path, &current, window, cx);
             });
         });
         std::fs::write(&path, "rewritten by another program").expect("failed to rewrite test file");
@@ -230,6 +254,35 @@ mod tests {
             first_tab_text(&fulgur, &mut visual_cx),
             "rewritten by another program",
             "an external write right after the editor's own save must not be hidden as an echo"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn test_external_write_before_own_save_is_recorded_reloads(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("external_before_record.txt");
+        std::fs::write(&path, "before save").expect("failed to write test file");
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                open_watched_unmodified_tab(this, &path, "buffer-text", window, cx);
+                let written =
+                    atomic_write_file(&path, b"editor").expect("failed to save test file");
+                // Lands after the editor's rename but before its save completes.
+                std::fs::write(&path, "rewritten by another program")
+                    .expect("failed to rewrite test file");
+                this.record_known_disk_state(&path, &written, window, cx);
+                assert!(
+                    this.file_watch_state.scheduled_checks.contains_key(&path),
+                    "a write newer than the editor's own must be re-checked"
+                );
+            });
+        });
+        settle_file_checks(&mut visual_cx);
+        assert_eq!(
+            first_tab_text(&fulgur, &mut visual_cx),
+            "rewritten by another program",
+            "a write landing before the save completes must not be adopted as the editor's own"
         );
     }
 

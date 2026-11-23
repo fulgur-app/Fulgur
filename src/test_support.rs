@@ -60,6 +60,34 @@ pub fn temp_test_path(file_name: &str) -> PathBuf {
     std::env::temp_dir().join(file_name)
 }
 
+/// Write a file and pin its modification time, so tests do not depend on clock resolution.
+///
+/// ### Arguments
+/// - `path`: The file to write
+/// - `text`: The file content
+/// - `unix_seconds`: The modification time to set, in seconds since the Unix epoch
+///
+/// ### Returns
+/// - `SystemTime`: The modification time now carried by the file
+///
+/// ### Panics
+/// - Panics if the file cannot be written or its modification time cannot be set.
+#[cfg(all(test, feature = "gpui-test-support"))]
+pub(crate) fn write_with_mtime(
+    path: &std::path::Path,
+    text: &str,
+    unix_seconds: u64,
+) -> std::time::SystemTime {
+    std::fs::write(path, text).expect("write test file");
+    let modified = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(unix_seconds);
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .and_then(|file| file.set_modified(modified))
+        .expect("set test file mtime");
+    modified
+}
+
 /// Build the default settings every test window starts from.
 ///
 /// ### Returns

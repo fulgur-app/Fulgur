@@ -4,6 +4,7 @@ use encoding_rs::{Encoding, UTF_8, UTF_16BE, UTF_16LE};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::time::SystemTime;
 
 /// Return whether the log-view toggle should be offered for a file path.
 ///
@@ -235,6 +236,7 @@ fn decode_log_bytes(
 /// - `identity`: The identity of the file object
 /// - `reset`: Whether the chunk replaces the display rather than extending it
 /// - `encoding`: The encoding to decode the bytes with
+/// - `modified`: The file's modification time, read before its bytes
 ///
 /// ### Returns
 /// - `Ok(LogTailChunk)`: The decoded text and the consumed position
@@ -245,6 +247,7 @@ fn read_chunk_to_end(
     identity: Option<LogFileIdentity>,
     reset: bool,
     encoding: &'static Encoding,
+    modified: Option<SystemTime>,
 ) -> std::io::Result<LogTailChunk> {
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
@@ -256,6 +259,7 @@ fn read_chunk_to_end(
             identity,
         },
         reset,
+        modified,
     })
 }
 
@@ -268,6 +272,9 @@ pub(super) struct LogTailChunk {
     pub position: LogFilePosition,
     /// Whether the file was truncated or replaced, so `text` is a full reread
     pub reset: bool,
+    /// The file's modification time, read before its bytes so a write racing
+    /// the read reads as a later change
+    pub modified: Option<SystemTime>,
 }
 
 /// Read a whole file from its start as a chunk that replaces the display.
@@ -282,7 +289,8 @@ pub(super) struct LogTailChunk {
 pub(super) fn read_whole_log(path: &Path, encoding: &'static Encoding) -> Option<LogTailChunk> {
     let mut file = File::open(path).ok()?;
     let identity = LogFileIdentity::from_file(&file);
-    read_chunk_to_end(&mut file, 0, identity, true, encoding).ok()
+    let modified = file.metadata().ok().and_then(|meta| meta.modified().ok());
+    read_chunk_to_end(&mut file, 0, identity, true, encoding, modified).ok()
 }
 
 /// Read newly appended bytes from a file beyond a known position.
@@ -302,7 +310,9 @@ pub(super) fn read_new_log_bytes(
     encoding: &'static Encoding,
 ) -> Option<LogTailChunk> {
     let mut file = File::open(path).ok()?;
-    let len = file.metadata().ok()?.len();
+    let metadata = file.metadata().ok()?;
+    let len = metadata.len();
+    let modified = metadata.modified().ok();
     let identity = LogFileIdentity::from_file(&file);
     let replaced = match (consumed.identity, identity) {
         (Some(known), Some(current)) => known != current,
@@ -310,7 +320,7 @@ pub(super) fn read_new_log_bytes(
     };
     let offset = consumed.byte_offset;
     if replaced || len < offset {
-        return read_chunk_to_end(&mut file, 0, identity, true, encoding).ok();
+        return read_chunk_to_end(&mut file, 0, identity, true, encoding, modified).ok();
     }
     if len == offset {
         return Some(LogTailChunk {
@@ -320,10 +330,11 @@ pub(super) fn read_new_log_bytes(
                 identity,
             },
             reset: false,
+            modified,
         });
     }
     file.seek(SeekFrom::Start(offset)).ok()?;
-    read_chunk_to_end(&mut file, offset, identity, false, encoding).ok()
+    read_chunk_to_end(&mut file, offset, identity, false, encoding, modified).ok()
 }
 
 #[cfg(test)]

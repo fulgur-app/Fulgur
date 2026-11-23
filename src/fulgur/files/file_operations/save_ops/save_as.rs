@@ -4,12 +4,12 @@ use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur,
     editor_tab::{TabLocation, content_fingerprint_from_str},
-    state::file_modified_system_time,
     tab::Tab,
     ui::components_utils::UNTITLED,
     utils::atomic_write::atomic_write_file,
 };
 use gpui_kit::{App, Context, Window};
+use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 
 impl Fulgur {
@@ -171,8 +171,10 @@ impl Fulgur {
             let write_result = window
                 .background_executor()
                 .spawn(async move {
-                    atomic_write_file(&write_path, &bytes).map(|()| {
-                        std::fs::canonicalize(&write_path).unwrap_or_else(|_| write_path.clone())
+                    atomic_write_file(&write_path, &bytes).map(|written| {
+                        let canonical = std::fs::canonicalize(&write_path)
+                            .unwrap_or_else(|_| write_path.clone());
+                        (canonical, written)
                     })
                 })
                 .await;
@@ -192,14 +194,15 @@ impl Fulgur {
     /// ### Arguments
     /// - `completion`: Dispatch-time context of the save being completed
     /// - `encoding`: The encoding label the bytes were written in
-    /// - `write_result`: The canonicalized destination path, or the write error
+    /// - `write_result`: The canonicalized destination path with the metadata of
+    ///   the written file, or the write error
     /// - `window`: The window context
     /// - `cx`: The application context
     fn finish_save_as(
         &mut self,
         completion: &SaveCompletion,
         encoding: String,
-        write_result: anyhow::Result<PathBuf>,
+        write_result: anyhow::Result<(PathBuf, Metadata)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -207,12 +210,11 @@ impl Fulgur {
         let byte_len = completion.byte_len;
         self.inflight_saves.remove(&tab_id);
         match write_result {
-            Ok(canonical_path) => {
+            Ok((canonical_path, written)) => {
                 let path = canonical_path.as_path();
                 log::debug!("File saved successfully as: {}", path.display());
                 if self.tab_entity_of(tab_id, cx).is_some() {
-                    self.record_local_file_save(path);
-                    let saved_modified = file_modified_system_time(path);
+                    let saved_modified = written.modified().ok();
                     self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
                         editor_tab.encoding = encoding;
                         editor_tab.mark_snapshot_as_saved(
@@ -223,6 +225,8 @@ impl Fulgur {
                         editor_tab.record_file_metadata(byte_len, saved_modified);
                     });
                     self.retarget_tab_to_saved_file(tab_id, path, cx);
+                    // After the retarget, so the new path is already watched.
+                    self.record_known_disk_state(path, &written, window, cx);
                 } else {
                     log::warn!("Save As completed, but tab {tab_id} no longer exists");
                 }

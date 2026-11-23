@@ -240,6 +240,9 @@ impl Fulgur {
 
         self.update_editor_tab(tab_id, cx, |editor, cx| {
             editor.mark_as_saved(cx);
+            // The buffer now matches this disk version, so a save after leaving
+            // the log view must not see the appends as an external change.
+            editor.file_last_modified = chunk.modified;
         });
         cx.notify();
     }

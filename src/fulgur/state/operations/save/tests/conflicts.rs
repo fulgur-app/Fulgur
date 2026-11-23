@@ -6,34 +6,10 @@ use crate::fulgur::{
     editor_tab::TabLocation,
     state::persistence::{TabContent, TabState, file_modified_system_time, format_modified_time},
 };
-use crate::test_support::setup_fulgur_with_root as setup_fulgur;
+use crate::test_support::{setup_fulgur_with_root as setup_fulgur, write_with_mtime};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
-use std::{
-    fs,
-    path::Path,
-    time::{Duration, SystemTime},
-};
+use std::{fs, path::Path, time::SystemTime};
 use tempfile::TempDir;
-
-/// Write a file and pin its modification time, so tests do not depend on clock resolution.
-///
-/// ### Arguments
-/// - `path`: The file to write
-/// - `text`: The file content
-/// - `unix_seconds`: The modification time to set, in seconds since the Unix epoch
-///
-/// ### Returns
-/// - `SystemTime`: The modification time now carried by the file
-fn write_with_mtime(path: &Path, text: &str, unix_seconds: u64) -> SystemTime {
-    fs::write(path, text).expect("write test file");
-    let modified = SystemTime::UNIX_EPOCH + Duration::from_secs(unix_seconds);
-    fs::File::options()
-        .write(true)
-        .open(path)
-        .and_then(|file| file.set_modified(modified))
-        .expect("set test file mtime");
-    modified
-}
 
 /// Open a dirty tab on a file, change the file behind it, then snapshot the window.
 ///
