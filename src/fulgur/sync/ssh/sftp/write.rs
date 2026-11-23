@@ -8,14 +8,70 @@ use std::path::Path;
 /// Fallback permission bits used when the remote destination mode cannot be read
 const DEFAULT_REMOTE_FILE_MODE: u32 = 0o644;
 
+/// Permission bits preserved across a save, including the setuid, setgid and sticky bits
+const PRESERVED_MODE_BITS: u32 = 0o7777;
+
+/// Numeric owner and group of a remote file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FileOwner {
+    uid: u32,
+    gid: u32,
+}
+
+impl FileOwner {
+    /// Read the owner and group reported in SFTP file attributes.
+    ///
+    /// ### Arguments
+    /// - `stat`: Attributes returned by the server.
+    ///
+    /// ### Returns
+    /// - `Some(FileOwner)`: The server reported both the uid and the gid.
+    /// - `None`: Either id is missing from the attributes.
+    fn from_stat(stat: &ssh2::FileStat) -> Option<Self> {
+        Some(Self {
+            uid: stat.uid?,
+            gid: stat.gid?,
+        })
+    }
+}
+
+/// Destination attributes a save must carry over to the new content.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DestAttributes {
+    owner: Option<FileOwner>,
+    mode: u32,
+}
+
+impl DestAttributes {
+    /// Collect the attributes to preserve from the destination's current attributes.
+    ///
+    /// ### Arguments
+    /// - `stat`: Attributes of the destination, or `None` when it does not exist or cannot be read.
+    ///
+    /// ### Returns
+    /// - `DestAttributes`: The destination owner when known, and its permission bits, or
+    ///   `DEFAULT_REMOTE_FILE_MODE` when they are unknown.
+    fn from_stat(stat: Option<&ssh2::FileStat>) -> Self {
+        Self {
+            owner: stat.and_then(FileOwner::from_stat),
+            mode: stat
+                .and_then(|stat| stat.perm)
+                .map_or(DEFAULT_REMOTE_FILE_MODE, |perm| perm & PRESERVED_MODE_BITS),
+        }
+    }
+}
+
 /// Write bytes to a remote file via SFTP using a temp-then-rename approach.
 ///
 /// ### Description
-/// Writes to a `.fulgur.tmp.{pid}.{nanos}` sibling, then moves it over the destination with
-/// `replace_with_temp`, which keeps a complete copy of either the original or the new content
-/// on the server at every step. A partial write therefore never corrupts the original. The
-/// non-atomic truncating write is used only when the temp file cannot be created or when the
-/// server refuses every rename.
+/// Writes to a `.fulgur.tmp.{pid}.{nanos}` sibling, then installs it with `install_temp`: the
+/// temp file gets the destination's owner, group and permission bits, and `replace_with_temp`
+/// moves it over the destination, keeping a complete copy of either the original or the new
+/// content on the server at every step. A partial write therefore never corrupts the original.
+/// The non-atomic truncating write is used when the temp file cannot be created, when it
+/// cannot be given the destination's owner (so the file keeps its owner and group), or when
+/// the server refuses every rename. Hard links cannot be detected because SFTP v3 attributes
+/// carry no link count, so a hard-linked destination is still split by the rename.
 ///
 /// ### Arguments
 /// - `session`: Established SSH session with SFTP subsystem.
@@ -44,14 +100,9 @@ pub fn write_remote_file(
         .and_then(|path| path.to_str().map(str::to_string))
         .unwrap_or(remote_path);
 
-    // Preserve the destination permission bits across the temp-then-rename so a
-    // private or executable remote file is not reset to a default mode.
-    let dest_mode = session
-        .sftp
-        .stat(Path::new(&resolved))
-        .ok()
-        .and_then(|stat| stat.perm)
-        .map_or(DEFAULT_REMOTE_FILE_MODE, |perm| perm & 0o777);
+    let dest_attributes =
+        DestAttributes::from_stat(session.sftp.stat(Path::new(&resolved)).ok().as_ref());
+    let dest_mode = dest_attributes.mode;
 
     let pid = std::process::id();
     let nanos = std::time::SystemTime::now()
@@ -96,32 +147,52 @@ pub fn write_remote_file(
     }
     drop(tmp);
 
-    // Enforce the exact mode regardless of the remote umask applied at creation.
-    let _ = session.sftp.setstat(
-        tmp_path,
-        ssh2::FileStat {
-            size: None,
-            uid: None,
-            gid: None,
-            perm: Some(dest_mode),
-            atime: None,
-            mtime: None,
-        },
-    );
-
-    replace_with_temp(
+    install_temp(
         &session.sftp,
         tmp_path,
         dest_path,
         backup_path,
         data,
-        dest_mode,
+        dest_attributes,
     )
     .map_err(|e| SshError::SftpError(format!("Cannot replace {resolved}: {e}")))
 }
 
 /// The SFTP primitives needed to move a fully written temp file over a destination.
 trait RemoteReplaceOps {
+    /// Read the owner and group of a remote file.
+    ///
+    /// ### Arguments
+    /// - `path`: File to inspect.
+    ///
+    /// ### Returns
+    /// - `Some(FileOwner)`: The server reported the file's uid and gid.
+    /// - `None`: The file cannot be read or the server omitted either id.
+    fn owner(&self, path: &Path) -> Option<FileOwner>;
+
+    /// Change the owner and group of a remote file.
+    ///
+    /// ### Arguments
+    /// - `path`: File to change.
+    /// - `owner`: Requested uid and gid.
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The server accepted the request.
+    /// - `Err(String)`: The server refused it, typically because the SSH user is neither root
+    ///   nor a member of the requested group.
+    fn set_owner(&self, path: &Path, owner: FileOwner) -> Result<(), String>;
+
+    /// Set the permission bits of a remote file.
+    ///
+    /// ### Arguments
+    /// - `path`: File to change.
+    /// - `mode`: Permission bits to apply.
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The server accepted the request.
+    /// - `Err(String)`: The server refused it.
+    fn set_mode(&self, path: &Path, mode: u32) -> Result<(), String>;
+
     /// Rename `src` to `dst`, asking the server to overwrite `dst` atomically.
     ///
     /// ### Description
@@ -161,6 +232,43 @@ trait RemoteReplaceOps {
 }
 
 impl RemoteReplaceOps for ssh2::Sftp {
+    fn owner(&self, path: &Path) -> Option<FileOwner> {
+        ssh2::Sftp::stat(self, path)
+            .ok()
+            .as_ref()
+            .and_then(FileOwner::from_stat)
+    }
+
+    fn set_owner(&self, path: &Path, owner: FileOwner) -> Result<(), String> {
+        self.setstat(
+            path,
+            ssh2::FileStat {
+                size: None,
+                uid: Some(owner.uid),
+                gid: Some(owner.gid),
+                perm: None,
+                atime: None,
+                mtime: None,
+            },
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    fn set_mode(&self, path: &Path, mode: u32) -> Result<(), String> {
+        self.setstat(
+            path,
+            ssh2::FileStat {
+                size: None,
+                uid: None,
+                gid: None,
+                perm: Some(mode),
+                atime: None,
+                mtime: None,
+            },
+        )
+        .map_err(|e| e.to_string())
+    }
+
     fn rename(&self, src: &Path, dst: &Path) -> Result<(), String> {
         ssh2::Sftp::rename(
             self,
@@ -187,6 +295,94 @@ impl RemoteReplaceOps for ssh2::Sftp {
         file.write_all(data)
             .map_err(|e| format!("write error on {}: {e}", path.display()))
     }
+}
+
+/// Give a fully written temp file the destination's attributes, then move it over the destination.
+///
+/// ### Description
+/// When the temp file's owner or group differs from the destination's, it is changed to
+/// match (a non-root user can only switch to a group it belongs to). If the ownership still
+/// differs, the destination is written in place instead, which keeps its inode and therefore
+/// its owner, group, mode, ACLs and hard links. If that in-place write fails, for example
+/// because the SSH user cannot write the destination itself, the temp file is moved over it
+/// anyway and the destination ends up owned by the SSH user. The permission bits are applied
+/// after the ownership change, because changing ownership clears the setuid and setgid bits.
+///
+/// ### Arguments
+/// - `ops`: SFTP primitives used to inspect, change, rename, delete, and write.
+/// - `tmp_path`: Temporary file holding the complete new content.
+/// - `dest_path`: Final destination path.
+/// - `backup_path`: Unused sibling path that receives the original while swapping.
+/// - `data`: New content, used by the in-place write paths.
+/// - `dest`: Attributes of the destination to carry over.
+///
+/// ### Returns
+/// - `Ok(())`: The destination holds the new content and no temp or backup file is left.
+/// - `Err(String)`: The replacement failed. The message names any temp or backup file left
+///   behind because it holds the only complete copy of the new or original content.
+fn install_temp(
+    ops: &impl RemoteReplaceOps,
+    tmp_path: &Path,
+    dest_path: &Path,
+    backup_path: &Path,
+    data: &[u8],
+    dest: DestAttributes,
+) -> Result<(), String> {
+    if let Some(owner) = dest.owner
+        && !temp_matches_owner(ops, tmp_path, owner)
+    {
+        match ops.write_truncating(dest_path, data, dest.mode) {
+            Ok(()) => {
+                log::info!(
+                    "Wrote {} in place to keep its owner (uid {}, gid {})",
+                    dest_path.display(),
+                    owner.uid,
+                    owner.gid
+                );
+                let _ = ops.unlink(tmp_path);
+                return Ok(());
+            }
+            Err(write_err) => log::warn!(
+                "Cannot write {} in place ({write_err}); replacing it, which changes its owner to the SSH user",
+                dest_path.display()
+            ),
+        }
+    }
+
+    if let Err(mode_err) = ops.set_mode(tmp_path, dest.mode) {
+        log::debug!(
+            "Cannot set mode {:o} on {} ({mode_err})",
+            dest.mode,
+            tmp_path.display()
+        );
+    }
+    replace_with_temp(ops, tmp_path, dest_path, backup_path, data, dest.mode)
+}
+
+/// Make sure the temp file has the destination's owner and group, changing them if needed.
+///
+/// ### Arguments
+/// - `ops`: SFTP primitives used to inspect and change the ownership.
+/// - `tmp_path`: Temporary file holding the new content.
+/// - `owner`: Owner and group of the destination.
+///
+/// ### Returns
+/// - `true`: The temp file is owned by `owner`, as confirmed by the server.
+/// - `false`: The ownership differs and could not be changed or confirmed.
+fn temp_matches_owner(ops: &impl RemoteReplaceOps, tmp_path: &Path, owner: FileOwner) -> bool {
+    if ops.owner(tmp_path) == Some(owner) {
+        return true;
+    }
+    if let Err(chown_err) = ops.set_owner(tmp_path, owner) {
+        log::debug!(
+            "Cannot give {} uid {} and gid {} ({chown_err})",
+            tmp_path.display(),
+            owner.uid,
+            owner.gid
+        );
+        return false;
+    }
+    ops.owner(tmp_path) == Some(owner)
 }
 
 /// Move a fully written temp file over the destination without ever losing a complete copy.
@@ -266,7 +462,7 @@ fn replace_with_temp(
 
 #[cfg(test)]
 mod tests {
-    use super::{RemoteReplaceOps, replace_with_temp};
+    use super::{DestAttributes, FileOwner, RemoteReplaceOps, install_temp, replace_with_temp};
     use std::cell::{Cell, RefCell};
     use std::collections::{HashMap, HashSet};
     use std::path::{Path, PathBuf};
@@ -276,12 +472,21 @@ mod tests {
     const BACKUP: &str = "/srv/app/config.toml.fulgur.bak.1.2";
     const ORIGINAL: &[u8] = b"original";
     const UPDATED: &[u8] = b"updated";
+    const SSH_USER: FileOwner = FileOwner {
+        uid: 1000,
+        gid: 1000,
+    };
+    const SHARED_GROUP: FileOwner = FileOwner { uid: 1000, gid: 33 };
+    const OTHER_USER: FileOwner = FileOwner { uid: 1001, gid: 33 };
 
     /// In-memory remote filesystem whose renames follow SFTP v3 (OpenSSH) semantics:
     /// renaming onto an existing path always fails, whatever flags are requested.
     #[derive(Default)]
     struct SftpV3Mock {
         files: RefCell<HashMap<PathBuf, Vec<u8>>>,
+        owners: RefCell<HashMap<PathBuf, FileOwner>>,
+        attribute_changes: RefCell<Vec<&'static str>>,
+        refuse_owner_changes: bool,
         refused_renames: HashSet<(PathBuf, PathBuf)>,
         refuse_all_renames: bool,
         fail_truncating_writes: bool,
@@ -329,6 +534,20 @@ mod tests {
         fn content(&self, path: &str) -> Option<Vec<u8>> {
             self.files.borrow().get(Path::new(path)).cloned()
         }
+
+        /// Give the destination and the temp file their owners.
+        ///
+        /// ### Arguments
+        /// - `dest`: Owner of the original destination.
+        /// - `tmp`: Owner of the temp file, i.e. the SSH user.
+        ///
+        /// ### Returns
+        /// - `SftpV3Mock`: The mock with both owners recorded.
+        fn owned_by(self, dest: FileOwner, tmp: FileOwner) -> Self {
+            self.owners.borrow_mut().insert(PathBuf::from(DEST), dest);
+            self.owners.borrow_mut().insert(PathBuf::from(TMP), tmp);
+            self
+        }
     }
 
     impl RemoteReplaceOps for SftpV3Mock {
@@ -342,15 +561,38 @@ mod tests {
             }
             let content = files.remove(src).ok_or("SFTP(2) no such file")?;
             files.insert(dst.to_path_buf(), content);
+            let mut owners = self.owners.borrow_mut();
+            if let Some(owner) = owners.remove(src) {
+                owners.insert(dst.to_path_buf(), owner);
+            }
             Ok(())
         }
 
         fn unlink(&self, path: &Path) -> Result<(), String> {
+            self.owners.borrow_mut().remove(path);
             self.files
                 .borrow_mut()
                 .remove(path)
                 .map(|_| ())
                 .ok_or_else(|| "SFTP(2) no such file".to_string())
+        }
+
+        fn owner(&self, path: &Path) -> Option<FileOwner> {
+            self.owners.borrow().get(path).copied()
+        }
+
+        fn set_owner(&self, path: &Path, owner: FileOwner) -> Result<(), String> {
+            self.attribute_changes.borrow_mut().push("owner");
+            if self.refuse_owner_changes {
+                return Err("SFTP(3) permission denied".to_string());
+            }
+            self.owners.borrow_mut().insert(path.to_path_buf(), owner);
+            Ok(())
+        }
+
+        fn set_mode(&self, _path: &Path, _mode: u32) -> Result<(), String> {
+            self.attribute_changes.borrow_mut().push("mode");
+            Ok(())
         }
 
         fn write_truncating(&self, path: &Path, data: &[u8], _mode: u32) -> Result<(), String> {
@@ -381,6 +623,128 @@ mod tests {
             UPDATED,
             0o644,
         )
+    }
+
+    /// Run `install_temp` against the mock with the shared test paths.
+    ///
+    /// ### Arguments
+    /// - `mock`: Mock remote filesystem to operate on.
+    /// - `dest_owner`: Owner of the destination to preserve.
+    ///
+    /// ### Returns
+    /// - `Result<(), String>`: The result of `install_temp`.
+    fn install(mock: &SftpV3Mock, dest_owner: FileOwner) -> Result<(), String> {
+        install_temp(
+            mock,
+            Path::new(TMP),
+            Path::new(DEST),
+            Path::new(BACKUP),
+            UPDATED,
+            DestAttributes {
+                owner: Some(dest_owner),
+                mode: 0o660,
+            },
+        )
+    }
+
+    #[test]
+    fn dest_attributes_keep_special_mode_bits_and_owner() {
+        let stat = ssh2::FileStat {
+            size: None,
+            uid: Some(SHARED_GROUP.uid),
+            gid: Some(SHARED_GROUP.gid),
+            perm: Some(0o100_4755),
+            atime: None,
+            mtime: None,
+        };
+
+        let attributes = DestAttributes::from_stat(Some(&stat));
+
+        assert_eq!(attributes.owner, Some(SHARED_GROUP));
+        assert_eq!(attributes.mode, 0o4755);
+    }
+
+    #[test]
+    fn dest_attributes_default_when_destination_is_missing() {
+        let attributes = DestAttributes::from_stat(None);
+
+        assert_eq!(attributes.owner, None);
+        assert_eq!(attributes.mode, 0o644);
+    }
+
+    #[test]
+    fn install_with_matching_owner_swaps_without_owner_change() {
+        let mock = SftpV3Mock::with_dest_and_tmp().owned_by(SSH_USER, SSH_USER);
+
+        install(&mock, SSH_USER).expect("install should succeed");
+
+        assert_eq!(mock.content(DEST).as_deref(), Some(UPDATED));
+        assert_eq!(mock.content(TMP), None);
+        assert_eq!(mock.owner(Path::new(DEST)), Some(SSH_USER));
+        assert_eq!(*mock.attribute_changes.borrow(), ["mode"]);
+        assert_eq!(mock.truncating_writes.get(), 0);
+    }
+
+    #[test]
+    fn install_gives_temp_the_destination_group_before_its_mode() {
+        let mock = SftpV3Mock::with_dest_and_tmp().owned_by(SHARED_GROUP, SSH_USER);
+
+        install(&mock, SHARED_GROUP).expect("install should succeed");
+
+        assert_eq!(mock.content(DEST).as_deref(), Some(UPDATED));
+        assert_eq!(mock.owner(Path::new(DEST)), Some(SHARED_GROUP));
+        assert_eq!(*mock.attribute_changes.borrow(), ["owner", "mode"]);
+        assert_eq!(mock.truncating_writes.get(), 0);
+    }
+
+    #[test]
+    fn install_writes_in_place_when_owner_cannot_be_matched() {
+        let mock = SftpV3Mock {
+            refuse_owner_changes: true,
+            ..SftpV3Mock::with_dest_and_tmp()
+        }
+        .owned_by(OTHER_USER, SSH_USER);
+
+        install(&mock, OTHER_USER).expect("in-place write should succeed");
+
+        assert_eq!(mock.content(DEST).as_deref(), Some(UPDATED));
+        assert_eq!(mock.owner(Path::new(DEST)), Some(OTHER_USER));
+        assert_eq!(mock.content(TMP), None);
+        assert_eq!(mock.content(BACKUP), None);
+        assert_eq!(mock.truncating_writes.get(), 1);
+    }
+
+    #[test]
+    fn install_replaces_destination_when_in_place_write_fails() {
+        let mock = SftpV3Mock {
+            refuse_owner_changes: true,
+            fail_truncating_writes: true,
+            ..SftpV3Mock::with_dest_and_tmp()
+        }
+        .owned_by(OTHER_USER, SSH_USER);
+
+        install(&mock, OTHER_USER).expect("replacing should recover the save");
+
+        assert_eq!(mock.content(DEST).as_deref(), Some(UPDATED));
+        assert_eq!(mock.owner(Path::new(DEST)), Some(SSH_USER));
+        assert_eq!(mock.content(TMP), None);
+        assert_eq!(mock.content(BACKUP), None);
+    }
+
+    #[test]
+    fn install_keeps_temp_when_every_write_path_fails() {
+        let mock = SftpV3Mock {
+            refuse_owner_changes: true,
+            fail_truncating_writes: true,
+            refuse_all_renames: true,
+            ..SftpV3Mock::with_dest_and_tmp()
+        }
+        .owned_by(OTHER_USER, SSH_USER);
+
+        let err = install(&mock, OTHER_USER).expect_err("install should fail");
+
+        assert_eq!(mock.content(TMP).as_deref(), Some(UPDATED));
+        assert!(err.contains(TMP));
     }
 
     #[test]
