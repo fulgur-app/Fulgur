@@ -170,8 +170,9 @@ fn main() {
         fulgur::utils::paths::set_config_dir_override(dev_dir);
     }
 
-    if let Err(e) = fulgur::utils::logger::init() {
-        eprintln!("Failed to initialize logger: {e}");
+    match fulgur::utils::logger::init() {
+        Ok(()) => fulgur::utils::logger::install_panic_hook(),
+        Err(e) => eprintln!("Failed to initialize logger: {e}"),
     }
     if let Ok(config_dir) = fulgur::utils::paths::config_dir() {
         fulgur::utils::atomic_write::cleanup_orphan_temp_files(&config_dir);
