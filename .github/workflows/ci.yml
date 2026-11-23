@@ -60,9 +60,11 @@ jobs:
   # in ~30s instead of being hidden behind a 10-minute test run.
   fmt:
     name: Formatting
-    # Merge-to-main gate disabled: fmt no longer runs on pull_request, only on dev-* pushes.
-    # Restore the merge gate by prepending: github.event_name == 'pull_request' ||
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-')
+    # Merge-to-main gate: runs on every PR (about 30 s), so branches that never
+    # get a dev-* push (Dependabot, forks) are still format-checked before merge.
+    if: >-
+      github.event_name == 'pull_request'
+      || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -79,7 +81,8 @@ jobs:
   clippy:
     name: Clippy - ${{ matrix.os }}
     # Merge-to-main gate disabled: clippy no longer runs on pull_request, only on
-    # dev-* pushes and manual (Windows) dispatch runs.
+    # dev-* pushes, manual (Windows) dispatch runs and the daily schedule, so a PR
+    # from a non-dev-* branch merges without clippy and macOS is never linted in CI.
     # Restore the merge gate by prepending: github.event_name == 'pull_request' ||
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))

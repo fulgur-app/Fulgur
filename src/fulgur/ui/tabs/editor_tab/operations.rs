@@ -1,4 +1,4 @@
-use super::{EditorTab, Jump, TabLocation, hex_color_provider};
+use super::{CsvViewMode, EditorTab, Jump, TabLocation, hex_color_provider};
 use crate::fulgur::languages::supported_languages::{
     SupportedLanguage, language_from_content, language_registry_name,
 };
@@ -157,6 +157,31 @@ impl EditorTab {
             input_state.set_smart_indent(settings.smart_indent, window, cx);
         });
         self.set_highlight_colors(cx, settings.highlight_colors);
+    }
+
+    /// Switch a live tab into large-file mode, as if it had been opened large.
+    ///
+    /// ### Arguments
+    /// - `window`: The window context
+    /// - `cx`: The application context
+    pub fn enter_large_file_mode(&mut self, window: &mut Window, cx: &mut App) {
+        if self.large_file {
+            return;
+        }
+        self.set_highlight_colors(cx, false);
+        self.large_file = true;
+        self.original_content_hash = 0;
+        self.csv_view_mode = CsvViewMode::Text;
+        self.csv_table = None;
+        let plain_registry_name = language_registry_name(&SupportedLanguage::Plain).to_string();
+        self.content.update(cx, |input_state, cx| {
+            input_state.set_highlighter(plain_registry_name, cx);
+            input_state.set_folding(false, window, cx);
+            input_state.set_indent_guides(false, window, cx);
+            input_state.set_soft_wrap(false, window, cx);
+            input_state.set_show_whitespaces(false, window, cx);
+            input_state.refresh(cx);
+        });
     }
 
     /// Turn document color swatches on or off on the live `EditorState`.

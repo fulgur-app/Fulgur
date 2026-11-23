@@ -2,7 +2,7 @@ use super::super::{DecodedContents, binary_file_notice, decode_text_file};
 use super::{notice_file_name, read_failure_notice};
 use crate::fulgur::{
     Fulgur,
-    editor_tab::{ContentRevision, replace_editor_text},
+    editor_tab::{ContentRevision, is_large_file, replace_editor_text},
     state::file_modified_system_time,
     tab::Tab,
     ui::tabs::tab::TabId,
@@ -169,6 +169,13 @@ impl Fulgur {
                 let input_state = editor_tab.content.read(cx);
                 (input_state.cursor(), input_state.scroll_offset())
             };
+            if !editor_tab.large_file && is_large_file(decoded.content.len()) {
+                log::info!(
+                    "Reloaded file {} crossed the large-file threshold, switching to large-file mode",
+                    guard.path.display()
+                );
+                editor_tab.enter_large_file_mode(window, cx);
+            }
             editor_tab.content.update(cx, |input_state, cx| {
                 replace_editor_text(input_state, &decoded.content, window, cx);
             });
@@ -177,6 +184,14 @@ impl Fulgur {
             editor_tab.lossy_decode = decoded.lossy;
             editor_tab.modified = false;
             editor_tab.record_file_metadata(decoded.byte_len, disk_modified);
+            if editor_tab.large_file {
+                cx.defer_in(window, |tab, _window, cx| {
+                    if let Some(editor_tab) = tab.as_editor_mut() {
+                        editor_tab.modified = false;
+                        cx.notify();
+                    }
+                });
+            }
             tab.update_language(cx);
             if let Some(editor_tab) = tab.as_editor_mut() {
                 editor_tab.content.update(cx, |input_state, cx| {
@@ -196,7 +211,7 @@ impl Fulgur {
 mod tests {
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::{
-        editor_tab::{EditorTab, TabLocation},
+        editor_tab::{EditorTab, LARGE_FILE_THRESHOLD_BYTES, TabLocation},
         tab::Tab,
     };
 
@@ -330,6 +345,54 @@ mod tests {
                     "the caret must survive an external edit instead of snapping back to the top"
                 );
             });
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
+    fn test_reload_tab_from_disk_enters_large_file_mode_past_threshold(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("grows_past_threshold.txt");
+        std::fs::write(&path, "small").expect("failed to write initial file");
+
+        visual_cx.update(|_window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.tabs
+                    .first()
+                    .expect("expected an editor tab")
+                    .clone()
+                    .update(cx, |tab, _cx| {
+                        let editor = tab.as_editor_mut().expect("expected an editor tab");
+                        editor.location = TabLocation::Local(path.clone());
+                        editor.set_original_content_from_str("");
+                        editor.modified = false;
+                    });
+            });
+        });
+
+        let threshold =
+            usize::try_from(LARGE_FILE_THRESHOLD_BYTES).expect("threshold fits in usize");
+        std::fs::write(&path, "x".repeat(threshold + 1)).expect("failed to grow the file");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| this.reload_tab_from_disk(0, window, cx));
+        });
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|_window, cx| {
+            let editor = fulgur
+                .read(cx)
+                .tabs
+                .first()
+                .and_then(|tab| tab.read(cx).as_editor())
+                .expect("expected an editor tab");
+            assert!(
+                editor.large_file,
+                "a reload past the threshold must switch the tab to large-file mode"
+            );
+            assert_eq!(editor.content.read(cx).text().len(), threshold + 1);
+            assert!(!editor.modified, "a reload leaves the tab clean");
         });
     }
 

@@ -3,7 +3,7 @@ mod startup;
 mod sync_state;
 
 pub use notifications::{AppNotification, NotificationOrigin, spawn_notification_consumer};
-pub use sync_state::{PendingDevicesResult, SyncState};
+pub use sync_state::SyncState;
 
 use crate::fulgur::settings::ProfileId;
 use crate::fulgur::state::{
