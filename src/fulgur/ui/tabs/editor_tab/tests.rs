@@ -910,3 +910,52 @@ fn test_csv_fit_leaves_the_row_number_column_alone(cx: &mut TestAppContext) {
         .expect("failed to open test window");
     });
 }
+
+#[gpui_kit::test]
+fn test_enter_large_file_mode_drops_the_features_large_files_skip(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let mut settings = EditorSettings::new();
+    settings.highlight_colors = true;
+    let params = FromFileParams {
+        id: TabId(78),
+        path: temp_test_path("grown_past_threshold.csv"),
+        contents: "a,b\n1,2\n".to_string(),
+        encoding: "UTF-8".to_string(),
+        is_modified: false,
+        file_last_modified: None,
+    };
+
+    cx.update(|cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let mut tab = EditorTab::from_file(params, window, cx, &settings);
+            tab.ensure_csv_table(window, cx);
+            assert!(
+                tab.csv_table.is_some(),
+                "fixture should start in table view"
+            );
+            assert!(
+                tab.highlight_colors,
+                "fixture should start with swatches on"
+            );
+
+            tab.enter_large_file_mode(window, cx);
+
+            assert!(tab.large_file);
+            assert!(!tab.highlight_colors);
+            assert!(tab.csv_table.is_none());
+            assert_eq!(tab.csv_view_mode, super::CsvViewMode::Text);
+            tab.set_original_content_from_str("a,b\n1,2\n3,4\n");
+            assert_eq!(
+                tab.original_content_hash, 0,
+                "a large-file baseline must be tracked by length only"
+            );
+            tab.update_settings(window, cx, &settings);
+            assert!(
+                !tab.highlight_colors,
+                "a settings refresh must not turn features back on"
+            );
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
