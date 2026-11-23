@@ -4,6 +4,9 @@ use flexi_logger::{
     Age, Cleanup, Criterion, FileSpec, LogfileSelector, Logger, LoggerHandle, Naming,
 };
 use log::LevelFilter;
+use std::backtrace::Backtrace;
+use std::fmt::Display;
+use std::panic::{Location, PanicHookInfo};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -139,6 +142,56 @@ pub fn init() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Install a process-wide panic hook that writes every panic to the log file.
+///
+pub fn install_panic_hook() {
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log_panic(info);
+        previous_hook(info);
+    }));
+}
+
+/// Log a panic at error level and flush the logger.
+///
+/// ### Arguments
+/// - `info`: The panic information handed to the panic hook
+fn log_panic(info: &PanicHookInfo<'_>) {
+    let thread = std::thread::current();
+    let thread_name = thread.name().unwrap_or("<unnamed>");
+    let report = panic_report(
+        thread_name,
+        info.location(),
+        info.payload_as_str(),
+        &Backtrace::force_capture(),
+    );
+    log::error!("{report}");
+    if let Some(handle) = LOGGER_HANDLE.get() {
+        handle.flush();
+    }
+}
+
+/// Build the log message describing a panic.
+///
+/// ### Arguments
+/// - `thread_name`: The name of the panicking thread
+/// - `location`: Where the panic originated, when known
+/// - `message`: The panic payload, when it is a string
+/// - `backtrace`: The backtrace captured in the panic hook
+///
+/// ### Returns
+/// - `String`: A multi-line report: thread, location and message, then the backtrace
+fn panic_report(
+    thread_name: &str,
+    location: Option<&Location<'_>>,
+    message: Option<&str>,
+    backtrace: &impl Display,
+) -> String {
+    let location = location.map_or_else(|| "<unknown location>".to_string(), ToString::to_string);
+    let message = message.unwrap_or("<non-string panic payload>");
+    format!("Thread '{thread_name}' panicked at {location}: {message}\nBacktrace:\n{backtrace}")
+}
+
 /// Get the path of the log file the logger is currently writing to.
 ///
 /// ### Returns
@@ -186,11 +239,12 @@ pub fn set_debug_mode(debug_mode: bool) {
 #[cfg(test)]
 mod tests {
     use crate::fulgur::utils::logger::{
-        current_log_file, current_log_file_of, file_log_format, file_logger, set_debug_mode,
-        with_current_thread_id,
+        current_log_file, current_log_file_of, file_log_format, file_logger, panic_report,
+        set_debug_mode, with_current_thread_id,
     };
     use flexi_logger::DeferredNow;
     use log::{Level, LevelFilter, Record};
+    use std::panic::Location;
     use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
     // All assertions live in a single test function to avoid races on the
@@ -301,5 +355,33 @@ mod tests {
     #[test]
     fn current_log_file_is_none_while_the_logger_is_not_initialized() {
         assert!(current_log_file().is_none());
+    }
+
+    #[test]
+    fn panic_report_includes_thread_location_message_and_backtrace() {
+        let location = Location::caller();
+        let report = panic_report(
+            "state-writer",
+            Some(location),
+            Some("index out of bounds"),
+            &"frame 0: fulgur::main",
+        );
+        assert_eq!(
+            report,
+            format!(
+                "Thread 'state-writer' panicked at {location}: index out of bounds\nBacktrace:\nframe 0: fulgur::main"
+            )
+        );
+    }
+
+    #[test]
+    fn panic_report_uses_placeholders_for_missing_location_and_payload() {
+        let report = panic_report("main", None, None, &"");
+        assert!(
+            report.starts_with(
+                "Thread 'main' panicked at <unknown location>: <non-string panic payload>\n"
+            ),
+            "Unexpected report: {report}"
+        );
     }
 }
