@@ -117,9 +117,9 @@ pub struct EditorTab {
     /// `--read-only` command-line flag. Set through `make_read_only`, and absent
     /// from `TabState` so that it is never persisted.
     pub read_only: bool,
-    /// Whether this is a restored remote tab whose file has not been read yet,
-    /// so its buffer says nothing about the remote file.
-    pub awaiting_remote_content: bool,
+    /// Whether this is a restored tab (local or remote) whose file has not been
+    /// read yet, so its buffer says nothing about the file.
+    pub awaiting_content: bool,
     /// Subscription to the content entity keeping `modified` current. Owned by
     /// the tab entity, attached by `Tab::attach_content_subscription`, and
     /// replaced whenever the content entity is swapped.
@@ -155,7 +155,7 @@ pub struct TabTransferData {
     pub color_tag: Option<ColorTag>,
     pub log_view: bool,
     pub read_only: bool,
-    pub awaiting_remote_content: bool,
+    pub awaiting_content: bool,
 }
 
 /// Parameters for creating an editor tab as a duplicate of another
@@ -216,26 +216,26 @@ impl EditorTab {
         });
     }
 
-    /// Flag this tab as a placeholder for a remote file that has not been read yet.
+    /// Flag this tab as a placeholder for a file that has not been read yet.
     ///
     /// The buffer is locked here and not only by the rendered `Editor`, because a
     /// tab that is not active, or a CSV tab in table view, does not render one.
     ///
     /// ### Arguments
     /// - `cx`: The application context
-    pub fn mark_awaiting_remote_content(&mut self, cx: &mut App) {
-        self.awaiting_remote_content = true;
+    pub fn mark_awaiting_content(&mut self, cx: &mut App) {
+        self.awaiting_content = true;
         self.content.update(cx, |state, cx| {
             state.set_readonly(true, cx);
         });
     }
 
-    /// Clear the placeholder state once the remote file's content is in the buffer.
+    /// Clear the placeholder state once the file's content is in the buffer.
     ///
     /// ### Arguments
     /// - `cx`: The application context
-    pub fn finish_awaiting_remote_content(&mut self, cx: &mut App) {
-        self.awaiting_remote_content = false;
+    pub fn finish_awaiting_content(&mut self, cx: &mut App) {
+        self.awaiting_content = false;
         let stays_locked = self.blocks_user_edits();
         self.content.update(cx, |state, cx| {
             state.set_readonly(stays_locked, cx);
@@ -245,10 +245,10 @@ impl EditorTab {
     /// Whether the user is currently prevented from editing this tab's buffer.
     ///
     /// ### Returns
-    /// - `true`: The tab is read-only, in log view, or awaiting its remote content
+    /// - `true`: The tab is read-only, in log view, or awaiting its file content
     /// - `false`: The buffer can be edited
     pub fn blocks_user_edits(&self) -> bool {
-        self.read_only || self.log_view || self.awaiting_remote_content
+        self.read_only || self.log_view || self.awaiting_content
     }
 
     /// Whether this tab is an untitled tab holding nothing but whitespace.

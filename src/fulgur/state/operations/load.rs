@@ -5,14 +5,13 @@ use super::decision::{TabRestoreDecision, determine_tab_restore_strategy};
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, FromFileParams, TabLocation},
-    files::file_operations::{RemoteFileResult, decode_text_file},
+    files::file_operations::RemoteFileResult,
     tab::{Tab, TabId},
     ui::components_utils::{UNTITLED, UTF_8},
     ui::tabs::color_tag::ColorTag,
 };
 use gpui_kit::{App, Context, Window};
 use std::fs;
-use std::io::Read;
 use std::path::PathBuf;
 
 impl Fulgur {
@@ -39,13 +38,14 @@ impl Fulgur {
                 window_state.tabs.len()
             );
             self.tabs.clear();
-            self.inflight_remote_restore.clear();
+            self.inflight_content_loads.clear();
             // Restored tabs keep the identity they were persisted under, so the
             // first save of the session updates their rows in place rather than
             // deleting and reinserting every buffer under a fresh identity.
             let mut highest_tab_id = 0;
             let mut saved_active_editor_id = None;
             let mut changed_on_disk_tabs = Vec::new();
+            let mut placeholder_reads = Vec::new();
             let active_tab_index = window_state.active_tab_index;
             for (saved_index, tab_state) in window_state.tabs.into_iter().enumerate() {
                 let tab_id = TabId(tab_state.tab_id);
@@ -62,6 +62,11 @@ impl Fulgur {
                     if changed_on_disk && let Some(path) = editor_tab.file_path() {
                         changed_on_disk_tabs.push((editor_tab.id, path.clone()));
                     }
+                    if editor_tab.awaiting_content
+                        && let Some(path) = editor_tab.file_path()
+                    {
+                        placeholder_reads.push((editor_tab.id, path.clone()));
+                    }
                     self.tabs.push(Tab::Editor(editor_tab).into_entity(cx));
                     highest_tab_id = highest_tab_id.max(tab_id.0);
                 }
@@ -72,13 +77,19 @@ impl Fulgur {
             self.active_tab_id =
                 saved_active_editor_id.or_else(|| self.tabs.first().map(|t| t.read(cx).id()));
 
+            // A placeholder log tab turns its log view on once its read lands.
             let active_log_tab_id = self
                 .active_tab(cx)
                 .and_then(Tab::as_editor)
-                .filter(|editor| editor.log_view)
+                .filter(|editor| editor.log_view && !editor.awaiting_content)
                 .map(|editor| editor.id);
             if let Some(active_id) = active_log_tab_id {
                 self.activate_log_view(active_id, window, cx);
+            }
+            // The active tab's file is read first, as the only one on screen.
+            placeholder_reads.sort_by_key(|(tab_id, _)| Some(*tab_id) != self.active_tab_id);
+            for (tab_id, path) in placeholder_reads {
+                self.load_placeholder_file_content(tab_id, path, window, cx);
             }
 
             cx.notify();
@@ -129,10 +140,9 @@ impl Fulgur {
 
     /// Restore a single tab from saved state:
     ///
-    /// - If the tab has no unsaved content and its file exists, it will be loaded from the file.
+    /// - If the tab has no unsaved content and its file exists, it is restored as a placeholder awaiting its content, and `load_state` reads the file in the background. A file that then looks binary or fails to read closes the tab with a notification, as there is nothing to restore it from.
     /// - If the tab has unsaved content and its file exists, the saved content is restored as modified. When the file changed on disk after the save, the tab is flagged so a conflict is raised.
     /// - If a file does not exist, the saved content will be used.
-    /// - If a file with no unsaved content now looks binary, or fails to read after opening, the tab will be skipped with a warning, as there is nothing to restore it from.
     /// - If no path and no content is provided, the tab will be skipped.
     ///
     /// ### Arguments
@@ -161,7 +171,7 @@ impl Fulgur {
             .file_path
             .as_deref()
             .and_then(get_file_modified_time);
-        let mut readable_file = tab_state
+        let readable_file = tab_state
             .file_path
             .as_ref()
             .and_then(|path| fs::File::open(path).ok());
@@ -180,112 +190,84 @@ impl Fulgur {
             can_read_file,
         );
         let mut changed_on_disk = false;
-        let (content, path, encoding, is_modified, lossy_decode, file_last_modified) =
-            match decision {
-                TabRestoreDecision::RestoreRemote { remote, content } => {
-                    let is_modified = content.is_some();
-                    let restored_content = content.unwrap_or_default();
-                    let mut tab = EditorTab::from_remote_loaded(
-                        tab_id,
-                        RemoteFileResult {
-                            spec: remote.to_remote_spec(),
-                            file_size: restored_content.len(),
-                            content: restored_content,
-                            encoding: saved_encoding,
-                            lossy: saved_lossy_decode,
-                        },
-                        window,
-                        cx,
-                        &self.settings.editor_settings,
-                    );
-                    if is_modified {
-                        tab.mark_saved_baseline_unknown();
-                    } else {
-                        tab.mark_awaiting_remote_content(cx);
-                    }
-                    tab.color_tag = color_tag;
-                    return Some((tab, false));
+        let mut tab = match decision {
+            TabRestoreDecision::RestoreRemote { remote, content } => {
+                let is_modified = content.is_some();
+                let restored_content = content.unwrap_or_default();
+                let mut tab = EditorTab::from_remote_loaded(
+                    tab_id,
+                    RemoteFileResult {
+                        spec: remote.to_remote_spec(),
+                        file_size: restored_content.len(),
+                        content: restored_content,
+                        encoding: saved_encoding,
+                        lossy: saved_lossy_decode,
+                    },
+                    window,
+                    cx,
+                    &self.settings.editor_settings,
+                );
+                if is_modified {
+                    tab.mark_saved_baseline_unknown();
+                } else {
+                    tab.mark_awaiting_content(cx);
                 }
-                TabRestoreDecision::LoadFromFile { path } => {
-                    let mut bytes = Vec::new();
-                    let mut file = readable_file.take()?;
-                    let disk_modified = file.metadata().and_then(|meta| meta.modified()).ok();
-                    // A clean tab persists no buffer, so a failed read leaves
-                    // nothing to restore it from.
-                    if let Err(e) = file.read_to_end(&mut bytes) {
-                        log::warn!(
-                            "Skipping restored tab {}: cannot read file: {}",
-                            path.display(),
-                            e
-                        );
-                        return None;
-                    }
-                    let Some(decoded) = decode_text_file(bytes) else {
-                        log::warn!(
-                            "Skipping restored tab {}: file looks binary",
-                            path.display()
-                        );
-                        return None;
-                    };
-                    (
-                        decoded.content,
-                        Some(path),
-                        decoded.encoding,
-                        false,
-                        decoded.lossy,
-                        disk_modified,
-                    )
-                }
-                TabRestoreDecision::UseSavedContentWithPath {
+                tab.color_tag = color_tag;
+                return Some((tab, false));
+            }
+            TabRestoreDecision::LoadFromFile { path } => {
+                // A clean tab persists no buffer: its file is read in the
+                // background once the window is built (`load_state`).
+                let disk_len = readable_file
+                    .and_then(|file| file.metadata().ok())
+                    .map_or(0, |metadata| metadata.len());
+                EditorTab::from_file_awaiting_content(
+                    tab_id,
                     path,
-                    content,
-                    changed_on_disk: file_changed,
-                } => {
-                    changed_on_disk = file_changed;
-                    // The edits are still based on the version persisted with them,
-                    // so an unresolved disk change keeps raising its conflict.
-                    (
-                        content,
-                        Some(path),
-                        saved_encoding,
-                        true,
-                        saved_lossy_decode,
-                        persisted_baseline,
-                    )
-                }
-                TabRestoreDecision::UseSavedContentNoPath { content } => {
-                    (content, None, UTF_8.to_string(), true, false, None)
-                }
-                TabRestoreDecision::Skip => return None,
-            };
-        let mut tab = if let Some(file_path) = path {
-            let mut tab = EditorTab::from_file(
-                FromFileParams {
-                    id: tab_id,
-                    path: file_path,
-                    contents: content,
-                    encoding,
-                    is_modified,
-                    file_last_modified,
-                },
-                window,
-                cx,
-                &self.settings.editor_settings,
-            );
-            tab.lossy_decode = lossy_decode;
-            tab
-        } else {
-            EditorTab::from_unsaved_content(
-                tab_id,
+                    disk_len,
+                    window,
+                    cx,
+                    &self.settings.editor_settings,
+                )
+            }
+            TabRestoreDecision::UseSavedContentWithPath {
+                path,
                 content,
-                strip_legacy_modified_indicator(tab_state.title),
-                tab_state
-                    .share
-                    .map_or(TabLocation::Untitled, TabLocation::Shared),
-                window,
-                cx,
-                &self.settings.editor_settings,
-            )
+                changed_on_disk: file_changed,
+            } => {
+                changed_on_disk = file_changed;
+                // The edits are still based on the version persisted with them,
+                // so an unresolved disk change keeps raising its conflict.
+                let mut tab = EditorTab::from_file(
+                    FromFileParams {
+                        id: tab_id,
+                        path,
+                        contents: content,
+                        encoding: saved_encoding,
+                        is_modified: true,
+                        file_last_modified: persisted_baseline,
+                    },
+                    window,
+                    cx,
+                    &self.settings.editor_settings,
+                );
+                tab.lossy_decode = saved_lossy_decode;
+                tab
+            }
+            TabRestoreDecision::UseSavedContentNoPath { content } => {
+                EditorTab::from_unsaved_content(
+                    tab_id,
+                    content,
+                    strip_legacy_modified_indicator(tab_state.title),
+                    tab_state
+                        .share
+                        .map_or(TabLocation::Untitled, TabLocation::Shared),
+                    window,
+                    cx,
+                    &self.settings.editor_settings,
+                )
+            }
+            TabRestoreDecision::Skip => return None,
         };
 
         let opens_as_log = tab

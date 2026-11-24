@@ -66,7 +66,7 @@ impl Fulgur {
     /// - `window`: The window to save the file in
     /// - `cx`: The application context
     pub fn save_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.is_empty() || self.refuse_save_of_unloaded_remote_tab(window, cx) {
+        if self.tabs.is_empty() || self.refuse_save_of_unloaded_tab(window, cx) {
             return;
         }
         let Some(tab_id) = self

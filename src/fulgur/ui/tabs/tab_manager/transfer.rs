@@ -45,7 +45,7 @@ impl Fulgur {
             color_tag: editor.color_tag,
             log_view: editor.log_view,
             read_only: editor.read_only,
-            awaiting_remote_content: editor.awaiting_remote_content,
+            awaiting_content: editor.awaiting_content,
         })
     }
 

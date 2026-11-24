@@ -1,6 +1,7 @@
 mod external_sources;
 mod open_core;
 mod open_entry;
+mod placeholder_read;
 mod reload;
 mod tab_lookup;
 
