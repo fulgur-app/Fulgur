@@ -1,4 +1,7 @@
-use super::{CsvViewMode, EditorTab, FileMissingProbe, Jump, TabLocation, hex_color_provider};
+use super::{
+    ContentRevision, CsvViewMode, EditorTab, FileMissingProbe, Jump, TabLocation,
+    hex_color_provider,
+};
 use crate::fulgur::languages::supported_languages::{
     SupportedLanguage, language_from_content, language_registry_name,
 };
@@ -270,14 +273,20 @@ impl EditorTab {
     /// ### Arguments
     /// - `saved_hash`: Fingerprint of the content dispatched to the writer
     /// - `saved_len`: Byte length of the content dispatched to the writer
+    /// - `saved_revision`: Revision of the buffer when the snapshot was taken
     /// - `cx`: The application context
-    pub fn mark_snapshot_as_saved(&mut self, saved_hash: u64, saved_len: usize, cx: &mut App) {
-        let current_text = self.content.read(cx).text();
-        let (current_hash, current_len) = super::content_fingerprint_from_rope(current_text);
+    pub(crate) fn mark_snapshot_as_saved(
+        &mut self,
+        saved_hash: u64,
+        saved_len: usize,
+        saved_revision: ContentRevision,
+        cx: &App,
+    ) {
         self.original_content_hash = if self.large_file { 0 } else { saved_hash };
         self.original_content_len = saved_len;
         self.saved_baseline_known = true;
-        self.modified = current_len != saved_len || current_hash != saved_hash;
+        self.modified =
+            self.content_revision(cx) != saved_revision && self.content_differs_from_original(cx);
     }
 
     /// Establish a known original-content fingerprint from a string source.

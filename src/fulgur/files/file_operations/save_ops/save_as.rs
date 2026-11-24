@@ -1,11 +1,8 @@
-use super::super::{EncodedContents, encode_for_save};
-use super::completion::SaveCompletion;
+use super::completion::{SaveCompletion, SavedSnapshot};
+use super::snapshot::{EncodedSave, SaveSnapshot};
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
-    Fulgur,
-    editor_tab::{TabLocation, content_fingerprint_from_str},
-    tab::Tab,
-    ui::components_utils::UNTITLED,
+    Fulgur, editor_tab::TabLocation, tab::Tab, ui::components_utils::UNTITLED,
     utils::atomic_write::atomic_write_file,
 };
 use gpui_kit::{App, Context, Window};
@@ -31,36 +28,43 @@ impl Fulgur {
         };
         cx.spawn_in(window, async move |view, window| {
             let path = path_future.await?;
-            let contents = window
+            let snapshot = window
                 .update(|_, cx| {
                     view.update(cx, |this, cx| {
-                        this.tabs
-                            .iter()
-                            .map(|tab| tab.read(cx))
-                            .find(|tab| tab.id() == tab_id)
-                            .and_then(Tab::as_editor)
-                            .map(|editor_tab| editor_tab.content.read(cx).text().to_string())
+                        let tab = this.tab_entity_of(tab_id, cx)?;
+                        let editor_tab = tab.read(cx).as_editor()?;
+                        Some(SaveSnapshot::capture(editor_tab, cx))
                     })
                     .ok()
                     .flatten()
                 })
                 .ok()??;
             // Re-encode with the source tab's encoding. If the text cannot be represented, defer to a confirm dialog instead of writing.
+            let prepare_encoding = encoding.clone();
+            let prepared = window
+                .background_executor()
+                .spawn(async move { snapshot.prepare(&prepare_encoding) })
+                .await;
+            let fingerprint = prepared.fingerprint;
             window
                 .update(|window, cx| {
-                    _ = view.update(cx, |this, cx| match encode_for_save(&contents, &encoding) {
-                        EncodedContents::Encoded(bytes) => {
-                            this.finalize_save_as(
+                    _ = view.update(cx, |this, cx| match prepared.encoded {
+                        Ok(bytes) => {
+                            let encoded = EncodedSave {
+                                bytes,
+                                encoding,
+                                fingerprint,
+                            };
+                            this.finalize_save_as(tab_id, &path, encoded, window, cx);
+                        }
+                        Err(contents) => {
+                            Self::show_lossy_save_as_dialog(
                                 tab_id,
-                                &path,
-                                (&contents, &bytes, encoding.clone()),
+                                path,
+                                (contents, fingerprint),
+                                &encoding,
                                 window,
                                 cx,
-                            );
-                        }
-                        EncodedContents::Lossy => {
-                            this.show_lossy_save_as_dialog(
-                                tab_id, path, contents, &encoding, window, cx,
                             );
                         }
                     });
@@ -136,18 +140,23 @@ impl Fulgur {
     /// ### Arguments
     /// - `tab_id`: Stable identifier of the editor tab that started `save_file_as`
     /// - `path`: The chosen destination path
-    /// - `snapshot`: The editor text, encoded bytes, and encoding label
+    /// - `encoded`: The encoded bytes, their encoding label, and the identity of
+    ///   the editor text they encode
     /// - `window`: The window context
     /// - `cx`: The application context
     pub(crate) fn finalize_save_as(
         &mut self,
         tab_id: TabId,
         path: &Path,
-        snapshot: (&str, &[u8], String),
+        encoded: EncodedSave,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (contents, bytes, encoding) = snapshot;
+        let EncodedSave {
+            bytes,
+            encoding,
+            fingerprint,
+        } = encoded;
         if self.inflight_saves.contains_key(&tab_id) {
             log::debug!(
                 "Save already in flight for tab {tab_id}; skipping Save As to {}",
@@ -157,15 +166,14 @@ impl Fulgur {
         }
         log::debug!("Saving file as: {} ({} bytes)", path.display(), bytes.len());
         self.inflight_saves.insert(tab_id, path.to_path_buf());
-        let (saved_content_hash, saved_content_len) = content_fingerprint_from_str(contents);
         let completion = SaveCompletion {
             tab_id,
-            byte_len: bytes.len(),
-            saved_content_hash,
-            saved_content_len,
             path: path.to_path_buf(),
         };
-        let bytes = bytes.to_vec();
+        let saved = SavedSnapshot {
+            byte_len: bytes.len(),
+            fingerprint,
+        };
         cx.spawn_in(window, async move |view, window| {
             let write_path = completion.path.clone();
             let write_result = window
@@ -181,7 +189,13 @@ impl Fulgur {
             window
                 .update(|window, cx| {
                     _ = view.update(cx, |this, cx| {
-                        this.finish_save_as(&completion, encoding, write_result, window, cx);
+                        this.finish_save_as(
+                            &completion,
+                            (saved, encoding),
+                            write_result,
+                            window,
+                            cx,
+                        );
                     });
                 })
                 .ok();
@@ -193,7 +207,8 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `completion`: Dispatch-time context of the save being completed
-    /// - `encoding`: The encoding label the bytes were written in
+    /// - `written`: The editor snapshot the bytes encode, and the encoding label
+    ///   they were written in
     /// - `write_result`: The canonicalized destination path with the metadata of
     ///   the written file, or the write error
     /// - `window`: The window context
@@ -201,28 +216,22 @@ impl Fulgur {
     fn finish_save_as(
         &mut self,
         completion: &SaveCompletion,
-        encoding: String,
+        written: (SavedSnapshot, String),
         write_result: anyhow::Result<(PathBuf, Metadata)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let tab_id = completion.tab_id;
-        let byte_len = completion.byte_len;
+        let (saved, encoding) = written;
         self.inflight_saves.remove(&tab_id);
         match write_result {
             Ok((canonical_path, written)) => {
                 let path = canonical_path.as_path();
                 log::debug!("File saved successfully as: {}", path.display());
                 if self.tab_entity_of(tab_id, cx).is_some() {
-                    let saved_modified = written.modified().ok();
                     self.update_editor_tab(tab_id, cx, |editor_tab, cx| {
                         editor_tab.encoding = encoding;
-                        editor_tab.mark_snapshot_as_saved(
-                            completion.saved_content_hash,
-                            completion.saved_content_len,
-                            cx,
-                        );
-                        editor_tab.record_file_metadata(byte_len, saved_modified);
+                        saved.record_on(editor_tab, &written, cx);
                     });
                     self.retarget_tab_to_saved_file(tab_id, path, cx);
                     // After the retarget, so the new path is already watched.
@@ -243,9 +252,11 @@ impl Fulgur {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
     #[cfg(feature = "gpui-test-support")]
+    use super::{EncodedSave, SaveSnapshot};
+    #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::files::file_operations::test_helpers::setup_fulgur;
     #[cfg(feature = "gpui-test-support")]
-    use crate::fulgur::{editor_tab::TabLocation, tab::Tab};
+    use crate::fulgur::{editor_tab::TabLocation, tab::Tab, ui::components_utils::UTF_8};
     #[cfg(feature = "gpui-test-support")]
     use gpui_kit::TestAppContext;
     #[cfg(feature = "gpui-test-support")]
@@ -288,13 +299,18 @@ mod tests {
                         }
                     });
 
-                this.finalize_save_as(
-                    first_tab_id,
-                    &renamed_path,
-                    ("hello", b"hello", "UTF-8".to_string()),
-                    window,
-                    cx,
-                );
+                let prepared = this
+                    .tabs
+                    .first()
+                    .and_then(|tab| tab.read(cx).as_editor())
+                    .map(|editor_tab| SaveSnapshot::capture(editor_tab, cx).prepare(UTF_8))
+                    .expect("expected first editor tab");
+                let encoded = EncodedSave {
+                    bytes: prepared.encoded.expect("UTF-8 encodes any text"),
+                    encoding: UTF_8.to_string(),
+                    fingerprint: prepared.fingerprint,
+                };
+                this.finalize_save_as(first_tab_id, &renamed_path, encoded, window, cx);
                 let first_editor = this
                     .tabs
                     .first()

@@ -4,6 +4,7 @@ use std::{path::PathBuf, rc::Rc};
 use gpui_kit::component::{WindowExt, button::ButtonVariant, dialog::DialogButtonProps, v_flex};
 use gpui_kit::{Context, ParentElement, Styled, Window, div, px};
 
+use crate::fulgur::files::file_operations::{EncodedSave, SnapshotFingerprint};
 use crate::fulgur::{Fulgur, ui::components_utils::UTF_8};
 
 impl Fulgur {
@@ -64,15 +65,14 @@ impl Fulgur {
     /// ### Arguments
     /// - `tab_id`: Stable id of the tab being saved
     /// - `path`: The chosen destination path
-    /// - `contents`: The editor text to write as UTF-8 on confirm
+    /// - `snapshot`: The editor text to write as UTF-8 on confirm, with its identity
     /// - `encoding`: The current encoding label that cannot represent the text
     /// - `window`: The window to show the dialog in
     /// - `cx`: The application context
-    pub fn show_lossy_save_as_dialog(
-        &self,
+    pub(crate) fn show_lossy_save_as_dialog(
         tab_id: TabId,
         path: PathBuf,
-        contents: String,
+        snapshot: (String, SnapshotFingerprint),
         encoding: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -80,6 +80,7 @@ impl Fulgur {
         let entity = cx.entity().clone();
         let encoding = encoding.to_string();
         // The builder runs on every render, so it must share the buffer rather than copy it.
+        let (contents, fingerprint) = snapshot;
         let contents: Rc<str> = contents.into();
         window.open_alert_dialog(cx, move |modal, _, _| {
             let entity_for_ok = entity.clone();
@@ -107,13 +108,12 @@ impl Fulgur {
                 )
                 .on_ok(move |_, window, cx| {
                     entity_for_ok.update(cx, |this, cx| {
-                        this.finalize_save_as(
-                            tab_id,
-                            &path,
-                            (&contents, contents.as_bytes(), UTF_8.to_string()),
-                            window,
-                            cx,
-                        );
+                        let encoded = EncodedSave {
+                            bytes: contents.as_bytes().to_vec(),
+                            encoding: UTF_8.to_string(),
+                            fingerprint,
+                        };
+                        this.finalize_save_as(tab_id, &path, encoded, window, cx);
                     });
                     true
                 })
