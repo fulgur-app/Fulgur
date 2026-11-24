@@ -56,7 +56,7 @@ impl Fulgur {
         {
             tab_entity.update(cx, |tab, cx| {
                 if let Some(editor_tab) = tab.as_editor_mut() {
-                    editor_tab.mark_saved_baseline_unknown();
+                    editor_tab.mark_file_deleted();
                     cx.notify();
                 }
             });

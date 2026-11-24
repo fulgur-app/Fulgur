@@ -1,4 +1,5 @@
 use super::{restore_and_snapshot, tab_states_with};
+use crate::fulgur::state::SnapshotKind;
 use crate::fulgur::{
     editor_tab::TabLocation,
     languages::supported_languages::SupportedLanguage,
@@ -31,7 +32,7 @@ fn active_index_ignores_tabs_omitted_from_snapshot(cx: &mut TestAppContext) {
                     });
             });
 
-            this.build_window_state_without_bounds(cx)
+            this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
         })
     });
 
@@ -127,7 +128,7 @@ fn active_index_maps_preview_tab_to_its_source(cx: &mut TestAppContext) {
             });
             this.open_markdown_preview_tab(window, cx);
             assert!(matches!(this.active_tab(cx), Some(Tab::MarkdownPreview(_))));
-            this.build_window_state_without_bounds(cx)
+            this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
         })
     });
     assert_eq!(snapshot.tabs.len(), 1, "preview tabs must not be persisted");
@@ -141,7 +142,7 @@ fn active_index_is_none_when_settings_tab_is_active(cx: &mut TestAppContext) {
     let snapshot = visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             this.open_settings(window, cx);
-            this.build_window_state_without_bounds(cx)
+            this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
         })
     });
     assert_eq!(snapshot.tabs.len(), 1);

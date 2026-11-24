@@ -2,9 +2,10 @@ use super::{
     assert_recovery_content, configured_tab_states, restore_and_snapshot, sample_remote_location,
     sample_share_origin, startup_snapshot, tab_states_with,
 };
+use crate::fulgur::state::SnapshotKind;
 use crate::fulgur::{
     Fulgur,
-    editor_tab::{TabLocation, replace_editor_text},
+    editor_tab::{FileMissingProbe, TabLocation, replace_editor_text},
     files::file_watcher::{FileWatchEvent, test_helpers::settle_file_checks},
     state::persistence::TabState,
     tab::Tab,
@@ -73,7 +74,8 @@ fn same_length_edit_tab_states(
     });
     cx.run_until_parked();
     fulgur.read_with(cx, |this, cx| {
-        this.build_window_state_without_bounds(cx).tabs
+        this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
+            .tabs
     })
 }
 
@@ -136,10 +138,9 @@ fn externally_deleted_file_buffer_survives_a_restart(cx: &mut TestAppContext) {
     });
     settle_file_checks(&mut visual_cx);
 
-    let snapshot = fulgur.read_with(
-        &visual_cx,
-        crate::fulgur::Fulgur::build_window_state_without_bounds,
-    );
+    let snapshot = fulgur.read_with(&visual_cx, |this, cx| {
+        this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
+    });
     let persisted = snapshot.tabs.into_iter().next().expect("expected a tab");
     assert_recovery_content(&persisted, text);
 
@@ -153,36 +154,153 @@ fn externally_deleted_file_buffer_survives_a_restart(cx: &mut TestAppContext) {
     );
 }
 
-#[gpui_kit::test]
-fn clean_file_tab_persists_content_only_when_its_file_is_missing(cx: &mut TestAppContext) {
-    let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    let dir = TempDir::new().expect("failed to create temp dir");
-    let path = dir.path().join("watching_disabled.txt");
-    let text = "unedited text";
-    fs::write(&path, text).expect("failed to write test file");
-    let snapshot_clean_tab = |visual_cx: &mut VisualTestContext| {
-        configured_tab_states(
-            &fulgur,
-            visual_cx,
-            TabLocation::Local(path.clone()),
-            true,
-            text,
-            |editor_tab| {
-                editor_tab.set_original_content_from_str(text);
-                editor_tab.modified = false;
-            },
-        )
-    };
+/// Snapshot the window's tabs as a given kind of snapshot.
+///
+/// ### Arguments
+/// - `fulgur`: The application entity to snapshot
+/// - `cx`: The visual test context containing the application window
+/// - `kind`: When the snapshot is taken
+///
+/// ### Returns
+/// - `Vec<TabState>`: The persisted tabs of the window snapshot
+fn snapshot_tabs(
+    fulgur: &Entity<Fulgur>,
+    cx: &mut VisualTestContext,
+    kind: SnapshotKind,
+) -> Vec<TabState> {
+    fulgur.read_with(cx, |this, cx| {
+        this.build_window_state_without_bounds(cx, kind).tabs
+    })
+}
 
-    let while_present = snapshot_clean_tab(&mut visual_cx);
+/// Give the first tab a clean local file, then delete that file without any
+/// watch event reporting it.
+///
+/// ### Arguments
+/// - `fulgur`: The application entity whose first tab is configured
+/// - `cx`: The visual test context containing the application window
+/// - `dir`: The directory holding the file
+/// - `text`: The file and buffer text
+/// - `watch_files`: The value of the `watch_files` setting
+fn clean_tab_with_silently_deleted_file(
+    fulgur: &Entity<Fulgur>,
+    cx: &mut VisualTestContext,
+    dir: &TempDir,
+    text: &str,
+    watch_files: bool,
+) {
+    let path = dir.path().join("silently_deleted.txt");
+    fs::write(&path, text).expect("failed to write test file");
+    cx.update(|_, cx| {
+        fulgur.update(cx, |this, _| {
+            this.settings.editor_settings.watch_files = watch_files;
+        });
+    });
+    let while_present = configured_tab_states(
+        fulgur,
+        cx,
+        TabLocation::Local(path.clone()),
+        true,
+        text,
+        |editor_tab| {
+            editor_tab.set_original_content_from_str(text);
+            editor_tab.modified = false;
+        },
+    );
     assert!(
         while_present[0].content.is_none(),
         "a clean tab whose file exists is reloaded from that file"
     );
-
     fs::remove_file(&path).expect("failed to delete test file");
-    let once_missing = snapshot_clean_tab(&mut visual_cx);
+}
+
+#[gpui_kit::test]
+fn blocking_snapshot_stats_unwatched_files_to_keep_a_deleted_file_buffer(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let dir = TempDir::new().expect("failed to create temp dir");
+    let text = "unedited text";
+    clean_tab_with_silently_deleted_file(&fulgur, &mut visual_cx, &dir, text, false);
+
+    let once_missing = snapshot_tabs(&fulgur, &mut visual_cx, SnapshotKind::Blocking);
     assert_recovery_content(&once_missing[0], text);
+    assert!(
+        once_missing[0].last_saved.is_none(),
+        "a missing file records no version to compare against at restore"
+    );
+}
+
+#[gpui_kit::test]
+fn background_snapshot_never_stats_a_clean_local_file(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let dir = TempDir::new().expect("failed to create temp dir");
+    clean_tab_with_silently_deleted_file(&fulgur, &mut visual_cx, &dir, "unedited text", false);
+
+    let tabs = snapshot_tabs(&fulgur, &mut visual_cx, SnapshotKind::Background);
+    assert!(
+        tabs[0].content.is_none(),
+        "only a stat could notice this deletion, and an autosave must not touch the disk"
+    );
+}
+
+#[gpui_kit::test]
+fn blocking_snapshot_trusts_the_watcher_for_watched_files(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let dir = TempDir::new().expect("failed to create temp dir");
+    clean_tab_with_silently_deleted_file(&fulgur, &mut visual_cx, &dir, "unedited text", true);
+
+    let tabs = snapshot_tabs(&fulgur, &mut visual_cx, SnapshotKind::Blocking);
+    assert!(
+        tabs[0].content.is_none(),
+        "with watching on, only a reported deletion makes a clean buffer worth keeping"
+    );
+}
+
+#[gpui_kit::test]
+fn background_snapshot_keeps_the_buffer_of_a_reported_deletion(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let dir = TempDir::new().expect("failed to create temp dir");
+    let path = dir.path().join("silently_deleted.txt");
+    let text = "only remaining copy";
+    clean_tab_with_silently_deleted_file(&fulgur, &mut visual_cx, &dir, text, true);
+    visual_cx.update(|_, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_active_editor_tab(cx, |editor_tab, _| {
+                editor_tab.file_last_modified = Some(std::time::SystemTime::now());
+            });
+        });
+    });
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.handle_file_watch_event(FileWatchEvent::Deleted(path), window, cx);
+        });
+    });
+    settle_file_checks(&mut visual_cx);
+
+    let tabs = snapshot_tabs(&fulgur, &mut visual_cx, SnapshotKind::Background);
+    assert_recovery_content(&tabs[0], text);
+    assert!(
+        tabs[0].last_saved.is_none(),
+        "a reported deletion leaves no file version behind the buffer"
+    );
+}
+
+#[gpui_kit::test]
+fn recording_a_disk_version_clears_a_reported_deletion(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let missing_after_save = fulgur.update(&mut visual_cx, |this, cx| {
+        this.update_active_editor_tab(cx, |editor_tab, _| {
+            editor_tab.location = TabLocation::Local("/tmp/recreated.txt".into());
+            editor_tab.mark_file_deleted();
+            assert!(editor_tab.local_file_missing(FileMissingProbe::Reported));
+            editor_tab.record_file_metadata(0, Some(std::time::SystemTime::now()));
+            editor_tab.local_file_missing(FileMissingProbe::Reported)
+        })
+    });
+    assert_eq!(
+        missing_after_save,
+        Some(false),
+        "a save or reload proves the file exists again"
+    );
 }
 
 #[gpui_kit::test]

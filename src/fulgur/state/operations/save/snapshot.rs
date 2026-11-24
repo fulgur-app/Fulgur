@@ -1,3 +1,4 @@
+use super::SnapshotKind;
 use crate::fulgur::{
     Fulgur,
     editor_tab::TabLocation,
@@ -15,26 +16,28 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `cx`: The application context
+    /// - `kind`: When the snapshot is taken, which decides whether files are stat'ed
     ///
     /// ### Returns
     /// - `Vec<TabState>`: The tab states for all tabs
-    fn build_tab_states(&self, cx: &App) -> Vec<TabState> {
+    fn build_tab_states(&self, cx: &App, kind: SnapshotKind) -> Vec<TabState> {
         let persist_unsaved = self.settings.app_settings.persist_unsaved_buffers;
+        let probe = self.file_missing_probe(kind);
         let mut tab_states = Vec::new();
         for tab in &self.tabs {
             if let Some(editor_tab) = tab.read(cx).as_editor() {
                 // Shared with the close-flow warning, so a buffer this snapshot
                 // leaves out for its size is always offered a save first.
-                let keeps_buffer = editor_tab.snapshot_keeps_buffer(persist_unsaved, cx);
+                let keeps_buffer = editor_tab.snapshot_keeps_buffer(persist_unsaved, probe, cx);
                 let tab_state = match &editor_tab.location {
                     TabLocation::Local(path) => {
                         if keeps_buffer {
                             let current_content = editor_tab.content.read(cx).text().clone();
-                            // A missing file leaves the buffer as the only copy, even
-                            // when no watch event reported the deletion.
+                            // A missing file records no version, so a file appearing
+                            // there before the restore is treated as a conflict.
                             let last_saved = editor_tab
                                 .file_last_modified
-                                .filter(|_| path.exists())
+                                .filter(|_| !editor_tab.local_file_missing(probe))
                                 .and_then(format_modified_time);
                             TabState {
                                 tab_id: editor_tab.id.0,
@@ -145,12 +148,13 @@ impl Fulgur {
     ///
     /// ### Arguments
     /// - `cx`: The application context
+    /// - `kind`: When the snapshot is taken
     ///
     /// ### Returns
     /// - `WindowState`: The `WindowState` for this window (with cached bounds)
-    pub fn build_window_state_without_bounds(&self, cx: &App) -> WindowState {
+    pub fn build_window_state_without_bounds(&self, cx: &App, kind: SnapshotKind) -> WindowState {
         let window_bounds = self.cached_window_bounds.clone().unwrap_or_default();
-        let tabs = self.build_tab_states(cx);
+        let tabs = self.build_tab_states(cx, kind);
         let active_tab_index = self.active_editor_index_for_state(cx, &tabs);
         WindowState {
             window_id: self.persistent_window_id,
@@ -165,16 +169,17 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     /// - `window`: The window (needed for bounds)
+    /// - `kind`: When the snapshot is taken
     ///
     /// ### Returns
     /// - `WindowState`: The `WindowState` for this window
-    pub fn build_window_state(&self, cx: &App, window: &Window) -> WindowState {
+    pub fn build_window_state(&self, cx: &App, window: &Window, kind: SnapshotKind) -> WindowState {
         let display_id = window
             .display(cx)
             .and_then(|d| u32::try_from(u64::from(d.id())).ok());
         let window_bounds =
             SerializedWindowBounds::from_gpui_bounds(window.window_bounds(), display_id);
-        let tabs = self.build_tab_states(cx);
+        let tabs = self.build_tab_states(cx, kind);
         let active_tab_index = self.active_editor_index_for_state(cx, &tabs);
         WindowState {
             window_id: self.persistent_window_id,

@@ -5,7 +5,7 @@ mod writer;
 
 pub use db::{StateDb, import_legacy_json};
 pub(crate) use operations::schedule_session_autosave;
-pub use operations::{TabRestoreDecision, determine_tab_restore_strategy};
+pub use operations::{SnapshotKind, TabRestoreDecision, determine_tab_restore_strategy};
 pub use persistence::{
     DeviceKeyPins, DeviceKeyStatus, MAX_REMOTE_HISTORY_ENTRIES, RemoteHistory,
     SerializedRemoteSpec, SerializedWindowBounds, TabContent, TabState, WindowState, WindowsState,

@@ -1,4 +1,4 @@
-use super::{CsvViewMode, EditorTab, Jump, TabLocation, hex_color_provider};
+use super::{CsvViewMode, EditorTab, FileMissingProbe, Jump, TabLocation, hex_color_provider};
 use crate::fulgur::languages::supported_languages::{
     SupportedLanguage, language_from_content, language_registry_name,
 };
@@ -132,7 +132,18 @@ impl EditorTab {
     /// - `last_modified`: The file's modification time for that version (see `file_last_modified`)
     pub fn record_file_metadata(&mut self, content_len: usize, last_modified: Option<SystemTime>) {
         self.file_size_bytes = Some(content_len as u64);
+        self.record_disk_version(last_modified);
+    }
+
+    /// Record the modification time of the disk version the buffer is now based on.
+    /// The buffer matching a disk version proves the file exists, so this also
+    /// clears `file_missing`.
+    ///
+    /// ### Arguments
+    /// - `last_modified`: The file's modification time for that version (see `file_last_modified`)
+    pub fn record_disk_version(&mut self, last_modified: Option<SystemTime>) {
         self.file_last_modified = last_modified;
+        self.file_missing = false;
     }
 
     /// Update the editor's display settings. Tab size cannot be changed after `EditorState` creation.
@@ -291,6 +302,29 @@ impl EditorTab {
         self.modified = true;
     }
 
+    /// Mark the file backing this tab as deleted, leaving the buffer as its only copy.
+    pub fn mark_file_deleted(&mut self) {
+        self.file_missing = true;
+        self.mark_saved_baseline_unknown();
+    }
+
+    /// Whether this tab is a local file that is known to be gone from disk.
+    ///
+    /// ### Arguments
+    /// - `probe`: Whether a reported deletion is enough or the file must also be stat'ed
+    ///
+    /// ### Returns
+    /// - `bool`: `true` for a local tab whose file was reported deleted, or
+    ///   found missing by `FileMissingProbe::Stat`
+    pub fn local_file_missing(&self, probe: FileMissingProbe) -> bool {
+        match &self.location {
+            TabLocation::Local(path) => {
+                self.file_missing || (probe == FileMissingProbe::Stat && !path.exists())
+            }
+            TabLocation::Remote(_) | TabLocation::Untitled | TabLocation::Shared(_) => false,
+        }
+    }
+
     /// Whether this tab's content is too large to embed in the persisted state file.
     ///
     /// ### Arguments
@@ -306,16 +340,24 @@ impl EditorTab {
     ///
     /// ### Arguments
     /// - `persist_unsaved`: The value of the `persist_unsaved_buffers` setting
+    /// - `probe`: How a missing local file is detected
     /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `bool`: `true` when the buffer is the only copy of content worth restoring
-    fn snapshot_wants_buffer(&self, persist_unsaved: bool, cx: &App) -> bool {
+    fn snapshot_wants_buffer(
+        &self,
+        persist_unsaved: bool,
+        probe: FileMissingProbe,
+        cx: &App,
+    ) -> bool {
         if !persist_unsaved {
             return false;
         }
         match &self.location {
-            TabLocation::Local(path) => self.has_unsaved_changes_for_snapshot(cx) || !path.exists(),
+            TabLocation::Local(_) => {
+                self.has_unsaved_changes_for_snapshot(cx) || self.local_file_missing(probe)
+            }
             TabLocation::Remote(_) => self.has_unsaved_changes_for_snapshot(cx),
             TabLocation::Untitled | TabLocation::Shared(_) => true,
         }
@@ -325,12 +367,19 @@ impl EditorTab {
     ///
     /// ### Arguments
     /// - `persist_unsaved`: The value of the `persist_unsaved_buffers` setting
+    /// - `probe`: How a missing local file is detected
     /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `bool`: `true` when the snapshot must carry the buffer text
-    pub fn snapshot_keeps_buffer(&self, persist_unsaved: bool, cx: &App) -> bool {
-        self.snapshot_wants_buffer(persist_unsaved, cx) && !self.content_too_large_to_persist(cx)
+    pub fn snapshot_keeps_buffer(
+        &self,
+        persist_unsaved: bool,
+        probe: FileMissingProbe,
+        cx: &App,
+    ) -> bool {
+        self.snapshot_wants_buffer(persist_unsaved, probe, cx)
+            && !self.content_too_large_to_persist(cx)
     }
 
     /// Whether closing would silently drop this tab's buffer because it is too
@@ -338,12 +387,19 @@ impl EditorTab {
     ///
     /// ### Arguments
     /// - `persist_unsaved`: The value of the `persist_unsaved_buffers` setting
+    /// - `probe`: How a missing local file is detected
     /// - `cx`: The application context
     ///
     /// ### Returns
     /// - `bool`: `true` when the snapshot would keep the buffer but for its size
-    pub fn needs_large_file_close_warning(&self, persist_unsaved: bool, cx: &App) -> bool {
-        self.snapshot_wants_buffer(persist_unsaved, cx) && self.content_too_large_to_persist(cx)
+    pub fn needs_large_file_close_warning(
+        &self,
+        persist_unsaved: bool,
+        probe: FileMissingProbe,
+        cx: &App,
+    ) -> bool {
+        self.snapshot_wants_buffer(persist_unsaved, probe, cx)
+            && self.content_too_large_to_persist(cx)
     }
 
     /// Check whether current buffer content differs from the saved baseline.

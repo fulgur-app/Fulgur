@@ -1,4 +1,5 @@
 use super::{assert_recovery_content, restore_and_snapshot, sample_share_origin, startup_snapshot};
+use crate::fulgur::state::SnapshotKind;
 use crate::fulgur::{
     shared_state::SharedAppState,
     state::persistence::{
@@ -69,7 +70,7 @@ fn restore_consumes_the_window_slot_and_keeps_other_slots(cx: &mut TestAppContex
     let restored_again = visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| {
             this.load_state(window, cx, 0);
-            this.build_window_state_without_bounds(cx)
+            this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
         })
     });
     assert_eq!(

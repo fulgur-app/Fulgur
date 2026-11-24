@@ -1604,6 +1604,7 @@ fn make_transfer_data() -> TabTransferData {
         show_markdown_preview: false,
         file_size_bytes: None,
         file_last_modified: None,
+        file_missing: false,
         cursor_position: Position::default(),
         csv_view_mode: crate::fulgur::ui::tabs::editor_tab::CsvViewMode::Text,
         csv_delimiter: b',',

@@ -4,6 +4,7 @@ mod read_only;
 mod restore;
 mod snapshot;
 
+use crate::fulgur::state::SnapshotKind;
 use crate::fulgur::{
     Fulgur,
     editor_tab::{EditorTab, TabLocation},
@@ -72,7 +73,8 @@ pub(super) fn configured_tab_states(
         });
     });
     fulgur.read_with(cx, |this, cx| {
-        this.build_window_state_without_bounds(cx).tabs
+        this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
+            .tabs
     })
 }
 
@@ -142,7 +144,9 @@ pub(super) fn restore_and_snapshot(
             this.load_state(window, cx, 0);
         });
     });
-    fulgur.read_with(cx, crate::fulgur::Fulgur::build_window_state_without_bounds)
+    fulgur.read_with(cx, |this, cx| {
+        this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
+    })
 }
 
 /// Assert that a persisted tab still carries the expected recovery text.

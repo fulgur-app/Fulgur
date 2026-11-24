@@ -38,6 +38,7 @@ impl Fulgur {
             show_markdown_preview: editor.show_markdown_preview,
             file_size_bytes: editor.file_size_bytes,
             file_last_modified: editor.file_last_modified,
+            file_missing: editor.file_missing,
             cursor_position: content_state.cursor_position(),
             csv_view_mode: editor.csv_view_mode,
             csv_delimiter: editor.csv_delimiter,

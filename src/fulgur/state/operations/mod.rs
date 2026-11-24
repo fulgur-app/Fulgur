@@ -7,3 +7,4 @@ mod save;
 
 pub(crate) use autosave::schedule_session_autosave;
 pub use decision::{TabRestoreDecision, determine_tab_restore_strategy};
+pub use save::SnapshotKind;
