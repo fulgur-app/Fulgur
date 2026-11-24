@@ -98,7 +98,6 @@ impl Fulgur {
         register_action!(app_content, cx, ui::menus::JumpToLine => show_jump_to_line_dialog);
         register_action!(app_content, cx, ui::menus::SelectTheme => select_theme_sheet);
         register_action!(app_content, cx, ui::menus::About => call about);
-        register_action!(app_content, cx, ui::menus::SwitchTheme => switch_to_theme(.0, no_window));
         register_action!(app_content, cx, ui::tabs::tab_bar::CloseTabAction => on_close_tab_action(&action));
         register_action!(app_content, cx, ui::tabs::tab_bar::CloseTabsToLeft => on_close_tabs_to_left(&action));
         register_action!(app_content, cx, ui::tabs::tab_bar::CloseTabsToRight => on_close_tabs_to_right(&action));

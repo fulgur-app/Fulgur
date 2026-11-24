@@ -37,12 +37,6 @@ macro_rules! register_action {
             this.$method(window, cx, action.0.clone());
         }));
     };
-    // Action with tuple struct .0 → method call with extracted param (param, cx) - no window
-    ($div:expr, $cx:expr, $action:ty => $method:ident(.0, no_window)) => {
-        $div = $div.on_action($cx.listener(|this, action: &$action, _window, cx| {
-            this.$method(action.0.clone(), cx);
-        }));
-    };
     // Action with action reference passed to method (action, window, cx)
     ($div:expr, $cx:expr, $action:ty => $method:ident(&action)) => {
         $div = $div.on_action($cx.listener(|this, action: &$action, window, cx| {
