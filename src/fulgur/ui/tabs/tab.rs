@@ -155,6 +155,7 @@ impl Tab {
                 return;
             }
             if let Tab::Editor(editor_tab) = this {
+                editor_tab.record_content_change();
                 if editor_tab.invalidate_csv_table_on_external_change(cx) {
                     cx.notify();
                 }

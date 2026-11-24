@@ -1,11 +1,9 @@
 use super::super::{EncodedContents, RemoteSaveRequest, encode_for_save};
-use super::completion::SaveCompletion;
+use super::completion::{SaveCompletion, SavedSnapshot};
+use super::snapshot::SaveSnapshot;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
-    Fulgur,
-    editor_tab::{TabLocation, content_fingerprint_from_str},
-    state::file_modified_system_time,
-    tab::Tab,
+    Fulgur, editor_tab::TabLocation, state::file_modified_system_time, tab::Tab,
     utils::atomic_write::atomic_write_file,
 };
 use gpui_kit::component::{WindowExt, notification::NotificationType};
@@ -26,11 +24,15 @@ pub(crate) enum DiskChangePolicy {
 
 /// Result of a background local save that did not fail.
 pub(super) enum LocalWriteOutcome {
-    /// The file was written; holds the metadata of the written version.
-    Written(Metadata),
+    /// The file was written; holds the metadata of the written version and
+    /// the editor snapshot it contains.
+    Written(Metadata, SavedSnapshot),
     /// The write was refused because the file changed on disk since the
     /// version the buffer is based on.
     ChangedOnDisk,
+    /// Nothing was written because the buffer cannot be represented in the
+    /// tab's encoding; holds that encoding label.
+    Unencodable(String),
 }
 
 /// Destination of a local save and the disk state it expects to replace.
@@ -57,6 +59,46 @@ pub(crate) fn disk_changed_since(path: &Path, baseline: Option<SystemTime>) -> b
         return false;
     };
     file_modified_system_time(path).is_some_and(|current| current != baseline)
+}
+
+/// Encode a save snapshot and write it to a local file, unless the file changed
+/// on disk since the version the buffer is based on. Linear in the buffer size,
+/// so it must run on a background executor.
+///
+/// ### Arguments
+/// - `target`: Destination path and the disk state the write expects to replace
+/// - `snapshot`: The editor text to write
+/// - `encoding`: The encoding label to write the text in
+///
+/// ### Errors
+/// - Returns an `anyhow::Error` if the atomic write fails.
+///
+/// ### Returns
+/// - `Ok(LocalWriteOutcome)`: The file was written, or deliberately left alone
+/// - `Err(anyhow::Error)`: The write failed
+fn write_local_snapshot(
+    target: &LocalSaveTarget,
+    snapshot: SaveSnapshot,
+    encoding: String,
+) -> anyhow::Result<LocalWriteOutcome> {
+    let prepared = snapshot.prepare(&encoding);
+    let Ok(bytes) = prepared.encoded else {
+        return Ok(LocalWriteOutcome::Unencodable(encoding));
+    };
+    if disk_changed_since(&target.path, target.disk_baseline) {
+        return Ok(LocalWriteOutcome::ChangedOnDisk);
+    }
+    log::debug!(
+        "Writing file: {} ({} bytes)",
+        target.path.display(),
+        bytes.len()
+    );
+    let saved = SavedSnapshot {
+        byte_len: bytes.len(),
+        fingerprint: prepared.fingerprint,
+    };
+    atomic_write_file(&target.path, &bytes)
+        .map(|written| LocalWriteOutcome::Written(written, saved))
 }
 
 impl Fulgur {
@@ -119,11 +161,11 @@ impl Fulgur {
         let Some(tab) = self.tab_entity_of(tab_id, cx) else {
             return;
         };
-        let (location, content_entity, encoding, lossy_decode, read_only, disk_baseline) =
+        let (location, snapshot, encoding, lossy_decode, read_only, disk_baseline) =
             match tab.read(cx) {
                 Tab::Editor(editor_tab) => (
                     editor_tab.location.clone(),
-                    editor_tab.content.clone(),
+                    SaveSnapshot::capture(editor_tab, cx),
                     editor_tab.encoding.clone(),
                     editor_tab.lossy_decode,
                     editor_tab.read_only,
@@ -145,21 +187,12 @@ impl Fulgur {
             );
             return;
         }
-        let contents = content_entity.read(cx).text().to_string();
-        // Re-encode using the tab's stored encoding so legacy-encoded files are
-        // not silently rewritten as UTF-8.
-        let bytes = if lossy_decode {
-            None
-        } else {
-            match encode_for_save(&contents, &encoding) {
-                EncodedContents::Encoded(bytes) => Some(bytes),
-                EncodedContents::Lossy => None,
-            }
-        };
-        let Some(bytes) = bytes else {
+        if lossy_decode {
             self.show_lossy_save_dialog(tab_id, &encoding, window, cx);
             return;
-        };
+        }
+        // Both branches re-encode using the tab's stored encoding so
+        // legacy-encoded files are not silently rewritten as UTF-8.
         match location {
             TabLocation::Local(path) => {
                 let target = LocalSaveTarget {
@@ -169,9 +202,14 @@ impl Fulgur {
                         DiskChangePolicy::Overwrite => None,
                     },
                 };
-                self.spawn_local_save(tab_id, target, &contents, bytes, window, cx);
+                self.spawn_local_save(tab_id, target, snapshot, encoding, window, cx);
             }
             TabLocation::Remote(spec) => {
+                let contents = snapshot.into_string();
+                let EncodedContents::Encoded(bytes) = encode_for_save(&contents, &encoding) else {
+                    self.show_lossy_save_dialog(tab_id, &encoding, window, cx);
+                    return;
+                };
                 let request = RemoteSaveRequest {
                     tab_id,
                     spec,
@@ -185,56 +223,42 @@ impl Fulgur {
         }
     }
 
-    /// Dispatch a background atomic write of a local tab's encoded content.
+    /// Dispatch the background encoding and atomic write of a local tab's content.
     ///
     /// ### Arguments
     /// - `tab_id`: Stable identifier of the editor tab being saved
     /// - `target`: Destination path and the disk state the write expects to replace
-    /// - `contents`: The editor snapshot represented by `bytes`
-    /// - `bytes`: The already-encoded file contents
+    /// - `snapshot`: The editor text to write
+    /// - `encoding`: The encoding label to write the text in
     /// - `window`: The window context
     /// - `cx`: The application context
     fn spawn_local_save(
         &mut self,
         tab_id: TabId,
         target: LocalSaveTarget,
-        contents: &str,
-        bytes: Vec<u8>,
+        snapshot: SaveSnapshot,
+        encoding: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let LocalSaveTarget {
-            path,
-            disk_baseline,
-        } = target;
         if self.inflight_saves.contains_key(&tab_id) {
             log::debug!(
                 "Save already in flight for {}; skipping duplicate save",
-                path.display()
+                target.path.display()
             );
             return;
         }
-        log::debug!("Saving file: {} ({} bytes)", path.display(), bytes.len());
-        self.inflight_saves.insert(tab_id, path.clone());
-        let (saved_content_hash, saved_content_len) = content_fingerprint_from_str(contents);
+        log::debug!("Saving file: {}", target.path.display());
+        self.inflight_saves.insert(tab_id, target.path.clone());
         let completion = SaveCompletion {
             tab_id,
-            byte_len: bytes.len(),
-            saved_content_hash,
-            saved_content_len,
-            path,
+            path: target.path.clone(),
         };
         cx.notify();
         cx.spawn_in(window, async move |view, window| {
-            let write_path = completion.path.clone();
             let write_result = window
                 .background_executor()
-                .spawn(async move {
-                    if disk_changed_since(&write_path, disk_baseline) {
-                        return Ok(LocalWriteOutcome::ChangedOnDisk);
-                    }
-                    atomic_write_file(&write_path, &bytes).map(LocalWriteOutcome::Written)
-                })
+                .spawn(async move { write_local_snapshot(&target, snapshot, encoding) })
                 .await;
             window
                 .update(|window, cx| {
@@ -263,7 +287,7 @@ impl Fulgur {
     ) {
         self.inflight_saves.remove(&completion.tab_id);
         match write_result {
-            Ok(LocalWriteOutcome::Written(written)) => {
+            Ok(LocalWriteOutcome::Written(written, saved)) => {
                 log::debug!("File saved successfully: {}", completion.path.display());
                 // For Inode-based backends (Linux inotify, BSD kqueue).
                 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -272,15 +296,8 @@ impl Fulgur {
                     self.watch_file(&completion.path);
                 }
                 self.record_known_disk_state(&completion.path, &written, window, cx);
-                let byte_len = completion.byte_len;
-                let saved_modified = written.modified().ok();
                 self.update_editor_tab(completion.tab_id, cx, |editor_tab, cx| {
-                    editor_tab.mark_snapshot_as_saved(
-                        completion.saved_content_hash,
-                        completion.saved_content_len,
-                        cx,
-                    );
-                    editor_tab.record_file_metadata(byte_len, saved_modified);
+                    saved.record_on(editor_tab, &written, cx);
                     cx.notify();
                 });
                 cx.notify();
@@ -296,6 +313,11 @@ impl Fulgur {
                 self.show_save_conflict_dialog(&completion.path, completion.tab_id, window, cx);
                 cx.notify();
             }
+            Ok(LocalWriteOutcome::Unencodable(encoding)) => {
+                self.cancel_close_after_failed_local_save(completion.tab_id);
+                self.show_lossy_save_dialog(completion.tab_id, &encoding, window, cx);
+                cx.notify();
+            }
             Err(e) => {
                 self.cancel_close_after_failed_local_save(completion.tab_id);
                 Self::handle_failed_save(completion, &e, window, cx);
@@ -309,23 +331,25 @@ mod tests {
     use super::LocalWriteOutcome;
     #[cfg(feature = "gpui-test-support")]
     use super::SaveCompletion;
+    use super::{SaveSnapshot, SavedSnapshot};
     use crate::fulgur::Fulgur;
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::PendingSaveCloseAction;
-    use crate::fulgur::editor_tab::replace_editor_text;
     #[cfg(feature = "gpui-test-support")]
-    use crate::fulgur::editor_tab::{TabLocation, content_fingerprint_from_str};
+    use crate::fulgur::editor_tab::TabLocation;
+    use crate::fulgur::editor_tab::replace_editor_text;
     #[cfg(feature = "gpui-test-support")]
     use crate::fulgur::files::file_operations::test_helpers::{
         setup_fulgur, setup_fulgur_with_root,
     };
     use crate::fulgur::state::file_modified_system_time;
+    use crate::fulgur::ui::components_utils::UTF_8;
     use crate::fulgur::ui::tabs::tab::TabId;
     use crate::fulgur::utils::atomic_write::atomic_write_file;
     use crate::test_support::{has_active_dialog, write_with_mtime};
     #[cfg(feature = "gpui-test-support")]
     use gpui_kit::TestAppContext;
-    use gpui_kit::{Entity, Modifiers, VisualTestContext};
+    use gpui_kit::{App, Entity, Modifiers, VisualTestContext};
     use std::path::Path;
     use std::time::SystemTime;
     #[cfg(feature = "gpui-test-support")]
@@ -413,6 +437,25 @@ mod tests {
             .expect("the dialog button should be rendered");
         visual_cx.simulate_click(bounds.center(), Modifiers::none());
         visual_cx.run_until_parked();
+    }
+
+    /// Describe a tab's current buffer as the snapshot a UTF-8 save would write.
+    ///
+    /// ### Arguments
+    /// - `this`: The window state owning the tab
+    /// - `tab_id`: The tab to describe
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `SavedSnapshot`: The byte length, fingerprint and revision of the buffer
+    fn saved_snapshot_of(this: &Fulgur, tab_id: TabId, cx: &App) -> SavedSnapshot {
+        let tab = this.tab_entity_of(tab_id, cx).expect("expected the tab");
+        let editor_tab = tab.read(cx).as_editor().expect("expected an editor tab");
+        let prepared = SaveSnapshot::capture(editor_tab, cx).prepare(UTF_8);
+        SavedSnapshot {
+            byte_len: prepared.encoded.expect("UTF-8 encodes any text").len(),
+            fingerprint: prepared.fingerprint,
+        }
     }
 
     /// Read a tab's buffer text, dirty flag and disk baseline.
@@ -560,6 +603,55 @@ mod tests {
 
     #[cfg(feature = "gpui-test-support")]
     #[gpui_kit::test]
+    fn test_same_length_edit_during_local_save_stays_dirty(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("same_length_edit.txt");
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let tab = this.tabs.last().expect("expected at least one tab").clone();
+                tab.update(cx, |tab, cx| {
+                    let editor_tab = tab.as_editor_mut().expect("expected editor tab");
+                    editor_tab.location = TabLocation::Local(path.clone());
+                    editor_tab.content.update(cx, |state, cx| {
+                        replace_editor_text(state, "aaaa", window, cx);
+                    });
+                });
+            });
+        });
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                this.save_file(window, cx);
+                let tab = this.tabs.last().expect("expected at least one tab").clone();
+                tab.update(cx, |tab, cx| {
+                    tab.as_editor_mut()
+                        .expect("expected editor tab")
+                        .content
+                        .update(cx, |state, cx| {
+                            replace_editor_text(state, "bbbb", window, cx);
+                        });
+                });
+            });
+        });
+        visual_cx.run_until_parked();
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("file should have been saved"),
+            "aaaa"
+        );
+        visual_cx.update(|_, cx| {
+            let tab = fulgur.read(cx).tabs.last().expect("expected tab").read(cx);
+            let editor_tab = tab.as_editor().expect("expected editor tab");
+            assert!(
+                editor_tab.modified,
+                "an edit of the same length made during the write must remain dirty"
+            );
+        });
+    }
+
+    #[cfg(feature = "gpui-test-support")]
+    #[gpui_kit::test]
     fn test_save_then_close_waits_for_success(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
@@ -614,7 +706,6 @@ mod tests {
         let dir = TempDir::new().expect("failed to create temp dir");
         let path = dir.path().join("missing-parent").join("missing.txt");
         let contents = "not persisted";
-        let (saved_content_hash, saved_content_len) = content_fingerprint_from_str(contents);
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
@@ -633,9 +724,6 @@ mod tests {
                     &SaveCompletion {
                         tab_id,
                         path: path.clone(),
-                        byte_len: contents.len(),
-                        saved_content_hash,
-                        saved_content_len,
                     },
                     Err(anyhow::anyhow!("delayed write failed")),
                     window,
@@ -841,7 +929,6 @@ mod tests {
         let path = dir.path().join("close_after_conflict.txt");
         let baseline = write_with_mtime(&path, "loaded", 1_000);
         let tab_id = open_unwatched_dirty_tab(&fulgur, &mut visual_cx, &path, baseline);
-        let (saved_content_hash, saved_content_len) = content_fingerprint_from_str(LOCAL_TEXT);
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
@@ -851,9 +938,6 @@ mod tests {
                     &SaveCompletion {
                         tab_id,
                         path: path.clone(),
-                        byte_len: LOCAL_TEXT.len(),
-                        saved_content_hash,
-                        saved_content_len,
                     },
                     Ok(LocalWriteOutcome::ChangedOnDisk),
                     window,
@@ -878,20 +962,17 @@ mod tests {
             atomic_write_file(&path, LOCAL_TEXT.as_bytes()).expect("write should succeed");
         // Lands after the editor's rename, before its save completes.
         write_with_mtime(&path, EXTERNAL_TEXT, 3_000);
-        let (saved_content_hash, saved_content_len) = content_fingerprint_from_str(LOCAL_TEXT);
 
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.inflight_saves.insert(tab_id, path.clone());
+                let saved = saved_snapshot_of(this, tab_id, cx);
                 this.finish_local_save(
                     &SaveCompletion {
                         tab_id,
                         path: path.clone(),
-                        byte_len: LOCAL_TEXT.len(),
-                        saved_content_hash,
-                        saved_content_len,
                     },
-                    Ok(LocalWriteOutcome::Written(written.clone())),
+                    Ok(LocalWriteOutcome::Written(written.clone(), saved)),
                     window,
                     cx,
                 );
