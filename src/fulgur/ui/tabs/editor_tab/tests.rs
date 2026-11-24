@@ -57,7 +57,7 @@ fn make_transfer_data() -> TabTransferData {
         color_tag: None,
         log_view: false,
         read_only: false,
-        awaiting_remote_content: false,
+        awaiting_content: false,
     }
 }
 
@@ -178,6 +178,52 @@ fn test_editor_tab_from_file_construction(cx: &mut TestAppContext) {
             assert_eq!(tab.file_size_bytes, Some(12));
             assert_eq!(tab.file_last_modified, Some(disk_modified));
             assert_eq!(tab.content.read(cx).text().to_string(), "# title\nbody");
+            cx.new(|_| EmptyView)
+        })
+        .expect("failed to open test window");
+    });
+}
+
+#[gpui_kit::test]
+fn test_editor_tab_awaiting_file_content_starts_locked_and_sized_for_the_file(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let settings = EditorSettings::new();
+    let large_len = super::LARGE_FILE_THRESHOLD_BYTES + 1;
+
+    cx.update(|cx| {
+        cx.open_window(WindowOptions::default(), |window, cx| {
+            let small = EditorTab::from_file_awaiting_content(
+                TabId(1),
+                temp_test_path("placeholder.md"),
+                12,
+                window,
+                cx,
+                &settings,
+            );
+            assert!(small.awaiting_content);
+            assert!(!small.modified);
+            assert!(!small.large_file);
+            assert!(!small.content.read(cx).is_editable());
+            assert_eq!(small.language, SupportedLanguage::Markdown);
+            assert_eq!(small.file_size_bytes, Some(12));
+            assert_eq!(small.file_last_modified, None);
+
+            let large = EditorTab::from_file_awaiting_content(
+                TabId(2),
+                temp_test_path("placeholder.log"),
+                large_len,
+                window,
+                cx,
+                &settings,
+            );
+            assert!(large.awaiting_content);
+            assert!(
+                large.large_file,
+                "a placeholder for a large file must render as the large file will"
+            );
+            assert_eq!(large.file_size_bytes, Some(large_len));
             cx.new(|_| EmptyView)
         })
         .expect("failed to open test window");
@@ -550,7 +596,7 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
         color_tag: None,
         log_view: false,
         read_only: false,
-        awaiting_remote_content: false,
+        awaiting_content: false,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -591,7 +637,7 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
         color_tag: None,
         log_view: false,
         read_only: false,
-        awaiting_remote_content: false,
+        awaiting_content: false,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -635,7 +681,7 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
         color_tag: None,
         log_view: false,
         read_only: false,
-        awaiting_remote_content: false,
+        awaiting_content: false,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -673,7 +719,7 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
         color_tag: None,
         log_view: false,
         read_only: false,
-        awaiting_remote_content: false,
+        awaiting_content: false,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {

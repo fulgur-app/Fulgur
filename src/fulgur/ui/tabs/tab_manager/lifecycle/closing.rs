@@ -307,7 +307,7 @@ impl Fulgur {
             // the rest of its owned state with it.
             self.tabs.remove(pos);
             self.close_tab_manage_focus(window, cx, pos);
-            self.inflight_remote_restore.remove(&tab_id);
+            self.inflight_content_loads.remove(&tab_id);
             self.latest_remote_open_request_by_tab.remove(&tab_id);
             self.latest_remote_save_request_by_tab.remove(&tab_id);
             self.clear_log_tail(tab_id);

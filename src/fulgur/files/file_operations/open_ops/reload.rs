@@ -19,6 +19,58 @@ struct LocalReloadGuard {
     content_revision: ContentRevision,
 }
 
+impl Tab {
+    /// Replace an editor tab's buffer with a version read from disk, and make it
+    /// the tab's saved version.
+    ///
+    /// Switches the tab to large-file mode when the new content crosses the
+    /// threshold, and re-detects the language from the new content. The cursor
+    /// is not preserved: `set_value` moves it to the start of the buffer.
+    ///
+    /// ### Arguments
+    /// - `decoded`: The decoded file contents produced off the UI thread
+    /// - `disk_modified`: The file's modification time, read just before its contents
+    /// - `window`: The window context
+    /// - `cx`: The tab entity context
+    pub(super) fn load_disk_contents(
+        &mut self,
+        decoded: DecodedContents,
+        disk_modified: Option<SystemTime>,
+        window: &mut Window,
+        cx: &mut Context<Tab>,
+    ) {
+        let Some(editor_tab) = self.as_editor_mut() else {
+            return;
+        };
+        if !editor_tab.large_file && is_large_file(decoded.content.len()) {
+            log::info!(
+                "File loaded into tab {} crossed the large-file threshold, switching to large-file mode",
+                editor_tab.id
+            );
+            editor_tab.enter_large_file_mode(window, cx);
+        }
+        editor_tab.content.update(cx, |input_state, cx| {
+            replace_editor_text(input_state, &decoded.content, window, cx);
+        });
+        editor_tab.set_original_content_from_str(&decoded.content);
+        editor_tab.encoding = decoded.encoding;
+        editor_tab.lossy_decode = decoded.lossy;
+        editor_tab.modified = false;
+        editor_tab.record_file_metadata(decoded.byte_len, disk_modified);
+        if editor_tab.large_file {
+            // The content subscription marks a large-file tab modified on the
+            // `Change` emitted above, once this update returns.
+            cx.defer_in(window, |tab, _window, cx| {
+                if let Some(editor_tab) = tab.as_editor_mut() {
+                    editor_tab.modified = false;
+                    cx.notify();
+                }
+            });
+        }
+        self.update_language(cx);
+    }
+}
+
 impl Fulgur {
     /// Reload tab content from disk
     ///
@@ -32,8 +84,11 @@ impl Fulgur {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A placeholder still waiting for its first read gets the latest version
+        // from that read, which re-checks the file once it lands.
         let guard = if let Some(Tab::Editor(editor_tab)) =
             self.tabs.get(tab_index).map(|tab| tab.read(cx))
+            && !editor_tab.awaiting_content
         {
             editor_tab
                 .file_path()
@@ -169,30 +224,7 @@ impl Fulgur {
                 let input_state = editor_tab.content.read(cx);
                 (input_state.cursor(), input_state.scroll_offset())
             };
-            if !editor_tab.large_file && is_large_file(decoded.content.len()) {
-                log::info!(
-                    "Reloaded file {} crossed the large-file threshold, switching to large-file mode",
-                    guard.path.display()
-                );
-                editor_tab.enter_large_file_mode(window, cx);
-            }
-            editor_tab.content.update(cx, |input_state, cx| {
-                replace_editor_text(input_state, &decoded.content, window, cx);
-            });
-            editor_tab.set_original_content_from_str(&decoded.content);
-            editor_tab.encoding = decoded.encoding;
-            editor_tab.lossy_decode = decoded.lossy;
-            editor_tab.modified = false;
-            editor_tab.record_file_metadata(decoded.byte_len, disk_modified);
-            if editor_tab.large_file {
-                cx.defer_in(window, |tab, _window, cx| {
-                    if let Some(editor_tab) = tab.as_editor_mut() {
-                        editor_tab.modified = false;
-                        cx.notify();
-                    }
-                });
-            }
-            tab.update_language(cx);
+            tab.load_disk_contents(decoded, disk_modified, window, cx);
             if let Some(editor_tab) = tab.as_editor_mut() {
                 editor_tab.content.update(cx, |input_state, cx| {
                     input_state.set_selected_range(cursor..cursor, cx);

@@ -197,15 +197,17 @@ impl Fulgur {
         self.open_remote_file_with_target(window, cx, spec, Some(tab_id), false);
     }
 
-    /// Start reading the remote file of the active tab if it is still a placeholder.
+    /// Start reading the file of the active tab if it is still a placeholder.
     ///
     /// Does nothing for any other tab, or when that read is already running. A
     /// modified buffer is left alone, because the read would replace its text.
+    /// A restored local tab normally starts its read at restore; this covers a
+    /// placeholder that reached another window through a tab transfer.
     ///
     /// ### Arguments
     /// - `window`: The window context
     /// - `cx`: The application context
-    pub(crate) fn load_active_tab_remote_content(
+    pub(crate) fn load_active_tab_pending_content(
         &mut self,
         window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
@@ -213,23 +215,26 @@ impl Fulgur {
         let Some(editor_tab) = self.get_active_editor_tab(cx) else {
             return;
         };
-        if !editor_tab.awaiting_remote_content
+        if !editor_tab.awaiting_content
             || editor_tab.modified
-            || self.inflight_remote_restore.contains(&editor_tab.id)
+            || self.inflight_content_loads.contains(&editor_tab.id)
         {
             return;
         }
-        let TabLocation::Remote(spec) = &editor_tab.location else {
-            return;
-        };
-        let (tab_id, spec) = (editor_tab.id, spec.clone());
-        self.ensure_remote_tab_loaded(window, cx, tab_id, spec);
+        let tab_id = editor_tab.id;
+        match editor_tab.location.clone() {
+            TabLocation::Remote(spec) => self.ensure_remote_tab_loaded(window, cx, tab_id, spec),
+            TabLocation::Local(path) => {
+                self.load_placeholder_file_content(tab_id, path, window, cx);
+            }
+            TabLocation::Untitled | TabLocation::Shared(_) => {}
+        }
     }
 
-    /// Refuse to write the active tab while it is a placeholder for a remote file.
+    /// Refuse to write the active tab while it is a placeholder for a file.
     ///
-    /// Its buffer is not the file's content, so a Save would replace the remote
-    /// file with it and a Save As would write an empty copy. The read is started
+    /// Its buffer is not the file's content, so a Save would replace the file
+    /// with it and a Save As would write an empty copy. The read is started
     /// instead, so that the user can save again once the content has arrived.
     ///
     /// ### Arguments
@@ -239,23 +244,23 @@ impl Fulgur {
     /// ### Returns
     /// - `true`: The active tab is a placeholder and must not be written
     /// - `false`: The active tab can be saved
-    pub(crate) fn refuse_save_of_unloaded_remote_tab(
+    pub(crate) fn refuse_save_of_unloaded_tab(
         &mut self,
         window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
     ) -> bool {
         let is_placeholder = self
             .get_active_editor_tab(cx)
-            .is_some_and(|editor_tab| editor_tab.awaiting_remote_content);
+            .is_some_and(|editor_tab| editor_tab.awaiting_content);
         if !is_placeholder {
             return false;
         }
-        self.load_active_tab_remote_content(window, cx);
+        self.load_active_tab_pending_content(window, cx);
         window.push_notification(
             (
                 NotificationType::Warning,
                 gpui_kit::SharedString::from(
-                    "This remote file has not loaded yet, so it was not saved. Loading it now.",
+                    "This file has not loaded yet, so it was not saved. Loading it now.",
                 ),
             ),
             cx,
@@ -430,7 +435,7 @@ impl Fulgur {
             history_url,
         } = params;
         if let Some(tab_id) = target_tab_id {
-            self.inflight_remote_restore.insert(tab_id);
+            self.inflight_content_loads.insert(tab_id);
         }
         let pending_remote_open = Arc::clone(&self.pending_remote_open);
         let notification_tx = Fulgur::shared_state(cx).notification_tx.clone();
@@ -441,7 +446,7 @@ impl Fulgur {
                 entity.update(cx, |fulgur, _cx| {
                     if let Some(tab_id) = target_tab_id {
                         fulgur.latest_remote_open_request_by_tab.remove(&tab_id);
-                        fulgur.inflight_remote_restore.remove(&tab_id);
+                        fulgur.inflight_content_loads.remove(&tab_id);
                     }
                 });
             }

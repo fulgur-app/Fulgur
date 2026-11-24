@@ -44,7 +44,7 @@ impl Fulgur {
                 {
                     self.latest_remote_open_request_by_tab.remove(&tab_id);
                 }
-                self.inflight_remote_restore.remove(&tab_id);
+                self.inflight_content_loads.remove(&tab_id);
             }
 
             match outcome.result {
@@ -223,7 +223,7 @@ impl Fulgur {
             editor_tab.lossy_decode = remote_file.lossy;
             editor_tab.set_original_content_from_str(&remote_file.content);
             editor_tab.modified = false;
-            editor_tab.finish_awaiting_remote_content(cx);
+            editor_tab.finish_awaiting_content(cx);
             editor_tab
                 .record_file_metadata(remote_file.file_size, Some(std::time::SystemTime::now()));
             let filename = remote_file
@@ -340,7 +340,7 @@ mod tests {
                     editor.location = TabLocation::Remote(remote_spec());
                     editor.set_original_content_from_str("");
                     editor.modified = false;
-                    editor.mark_awaiting_remote_content(cx);
+                    editor.mark_awaiting_content(cx);
                     (editor.id, editor.content_revision(cx))
                 });
 
@@ -379,7 +379,7 @@ mod tests {
                 assert_eq!(editor.content.read(cx).text().to_string(), "local edit");
                 assert!(editor.modified, "the intervening edit must remain dirty");
                 assert!(
-                    editor.awaiting_remote_content,
+                    editor.awaiting_content,
                     "a rejected stale reload must not mark the restored tab as refreshed"
                 );
             });
@@ -404,7 +404,7 @@ mod tests {
             editor.location = TabLocation::Remote(remote_spec());
             editor.set_original_content_from_str("");
             editor.modified = false;
-            editor.mark_awaiting_remote_content(cx);
+            editor.mark_awaiting_content(cx);
             (editor.id, editor.content_revision(cx))
         });
         let guard = RemoteReloadGuard {
@@ -446,7 +446,7 @@ mod tests {
                     editor.lossy_decode,
                     "a lossy remote reload must keep the lossy-save confirmation armed"
                 );
-                assert!(!editor.awaiting_remote_content);
+                assert!(!editor.awaiting_content);
             });
         });
     }
@@ -476,7 +476,7 @@ mod tests {
                 assert_eq!(editor.content.read(cx).text().to_string(), "");
                 assert!(!editor.modified);
                 assert!(
-                    editor.awaiting_remote_content,
+                    editor.awaiting_content,
                     "a refused binary reload must leave the tab pending a retry"
                 );
             });
@@ -557,7 +557,7 @@ mod tests {
                     !this.latest_remote_save_request_by_tab.contains_key(&tab_id),
                     "an unloaded buffer must never be written over the remote file"
                 );
-                assert!(this.inflight_remote_restore.contains(&tab_id));
+                assert!(this.inflight_content_loads.contains(&tab_id));
             });
         });
     }
@@ -569,7 +569,7 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 let (_tab_entity, tab_id, _guard) = restored_remote_tab(this, cx);
-                this.inflight_remote_restore.insert(tab_id);
+                this.inflight_content_loads.insert(tab_id);
                 this.active_tab_id = Some(tab_id);
 
                 this.save_file_as(window, cx);
@@ -604,7 +604,7 @@ mod tests {
                     "recovered edits are real content and must stay saveable"
                 );
                 assert!(
-                    !this.inflight_remote_restore.contains(&tab_id),
+                    !this.inflight_content_loads.contains(&tab_id),
                     "a reload would replace the recovered edits"
                 );
             });
@@ -666,7 +666,7 @@ mod tests {
                 tab_entity.update(cx, |tab, cx| {
                     let editor = tab.as_editor_mut().expect("expected an editor tab");
                     editor.make_read_only(cx);
-                    editor.finish_awaiting_remote_content(cx);
+                    editor.finish_awaiting_content(cx);
                     assert!(!editor.content.read(cx).is_editable());
                 });
             });
@@ -693,7 +693,7 @@ mod tests {
 
         // The read starts in a deferred effect, so the window draws before the next
         // check, and a draw drains whatever outcome the worker thread already
-        // published. `inflight_remote_restore` is cleared by that drain; the request
+        // published. `inflight_content_loads` is cleared by that drain; the request
         // counter is not, so it is the only witness that holds whatever the timing.
         visual_cx.update(|_window, cx| {
             let this = fulgur.read(cx);
@@ -756,9 +756,9 @@ mod tests {
                 let received_id = this.active_tab_id.expect("expected the received tab");
                 assert_ne!(received_id, tab_id);
                 let editor = this.get_active_editor_tab(cx).expect("expected an editor");
-                assert!(editor.awaiting_remote_content);
+                assert!(editor.awaiting_content);
                 assert!(!editor.content.read(cx).is_editable());
-                assert!(this.inflight_remote_restore.contains(&received_id));
+                assert!(this.inflight_content_loads.contains(&received_id));
             });
         });
     }

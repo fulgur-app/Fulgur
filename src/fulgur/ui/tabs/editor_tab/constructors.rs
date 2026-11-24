@@ -11,6 +11,7 @@ use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
 use crate::fulgur::ui::tabs::tab::TabId;
 use gpui_kit::{App, AppContext, SharedString, Window};
+use std::path::PathBuf;
 use std::time::SystemTime;
 
 impl EditorTab {
@@ -69,7 +70,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
-            awaiting_remote_content: false,
+            awaiting_content: false,
             highlight_colors: settings.highlight_colors,
             content_subscription: None,
         }
@@ -169,7 +170,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
-            awaiting_remote_content: false,
+            awaiting_content: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -244,10 +245,55 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
-            awaiting_remote_content: false,
+            awaiting_content: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
+    }
+
+    /// Create a placeholder tab for a local file whose content is read later.
+    ///
+    /// The tab starts empty, locked and awaiting its content, already in
+    /// large-file mode when the file on disk is large, so that it renders as the
+    /// loaded file will until the read lands.
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the tab
+    /// - `path`: The local file the tab holds
+    /// - `disk_len`: The current size of the file on disk, in bytes
+    /// - `window`: The window to create the tab in
+    /// - `cx`: The application context
+    /// - `settings`: The settings for the input state
+    ///
+    /// ### Returns
+    /// - `EditorTab`: The placeholder tab
+    pub fn from_file_awaiting_content(
+        id: TabId,
+        path: PathBuf,
+        disk_len: u64,
+        window: &mut Window,
+        cx: &mut App,
+        settings: &EditorSettings,
+    ) -> Self {
+        let mut tab = Self::from_file(
+            FromFileParams {
+                id,
+                path,
+                contents: String::new(),
+                encoding: UTF_8.to_string(),
+                is_modified: false,
+                file_last_modified: None,
+            },
+            window,
+            cx,
+            settings,
+        );
+        if disk_len > super::LARGE_FILE_THRESHOLD_BYTES {
+            tab.enter_large_file_mode(window, cx);
+        }
+        tab.file_size_bytes = Some(disk_len);
+        tab.mark_awaiting_content(cx);
+        tab
     }
 
     /// Create a new tab as a duplicate of an existing editor tab.
@@ -308,7 +354,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
-            awaiting_remote_content: false,
+            awaiting_content: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -376,7 +422,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
-            awaiting_remote_content: false,
+            awaiting_content: false,
             highlight_colors: settings.highlight_colors,
             content_subscription: None,
         }
@@ -447,7 +493,7 @@ impl EditorTab {
             log_view: false,
             log_follow: true,
             read_only: false,
-            awaiting_remote_content: false,
+            awaiting_content: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         }
@@ -477,7 +523,7 @@ impl EditorTab {
     ) -> Self {
         let cursor_position = data.cursor_position;
         let read_only = data.read_only;
-        let awaiting_remote_content = data.awaiting_remote_content;
+        let awaiting_content = data.awaiting_content;
         let large_file = super::is_large_file(data.content.len());
         let content = cx.new(|cx| {
             super::make_input_state(
@@ -517,15 +563,15 @@ impl EditorTab {
             log_view: data.log_view,
             log_follow: true,
             read_only: false,
-            awaiting_remote_content: false,
+            awaiting_content: false,
             highlight_colors: settings.highlight_colors && !large_file,
             content_subscription: None,
         };
         if read_only {
             tab.make_read_only(cx);
         }
-        if awaiting_remote_content {
-            tab.mark_awaiting_remote_content(cx);
+        if awaiting_content {
+            tab.mark_awaiting_content(cx);
         }
         tab
     }

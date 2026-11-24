@@ -1,4 +1,5 @@
 use super::{assert_recovery_content, restore_and_snapshot, sample_share_origin, startup_snapshot};
+use crate::fulgur::Fulgur;
 use crate::fulgur::state::SnapshotKind;
 use crate::fulgur::{
     shared_state::SharedAppState,
@@ -8,9 +9,9 @@ use crate::fulgur::{
     },
     ui::components_utils::UNTITLED,
 };
-use crate::test_support::setup_fulgur_with_root as setup_fulgur;
-use gpui_kit::TestAppContext;
-use std::{fs, sync::Arc};
+use crate::test_support::{notification_count, setup_fulgur_with_root as setup_fulgur};
+use gpui_kit::{Entity, TestAppContext, VisualTestContext};
+use std::{fs, path::Path, sync::Arc};
 use tempfile::TempDir;
 
 #[gpui_kit::test]
@@ -206,9 +207,9 @@ fn only_a_restored_remote_tab_without_edits_awaits_its_content(cx: &mut TestAppC
         let (placeholder, recovered) = (&tabs[0], &tabs[1]);
         let placeholder = placeholder.read(cx).as_editor().expect("editor tab");
         let recovered = recovered.read(cx).as_editor().expect("editor tab");
-        assert!(placeholder.awaiting_remote_content);
+        assert!(placeholder.awaiting_content);
         assert!(!placeholder.content.read(cx).is_editable());
-        assert!(!recovered.awaiting_remote_content);
+        assert!(!recovered.awaiting_content);
         assert!(recovered.content.read(cx).is_editable());
     });
 }
@@ -315,15 +316,21 @@ fn restored_untitled_tab_installs_color_provider(cx: &mut TestAppContext) {
     );
 }
 
-#[gpui_kit::test]
-fn restore_skips_clean_tab_whose_file_now_looks_binary(cx: &mut TestAppContext) {
-    let temp_dir = TempDir::new().expect("create temp dir");
-    let path = temp_dir.path().join("became_binary.txt");
-    fs::write(&path, [0x7F, b'E', b'L', b'F', 0x00, 0x01]).expect("write binary file");
-    let clean_tab = TabState {
-        tab_id: 7,
-        title: "became_binary.txt".to_string(),
-        file_path: Some(path.clone()),
+/// Build the persisted state of a clean local tab, which stores no buffer.
+///
+/// ### Arguments
+/// - `tab_id`: The persisted tab id
+/// - `path`: The local file the tab holds
+///
+/// ### Returns
+/// - `TabState`: A clean tab restored by reading `path`
+fn clean_local_tab(tab_id: u64, path: &Path) -> TabState {
+    TabState {
+        tab_id,
+        title: path
+            .file_name()
+            .map_or_default(|name| name.to_string_lossy().into_owned()),
+        file_path: Some(path.to_path_buf()),
         content: None,
         last_saved: None,
         remote: None,
@@ -332,50 +339,171 @@ fn restore_skips_clean_tab_whose_file_now_looks_binary(cx: &mut TestAppContext) 
         share: None,
         encoding: None,
         lossy_decode: false,
-    };
+    }
+}
+
+/// Restore a startup snapshot, let the background file reads land, then snapshot.
+///
+/// ### Arguments
+/// - `fulgur`: The application entity whose tabs should be restored
+/// - `visual_cx`: The visual test context containing the application window
+/// - `state`: The startup snapshot to restore
+///
+/// ### Returns
+/// - `WindowState`: The window snapshot taken once every placeholder resolved
+fn restore_and_settle(
+    fulgur: &Entity<Fulgur>,
+    visual_cx: &mut VisualTestContext,
+    state: WindowsState,
+) -> WindowState {
+    restore_and_snapshot(fulgur, visual_cx, state);
+    visual_cx.run_until_parked();
+    fulgur.read_with(visual_cx, |this, cx| {
+        this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
+    })
+}
+
+#[gpui_kit::test]
+fn clean_local_tab_restores_as_a_placeholder_until_its_read_lands(cx: &mut TestAppContext) {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let path = temp_dir.path().join("notes.txt");
+    fs::write(&path, "restored from disk\n").expect("write file");
+    let disk_modified = fs::metadata(&path)
+        .and_then(|metadata| metadata.modified())
+        .expect("read mtime");
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
-    let restored = restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(clean_tab));
-
-    assert!(
-        restored
-            .tabs
-            .iter()
-            .all(|tab| tab.file_path.as_deref() != Some(path.as_path())),
-        "a clean tab whose file now looks binary must be skipped, as opening it would be refused"
+    restore_and_snapshot(
+        &fulgur,
+        &mut visual_cx,
+        startup_snapshot(clean_local_tab(7, &path)),
     );
+
+    visual_cx.update(|_window, cx| {
+        let tab = fulgur.read(cx).tabs[0].read(cx);
+        let editor = tab.as_editor().expect("editor tab");
+        assert!(
+            editor.awaiting_content,
+            "the window must not wait for the file before its first frame"
+        );
+        assert!(!editor.content.read(cx).is_editable());
+        assert_eq!(editor.content.read(cx).text().len(), 0);
+    });
+
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        let tab = fulgur.read(cx).tabs[0].read(cx);
+        let editor = tab.as_editor().expect("editor tab");
+        assert!(!editor.awaiting_content);
+        assert!(!editor.modified);
+        assert!(editor.content.read(cx).is_editable());
+        assert_eq!(
+            editor.content.read(cx).text().to_string(),
+            "restored from disk\n"
+        );
+        assert_eq!(editor.file_last_modified, Some(disk_modified));
+    });
+}
+
+#[gpui_kit::test]
+fn restored_csv_placeholder_detects_its_delimiter_once_loaded(cx: &mut TestAppContext) {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let path = temp_dir.path().join("table.csv");
+    fs::write(&path, "a;b;c\n1;2;3\n4;5;6\n").expect("write csv");
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    restore_and_settle(
+        &fulgur,
+        &mut visual_cx,
+        startup_snapshot(clean_local_tab(7, &path)),
+    );
+
+    visual_cx.update(|_window, cx| {
+        let tab = fulgur.read(cx).tabs[0].read(cx);
+        let editor = tab.as_editor().expect("editor tab");
+        assert_eq!(editor.csv_delimiter, b';');
+    });
+}
+
+#[gpui_kit::test]
+fn save_of_a_restored_local_placeholder_is_refused(cx: &mut TestAppContext) {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let path = temp_dir.path().join("keep.txt");
+    fs::write(&path, "original").expect("write file");
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    restore_and_snapshot(
+        &fulgur,
+        &mut visual_cx,
+        startup_snapshot(clean_local_tab(7, &path)),
+    );
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| this.save_file(window, cx));
+    });
+    visual_cx.run_until_parked();
+
+    assert_eq!(
+        fs::read_to_string(&path).expect("read file"),
+        "original",
+        "saving the empty placeholder would have truncated the file"
+    );
+    assert_eq!(notification_count(&mut visual_cx), 1);
+}
+
+#[gpui_kit::test]
+fn restore_closes_clean_tab_whose_file_now_looks_binary(cx: &mut TestAppContext) {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let path = temp_dir.path().join("became_binary.txt");
+    fs::write(&path, [0x7F, b'E', b'L', b'F', 0x00, 0x01]).expect("write binary file");
+    let text_path = temp_dir.path().join("text.txt");
+    fs::write(&text_path, "text").expect("write text file");
+    let mut state = startup_snapshot(clean_local_tab(7, &path));
+    state.windows[0].tabs.push(clean_local_tab(8, &text_path));
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+    let restored = restore_and_settle(&fulgur, &mut visual_cx, state);
+
+    let restored_paths: Vec<_> = restored
+        .tabs
+        .iter()
+        .filter_map(|tab| tab.file_path.clone())
+        .collect();
+    assert_eq!(
+        restored_paths,
+        vec![text_path],
+        "a clean tab whose file now looks binary must be closed, as opening it would be refused"
+    );
+    assert_eq!(notification_count(&mut visual_cx), 1);
 }
 
 /// On Unix a directory opens as a file but fails on read, which reproduces a
 /// read error after a successful open.
 #[cfg(unix)]
 #[gpui_kit::test]
-fn restore_skips_clean_tab_whose_file_fails_to_read(cx: &mut TestAppContext) {
+fn restore_replaces_the_only_tab_whose_file_fails_to_read(cx: &mut TestAppContext) {
     let temp_dir = TempDir::new().expect("create temp dir");
     let path = temp_dir.path().join("unreadable.txt");
     fs::create_dir(&path).expect("create directory standing in for the file");
-    let clean_tab = TabState {
-        tab_id: 7,
-        title: "unreadable.txt".to_string(),
-        file_path: Some(path.clone()),
-        content: None,
-        last_saved: None,
-        remote: None,
-        log_view: false,
-        color_tag: None,
-        share: None,
-        encoding: None,
-        lossy_decode: false,
-    };
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
 
-    let restored = restore_and_snapshot(&fulgur, &mut visual_cx, startup_snapshot(clean_tab));
+    let restored = restore_and_settle(
+        &fulgur,
+        &mut visual_cx,
+        startup_snapshot(clean_local_tab(7, &path)),
+    );
 
     assert!(
         restored
             .tabs
             .iter()
             .all(|tab| tab.file_path.as_deref() != Some(path.as_path())),
-        "a clean tab whose file fails to read must be skipped, as no buffer was persisted"
+        "a clean tab whose file fails to read must be closed, as no buffer was persisted"
     );
+    let live_tab_count = fulgur.read_with(&visual_cx, |this, _| this.tabs.len());
+    assert_eq!(
+        live_tab_count, 1,
+        "a window left without tabs gets an untitled one"
+    );
+    assert_eq!(notification_count(&mut visual_cx), 1);
 }

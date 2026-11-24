@@ -80,10 +80,11 @@ impl Fulgur {
             self.file_watch_state.pending_conflicts.remove(&path);
             self.show_file_conflict_dialog(&path, tab_id, window, cx);
         }
-        self.load_active_tab_remote_content(window, cx);
+        self.load_active_tab_pending_content(window, cx);
+        // A placeholder log tab turns its log view on once its read lands.
         if self
             .editor_tab(tab_id, cx)
-            .is_some_and(|editor_tab| editor_tab.log_view)
+            .is_some_and(|editor_tab| editor_tab.log_view && !editor_tab.awaiting_content)
         {
             self.resume_log_view(tab_id, window, cx);
         }

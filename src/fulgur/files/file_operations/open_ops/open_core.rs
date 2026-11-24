@@ -10,11 +10,36 @@ use gpui_kit::{AsyncWindowContext, Context, SharedString, WeakEntity, Window};
 use std::path::Path;
 
 /// Result of reading and classifying a file on the background executor.
-enum FileReadOutcome {
+pub(super) enum FileReadOutcome {
     /// A text file.
     Decoded(DecodedContents),
     Binary,
     Failed(std::io::Error),
+}
+
+/// Read a local file and decode it as text. Blocking: run it on the background executor.
+///
+/// ### Arguments
+/// - `path`: The file to read
+///
+/// ### Returns
+/// - `(FileReadOutcome, Option<Metadata>)`: The classified contents, and the
+///   file's metadata taken just before the read (`None` when it cannot be read)
+pub(super) fn read_and_classify_file(path: &Path) -> (FileReadOutcome, Option<std::fs::Metadata>) {
+    // Taken before the read so a write racing it reads as a later change.
+    let disk_metadata = std::fs::metadata(path).ok();
+    let outcome = match std::fs::read(path) {
+        Ok(bytes) => {
+            log::debug!(
+                "Successfully read file: {} ({} bytes)",
+                path.display(),
+                bytes.len()
+            );
+            decode_text_file(bytes).map_or(FileReadOutcome::Binary, FileReadOutcome::Decoded)
+        }
+        Err(e) => FileReadOutcome::Failed(e),
+    };
+    (outcome, disk_metadata)
 }
 
 impl Fulgur {
@@ -102,23 +127,7 @@ impl Fulgur {
         let read_path = canonical_path.clone();
         let (outcome, disk_metadata) = window
             .background_executor()
-            .spawn(async move {
-                // Taken before the read so a write racing it reads as a later change.
-                let disk_metadata = std::fs::metadata(&read_path).ok();
-                let outcome = match std::fs::read(&read_path) {
-                    Ok(bytes) => {
-                        log::debug!(
-                            "Successfully read file: {} ({} bytes)",
-                            read_path.display(),
-                            bytes.len()
-                        );
-                        decode_text_file(bytes)
-                            .map_or(FileReadOutcome::Binary, FileReadOutcome::Decoded)
-                    }
-                    Err(e) => FileReadOutcome::Failed(e),
-                };
-                (outcome, disk_metadata)
-            })
+            .spawn(async move { read_and_classify_file(&read_path) })
             .await;
         let path = canonical_path.as_path();
         let decoded = match outcome {
