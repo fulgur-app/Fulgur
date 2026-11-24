@@ -1,7 +1,10 @@
+use super::snapshot::SnapshotFingerprint;
+use crate::fulgur::editor_tab::EditorTab;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{Fulgur, PendingSaveCloseAction};
 use gpui_kit::component::{WindowExt, notification::NotificationType};
-use gpui_kit::{Context, SharedString, Window};
+use gpui_kit::{App, Context, SharedString, Window};
+use std::fs::Metadata;
 use std::path::PathBuf;
 
 /// Dispatch-time context of a background save, handed back to the completion
@@ -11,12 +14,33 @@ pub(super) struct SaveCompletion {
     pub(super) tab_id: TabId,
     /// Destination path of the write, as requested at dispatch
     pub(super) path: PathBuf,
-    /// Size of the written content in bytes
+}
+
+/// The editor snapshot a save wrote to disk.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SavedSnapshot {
+    /// Size of the written file content in bytes
     pub(super) byte_len: usize,
-    /// Fingerprint of the exact editor snapshot dispatched to the writer
-    pub(super) saved_content_hash: u64,
-    /// UTF-8 byte length of the exact editor snapshot dispatched to the writer
-    pub(super) saved_content_len: usize,
+    /// Fingerprint and revision of the editor text that was written
+    pub(super) fingerprint: SnapshotFingerprint,
+}
+
+impl SavedSnapshot {
+    /// Make the written snapshot the tab's saved version.
+    ///
+    /// ### Arguments
+    /// - `editor_tab`: The tab that was saved
+    /// - `written`: Metadata of the file version the save produced
+    /// - `cx`: The application context
+    pub(super) fn record_on(&self, editor_tab: &mut EditorTab, written: &Metadata, cx: &App) {
+        let SnapshotFingerprint {
+            revision,
+            content_hash,
+            content_len,
+        } = self.fingerprint;
+        editor_tab.mark_snapshot_as_saved(content_hash, content_len, revision, cx);
+        editor_tab.record_file_metadata(self.byte_len, written.modified().ok());
+    }
 }
 
 impl Fulgur {

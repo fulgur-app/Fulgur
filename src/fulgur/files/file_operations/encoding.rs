@@ -87,23 +87,91 @@ pub fn detect_encoding_and_decode(bytes: Vec<u8>) -> DecodedContents {
 ///   target encoding
 #[must_use]
 pub fn encode_for_save(contents: &str, label: &str) -> EncodedContents {
+    match save_target_encoding(label) {
+        SaveTargetEncoding::Utf8 => EncodedContents::Encoded(contents.as_bytes().to_vec()),
+        SaveTargetEncoding::Utf16 { big_endian } => {
+            EncodedContents::Encoded(encode_utf16_with_bom(contents, big_endian))
+        }
+        SaveTargetEncoding::Legacy(encoding) => encode_legacy(contents, encoding),
+    }
+}
+
+/// Re-encode owned editor text, reusing its buffer when the target is UTF-8.
+///
+/// ### Arguments
+/// - `contents`: The editor text to encode
+/// - `label`: The target encoding label (the tab's `encoding` field)
+///
+/// ### Errors
+/// - Hands `contents` back unchanged when the target encoding cannot represent
+///   every character, so the caller can offer a UTF-8 save without copying it.
+///
+/// ### Returns
+/// - `Ok(Vec<u8>)`: The encoded bytes ready to write
+/// - `Err(String)`: The text, handed back unchanged, cannot be represented
+///   losslessly in the target encoding
+pub fn encode_owned_for_save(contents: String, label: &str) -> Result<Vec<u8>, String> {
+    let encoded = match save_target_encoding(label) {
+        SaveTargetEncoding::Utf8 => return Ok(contents.into_bytes()),
+        SaveTargetEncoding::Utf16 { big_endian } => {
+            EncodedContents::Encoded(encode_utf16_with_bom(&contents, big_endian))
+        }
+        SaveTargetEncoding::Legacy(encoding) => encode_legacy(&contents, encoding),
+    };
+    match encoded {
+        EncodedContents::Encoded(bytes) => Ok(bytes),
+        EncodedContents::Lossy => Err(contents),
+    }
+}
+
+/// How editor text is turned into bytes for a given encoding label.
+enum SaveTargetEncoding {
+    /// Written as UTF-8 bytes, including for unknown or unencodable labels.
+    Utf8,
+    /// Written as UTF-16 with a byte order mark.
+    Utf16 { big_endian: bool },
+    /// Written through `encoding_rs`, which may not represent every character.
+    Legacy(&'static encoding_rs::Encoding),
+}
+
+/// Resolve the encoding a save writes for a tab's encoding label.
+///
+/// ### Arguments
+/// - `label`: The target encoding label (the tab's `encoding` field)
+///
+/// ### Returns
+/// - `SaveTargetEncoding`: The resolved target, falling back to UTF-8 for an
+///   unknown label or one `encoding_rs` cannot encode to
+fn save_target_encoding(label: &str) -> SaveTargetEncoding {
     if label.eq_ignore_ascii_case(UTF_8) {
-        return EncodedContents::Encoded(contents.as_bytes().to_vec());
+        return SaveTargetEncoding::Utf8;
     }
     let Some(encoding) = encoding_rs::Encoding::for_label(label.as_bytes()) else {
         log::warn!("Unknown encoding label '{label}', saving as UTF-8");
-        return EncodedContents::Encoded(contents.as_bytes().to_vec());
+        return SaveTargetEncoding::Utf8;
     };
     if encoding == encoding_rs::UTF_16LE || encoding == encoding_rs::UTF_16BE {
-        return EncodedContents::Encoded(encode_utf16_with_bom(
-            contents,
-            encoding == encoding_rs::UTF_16BE,
-        ));
+        return SaveTargetEncoding::Utf16 {
+            big_endian: encoding == encoding_rs::UTF_16BE,
+        };
     }
     if encoding == encoding_rs::REPLACEMENT {
         log::warn!("Cannot encode to '{label}', saving as UTF-8");
-        return EncodedContents::Encoded(contents.as_bytes().to_vec());
+        return SaveTargetEncoding::Utf8;
     }
+    SaveTargetEncoding::Legacy(encoding)
+}
+
+/// Encode text with a legacy single- or multi-byte encoding.
+///
+/// ### Arguments
+/// - `contents`: The editor text to encode
+/// - `encoding`: The target encoding
+///
+/// ### Returns
+/// - `EncodedContents::Encoded`: The encoded bytes
+/// - `EncodedContents::Lossy`: Some characters have no mapping in `encoding`
+fn encode_legacy(contents: &str, encoding: &'static encoding_rs::Encoding) -> EncodedContents {
     let (encoded, _, had_unmappable) = encoding.encode(contents);
     if had_unmappable {
         EncodedContents::Lossy
@@ -210,7 +278,7 @@ pub fn large_file_notice(file_name: &str) -> String {
 mod tests {
     use super::{
         EncodedContents, decode_text_file, detect_encoding_and_decode, encode_for_save,
-        looks_binary,
+        encode_owned_for_save, looks_binary,
     };
     use crate::fulgur::ui::components_utils::UTF_8;
 
@@ -274,6 +342,33 @@ mod tests {
             encode_for_save("你好", "windows-1252"),
             EncodedContents::Lossy
         ));
+    }
+
+    #[test]
+    fn test_encode_owned_for_save_matches_borrowed_encoder() {
+        for (text, label) in [
+            ("héllo", UTF_8),
+            ("café", "windows-1252"),
+            ("héllo", "UTF-16LE"),
+            ("héllo", "no-such-encoding"),
+        ] {
+            let EncodedContents::Encoded(expected) = encode_for_save(text, label) else {
+                panic!("expected a lossless encode of {text:?} in {label}");
+            };
+            assert_eq!(
+                encode_owned_for_save(text.to_string(), label),
+                Ok(expected),
+                "owned and borrowed encoders must agree for {label}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_encode_owned_for_save_hands_back_unencodable_text() {
+        assert_eq!(
+            encode_owned_for_save("你好".to_string(), "windows-1252"),
+            Err("你好".to_string())
+        );
     }
 
     #[test]

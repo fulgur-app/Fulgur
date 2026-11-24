@@ -61,10 +61,11 @@ pub enum CsvViewMode {
     Text,
 }
 
-/// Fingerprint of editor text used to reject stale asynchronous work.
+/// Edit generation and byte length of a tab's buffer, used to reject stale
+/// asynchronous work without reading the text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ContentRevision {
-    hash: u64,
+    generation: u64,
     len: usize,
 }
 
@@ -120,6 +121,9 @@ pub struct EditorTab {
     /// Whether this is a restored tab (local or remote) whose file has not been
     /// read yet, so its buffer says nothing about the file.
     pub awaiting_content: bool,
+    /// Number of `InputEvent::Change` events the content subscription has seen,
+    /// read through `content_revision`.
+    edit_generation: u64,
     /// Subscription to the content entity keeping `modified` current. Owned by
     /// the tab entity, attached by `Tab::attach_content_subscription`, and
     /// replaced whenever the content entity is swapped.
@@ -190,16 +194,25 @@ pub(crate) fn initial_csv_state(language: SupportedLanguage, content: &str) -> (
 }
 
 impl EditorTab {
-    /// Capture the current editor text as a lightweight revision token.
+    /// Capture the buffer's current revision, in constant time.
     ///
     /// ### Arguments
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `ContentRevision`: A hash and byte length representing the current text
+    /// - `ContentRevision`: A token that changes with every delivered buffer
+    ///   change and every change of the buffer's byte length
     pub(crate) fn content_revision(&self, cx: &App) -> ContentRevision {
-        let (hash, len) = content_fingerprint_from_rope(self.content.read(cx).text());
-        ContentRevision { hash, len }
+        ContentRevision {
+            generation: self.edit_generation,
+            len: self.content.read(cx).text().len(),
+        }
+    }
+
+    /// Advance the edit generation after the content entity reported a change.
+    /// Called by the tab's content subscription for every `InputEvent::Change`.
+    pub(crate) fn record_content_change(&mut self) {
+        self.edit_generation = self.edit_generation.wrapping_add(1);
     }
 
     /// Lock this tab against edits for the rest of its lifetime.
