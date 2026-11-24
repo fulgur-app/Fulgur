@@ -45,6 +45,15 @@ pub fn is_large_file(content_len: usize) -> bool {
     content_len as u64 > LARGE_FILE_THRESHOLD_BYTES
 }
 
+/// How a session snapshot learns that a local tab's file is gone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileMissingProbe {
+    /// Trust the deletions the file watcher reported, without touching the disk.
+    Reported,
+    /// Also `stat` the file, for blocking snapshots taken while files are not watched.
+    Stat,
+}
+
 /// Which surface a CSV-language tab is currently editing through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CsvViewMode {
@@ -82,6 +91,10 @@ pub struct EditorTab {
     /// is based on (set on open, reload, save and conflict resolution, never by
     /// a later `stat`).
     pub file_last_modified: Option<SystemTime>,
+    /// Whether the file watcher reported this local file deleted since the
+    /// buffer last matched a disk version, so the buffer is its only copy.
+    /// Cleared by `record_disk_version`.
+    pub file_missing: bool,
     pub large_file: bool,
     /// Whether the document color provider currently reports colors.
     pub highlight_colors: bool,
@@ -135,6 +148,7 @@ pub struct TabTransferData {
     pub show_markdown_preview: bool,
     pub file_size_bytes: Option<u64>,
     pub file_last_modified: Option<SystemTime>,
+    pub file_missing: bool,
     pub cursor_position: gpui_kit::component::input::Position,
     pub csv_view_mode: CsvViewMode,
     pub csv_delimiter: u8,

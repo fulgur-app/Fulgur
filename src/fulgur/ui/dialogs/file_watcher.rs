@@ -91,7 +91,7 @@ impl Fulgur {
         let disk_modified = file_modified_system_time(path);
         self.update_editor_tab(tab_id, cx, |editor_tab, _| {
             if editor_tab.file_path().is_some_and(|p| p == path) {
-                editor_tab.file_last_modified = disk_modified;
+                editor_tab.record_disk_version(disk_modified);
             }
         });
     }

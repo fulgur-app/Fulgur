@@ -1,3 +1,4 @@
+use super::save::SnapshotKind;
 use crate::fulgur::{Fulgur, shared_state::SharedAppState};
 use gpui_kit::{App, Global, Task};
 use std::time::Duration;
@@ -45,7 +46,7 @@ impl Fulgur {
     /// ### Arguments
     /// - `cx`: The application context
     fn autosave_session(cx: &mut App) {
-        let Some(windows_state) = Self::build_session_snapshot(cx) else {
+        let Some(windows_state) = Self::build_session_snapshot(cx, SnapshotKind::Background) else {
             log::debug!("No window registered at autosave, keeping the persisted session");
             return;
         };

@@ -82,6 +82,7 @@ impl Fulgur {
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
 
+    use crate::fulgur::state::SnapshotKind;
     use crate::fulgur::{
         Fulgur,
         editor_tab::{EditorTab, TabLocation},
@@ -226,7 +227,9 @@ mod tests {
 
         // A default-named empty scratch tab is not worth persisting.
         let default_tabs = fulgur.read_with(&visual_cx, |this, cx| {
-            this.build_window_state_without_bounds(cx).tabs.len()
+            this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
+                .tabs
+                .len()
         });
         assert_eq!(default_tabs, 0);
 
@@ -236,7 +239,7 @@ mod tests {
             })
         });
         let titles: Vec<String> = fulgur.read_with(&visual_cx, |this, cx| {
-            this.build_window_state_without_bounds(cx)
+            this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
                 .tabs
                 .into_iter()
                 .map(|tab_state| tab_state.title)

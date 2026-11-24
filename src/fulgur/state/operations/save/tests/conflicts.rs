@@ -1,6 +1,7 @@
 use super::{
     assert_recovery_content, configured_tab_states, restore_and_snapshot, startup_snapshot,
 };
+use crate::fulgur::state::SnapshotKind;
 use crate::fulgur::{
     Fulgur,
     editor_tab::TabLocation,
@@ -43,7 +44,9 @@ fn snapshot_dirty_tab_after_external_change(
     );
     write_with_mtime(path, "changed externally", 1_100_000_000);
     cx.update(|_, cx| fulgur.update(cx, before_snapshot));
-    let snapshot = fulgur.read_with(cx, Fulgur::build_window_state_without_bounds);
+    let snapshot = fulgur.read_with(cx, |this, cx| {
+        this.build_window_state_without_bounds(cx, SnapshotKind::Blocking)
+    });
     let persisted = snapshot.tabs.into_iter().next().expect("expected a tab");
     (persisted, opened_version)
 }

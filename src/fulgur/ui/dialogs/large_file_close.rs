@@ -8,6 +8,7 @@ use crate::fulgur::Fulgur;
 use crate::fulgur::files::file_operations::{
     EncodedContents, RemoteSaveContinuation, RemoteSaveRequest, disk_changed_since, encode_for_save,
 };
+use crate::fulgur::state::SnapshotKind;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::tabs::editor_tab::{EditorTab, TabLocation};
 use crate::fulgur::ui::tabs::tab::TabId;
@@ -28,8 +29,11 @@ impl Fulgur {
         editor_tab: &EditorTab,
         cx: &App,
     ) -> bool {
-        editor_tab
-            .needs_large_file_close_warning(self.settings.app_settings.persist_unsaved_buffers, cx)
+        editor_tab.needs_large_file_close_warning(
+            self.settings.app_settings.persist_unsaved_buffers,
+            self.file_missing_probe(SnapshotKind::Blocking),
+            cx,
+        )
     }
 
     /// Collect the ids of editor tabs whose buffer would be silently dropped on

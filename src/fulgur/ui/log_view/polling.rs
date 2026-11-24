@@ -242,7 +242,7 @@ impl Fulgur {
             editor.mark_as_saved(cx);
             // The buffer now matches this disk version, so a save after leaving
             // the log view must not see the appends as an external change.
-            editor.file_last_modified = chunk.modified;
+            editor.record_disk_version(chunk.modified);
         });
         cx.notify();
     }
