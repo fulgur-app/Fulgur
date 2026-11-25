@@ -7,12 +7,12 @@ use crate::fulgur::languages::supported_languages::{
 };
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::sync::share::ShareOrigin;
+use crate::fulgur::sync::ssh::sftp::RemoteBaseline;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
 use crate::fulgur::ui::components_utils::{UNTITLED, UTF_8};
 use crate::fulgur::ui::tabs::tab::TabId;
 use gpui_kit::{App, AppContext, SharedString, Window};
 use std::path::PathBuf;
-use std::time::SystemTime;
 
 impl EditorTab {
     /// Create a new tab
@@ -62,6 +62,7 @@ impl EditorTab {
             file_size_bytes: None,
             file_last_modified: None,
             file_missing: false,
+            remote_baseline: RemoteBaseline::default(),
             large_file: false,
             csv_view_mode: super::CsvViewMode::Text,
             csv_delimiter: crate::fulgur::files::csv_support::DEFAULT_DELIMITER,
@@ -163,6 +164,7 @@ impl EditorTab {
             file_size_bytes: None,
             file_last_modified: None,
             file_missing: false,
+            remote_baseline: RemoteBaseline::default(),
             large_file,
             csv_view_mode,
             csv_delimiter,
@@ -239,6 +241,7 @@ impl EditorTab {
             file_size_bytes: Some(content_len as u64),
             file_last_modified: params.file_last_modified,
             file_missing: false,
+            remote_baseline: RemoteBaseline::default(),
             large_file,
             csv_view_mode,
             csv_delimiter,
@@ -349,6 +352,7 @@ impl EditorTab {
             file_size_bytes: None,
             file_last_modified: None,
             file_missing: false,
+            remote_baseline: RemoteBaseline::default(),
             large_file,
             csv_view_mode,
             csv_delimiter,
@@ -418,6 +422,7 @@ impl EditorTab {
             file_size_bytes: None,
             file_last_modified: None,
             file_missing: false,
+            remote_baseline: RemoteBaseline::default(),
             large_file: false,
             csv_view_mode,
             csv_delimiter,
@@ -488,8 +493,9 @@ impl EditorTab {
             show_markdown_toolbar: settings.markdown_settings.show_markdown_toolbar,
             show_markdown_preview: settings.markdown_settings.show_markdown_preview,
             file_size_bytes: Some(result.file_size as u64),
-            file_last_modified: Some(SystemTime::now()),
+            file_last_modified: result.version.and_then(|version| version.modified()),
             file_missing: false,
+            remote_baseline: RemoteBaseline::new(result.version),
             large_file,
             csv_view_mode,
             csv_delimiter,
@@ -561,6 +567,7 @@ impl EditorTab {
             file_size_bytes: data.file_size_bytes,
             file_last_modified: data.file_last_modified,
             file_missing: data.file_missing,
+            remote_baseline: data.remote_baseline,
             large_file,
             csv_view_mode: data.csv_view_mode,
             csv_delimiter: data.csv_delimiter,

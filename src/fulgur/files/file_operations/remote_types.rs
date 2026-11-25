@@ -1,8 +1,9 @@
+use super::DiskChangePolicy;
 use crate::fulgur::Fulgur;
 use crate::fulgur::sync::ssh::{
     save_queue::RemoteSavePermit,
     session::HostKeyDecision,
-    sftp::RemoteDirectoryEntry,
+    sftp::{RemoteBaseline, RemoteDirectoryEntry, RemoteFileVersion},
     url::{RemoteSpec, format_host_for_url},
 };
 use crate::fulgur::ui::tabs::editor_tab::ContentRevision;
@@ -31,6 +32,8 @@ pub struct RemoteFileResult {
     pub encoding: String,
     pub lossy: bool,
     pub file_size: usize,
+    /// Version of the file the content was read from, `None` when unknown.
+    pub version: Option<RemoteFileVersion>,
 }
 
 /// Data required to open a remote browsing dialog when the requested path is not a file.
@@ -165,6 +168,8 @@ pub struct RemoteSaveRequest {
     pub contents: String,
     /// The encoded file contents to write to the remote host
     pub bytes: Vec<u8>,
+    /// What the save does if the file changed on the server
+    pub(crate) disk_change_policy: DiskChangePolicy,
     /// Runs after a successful save; dropped unrun when the save fails or is superseded
     pub on_saved: Option<RemoteSaveContinuation>,
 }
@@ -176,6 +181,10 @@ pub struct RemoteSaveTaskParams {
     pub spec: RemoteSpec,
     pub saved_content: Arc<String>,
     pub saved_bytes: Arc<Vec<u8>>,
+    /// What the save does if the file changed on the server
+    pub(crate) disk_change_policy: DiskChangePolicy,
+    /// Version of the remote file the tab's buffer is based on
+    pub baseline: RemoteBaseline,
     pub remote_save_permit: RemoteSavePermit,
     /// Runs after a successful save; dropped unrun when the save fails or is superseded
     pub on_saved: Option<RemoteSaveContinuation>,

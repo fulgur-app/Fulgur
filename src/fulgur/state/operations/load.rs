@@ -202,6 +202,7 @@ impl Fulgur {
                         content: restored_content,
                         encoding: saved_encoding,
                         lossy: saved_lossy_decode,
+                        version: None,
                     },
                     window,
                     cx,

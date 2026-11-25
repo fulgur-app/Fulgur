@@ -211,6 +211,11 @@ fn only_a_restored_remote_tab_without_edits_awaits_its_content(cx: &mut TestAppC
         assert!(!placeholder.content.read(cx).is_editable());
         assert!(!recovered.awaiting_content);
         assert!(recovered.content.read(cx).is_editable());
+        assert_eq!(
+            recovered.remote_baseline.get(),
+            None,
+            "the first save of recovered edits must ask before replacing the server's version"
+        );
     });
 }
 

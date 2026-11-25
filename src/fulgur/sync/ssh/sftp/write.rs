@@ -1,4 +1,6 @@
+use super::browse::{cannot_inspect_error, is_missing_path_error};
 use super::paths::resolve_home_relative_path;
+use super::version::{RemoteConflict, RemoteFileVersion, RemoteWriteGuard, RemoteWriteOutcome};
 use crate::fulgur::sync::ssh::error::SshError;
 use crate::fulgur::sync::ssh::session::SshSession;
 use ssh2::{OpenFlags, OpenType, RenameFlags};
@@ -61,7 +63,104 @@ impl DestAttributes {
     }
 }
 
-/// Write bytes to a remote file via SFTP using a temp-then-rename approach.
+/// What a save found at its destination.
+#[derive(Debug)]
+enum Destination {
+    /// It may be written; holds its attributes, or `None` when it does not exist or cannot
+    /// be read.
+    Writable(Option<ssh2::FileStat>),
+    /// It must be left alone.
+    Conflict(RemoteConflict),
+}
+
+/// Decide from the destination's attributes whether a save may replace it.
+///
+/// ### Arguments
+/// - `stat`: Result of reading the destination's attributes.
+/// - `guard`: What the write requires of the destination.
+/// - `remote_path`: Path named in the error message.
+///
+/// ### Errors
+/// - Returns an `SshError::SftpError` when the attributes of a destination that must be
+///   unchanged cannot be read, unless it does not exist.
+///
+/// ### Returns
+/// - `Ok(Destination)`: The destination may be written, or is in conflict.
+/// - `Err(SshError::SftpError)`: The destination could not be checked.
+fn check_destination(
+    stat: Result<ssh2::FileStat, ssh2::Error>,
+    guard: RemoteWriteGuard,
+    remote_path: &str,
+) -> Result<Destination, SshError> {
+    match stat {
+        Ok(stat) => {
+            let current = RemoteFileVersion::from_stat(&stat);
+            Ok(guard
+                .conflict_with(&current)
+                .map_or(Destination::Writable(Some(stat)), Destination::Conflict))
+        }
+        Err(e) if is_missing_path_error(&e) || guard == RemoteWriteGuard::Overwrite => {
+            Ok(Destination::Writable(None))
+        }
+        Err(e) => Err(cannot_inspect_error(remote_path, &e)),
+    }
+}
+
+/// Write bytes to a remote file via SFTP, unless it changed since the expected version.
+///
+/// ### Arguments
+/// - `session`: Established SSH session with SFTP subsystem.
+/// - `remote_path`: Absolute or home-relative (`~/...`) destination path on the remote host.
+/// - `data`: File contents to write.
+/// - `guard`: What the write requires of the destination.
+/// - `before_write`: Called once the destination satisfies `guard`, before anything changes
+///   on the remote host.
+///
+/// ### Errors
+/// - Returns an `SshError::SftpError` when the remote home directory cannot be resolved,
+///   when the destination cannot be checked against `guard`, or on any write, rename, or
+///   permission failure against the temporary file or the destination path.
+///
+/// ### Returns
+/// - `Ok(RemoteWriteOutcome::Written)`: File written and moved into place.
+/// - `Ok(RemoteWriteOutcome::Refused)`: The destination does not satisfy `guard`; nothing
+///   was written.
+/// - `Err(SshError::SftpError)`: Check, write, rename, or permission error.
+pub fn write_remote_file(
+    session: &SshSession,
+    remote_path: &str,
+    data: &[u8],
+    guard: RemoteWriteGuard,
+    before_write: impl FnOnce(),
+) -> Result<RemoteWriteOutcome, SshError> {
+    let remote_path = resolve_home_relative_path(session, remote_path)?;
+    // Resolve symlinks so the write targets the real file instead of replacing the link.
+    let resolved = session
+        .sftp
+        .realpath(Path::new(&remote_path))
+        .ok()
+        .and_then(|path| path.to_str().map(str::to_string))
+        .unwrap_or(remote_path);
+    let dest_path = Path::new(&resolved);
+
+    let dest_stat = match check_destination(session.sftp.stat(dest_path), guard, &resolved)? {
+        Destination::Writable(stat) => stat,
+        Destination::Conflict(conflict) => return Ok(RemoteWriteOutcome::Refused(conflict)),
+    };
+    before_write();
+    replace_destination(
+        session,
+        &resolved,
+        data,
+        DestAttributes::from_stat(dest_stat.as_ref()),
+    )?;
+    Ok(RemoteWriteOutcome::Written(RemoteFileVersion::after_write(
+        session.sftp.stat(dest_path).ok().as_ref(),
+        data.len() as u64,
+    )))
+}
+
+/// Replace a remote file's contents using a temp-then-rename approach.
 ///
 /// ### Description
 /// Writes to a `.fulgur.tmp.{pid}.{nanos}` sibling, then installs it with `install_temp`: the
@@ -75,33 +174,23 @@ impl DestAttributes {
 ///
 /// ### Arguments
 /// - `session`: Established SSH session with SFTP subsystem.
-/// - `remote_path`: Absolute or home-relative (`~/...`) destination path on the remote host.
+/// - `resolved`: Absolute destination path, with symlinks resolved.
 /// - `data`: File contents to write.
+/// - `dest_attributes`: Attributes of the destination to carry over.
 ///
 /// ### Errors
-/// - Returns an `SshError::SftpError` when the remote home directory cannot be resolved,
-///   or on any write, rename, or permission failure against the temporary file or the
-///   destination path.
+/// - Returns an `SshError::SftpError` on any write, rename, or permission failure against
+///   the temporary file or the destination path.
 ///
 /// ### Returns
 /// - `Ok(())`: File written and renamed successfully.
 /// - `Err(SshError::SftpError)`: Write, rename, or permission error.
-pub fn write_remote_file(
+fn replace_destination(
     session: &SshSession,
-    remote_path: &str,
+    resolved: &str,
     data: &[u8],
+    dest_attributes: DestAttributes,
 ) -> Result<(), SshError> {
-    let remote_path = resolve_home_relative_path(session, remote_path)?;
-    // Resolve symlinks so the write targets the real file instead of replacing the link.
-    let resolved = session
-        .sftp
-        .realpath(Path::new(&remote_path))
-        .ok()
-        .and_then(|path| path.to_str().map(str::to_string))
-        .unwrap_or(remote_path);
-
-    let dest_attributes =
-        DestAttributes::from_stat(session.sftp.stat(Path::new(&resolved)).ok().as_ref());
     let dest_mode = dest_attributes.mode;
 
     let pid = std::process::id();
@@ -114,7 +203,7 @@ pub fn write_remote_file(
     let backup_str = format!("{resolved}.fulgur.bak.{pid}.{nanos}");
     let tmp_path = Path::new(&tmp_str);
     let backup_path = Path::new(&backup_str);
-    let dest_path = Path::new(&resolved);
+    let dest_path = Path::new(resolved);
 
     let mut tmp = match session.sftp.open_mode(
         tmp_path,
@@ -462,7 +551,13 @@ fn replace_with_temp(
 
 #[cfg(test)]
 mod tests {
-    use super::{DestAttributes, FileOwner, RemoteReplaceOps, install_temp, replace_with_temp};
+    use super::{
+        DestAttributes, Destination, FileOwner, RemoteReplaceOps, check_destination, install_temp,
+        replace_with_temp,
+    };
+    use crate::fulgur::sync::ssh::error::SshError;
+    use crate::fulgur::sync::ssh::sftp::{RemoteConflict, RemoteFileVersion, RemoteWriteGuard};
+    use ssh2::ErrorCode;
     use std::cell::{Cell, RefCell};
     use std::collections::{HashMap, HashSet};
     use std::path::{Path, PathBuf};
@@ -645,6 +740,99 @@ mod tests {
                 mode: 0o660,
             },
         )
+    }
+
+    /// Attributes of a 10-byte destination modified at the given time.
+    ///
+    /// ### Arguments
+    /// - `mtime`: Modification time reported by the server.
+    ///
+    /// ### Returns
+    /// - `ssh2::FileStat`: The attributes.
+    fn dest_stat(mtime: u64) -> ssh2::FileStat {
+        ssh2::FileStat {
+            size: Some(10),
+            uid: None,
+            gid: None,
+            perm: Some(0o100_644),
+            atime: None,
+            mtime: Some(mtime),
+        }
+    }
+
+    /// Build the error a server returns for a failed metadata lookup.
+    ///
+    /// ### Arguments
+    /// - `status`: SFTP status code.
+    ///
+    /// ### Returns
+    /// - `ssh2::Error`: The error.
+    fn sftp_error(status: i32) -> ssh2::Error {
+        ssh2::Error::new(ErrorCode::SFTP(status), "stat failed")
+    }
+
+    /// Guard accepting only the destination described by `dest_stat(1_000)`.
+    ///
+    /// ### Returns
+    /// - `RemoteWriteGuard`: The guard.
+    fn loaded_version_guard() -> RemoteWriteGuard {
+        RemoteWriteGuard::Unchanged(Some(RemoteFileVersion::from_stat(&dest_stat(1_000))))
+    }
+
+    #[test]
+    fn unchanged_destination_is_writable_and_keeps_its_attributes() {
+        let destination = check_destination(Ok(dest_stat(1_000)), loaded_version_guard(), DEST);
+
+        assert!(
+            matches!(destination, Ok(Destination::Writable(Some(stat))) if stat == dest_stat(1_000))
+        );
+    }
+
+    #[test]
+    fn destination_changed_on_the_server_is_a_conflict() {
+        let destination = check_destination(Ok(dest_stat(2_000)), loaded_version_guard(), DEST);
+
+        assert!(matches!(
+            destination,
+            Ok(Destination::Conflict(RemoteConflict::Changed))
+        ));
+    }
+
+    #[test]
+    fn existing_destination_with_unknown_baseline_is_a_conflict() {
+        let guard = RemoteWriteGuard::Unchanged(None);
+
+        assert!(matches!(
+            check_destination(Ok(dest_stat(1_000)), guard, DEST),
+            Ok(Destination::Conflict(RemoteConflict::UnknownBaseline))
+        ));
+    }
+
+    #[test]
+    fn missing_destination_is_writable_whatever_the_baseline() {
+        for guard in [loaded_version_guard(), RemoteWriteGuard::Unchanged(None)] {
+            assert!(matches!(
+                check_destination(Err(sftp_error(2)), guard, DEST),
+                Ok(Destination::Writable(None))
+            ));
+        }
+    }
+
+    #[test]
+    fn destination_that_cannot_be_inspected_is_not_overwritten_unchecked() {
+        let refused = check_destination(Err(sftp_error(3)), loaded_version_guard(), DEST);
+        assert!(matches!(refused, Err(SshError::SftpError(message)) if message.contains(DEST)));
+
+        let forced = check_destination(Err(sftp_error(3)), RemoteWriteGuard::Overwrite, DEST);
+        assert!(matches!(forced, Ok(Destination::Writable(None))));
+    }
+
+    #[test]
+    fn overwrite_guard_accepts_a_changed_destination() {
+        let destination =
+            check_destination(Ok(dest_stat(2_000)), RemoteWriteGuard::Overwrite, DEST);
+
+        assert!(matches!(destination, Ok(Destination::Writable(Some(_)))));
     }
 
     #[test]

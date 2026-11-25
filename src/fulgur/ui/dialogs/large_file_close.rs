@@ -6,7 +6,8 @@ use std::time::SystemTime;
 
 use crate::fulgur::Fulgur;
 use crate::fulgur::files::file_operations::{
-    EncodedContents, RemoteSaveContinuation, RemoteSaveRequest, disk_changed_since, encode_for_save,
+    DiskChangePolicy, EncodedContents, RemoteSaveContinuation, RemoteSaveRequest,
+    disk_changed_since, encode_for_save,
 };
 use crate::fulgur::state::SnapshotKind;
 use crate::fulgur::sync::ssh::url::RemoteSpec;
@@ -162,6 +163,7 @@ impl Fulgur {
             spec,
             contents,
             bytes,
+            disk_change_policy: DiskChangePolicy::Prompt,
             on_saved: Some(resume),
         };
         self.save_remote_file(window, cx, request);

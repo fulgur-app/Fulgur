@@ -16,7 +16,7 @@ pub use remote_types::{
     PendingRemoteOpenOutcome, RemoteBrowseResult, RemoteFileResult, RemoteOpenResult,
     RemoteSaveContinuation, RemoteSaveRequest,
 };
-pub(crate) use save_ops::{EncodedSave, SnapshotFingerprint, disk_changed_since};
+pub(crate) use save_ops::{DiskChangePolicy, EncodedSave, SnapshotFingerprint, disk_changed_since};
 
 #[cfg(test)]
 pub mod test_helpers;

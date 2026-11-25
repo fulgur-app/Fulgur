@@ -1,6 +1,7 @@
 use super::super::{EncodedContents, RemoteSaveRequest, encode_for_save};
 use super::completion::{SaveCompletion, SavedSnapshot};
 use super::snapshot::SaveSnapshot;
+use crate::fulgur::ui::dialogs::save_conflict::ConflictedFile;
 use crate::fulgur::ui::tabs::tab::TabId;
 use crate::fulgur::{
     Fulgur, editor_tab::TabLocation, state::file_modified_system_time, tab::Tab,
@@ -12,13 +13,13 @@ use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-/// What a local save does when the file on disk no longer matches the version
-/// the buffer is based on.
+/// What a save does when the file, on disk or on a remote host, no longer matches
+/// the version the buffer is based on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DiskChangePolicy {
     /// Refuse the write and ask the user how to resolve the conflict.
     Prompt,
-    /// Write anyway, replacing the version on disk.
+    /// Write anyway, replacing the newer version.
     Overwrite,
 }
 
@@ -120,38 +121,14 @@ impl Fulgur {
         self.save_editor_tab(tab_id, DiskChangePolicy::Prompt, window, cx);
     }
 
-    /// Save a local tab over a version of its file that changed on disk, after
-    /// the user chose to overwrite it.
-    ///
-    /// ### Arguments
-    /// - `tab_id`: Stable identifier of the tab to save
-    /// - `path`: The path the tab is expected to still point at
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub(crate) fn save_tab_over_disk_changes(
-        &mut self,
-        tab_id: TabId,
-        path: &Path,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let still_backed_by_path = self
-            .tab_entity_of(tab_id, cx)
-            .and_then(|tab| tab.read(cx).as_editor()?.file_path().cloned())
-            .is_some_and(|tab_path| tab_path == path);
-        if still_backed_by_path {
-            self.save_editor_tab(tab_id, DiskChangePolicy::Overwrite, window, cx);
-        }
-    }
-
     /// Save an editor tab to its backing location
     ///
     /// ### Arguments
     /// - `tab_id`: Stable identifier of the tab to save
-    /// - `disk_change_policy`: What a local save does if the file changed on disk
+    /// - `disk_change_policy`: What the save does if the file changed since it was loaded
     /// - `window`: The window to save the file in
     /// - `cx`: The application context
-    fn save_editor_tab(
+    pub(crate) fn save_editor_tab(
         &mut self,
         tab_id: TabId,
         disk_change_policy: DiskChangePolicy,
@@ -215,6 +192,7 @@ impl Fulgur {
                     spec,
                     contents,
                     bytes,
+                    disk_change_policy,
                     on_saved: None,
                 };
                 self.save_remote_file(window, cx, request);
@@ -310,7 +288,12 @@ impl Fulgur {
                     completion.path.display()
                 );
                 self.cancel_close_after_failed_local_save(completion.tab_id);
-                self.show_save_conflict_dialog(&completion.path, completion.tab_id, window, cx);
+                self.show_save_conflict_dialog(
+                    ConflictedFile::Local(completion.path.clone()),
+                    completion.tab_id,
+                    window,
+                    cx,
+                );
                 cx.notify();
             }
             Ok(LocalWriteOutcome::Unencodable(encoding)) => {
@@ -346,10 +329,10 @@ mod tests {
     use crate::fulgur::ui::components_utils::UTF_8;
     use crate::fulgur::ui::tabs::tab::TabId;
     use crate::fulgur::utils::atomic_write::atomic_write_file;
-    use crate::test_support::{has_active_dialog, write_with_mtime};
+    use crate::test_support::{click_dialog_button, has_active_dialog, write_with_mtime};
     #[cfg(feature = "gpui-test-support")]
     use gpui_kit::TestAppContext;
-    use gpui_kit::{App, Entity, Modifiers, VisualTestContext};
+    use gpui_kit::{App, Entity, VisualTestContext};
     use std::path::Path;
     use std::time::SystemTime;
     #[cfg(feature = "gpui-test-support")]
@@ -423,20 +406,6 @@ mod tests {
         save_active_tab(fulgur, visual_cx);
         assert!(has_active_dialog(visual_cx));
         tab_id
-    }
-
-    /// Click a button of the open dialog by its debug selector.
-    ///
-    /// ### Arguments
-    /// - `visual_cx`: The visual test context of the window
-    /// - `selector`: The button's debug selector
-    fn click_dialog_button(visual_cx: &mut VisualTestContext, selector: &'static str) {
-        visual_cx.update(|window, cx| window.draw(cx).clear(cx));
-        let bounds = visual_cx
-            .debug_bounds(selector)
-            .expect("the dialog button should be rendered");
-        visual_cx.simulate_click(bounds.center(), Modifiers::none());
-        visual_cx.run_until_parked();
     }
 
     /// Describe a tab's current buffer as the snapshot a UTF-8 save would write.

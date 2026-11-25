@@ -1,6 +1,7 @@
 use super::paths::{
     join_remote_path, normalize_remote_path, parent_remote_path, resolve_home_relative_path,
 };
+use super::version::RemoteFileVersion;
 use crate::fulgur::sync::ssh::REMOTE_ROOT_PATH;
 use crate::fulgur::sync::ssh::error::SshError;
 use crate::fulgur::sync::ssh::session::SshSession;
@@ -10,6 +11,9 @@ use std::path::Path;
 
 /// Largest remote file, in bytes, that Fulgur reads into an editor buffer.
 pub const MAX_REMOTE_FILE_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// SFTP status code of a path that does not exist.
+const SFTP_NO_SUCH_FILE: i32 = 2;
 
 /// POSIX mask selecting the file type bits of a mode.
 const MODE_TYPE_MASK: u32 = 0o170_000;
@@ -33,19 +37,20 @@ const MODE_TYPE_REGULAR: u32 = 0o100_000;
 ///   I/O error occurs while reading.
 ///
 /// ### Returns
-/// - `Ok(Vec<u8>)`: Raw file contents.
+/// - `Ok((Vec<u8>, RemoteFileVersion))`: Raw file contents, and the version the file was
+///   before the read. A file changed during the read therefore differs from it.
 /// - `Err(SshError::SftpError)`: The file was refused or could not be read.
 pub fn read_remote_file(
     session: &SshSession,
     remote_path: &str,
     before_read: impl FnOnce(u64),
-) -> Result<Vec<u8>, SshError> {
+) -> Result<(Vec<u8>, RemoteFileVersion), SshError> {
     let remote_path = resolve_home_relative_path(session, remote_path)?;
     let path = Path::new(&remote_path);
     let stat = session
         .sftp
         .stat(path)
-        .map_err(|e| SshError::SftpError(format!("Cannot inspect {remote_path}: {e}")))?;
+        .map_err(|e| cannot_inspect_error(&remote_path, &e))?;
     if let Some(perm) = stat.perm
         && !matches!(remote_path_kind_from_mode(perm), RemotePathKind::File)
     {
@@ -61,7 +66,8 @@ pub fn read_remote_file(
         .sftp
         .open(path)
         .map_err(|e| SshError::SftpError(format!("Cannot open {remote_path}: {e}")))?;
-    read_bounded(file, MAX_REMOTE_FILE_BYTES, &remote_path)
+    let bytes = read_bounded(file, MAX_REMOTE_FILE_BYTES, &remote_path)?;
+    Ok((bytes, RemoteFileVersion::from_stat(&stat)))
 }
 
 /// Read a stream to its end, refusing it once it exceeds a byte limit.
@@ -193,13 +199,32 @@ pub fn classify_remote_path(
                 Ok(RemotePathKind::File)
             }
         }
-        Err(err) => match err.code() {
-            ErrorCode::SFTP(2) => Ok(RemotePathKind::Missing),
-            _ => Err(SshError::SftpError(format!(
-                "Cannot inspect {normalized}: {err}"
-            ))),
-        },
+        Err(err) if is_missing_path_error(&err) => Ok(RemotePathKind::Missing),
+        Err(err) => Err(cannot_inspect_error(&normalized, &err)),
     }
+}
+
+/// Check whether an SFTP error means that the path does not exist.
+///
+/// ### Arguments
+/// - `error`: Error returned by an SFTP metadata lookup.
+///
+/// ### Returns
+/// - `bool`: `true` for the SFTP "no such file" status.
+pub(super) fn is_missing_path_error(error: &ssh2::Error) -> bool {
+    matches!(error.code(), ErrorCode::SFTP(SFTP_NO_SUCH_FILE))
+}
+
+/// Build the error returned when the attributes of a remote path cannot be read.
+///
+/// ### Arguments
+/// - `remote_path`: The path that was inspected.
+/// - `error`: Error returned by the metadata lookup.
+///
+/// ### Returns
+/// - `SshError::SftpError`: The error naming the path and the cause.
+pub(super) fn cannot_inspect_error(remote_path: &str, error: &ssh2::Error) -> SshError {
+    SshError::SftpError(format!("Cannot inspect {remote_path}: {error}"))
 }
 
 /// Find the closest existing remote directory for an input path.

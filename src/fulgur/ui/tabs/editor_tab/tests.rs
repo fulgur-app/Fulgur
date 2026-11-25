@@ -5,6 +5,7 @@ use super::{
 use crate::fulgur::languages::supported_languages::SupportedLanguage;
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::sync::share::ShareOrigin;
+use crate::fulgur::sync::ssh::sftp::RemoteBaseline;
 use crate::fulgur::ui::tabs::tab::TabId;
 use gpui_kit::component::input::Position;
 use gpui_kit::component::table::TableDelegate;
@@ -51,6 +52,7 @@ fn make_transfer_data() -> TabTransferData {
         file_size_bytes: Some(12),
         file_last_modified: None,
         file_missing: false,
+        remote_baseline: RemoteBaseline::default(),
         cursor_position: Position::default(),
         csv_view_mode: super::CsvViewMode::Text,
         csv_delimiter: b',',
@@ -590,6 +592,7 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
         file_size_bytes: None,
         file_last_modified: None,
         file_missing: false,
+        remote_baseline: RemoteBaseline::default(),
         cursor_position: Position::default(),
         csv_view_mode: super::CsvViewMode::Text,
         csv_delimiter: b',',
@@ -631,6 +634,7 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
         file_size_bytes: None,
         file_last_modified: None,
         file_missing: false,
+        remote_baseline: RemoteBaseline::default(),
         cursor_position: Position::default(),
         csv_view_mode: super::CsvViewMode::Text,
         csv_delimiter: b',',
@@ -675,6 +679,7 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
         file_size_bytes: None,
         file_last_modified: None,
         file_missing: false,
+        remote_baseline: RemoteBaseline::default(),
         cursor_position: Position::default(),
         csv_view_mode: super::CsvViewMode::Text,
         csv_delimiter: b',',
@@ -713,6 +718,7 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
         file_size_bytes: None,
         file_last_modified: None,
         file_missing: false,
+        remote_baseline: RemoteBaseline::default(),
         cursor_position: Position::default(),
         csv_view_mode: super::CsvViewMode::Text,
         csv_delimiter: b',',
