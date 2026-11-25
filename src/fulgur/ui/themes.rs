@@ -2,8 +2,8 @@ use crate::fulgur::settings::{Settings, Themes};
 use crate::fulgur::shared_state::SharedAppState;
 
 use gpui_kit::base::input::CursorBlink;
-use gpui_kit::component::{Theme, ThemeConfig, ThemeMode, ThemeRegistry};
-use gpui_kit::{Action, App, BorrowAppContext, SharedString};
+use gpui_kit::component::{Theme, ThemeConfig, ThemeRegistry};
+use gpui_kit::{App, BorrowAppContext, SharedString};
 use rust_embed::RustEmbed;
 use std::fs;
 use std::path::PathBuf;
@@ -118,11 +118,6 @@ pub fn init(settings: &Settings, cx: &mut App, on_themes_loaded: impl Fn(&mut Ap
         Theme::set_scrollbar_mode(scrollbar_show, cx);
     }
     cx.refresh_windows();
-    cx.on_action(|switch: &SwitchThemeMode, cx| {
-        let mode = switch.0;
-        Theme::change(mode, None, cx);
-        cx.refresh_windows();
-    });
 }
 
 /// Apply the selected theme if the theme registry knows it, otherwise keep the current theme
@@ -187,10 +182,6 @@ pub fn reload_theme_catalog(cx: &mut App) {
         Err(e) => log::error!("Failed to load themes: {e}"),
     }
 }
-
-#[derive(Action, Clone, PartialEq)]
-#[action(namespace = themes, no_json)]
-pub(crate) struct SwitchThemeMode(pub(crate) ThemeMode);
 
 #[cfg(test)]
 mod tests {

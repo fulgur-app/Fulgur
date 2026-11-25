@@ -42,10 +42,6 @@ actions!(
 
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
-pub struct SwitchTheme(pub SharedString);
-
-#[derive(Action, Clone, PartialEq)]
-#[action(namespace = fulgur, no_json)]
 pub struct OpenRecentFile(pub PathBuf);
 
 #[derive(Action, Clone, PartialEq)]

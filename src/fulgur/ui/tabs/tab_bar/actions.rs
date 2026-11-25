@@ -3,7 +3,6 @@ use super::{
     CopyPath, DuplicateTab, RenameTab, SetTabColor, ShowInFileManager,
 };
 use crate::fulgur::Fulgur;
-use gpui_kit::component::{ActiveTheme, ThemeRegistry};
 use gpui_kit::{ClipboardItem, Context, Window};
 
 impl Fulgur {
@@ -237,27 +236,6 @@ impl Fulgur {
             let previous_index = (active_index + self.tabs.len() - 1) % self.tabs.len();
             self.set_active_tab(previous_index, window, cx);
         }
-    }
-
-    /// Handle theme switching action.
-    ///
-    /// Applies the selected theme, updates settings, refreshes windows, and rebuilds menus.
-    ///
-    /// ### Arguments
-    /// - `theme_name`: The name of the theme to switch to (as `SharedString` from action)
-    /// - `cx`: The application context
-    pub fn switch_to_theme(&mut self, theme_name: gpui_kit::SharedString, cx: &mut Context<Self>) {
-        if let Some(theme_config) = ThemeRegistry::global(cx)
-            .themes()
-            .get(theme_name.as_ref())
-            .cloned()
-        {
-            crate::fulgur::ui::themes::apply_theme_config(&theme_config, cx);
-            self.settings.app_settings.theme = theme_name;
-            self.settings.app_settings.scrollbar_show = Some(cx.theme().scrollbar_mode);
-            let _ = self.update_and_propagate_settings(cx);
-        }
-        cx.refresh_windows();
     }
 }
 
