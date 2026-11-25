@@ -9,12 +9,6 @@ pub enum SshError {
     ConnectionFailed(String),
     /// Server's host key is in `known_hosts` but does not match.
     HostKeyMismatch { host: String, port: u16 },
-    /// Server's host key is not in `known_hosts`; contains the SHA-256 fingerprint for display.
-    UnknownHost {
-        host: String,
-        port: u16,
-        fingerprint: String,
-    },
     /// No agent identity, key, or password was accepted by the server.
     AuthFailed,
     /// The user cancelled a passphrase or login prompt.
@@ -37,11 +31,6 @@ impl fmt::Display for SshError {
                 "Host key mismatch for {host}:{port} - possible MITM. \
                  Verify or update ~/.ssh/known_hosts."
             ),
-            SshError::UnknownHost {
-                host,
-                port,
-                fingerprint,
-            } => write!(f, "Unknown host {host}:{port} (fingerprint: {fingerprint})"),
             SshError::AuthFailed => write!(
                 f,
                 "Authentication failed - no SSH agent identity, key, or password was accepted."
