@@ -112,10 +112,6 @@ jobs:
         shell: pwsh
         run: echo "OPENSSL_SRC_PERL=C:\Strawberry\perl\bin\perl.exe" >> $env:GITHUB_ENV
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          shared-key: release-${{ matrix.runner }}
 
       # -- Test phase --
       # Only tests run here. ci.yml checks fmt on every PR but runs clippy only on
