@@ -11,7 +11,7 @@ mod tests;
 use std::ops::Range;
 
 use gpui_kit::component::{
-    input::{EditorState, InputState},
+    input::{EditorState, TextareaState},
     table::{Column, TableEvent, TableState},
 };
 use gpui_kit::{App, Context, Entity, SharedString, Window, px};
@@ -61,7 +61,7 @@ pub struct CsvTableDelegate {
     columns: Vec<Column>,
     dialect: CsvDialect,
     content: Entity<EditorState>,
-    dialog_input: Entity<InputState>,
+    dialog_input: Entity<TextareaState>,
     /// The most recent selection event received via `attach_selection_tracking`.
     last_selection: Option<CsvSelection>,
     /// The row range the table last reported as visible.
@@ -87,7 +87,7 @@ impl CsvTableDelegate {
         data: CsvData,
         dialect: CsvDialect,
         content: Entity<EditorState>,
-        dialog_input: Entity<InputState>,
+        dialog_input: Entity<TextareaState>,
     ) -> Self {
         let columns = Self::compute_columns(&data.headers, &data.rows);
         Self {

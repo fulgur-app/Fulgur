@@ -12,7 +12,4 @@ ignore = [
     # Optional dependency of ssh-key 0.6.7, recorded in Cargo.lock only through the weak
     # `rsa?/std` feature. Fulgur does not enable ssh-key's `rsa` feature, so it is never built.
     "RUSTSEC-2023-0071",
-    # core2 - unmaintained, all versions yanked. Recorded in Cargo.lock through image's
-    # optional AVIF encoder (image -> ravif -> rav1e -> bitstream-io), which is disabled.
-    "RUSTSEC-2026-0105",
 ]

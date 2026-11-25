@@ -625,3 +625,102 @@ fn test_table_edits_are_undone_one_at_a_time(cx: &mut gpui_kit::TestAppContext) 
         "the earlier table edit must still be in the undo history"
     );
 }
+
+/// Open a window whose active tab shows `source` as a CSV table.
+///
+/// ### Arguments
+/// - `cx`: The test application context
+/// - `source`: The CSV document
+///
+/// ### Returns
+/// - `(Entity<EditorState>, Entity<TableState<CsvTableDelegate>>, VisualTestContext)`: The tab's
+///   buffer, its table and the visual test context
+#[cfg(feature = "gpui-test-support")]
+fn open_csv_table(
+    cx: &mut gpui_kit::TestAppContext,
+    source: &'static str,
+) -> (
+    gpui_kit::Entity<gpui_kit::component::input::EditorState>,
+    gpui_kit::Entity<gpui_kit::component::table::TableState<CsvTableDelegate>>,
+    gpui_kit::VisualTestContext,
+) {
+    use crate::fulgur::languages::supported_languages::SupportedLanguage;
+
+    let (fulgur, mut visual_cx) = crate::test_support::setup_fulgur_with_root(cx);
+    let (content, table) = visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_active_editor_tab(cx, |editor, cx| {
+                editor.language = SupportedLanguage::Csv;
+                editor.csv_delimiter = b',';
+                editor.content.update(cx, |state, cx| {
+                    state.set_value(source, window, cx);
+                });
+                editor.ensure_csv_table(window, cx);
+                let table = editor.csv_table.clone().expect("expected a CSV table");
+                (editor.content.clone(), table)
+            })
+            .expect("expected an active editor tab")
+        })
+    });
+    (content, table, visual_cx)
+}
+
+/// Open the edit dialog on a cell of the first row, press keys in it and confirm it.
+///
+/// ### Arguments
+/// - `table`: The table owning the cell
+/// - `column`: The data column of the cell
+/// - `keystrokes`: The keys pressed before the dialog is confirmed
+/// - `visual_cx`: The visual test context driving the window
+#[cfg(feature = "gpui-test-support")]
+fn edit_first_row_cell(
+    table: &gpui_kit::Entity<gpui_kit::component::table::TableState<CsvTableDelegate>>,
+    column: usize,
+    keystrokes: &str,
+    visual_cx: &mut gpui_kit::VisualTestContext,
+) {
+    use crate::test_support::has_active_dialog;
+
+    visual_cx.update(|window, cx| {
+        table.update(cx, |state, cx| {
+            state
+                .delegate_mut()
+                .open_edit_dialog(EditTarget::Cell(0, column), window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+    assert!(has_active_dialog(visual_cx));
+    visual_cx.simulate_keystrokes(keystrokes);
+    visual_cx.simulate_keystrokes("enter");
+    visual_cx.run_until_parked();
+    assert!(!has_active_dialog(visual_cx));
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_confirming_an_untouched_edit_leaves_the_buffer_untouched(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let source = "a,b\n\"x\ty\",\"line 1\nline 2\"";
+    let (content, table, mut visual_cx) = open_csv_table(cx, source);
+    for column in [0, 1] {
+        edit_first_row_cell(&table, column, "", &mut visual_cx);
+        assert_eq!(
+            visual_cx.update(|_, cx| content.read(cx).text().to_string()),
+            source,
+            "confirming column {column} without typing must not rewrite the cell"
+        );
+    }
+}
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_editing_a_cell_keeps_its_tabs_and_line_breaks(cx: &mut gpui_kit::TestAppContext) {
+    let (content, table, mut visual_cx) = open_csv_table(cx, "a,b\nx\ty,\"line 1\nline 2\"");
+    edit_first_row_cell(&table, 0, "z", &mut visual_cx);
+    edit_first_row_cell(&table, 1, "shift-enter z", &mut visual_cx);
+    assert_eq!(
+        visual_cx.update(|_, cx| content.read(cx).text().to_string()),
+        "a,b\nx\tyz,\"line 1\nline 2\nz\""
+    );
+}

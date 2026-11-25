@@ -28,8 +28,10 @@ confidence-threshold = 0.8
 
 # Allow licenses that are exceptions (e.g., font licenses)
 exceptions = [
-    # Add any specific crate exceptions here if needed
-    # { allow = ["SOME-LICENSE"], name = "crate-name" },
+    # libfuzzer-sys - `(MIT OR Apache-2.0) AND NCSA`. Never built: rav1e requires it only under
+    # `cfg(fuzzing)`, and rav1e itself is reached only with `gpui-test-support` (gpui-base's
+    # `test-support` enables `image` with default features, hence its AVIF encoder). Not shipped.
+    { allow = ["NCSA"], crate = "libfuzzer-sys" },
 ]
 
 # ============================================================================

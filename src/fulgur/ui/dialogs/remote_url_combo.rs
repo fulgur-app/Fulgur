@@ -143,7 +143,10 @@ impl RemoteUrlCombo {
             Some(cx.subscribe(&menu, |this, _menu, _: &DismissEvent, cx| {
                 this.close_history(cx);
             }));
-        menu.focus_handle(cx).focus(window, cx);
+        // A controlled popover takes the focus after the frame that opens it, so the
+        // menu must ask for it after that too.
+        let focus_handle = menu.focus_handle(cx);
+        window.defer(cx, move |window, cx| focus_handle.focus(window, cx));
         self.history_menu = Some(menu.clone());
         menu
     }

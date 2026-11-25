@@ -1771,3 +1771,36 @@ fn test_replace_all_clears_match_decorations(cx: &mut TestAppContext) {
         });
     });
 }
+
+#[cfg(feature = "gpui-test-support")]
+#[gpui_kit::test]
+fn test_a_shared_state_change_repaints_the_matches(cx: &mut TestAppContext) {
+    use crate::fulgur::shared_state::SharedAppState;
+    use gpui_kit::BorrowAppContext;
+
+    let (_fulgur, search_bar, content, mut visual_cx) = setup_search(cx);
+    visual_cx.update(|window, cx| {
+        content.update(cx, |content, cx| {
+            content.set_value("foo foo", window, cx);
+        });
+        search_bar.update(cx, |bar, cx| {
+            bar.show_search = true;
+            bar.search_input.update(cx, |input, cx| {
+                input.set_value("foo", window, cx);
+            });
+            bar.perform_search(Some(content.clone()), cx);
+            bar.clear_match_decorations(cx);
+        });
+    });
+
+    visual_cx.update(|_window, cx| {
+        cx.update_global::<SharedAppState, _>(|_, _| {});
+    });
+    visual_cx.run_until_parked();
+
+    visual_cx.update(|_window, cx| {
+        let (all, current) = painted_ranges(search_bar.read(cx), &content, cx);
+        assert_eq!(current, vec![0..3]);
+        assert_eq!(all, vec![0..3, 4..7]);
+    });
+}

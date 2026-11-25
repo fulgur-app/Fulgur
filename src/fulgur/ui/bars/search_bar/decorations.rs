@@ -77,13 +77,18 @@ impl SearchBar {
     /// Repaint the search highlights of the active editor with the current theme
     ///
     /// ### Arguments
+    /// - `content`: The active editor tab's content, if any
     /// - `cx`: The search bar context
-    pub(crate) fn refresh_match_decorations(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn refresh_match_decorations(
+        &mut self,
+        content: Option<&Entity<EditorState>>,
+        cx: &mut Context<Self>,
+    ) {
         if !self.show_search {
             return;
         }
-        if let Some(content) = self.active_editor_content(cx) {
-            self.apply_match_decorations(&content, cx);
+        if let Some(content) = content {
+            self.apply_match_decorations(content, cx);
         }
     }
 

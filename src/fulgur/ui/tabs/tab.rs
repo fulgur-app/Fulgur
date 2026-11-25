@@ -6,7 +6,7 @@ use crate::fulgur::{
         editor_tab::EditorTab, markdown_preview_tab::MarkdownPreviewTab, settings_tab::SettingsTab,
     },
 };
-use gpui_kit::component::input::InputEvent;
+use gpui_kit::component::input::{EditorState, InputEvent};
 use gpui_kit::{App, AppContext, Context, Entity, SharedString, Window};
 use std::path::Path;
 
@@ -350,6 +350,20 @@ impl Fulgur {
     #[must_use]
     pub fn get_active_editor_tab<'a>(&self, cx: &'a App) -> Option<&'a EditorTab> {
         self.active_tab(cx).and_then(Tab::as_editor)
+    }
+
+    /// Get the content entity of the active editor tab
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Some(Entity<EditorState>)`: The active editor tab's content
+    /// - `None`: If there is no active editor tab
+    #[must_use]
+    pub fn active_editor_content(&self, cx: &App) -> Option<Entity<EditorState>> {
+        self.get_active_editor_tab(cx)
+            .map(|editor_tab| editor_tab.content.clone())
     }
 
     /// Borrow an editor tab by its stable identifier
