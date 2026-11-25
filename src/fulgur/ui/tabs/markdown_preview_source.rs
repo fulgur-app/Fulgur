@@ -18,6 +18,9 @@ use std::path::{Path, PathBuf};
 /// sources are rewritten on the background executor so typing stays fluid.
 const MAX_SYNC_REWRITE_BYTES: usize = 64 * 1024;
 
+/// Markdown shown instead of the preview of a source in large-file mode.
+pub(crate) const LARGE_FILE_PLACEHOLDER: &str = "*This file is too large to preview.*";
+
 /// The preview text of a Markdown editor tab, pushed on every content change.
 ///
 /// Rendering only reads `view_state`: the image-path rewrite runs when the
@@ -214,12 +217,36 @@ impl MarkdownPreviewSource {
         }
     }
 
+    /// Tell whether the source tab is in large-file mode.
+    ///
+    /// ### Arguments
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `true`: The source tab is open and in large-file mode
+    /// - `false`: The source tab is gone, or small enough to preview
+    fn source_is_large_file(&self, cx: &App) -> bool {
+        self.source_tab.upgrade().is_some_and(|source_tab| {
+            source_tab
+                .read(cx)
+                .as_editor()
+                .is_some_and(|editor_tab| editor_tab.large_file)
+        })
+    }
+
     /// Push the current source text, with local images rewritten, to the view.
     ///
     /// ### Arguments
     /// - `content`: The source editor buffer
     /// - `cx`: The preview source context
     fn refresh(&mut self, content: &Entity<EditorState>, cx: &mut Context<Self>) {
+        if self.source_is_large_file(cx) {
+            self.refresh_task = None;
+            self.rewrite_offsets = RewriteOffsets::default();
+            self.view_state
+                .update(cx, |state, cx| state.set_text(LARGE_FILE_PLACEHOLDER, cx));
+            return;
+        }
         let rope = content.read(cx).text().clone();
         let base_dir = self.base_dir.clone();
         let view_state = self.view_state.clone();
@@ -317,13 +344,43 @@ mod marker_tests {
 }
 
 #[cfg(all(test, feature = "gpui-test-support"))]
+pub(crate) mod test_helpers {
+    use super::MarkdownPreviewSource;
+    use gpui_kit::component::text::SelectionFormat;
+    use gpui_kit::{Entity, VisualTestContext};
+
+    /// Read back the Markdown source a preview currently holds, once it has settled.
+    ///
+    /// ### Arguments
+    /// - `preview`: The preview to read
+    /// - `visual_cx`: The visual test context driving the window
+    ///
+    /// ### Returns
+    /// - `String`: The Markdown last pushed to the preview's text view
+    pub(crate) fn preview_source(
+        preview: &Entity<MarkdownPreviewSource>,
+        visual_cx: &mut VisualTestContext,
+    ) -> String {
+        visual_cx.run_until_parked();
+        visual_cx.update(|_window, cx| {
+            let view_state = preview.read(cx).view_state();
+            view_state.update(cx, |state, cx| {
+                state.set_selection_format(SelectionFormat::Source, cx);
+                state.select_all(cx);
+                state.selected_text()
+            })
+        })
+    }
+}
+
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests {
-    use super::{MAX_SYNC_REWRITE_BYTES, MarkdownPreviewSource};
+    use super::test_helpers::preview_source;
+    use super::{LARGE_FILE_PLACEHOLDER, MAX_SYNC_REWRITE_BYTES, MarkdownPreviewSource};
     use crate::fulgur::Fulgur;
     use crate::fulgur::editor_tab::{TabLocation, replace_editor_text};
     use crate::fulgur::tab::Tab;
     use crate::test_support::setup_fulgur;
-    use gpui_kit::component::text::SelectionFormat;
     use gpui_kit::{Entity, TestAppContext, VisualTestContext};
     use std::ops::Range;
     use std::path::PathBuf;
@@ -359,22 +416,6 @@ mod tests {
             content.update(cx, |state, cx| replace_editor_text(state, text, window, cx));
         });
         visual_cx.run_until_parked();
-    }
-
-    /// Read back the Markdown source currently held by the preview.
-    fn preview_source(
-        preview: &Entity<MarkdownPreviewSource>,
-        visual_cx: &mut VisualTestContext,
-    ) -> String {
-        visual_cx.run_until_parked();
-        visual_cx.update(|_window, cx| {
-            let view_state = preview.read(cx).view_state();
-            view_state.update(cx, |state, cx| {
-                state.set_selection_format(SelectionFormat::Source, cx);
-                state.select_all(cx);
-                state.selected_text()
-            })
-        })
     }
 
     /// Read back the whole text of the tab's buffer.
@@ -571,12 +612,93 @@ mod tests {
     #[gpui_kit::test]
     fn large_sources_are_rewritten_in_the_background(cx: &mut TestAppContext) {
         let (tab, preview, _fulgur, mut visual_cx) = preview_of_active_tab(cx);
-        let large = format!(
+        let large = background_sized_markdown();
+        replace_buffer(&tab, &large, &mut visual_cx);
+        assert_eq!(preview_source(&preview, &mut visual_cx), large);
+    }
+
+    /// Build Markdown too long for a synchronous rewrite.
+    fn background_sized_markdown() -> String {
+        let markdown = format!(
             "{}\n\n# End",
             "Some filler text.\n".repeat(MAX_SYNC_REWRITE_BYTES / 16)
         );
-        assert!(large.len() > MAX_SYNC_REWRITE_BYTES);
-        replace_buffer(&tab, &large, &mut visual_cx);
-        assert_eq!(preview_source(&preview, &mut visual_cx), large);
+        assert!(markdown.len() > MAX_SYNC_REWRITE_BYTES);
+        markdown
+    }
+
+    /// Flag the tab as a large file, as `EditorTab::enter_large_file_mode` does.
+    fn mark_large_file(tab: &Entity<Tab>, visual_cx: &mut VisualTestContext) {
+        visual_cx.update(|_window, cx| {
+            tab.update(cx, |tab, _cx| {
+                tab.as_editor_mut().expect("editor tab").large_file = true;
+            });
+        });
+    }
+
+    #[gpui_kit::test]
+    fn a_source_entering_large_file_mode_stops_feeding_the_preview(cx: &mut TestAppContext) {
+        let (tab, preview, _fulgur, mut visual_cx) = preview_of_active_tab(cx);
+        replace_buffer(&tab, "# Small", &mut visual_cx);
+        assert_eq!(preview_source(&preview, &mut visual_cx), "# Small");
+
+        mark_large_file(&tab, &mut visual_cx);
+        replace_buffer(&tab, "# Grown", &mut visual_cx);
+        assert_eq!(
+            preview_source(&preview, &mut visual_cx),
+            LARGE_FILE_PLACEHOLDER
+        );
+
+        replace_buffer(&tab, "# Edited", &mut visual_cx);
+        assert_eq!(
+            preview_source(&preview, &mut visual_cx),
+            LARGE_FILE_PLACEHOLDER,
+            "later edits must not reach the preview either"
+        );
+    }
+
+    #[gpui_kit::test]
+    fn entering_large_file_mode_cancels_a_background_rewrite(cx: &mut TestAppContext) {
+        let (tab, preview, _fulgur, mut visual_cx) = preview_of_active_tab(cx);
+        let content = visual_cx.update(|_window, cx| {
+            tab.read(cx)
+                .as_editor()
+                .expect("editor tab")
+                .content
+                .clone()
+        });
+        visual_cx.update(|window, cx| {
+            content.update(cx, |state, cx| {
+                replace_editor_text(state, &background_sized_markdown(), window, cx);
+            });
+        });
+        assert!(
+            visual_cx.update(|_window, cx| preview.read(cx).refresh_task.is_some()),
+            "fixture should have a rewrite in flight"
+        );
+
+        mark_large_file(&tab, &mut visual_cx);
+        replace_buffer(&tab, "# Grown", &mut visual_cx);
+
+        assert_eq!(
+            preview_source(&preview, &mut visual_cx),
+            LARGE_FILE_PLACEHOLDER
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_preview_created_for_a_large_file_shows_the_placeholder(cx: &mut TestAppContext) {
+        let (tab, _preview, _fulgur, mut visual_cx) = preview_of_active_tab(cx);
+        replace_buffer(&tab, "# Large", &mut visual_cx);
+        mark_large_file(&tab, &mut visual_cx);
+
+        let preview = visual_cx.update(|_window, cx| {
+            MarkdownPreviewSource::for_editor_tab(&tab, cx).expect("expected an editor tab")
+        });
+
+        assert_eq!(
+            preview_source(&preview, &mut visual_cx),
+            LARGE_FILE_PLACEHOLDER
+        );
     }
 }
