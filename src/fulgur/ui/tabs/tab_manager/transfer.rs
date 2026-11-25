@@ -39,6 +39,7 @@ impl Fulgur {
             file_size_bytes: editor.file_size_bytes,
             file_last_modified: editor.file_last_modified,
             file_missing: editor.file_missing,
+            remote_baseline: editor.remote_baseline.clone(),
             cursor_position: content_state.cursor_position(),
             csv_view_mode: editor.csv_view_mode,
             csv_delimiter: editor.csv_delimiter,

@@ -3,6 +3,7 @@ use crate::fulgur::{
     languages::supported_languages::{SupportedLanguage, language_registry_name},
     shared_state::SharedAppState,
     state::{StateDb, StateWriter},
+    sync::ssh::sftp::RemoteBaseline,
     tab::{Tab, TabId},
     ui::tabs::{
         editor_tab::{TabLocation, TabTransferData},
@@ -1605,6 +1606,7 @@ fn make_transfer_data() -> TabTransferData {
         file_size_bytes: None,
         file_last_modified: None,
         file_missing: false,
+        remote_baseline: RemoteBaseline::default(),
         cursor_position: Position::default(),
         csv_view_mode: crate::fulgur::ui::tabs::editor_tab::CsvViewMode::Text,
         csv_delimiter: b',',

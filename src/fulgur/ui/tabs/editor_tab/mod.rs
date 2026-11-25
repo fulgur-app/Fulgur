@@ -27,6 +27,7 @@ use std::time::SystemTime;
 use crate::fulgur::files::csv_support::{DEFAULT_DELIMITER, detect_delimiter, parse_csv};
 use crate::fulgur::languages::supported_languages::{SupportedLanguage, language_registry_name};
 use crate::fulgur::settings::EditorSettings;
+use crate::fulgur::sync::ssh::sftp::RemoteBaseline;
 use crate::fulgur::ui::tabs::color_tag::ColorTag;
 use crate::fulgur::ui::tabs::tab::TabId;
 
@@ -90,12 +91,16 @@ pub struct EditorTab {
     pub file_size_bytes: Option<u64>,
     /// For a local file, the disk modification time of the version the buffer
     /// is based on (set on open, reload, save and conflict resolution, never by
-    /// a later `stat`).
+    /// a later `stat`). For a remote file, the server's modification time of that
+    /// version, informative only: saves compare `remote_baseline`.
     pub file_last_modified: Option<SystemTime>,
     /// Whether the file watcher reported this local file deleted since the
     /// buffer last matched a disk version, so the buffer is its only copy.
     /// Cleared by `record_disk_version`.
     pub file_missing: bool,
+    /// For a remote file, the version the buffer is based on, which a save checks
+    /// the server against. Unknown for recovered unsaved edits.
+    pub remote_baseline: RemoteBaseline,
     pub large_file: bool,
     /// Whether the document color provider currently reports colors.
     pub highlight_colors: bool,
@@ -153,6 +158,7 @@ pub struct TabTransferData {
     pub file_size_bytes: Option<u64>,
     pub file_last_modified: Option<SystemTime>,
     pub file_missing: bool,
+    pub remote_baseline: RemoteBaseline,
     pub cursor_position: gpui_kit::component::input::Position,
     pub csv_view_mode: CsvViewMode,
     pub csv_delimiter: u8,

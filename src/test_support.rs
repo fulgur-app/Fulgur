@@ -357,6 +357,24 @@ pub fn has_active_dialog(visual_cx: &mut VisualTestContext) -> bool {
     visual_cx.update(WindowExt::has_active_dialog)
 }
 
+/// Click a button of the open dialog by its debug selector.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context of the window
+/// - `selector`: The button's debug selector
+///
+/// ### Panics
+/// - Panics if no button with that selector is rendered.
+#[cfg(feature = "gpui-test-support")]
+pub fn click_dialog_button(visual_cx: &mut VisualTestContext, selector: &'static str) {
+    visual_cx.update(|window, cx| window.draw(cx).clear(cx));
+    let bounds = visual_cx
+        .debug_bounds(selector)
+        .expect("the dialog button should be rendered");
+    visual_cx.simulate_click(bounds.center(), Modifiers::none());
+    visual_cx.run_until_parked();
+}
+
 /// Fold the editor region spanning lines `0..=end_line` by clicking its gutter chevron.
 ///
 /// ### Arguments

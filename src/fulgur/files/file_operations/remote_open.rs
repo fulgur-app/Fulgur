@@ -273,11 +273,16 @@ impl Fulgur {
     /// ### Arguments
     /// - `spec`: Location the bytes were read from.
     /// - `bytes`: Raw remote file contents.
+    /// - `version`: Version of the file the bytes were read from.
     ///
     /// ### Returns
     /// - `RemoteOpenResult::File`: The decoded text file.
     /// - `RemoteOpenResult::Binary`: The bytes look binary and were not decoded.
-    fn remote_file_open_result(spec: &RemoteSpec, bytes: Vec<u8>) -> RemoteOpenResult {
+    fn remote_file_open_result(
+        spec: &RemoteSpec,
+        bytes: Vec<u8>,
+        version: ssh::sftp::RemoteFileVersion,
+    ) -> RemoteOpenResult {
         match decode_text_file(bytes) {
             Some(decoded) => RemoteOpenResult::File(RemoteFileResult {
                 spec: spec.clone(),
@@ -285,6 +290,7 @@ impl Fulgur {
                 content: decoded.content,
                 encoding: decoded.encoding,
                 lossy: decoded.lossy,
+                version: Some(version),
             }),
             None => RemoteOpenResult::Binary(spec.clone()),
         }
@@ -311,19 +317,20 @@ impl Fulgur {
         remote_path: &str,
         notification_tx: &UnboundedSender<AppNotification>,
     ) -> Result<RemoteOpenResult, ssh::error::SshError> {
-        let bytes = ssh::sftp::read_remote_file(session, remote_path, |reported_size| {
-            if reported_size > LARGE_FILE_THRESHOLD_BYTES {
-                let file_name = remote_path.rsplit('/').next().unwrap_or(remote_path);
-                let notice = AppNotification::foreground(
-                    NotificationType::Info,
-                    large_file_notice(file_name),
-                );
-                if notification_tx.unbounded_send(notice).is_err() {
-                    log::debug!("Notification channel closed, dropping the large-file notice");
+        let (bytes, version) =
+            ssh::sftp::read_remote_file(session, remote_path, |reported_size| {
+                if reported_size > LARGE_FILE_THRESHOLD_BYTES {
+                    let file_name = remote_path.rsplit('/').next().unwrap_or(remote_path);
+                    let notice = AppNotification::foreground(
+                        NotificationType::Info,
+                        large_file_notice(file_name),
+                    );
+                    if notification_tx.unbounded_send(notice).is_err() {
+                        log::debug!("Notification channel closed, dropping the large-file notice");
+                    }
                 }
-            }
-        })?;
-        Ok(Self::remote_file_open_result(spec, bytes))
+            })?;
+        Ok(Self::remote_file_open_result(spec, bytes, version))
     }
 
     /// Resolve a remote open request into either file contents or a browse fallback.
@@ -543,6 +550,7 @@ mod tests {
             encoding: UTF_8.to_string(),
             lossy: false,
             file_size: 2,
+            version: None,
         })
     }
 

@@ -224,8 +224,11 @@ impl Fulgur {
             editor_tab.set_original_content_from_str(&remote_file.content);
             editor_tab.modified = false;
             editor_tab.finish_awaiting_content(cx);
-            editor_tab
-                .record_file_metadata(remote_file.file_size, Some(std::time::SystemTime::now()));
+            editor_tab.remote_baseline.set(remote_file.version);
+            editor_tab.record_file_metadata(
+                remote_file.file_size,
+                remote_file.version.and_then(|version| version.modified()),
+            );
             let filename = remote_file
                 .spec
                 .path
@@ -255,7 +258,7 @@ mod tests {
             PendingRemoteOpenOutcome, remote_types::RemoteReloadGuard,
             test_helpers::setup_fulgur_with_root,
         },
-        sync::ssh::url::RemoteSpec,
+        sync::ssh::{sftp::RemoteFileVersion, url::RemoteSpec},
         tab::Tab,
         ui::{components_utils::UTF_8, tabs::tab::TabId},
     };
@@ -272,6 +275,17 @@ mod tests {
             user: Some("alice".to_string()),
             path: "/tmp/reconnect.txt".to_string(),
             password_in_url: None,
+        }
+    }
+
+    /// Version the server reports for the file in these tests.
+    ///
+    /// ### Returns
+    /// - `RemoteFileVersion`: A fixed version
+    fn server_version() -> RemoteFileVersion {
+        RemoteFileVersion {
+            size: Some(14),
+            mtime: Some(1_000),
         }
     }
 
@@ -368,6 +382,7 @@ mod tests {
                             encoding: UTF_8.to_string(),
                             lossy: false,
                             file_size: 14,
+                            version: Some(server_version()),
                         })),
                     });
                 this.process_pending_remote_files(window, cx);
@@ -434,6 +449,7 @@ mod tests {
                             encoding: UTF_8.to_string(),
                             lossy: true,
                             file_size: 4,
+                            version: Some(server_version()),
                         })),
                     });
                 this.process_pending_remote_files(window, cx);
@@ -510,6 +526,7 @@ mod tests {
                             encoding: UTF_8.to_string(),
                             lossy: false,
                             file_size: 11,
+                            version: Some(server_version()),
                         })),
                     });
                 this.process_pending_remote_files(window, cx);
@@ -641,6 +658,7 @@ mod tests {
                             encoding: UTF_8.to_string(),
                             lossy: false,
                             file_size: 14,
+                            version: Some(server_version()),
                         })),
                     });
                 this.process_pending_remote_files(window, cx);
@@ -652,6 +670,8 @@ mod tests {
                     .expect("expected an editor tab");
                 assert_eq!(editor.content.read(cx).text().to_string(), "remote content");
                 assert!(!editor.modified);
+                assert_eq!(editor.remote_baseline.get(), Some(server_version()));
+                assert_eq!(editor.file_last_modified, server_version().modified());
             });
         });
     }
