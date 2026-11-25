@@ -1,11 +1,12 @@
 use super::SearchMatch;
-use super::actions::MatchStep;
+use super::field::new_field;
 use super::matching::LengthChange;
 use crate::fulgur::Fulgur;
-use gpui_kit::component::input::{EditorState, InputEvent, InputState, TextDecorationCollection};
+use gpui_kit::component::input::{
+    EditorState, InputEvent, TextDecorationCollection, TextareaState,
+};
 use gpui_kit::{
-    App, AppContext, Context, Entity, EntityId, EventEmitter, Subscription, Task, WeakEntity,
-    Window,
+    App, Context, Entity, EntityId, EventEmitter, Subscription, Task, WeakEntity, Window,
 };
 use std::collections::HashMap;
 
@@ -26,8 +27,8 @@ pub(super) struct MatchDecorations {
 pub(crate) struct SearchBar {
     pub(super) fulgur: WeakEntity<Fulgur>,
     pub(super) show_search: bool,
-    pub(super) search_input: Entity<InputState>,
-    pub(super) replace_input: Entity<InputState>,
+    pub(super) search_input: Entity<TextareaState>,
+    pub(super) replace_input: Entity<TextareaState>,
     pub(super) match_case: bool,
     pub(super) match_whole_word: bool,
     pub(super) search_matches: Vec<SearchMatch>,
@@ -53,8 +54,7 @@ impl SearchBar {
     /// Create a new search bar view owning its search and replace inputs
     ///
     /// Subscribes to its own search input so the search re-runs whenever the
-    /// query changes while the bar is visible, and so Enter / Shift-Enter step
-    /// to the next / previous match.
+    /// query changes while the bar is visible.
     ///
     /// ### Arguments
     /// - `fulgur`: Weak handle to the owning window entity the bar reads the active editor from
@@ -68,25 +68,12 @@ impl SearchBar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
-        let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace"));
+        let search_input = new_field("Search", window, cx);
+        let replace_input = new_field("Replace", window, cx);
         let search_input_subscription =
             cx.subscribe(&search_input, |this: &mut Self, _, ev: &InputEvent, cx| {
-                if !this.show_search {
-                    return;
-                }
-                match ev {
-                    InputEvent::Change => this.on_query_changed(cx),
-                    InputEvent::PressEnter { shift, .. } => {
-                        let step = if *shift {
-                            MatchStep::Previous
-                        } else {
-                            MatchStep::Next
-                        };
-                        let content = this.active_editor_content(cx);
-                        this.step_match(step, content, cx);
-                    }
-                    InputEvent::Focus | InputEvent::Blur => {}
+                if this.show_search && matches!(ev, InputEvent::Change) {
+                    this.on_query_changed(cx);
                 }
             });
         Self {
@@ -118,6 +105,10 @@ impl SearchBar {
 
     /// Get the active editor's content entity from the owning window
     ///
+    /// ### Description
+    /// Panics while `Fulgur` is being updated, so a method `Fulgur` calls on the bar must take the
+    /// content as an argument instead.
+    ///
     /// ### Arguments
     /// - `cx`: The application context
     ///
@@ -125,11 +116,7 @@ impl SearchBar {
     /// - `Some(Entity<EditorState>)`: The active editor tab's content
     /// - `None`: If the window is gone or the active tab is not an editor
     pub(super) fn active_editor_content(&self, cx: &App) -> Option<Entity<EditorState>> {
-        let fulgur = self.fulgur.upgrade()?;
-        fulgur
-            .read(cx)
-            .get_active_editor_tab(cx)
-            .map(|editor_tab| editor_tab.content.clone())
+        self.fulgur.upgrade()?.read(cx).active_editor_content(cx)
     }
 
     /// Return whether the active editor buffer accepts user edits.

@@ -46,9 +46,7 @@ impl Fulgur {
         // older one (such as the restored tab's) still waiting for the bar's layout.
         self.request_tab_scroll(tab_id, cx);
         if self.search_bar.read(cx).is_visible() {
-            let content = self
-                .get_active_editor_tab(cx)
-                .map(|editor_tab| editor_tab.content.clone());
+            let content = self.active_editor_content(cx);
             self.search_bar
                 .update(cx, |bar, cx| bar.refresh_matches(content, cx));
         }

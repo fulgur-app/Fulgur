@@ -1,12 +1,13 @@
 //! Headless interaction tests for the search and replace bar.
 
 use super::SearchBar;
+use crate::fulgur::ui::components_utils::SEARCH_BAR_HEIGHT;
 use crate::fulgur::ui::menus::build_default_key_bindings;
 use crate::fulgur::ui::motion::SURFACE_DURATION;
 use crate::test_support::open_fulgur_with_root;
 use gpui_kit::component::input::EditorState;
 use gpui_kit::test::TestWindowExt;
-use gpui_kit::{Entity, Focusable, TestAppContext, VisualTestContext};
+use gpui_kit::{ClipboardItem, Entity, Focusable, TestAppContext, VisualTestContext, point, px};
 
 /// Open a window with the search bar visible over an editor holding `content`.
 ///
@@ -788,4 +789,184 @@ fn test_stepping_flushes_a_pending_large_buffer_rescan(cx: &mut TestAppContext) 
     );
     let current = current_match(&search_bar, &mut visual_cx).expect("expected a current match");
     assert_eq!(editor_cursor(&editor, &mut visual_cx), starts[current]);
+}
+
+/// Click a field of the bar and paste text into it.
+///
+/// ### Arguments
+/// - `visual_cx`: The visual test context driving the window
+/// - `field`: The element id of the field
+/// - `text`: The clipboard text to paste
+fn paste_into(visual_cx: &mut VisualTestContext, field: &'static str, text: &str) {
+    visual_cx.update(|window, cx| {
+        cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
+        window.render_frame(cx);
+        window.click(field, cx);
+    });
+    visual_cx.run_until_parked();
+    visual_cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-v"
+    } else {
+        "ctrl-v"
+    });
+    visual_cx.run_until_parked();
+}
+
+/// Read the replace input's current text.
+///
+/// ### Arguments
+/// - `search_bar`: The search bar under test
+/// - `visual_cx`: The visual test context driving the window
+///
+/// ### Returns
+/// - `String`: The replacement held by the replace input
+fn replacement(search_bar: &Entity<SearchBar>, visual_cx: &mut VisualTestContext) -> String {
+    visual_cx.update(|_window, cx| {
+        search_bar
+            .read(cx)
+            .replace_input
+            .read(cx)
+            .value()
+            .to_string()
+    })
+}
+
+#[gpui_kit::test]
+fn test_pasted_tabs_are_searched_and_replaced(cx: &mut TestAppContext) {
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, "a\tb ab a\tb");
+
+    paste_into(&mut visual_cx, "search-input", "a\tb");
+    assert_eq!(search_query(&search_bar, &mut visual_cx), "a\tb");
+    assert_eq!(match_count(&search_bar, &mut visual_cx), 2);
+
+    paste_into(&mut visual_cx, "replace-input", "\t\t");
+    visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.click("replace-all-button", cx);
+    });
+    visual_cx.run_until_parked();
+    assert_eq!(
+        visual_cx.update(|_window, cx| editor.read(cx).value().to_string()),
+        "\t\t ab \t\t"
+    );
+}
+
+#[gpui_kit::test]
+fn test_pasted_line_breaks_are_dropped_from_both_fields(cx: &mut TestAppContext) {
+    let (search_bar, _editor, mut visual_cx) = setup_visible_search(cx, "foobar");
+
+    paste_into(&mut visual_cx, "search-input", "foo\r\nbar\n");
+    assert_eq!(search_query(&search_bar, &mut visual_cx), "foobar");
+    assert_eq!(
+        match_count(&search_bar, &mut visual_cx),
+        1,
+        "a paste without its line breaks must still run the search"
+    );
+
+    paste_into(&mut visual_cx, "replace-input", "x\ny");
+    assert_eq!(replacement(&search_bar, &mut visual_cx), "xy");
+}
+
+#[gpui_kit::test]
+fn test_enter_and_shift_enter_never_insert_a_line_break(cx: &mut TestAppContext) {
+    let (search_bar, _editor, mut visual_cx) = setup_visible_search(cx, "foo foo");
+    type_query(&mut visual_cx, "foo");
+    paste_into(&mut visual_cx, "replace-input", "x");
+    visual_cx.simulate_keystrokes("enter shift-enter");
+    visual_cx.run_until_parked();
+    assert_eq!(replacement(&search_bar, &mut visual_cx), "x");
+
+    visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.click("search-input", cx);
+    });
+    visual_cx.simulate_keystrokes("enter shift-enter");
+    visual_cx.run_until_parked();
+    assert_eq!(search_query(&search_bar, &mut visual_cx), "foo");
+}
+
+#[gpui_kit::test]
+fn test_tab_leaves_the_search_input_without_typing(cx: &mut TestAppContext) {
+    let (search_bar, _editor, mut visual_cx) = setup_visible_search(cx, "foo foo");
+    type_query(&mut visual_cx, "foo");
+    visual_cx.simulate_keystrokes("tab");
+    visual_cx.run_until_parked();
+
+    assert_eq!(search_query(&search_bar, &mut visual_cx), "foo");
+    assert!(!search_input_is_focused(&search_bar, &mut visual_cx));
+}
+
+#[gpui_kit::test]
+fn test_a_long_query_stays_on_one_row(cx: &mut TestAppContext) {
+    let (search_bar, _editor, mut visual_cx) = setup_visible_search(cx, "foo");
+    type_query(&mut visual_cx, &"long query ".repeat(60));
+
+    let height = visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert_eq!(
+            search_bar
+                .read(cx)
+                .search_input
+                .read(cx)
+                .display_map()
+                .wrap_row_count(),
+            1
+        );
+        window.find("search-input").bounds().size.height
+    });
+    assert_eq!(height, SEARCH_BAR_HEIGHT);
+}
+
+#[gpui_kit::test]
+fn test_clicking_above_the_row_focuses_the_field(cx: &mut TestAppContext) {
+    let (search_bar, _editor, mut visual_cx) = setup_visible_search(cx, "foo");
+    visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.click("replace-input", cx);
+    });
+    assert!(!search_input_is_focused(&search_bar, &mut visual_cx));
+
+    visual_cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.click_at("search-input", point(px(20.), px(3.)), cx);
+    });
+    visual_cx.run_until_parked();
+    assert!(search_input_is_focused(&search_bar, &mut visual_cx));
+}
+
+#[gpui_kit::test]
+fn test_opening_a_csv_file_after_a_replace_searches_the_new_file(cx: &mut TestAppContext) {
+    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, "foo bar foo");
+    type_query(&mut visual_cx, "foo");
+    visual_cx.update(|window, cx| {
+        search_bar.update(cx, |bar, cx| {
+            bar.replace_input.update(cx, |input, cx| {
+                input.set_value("baz", window, cx);
+            });
+            bar.replace_all(Some(editor.clone()), window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+    assert_eq!(match_count(&search_bar, &mut visual_cx), 0);
+
+    let dir = tempfile::TempDir::new().expect("failed to create temp dir");
+    let path = dir.path().join("data.csv");
+    std::fs::write(&path, "name,kind\nfoo,bar\nbaz,foo\n").expect("failed to write file");
+    let fulgur = visual_cx.update(|window, cx| {
+        let fulgur = search_bar
+            .read(cx)
+            .fulgur
+            .upgrade()
+            .expect("expected a live window");
+        fulgur.update(cx, |this, cx| this.do_open_file(window, cx, path));
+        fulgur
+    });
+    visual_cx.run_until_parked();
+
+    let has_csv_table = fulgur.read_with(&visual_cx, |this, cx| {
+        this.get_active_editor_tab(cx)
+            .is_some_and(|editor_tab| editor_tab.csv_table.is_some())
+    });
+    assert!(has_csv_table, "the CSV file must open in its own tab");
+    assert_eq!(match_count(&search_bar, &mut visual_cx), 2);
 }

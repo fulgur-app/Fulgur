@@ -17,7 +17,7 @@ pub use location::TabLocation;
 pub use navigation::{Jump, extract_line_number};
 pub use operations::{replace_editor_range, replace_editor_text, replace_editor_text_undoable};
 
-use gpui_kit::component::input::{EditorState, InputState, Rope, TabSize};
+use gpui_kit::component::input::{EditorState, Rope, TabSize};
 use gpui_kit::component::table::TableState;
 use gpui_kit::{App, AppContext, Context, Entity, SharedString, Window};
 use std::path::PathBuf;
@@ -333,7 +333,7 @@ impl EditorTab {
         }
 
         let content = self.content.clone();
-        let dialog_input = cx.new(|cx| InputState::new(window, cx));
+        let dialog_input = CsvTableDelegate::new_edit_input(window, cx);
         let delegate = CsvTableDelegate::new(outcome.data, outcome.dialect, content, dialog_input);
         let columns_movable = !self.read_only;
         let table = cx.new(|cx| {

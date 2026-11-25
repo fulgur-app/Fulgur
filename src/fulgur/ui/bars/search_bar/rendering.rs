@@ -1,12 +1,13 @@
 use super::actions::MatchStep;
+use super::field::render_field;
 use super::{SearchBar, search_bar_button_factory, search_bar_toggle_button_factory};
 use crate::fulgur::ui::{
-    components_utils::{CORNERS_SIZE, LINE_HEIGHT, SEARCH_BAR_HEIGHT, TEXT_SIZE},
+    components_utils::{LINE_HEIGHT, SEARCH_BAR_HEIGHT},
     icons::CustomIcon,
 };
 use gpui_kit::component::{
-    ActiveTheme, StyledExt,
-    input::{Escape, Input},
+    ActiveTheme,
+    input::{Enter, Escape},
 };
 use gpui_kit::{
     Context, Div, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window, div,
@@ -63,21 +64,18 @@ impl SearchBar {
             .bg(cx.theme().background)
             .text_color(cx.theme().muted_foreground)
             .child(
-                Input::new(&self.search_input)
-                    .id("search-input")
-                    .appearance(false)
-                    .bordered(false)
-                    .flex_1()
-                    .text_size(TEXT_SIZE)
-                    .line_height(LINE_HEIGHT)
-                    .m_0()
-                    .py_0()
-                    .pl_2()
-                    .pr_0()
-                    .h(SEARCH_BAR_HEIGHT)
-                    .corner_radii(CORNERS_SIZE)
-                    .text_color(cx.theme().muted_foreground)
-                    .bg(cx.theme().background),
+                render_field("search-input", &self.search_input, cx).capture_action(cx.listener(
+                    |this, enter: &Enter, _window, cx| {
+                        cx.stop_propagation();
+                        let step = if enter.shift {
+                            MatchStep::Previous
+                        } else {
+                            MatchStep::Next
+                        };
+                        let content = this.active_editor_content(cx);
+                        this.step_match(step, content, cx);
+                    },
+                )),
             )
             .child(
                 div()
@@ -200,20 +198,8 @@ impl SearchBar {
             .border_l_1()
             .border_color(cx.theme().border)
             .child(
-                Input::new(&self.replace_input)
-                    .id("replace-input")
-                    .appearance(false)
-                    .bordered(false)
-                    .flex_1()
-                    .text_size(TEXT_SIZE)
-                    .line_height(LINE_HEIGHT)
-                    .m_0()
-                    .py_0()
-                    .px_2()
-                    .h(SEARCH_BAR_HEIGHT)
-                    .corner_radii(CORNERS_SIZE)
-                    .text_color(cx.theme().muted_foreground)
-                    .bg(cx.theme().background),
+                render_field("replace-input", &self.replace_input, cx)
+                    .capture_action(|_: &Enter, _window, cx| cx.stop_propagation()),
             )
             .child(
                 div()

@@ -362,9 +362,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn find_in_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let content = self
-            .get_active_editor_tab(cx)
-            .map(|editor_tab| editor_tab.content.clone());
+        let content = self.active_editor_content(cx);
         self.search_bar
             .update(cx, |bar, cx| bar.toggle(content, window, cx));
         cx.notify();
@@ -376,9 +374,7 @@ impl Fulgur {
     /// - `window`: The window context
     /// - `cx`: The application context
     pub fn find_and_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let content = self
-            .get_active_editor_tab(cx)
-            .map(|editor_tab| editor_tab.content.clone());
+        let content = self.active_editor_content(cx);
         self.search_bar
             .update(cx, |bar, cx| bar.open_replace(content, window, cx));
         cx.notify();
@@ -406,9 +402,7 @@ impl Fulgur {
     /// - `step`: Which way to move through the matches
     /// - `cx`: The application context
     fn step_search_match(&mut self, step: MatchStep, cx: &mut Context<Self>) {
-        let content = self
-            .get_active_editor_tab(cx)
-            .map(|editor_tab| editor_tab.content.clone());
+        let content = self.active_editor_content(cx);
         self.search_bar
             .update(cx, |bar, cx| bar.step_match(step, content, cx));
     }

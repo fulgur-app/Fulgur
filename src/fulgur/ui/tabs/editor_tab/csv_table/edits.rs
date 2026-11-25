@@ -2,13 +2,44 @@
 
 use crate::fulgur::ui::dialogs::initial_focus::OpenAlertDialogWithFocus;
 use gpui_kit::component::{
-    button::ButtonVariant, dialog::DialogButtonProps, input::Input, table::TableState,
+    button::ButtonVariant,
+    dialog::DialogButtonProps,
+    input::{Textarea, TextareaState},
+    table::TableState,
 };
-use gpui_kit::{Context, Focusable, ParentElement, Styled, Window, div, px};
+use gpui_kit::{
+    App, AppContext, Context, Entity, Focusable, ParentElement, Styled, Window, div, px,
+};
 
 use super::{CsvTableDelegate, EditTarget};
 
+/// Number of rows the edit dialog's input grows to before it scrolls.
+const MAX_EDIT_INPUT_ROWS: usize = 8;
+
 impl CsvTableDelegate {
+    /// Create the input of the edit dialog.
+    ///
+    /// ### Description
+    /// A single-line `InputState` drops tabs and line breaks, which are data in a quoted cell, so
+    /// the input is a textarea: Enter confirms the dialog and Shift+Enter inserts a line break.
+    ///
+    /// ### Arguments
+    /// - `window`: The window the table is created in
+    /// - `cx`: The application context
+    ///
+    /// ### Returns
+    /// - `Entity<TextareaState>`: The reusable input of the edit dialog
+    pub(in crate::fulgur::ui::tabs::editor_tab) fn new_edit_input(
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Entity<TextareaState> {
+        cx.new(|cx| {
+            let mut state = TextareaState::new(window, cx).auto_grow(1, MAX_EDIT_INPUT_ROWS);
+            state.set_submit_on_enter(true, cx);
+            state
+        })
+    }
+
     /// Read the current value targeted by an edit dialog.
     ///
     /// ### Arguments
@@ -46,6 +77,9 @@ impl CsvTableDelegate {
 
     /// Open the modal edit dialog for a header or cell, unless the buffer is read-only.
     ///
+    /// ### Description
+    /// Confirming the dialog without changing the value leaves the cell and the buffer untouched.
+    ///
     /// ### Arguments
     /// - `target`: The header or cell being edited (data indices)
     /// - `window`: The active window
@@ -63,8 +97,11 @@ impl CsvTableDelegate {
         let input = self.dialog_input.clone();
         input.update(cx, |state, cx| {
             state.set_value(current, window, cx);
+            let end = state.text().len();
+            state.set_selected_range(end..end, cx);
             cx.notify();
         });
+        let shown = input.read(cx).value();
 
         let table = cx.entity();
         let title = match target {
@@ -76,6 +113,7 @@ impl CsvTableDelegate {
         window.open_alert_dialog_with_focus(initial_focus, cx, move |dialog, _window, _cx| {
             let input_for_ok = input.clone();
             let table_for_ok = table.clone();
+            let shown_for_ok = shown.clone();
             dialog
                 .title(div().text_size(px(16.)).child(title))
                 .keyboard(true)
@@ -88,9 +126,13 @@ impl CsvTableDelegate {
                         .ok_variant(ButtonVariant::Primary),
                 )
                 .close_button(false)
-                .child(Input::new(&input))
+                .child(Textarea::new(&input))
                 .on_ok(move |_, window, cx| {
-                    let value = input_for_ok.read(cx).value().to_string();
+                    let value = input_for_ok.read(cx).value();
+                    if value == shown_for_ok {
+                        return true;
+                    }
+                    let value = value.to_string();
                     table_for_ok.update(cx, |state, cx| {
                         state.delegate_mut().apply_edit(target, value, window, cx);
                     });
