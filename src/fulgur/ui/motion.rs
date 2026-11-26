@@ -1,9 +1,10 @@
 //! Application motion tokens and the helpers that apply them.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::base::motion::{Easing, MotionReveal, Presence, PresenceSample, Transition};
-use gpui_kit::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div};
+use gpui_kit::{AnyElement, App, ElementId, IntoElement, ParentElement, Styled, Window, div};
 
 /// Timing for small affordances that fade within an existing surface without
 /// changing the layout around them.
@@ -73,6 +74,70 @@ pub fn revealed_bar(
     cx: &mut App,
 ) -> Option<AnyElement> {
     let sample = presence(id, present, surface(), window, cx);
+    reveal(id.into(), sample, child)
+}
+
+/// Wrap a full width bar that belongs to one owner among several, such as the
+/// active tab, so that only the owner's own changes animate.
+///
+/// ### Description
+/// The motion is keyed by `(id, owner)`. A key seen for the first time, for
+/// example right after the owner changed, shows its state at once instead of
+/// growing or collapsing, while showing or hiding the bar of the same owner
+/// animates like `revealed_bar`. A key is forgotten as soon as a frame skips it.
+///
+/// ### Arguments
+/// - `id`: Stable identity of the bar
+/// - `owner`: Identity of the owner the bar currently belongs to
+/// - `present`: Whether the owner's bar should be shown this frame
+/// - `child`: Builds the bar, called only while the bar is on screen
+/// - `window`: The window being rendered
+/// - `cx`: The application context
+///
+/// ### Returns
+/// - `Some(AnyElement)`: The wrapped bar, while it is entering, present or collapsing
+/// - `None`: The bar is fully hidden and should not be rendered at all
+pub fn revealed_owned_bar(
+    id: &'static str,
+    owner: u64,
+    present: bool,
+    child: impl FnOnce() -> AnyElement,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<AnyElement> {
+    let key = ElementId::NamedInteger(id.into(), owner);
+    let mut first_frame = false;
+    window.use_keyed_state(
+        ElementId::NamedChild(Arc::new(key.clone()), "owner".into()),
+        cx,
+        |_, _| first_frame = true,
+    );
+    let transition = if first_frame {
+        Transition::new(Duration::ZERO)
+    } else {
+        surface()
+    };
+    let sample = Presence::new(key.clone(), present)
+        .transition(transition)
+        .sample(window, cx);
+    reveal(key, sample, child)
+}
+
+/// Build the growing and fading wrapper of a bar for one presence sample.
+///
+/// ### Arguments
+/// - `id`: Identity keying the reveal measurement
+/// - `sample`: The presence of the bar this frame
+/// - `child`: Builds the bar, called only while the bar is on screen
+///
+/// ### Returns
+/// - `Some(AnyElement)`: The wrapped bar, while it is entering, present or collapsing
+/// - `None`: The bar is fully hidden
+fn reveal(
+    id: ElementId,
+    sample: PresenceSample,
+    child: impl FnOnce() -> AnyElement,
+) -> Option<AnyElement> {
     if !sample.should_render() {
         return None;
     }

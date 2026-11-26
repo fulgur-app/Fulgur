@@ -38,7 +38,7 @@ impl Render for SearchBar {
             .on_action(cx.listener(|this, _: &Escape, _window, cx| this.close(cx)))
             .child(self.render_search_input_section(cx))
             .child(self.render_search_navigation_section(cx))
-            .when(self.active_editor_is_editable(cx), |this| {
+            .when(self.editor_is_editable(cx), |this| {
                 this.child(self.render_replace_section(cx))
             })
             .child(Self::render_search_close_button(cx))
@@ -72,8 +72,7 @@ impl SearchBar {
                         } else {
                             MatchStep::Next
                         };
-                        let content = this.active_editor_content(cx);
-                        this.step_match(step, content, cx);
+                        this.step_match(step, cx);
                     },
                 )),
             )
@@ -102,8 +101,7 @@ impl SearchBar {
                         .line_height(LINE_HEIGHT)
                         .on_click(cx.listener(|this, _, _window, cx| {
                             this.match_case = !this.match_case;
-                            let content = this.active_editor_content(cx);
-                            this.perform_search(content, cx);
+                            this.perform_search(cx);
                         })),
                     )
                     .child(
@@ -119,8 +117,7 @@ impl SearchBar {
                         .line_height(LINE_HEIGHT)
                         .on_click(cx.listener(|this, _, _window, cx| {
                             this.match_whole_word = !this.match_whole_word;
-                            let content = this.active_editor_content(cx);
-                            this.perform_search(content, cx);
+                            this.perform_search(cx);
                         })),
                     ),
             )
@@ -160,8 +157,7 @@ impl SearchBar {
                     cx.theme().border,
                 )
                 .on_click(cx.listener(|this, _, _window, cx| {
-                    let content = this.active_editor_content(cx);
-                    this.step_match(MatchStep::Previous, content, cx);
+                    this.step_match(MatchStep::Previous, cx);
                 })),
             )
             .child(
@@ -172,8 +168,7 @@ impl SearchBar {
                     cx.theme().tab_bar,
                 )
                 .on_click(cx.listener(|this, _, _window, cx| {
-                    let content = this.active_editor_content(cx);
-                    this.step_match(MatchStep::Next, content, cx);
+                    this.step_match(MatchStep::Next, cx);
                 })),
             )
     }
@@ -220,8 +215,7 @@ impl SearchBar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            let content = this.active_editor_content(cx);
-                            this.replace_current(content, window, cx);
+                            this.replace_current(window, cx);
                         })),
                     )
                     .child(
@@ -232,8 +226,7 @@ impl SearchBar {
                             cx.theme().border,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            let content = this.active_editor_content(cx);
-                            this.replace_all(content, window, cx);
+                            this.replace_all(window, cx);
                         })),
                     ),
             )

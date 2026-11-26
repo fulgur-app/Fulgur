@@ -34,7 +34,11 @@ fn setup_visible_search(
             editor.set_value(content, window, cx);
         });
         fulgur.update(cx, |this, cx| this.find_in_file(window, cx));
-        (fulgur.read(cx).search_bar.clone(), editor)
+        let search_bar = fulgur
+            .read(cx)
+            .active_search_bar(cx)
+            .expect("Find must create the active tab's bar");
+        (search_bar, editor)
     });
     visual_cx.run_until_parked();
     (search_bar, editor, visual_cx)
@@ -478,7 +482,7 @@ fn test_reopening_with_a_remembered_query_keeps_focus_in_the_search_input(cx: &m
     visual_cx.run_until_parked();
 
     visual_cx.update(|window, cx| {
-        search_bar.update(cx, |bar, cx| bar.toggle(Some(editor.clone()), window, cx));
+        search_bar.update(cx, |bar, cx| bar.toggle(window, cx));
     });
     visual_cx.run_until_parked();
     assert!(
@@ -702,7 +706,7 @@ fn test_each_query_keystroke_restarts_the_large_buffer_debounce(cx: &mut TestApp
 
 #[gpui_kit::test]
 fn test_clearing_the_query_on_a_large_buffer_takes_effect_immediately(cx: &mut TestAppContext) {
-    let (search_bar, editor, mut visual_cx) =
+    let (search_bar, _editor, mut visual_cx) =
         setup_visible_search(cx, &large_buffer_ending_in_foo());
     type_query(&mut visual_cx, "foo");
     run_pending_rescan(&mut visual_cx);
@@ -723,7 +727,10 @@ fn test_clearing_the_query_on_a_large_buffer_takes_effect_immediately(cx: &mut T
     );
     let painted = visual_cx.update(|_window, cx| {
         let bar = search_bar.read(cx);
-        let decorations = &bar.match_decorations[&editor.entity_id()];
+        let decorations = bar
+            .match_decorations
+            .as_ref()
+            .expect("expected painted decorations");
         decorations.all.get_ranges(cx).len() + decorations.current.get_ranges(cx).len()
     });
     assert_eq!(painted, 0, "the stale highlights must go with the query");
@@ -935,15 +942,24 @@ fn test_clicking_above_the_row_focuses_the_field(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn test_opening_a_csv_file_after_a_replace_searches_the_new_file(cx: &mut TestAppContext) {
-    let (search_bar, editor, mut visual_cx) = setup_visible_search(cx, "foo bar foo");
+fn test_opening_a_csv_file_after_a_replace_leaves_the_new_tab_without_a_bar(
+    cx: &mut TestAppContext,
+) {
+    let (fulgur, _handle, mut visual_cx) = open_fulgur_with_root(cx);
+    let (search_bar, editor) = visual_cx.update(|window, cx| {
+        let (search_bar, editor) = super::tests::active_tab_search_bar(&fulgur, window, cx);
+        editor.update(cx, |editor, cx| editor.set_value("foo bar foo", window, cx));
+        fulgur.update(cx, |this, cx| this.find_in_file(window, cx));
+        (search_bar, editor)
+    });
+    visual_cx.run_until_parked();
     type_query(&mut visual_cx, "foo");
     visual_cx.update(|window, cx| {
         search_bar.update(cx, |bar, cx| {
             bar.replace_input.update(cx, |input, cx| {
                 input.set_value("baz", window, cx);
             });
-            bar.replace_all(Some(editor.clone()), window, cx);
+            bar.replace_all(window, cx);
         });
     });
     visual_cx.run_until_parked();
@@ -952,21 +968,26 @@ fn test_opening_a_csv_file_after_a_replace_searches_the_new_file(cx: &mut TestAp
     let dir = tempfile::TempDir::new().expect("failed to create temp dir");
     let path = dir.path().join("data.csv");
     std::fs::write(&path, "name,kind\nfoo,bar\nbaz,foo\n").expect("failed to write file");
-    let fulgur = visual_cx.update(|window, cx| {
-        let fulgur = search_bar
-            .read(cx)
-            .fulgur
-            .upgrade()
-            .expect("expected a live window");
+    visual_cx.update(|window, cx| {
         fulgur.update(cx, |this, cx| this.do_open_file(window, cx, path));
-        fulgur
     });
     visual_cx.run_until_parked();
 
-    let has_csv_table = fulgur.read_with(&visual_cx, |this, cx| {
-        this.get_active_editor_tab(cx)
-            .is_some_and(|editor_tab| editor_tab.csv_table.is_some())
+    let (has_csv_table, new_tab_bar) = fulgur.read_with(&visual_cx, |this, cx| {
+        let has_csv_table = this
+            .get_active_editor_tab(cx)
+            .is_some_and(|editor_tab| editor_tab.csv_table.is_some());
+        (has_csv_table, this.active_search_bar(cx))
     });
     assert!(has_csv_table, "the CSV file must open in its own tab");
-    assert_eq!(match_count(&search_bar, &mut visual_cx), 2);
+    assert!(
+        new_tab_bar.is_none(),
+        "the new tab must not inherit a search bar"
+    );
+    visual_cx.update(|_window, cx| {
+        let bar = search_bar.read(cx);
+        assert!(bar.is_visible(), "the first tab keeps its bar open");
+        assert_eq!(bar.search_input.read(cx).value(), "foo");
+        assert_eq!(editor.read(cx).value(), "baz bar baz");
+    });
 }

@@ -1,9 +1,9 @@
-use crate::fulgur::Fulgur;
-use gpui_kit::component::input::{EditorState, InputEvent, RopeExt};
-use gpui_kit::{App, Context, Entity, Focusable, Window};
+use gpui_kit::component::input::{InputEvent, RopeExt};
+use gpui_kit::{App, Context, Focusable, Window};
 use std::time::Duration;
 
 use super::matching::{find_matches_with_scratch, first_match_from};
+use super::scratch::{free_search_scratch, with_search_scratch};
 use super::{SearchBar, SearchBarEvent};
 
 /// Largest buffer, in bytes, rescanned synchronously after each edit or query change
@@ -30,51 +30,36 @@ impl SearchBar {
     /// Toggle the search bar open or closed
     ///
     /// ### Arguments
-    /// - `content`: The active editor tab's content, if any
     /// - `window`: The window context
     /// - `cx`: The search bar context
-    pub(super) fn toggle(
-        &mut self,
-        content: Option<Entity<EditorState>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.show_search {
             self.close(cx);
         } else {
             self.show_search = true;
             let search_focus = self.search_input.read(cx).focus_handle(cx);
             window.focus(&search_focus, cx);
-            self.watch_editor(content.as_ref(), cx);
-            self.perform_search(content, cx);
+            self.watch_editor(cx);
+            self.perform_search(cx);
             cx.notify();
         }
     }
 
     /// Open the search bar with the caret in the replace field
     ///
-    /// When the active buffer is read-only the replace field is not rendered,
-    /// so the caret lands in the search field instead.
+    /// When the buffer is read-only the replace field is not rendered, so the
+    /// caret lands in the search field instead.
     ///
     /// ### Arguments
-    /// - `content`: The active editor tab's content, if any
     /// - `window`: The window context
     /// - `cx`: The search bar context
-    pub(super) fn open_replace(
-        &mut self,
-        content: Option<Entity<EditorState>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let editable = content
-            .as_ref()
-            .is_some_and(|content| content.read(cx).is_editable());
+    pub(super) fn open_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.show_search {
             self.show_search = true;
-            self.watch_editor(content.as_ref(), cx);
-            self.perform_search(content, cx);
+            self.watch_editor(cx);
+            self.perform_search(cx);
         }
-        let target = if editable {
+        let target = if self.editor_is_editable(cx) {
             &self.replace_input
         } else {
             &self.search_input
@@ -90,13 +75,12 @@ impl SearchBar {
     /// - `cx`: The search bar context
     pub(super) fn close(&mut self, cx: &mut Context<Self>) {
         self.show_search = false;
-        self.watch_editor(None, cx);
+        self.pending_rescan = None;
+        self.editor_subscription = None;
         self.clear_match_decorations(cx);
         self.search_matches = Vec::new();
         self.current_match_index = None;
-        self.search_text_scratch = String::new();
-        self.search_lowercase_text_scratch = String::new();
-        self.search_length_changes_scratch = Vec::new();
+        free_search_scratch();
         cx.emit(SearchBarEvent::Closed);
         cx.notify();
     }
@@ -109,147 +93,110 @@ impl SearchBar {
     /// ### Arguments
     /// - `cx`: The search bar context
     pub(super) fn on_query_changed(&mut self, cx: &mut Context<Self>) {
-        let content = self.active_editor_content(cx);
         let query_is_empty = self.search_input.read(cx).value().is_empty();
-        match content {
-            Some(content)
-                if !query_is_empty
-                    && content.read(cx).text().len() > MAX_IMMEDIATE_RESCAN_BYTES =>
-            {
-                self.schedule_rescan(&content, CaretAfterRescan::MoveToCurrentMatch, cx);
-            }
-            content => self.perform_search(content, cx),
+        let large_buffer = self
+            .editor()
+            .is_some_and(|editor| editor.read(cx).text().len() > MAX_IMMEDIATE_RESCAN_BYTES);
+        if !query_is_empty && large_buffer {
+            self.schedule_rescan(CaretAfterRescan::MoveToCurrentMatch, cx);
+        } else {
+            self.perform_search(cx);
         }
     }
 
-    /// Follow a newly active editor and search its content afresh
+    /// Search the editor and move its caret to the current match
     ///
     /// ### Arguments
-    /// - `content`: The active editor tab's content, if any
     /// - `cx`: The search bar context
-    pub(crate) fn refresh_matches(
-        &mut self,
-        content: Option<Entity<EditorState>>,
-        cx: &mut Context<Self>,
-    ) {
-        self.watch_editor(content.as_ref(), cx);
-        self.perform_search(content, cx);
-    }
-
-    /// Search the given editor content and move its caret to the current match
-    ///
-    /// ### Arguments
-    /// - `content`: The active editor tab's content, if any
-    /// - `cx`: The search bar context
-    pub(super) fn perform_search(
-        &mut self,
-        content: Option<Entity<EditorState>>,
-        cx: &mut Context<Self>,
-    ) {
-        self.rescan_matches(content.as_ref(), cx);
-        if let Some(content) = content {
-            self.scroll_to_current_match(&content, cx);
-        }
+    pub(super) fn perform_search(&mut self, cx: &mut Context<Self>) {
+        self.rescan_matches(cx);
+        self.scroll_to_current_match(cx);
     }
 
     /// Recompute the matches and repaint them without moving the editor caret
     ///
     /// ### Arguments
-    /// - `content`: The active editor tab's content, if any
     /// - `cx`: The search bar context
-    pub(super) fn rescan_matches(
-        &mut self,
-        content: Option<&Entity<EditorState>>,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn rescan_matches(&mut self, cx: &mut Context<Self>) {
         self.pending_rescan = None;
         self.search_matches.clear();
         self.current_match_index = None;
-        if let Some(content_entity) = content {
+        if let Some(editor) = self.editor() {
             let query = self.search_input.read(cx).text().to_string();
             if !query.is_empty() {
-                let mut search_text_scratch = std::mem::take(&mut self.search_text_scratch);
-                let cursor_pos = {
-                    let content = content_entity.read(cx);
-                    search_text_scratch.clear();
+                let (matches, cursor_pos) = with_search_scratch(|scratch| {
+                    let content = editor.read(cx);
+                    scratch.text.clear();
                     for chunk in content.text().chunks() {
-                        search_text_scratch.push_str(chunk);
+                        scratch.text.push_str(chunk);
                     }
-                    content.cursor()
-                };
-                self.search_matches = find_matches_with_scratch(
-                    search_text_scratch.as_str(),
-                    &query,
-                    self.match_case,
-                    self.match_whole_word,
-                    &mut self.search_lowercase_text_scratch,
-                    &mut self.search_length_changes_scratch,
-                );
-                self.search_text_scratch = search_text_scratch;
+                    let matches = find_matches_with_scratch(
+                        scratch.text.as_str(),
+                        &query,
+                        self.match_case,
+                        self.match_whole_word,
+                        &mut scratch.lowercase_text,
+                        &mut scratch.length_changes,
+                    );
+                    (matches, content.cursor())
+                });
+                self.search_matches = matches;
                 self.current_match_index = first_match_from(&self.search_matches, cursor_pos);
             }
-            self.apply_match_decorations(content_entity, cx);
+            self.apply_match_decorations(&editor, cx);
         }
         cx.notify();
     }
 
-    /// Follow the edits of the active editor so its matches never go stale
+    /// Follow the edits of the bar's editor so its matches never go stale
+    ///
+    /// ### Description
+    /// The bar keeps following its editor while its tab is inactive, so a reload
+    /// of a background tab is reflected when the user returns to it.
     ///
     /// ### Arguments
-    /// - `content`: The active editor tab's content, if any
     /// - `cx`: The search bar context
-    fn watch_editor(&mut self, content: Option<&Entity<EditorState>>, cx: &mut Context<Self>) {
+    pub(super) fn watch_editor(&mut self, cx: &mut Context<Self>) {
         self.pending_rescan = None;
-        self.editor_subscription = content.map(|content| {
-            cx.subscribe(
-                content,
-                |this: &mut Self, content, event: &InputEvent, cx| {
-                    if matches!(event, InputEvent::Change) {
-                        this.on_editor_changed(&content, cx);
-                    }
-                },
-            )
+        self.editor_subscription = self.editor().map(|editor| {
+            cx.subscribe(&editor, |this: &mut Self, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.on_editor_changed(cx);
+                }
+            })
         });
     }
 
-    /// Rescan the matches after the watched editor's text changed
+    /// Rescan the matches after the editor's text changed, keeping its caret
     ///
     /// ### Arguments
-    /// - `content`: The editor whose text changed
     /// - `cx`: The search bar context
-    fn on_editor_changed(&mut self, content: &Entity<EditorState>, cx: &mut Context<Self>) {
-        if !self.show_search || self.active_editor_content(cx).as_ref() != Some(content) {
+    fn on_editor_changed(&mut self, cx: &mut Context<Self>) {
+        if !self.show_search {
             return;
         }
-        if content.read(cx).text().len() <= MAX_IMMEDIATE_RESCAN_BYTES {
-            self.rescan_matches(Some(content), cx);
-            return;
+        let large_buffer = self
+            .editor()
+            .is_some_and(|editor| editor.read(cx).text().len() > MAX_IMMEDIATE_RESCAN_BYTES);
+        if large_buffer {
+            self.schedule_rescan(CaretAfterRescan::Keep, cx);
+        } else {
+            self.rescan_matches(cx);
         }
-        self.schedule_rescan(content, CaretAfterRescan::Keep, cx);
     }
 
-    /// Rescan the given editor once the debounce period passes without a newer request
+    /// Rescan the editor once the debounce period passes without a newer request
     ///
     /// ### Arguments
-    /// - `content`: The editor to rescan
     /// - `caret`: What to do with the editor caret after the rescan
     /// - `cx`: The search bar context
-    fn schedule_rescan(
-        &mut self,
-        content: &Entity<EditorState>,
-        caret: CaretAfterRescan,
-        cx: &mut Context<Self>,
-    ) {
-        let content = content.downgrade();
+    fn schedule_rescan(&mut self, caret: CaretAfterRescan, cx: &mut Context<Self>) {
         // Replacing the task drops, and so cancels, a rescan still waiting.
         self.pending_rescan = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(RESCAN_DEBOUNCE).await;
-            let Some(content) = content.upgrade() else {
-                return;
-            };
             this.update(cx, |this, cx| match caret {
-                CaretAfterRescan::Keep => this.rescan_matches(Some(&content), cx),
-                CaretAfterRescan::MoveToCurrentMatch => this.perform_search(Some(content), cx),
+                CaretAfterRescan::Keep => this.rescan_matches(cx),
+                CaretAfterRescan::MoveToCurrentMatch => this.perform_search(cx),
             })
             .ok();
         }));
@@ -258,13 +205,8 @@ impl SearchBar {
     /// Navigate to the next search match
     ///
     /// ### Arguments
-    /// - `content`: The active editor tab's content, if any
     /// - `cx`: The search bar context
-    pub(super) fn search_next(
-        &mut self,
-        content: Option<Entity<EditorState>>,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn search_next(&mut self, cx: &mut Context<Self>) {
         if self.search_matches.is_empty() {
             return;
         }
@@ -273,23 +215,14 @@ impl SearchBar {
         } else {
             self.current_match_index = Some(0);
         }
-        if let Some(content) = content {
-            self.scroll_to_current_match(&content, cx);
-            self.apply_current_match_decoration(&content, cx);
-        }
-        cx.notify();
+        self.show_current_match(cx);
     }
 
     /// Navigate to the previous search match
     ///
     /// ### Arguments
-    /// - `content`: The active editor tab's content, if any
     /// - `cx`: The search bar context
-    pub(super) fn search_previous(
-        &mut self,
-        content: Option<Entity<EditorState>>,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn search_previous(&mut self, cx: &mut Context<Self>) {
         if self.search_matches.is_empty() {
             return;
         }
@@ -302,9 +235,17 @@ impl SearchBar {
         } else {
             self.current_match_index = Some(0);
         }
-        if let Some(content) = content {
-            self.scroll_to_current_match(&content, cx);
-            self.apply_current_match_decoration(&content, cx);
+        self.show_current_match(cx);
+    }
+
+    /// Move the caret and the accent onto the current match
+    ///
+    /// ### Arguments
+    /// - `cx`: The search bar context
+    fn show_current_match(&mut self, cx: &mut Context<Self>) {
+        self.scroll_to_current_match(cx);
+        if let Some(editor) = self.editor() {
+            self.apply_current_match_decoration(&editor, cx);
         }
         cx.notify();
     }
@@ -313,20 +254,14 @@ impl SearchBar {
     ///
     /// ### Arguments
     /// - `step`: Which way to move through the matches
-    /// - `content`: The active editor tab's content, if any
     /// - `cx`: The search bar context
-    pub(super) fn step_match(
-        &mut self,
-        step: MatchStep,
-        content: Option<Entity<EditorState>>,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn step_match(&mut self, step: MatchStep, cx: &mut Context<Self>) {
         if self.pending_rescan.is_some() {
-            self.rescan_matches(content.as_ref(), cx);
+            self.rescan_matches(cx);
         }
         match step {
-            MatchStep::Next => self.search_next(content, cx),
-            MatchStep::Previous => self.search_previous(content, cx),
+            MatchStep::Next => self.search_next(cx),
+            MatchStep::Previous => self.search_previous(cx),
         }
     }
 
@@ -340,70 +275,17 @@ impl SearchBar {
     /// user's next keystrokes into the document.
     ///
     /// ### Arguments
-    /// - `content`: The active editor tab's content
     /// - `cx`: The application context
-    pub(super) fn scroll_to_current_match(&self, content: &Entity<EditorState>, cx: &mut App) {
+    pub(super) fn scroll_to_current_match(&self, cx: &mut App) {
         if let Some(match_index) = self.current_match_index
             && let Some(search_match) = self.search_matches.get(match_index)
+            && let Some(editor) = self.editor()
         {
-            content.update(cx, |content, cx| {
+            editor.update(cx, |content, cx| {
                 let match_position = content.text().offset_to_position(search_match.start);
                 content.unfold_at(match_position, cx);
                 content.set_selected_range(search_match.start..search_match.start, cx);
             });
         }
-    }
-}
-
-impl Fulgur {
-    /// Toggle the search bar in this window
-    ///
-    /// ### Arguments
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn find_in_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let content = self.active_editor_content(cx);
-        self.search_bar
-            .update(cx, |bar, cx| bar.toggle(content, window, cx));
-        cx.notify();
-    }
-
-    /// Open the search bar in this window with the caret in the replace field
-    ///
-    /// ### Arguments
-    /// - `window`: The window context
-    /// - `cx`: The application context
-    pub fn find_and_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let content = self.active_editor_content(cx);
-        self.search_bar
-            .update(cx, |bar, cx| bar.open_replace(content, window, cx));
-        cx.notify();
-    }
-
-    /// Move to the next search match in this window
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    pub fn find_next(&mut self, cx: &mut Context<Self>) {
-        self.step_search_match(MatchStep::Next, cx);
-    }
-
-    /// Move to the previous search match in this window
-    ///
-    /// ### Arguments
-    /// - `cx`: The application context
-    pub fn find_previous(&mut self, cx: &mut Context<Self>) {
-        self.step_search_match(MatchStep::Previous, cx);
-    }
-
-    /// Step the search bar through the active editor's matches
-    ///
-    /// ### Arguments
-    /// - `step`: Which way to move through the matches
-    /// - `cx`: The application context
-    fn step_search_match(&mut self, step: MatchStep, cx: &mut Context<Self>) {
-        let content = self.active_editor_content(cx);
-        self.search_bar
-            .update(cx, |bar, cx| bar.step_match(step, content, cx));
     }
 }

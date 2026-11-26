@@ -1614,6 +1614,7 @@ fn make_transfer_data() -> TabTransferData {
         log_view: false,
         read_only: false,
         awaiting_content: false,
+        search: None,
     }
 }
 
