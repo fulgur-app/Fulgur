@@ -245,6 +245,7 @@ mod tests {
     use crate::fulgur::{
         editor_tab::{EditorTab, LARGE_FILE_THRESHOLD_BYTES, TabLocation},
         tab::Tab,
+        ui::tabs::markdown_preview_source::{LARGE_FILE_PLACEHOLDER, test_helpers::preview_source},
     };
 
     #[cfg(feature = "gpui-test-support")]
@@ -385,10 +386,10 @@ mod tests {
     fn test_reload_tab_from_disk_enters_large_file_mode_past_threshold(cx: &mut TestAppContext) {
         let (fulgur, mut visual_cx) = setup_fulgur(cx);
         let dir = TempDir::new().expect("failed to create temp dir");
-        let path = dir.path().join("grows_past_threshold.txt");
+        let path = dir.path().join("grows_past_threshold.md");
         std::fs::write(&path, "small").expect("failed to write initial file");
 
-        visual_cx.update(|_window, cx| {
+        visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 this.tabs
                     .first()
@@ -400,7 +401,19 @@ mod tests {
                         editor.set_original_content_from_str("");
                         editor.modified = false;
                     });
+                this.open_markdown_preview_tab(window, cx);
             });
+        });
+        let preview = visual_cx.update(|_window, cx| {
+            fulgur
+                .read(cx)
+                .tabs
+                .iter()
+                .find_map(|tab| match tab.read(cx) {
+                    Tab::MarkdownPreview(preview_tab) => Some(preview_tab.preview.clone()),
+                    _ => None,
+                })
+                .expect("expected a dedicated preview tab")
         });
 
         let threshold =
@@ -426,6 +439,11 @@ mod tests {
             assert_eq!(editor.content.read(cx).text().len(), threshold + 1);
             assert!(!editor.modified, "a reload leaves the tab clean");
         });
+        assert_eq!(
+            preview_source(&preview, &mut visual_cx),
+            LARGE_FILE_PLACEHOLDER,
+            "an open dedicated preview must not parse a large file"
+        );
     }
 
     #[cfg(feature = "gpui-test-support")]
