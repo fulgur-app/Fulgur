@@ -6,8 +6,8 @@ use crate::fulgur::{
 use crate::register_action;
 use gpui_kit::component::{ActiveTheme, StyledExt, v_flex};
 use gpui_kit::{
-    Anchor, App, Context, ExternalPaths, FocusHandle, Focusable, InteractiveElement, IntoElement,
-    ParentElement, Render, Styled, Window, div, px,
+    Anchor, App, Context, Empty, ExternalPaths, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, ParentElement, Render, Styled, Window, div, px,
 };
 
 impl Focusable for Fulgur {
@@ -121,7 +121,9 @@ impl Fulgur {
             app_content.on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                 this.handle_external_paths_drop(paths, window, cx);
             }));
-        let search_bar_visible = self.search_bar.read(cx).is_visible();
+        let active_search_bar = self.active_search_bar(cx);
+        let search_bar_visible = self.active_search_bar_visible(cx);
+        let search_bar_owner = self.active_tab_id.map_or(0, |tab_id| tab_id.0);
         let markdown_toolbar_visible = self.markdown_toolbar_visible(cx);
         let csv_toolbar_visible = self.csv_toolbar_visible(cx);
         let color_picker_bar_visible = self.color_picker_bar.read(cx).is_visible();
@@ -148,10 +150,14 @@ impl Fulgur {
                 window,
                 cx,
             ))
-            .children(ui::motion::revealed_bar(
+            .children(ui::motion::revealed_owned_bar(
                 "search-bar-reveal",
+                search_bar_owner,
                 search_bar_visible,
-                || self.search_bar.clone().into_any_element(),
+                || match active_search_bar {
+                    Some(bar) => bar.into_any_element(),
+                    None => Empty.into_any_element(),
+                },
                 window,
                 cx,
             ))

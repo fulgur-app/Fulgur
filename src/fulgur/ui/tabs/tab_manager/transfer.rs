@@ -47,6 +47,10 @@ impl Fulgur {
             log_view: editor.log_view,
             read_only: editor.read_only,
             awaiting_content: editor.awaiting_content,
+            search: editor
+                .search_bar
+                .as_ref()
+                .map(|tab_bar| tab_bar.bar.read(cx).snapshot(cx)),
         })
     }
 
@@ -54,14 +58,16 @@ impl Fulgur {
     ///
     /// Called from the render loop when `pending_tab_transfer` is set. Creates
     /// the `EditorTab`, starts file-watching if applicable, activates the new
-    /// tab through `activate_tab`, then persists state.
+    /// tab through `activate_tab`, restores its search bar without moving the
+    /// caret, then persists state.
     ///
     /// ### Arguments
     /// - `window`: The target window context
     /// - `cx`: The application context
     pub fn handle_pending_tab_transfer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(data) = self.pending_tab_transfer.take() {
+        if let Some(mut data) = self.pending_tab_transfer.take() {
             let id = self.allocate_tab_id();
+            let search = data.search.take();
             let local_path = data.location.local_path().cloned();
             let cursor_position = data.cursor_position;
             let tab =
@@ -73,6 +79,11 @@ impl Fulgur {
             }
             // Also turns tailing on for a log view tab, through `resume_log_view`.
             self.activate_tab(id, window, cx);
+            if let Some(snapshot) = search
+                && let Some(bar) = self.ensure_search_bar(id, window, cx)
+            {
+                bar.update(cx, |bar, cx| bar.restore(snapshot, window, cx));
+            }
             self.save_state_async(cx, window);
         }
     }

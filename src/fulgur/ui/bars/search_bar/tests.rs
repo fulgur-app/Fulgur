@@ -8,6 +8,8 @@ use core::prelude::v1::test;
 #[cfg(feature = "gpui-test-support")]
 use super::SearchBar;
 #[cfg(feature = "gpui-test-support")]
+use super::scratch::search_scratch_capacities;
+#[cfg(feature = "gpui-test-support")]
 use crate::fulgur::Fulgur;
 #[cfg(feature = "gpui-test-support")]
 use gpui_kit::component::input::{EditorState, InputEditsEvent, Undo};
@@ -26,6 +28,35 @@ fn create_match(start: usize, end: usize) -> SearchMatch {
 #[cfg(feature = "gpui-test-support")]
 use crate::test_support::{fold_from_first_line, setup_fulgur, setup_fulgur_with_root};
 
+/// Create the active tab's search bar, hidden, and get the content it searches
+///
+/// ### Arguments
+/// - `fulgur`: The window entity
+/// - `window`: The window context
+/// - `cx`: The application context
+///
+/// ### Returns
+/// - `(Entity<SearchBar>, Entity<EditorState>)`: The active tab's bar and editor content
+#[cfg(feature = "gpui-test-support")]
+pub(super) fn active_tab_search_bar(
+    fulgur: &Entity<Fulgur>,
+    window: &mut gpui_kit::Window,
+    cx: &mut gpui_kit::App,
+) -> (Entity<SearchBar>, Entity<EditorState>) {
+    fulgur.update(cx, |this, cx| {
+        let tab_id = this.active_tab_id.expect("expected an active tab");
+        let content = this
+            .get_active_editor_tab(cx)
+            .expect("expected active editor tab")
+            .content
+            .clone();
+        let bar = this
+            .ensure_search_bar(tab_id, window, cx)
+            .expect("expected the active tab to be an editor tab");
+        (bar, content)
+    })
+}
+
 /// Set up a `Fulgur` window and return its search bar plus the active editor's content.
 #[cfg(feature = "gpui-test-support")]
 fn setup_search(
@@ -37,15 +68,8 @@ fn setup_search(
     VisualTestContext,
 ) {
     let (fulgur, mut visual_cx) = setup_fulgur(cx);
-    let (search_bar, content) = visual_cx.update(|_window, cx| {
-        let this = fulgur.read(cx);
-        let content = this
-            .get_active_editor_tab(cx)
-            .expect("expected active editor tab")
-            .content
-            .clone();
-        (this.search_bar.clone(), content)
-    });
+    let (search_bar, content) =
+        visual_cx.update(|window, cx| active_tab_search_bar(&fulgur, window, cx));
     (fulgur, search_bar, content, visual_cx)
 }
 
@@ -62,15 +86,8 @@ fn setup_search_with_root(
     cx: &mut TestAppContext,
 ) -> (Entity<SearchBar>, Entity<EditorState>, VisualTestContext) {
     let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
-    let (search_bar, content) = visual_cx.update(|_window, cx| {
-        let this = fulgur.read(cx);
-        let content = this
-            .get_active_editor_tab(cx)
-            .expect("expected active editor tab")
-            .content
-            .clone();
-        (this.search_bar.clone(), content)
-    });
+    let (search_bar, content) =
+        visual_cx.update(|window, cx| active_tab_search_bar(&fulgur, window, cx));
     (search_bar, content, visual_cx)
 }
 
@@ -778,11 +795,11 @@ fn test_match_case_toggle_filters_results(cx: &mut TestAppContext) {
             });
 
             bar.match_case = false;
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 3);
 
             bar.match_case = true;
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 1);
         });
     });
@@ -803,11 +820,11 @@ fn test_match_whole_word_toggle_filters_results(cx: &mut TestAppContext) {
             });
 
             bar.match_whole_word = false;
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 4);
 
             bar.match_whole_word = true;
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 2);
         });
     });
@@ -828,7 +845,7 @@ fn test_no_match_state_when_query_not_found(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("zzz", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
 
             assert!(bar.search_matches.is_empty());
             assert!(bar.current_match_index.is_none());
@@ -850,7 +867,7 @@ fn test_close_search_clears_match_state(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 3);
             assert!(bar.current_match_index.is_some());
 
@@ -879,13 +896,13 @@ fn test_gpui_search_next_previous_wrap_and_cursor(cx: &mut TestAppContext) {
             bar.search_matches = vec![create_match(0, 1), create_match(4, 5), create_match(8, 9)];
             bar.current_match_index = Some(2);
 
-            bar.search_next(Some(content.clone()), cx);
+            bar.search_next(cx);
             assert_eq!(bar.current_match_index, Some(0));
             let cursor = content.read(cx).cursor_position();
             assert_eq!(cursor.line, 0);
             assert_eq!(cursor.character, 0);
 
-            bar.search_previous(Some(content.clone()), cx);
+            bar.search_previous(cx);
             assert_eq!(bar.current_match_index, Some(2));
             let cursor = content.read(cx).cursor_position();
             assert_eq!(cursor.line, 2);
@@ -910,7 +927,7 @@ fn test_search_next_unfolds_a_folded_match(cx: &mut TestAppContext) {
         search_bar.update(cx, |bar, cx| {
             bar.search_matches = vec![create_match(0, 1), create_match(4, 5)];
             bar.current_match_index = Some(0);
-            bar.search_next(Some(content.clone()), cx);
+            bar.search_next(cx);
         });
         let content = content.read(cx);
         assert!(
@@ -947,11 +964,11 @@ fn test_gpui_replace_current_updates_text_and_matches(cx: &mut TestAppContext) {
                 input.set_value("baz", window, cx);
             });
 
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 2);
             assert_eq!(bar.current_match_index, Some(0));
 
-            bar.replace_current(Some(content.clone()), window, cx);
+            bar.replace_current(window, cx);
 
             let text = content.read(cx).text().to_string();
             assert_eq!(text, "baz bar foo");
@@ -997,11 +1014,11 @@ fn replace_current_twice(
             bar.replace_input.update(cx, |input, cx| {
                 input.set_value(replacement, window, cx);
             });
-            bar.replace_current(Some(content.clone()), window, cx);
+            bar.replace_current(window, cx);
         });
         let after_first = content.read(cx).text().to_string();
         search_bar.update(cx, |bar, cx| {
-            bar.replace_current(Some(content.clone()), window, cx);
+            bar.replace_current(window, cx);
         });
         let after_second = content.read(cx).text().to_string();
         (after_first, after_second)
@@ -1049,7 +1066,7 @@ fn test_replace_current_puts_the_caret_after_the_replacement(cx: &mut TestAppCon
             bar.replace_input.update(cx, |input, cx| {
                 input.set_value("foobar", window, cx);
             });
-            bar.replace_current(Some(content.clone()), window, cx);
+            bar.replace_current(window, cx);
 
             assert_eq!(bar.search_matches.len(), 2);
             assert_eq!(bar.current_match_index, Some(1));
@@ -1078,10 +1095,10 @@ fn test_gpui_replace_all_whole_word_only(cx: &mut TestAppContext) {
                 input.set_value("done", window, cx);
             });
 
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 2);
 
-            bar.replace_all(Some(content.clone()), window, cx);
+            bar.replace_all(window, cx);
 
             let text = content.read(cx).text().to_string();
             assert_eq!(text, "done testing done");
@@ -1114,7 +1131,7 @@ fn test_gpui_replace_all_preserves_undo_history(cx: &mut TestAppContext) {
             bar.replace_input.update(cx, |input, cx| {
                 input.set_value("gamma", window, cx);
             });
-            bar.replace_all(Some(content.clone()), window, cx);
+            bar.replace_all(window, cx);
         });
     });
     visual_cx.run_until_parked();
@@ -1160,7 +1177,7 @@ fn test_gpui_replace_current_recomputes_after_buffer_edit(cx: &mut TestAppContex
                 input.set_value("x", window, cx);
             });
 
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 2);
             // Point at the second match, whose offset (11) is about to go stale.
             bar.current_match_index = Some(1);
@@ -1171,7 +1188,7 @@ fn test_gpui_replace_current_recomputes_after_buffer_edit(cx: &mut TestAppContex
                 content.set_value("alpha", window, cx);
             });
 
-            bar.replace_current(Some(content.clone()), window, cx);
+            bar.replace_current(window, cx);
 
             let text = content.read(cx).text().to_string();
             assert_eq!(text, "x");
@@ -1200,7 +1217,7 @@ fn test_gpui_replace_all_recomputes_after_buffer_edit(cx: &mut TestAppContext) {
                 input.set_value("baz", window, cx);
             });
 
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 3);
 
             // Shrink the buffer without refreshing matches; offsets 4 and 8 are
@@ -1209,7 +1226,7 @@ fn test_gpui_replace_all_recomputes_after_buffer_edit(cx: &mut TestAppContext) {
                 content.set_value("foo", window, cx);
             });
 
-            bar.replace_all(Some(content.clone()), window, cx);
+            bar.replace_all(window, cx);
 
             let text = content.read(cx).text().to_string();
             assert_eq!(text, "baz");
@@ -1237,10 +1254,10 @@ fn test_gpui_replace_all_case_sensitive_non_whole_word(cx: &mut TestAppContext) 
                 input.set_value("b", window, cx);
             });
 
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 3);
 
-            bar.replace_all(Some(content.clone()), window, cx);
+            bar.replace_all(window, cx);
 
             let text = content.read(cx).text().to_string();
             assert_eq!(text, "bb");
@@ -1282,7 +1299,7 @@ fn open_bar_on_scrolled_document(
 
     visual_cx.update(|window, cx| {
         search_bar.update(cx, |bar, cx| {
-            bar.toggle(Some(content.clone()), window, cx);
+            bar.toggle(window, cx);
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
@@ -1338,7 +1355,7 @@ fn test_replace_current_edits_only_the_match(cx: &mut TestAppContext) {
             bar.replace_input.update(cx, |input, cx| {
                 input.set_value("quux", window, cx);
             });
-            bar.replace_current(Some(content.clone()), window, cx);
+            bar.replace_current(window, cx);
         });
     });
     visual_cx.run_until_parked();
@@ -1369,7 +1386,7 @@ fn test_replace_current_keeps_the_view_when_the_next_match_is_visible(cx: &mut T
 
     visual_cx.update(|window, cx| {
         search_bar.update(cx, |bar, cx| {
-            bar.replace_current(Some(content.clone()), window, cx);
+            bar.replace_current(window, cx);
         });
     });
     visual_cx.run_until_parked();
@@ -1419,7 +1436,7 @@ fn test_replace_current_is_one_undoable_edit(cx: &mut TestAppContext) {
             bar.replace_input.update(cx, |input, cx| {
                 input.set_value("gamma", window, cx);
             });
-            bar.replace_current(Some(content.clone()), window, cx);
+            bar.replace_current(window, cx);
         });
     });
     visual_cx.run_until_parked();
@@ -1452,7 +1469,7 @@ fn test_replace_all_keeps_the_scroll_offset_and_the_caret(cx: &mut TestAppContex
 
     visual_cx.update(|window, cx| {
         search_bar.update(cx, |bar, cx| {
-            bar.replace_all(Some(content.clone()), window, cx);
+            bar.replace_all(window, cx);
         });
     });
     visual_cx.run_until_parked();
@@ -1492,7 +1509,12 @@ fn painted_ranges(
     content: &Entity<EditorState>,
     cx: &gpui_kit::App,
 ) -> (Vec<std::ops::Range<usize>>, Vec<std::ops::Range<usize>>) {
-    match bar.match_decorations.get(&content.entity_id()) {
+    assert_eq!(
+        bar.editor.upgrade().as_ref(),
+        Some(content),
+        "a bar only paints its own editor"
+    );
+    match &bar.match_decorations {
         Some(decorations) => (
             decorations.all.get_ranges(cx),
             decorations.current.get_ranges(cx),
@@ -1515,7 +1537,7 @@ fn test_search_paints_every_match_and_accents_the_current_one(cx: &mut TestAppCo
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
 
             assert_eq!(bar.current_match_index, Some(0));
             let (all, current) = painted_ranges(bar, &content, cx);
@@ -1539,14 +1561,14 @@ fn test_navigation_moves_the_accented_match(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
 
-            bar.search_next(Some(content.clone()), cx);
+            bar.search_next(cx);
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(current, vec![4..7]);
             assert_eq!(all, vec![0..3, 4..7, 8..11]);
 
-            bar.search_previous(Some(content.clone()), cx);
+            bar.search_previous(cx);
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(current, vec![0..3]);
             assert_eq!(all, vec![0..3, 4..7, 8..11]);
@@ -1568,11 +1590,15 @@ fn test_navigation_rewrites_only_the_current_match_decoration(cx: &mut TestAppCo
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
-            bar.match_decorations[&content.entity_id()].all.clear(cx);
+            bar.perform_search(cx);
+            bar.match_decorations
+                .as_ref()
+                .expect("expected painted decorations")
+                .all
+                .clear(cx);
 
-            bar.search_next(Some(content.clone()), cx);
-            bar.search_previous(Some(content.clone()), cx);
+            bar.search_next(cx);
+            bar.search_previous(cx);
 
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(
@@ -1620,9 +1646,12 @@ fn test_current_match_collection_outranks_the_all_matches_collection(cx: &mut Te
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
 
-            let decorations = &bar.match_decorations[&content.entity_id()];
+            let decorations = bar
+                .match_decorations
+                .as_ref()
+                .expect("expected painted decorations");
             assert!(
                 decoration_collection_rank(&decorations.current)
                     < decoration_collection_rank(&decorations.all),
@@ -1646,17 +1675,16 @@ fn test_close_frees_the_scan_buffers(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
-            assert!(bar.search_text_scratch.capacity() > 0);
-            assert!(bar.search_lowercase_text_scratch.capacity() > 0);
-            assert!(bar.search_length_changes_scratch.capacity() > 0);
+            bar.perform_search(cx);
+            let (text, lowercase_text, length_changes) = search_scratch_capacities();
+            assert!(text > 0);
+            assert!(lowercase_text > 0);
+            assert!(length_changes > 0);
             assert!(bar.search_matches.capacity() > 0);
 
             bar.close(cx);
 
-            assert_eq!(bar.search_text_scratch.capacity(), 0);
-            assert_eq!(bar.search_lowercase_text_scratch.capacity(), 0);
-            assert_eq!(bar.search_length_changes_scratch.capacity(), 0);
+            assert_eq!(search_scratch_capacities(), (0, 0, 0));
             assert_eq!(bar.search_matches.capacity(), 0);
         });
     });
@@ -1676,7 +1704,7 @@ fn test_close_search_clears_match_decorations(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 3);
 
             bar.close(cx);
@@ -1702,13 +1730,13 @@ fn test_clearing_the_query_clears_match_decorations(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             assert_eq!(bar.search_matches.len(), 3);
 
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
 
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(all, [] as [std::ops::Range<usize>; 0]);
@@ -1732,10 +1760,10 @@ fn test_decoration_collections_are_reused_across_searches(cx: &mut TestAppContex
                 bar.search_input.update(cx, |input, cx| {
                     input.set_value(query, window, cx);
                 });
-                bar.perform_search(Some(content.clone()), cx);
+                bar.perform_search(cx);
             }
 
-            assert_eq!(bar.match_decorations.len(), 1);
+            assert!(bar.match_decorations.is_some());
             // The intermediate "bar" search left the cursor on the first "bar",
             // so the final "foo" search resumes from the second occurrence.
             let (all, current) = painted_ranges(bar, &content, cx);
@@ -1762,8 +1790,8 @@ fn test_replace_all_clears_match_decorations(cx: &mut TestAppContext) {
             bar.replace_input.update(cx, |input, cx| {
                 input.set_value("baz", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
-            bar.replace_all(Some(content.clone()), window, cx);
+            bar.perform_search(cx);
+            bar.replace_all(window, cx);
 
             let (all, current) = painted_ranges(bar, &content, cx);
             assert_eq!(all, [] as [std::ops::Range<usize>; 0]);
@@ -1788,7 +1816,7 @@ fn test_a_shared_state_change_repaints_the_matches(cx: &mut TestAppContext) {
             bar.search_input.update(cx, |input, cx| {
                 input.set_value("foo", window, cx);
             });
-            bar.perform_search(Some(content.clone()), cx);
+            bar.perform_search(cx);
             bar.clear_match_decorations(cx);
         });
     });

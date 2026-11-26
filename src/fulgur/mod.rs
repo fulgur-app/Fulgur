@@ -28,7 +28,6 @@ use ui::{
     bars::color_picker_bar::ColorPickerBar,
     bars::csv_toolbar::CsvToolbar,
     bars::markdown_toolbar::MarkdownToolbar,
-    bars::search_bar::SearchBar,
     bars::status_bar::StatusBar,
     bars::titlebar::CustomTitleBar,
     command_palette::CommandPalette,
@@ -56,8 +55,6 @@ pub struct Fulgur {
     tabs: Vec<Entity<Tab>>, // The tabs in the application, each its own entity
     active_tab_id: Option<TabId>, // Stable ID of the active tab
     next_tab_id: TabId,     // The next tab ID
-    search_bar: Entity<SearchBar>, // The search and replace bar view
-    _search_bar_subscription: Subscription, // Routes SearchBarEvent from the search bar to window-level handlers
     markdown_toolbar: Entity<MarkdownToolbar>, // The markdown formatting toolbar view (acts directly on the active editor, emits no events)
     csv_toolbar: Entity<CsvToolbar>, // The CSV structural-edit toolbar view (acts directly on the active tab's table, emits no events)
     color_picker_bar: Entity<ColorPickerBar>, // The color picker bar view (owns the picker widget and its three text inputs)

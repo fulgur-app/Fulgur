@@ -28,6 +28,7 @@ use crate::fulgur::files::csv_support::{DEFAULT_DELIMITER, detect_delimiter, par
 use crate::fulgur::languages::supported_languages::{SupportedLanguage, language_registry_name};
 use crate::fulgur::settings::EditorSettings;
 use crate::fulgur::sync::ssh::sftp::RemoteBaseline;
+use crate::fulgur::ui::bars::search_bar::{SearchBarSnapshot, TabSearchBar};
 use crate::fulgur::ui::tabs::color_tag::ColorTag;
 use crate::fulgur::ui::tabs::tab::TabId;
 
@@ -126,6 +127,9 @@ pub struct EditorTab {
     /// Whether this is a restored tab (local or remote) whose file has not been
     /// read yet, so its buffer says nothing about the file.
     pub awaiting_content: bool,
+    /// The tab's own search bar, created on the first Find and dropped with the
+    /// tab. Never persisted; a window transfer carries it as a `SearchBarSnapshot`.
+    pub(crate) search_bar: Option<TabSearchBar>,
     /// Number of `InputEvent::Change` events the content subscription has seen,
     /// read through `content_revision`.
     edit_generation: u64,
@@ -166,6 +170,8 @@ pub struct TabTransferData {
     pub log_view: bool,
     pub read_only: bool,
     pub awaiting_content: bool,
+    /// The search bar state, restored on arrival without moving the caret.
+    pub search: Option<SearchBarSnapshot>,
 }
 
 /// Parameters for creating an editor tab as a duplicate of another

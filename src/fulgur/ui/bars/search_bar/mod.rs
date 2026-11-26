@@ -4,14 +4,19 @@ mod field;
 mod matching;
 mod rendering;
 mod replace;
+mod scratch;
 mod state;
+mod window_ops;
 
 #[cfg(all(test, feature = "gpui-test-support"))]
 mod interaction_tests;
 #[cfg(all(test, feature = "gpui-test-support"))]
+mod per_tab_tests;
+#[cfg(all(test, feature = "gpui-test-support"))]
 mod tests;
 
-pub(crate) use state::{SearchBar, SearchBarEvent};
+pub use state::SearchBarSnapshot;
+pub(crate) use state::{SearchBar, SearchBarEvent, TabSearchBar};
 
 use crate::fulgur::ui::{
     components_utils::{SEARCH_BAR_BUTTON_SIZE, button_factory},

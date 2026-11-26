@@ -45,11 +45,6 @@ impl Fulgur {
         // Deferred like every other tab bar scroll, so the latest request wins over an
         // older one (such as the restored tab's) still waiting for the bar's layout.
         self.request_tab_scroll(tab_id, cx);
-        if self.search_bar.read(cx).is_visible() {
-            let content = self.active_editor_content(cx);
-            self.search_bar
-                .update(cx, |bar, cx| bar.refresh_matches(content, cx));
-        }
         cx.notify();
     }
 

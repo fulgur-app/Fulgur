@@ -1,31 +1,27 @@
 use super::SearchMatch;
 use super::field::new_field;
-use super::matching::LengthChange;
-use crate::fulgur::Fulgur;
 use gpui_kit::component::input::{
     EditorState, InputEvent, TextDecorationCollection, TextareaState,
 };
-use gpui_kit::{
-    App, Context, Entity, EntityId, EventEmitter, Subscription, Task, WeakEntity, Window,
-};
-use std::collections::HashMap;
+use gpui_kit::{App, Context, Entity, EventEmitter, Subscription, Task, WeakEntity, Window};
 
-/// The pair of decoration collections painting the search matches of one editor
+/// The pair of decoration collections painting the search matches of the bar's editor
 ///
 /// `all` carries every match and `current` overlays the current one, so stepping
 /// through the matches only rewrites `current`. `current` must be created first:
 /// the first collection wins when overlapping decorations set the same property.
-/// The weak handle lets dead editors be pruned from the cache.
 pub(super) struct MatchDecorations {
-    pub(super) editor: WeakEntity<EditorState>,
     pub(super) all: TextDecorationCollection,
     pub(super) current: TextDecorationCollection,
 }
 
-/// The search and replace bar, rendered as its own entity
+/// The search and replace bar of one editor tab, rendered as its own entity
 ///
+/// ### Description
+/// Each editor tab creates its bar on the first Find and drops it with the tab, so
+/// the query, options and matches belong to that tab alone.
 pub(crate) struct SearchBar {
-    pub(super) fulgur: WeakEntity<Fulgur>,
+    pub(super) editor: WeakEntity<EditorState>,
     pub(super) show_search: bool,
     pub(super) search_input: Entity<TextareaState>,
     pub(super) replace_input: Entity<TextareaState>,
@@ -33,10 +29,7 @@ pub(crate) struct SearchBar {
     pub(super) match_whole_word: bool,
     pub(super) search_matches: Vec<SearchMatch>,
     pub(super) current_match_index: Option<usize>,
-    pub(super) search_text_scratch: String,
-    pub(super) search_lowercase_text_scratch: String,
-    pub(super) search_length_changes_scratch: Vec<LengthChange>,
-    pub(super) match_decorations: HashMap<EntityId, MatchDecorations>,
+    pub(super) match_decorations: Option<MatchDecorations>,
     pub(super) editor_subscription: Option<Subscription>,
     pub(super) pending_rescan: Option<Task<()>>,
     _search_input_subscription: Subscription,
@@ -50,21 +43,54 @@ pub(crate) enum SearchBarEvent {
 
 impl EventEmitter<SearchBarEvent> for SearchBar {}
 
+/// The plain-data state of a search bar, carried when its tab moves to another window
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SearchBarSnapshot {
+    pub visible: bool,
+    pub query: String,
+    pub replacement: String,
+    pub match_case: bool,
+    pub match_whole_word: bool,
+}
+
+/// A search bar stored on its editor tab, with the subscription routing its events to the window
+pub(crate) struct TabSearchBar {
+    pub(crate) bar: Entity<SearchBar>,
+    _events: Subscription,
+}
+
+impl TabSearchBar {
+    /// Pair a search bar with the subscription delivering its events
+    ///
+    /// ### Arguments
+    /// - `bar`: The tab's search bar
+    /// - `events`: The subscription routing the bar's events to the owning window
+    ///
+    /// ### Returns
+    /// - `TabSearchBar`: The bar ready to be stored on its tab
+    pub(crate) fn new(bar: Entity<SearchBar>, events: Subscription) -> Self {
+        Self {
+            bar,
+            _events: events,
+        }
+    }
+}
+
 impl SearchBar {
-    /// Create a new search bar view owning its search and replace inputs
+    /// Create a new search bar view searching one editor
     ///
     /// Subscribes to its own search input so the search re-runs whenever the
     /// query changes while the bar is visible.
     ///
     /// ### Arguments
-    /// - `fulgur`: Weak handle to the owning window entity the bar reads the active editor from
+    /// - `editor`: Weak handle to the content of the tab owning the bar
     /// - `window`: The window context
     /// - `cx`: The search bar context
     ///
     /// ### Returns
     /// - `SearchBar`: The new search bar view
     pub(crate) fn new(
-        fulgur: WeakEntity<Fulgur>,
+        editor: WeakEntity<EditorState>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -77,7 +103,7 @@ impl SearchBar {
                 }
             });
         Self {
-            fulgur,
+            editor,
             show_search: false,
             search_input,
             replace_input,
@@ -85,10 +111,7 @@ impl SearchBar {
             match_whole_word: false,
             search_matches: Vec::new(),
             current_match_index: None,
-            search_text_scratch: String::new(),
-            search_lowercase_text_scratch: String::new(),
-            search_length_changes_scratch: Vec::new(),
-            match_decorations: HashMap::new(),
+            match_decorations: None,
             editor_subscription: None,
             pending_rescan: None,
             _search_input_subscription: search_input_subscription,
@@ -103,53 +126,69 @@ impl SearchBar {
         self.show_search
     }
 
-    /// Get the active editor's content entity from the owning window
+    /// Get the content of the tab owning the bar
     ///
-    /// ### Description
-    /// Panics while `Fulgur` is being updated, so a method `Fulgur` calls on the bar must take the
-    /// content as an argument instead.
+    /// ### Returns
+    /// - `Some(Entity<EditorState>)`: The editor the bar searches
+    /// - `None`: If the tab, and so its editor, is gone
+    pub(super) fn editor(&self) -> Option<Entity<EditorState>> {
+        self.editor.upgrade()
+    }
+
+    /// Return whether the bar's editor accepts user edits.
     ///
     /// ### Arguments
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `Some(Entity<EditorState>)`: The active editor tab's content
-    /// - `None`: If the window is gone or the active tab is not an editor
-    pub(super) fn active_editor_content(&self, cx: &App) -> Option<Entity<EditorState>> {
-        self.fulgur.upgrade()?.read(cx).active_editor_content(cx)
+    /// - `bool`: `true` when the editor is alive and editable
+    pub(super) fn editor_is_editable(&self, cx: &App) -> bool {
+        self.editor()
+            .is_some_and(|editor| editor.read(cx).is_editable())
     }
 
-    /// Return whether the active editor buffer accepts user edits.
+    /// Capture the state worth keeping when the tab moves to another window
     ///
     /// ### Arguments
     /// - `cx`: The application context
     ///
     /// ### Returns
-    /// - `bool`: `true` when an editor tab is active and its buffer is editable
-    pub(super) fn active_editor_is_editable(&self, cx: &App) -> bool {
-        self.active_editor_content(cx)
-            .is_some_and(|content| content.read(cx).is_editable())
+    /// - `SearchBarSnapshot`: The visibility, query, replacement text and options
+    pub(crate) fn snapshot(&self, cx: &App) -> SearchBarSnapshot {
+        SearchBarSnapshot {
+            visible: self.show_search,
+            query: self.search_input.read(cx).value().to_string(),
+            replacement: self.replace_input.read(cx).value().to_string(),
+            match_case: self.match_case,
+            match_whole_word: self.match_whole_word,
+        }
     }
-}
 
-impl Fulgur {
-    /// Dispatch a search bar event to the matching window-level handler
+    /// Restore a captured state, searching again without moving the caret or the focus
     ///
     /// ### Arguments
-    /// - `event`: The search bar event to handle
+    /// - `snapshot`: The state captured in the source window
     /// - `window`: The window context
-    /// - `cx`: The application context
-    pub(crate) fn on_search_bar_event(
+    /// - `cx`: The search bar context
+    pub(crate) fn restore(
         &mut self,
-        event: SearchBarEvent,
+        snapshot: SearchBarSnapshot,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match event {
-            SearchBarEvent::Closed => {
-                self.focus_active_tab(window, cx);
-                cx.notify();
-            }
+        self.match_case = snapshot.match_case;
+        self.match_whole_word = snapshot.match_whole_word;
+        self.search_input.update(cx, |input, cx| {
+            input.set_value(snapshot.query, window, cx);
+        });
+        self.replace_input.update(cx, |input, cx| {
+            input.set_value(snapshot.replacement, window, cx);
+        });
+        if snapshot.visible {
+            self.show_search = true;
+            self.watch_editor(cx);
+            self.rescan_matches(cx);
         }
+        cx.notify();
     }
 }

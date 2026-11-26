@@ -60,6 +60,7 @@ fn make_transfer_data() -> TabTransferData {
         log_view: false,
         read_only: false,
         awaiting_content: false,
+        search: None,
     }
 }
 
@@ -600,6 +601,7 @@ fn test_from_transfer_untitled_no_file_metadata(cx: &mut TestAppContext) {
         log_view: false,
         read_only: false,
         awaiting_content: false,
+        search: None,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -642,6 +644,7 @@ fn test_from_transfer_modified_state_preserved(cx: &mut TestAppContext) {
         log_view: false,
         read_only: false,
         awaiting_content: false,
+        search: None,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -687,6 +690,7 @@ fn test_from_transfer_preserves_language(cx: &mut TestAppContext) {
         log_view: false,
         read_only: false,
         awaiting_content: false,
+        search: None,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {
@@ -726,6 +730,7 @@ fn test_from_transfer_preserves_markdown_flags(cx: &mut TestAppContext) {
         log_view: false,
         read_only: false,
         awaiting_content: false,
+        search: None,
     };
     cx.update(|cx| {
         cx.open_window(WindowOptions::default(), |window, cx| {

@@ -10,7 +10,6 @@ use crate::fulgur::{
         bars::color_picker_bar::{ColorPickerBar, ColorPickerBarEvent},
         bars::csv_toolbar::CsvToolbar,
         bars::markdown_toolbar::MarkdownToolbar,
-        bars::search_bar::{SearchBar, SearchBarEvent},
         bars::status_bar::{StatusBar, StatusBarEvent},
         bars::titlebar::CustomTitleBar,
         command_palette::{CommandPalette, CommandPaletteEvent},
@@ -89,15 +88,6 @@ impl Fulgur {
         let entity = cx.new(|cx| {
             let weak_fulgur = cx.weak_entity();
             let title_bar = CustomTitleBar::new(&weak_fulgur, window, cx);
-            let search_bar = cx.new(|cx| SearchBar::new(weak_fulgur.clone(), window, cx));
-            let search_bar_subscription = cx.subscribe_in(
-                &search_bar,
-                window,
-                |this: &mut Self, _, event: &SearchBarEvent, window, cx| {
-                    this.on_search_bar_event(*event, window, cx);
-                },
-            );
-
             let status_bar = cx.new(|_| StatusBar::new(weak_fulgur.clone()));
             let status_bar_subscription = cx.subscribe_in(
                 &status_bar,
@@ -147,10 +137,7 @@ impl Fulgur {
                         this.settings = shared.settings.clone();
                     }
                     this.apply_editor_settings_to_tabs(window, cx);
-                    let content = this.active_editor_content(cx);
-                    this.search_bar.update(cx, |bar, cx| {
-                        bar.refresh_match_decorations(content.as_ref(), cx);
-                    });
+                    this.refresh_search_decorations(cx);
                     cx.notify();
                 },
             );
@@ -162,8 +149,6 @@ impl Fulgur {
                 tabs: vec![],
                 active_tab_id: None,
                 next_tab_id: TabId(0),
-                search_bar,
-                _search_bar_subscription: search_bar_subscription,
                 markdown_toolbar,
                 csv_toolbar,
                 color_picker_bar,

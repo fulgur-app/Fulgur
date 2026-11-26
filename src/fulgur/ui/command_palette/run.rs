@@ -575,10 +575,10 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 run(this, PaletteCommand::FindInFile, window, cx);
-                assert!(this.search_bar.read(cx).is_visible());
+                assert!(this.active_search_bar_visible(cx));
 
                 run(this, PaletteCommand::FindInFile, window, cx);
-                assert!(!this.search_bar.read(cx).is_visible());
+                assert!(!this.active_search_bar_visible(cx));
             });
         });
     }
@@ -590,11 +590,11 @@ mod tests {
         visual_cx.update(|window, cx| {
             fulgur.update(cx, |this, cx| {
                 run(this, PaletteCommand::FindAndReplace, window, cx);
-                assert!(this.search_bar.read(cx).is_visible());
+                assert!(this.active_search_bar_visible(cx));
 
                 // Unlike Find, Find and Replace never toggles the bar shut.
                 run(this, PaletteCommand::FindAndReplace, window, cx);
-                assert!(this.search_bar.read(cx).is_visible());
+                assert!(this.active_search_bar_visible(cx));
             });
         });
     }
