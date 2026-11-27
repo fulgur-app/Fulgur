@@ -254,13 +254,13 @@ mod tests {
         settings::{ServerProfile, Settings},
         shared_state::SharedAppState,
         sync::synchronization::SynchronizationStatus,
-        ui::components_utils::UTF_8,
+        ui::{components_utils::UTF_8, tabs::editor_tab::extract_line_number},
         window_manager::WindowManager,
     };
     use gpui_kit::component::input::Position;
     use gpui_kit::{
-        AppContext, Context, Entity, IntoElement, Render, TestAppContext, VisualTestContext,
-        Window, WindowOptions, div,
+        AppContext, Context, Entity, IntoElement, Render, SharedString, TestAppContext,
+        VisualTestContext, Window, WindowOptions, div,
     };
     use parking_lot::Mutex;
     use std::{
@@ -356,6 +356,28 @@ mod tests {
                 let labels = StatusBar::compute_labels(this.active_tab(cx), cx);
                 assert_eq!(labels.language_label, "Rust");
                 assert_eq!(labels.encoding_label, "ISO-8859-1");
+                assert_eq!(labels.line_col, "Ln 2, Col 5");
+            });
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_jump_to_status_bar_position_round_trips(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur(cx);
+
+        visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let jump = extract_line_number(&SharedString::from("2:5"))
+                    .expect("expected a valid jump destination");
+                this.update_active_editor_tab(cx, |editor, cx| {
+                    editor.content.update(cx, |content, cx| {
+                        content.set_value("first line\nsecond line", window, cx);
+                    });
+                    editor.jump_to_line(window, cx, jump);
+                })
+                .expect("expected active editor tab");
+
+                let labels = StatusBar::compute_labels(this.active_tab(cx), cx);
                 assert_eq!(labels.line_col, "Ln 2, Col 5");
             });
         });

@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 /// Regex for matching line numbers and line:column positions
 static LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+|\d+:\d+)$").unwrap());
 
-/// A line and optional character position for cursor navigation
+/// A 0-based line and optional 0-based character position for cursor navigation
 #[derive(Copy, Clone)]
 pub struct Jump {
     pub line: u32,
@@ -31,13 +31,11 @@ pub fn extract_line_number(destination: &SharedString) -> anyhow::Result<Jump> {
             if destination.contains(':') {
                 let parts = destination.split(':').collect::<Vec<&str>>();
                 if parts.len() == 2 {
-                    let line = string_to_u32(parts[0]);
-                    jump.line = if line > 0 { line - 1 } else { 0 };
-                    jump.character = Some(string_to_u32(parts[1]));
+                    jump.line = string_to_u32(parts[0]).saturating_sub(1);
+                    jump.character = Some(string_to_u32(parts[1]).saturating_sub(1));
                 }
             } else {
-                let line = string_to_u32(destination.as_str());
-                jump.line = if line > 0 { line - 1 } else { 0 };
+                jump.line = string_to_u32(destination.as_str()).saturating_sub(1);
             }
         })
         .ok_or(anyhow::anyhow!("Invalid destination"))?;
@@ -81,7 +79,7 @@ mod tests {
         let destination = SharedString::from("23:17");
         let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, 22);
-        assert_eq!(result.character, Some(17));
+        assert_eq!(result.character, Some(16));
     }
 
     #[test]
@@ -193,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_extract_line_number_zero_character() {
-        // Line with character 0
+        // Column 0 should lead to the first column
         let destination = SharedString::from("10:0");
         let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, 9);
@@ -214,8 +212,8 @@ mod tests {
         let destination = SharedString::from("10:99999999999999999999");
         let result = extract_line_number(&destination).unwrap();
         assert_eq!(result.line, 9);
-        // Overflow causes parse to fail, string_to_u32 returns 0
-        assert_eq!(result.character, Some(u32::MAX));
+        // Overflow saturates to u32::MAX, then converts to a 0-based column
+        assert_eq!(result.character, Some(u32::MAX - 1));
     }
 
     // ========== string_to_u32() tests ==========
