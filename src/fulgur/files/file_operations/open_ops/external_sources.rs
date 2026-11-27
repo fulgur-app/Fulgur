@@ -120,7 +120,8 @@ impl Fulgur {
     /// External requests are macOS open events, command-line file arguments
     /// and messages forwarded by another Fulgur process. They are queued in
     /// `SharedAppState` and delivered here, outside of any render pass, to the
-    /// last focused window (or any open window), which is brought to the front.
+    /// last focused window (or any open window), which is brought to the front
+    /// together with the app.
     /// When no window exists yet the requests stay queued: window creation calls
     /// this again once the window and its `Root` are mounted.
     ///
@@ -134,6 +135,9 @@ impl Fulgur {
             log::debug!("No window yet for external open requests, keeping them queued");
             return;
         };
+        // A request forwarded by another process arrives while that process is the
+        // active app, so the window alone cannot come to the front on macOS.
+        cx.activate(true);
         if let Err(e) = handle.update(cx, |_, window, cx| {
             window.activate_window();
             fulgur.update(cx, |this, cx| {

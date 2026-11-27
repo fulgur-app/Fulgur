@@ -35,7 +35,7 @@ pub fn instance_id(config_dir: &Path) -> String {
     hex::encode(instance_hash(config_dir))
 }
 
-/// Path of the IPC socket for a configuration directory, on Linux.
+/// Path of the IPC socket for a configuration directory, on Linux and macOS.
 ///
 /// ### Arguments
 /// - `config_dir`: The resolved configuration directory
@@ -44,7 +44,7 @@ pub fn instance_id(config_dir: &Path) -> String {
 ///
 /// ### Returns
 /// - `PathBuf`: `fulgur-<hash>.sock` in the runtime folder, else in the fallback
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(unix, test))]
 #[must_use]
 pub fn socket_path(
     config_dir: &Path,

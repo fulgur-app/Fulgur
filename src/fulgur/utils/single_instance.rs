@@ -1,14 +1,20 @@
-//! Single-instance coordination for Windows and Linux.
+//! Single-instance coordination for Windows, Linux and macOS.
 //!
-//! When a new Fulgur process is launched with a file-path argument (taskbar
-//! jump list on Windows, double-click / "Open with" on Linux), this module
-//! detects the already-running instance, forwards the path to it, and lets the
-//! caller exit early. Windows uses a named pipe scoped to the user and logon
-//! session, with a user-only DACL and peer-user checks on both ends (see
-//! `windows_pipe`); Linux uses a private Unix domain socket. Both channels are
-//! keyed by a hash of the configuration directory (see `instance_key`), so an
-//! installed Fulgur, a portable Fulgur and a dev instance started with `-d`
-//! stay isolated from each other.
+//! When a new Fulgur process is launched while another one runs, this module
+//! detects the already-running instance, forwards the launch to it, and lets
+//! the caller exit early: file paths (taskbar jump list on Windows, double-click /
+//! "Open with" on Linux, a terminal launch anywhere), jump list tasks, or a
+//! `focus` command for a launch without files, so the session is never restored
+//! by a second process. On macOS, Finder and the Dock already route a launch to
+//! the running app through open events; the socket covers the launches they do
+//! not route, such as `open -n` or the binary started from a terminal.
+//!
+//! Windows uses a named pipe scoped to the user and logon session, with a
+//! user-only DACL and peer-user checks on both ends (see `windows_pipe`); Linux
+//! and macOS use a private Unix domain socket. Both channels are keyed by a hash
+//! of the configuration directory (see `instance_key`), so an installed Fulgur, a
+//! portable Fulgur and a dev instance started with `-d` stay isolated from each
+//! other.
 //!
 //! Each accepted connection is read on its own short-lived thread, so a client
 //! that connects and never closes cannot block the listener.
@@ -39,9 +45,9 @@ use futures::channel::mpsc::UnboundedSender;
 use parking_lot::Mutex;
 #[cfg(target_os = "windows")]
 use std::fs::File as IpcStream;
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 use std::os::unix::net::{UnixListener as IpcListener, UnixStream as IpcStream};
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 use std::path::Path;
 use std::{
     io::{self, BufReader, Read, Write},
@@ -53,7 +59,7 @@ use std::{
 
 /// Read timeout of an accepted Unix socket connection, bounding the lifetime of
 /// its reader thread when a client never closes.
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 const IPC_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Pause after a failed accept, so a persistent error cannot spin the listener.
@@ -83,7 +89,7 @@ fn pipe_name() -> io::Result<String> {
 /// ### Returns
 /// - `Ok(PathBuf)`: The socket path derived from the configuration directory
 /// - `Err(io::Error)`: The configuration directory could not be resolved
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 fn socket_path() -> io::Result<PathBuf> {
     let config_dir = paths::config_dir().map_err(io::Error::other)?;
     let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
@@ -104,15 +110,18 @@ fn socket_path() -> io::Result<PathBuf> {
 /// Connect to the IPC listener of the running instance.
 ///
 /// On Windows the pipe server must run as the current user, otherwise the pipe
-/// is treated as absent so this process starts normally.
+/// is treated as absent so this process starts normally. A trusted server is
+/// then allowed to take the foreground, so the window it activates for the
+/// forwarded message comes to the front.
 ///
 /// ### Returns
 /// - `Ok(IpcStream)`: A connection to the running instance
 /// - `Err(io::Error)`: No trusted instance is listening
 fn connect() -> io::Result<IpcStream> {
     #[cfg(target_os = "windows")]
-    return windows_pipe::connect_trusted(&pipe_name()?);
-    #[cfg(target_os = "linux")]
+    return windows_pipe::connect_trusted(&pipe_name()?)
+        .inspect(windows_pipe::allow_server_foreground);
+    #[cfg(unix)]
     return IpcStream::connect(socket_path()?);
 }
 
@@ -122,7 +131,7 @@ fn unblock_own_listener() {
     if let Ok(name) = pipe_name() {
         let _ = windows_pipe::connect(&name);
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     if let Ok(path) = socket_path() {
         let _ = IpcStream::connect(path);
     }
@@ -136,7 +145,7 @@ fn unblock_own_listener() {
 fn bind() -> io::Result<IpcListener> {
     #[cfg(target_os = "windows")]
     return IpcListener::bind(&pipe_name()?);
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     return bind_socket(&socket_path()?);
 }
 
@@ -151,7 +160,7 @@ fn bind() -> io::Result<IpcListener> {
 fn accept(listener: &mut IpcListener) -> io::Result<IpcStream> {
     #[cfg(target_os = "windows")]
     return listener.accept();
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     return listener.accept().map(|(stream, _)| {
         if let Err(e) = stream.set_read_timeout(Some(IPC_READ_TIMEOUT)) {
             log::warn!("Could not set the IPC connection read timeout: {e}");
@@ -168,7 +177,7 @@ fn accept(listener: &mut IpcListener) -> io::Result<IpcStream> {
 /// ### Returns
 /// - `Ok(IpcListener)`: The bound listener
 /// - `Err(io::Error)`: The listener could not be bound, or another instance is listening
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 fn bind_socket(path: &Path) -> io::Result<IpcListener> {
     match IpcListener::bind(path) {
         Err(e) if e.kind() == io::ErrorKind::AddrInUse && IpcStream::connect(path).is_err() => {
@@ -381,7 +390,7 @@ fn spawn_connection_reader(
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, unix))]
 mod tests {
     use super::{IPC_WORKER_JOIN_TIMEOUT, bind_socket, forward_files, spawn_ipc_listener};
     use crate::fulgur::{
