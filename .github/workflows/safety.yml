@@ -7,8 +7,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 # First-party unsafe code is guarded by the `unsafe_code` lint in Cargo.toml,
@@ -90,6 +88,8 @@ jobs:
       - name: Telegram notification
         if: always()
         env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           JOB_STATUS: ${{ job.status }}
           UNSAFE_EXPRS: ${{ steps.geiger.outputs.unsafe_exprs }}
           UNSAFE_CRATES: ${{ steps.geiger.outputs.unsafe_crates }}

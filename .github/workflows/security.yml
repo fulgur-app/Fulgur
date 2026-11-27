@@ -15,8 +15,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   BRANCH: ${{ github.ref_name }}
   COMMIT_SHA: ${{ github.sha }}
   ACTOR: ${{ github.actor }}
@@ -78,6 +76,9 @@ jobs:
 
       - name: Telegram notification - Success
         if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           source .github/scripts/telegram.sh
           COMMIT_MSG=$(telegram_commit_subject)
@@ -97,6 +98,9 @@ jobs:
 
       - name: Telegram notification - Failure
         if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           source .github/scripts/telegram.sh
           COMMIT_MSG=$(telegram_commit_subject)

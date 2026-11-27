@@ -48,8 +48,6 @@ env:
   # overflows on Windows (1 MiB main stack) and aborts with STATUS_STACK_BUFFER_OVERRUN
   # (0xc0000409). Raise the minimum thread stack so test threads inherit 16 MiB.
   RUST_MIN_STACK: '16777216'
-  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   BRANCH: ${{ github.ref_name }}
   COMMIT_SHA: ${{ github.sha }}
   ACTOR: ${{ github.actor }}
@@ -339,6 +337,8 @@ jobs:
 
       - name: Compose and send notification
         env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FMT: ${{ needs.fmt.result }}
           CLIPPY: ${{ needs.clippy.result }}
           TEST: ${{ needs.test.result }}
