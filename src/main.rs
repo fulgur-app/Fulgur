@@ -6,7 +6,12 @@ use gpui_kit::component::notification::NotificationType;
 use gpui_kit::{AppContext, AssetSource, BorrowAppContext, SharedString};
 use parking_lot::Mutex;
 use rust_embed::RustEmbed;
-use std::{borrow::Cow, path::PathBuf, sync::Arc};
+use std::{
+    borrow::Cow,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -140,6 +145,124 @@ fn is_read_only_requested(args: &[String]) -> bool {
     args.iter().skip(1).any(|arg| arg == READ_ONLY_FLAG)
 }
 
+/// What a launch hands to an already-running Fulgur instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LaunchForward {
+    /// Ask the running instance to open a new tab (Windows jump list task).
+    NewTab,
+    /// Ask the running instance to open a new window (Windows jump list task).
+    NewWindow,
+    /// Ask the running instance to bring its window to the front.
+    Focus,
+    /// Forward the command-line files to the running instance.
+    Files,
+    /// Start without contacting another instance.
+    Start,
+}
+
+/// Decide what a launch hands to an already-running instance.
+///
+/// ### Arguments
+/// - `os`: The target operating system, as reported by `std::env::consts::OS`
+/// - `args`: The full command line, including the program name at index 0
+/// - `has_files`: Whether the command line names at least one existing file
+///
+/// ### Returns
+/// - `LaunchForward`: The message for the running instance, or `Start`
+fn launch_forward(os: &str, args: &[String], has_files: bool) -> LaunchForward {
+    let has_flag = |flag: &str| args.iter().skip(1).any(|arg| arg == flag);
+    match os {
+        "windows" if has_flag("--new-tab") => LaunchForward::NewTab,
+        "windows" if has_flag("--new-window") => LaunchForward::NewWindow,
+        "windows" | "linux" | "macos" if has_files => LaunchForward::Files,
+        "windows" | "linux" | "macos" => LaunchForward::Focus,
+        _ => LaunchForward::Start,
+    }
+}
+
+/// Longest wait for a running instance that owns the session but is not listening yet.
+const RUNNING_INSTANCE_STARTUP_GRACE: Duration = Duration::from_secs(3);
+
+/// Pause between two hand-over attempts while the running instance starts.
+const HAND_OVER_RETRY_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Hand a launch to the running instance, waiting for it if it is still starting.
+///
+/// ### Arguments
+/// - `forward`: What to hand over, from `launch_forward`
+/// - `files`: The command-line files, sent for `LaunchForward::Files`
+/// - `read_only`: Whether the running instance must open `files` read-only
+///
+/// ### Returns
+/// - `true`: The running instance received the launch, this process must exit
+/// - `false`: No instance received it, this process must start normally
+fn hand_over_to_running_instance(
+    forward: LaunchForward,
+    files: &[PathBuf],
+    read_only: bool,
+) -> bool {
+    if forward_to_running_instance(forward, files, read_only) {
+        return true;
+    }
+    if forward == LaunchForward::Start
+        || !fulgur::state::WindowsState::is_session_owned_by_another_process()
+    {
+        return false;
+    }
+    log::info!("Another Fulgur process owns the session, waiting for its listener");
+    let deadline = Instant::now() + RUNNING_INSTANCE_STARTUP_GRACE;
+    while Instant::now() < deadline {
+        std::thread::sleep(HAND_OVER_RETRY_INTERVAL);
+        if forward_to_running_instance(forward, files, read_only) {
+            return true;
+        }
+    }
+    log::warn!("The Fulgur process owning the session never answered, starting normally");
+    false
+}
+
+/// Hand a launch to the running instance, if there is one.
+///
+/// ### Arguments
+/// - `forward`: What to hand over, from `launch_forward`
+/// - `files`: The command-line files, sent for `LaunchForward::Files`
+/// - `read_only`: Whether the running instance must open `files` read-only
+///
+/// ### Returns
+/// - `true`: The running instance received the launch, this process must exit
+/// - `false`: No instance received it, this process must start normally
+#[cfg(any(windows, unix))]
+fn forward_to_running_instance(forward: LaunchForward, files: &[PathBuf], read_only: bool) -> bool {
+    use fulgur::utils::single_instance::{
+        try_forward_to_existing_instance, try_send_command_to_existing_instance,
+    };
+    match forward {
+        LaunchForward::NewTab => try_send_command_to_existing_instance("new-tab"),
+        LaunchForward::NewWindow => try_send_command_to_existing_instance("new-window"),
+        LaunchForward::Focus => try_send_command_to_existing_instance("focus"),
+        LaunchForward::Files => try_forward_to_existing_instance(files, read_only),
+        LaunchForward::Start => false,
+    }
+}
+
+/// Hand a launch to the running instance, if there is one.
+///
+/// ### Arguments
+/// - `_forward`: What to hand over, always `LaunchForward::Start` here
+/// - `_files`: The command-line files
+/// - `_read_only`: Whether the files were requested read-only
+///
+/// ### Returns
+/// - `false`: This process must start normally
+#[cfg(not(any(windows, unix)))]
+fn forward_to_running_instance(
+    _forward: LaunchForward,
+    _files: &[PathBuf],
+    _read_only: bool,
+) -> bool {
+    false
+}
+
 fn main() {
     // A portable build keeps every file next to the executable. It must switch before
     // anything resolves the configuration directory (logger, settings, single instance,
@@ -192,23 +315,6 @@ fn main() {
     if args.len() > 1 {
         log::debug!("File to open from command-line: {}", args[1]);
     }
-    // Check for jump-list command flags before collecting file paths.
-    #[cfg(target_os = "windows")]
-    {
-        let ipc_cmd = if args.iter().any(|a| a == "--new-tab") {
-            Some("new-tab")
-        } else if args.iter().any(|a| a == "--new-window") {
-            Some("new-window")
-        } else {
-            None
-        };
-        if let Some(cmd) = ipc_cmd
-            && fulgur::utils::single_instance::try_send_command_to_existing_instance(cmd)
-        {
-            return;
-        }
-    }
-
     let read_only = is_read_only_requested(&args);
     let cli_file_paths: Vec<PathBuf> = args
         .iter()
@@ -229,24 +335,11 @@ fn main() {
         })
         .collect();
 
-    // On Windows and Linux, if we have file paths AND another Fulgur is already running,
-    // forward the paths to it and exit, that instance will open/focus the files.
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
-    if !cli_file_paths.is_empty()
-        && fulgur::utils::single_instance::try_forward_to_existing_instance(
-            &cli_file_paths,
-            read_only,
-        )
-    {
-        return;
-    }
-
-    // On Linux, a launch without files (e.g. from the app launcher) focuses the running
-    // instance instead of restoring the session into a duplicate window.
-    #[cfg(target_os = "linux")]
-    if cli_file_paths.is_empty()
-        && fulgur::utils::single_instance::try_send_command_to_existing_instance("focus")
-    {
+    // A launch while Fulgur already runs is handed to that instance, which opens the files
+    // or runs the command in its last focused window, instead of starting a second process
+    // that would restore the same session.
+    let forward = launch_forward(std::env::consts::OS, &args, !cli_file_paths.is_empty());
+    if hand_over_to_running_instance(forward, &cli_file_paths, read_only) {
         return;
     }
 
@@ -353,17 +446,17 @@ fn main() {
         }
         cx.set_global(fulgur::window_manager::WindowManager::new());
         fulgur::window_manager::WindowManager::register_window_closed_cleanup(cx);
-        // On Windows and Linux, start the IPC listener now that SharedAppState is registered.
+        // Start the single-instance IPC listener now that SharedAppState is registered.
         // We grab the two arcs from the global so there's a single source of truth,
         // and store the Drop-owned worker back on it so the listener has an owner.
-        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        #[cfg(any(windows, unix))]
         cx.update_global::<fulgur::shared_state::SharedAppState, _>(|shared, _| {
             let pf = shared.pending_files_from_macos.clone();
             let pic = shared.pending_ipc_commands.clone();
             shared.ipc_listener =
                 fulgur::utils::single_instance::start_ipc_listener(pf, pic, open_request_tx);
         });
-        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+        #[cfg(not(any(windows, unix)))]
         drop(open_request_tx);
         // Each wake delivers the queued requests to the last focused window, outside of
         // any render pass. Requests arriving before a window exists stay queued until
@@ -500,7 +593,10 @@ fn create_window(
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::{has_url_scheme, is_launcher_flag, is_read_only_requested, url_to_path};
+    use super::{
+        LaunchForward, has_url_scheme, is_launcher_flag, is_read_only_requested, launch_forward,
+        url_to_path,
+    };
     use tempfile::TempDir;
 
     /// Build a command line from string slices.
@@ -512,6 +608,90 @@ mod tests {
     /// - `Vec<String>`: The owned command line
     fn command_line(args: &[&str]) -> Vec<String> {
         args.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn test_windows_launch_without_files_focuses_the_running_instance() {
+        let args = command_line(&["fulgur"]);
+
+        assert_eq!(
+            launch_forward("windows", &args, false),
+            LaunchForward::Focus
+        );
+        assert_eq!(
+            launch_forward("windows", &command_line(&["fulgur", "--read-only"]), false),
+            LaunchForward::Focus
+        );
+    }
+
+    #[test]
+    fn test_windows_launch_forwards_jump_list_tasks_before_files() {
+        let new_tab = command_line(&["fulgur", "--new-tab"]);
+        let new_window = command_line(&["fulgur", "--new-window", "a.txt"]);
+
+        assert_eq!(
+            launch_forward("windows", &new_tab, false),
+            LaunchForward::NewTab
+        );
+        assert_eq!(
+            launch_forward("windows", &new_window, true),
+            LaunchForward::NewWindow
+        );
+    }
+
+    #[test]
+    fn test_windows_and_linux_launches_forward_files() {
+        let args = command_line(&["fulgur", "a.txt"]);
+
+        assert_eq!(launch_forward("windows", &args, true), LaunchForward::Files);
+        assert_eq!(launch_forward("linux", &args, true), LaunchForward::Files);
+    }
+
+    #[test]
+    fn test_linux_launch_focuses_and_ignores_jump_list_flags() {
+        assert_eq!(
+            launch_forward("linux", &command_line(&["fulgur"]), false),
+            LaunchForward::Focus
+        );
+        assert_eq!(
+            launch_forward("linux", &command_line(&["fulgur", "--new-tab"]), false),
+            LaunchForward::Focus
+        );
+    }
+
+    #[test]
+    fn test_macos_launch_forwards_files_or_focuses_and_ignores_jump_list_flags() {
+        let with_file = command_line(&["fulgur", "--new-tab", "a.txt"]);
+
+        assert_eq!(
+            launch_forward("macos", &with_file, true),
+            LaunchForward::Files
+        );
+        assert_eq!(
+            launch_forward("macos", &command_line(&["fulgur", "--new-window"]), false),
+            LaunchForward::Focus
+        );
+    }
+
+    #[test]
+    fn test_unsupported_platform_launch_always_starts() {
+        let args = command_line(&["fulgur", "a.txt"]);
+
+        assert_eq!(launch_forward("freebsd", &args, true), LaunchForward::Start);
+        assert_eq!(
+            launch_forward("freebsd", &command_line(&["fulgur"]), false),
+            LaunchForward::Start
+        );
+    }
+
+    #[test]
+    fn test_jump_list_flag_as_program_name_is_ignored() {
+        let args = command_line(&["--new-tab"]);
+
+        assert_eq!(
+            launch_forward("windows", &args, false),
+            LaunchForward::Focus
+        );
     }
 
     #[test]

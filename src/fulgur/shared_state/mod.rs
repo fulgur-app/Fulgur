@@ -59,11 +59,11 @@ pub struct SharedAppState {
     /// restores is read-only. Set once at startup and never persisted.
     pub read_only_session: bool,
     /// Pending IPC commands forwarded by another instance ("new-tab", "new-window", "focus").
-    /// Only the Windows and Linux single-instance listener fills it; it stays empty on macOS.
+    /// Only the single-instance listener fills it, with messages from other Fulgur processes.
     pub pending_ipc_commands: Arc<Mutex<Vec<String>>>,
     /// Drop-owned handle to the single-instance IPC listener thread, set once
     /// at startup by `main.rs`.
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(any(windows, unix))]
     pub ipc_listener: Option<crate::fulgur::utils::worker::Worker>,
     /// Shared HTTP agent for connection pooling across all short-lived REST
     /// requests (token, ping, share fetch). Carries a 10s global timeout.
@@ -153,7 +153,7 @@ impl SharedAppState {
             pending_files_from_macos,
             read_only_session: false,
             pending_ipc_commands: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(any(target_os = "windows", target_os = "linux"))]
+            #[cfg(any(windows, unix))]
             ipc_listener: None,
             http_agent: Arc::new(ureq::Agent::new_with_config(
                 ureq::config::Config::builder()

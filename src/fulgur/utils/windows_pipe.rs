@@ -54,6 +54,7 @@ use windows::{
                 PROCESS_QUERY_LIMITED_INFORMATION,
             },
         },
+        UI::WindowsAndMessaging::AllowSetForegroundWindow,
     },
     core::{HSTRING, PWSTR},
 };
@@ -367,10 +368,7 @@ pub fn connect(name: &str) -> io::Result<File> {
 /// - `Err(io::Error)`: No trusted server is listening
 pub fn connect_trusted(name: &str) -> io::Result<File> {
     let connection = connect(name)?;
-    let mut pid = 0u32;
-    // SAFETY: `connection` owns a connected pipe handle; `pid` is a valid out-pointer.
-    unsafe { GetNamedPipeServerProcessId(HANDLE(connection.as_raw_handle()), &mut pid) }
-        .map_err(io::Error::other)?;
+    let pid = server_process_id(&connection)?;
     if !process_is_current_user(pid) {
         log::warn!("Single-instance: ignoring pipe served by process {pid} of another user");
         return Err(io::Error::new(
@@ -379,4 +377,37 @@ pub fn connect_trusted(name: &str) -> io::Result<File> {
         ));
     }
     Ok(connection)
+}
+
+/// Query the id of the process serving a connected pipe.
+///
+/// ### Arguments
+/// - `connection`: The client end of a connected pipe
+///
+/// ### Errors
+/// - Returns an `io::Error` if Windows cannot report the server process.
+///
+/// ### Returns
+/// - `Ok(u32)`: The server process id
+/// - `Err(io::Error)`: The server process id could not be queried
+fn server_process_id(connection: &File) -> io::Result<u32> {
+    let mut pid = 0u32;
+    // SAFETY: `connection` owns a connected pipe handle; `pid` is a valid out-pointer.
+    unsafe { GetNamedPipeServerProcessId(HANDLE(connection.as_raw_handle()), &mut pid) }
+        .map_err(io::Error::other)?;
+    Ok(pid)
+}
+
+/// Let the process serving a connected pipe bring its window to the foreground.
+///
+/// ### Arguments
+/// - `connection`: The client end of a pipe connected to the running instance
+pub fn allow_server_foreground(connection: &File) {
+    let result = server_process_id(connection).and_then(|pid| {
+        // SAFETY: `AllowSetForegroundWindow` only reads its process id argument.
+        unsafe { AllowSetForegroundWindow(pid) }.map_err(io::Error::other)
+    });
+    if let Err(e) = result {
+        log::debug!("Single-instance: could not hand the foreground to the running instance: {e}");
+    }
 }

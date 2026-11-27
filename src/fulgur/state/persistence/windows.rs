@@ -67,6 +67,16 @@ impl WindowsState {
         Ok(path)
     }
 
+    /// Whether another Fulgur process owns the session database at its default location
+    ///
+    /// ### Returns
+    /// - `true`: Another process holds the session lock
+    /// - `false`: Nobody holds it, or its path or lock could not be checked
+    #[must_use]
+    pub fn is_session_owned_by_another_process() -> bool {
+        Self::state_file_path().is_ok_and(|path| StateDb::is_owned_by_another_process(&path))
+    }
+
     /// Get the path to the legacy JSON state document
     ///
     /// ### Returns
@@ -233,6 +243,43 @@ mod tests {
             corrupt_contents,
             "the failed database must remain untouched for recovery"
         );
+    }
+
+    #[test]
+    fn a_database_owned_by_another_process_is_not_shared() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.db");
+        WindowsState {
+            windows: vec![WindowState {
+                window_id: 1,
+                tabs: vec![file_tab_state(0, "a.rs", "fulgur_state_a.rs", None, None)],
+                active_tab_index: Some(0),
+                window_bounds: SerializedWindowBounds::default(),
+            }],
+        }
+        .save_to_path(&path)
+        .unwrap();
+
+        assert!(!crate::fulgur::state::db::StateDb::is_owned_by_another_process(&path));
+        let owner = crate::fulgur::state::db::StateDb::open_or_fallback(&path).unwrap();
+        assert!(!owner.is_ephemeral());
+        assert!(crate::fulgur::state::db::StateDb::is_owned_by_another_process(&path));
+        let second = crate::fulgur::state::db::StateDb::open_or_fallback(&path).unwrap();
+
+        // The second process must neither restore nor claim the owner's windows.
+        assert!(second.is_ephemeral());
+        assert!(
+            second
+                .fallback_error()
+                .is_some_and(|error| error.contains("another Fulgur process"))
+        );
+        assert!(second.load().unwrap().windows.is_empty());
+
+        drop(owner);
+        assert!(!crate::fulgur::state::db::StateDb::is_owned_by_another_process(&path));
+        let next_launch = crate::fulgur::state::db::StateDb::open_or_fallback(&path).unwrap();
+        assert!(!next_launch.is_ephemeral());
+        assert_eq!(next_launch.load().unwrap().windows.len(), 1);
     }
 
     #[test]

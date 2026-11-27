@@ -148,7 +148,7 @@ impl Fulgur {
     /// Process pending IPC commands forwarded by another Fulgur process
     ///
     /// Commands come from the Windows jump list ("new-tab", "new-window") and from
-    /// Linux launches without a file ("focus", already handled by activating the
+    /// launches without a file ("focus", already handled by activating the
     /// window). Drains the `pending_ipc_commands` queue and executes each command
     /// in this window, which `deliver_external_open_requests` has chosen.
     ///

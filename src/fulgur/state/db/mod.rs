@@ -6,6 +6,7 @@ mod paths;
 mod read;
 mod remote_history;
 mod schema;
+mod session_lock;
 #[cfg(test)]
 mod tests;
 mod write;
@@ -15,7 +16,9 @@ pub use legacy::{LEGACY_STATE_FILE_NAME, import_legacy_json};
 use crate::fulgur::utils::portable::{self, PortableLayout};
 use anyhow::anyhow;
 use rusqlite::Connection;
+use session_lock::SessionLockOutcome;
 use std::collections::HashSet;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
 /// File name of the session state database inside the config directory.
@@ -67,6 +70,11 @@ pub struct StateDb {
     /// Portable layout tab file paths are persisted relative to, `None` outside
     /// portable mode. Captured at open time so tests can inject their own.
     path_layout: Option<PortableLayout>,
+    /// Exclusive lock making this process the owner of the database file, held
+    /// until the handle is dropped. `None` when the handle was opened without
+    /// `open_or_fallback`, or when locking is not supported.
+    #[allow(dead_code, reason = "held only so its drop releases the session lock")]
+    session_lock: Option<File>,
 }
 
 impl StateDb {
@@ -97,6 +105,7 @@ impl StateDb {
             fallback_error: None,
             owned_windows: HashSet::new(),
             path_layout: portable::layout().cloned(),
+            session_lock: None,
         })
     }
 
@@ -120,38 +129,93 @@ impl StateDb {
             fallback_error: None,
             owned_windows: HashSet::new(),
             path_layout: portable::layout().cloned(),
+            session_lock: None,
         })
     }
 
-    /// Open the database at `path`, degrading to an ephemeral one on failure.
+    /// Open the database at `path` as its owner, degrading to an ephemeral one on failure.
+    ///
+    /// The process first takes the database's exclusive session lock. When
+    /// another process holds it, this one gets an ephemeral database instead,
+    /// so the two never restore, claim or overwrite the same rows.
     ///
     /// ### Arguments
     /// - `path`: Path to the database file
     ///
     /// ### Returns
-    /// - `Some(StateDb)`: The file database, or an ephemeral one if it failed
+    /// - `Some(StateDb)`: The file database, or an ephemeral one if it is owned
+    ///   by another process or could not be opened
     /// - `None`: Even an in-memory database could not be prepared
     #[must_use]
     pub fn open_or_fallback(path: &Path) -> Option<Self> {
+        let ownership_lock = match session_lock::try_acquire(path) {
+            SessionLockOutcome::Acquired(lock) => Some(lock),
+            SessionLockOutcome::HeldElsewhere => {
+                log::warn!(
+                    "Another Fulgur process owns the session database, using in-memory session state"
+                );
+                return Self::in_memory_fallback(format!(
+                    "another Fulgur process is already using session database '{}'",
+                    path.display()
+                ));
+            }
+            SessionLockOutcome::Failed(e) => {
+                log::warn!(
+                    "Could not lock the session database, opening it without exclusive ownership: {e}"
+                );
+                None
+            }
+        };
         match Self::open(path) {
-            Ok(db) => Some(db),
+            Ok(mut db) => {
+                db.session_lock = ownership_lock;
+                Some(db)
+            }
             Err(file_err) => {
                 log::error!(
                     "Falling back to in-memory session state, it will not be saved: {file_err}"
                 );
-                match Self::open_in_memory() {
-                    Ok(mut db) => {
-                        db.fallback_error = Some(format!(
-                            "could not use session database '{}': {file_err}",
-                            path.display()
-                        ));
-                        Some(db)
-                    }
-                    Err(memory_err) => {
-                        log::error!("Failed to open fallback state database: {memory_err}");
-                        None
-                    }
-                }
+                Self::in_memory_fallback(format!(
+                    "could not use session database '{}': {file_err}",
+                    path.display()
+                ))
+            }
+        }
+    }
+
+    /// Whether another process currently owns the database at `path`.
+    ///
+    /// ### Arguments
+    /// - `path`: Path to the database file
+    ///
+    /// ### Returns
+    /// - `true`: Another process holds the database's session lock
+    /// - `false`: Nobody holds it, or the lock could not be checked
+    #[must_use]
+    pub fn is_owned_by_another_process(path: &Path) -> bool {
+        matches!(
+            session_lock::try_acquire(path),
+            SessionLockOutcome::HeldElsewhere
+        )
+    }
+
+    /// Open the in-memory database replacing an unusable file database.
+    ///
+    /// ### Arguments
+    /// - `reason`: Why the file database cannot be used, reported to the user
+    ///
+    /// ### Returns
+    /// - `Some(StateDb)`: An ephemeral database carrying `reason` as its fallback error
+    /// - `None`: The in-memory database could not be prepared
+    fn in_memory_fallback(reason: String) -> Option<Self> {
+        match Self::open_in_memory() {
+            Ok(mut db) => {
+                db.fallback_error = Some(reason);
+                Some(db)
+            }
+            Err(memory_err) => {
+                log::error!("Failed to open fallback state database: {memory_err}");
+                None
             }
         }
     }

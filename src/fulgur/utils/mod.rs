@@ -1,9 +1,9 @@
 pub mod atomic_write;
 pub mod crypto_helper;
 pub mod http;
-#[cfg(any(target_os = "windows", target_os = "linux", test))]
+#[cfg(any(windows, unix))]
 pub mod instance_key;
-#[cfg(any(target_os = "windows", target_os = "linux", test))]
+#[cfg(any(windows, unix))]
 pub mod ipc_protocol;
 #[cfg(target_os = "windows")]
 pub mod jump_list;
@@ -14,7 +14,7 @@ pub mod paths;
 pub mod portable;
 pub mod retry;
 pub mod sanitize;
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(windows, unix))]
 pub mod single_instance;
 pub mod startup_error;
 pub mod updater;
