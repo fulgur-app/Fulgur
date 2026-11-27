@@ -37,6 +37,9 @@ actions!(
         OpenConfigFolder,
         ShowRemoteUrlHistory,
         GoToParentFolder,
+        FoldAll,
+        UnfoldAll,
+        ToggleFold,
     ]
 );
 
@@ -51,3 +54,8 @@ pub struct DockActivateTab(pub PathBuf);
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
 pub struct DockActivateTabByTitle(pub SharedString);
+
+/// Fold the blocks at one nesting level of the active editor (1 is the outermost)
+#[derive(Action, Clone, PartialEq)]
+#[action(namespace = fulgur, no_json)]
+pub struct FoldAtLevel(pub usize);

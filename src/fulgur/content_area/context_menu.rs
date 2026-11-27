@@ -32,11 +32,12 @@ impl Fulgur {
         let active_tab_id = editor_tab.id;
         let editor_focus = editor_tab.content.focus_handle(cx);
         let has_file = editor_tab.file_path().is_some();
+        let fold_depth = editor_tab.fold_depth(cx);
         let position = event.position;
 
         let menu = PopupMenu::build(window, cx, {
             let editor_focus = editor_focus.clone();
-            move |mut menu, _window, _cx| {
+            move |mut menu, window, cx| {
                 menu = menu.action_context(editor_focus);
                 if has_file {
                     menu = menu
@@ -46,7 +47,8 @@ impl Fulgur {
                         )
                         .separator();
                 }
-                menu.menu("Cut", Box::new(gpui_kit::component::input::Cut))
+                menu = menu
+                    .menu("Cut", Box::new(gpui_kit::component::input::Cut))
                     .menu("Copy", Box::new(gpui_kit::component::input::Copy))
                     .menu("Paste", Box::new(gpui_kit::component::input::Paste))
                     .separator()
@@ -54,6 +56,19 @@ impl Fulgur {
                         "Select All",
                         Box::new(gpui_kit::component::input::SelectAll),
                     )
+                    .separator();
+                if fold_depth == 0 {
+                    menu.menu_with_disabled("Folding", Box::new(ui::menus::NoneAction), true)
+                } else {
+                    menu.submenu("Folding", window, cx, move |submenu, _window, _cx| {
+                        ui::menus::folding_popup_menu(
+                            submenu,
+                            fold_depth,
+                            true,
+                            ui::menus::active_editor_fold_action,
+                        )
+                    })
+                }
             }
         });
 

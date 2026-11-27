@@ -15,7 +15,7 @@ use gpui_kit::{Action, Hsla, Styled};
 use crate::fulgur::ui::{
     components_utils::{TAB_BAR_BUTTON_SIZE, button_factory},
     icons::CustomIcon,
-    tabs::{color_tag::ColorTag, tab::TabId},
+    tabs::{color_tag::ColorTag, editor_tab::FoldCommand, tab::TabId},
 };
 
 #[derive(Action, Clone, PartialEq)]
@@ -53,6 +53,11 @@ pub struct SetTabColor(pub TabId, pub Option<ColorTag>);
 #[derive(Action, Clone, PartialEq)]
 #[action(namespace = fulgur, no_json)]
 pub struct RenameTab(pub TabId);
+
+/// Apply a folding command to the editor of a tab
+#[derive(Action, Clone, PartialEq)]
+#[action(namespace = fulgur, no_json)]
+pub struct FoldTab(pub TabId, pub FoldCommand);
 
 gpui_kit::actions!(fulgur, [CloseAllTabsAction, SendTabToWindowNoOp]);
 

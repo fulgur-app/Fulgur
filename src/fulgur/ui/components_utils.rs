@@ -2,8 +2,12 @@ use crate::fulgur::ui::icons::CustomIcon;
 use gpui_kit::component::{
     Sizable, StyledExt,
     button::{Button, ButtonVariants},
+    kbd::Kbd,
 };
-use gpui_kit::{Corners, DefiniteLength, Hsla, Pixels, Styled, px, relative};
+use gpui_kit::{
+    Action, AsKeystroke, Corners, DefiniteLength, Hsla, KeyContext, Pixels, Styled, Window, px,
+    relative,
+};
 use std::time::SystemTime;
 use time::{OffsetDateTime, UtcOffset};
 
@@ -153,6 +157,31 @@ pub fn format_file_size(bytes: u64) -> String {
     } else {
         format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
+}
+
+/// Get one `Kbd` per keystroke of the binding an action resolves to, so a chord shows in full.
+///
+/// gpui-component's own `Kbd` lookups keep only a binding's first keystroke, which shows
+/// every `cmd-k` chord as a bare `cmd-k`.
+///
+/// ### Arguments
+/// - `action`: The action whose binding to display
+/// - `context`: The key context the binding is resolved in
+/// - `window`: The window the keymap is read from
+///
+/// ### Returns
+/// - `Some(Vec<Kbd>)`: The keystrokes of the highest-precedence binding, in order
+/// - `None`: The action has no binding in that context
+pub fn action_chord(action: &dyn Action, context: &str, window: &Window) -> Option<Vec<Kbd>> {
+    let context = KeyContext::parse(context).ok()?;
+    let binding = window.highest_precedence_binding_for_action_in_context(action, context)?;
+    Some(
+        binding
+            .keystrokes()
+            .iter()
+            .map(|keystroke| Kbd::new(keystroke.as_keystroke().clone()))
+            .collect(),
+    )
 }
 
 #[cfg(test)]

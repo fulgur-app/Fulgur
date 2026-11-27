@@ -11,7 +11,7 @@ use crate::fulgur::{
         dialogs::about::about,
         log_view::log_toggle_available,
         tabs::{
-            editor_tab::EditorTab,
+            editor_tab::{EditorTab, FoldCommand},
             tab_bar::{
                 CloseAllOtherTabs, CloseTabsToLeft, CloseTabsToRight, CopyPath, DuplicateTab,
                 RenameTab, ShowInFileManager, open_theme_repository,
@@ -52,6 +52,7 @@ impl Fulgur {
             has_recent_files: !self.settings.recent_files.get_files().is_empty(),
             has_remote_history: !Self::shared_state(cx).remote_history.is_empty(),
             has_active_sync_profile: !self.collect_active_profiles().is_empty(),
+            fold_depth: editor_tab.map_or(0, |tab| tab.fold_depth(cx)),
         }
     }
 
@@ -122,6 +123,18 @@ impl Fulgur {
             PaletteCommand::AddCursorBelow => {
                 self.dispatch_to_active_editor(Box::new(AddCursorBelow), window, cx);
             }
+            PaletteCommand::ToggleFold => {
+                self.fold_active_tab_from_palette(FoldCommand::ToggleAtCursor, window, cx);
+            }
+            PaletteCommand::FoldAll => {
+                self.fold_active_tab_from_palette(FoldCommand::FoldAll, window, cx);
+            }
+            PaletteCommand::UnfoldAll => {
+                self.fold_active_tab_from_palette(FoldCommand::UnfoldAll, window, cx);
+            }
+            PaletteCommand::FoldAtLevel(level) => {
+                self.fold_active_tab_from_palette(FoldCommand::FoldAtLevel(level), window, cx);
+            }
             PaletteCommand::FindInFile => self.find_in_file(window, cx),
             PaletteCommand::FindAndReplace => self.find_and_replace(window, cx),
             PaletteCommand::JumpToLine => self.show_jump_to_line_dialog(window, cx),
@@ -156,6 +169,22 @@ impl Fulgur {
             PaletteCommand::CheckForUpdates => self.check_for_updates(window, cx),
             PaletteCommand::About => about(window, cx),
         }
+    }
+
+    /// Apply a folding command to the active tab's editor, then hand it the focus back.
+    ///
+    /// ### Arguments
+    /// - `command`: The folding command to apply
+    /// - `window`: The window to run the command in
+    /// - `cx`: The application context
+    fn fold_active_tab_from_palette(
+        &mut self,
+        command: FoldCommand,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.fold_active_tab(command, window, cx);
+        self.focus_active_tab(window, cx);
     }
 
     /// Dispatch an editor action to the active tab's editor.

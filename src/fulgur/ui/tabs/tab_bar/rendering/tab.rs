@@ -1,7 +1,8 @@
+use crate::fulgur::ui::menus::{NoneAction, folding_popup_menu};
 use crate::fulgur::ui::tabs::tab_bar::{
     CloseAllOtherTabs, CloseAllTabsAction, CloseTabAction, CloseTabsToLeft, CloseTabsToRight,
-    CopyPath, DuplicateTab, RenameTab, SendTabToWindowNoOp, SetTabColor, ShowInFileManager, TabBar,
-    TabBarEvent,
+    CopyPath, DuplicateTab, FoldTab, RenameTab, SendTabToWindowNoOp, SetTabColor,
+    ShowInFileManager, TabBar, TabBarEvent,
 };
 use crate::fulgur::{
     Fulgur, settings::TabColorStyle, tab::Tab, ui::icons::CustomIcon,
@@ -349,6 +350,24 @@ impl TabBar {
                 })
             } else {
                 this.menu_with_disabled("Color Tag", Box::new(SetTabColor(tab_id, None)), true)
+            };
+            let fold_depth = source_entity
+                .upgrade()
+                .and_then(|fulgur| {
+                    let fulgur = fulgur.read(cx);
+                    fulgur
+                        .editor_tab(tab_id, cx)
+                        .map(|editor_tab| editor_tab.fold_depth(cx))
+                })
+                .unwrap_or(0);
+            let this = if fold_depth == 0 {
+                this.menu_with_disabled("Folding", Box::new(NoneAction), true)
+            } else {
+                this.submenu("Folding", window, cx, move |sub, _window, _cx| {
+                    folding_popup_menu(sub, fold_depth, false, |command| {
+                        Box::new(FoldTab(tab_id, command))
+                    })
+                })
             };
             this.separator()
                 .menu("Close Tab", Box::new(CloseTabAction(tab_id)))

@@ -1,10 +1,12 @@
 use super::actions::{
     About, CheckForUpdates, ClearRecentFiles, CloseAllFiles, CloseFile, CloseWindow, FindInFile,
-    GetTheme, JumpToLine, NewFile, NewWindow, NextTab, NoneAction, OpenConfigFolder, OpenFile,
-    OpenPath, OpenRecentFile, OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs,
-    SelectTheme, SettingsTab, ToggleColorPicker, ToggleCommandPalette, ViewLog,
+    FoldAll, FoldAtLevel, GetTheme, JumpToLine, NewFile, NewWindow, NextTab, NoneAction,
+    OpenConfigFolder, OpenFile, OpenPath, OpenRecentFile, OpenRemote, PreviousTab, PrintFile, Quit,
+    SaveFile, SaveFileAs, SelectTheme, SettingsTab, ToggleColorPicker, ToggleCommandPalette,
+    ToggleFold, UnfoldAll, ViewLog,
 };
 use crate::fulgur::Fulgur;
+use crate::fulgur::editor_tab::MAX_FOLD_LEVEL;
 use crate::fulgur::shared_state::SharedAppState;
 use gpui_kit::base::input::{AddCursorAbove, AddCursorBelow};
 #[cfg(not(target_os = "macos"))]
@@ -90,6 +92,8 @@ pub fn build_menus(recent_files: &[PathBuf], update_available: bool) -> Vec<Menu
                 MenuItem::action("Add Cursor Above", AddCursorAbove),
                 MenuItem::action("Add Cursor Below", AddCursorBelow),
                 MenuItem::separator(),
+                folding_submenu(),
+                MenuItem::separator(),
                 MenuItem::action("Find & Replace", FindInFile),
             ],
         },
@@ -118,6 +122,28 @@ pub fn build_menus(recent_files: &[PathBuf], update_available: bool) -> Vec<Menu
             ],
         },
     ]
+}
+
+/// Build the Folding submenu of the Edit menu, acting on the active editor
+///
+/// ### Returns
+/// - `MenuItem`: The submenu with the toggle, fold all, unfold all and per-level commands
+fn folding_submenu() -> MenuItem {
+    let mut items = vec![
+        MenuItem::action("Toggle Fold", ToggleFold),
+        MenuItem::action("Fold All", FoldAll),
+        MenuItem::action("Unfold All", UnfoldAll),
+        MenuItem::separator(),
+    ];
+    items.extend(
+        (1..=MAX_FOLD_LEVEL)
+            .map(|level| MenuItem::action(format!("Fold Level {level}"), FoldAtLevel(level))),
+    );
+    MenuItem::Submenu(Menu {
+        name: "Folding".into(),
+        disabled: false,
+        items,
+    })
 }
 
 /// Inputs of the application menus, compared between rebuilds
@@ -194,7 +220,10 @@ fn rebuild_app_menus(inputs: &AppMenuInputs, cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::build_menus;
-    use crate::fulgur::ui::menus::{CloseWindow, OpenConfigFolder, ViewLog};
+    use crate::fulgur::editor_tab::MAX_FOLD_LEVEL;
+    use crate::fulgur::ui::menus::{
+        CloseWindow, FoldAll, FoldAtLevel, OpenConfigFolder, ToggleFold, UnfoldAll, ViewLog,
+    };
     use core::prelude::v1::test;
     use gpui_kit::base::input::{AddCursorAbove, AddCursorBelow};
     use gpui_kit::{Action, MenuItem};
@@ -214,6 +243,37 @@ mod tests {
     fn test_edit_menu_exposes_multi_cursor_actions() {
         assert!(menu_exposes("Edit", &AddCursorAbove));
         assert!(menu_exposes("Edit", &AddCursorBelow));
+    }
+
+    #[test]
+    fn test_edit_menu_folding_submenu_exposes_every_fold_command() {
+        let menus = build_menus(&[], false);
+        let folding_items: Vec<&MenuItem> = menus
+            .iter()
+            .filter(|menu| menu.name == "Edit")
+            .flat_map(|menu| menu.items.iter())
+            .filter_map(|item| match item {
+                MenuItem::Submenu(submenu) if submenu.name == "Folding" => Some(&submenu.items),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let exposes = |action: &dyn Action| {
+            folding_items.iter().any(|item| match item {
+                MenuItem::Action { action: bound, .. } => bound.partial_eq(action),
+                _ => false,
+            })
+        };
+
+        assert!(exposes(&ToggleFold));
+        assert!(exposes(&FoldAll));
+        assert!(exposes(&UnfoldAll));
+        for level in 1..=MAX_FOLD_LEVEL {
+            assert!(
+                exposes(&FoldAtLevel(level)),
+                "Fold Level {level} is missing"
+            );
+        }
     }
 
     #[test]
