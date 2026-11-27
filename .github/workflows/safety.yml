@@ -95,6 +95,8 @@ jobs:
           UNSAFE_CRATES: ${{ steps.geiger.outputs.unsafe_crates }}
           SCANNED_CRATES: ${{ steps.geiger.outputs.scanned_crates }}
         run: |
+          source .github/scripts/telegram.sh
+
           if [ -n "$UNSAFE_EXPRS" ]; then
             SAFETY_LINE="Unsafe expressions in dependencies: *${UNSAFE_EXPRS}* (${UNSAFE_CRATES} of ${SCANNED_CRATES} crates)"
           else
@@ -115,7 +117,4 @@ jobs:
 
           [View Run](${RUN_URL})"
 
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
+          telegram_send "$MESSAGE"
