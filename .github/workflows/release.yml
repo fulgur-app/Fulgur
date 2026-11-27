@@ -517,7 +517,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           ARTIFACT_COUNT=$(ls release-artifacts/ | wc -l)
-          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+          source .github/scripts/telegram.sh
+          COMMIT_MSG=$(telegram_commit_subject)
+          AUTHOR=$(telegram_escape "$ACTOR")
 
           MESSAGE="📦 *Fulgur Release v${VERSION} - Draft Created*
 
@@ -526,15 +528,12 @@ jobs:
 
           *Tag:* \`v${VERSION}\`
           *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}
-          *Author:* ${ACTOR}
+          *Author:* ${AUTHOR}
 
           [View Release](https://github.com/${REPOSITORY}/releases/tag/v${VERSION})
           [View Run](${RUN_URL})"
 
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
+          telegram_send "$MESSAGE"
 
       - name: Telegram notification - Failure
         if: failure()
@@ -542,7 +541,9 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+          source .github/scripts/telegram.sh
+          COMMIT_MSG=$(telegram_commit_subject)
+          AUTHOR=$(telegram_escape "$ACTOR")
 
           MESSAGE="❌ *Fulgur Release v${VERSION} - Failed*
 
@@ -550,11 +551,8 @@ jobs:
 
           *Tag:* \`v${VERSION}\`
           *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}
-          *Author:* ${ACTOR}
+          *Author:* ${AUTHOR}
 
           [View Run](${RUN_URL})"
 
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
+          telegram_send "$MESSAGE"

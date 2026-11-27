@@ -72,10 +72,12 @@ jobs:
           JOB_STATUS: ${{ job.status }}
           OUTDATED: ${{ steps.compare.outputs.outdated }}
         run: |
+          source .github/scripts/telegram.sh
+
           if [ "$JOB_STATUS" = "success" ]; then
             MESSAGE="*Fulgur Release Tools - Update available*
 
-          ${OUTDATED}
+          $(telegram_escape "$OUTDATED")
           Read the changelogs, then bump the versions in release.yml.
 
           [View Run](${RUN_URL})"
@@ -87,7 +89,4 @@ jobs:
           [View Run](${RUN_URL})"
           fi
 
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
+          telegram_send "$MESSAGE"
