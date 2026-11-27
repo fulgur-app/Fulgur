@@ -28,6 +28,8 @@ pub struct PaletteContext {
     pub has_remote_history: bool,
     /// Whether synchronization is on and at least one profile is active.
     pub has_active_sync_profile: bool,
+    /// The deepest fold nesting level of the active editor, `0` when nothing can be folded.
+    pub fold_depth: usize,
 }
 
 /// Build the palette layout for a window state: the groups that have at least one
@@ -54,6 +56,7 @@ pub fn build_palette_layout(context: &PaletteContext) -> Vec<(PaletteGroup, Vec<
 #[cfg(test)]
 mod tests {
     use super::{PaletteContext, build_palette_layout};
+    use crate::fulgur::editor_tab::MAX_FOLD_LEVEL;
     use crate::fulgur::ui::command_palette::commands::{PaletteCommand, PaletteGroup};
     use crate::fulgur::ui::menus::{KEY_CONTEXT_FULGUR, KEY_CONTEXT_INPUT};
     use core::prelude::v1::test;
@@ -73,6 +76,7 @@ mod tests {
             has_recent_files: true,
             has_remote_history: true,
             has_active_sync_profile: true,
+            fold_depth: MAX_FOLD_LEVEL,
         }
     }
 
@@ -232,6 +236,47 @@ mod tests {
             assert!(command.is_available(&permissive_context()));
             assert_eq!(command.group(), PaletteGroup::Edit);
         }
+    }
+
+    #[test]
+    fn the_catalogue_offers_one_fold_level_command_per_level() {
+        let levels: Vec<usize> = PaletteCommand::ALL
+            .into_iter()
+            .filter_map(|command| match command {
+                PaletteCommand::FoldAtLevel(level) => Some(level),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(levels, (1..=MAX_FOLD_LEVEL).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn the_fold_commands_need_something_to_fold() {
+        let flat_buffer = PaletteContext {
+            fold_depth: 0,
+            ..permissive_context()
+        };
+        for command in [
+            PaletteCommand::ToggleFold,
+            PaletteCommand::FoldAll,
+            PaletteCommand::UnfoldAll,
+            PaletteCommand::FoldAtLevel(1),
+        ] {
+            assert!(!command.is_available(&flat_buffer), "{command:?}");
+            assert_eq!(command.group(), PaletteGroup::Edit);
+        }
+    }
+
+    #[test]
+    fn the_fold_level_commands_stop_at_the_buffer_depth() {
+        let two_levels = PaletteContext {
+            fold_depth: 2,
+            ..permissive_context()
+        };
+        assert!(PaletteCommand::FoldAtLevel(1).is_available(&two_levels));
+        assert!(PaletteCommand::FoldAtLevel(2).is_available(&two_levels));
+        assert!(!PaletteCommand::FoldAtLevel(3).is_available(&two_levels));
+        assert!(PaletteCommand::FoldAll.is_available(&two_levels));
     }
 
     #[test]

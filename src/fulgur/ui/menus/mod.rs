@@ -5,6 +5,7 @@ mod app_menus;
 mod config_folder;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod dock;
+mod folding_menu;
 mod keybindings;
 mod update_check;
 
@@ -14,6 +15,7 @@ pub use app_menus::build_menus;
 pub use dock::DockMenuTab;
 #[cfg(target_os = "macos")]
 pub use dock::build_dock_menu;
+pub use folding_menu::{active_editor_fold_action, folding_popup_menu};
 pub use keybindings::{
     KEY_CONTEXT_FULGUR, KEY_CONTEXT_INPUT, KEY_CONTEXT_PATH_BROWSER, KEY_CONTEXT_REMOTE_URL_COMBO,
     build_default_key_bindings,

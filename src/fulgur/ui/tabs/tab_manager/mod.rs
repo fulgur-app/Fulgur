@@ -1,3 +1,4 @@
+mod folding;
 mod lifecycle;
 mod markdown_preview;
 mod operations;

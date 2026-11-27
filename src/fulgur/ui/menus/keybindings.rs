@@ -1,8 +1,8 @@
 use super::actions::{
-    CloseAllFiles, CloseFile, CloseWindow, FindAndReplace, FindInFile, GoToParentFolder,
-    JumpToLine, NewFile, NewWindow, NextTab, OpenFile, OpenPath, OpenRemote, PreviousTab,
-    PrintFile, Quit, SaveFile, SaveFileAs, SearchNext, SearchPrevious, ShowRemoteUrlHistory,
-    ToggleColorPicker, ToggleCommandPalette,
+    CloseAllFiles, CloseFile, CloseWindow, FindAndReplace, FindInFile, FoldAll, FoldAtLevel,
+    GoToParentFolder, JumpToLine, NewFile, NewWindow, NextTab, OpenFile, OpenPath, OpenRemote,
+    PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs, SearchNext, SearchPrevious,
+    ShowRemoteUrlHistory, ToggleColorPicker, ToggleCommandPalette, ToggleFold, UnfoldAll,
 };
 use gpui_kit::KeyBinding;
 
@@ -47,6 +47,10 @@ enum KeybindingDispatchAction {
     ToggleCommandPalette,
     ShowRemoteUrlHistory,
     GoToParentFolder,
+    FoldAll,
+    UnfoldAll,
+    ToggleFold,
+    FoldAtLevel(usize),
 }
 
 /// A platform keybinding dispatch specification used to build runtime keybindings.
@@ -140,6 +144,16 @@ impl KeybindingDispatchSpec {
             KeybindingDispatchAction::GoToParentFolder => {
                 KeyBinding::new(self.keystroke, GoToParentFolder, context)
             }
+            KeybindingDispatchAction::FoldAll => KeyBinding::new(self.keystroke, FoldAll, context),
+            KeybindingDispatchAction::UnfoldAll => {
+                KeyBinding::new(self.keystroke, UnfoldAll, context)
+            }
+            KeybindingDispatchAction::ToggleFold => {
+                KeyBinding::new(self.keystroke, ToggleFold, context)
+            }
+            KeybindingDispatchAction::FoldAtLevel(level) => {
+                KeyBinding::new(self.keystroke, FoldAtLevel(level), context)
+            }
         }
     }
 }
@@ -172,7 +186,11 @@ impl KeybindingDispatchAction {
             | Self::JumpToLine
             | Self::PrintFile
             | Self::ToggleColorPicker
-            | Self::ToggleCommandPalette => Some(SCOPED_BINDING_PREDICATE),
+            | Self::ToggleCommandPalette
+            | Self::FoldAll
+            | Self::UnfoldAll
+            | Self::ToggleFold
+            | Self::FoldAtLevel(_) => Some(SCOPED_BINDING_PREDICATE),
             Self::ShowRemoteUrlHistory => Some(KEY_CONTEXT_REMOTE_URL_COMBO),
             Self::GoToParentFolder => Some(KEY_CONTEXT_PATH_BROWSER),
         }
@@ -285,6 +303,46 @@ fn default_keybinding_dispatch_specs() -> Vec<KeybindingDispatchSpec> {
         ),
         KeybindingDispatchSpec::new("alt-down", KeybindingDispatchAction::ShowRemoteUrlHistory),
         KeybindingDispatchSpec::new("alt-up", KeybindingDispatchAction::GoToParentFolder),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-k cmd-0", KeybindingDispatchAction::FoldAll),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-k ctrl-0", KeybindingDispatchAction::FoldAll),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-k cmd-j", KeybindingDispatchAction::UnfoldAll),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-k ctrl-j", KeybindingDispatchAction::UnfoldAll),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-k cmd-l", KeybindingDispatchAction::ToggleFold),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-k ctrl-l", KeybindingDispatchAction::ToggleFold),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-k cmd-1", KeybindingDispatchAction::FoldAtLevel(1)),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-k ctrl-1", KeybindingDispatchAction::FoldAtLevel(1)),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-k cmd-2", KeybindingDispatchAction::FoldAtLevel(2)),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-k ctrl-2", KeybindingDispatchAction::FoldAtLevel(2)),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-k cmd-3", KeybindingDispatchAction::FoldAtLevel(3)),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-k ctrl-3", KeybindingDispatchAction::FoldAtLevel(3)),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-k cmd-4", KeybindingDispatchAction::FoldAtLevel(4)),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-k ctrl-4", KeybindingDispatchAction::FoldAtLevel(4)),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-k cmd-5", KeybindingDispatchAction::FoldAtLevel(5)),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-k ctrl-5", KeybindingDispatchAction::FoldAtLevel(5)),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-k cmd-6", KeybindingDispatchAction::FoldAtLevel(6)),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-k ctrl-6", KeybindingDispatchAction::FoldAtLevel(6)),
+        #[cfg(target_os = "macos")]
+        KeybindingDispatchSpec::new("cmd-k cmd-7", KeybindingDispatchAction::FoldAtLevel(7)),
+        #[cfg(not(target_os = "macos"))]
+        KeybindingDispatchSpec::new("ctrl-k ctrl-7", KeybindingDispatchAction::FoldAtLevel(7)),
     ]
 }
 
@@ -716,6 +774,40 @@ mod tests {
             "scoped Fulgur shortcuts win ties with the editor's Input bindings, \
              so these would silently replace editor behaviour: {collisions:#?}"
         );
+    }
+
+    #[test]
+    fn test_fold_commands_use_the_scoped_ctrl_k_chords() {
+        let specs = default_keybinding_dispatch_specs();
+        #[cfg(target_os = "macos")]
+        let prefix = "cmd-k cmd-";
+        #[cfg(not(target_os = "macos"))]
+        let prefix = "ctrl-k ctrl-";
+
+        let mut expected = vec![
+            (format!("{prefix}0"), KeybindingDispatchAction::FoldAll),
+            (format!("{prefix}j"), KeybindingDispatchAction::UnfoldAll),
+            (format!("{prefix}l"), KeybindingDispatchAction::ToggleFold),
+        ];
+        expected.extend(
+            (1..=crate::fulgur::editor_tab::MAX_FOLD_LEVEL).map(|level| {
+                (
+                    format!("{prefix}{level}"),
+                    KeybindingDispatchAction::FoldAtLevel(level),
+                )
+            }),
+        );
+        for (keystroke, action) in expected {
+            assert!(
+                has_binding(&specs, &keystroke, action),
+                "{keystroke} should dispatch {action:?}"
+            );
+            assert_eq!(
+                action.key_context(),
+                Some(super::SCOPED_BINDING_PREDICATE),
+                "{action:?} acts on the editor and must not fire in dialogs"
+            );
+        }
     }
 
     #[test]

@@ -108,6 +108,11 @@ impl Fulgur {
         register_action!(app_content, cx, ui::tabs::tab_bar::DuplicateTab => on_duplicate_tab(&action));
         register_action!(app_content, cx, ui::tabs::tab_bar::SetTabColor => on_set_tab_color(&action));
         register_action!(app_content, cx, ui::tabs::tab_bar::RenameTab => on_rename_tab(&action));
+        register_action!(app_content, cx, ui::tabs::tab_bar::FoldTab => on_fold_tab(&action));
+        register_action!(app_content, cx, ui::menus::FoldAll => on_fold_all(&action));
+        register_action!(app_content, cx, ui::menus::UnfoldAll => on_unfold_all(&action));
+        register_action!(app_content, cx, ui::menus::ToggleFold => on_toggle_fold(&action));
+        register_action!(app_content, cx, ui::menus::FoldAtLevel => on_fold_at_level(&action));
         register_action!(app_content, cx, ui::menus::OpenRecentFile => do_open_recent_file(.0));
         register_action!(app_content, cx, ui::menus::CheckForUpdates => check_for_updates);
         register_action!(app_content, cx, ui::menus::GetTheme => call_no_args ui::tabs::tab_bar::open_theme_repository);

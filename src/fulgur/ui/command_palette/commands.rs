@@ -1,14 +1,15 @@
 //! The command palette catalogue.
 
 use super::layout::PaletteContext;
+use crate::fulgur::editor_tab::MAX_FOLD_LEVEL;
 use crate::fulgur::ui::{
     icons::CustomIcon,
     menus::{
         About, CheckForUpdates, ClearRecentFiles, CloseAllFiles, CloseFile, CloseWindow,
-        FindAndReplace, FindInFile, GetTheme, JumpToLine, KEY_CONTEXT_FULGUR, KEY_CONTEXT_INPUT,
-        NewFile, NewWindow, NextTab, OpenConfigFolder, OpenFile, OpenPath, OpenRemote, PreviousTab,
-        PrintFile, Quit, SaveFile, SaveFileAs, SelectTheme, SettingsTab, ToggleColorPicker,
-        ViewLog,
+        FindAndReplace, FindInFile, FoldAll, FoldAtLevel, GetTheme, JumpToLine, KEY_CONTEXT_FULGUR,
+        KEY_CONTEXT_INPUT, NewFile, NewWindow, NextTab, OpenConfigFolder, OpenFile, OpenPath,
+        OpenRemote, PreviousTab, PrintFile, Quit, SaveFile, SaveFileAs, SelectTheme, SettingsTab,
+        ToggleColorPicker, ToggleFold, UnfoldAll, ViewLog,
     },
 };
 use gpui_kit::Action;
@@ -90,6 +91,17 @@ impl KeybindingHint {
     }
 }
 
+/// The palette labels of the Fold Level commands, indexed by level minus one.
+const FOLD_LEVEL_LABELS: [&str; MAX_FOLD_LEVEL] = [
+    "Fold level 1",
+    "Fold level 2",
+    "Fold level 3",
+    "Fold level 4",
+    "Fold level 5",
+    "Fold level 6",
+    "Fold level 7",
+];
+
 /// A single command offered by the command palette.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PaletteCommand {
@@ -110,6 +122,11 @@ pub enum PaletteCommand {
     Quit,
     AddCursorAbove,
     AddCursorBelow,
+    ToggleFold,
+    FoldAll,
+    UnfoldAll,
+    /// Fold the blocks at one nesting level, from 1 to `MAX_FOLD_LEVEL`.
+    FoldAtLevel(usize),
     FindInFile,
     FindAndReplace,
     JumpToLine,
@@ -142,7 +159,7 @@ impl PaletteCommand {
     ///
     /// Grouping is derived from [`Self::group`], so a command added here lands in its
     /// group automatically and cannot go missing from the palette.
-    pub const ALL: [Self; 42] = [
+    pub const ALL: [Self; 52] = [
         Self::NewFile,
         Self::NewWindow,
         Self::OpenFile,
@@ -160,6 +177,16 @@ impl PaletteCommand {
         Self::Quit,
         Self::AddCursorAbove,
         Self::AddCursorBelow,
+        Self::ToggleFold,
+        Self::FoldAll,
+        Self::UnfoldAll,
+        Self::FoldAtLevel(1),
+        Self::FoldAtLevel(2),
+        Self::FoldAtLevel(3),
+        Self::FoldAtLevel(4),
+        Self::FoldAtLevel(5),
+        Self::FoldAtLevel(6),
+        Self::FoldAtLevel(7),
         Self::FindInFile,
         Self::FindAndReplace,
         Self::JumpToLine,
@@ -208,7 +235,12 @@ impl PaletteCommand {
             | Self::ClearRecentFiles
             | Self::ClearRemoteHistory
             | Self::Quit => PaletteGroup::File,
-            Self::AddCursorAbove | Self::AddCursorBelow => PaletteGroup::Edit,
+            Self::AddCursorAbove
+            | Self::AddCursorBelow
+            | Self::ToggleFold
+            | Self::FoldAll
+            | Self::UnfoldAll
+            | Self::FoldAtLevel(_) => PaletteGroup::Edit,
             Self::FindInFile | Self::FindAndReplace | Self::JumpToLine => PaletteGroup::Search,
             Self::SelectLanguage
             | Self::ToggleMarkdownPreview
@@ -256,6 +288,10 @@ impl PaletteCommand {
             Self::Quit => "Quit Fulgur",
             Self::AddCursorAbove => "Add cursor above",
             Self::AddCursorBelow => "Add cursor below",
+            Self::ToggleFold => "Toggle fold",
+            Self::FoldAll => "Fold all",
+            Self::UnfoldAll => "Unfold all",
+            Self::FoldAtLevel(level) => FOLD_LEVEL_LABELS[level - 1],
             Self::FindInFile => "Find in file",
             Self::FindAndReplace => "Find and replace",
             Self::JumpToLine => "Jump to line...",
@@ -307,6 +343,10 @@ impl PaletteCommand {
             Self::Quit => &["exit", "close application"],
             Self::AddCursorAbove => &["multi cursor", "multiple carets", "column", "up"],
             Self::AddCursorBelow => &["multi cursor", "multiple carets", "column", "down"],
+            Self::ToggleFold => &["code folding", "collapse", "expand", "block"],
+            Self::FoldAll => &["code folding", "collapse", "outline"],
+            Self::UnfoldAll => &["code folding", "expand", "reveal"],
+            Self::FoldAtLevel(_) => &["code folding", "collapse", "depth", "nesting"],
             Self::FindInFile => &["search", "locate", "grep"],
             Self::FindAndReplace => &["search", "substitute", "swap"],
             Self::JumpToLine => &["goto", "go to", "line number"],
@@ -350,7 +390,7 @@ impl PaletteCommand {
     pub const fn icon(self) -> CustomIcon {
         match self {
             Self::NewFile | Self::PrintFile => CustomIcon::File,
-            Self::NewWindow => CustomIcon::Plus,
+            Self::NewWindow | Self::UnfoldAll => CustomIcon::Plus,
             Self::OpenFile
             | Self::OpenFromPath
             | Self::ShowActiveTabInFileManager
@@ -362,14 +402,15 @@ impl PaletteCommand {
             | Self::CloseAllFiles
             | Self::CloseTabsToLeft
             | Self::CloseOtherTabs => CustomIcon::Close,
-            Self::ClearRecentFiles | Self::ClearRemoteHistory => CustomIcon::Minus,
+            Self::ClearRecentFiles | Self::ClearRemoteHistory | Self::FoldAll => CustomIcon::Minus,
             Self::AddCursorAbove => CustomIcon::ChevronUp,
             Self::AddCursorBelow => CustomIcon::ChevronDown,
+            Self::FoldAtLevel(_) => CustomIcon::ListNumbered,
             Self::CloseWindow | Self::Quit => CustomIcon::WindowClose,
             Self::FindInFile => CustomIcon::Search,
             Self::FindAndReplace => CustomIcon::Replace,
             Self::JumpToLine | Self::ToggleLogView | Self::ViewLog => CustomIcon::List,
-            Self::SelectLanguage => CustomIcon::Code,
+            Self::SelectLanguage | Self::ToggleFold => CustomIcon::Code,
             Self::ToggleMarkdownPreview => CustomIcon::FileCode,
             Self::ToggleMarkdownToolbar | Self::OpenSettings => CustomIcon::Menu,
             Self::ToggleCsvView => CustomIcon::Table,
@@ -419,6 +460,10 @@ impl PaletteCommand {
             Self::About => Some(KeybindingHint::fulgur(About)),
             Self::AddCursorAbove => Some(KeybindingHint::editor(AddCursorAbove)),
             Self::AddCursorBelow => Some(KeybindingHint::editor(AddCursorBelow)),
+            Self::ToggleFold => Some(KeybindingHint::fulgur(ToggleFold)),
+            Self::FoldAll => Some(KeybindingHint::fulgur(FoldAll)),
+            Self::UnfoldAll => Some(KeybindingHint::fulgur(UnfoldAll)),
+            Self::FoldAtLevel(level) => Some(KeybindingHint::fulgur(FoldAtLevel(level))),
             Self::ShareFile
             | Self::ClearRemoteHistory
             | Self::SelectLanguage
@@ -477,6 +522,8 @@ impl PaletteCommand {
             Self::CloseFile | Self::CloseAllFiles | Self::RenameActiveTab => context.tab_count > 0,
             Self::ClearRecentFiles => context.has_recent_files,
             Self::ClearRemoteHistory => context.has_remote_history,
+            Self::ToggleFold | Self::FoldAll | Self::UnfoldAll => context.fold_depth > 0,
+            Self::FoldAtLevel(level) => level <= context.fold_depth,
             Self::ToggleMarkdownPreview => context.is_markdown && !context.is_large_file,
             Self::ToggleMarkdownToolbar => context.is_markdown,
             Self::ToggleCsvView => context.is_csv && !context.is_large_file,

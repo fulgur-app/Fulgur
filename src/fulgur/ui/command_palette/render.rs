@@ -2,15 +2,15 @@
 
 use super::commands::KeybindingHint;
 use super::{CommandPalette, PaletteCommand, PaletteGroup};
+use crate::fulgur::ui::components_utils::action_chord;
 use gpui_kit::component::{
     ActiveTheme, Icon, WindowExt,
     command::{Command, CommandGroup, CommandItem},
     h_flex,
-    kbd::Kbd,
 };
 use gpui_kit::{
-    App, AsKeystroke, Context, Div, Focusable, IntoElement, KeyContext, ParentElement, Styled,
-    Window, prelude::FluentBuilder as _, px,
+    App, Context, Div, Focusable, IntoElement, ParentElement, Styled, Window,
+    prelude::FluentBuilder as _, px,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -161,17 +161,8 @@ fn render_row(
 /// - `Some(Div)`: One `Kbd` per keystroke of the highest-precedence binding, in order
 /// - `None`: The action has no binding in the hint's key context
 fn render_binding(hint: &KeybindingHint, window: &Window) -> Option<Div> {
-    let context = KeyContext::parse(hint.context).ok()?;
-    let binding =
-        window.highest_precedence_binding_for_action_in_context(hint.action.as_ref(), context)?;
-    Some(
-        h_flex().gap_1().children(
-            binding
-                .keystrokes()
-                .iter()
-                .map(|keystroke| Kbd::new(keystroke.as_keystroke().clone())),
-        ),
-    )
+    let chord = action_chord(hint.action.as_ref(), hint.context, window)?;
+    Some(h_flex().gap_1().children(chord))
 }
 
 /// Render the palette's key hint footer.

@@ -1,5 +1,6 @@
 mod constructors;
 mod csv_table;
+mod folding;
 pub mod hex_color_provider;
 mod location;
 mod navigation;
@@ -13,6 +14,7 @@ mod read_only_tests;
 mod tests;
 
 pub use csv_table::CsvTableDelegate;
+pub use folding::{FoldCommand, MAX_FOLD_LEVEL, apply_fold_command};
 pub use location::TabLocation;
 pub use navigation::{Jump, extract_line_number};
 pub use operations::{replace_editor_range, replace_editor_text, replace_editor_text_undoable};
