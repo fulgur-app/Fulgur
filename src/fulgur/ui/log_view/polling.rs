@@ -1,6 +1,6 @@
 //! The `Fulgur` tail engine: the background poll task and chunk application.
 
-use crate::fulgur::ui::tabs::editor_tab::replace_editor_text;
+use crate::fulgur::ui::tabs::editor_tab::{is_large_file, replace_editor_text};
 use crate::fulgur::ui::tabs::tab::TabId;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -14,7 +14,8 @@ use super::LogTailState;
 use super::tail::LogTailChunk;
 use crate::fulgur::Fulgur;
 
-/// How often the active log tab polls its file for newly appended bytes.
+/// How often the active log tab polls its file for newly appended bytes. A
+/// read that stopped at the per-read cap is followed by the next one at once.
 const POLL_INTERVAL_MS: u64 = 250;
 
 /// Move the caret to the end of a buffer.
@@ -164,6 +165,7 @@ impl Fulgur {
                 if cancel.load(Ordering::Acquire) {
                     break;
                 }
+                let more_pending = chunk.as_ref().is_some_and(|chunk| chunk.more_pending);
                 if let Some(chunk) = chunk.filter(|chunk| !chunk.text.is_empty() || chunk.reset) {
                     let applied = window.update(|window, cx| {
                         view.update(cx, |this, cx| {
@@ -173,6 +175,9 @@ impl Fulgur {
                     if applied.is_err() {
                         break;
                     }
+                }
+                if more_pending {
+                    continue;
                 }
                 window
                     .background_executor()
@@ -203,6 +208,9 @@ impl Fulgur {
 
     /// Apply a freshly read chunk of log bytes to the tab's buffer.
     ///
+    /// Switches the tab to large-file mode before the edit when the buffer
+    /// would cross the threshold, as a reload from disk does.
+    ///
     /// ### Arguments
     /// - `tab_id`: The tab being tailed
     /// - `chunk`: The newly read text, the position it advanced to, and
@@ -228,6 +236,17 @@ impl Fulgur {
             state.set_position(chunk.position);
         }
 
+        let resulting_len = if chunk.reset {
+            chunk.text.len()
+        } else {
+            content.read(cx).text().len() + chunk.text.len()
+        };
+        if is_large_file(resulting_len) {
+            self.update_editor_tab(tab_id, cx, |editor, cx| {
+                editor.enter_large_file_mode(window, cx);
+            });
+        }
+
         if chunk.reset {
             // File was replaced or shrunk: rebuild the buffer from the new content.
             content.update(cx, |state, cx| {
@@ -241,8 +260,12 @@ impl Fulgur {
         self.update_editor_tab(tab_id, cx, |editor, cx| {
             editor.mark_as_saved(cx);
             // The buffer now matches this disk version, so a save after leaving
-            // the log view must not see the appends as an external change.
-            editor.record_disk_version(chunk.modified);
+            // the log view must not see the appends as an external change. A
+            // capped read leaves the buffer a prefix of that version, which a
+            // save must still see as changed on disk.
+            if !chunk.more_pending {
+                editor.record_disk_version(chunk.modified);
+            }
         });
         cx.notify();
     }

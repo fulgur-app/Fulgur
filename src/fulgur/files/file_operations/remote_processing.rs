@@ -211,18 +211,14 @@ impl Fulgur {
             return;
         }
         tab_entity.update(cx, |tab, cx| {
+            tab.replace_with_saved_contents(&remote_file.content, window, cx);
             let Some(editor_tab) = tab.as_editor_mut() else {
                 return;
             };
-            editor_tab.content.update(cx, |input_state, cx| {
-                editor_tab::replace_editor_text(input_state, &remote_file.content, window, cx);
-            });
             editor_tab.location =
                 crate::fulgur::editor_tab::TabLocation::Remote(remote_file.spec.clone());
             editor_tab.encoding = remote_file.encoding;
             editor_tab.lossy_decode = remote_file.lossy;
-            editor_tab.set_original_content_from_str(&remote_file.content);
-            editor_tab.modified = false;
             editor_tab.finish_awaiting_content(cx);
             editor_tab.remote_baseline.set(remote_file.version);
             editor_tab.record_file_metadata(
@@ -253,7 +249,7 @@ mod tests {
     use super::{RemoteFileResult, RemoteOpenResult};
     use crate::fulgur::{
         Fulgur,
-        editor_tab::TabLocation,
+        editor_tab::{LARGE_FILE_THRESHOLD_BYTES, TabLocation},
         files::file_operations::{
             PendingRemoteOpenOutcome, remote_types::RemoteReloadGuard,
             test_helpers::setup_fulgur_with_root,
@@ -464,6 +460,52 @@ mod tests {
                 );
                 assert!(!editor.awaiting_content);
             });
+        });
+    }
+
+    #[gpui_kit::test]
+    fn test_remote_reload_past_the_threshold_enters_large_file_mode(cx: &mut TestAppContext) {
+        let (fulgur, mut visual_cx) = setup_fulgur_with_root(cx);
+        let content_len =
+            usize::try_from(LARGE_FILE_THRESHOLD_BYTES).expect("threshold fits in usize") + 1;
+
+        let tab_entity = visual_cx.update(|window, cx| {
+            fulgur.update(cx, |this, cx| {
+                let (tab_entity, tab_id, guard) = restored_remote_tab(this, cx);
+                this.pending_remote_open
+                    .lock()
+                    .push(PendingRemoteOpenOutcome {
+                        target_tab_id: Some(tab_id),
+                        target_request_id: None,
+                        target_reload_guard: Some(guard),
+                        history_url: None,
+                        result: Ok(RemoteOpenResult::File(RemoteFileResult {
+                            spec: remote_spec(),
+                            content: "x".repeat(content_len),
+                            encoding: UTF_8.to_string(),
+                            lossy: false,
+                            file_size: content_len,
+                            version: Some(server_version()),
+                        })),
+                    });
+                this.process_pending_remote_files(window, cx);
+                tab_entity
+            })
+        });
+        visual_cx.run_until_parked();
+
+        visual_cx.update(|_window, cx| {
+            let editor = tab_entity
+                .read(cx)
+                .as_editor()
+                .expect("expected an editor tab");
+            assert!(
+                editor.large_file,
+                "a restored remote tab reloaded past the threshold must switch to large-file mode"
+            );
+            assert_eq!(editor.content.read(cx).text().len(), content_len);
+            assert!(!editor.modified, "a remote reload leaves the tab clean");
+            assert!(!editor.awaiting_content);
         });
     }
 
