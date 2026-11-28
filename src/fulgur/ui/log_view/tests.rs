@@ -1,9 +1,10 @@
 use super::LogFilePosition;
 use super::tail::LogTailChunk;
+use super::tail::MAX_TAIL_READ_BYTES;
 use super::tail::read_new_log_bytes;
 use crate::fulgur::Fulgur;
-use crate::fulgur::editor_tab::TabLocation;
 use crate::fulgur::editor_tab::replace_editor_text;
+use crate::fulgur::editor_tab::{LARGE_FILE_THRESHOLD_BYTES, TabLocation};
 use crate::fulgur::files::file_watcher::FileWatchEvent;
 use crate::fulgur::files::file_watcher::test_helpers::setup_fulgur;
 use crate::fulgur::ui::tabs::editor_tab::content_fingerprint_from_str;
@@ -99,6 +100,7 @@ fn appended(text: &str, offset_before: u64) -> LogTailChunk {
         },
         reset: false,
         modified: None,
+        more_pending: false,
     }
 }
 
@@ -203,6 +205,7 @@ fn test_reset_chunk_replaces_buffer(cx: &mut TestAppContext) {
                 },
                 reset: true,
                 modified: None,
+                more_pending: false,
             };
             this.apply_log_tail_chunk(tab_id, &chunk, window, cx);
         });
@@ -695,4 +698,154 @@ fn test_save_after_leaving_log_view_does_not_see_tailed_appends_as_a_conflict(
         std::fs::read_to_string(&path).expect("log file should exist"),
         "edited\n"
     );
+}
+
+/// Return the byte length one past the large-file threshold.
+///
+/// ### Returns
+/// - `usize`: The smallest buffer length that is a large file
+fn past_large_file_threshold() -> usize {
+    usize::try_from(LARGE_FILE_THRESHOLD_BYTES).expect("threshold fits in usize") + 1
+}
+
+/// Read whether an editor tab is in large-file mode.
+///
+/// ### Arguments
+/// - `fulgur`: The window entity under test
+/// - `visual_cx`: The visual test context
+/// - `tab_id`: The tab to read
+///
+/// ### Returns
+/// - `bool`: `true` when the tab is in large-file mode
+fn is_large_file_tab(
+    fulgur: &Entity<Fulgur>,
+    visual_cx: &mut VisualTestContext,
+    tab_id: TabId,
+) -> bool {
+    visual_cx.update(|_, cx| {
+        fulgur
+            .read(cx)
+            .editor_tab(tab_id, cx)
+            .expect("editor tab")
+            .large_file
+    })
+}
+
+#[gpui_kit::test]
+fn test_tail_append_past_the_threshold_enters_large_file_mode(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let (_dir, tab_id) = setup_log_tab(&fulgur, &mut visual_cx, "line1\n");
+    let appended_text = "x".repeat(past_large_file_threshold() - 6);
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.apply_log_tail_chunk(tab_id, &appended(&appended_text, 6), window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    assert!(
+        is_large_file_tab(&fulgur, &mut visual_cx, tab_id),
+        "a log growing past the threshold must switch to large-file mode"
+    );
+    let (text, modified) = read_tab(&fulgur, &mut visual_cx, tab_id);
+    assert_eq!(text.len(), past_large_file_threshold());
+    assert!(!modified, "a tail write must not dirty the tab");
+}
+
+#[gpui_kit::test]
+fn test_tail_reset_past_the_threshold_enters_large_file_mode(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let (_dir, tab_id) = setup_log_tab(&fulgur, &mut visual_cx, "old\n");
+    let replacement = "x".repeat(past_large_file_threshold());
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            let chunk = LogTailChunk {
+                text: replacement.clone(),
+                position: LogFilePosition {
+                    byte_offset: replacement.len() as u64,
+                    identity: None,
+                },
+                reset: true,
+                modified: None,
+                more_pending: false,
+            };
+            this.apply_log_tail_chunk(tab_id, &chunk, window, cx);
+        });
+    });
+    visual_cx.run_until_parked();
+
+    assert!(
+        is_large_file_tab(&fulgur, &mut visual_cx, tab_id),
+        "a reread past the threshold must switch to large-file mode"
+    );
+    let (text, modified) = read_tab(&fulgur, &mut visual_cx, tab_id);
+    assert_eq!(text.len(), past_large_file_threshold());
+    assert!(!modified);
+}
+
+#[gpui_kit::test]
+fn test_tail_append_below_the_threshold_keeps_normal_mode(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let (_dir, tab_id) = setup_log_tab(&fulgur, &mut visual_cx, "line1\n");
+
+    visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.apply_log_tail_chunk(tab_id, &appended("line2\n", 6), window, cx);
+        });
+    });
+
+    assert!(!is_large_file_tab(&fulgur, &mut visual_cx, tab_id));
+}
+
+#[gpui_kit::test]
+fn test_capped_tail_chunk_does_not_adopt_the_disk_version(cx: &mut TestAppContext) {
+    let (fulgur, mut visual_cx) = setup_fulgur(cx);
+    let (_dir, tab_id) = setup_log_tab(&fulgur, &mut visual_cx, "line1\n");
+    let opened_version = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+    let grown_version = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(2_000);
+
+    let last_modified = visual_cx.update(|window, cx| {
+        fulgur.update(cx, |this, cx| {
+            this.update_editor_tab(tab_id, cx, |editor_tab, _| {
+                editor_tab.file_last_modified = Some(opened_version);
+            });
+            let mut chunk = appended("line2\n", 6);
+            chunk.modified = Some(grown_version);
+            chunk.more_pending = true;
+            this.apply_log_tail_chunk(tab_id, &chunk, window, cx);
+            this.editor_tab(tab_id, cx)
+                .expect("editor tab")
+                .file_last_modified
+        })
+    });
+
+    assert_eq!(
+        last_modified,
+        Some(opened_version),
+        "a buffer holding only a prefix of the file must not claim its version"
+    );
+}
+
+#[test]
+fn test_read_new_log_bytes_caps_one_read_and_resumes_from_its_end() {
+    let dir = TempDir::new().expect("temp dir");
+    let path = dir.path().join("backlog.log");
+    let cap = usize::try_from(MAX_TAIL_READ_BYTES).expect("cap fits in usize");
+    std::fs::write(&path, "x".repeat(cap + 10)).expect("write log file");
+    let start = LogFilePosition {
+        byte_offset: 0,
+        identity: None,
+    };
+
+    let first = read_new_log_bytes(&path, start, UTF_8).expect("first read");
+    assert_eq!(first.text.len(), cap);
+    assert_eq!(first.position.byte_offset, MAX_TAIL_READ_BYTES);
+    assert!(first.more_pending, "a capped read must ask for another");
+
+    let second = read_new_log_bytes(&path, first.position, UTF_8).expect("second read");
+    assert_eq!(second.text, "x".repeat(10));
+    assert_eq!(second.position.byte_offset, MAX_TAIL_READ_BYTES + 10);
+    assert!(!second.more_pending);
 }

@@ -20,6 +20,46 @@ struct LocalReloadGuard {
 }
 
 impl Tab {
+    /// Replace an editor tab's buffer with a saved version of its file (read
+    /// from disk or from a server), and make it the tab's clean baseline.
+    ///
+    /// ### Arguments
+    /// - `content`: The new buffer text
+    /// - `window`: The window context
+    /// - `cx`: The tab entity context
+    pub(in crate::fulgur::files::file_operations) fn replace_with_saved_contents(
+        &mut self,
+        content: &str,
+        window: &mut Window,
+        cx: &mut Context<Tab>,
+    ) {
+        let Some(editor_tab) = self.as_editor_mut() else {
+            return;
+        };
+        if !editor_tab.large_file && is_large_file(content.len()) {
+            log::info!(
+                "File loaded into tab {} crossed the large-file threshold, switching to large-file mode",
+                editor_tab.id
+            );
+            editor_tab.enter_large_file_mode(window, cx);
+        }
+        editor_tab.content.update(cx, |input_state, cx| {
+            replace_editor_text(input_state, content, window, cx);
+        });
+        editor_tab.set_original_content_from_str(content);
+        editor_tab.modified = false;
+        if editor_tab.large_file {
+            // The content subscription marks a large-file tab modified on the
+            // `Change` emitted above, once this update returns.
+            cx.defer_in(window, |tab, _window, cx| {
+                if let Some(editor_tab) = tab.as_editor_mut() {
+                    editor_tab.modified = false;
+                    cx.notify();
+                }
+            });
+        }
+    }
+
     /// Replace an editor tab's buffer with a version read from disk, and make it
     /// the tab's saved version.
     ///
@@ -39,34 +79,13 @@ impl Tab {
         window: &mut Window,
         cx: &mut Context<Tab>,
     ) {
+        self.replace_with_saved_contents(&decoded.content, window, cx);
         let Some(editor_tab) = self.as_editor_mut() else {
             return;
         };
-        if !editor_tab.large_file && is_large_file(decoded.content.len()) {
-            log::info!(
-                "File loaded into tab {} crossed the large-file threshold, switching to large-file mode",
-                editor_tab.id
-            );
-            editor_tab.enter_large_file_mode(window, cx);
-        }
-        editor_tab.content.update(cx, |input_state, cx| {
-            replace_editor_text(input_state, &decoded.content, window, cx);
-        });
-        editor_tab.set_original_content_from_str(&decoded.content);
         editor_tab.encoding = decoded.encoding;
         editor_tab.lossy_decode = decoded.lossy;
-        editor_tab.modified = false;
         editor_tab.record_file_metadata(decoded.byte_len, disk_modified);
-        if editor_tab.large_file {
-            // The content subscription marks a large-file tab modified on the
-            // `Change` emitted above, once this update returns.
-            cx.defer_in(window, |tab, _window, cx| {
-                if let Some(editor_tab) = tab.as_editor_mut() {
-                    editor_tab.modified = false;
-                    cx.notify();
-                }
-            });
-        }
         self.update_language(cx);
     }
 }

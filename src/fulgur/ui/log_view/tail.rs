@@ -6,6 +6,9 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::time::SystemTime;
 
+/// The most bytes one poll reads from a tailed file.
+pub(super) const MAX_TAIL_READ_BYTES: u64 = 32 * 1024 * 1024;
+
 /// Return whether the log-view toggle should be offered for a file path.
 ///
 /// ### Arguments
@@ -228,7 +231,8 @@ fn decode_log_bytes(
     (text.into_owned(), consumed as u64)
 }
 
-/// Read the rest of an opened file from its current position as a chunk.
+/// Read the rest of an opened file from its current position as a chunk,
+/// at most `MAX_TAIL_READ_BYTES` of it.
 ///
 /// ### Arguments
 /// - `file`: The opened file, positioned where reading should start
@@ -239,7 +243,8 @@ fn decode_log_bytes(
 /// - `modified`: The file's modification time, read before its bytes
 ///
 /// ### Returns
-/// - `Ok(LogTailChunk)`: The decoded text and the consumed position
+/// - `Ok(LogTailChunk)`: The decoded text, the consumed position, and whether
+///   the read stopped at the cap
 /// - `Err(std::io::Error)`: If the file could not be read
 fn read_chunk_to_end(
     file: &mut File,
@@ -250,7 +255,8 @@ fn read_chunk_to_end(
     modified: Option<SystemTime>,
 ) -> std::io::Result<LogTailChunk> {
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
+    file.take(MAX_TAIL_READ_BYTES).read_to_end(&mut bytes)?;
+    let more_pending = bytes.len() as u64 == MAX_TAIL_READ_BYTES;
     let (text, consumed) = decode_log_bytes(&bytes, encoding, start_offset == 0);
     Ok(LogTailChunk {
         text,
@@ -260,6 +266,7 @@ fn read_chunk_to_end(
         },
         reset,
         modified,
+        more_pending,
     })
 }
 
@@ -275,6 +282,9 @@ pub(super) struct LogTailChunk {
     /// The file's modification time, read before its bytes so a write racing
     /// the read reads as a later change
     pub modified: Option<SystemTime>,
+    /// Whether the read stopped at `MAX_TAIL_READ_BYTES` with bytes possibly
+    /// left in the file, so the buffer does not yet match `modified`'s version
+    pub more_pending: bool,
 }
 
 /// Read a whole file from its start as a chunk that replaces the display.
@@ -331,6 +341,7 @@ pub(super) fn read_new_log_bytes(
             },
             reset: false,
             modified,
+            more_pending: false,
         });
     }
     file.seek(SeekFrom::Start(offset)).ok()?;
